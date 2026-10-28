@@ -38,6 +38,7 @@ import { IntegritySettleControl } from "@/components/crm-integrity/integrity-set
 import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { CrmButton, CrmField, CrmNote, CrmSearchField, CrmSelect, crmInputClassName, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import {
   activeIntegrityFilterChips,
@@ -349,7 +350,7 @@ export function casePhoto(entry: IntegrityCase): { heading: string; alt: string;
  * Everything behind the headline: the story in plain English, the photograph, the map and its
  * numbers, the measurements, the history, and the decision.
  */
-function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
+function CasePanel({ canSettle, joined = false, row }: { canSettle: boolean; joined?: boolean; row: BoardRow }) {
   const { entry, story } = row;
   // 🔴 A BOOLEAN, NOT A NESTED COMPONENT. A function returning JSX declared inside a render is a NEW
   // component TYPE on every render, so React unmounts and remounts what it returns — here the settle
@@ -362,7 +363,7 @@ function CasePanel({ canSettle, row }: { canSettle: boolean; row: BoardRow }) {
   const offersDecision = canSettle && (entry.laterReading === null || !entry.laterReading.withdrawsFlag);
   const photo = casePhoto(entry);
   return (
-    <div className="min-w-0 space-y-4 border-t border-slate-200 pt-4">
+    <div className={joined ? "min-w-0 space-y-4" : "min-w-0 space-y-4 border-t border-slate-200 pt-4"}>
       {/* 1. The comparison, first and biggest: this location against the validation location. */}
       <CaseComparisonPanel comparison={story.comparison} />
 
@@ -582,7 +583,7 @@ function CaseList({ canSettle, entries, selection }: { canSettle: boolean; entri
                     {/* A chromeless control: no border, background, radius or height is written
                         here, so the one form design has nothing to be in breach of. */}
                     <button
-                      aria-expanded={open.has(row.entry.id)}
+                      {...rowDetailToggleProps(`case-detail-${row.entry.id}`, open.has(row.entry.id))}
                       className="flex w-full min-w-0 items-start gap-2 text-left"
                       onClick={() => toggleOpen(row.entry.id)}
                       type="button"
@@ -603,11 +604,9 @@ function CaseList({ canSettle, entries, selection }: { canSettle: boolean; entri
                   </td>
                 </tr>
                 {open.has(row.entry.id) ? (
-                  <tr className="border-b border-slate-200 bg-slate-50/80">
-                    <td className="px-5 pb-5" colSpan={6}>
-                      <CasePanel canSettle={canSettle} row={row} />
-                    </td>
-                  </tr>
+                  <TableRowDetail className="px-5 pb-5" colSpan={6} id={`case-detail-${row.entry.id}`}>
+                    <CasePanel canSettle={canSettle} joined row={row} />
+                  </TableRowDetail>
                 ) : null}
               </Fragment>
             ))}

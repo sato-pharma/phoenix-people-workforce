@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckTile } from "@/components/ui/form-kit";
 import { Input } from "@/components/ui/input";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import type {
@@ -118,7 +120,7 @@ function SummaryCard({ label, value, active, onClick, accent }: SummaryCardProps
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-start gap-1 rounded-sm border px-4 py-3 text-left transition",
+        "flex flex-col items-start gap-1 border px-4 py-3 text-left transition",
         active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-400",
       )}
     >
@@ -201,13 +203,26 @@ export function CustomerPharmacyMappingWorkspace() {
     });
   }
 
+  function requestDecision(row: CustomerPharmacyReadinessRow) {
+    return (link: CustomerPharmacyLinkSummary, decision: LinkDecision) =>
+      setDecisionTarget({
+        linkId: link.linkId,
+        customerName: row.customerName,
+        pharmacyName: link.pharmacyName,
+        decision,
+        licenseOnly: link.licenseOnly,
+        licenseUrl: link.licenseUrl,
+        licenseContentType: link.licenseContentType,
+      });
+  }
+
   if (loading) {
     return <p className="text-sm font-medium text-slate-500">Loading customer pharmacy mapping…</p>;
   }
 
   if (error) {
     return (
-      <div className="rounded-sm border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+      <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
         {error}
       </div>
     );
@@ -300,53 +315,49 @@ export function CustomerPharmacyMappingWorkspace() {
         {summary.inferredCustomers > 0 ? ` · ${summary.inferredCustomers} with inferred historical links` : ""}
       </p>
 
-      <div className="overflow-x-auto rounded-sm border border-slate-200">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="bg-slate-900 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-white">
-              <th className="whitespace-nowrap px-3 py-2.5">Customer</th>
-              <th className="whitespace-nowrap px-3 py-2.5">Code</th>
-              <th className="whitespace-nowrap px-3 py-2.5">Type</th>
-              <th className="whitespace-nowrap px-3 py-2.5">Area</th>
-              <th className="whitespace-nowrap px-3 py-2.5">Governorate</th>
-              <th className="whitespace-nowrap px-3 py-2.5">Readiness</th>
-              <th className="whitespace-nowrap px-3 py-2.5 text-right">Validated</th>
-              <th className="whitespace-nowrap px-3 py-2.5 text-right">Pending</th>
-              <th className="whitespace-nowrap px-3 py-2.5 text-right">Total</th>
-              <th className="whitespace-nowrap px-3 py-2.5">Links</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-sm font-medium text-slate-500">
-                  No customers match the current filters.
-                </td>
+      {filteredRows.length === 0 ? (
+        <p className="border border-slate-200 px-3 py-6 text-center text-sm font-medium text-slate-500">
+          No customers match the current filters.
+        </p>
+      ) : (
+        <>
+          <CrmTable columns={["26%", "17%", "17%", "9%", "9%", "8%", "14%"]}>
+            <thead>
+              <tr className="bg-slate-900 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-white">
+                <th className="px-3 py-2.5">Customer</th>
+                <th className="px-3 py-2.5">Area</th>
+                <th className="px-3 py-2.5">Readiness</th>
+                <th className="px-3 py-2.5 text-right">Validated</th>
+                <th className="px-3 py-2.5 text-right">Pending</th>
+                <th className="px-3 py-2.5 text-right">Total</th>
+                <th className="px-3 py-2.5">Links</th>
               </tr>
-            ) : (
-              filteredRows.map((row) => (
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
                 <CustomerRow
                   key={row.customerId}
                   row={row}
                   expanded={expanded.has(row.customerId)}
                   onToggle={() => toggleExpanded(row.customerId)}
-                  onRequestDecision={(link, decision) =>
-                    setDecisionTarget({
-                      linkId: link.linkId,
-                      customerName: row.customerName,
-                      pharmacyName: link.pharmacyName,
-                      decision,
-                      licenseOnly: link.licenseOnly,
-                      licenseUrl: link.licenseUrl,
-                      licenseContentType: link.licenseContentType,
-                    })
-                  }
+                  onRequestDecision={requestDecision(row)}
                 />
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </CrmTable>
+          <CrmCardsOnPhone>
+            {filteredRows.map((row) => (
+              <CustomerCard
+                key={row.customerId}
+                row={row}
+                expanded={expanded.has(row.customerId)}
+                onToggle={() => toggleExpanded(row.customerId)}
+                onRequestDecision={requestDecision(row)}
+              />
+            ))}
+          </CrmCardsOnPhone>
+        </>
+      )}
 
       {decisionTarget ? (
         <LinkDecisionDialog
@@ -369,63 +380,23 @@ type CustomerRowProps = {
   onRequestDecision: (link: CustomerPharmacyLinkSummary, decision: LinkDecision) => void;
 };
 
-function CustomerRow({ row, expanded, onToggle, onRequestDecision }: CustomerRowProps) {
-  const canExpand = row.totalLinkCount > 0;
-
+function LinkList({
+  links,
+  onRequestDecision,
+}: {
+  links: CustomerPharmacyLinkSummary[];
+  onRequestDecision: (link: CustomerPharmacyLinkSummary, decision: LinkDecision) => void;
+}) {
   return (
-    <>
-      <tr className="border-b border-orange-100 align-middle">
-        <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-900">{row.customerName}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.customerCode ?? "—"}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">
-          {row.customerType ? titleCase(row.customerType) : "—"}
-        </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.areaName ?? "—"}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.governorateName ?? "—"}</td>
-        <td className="whitespace-nowrap px-3 py-2.5">
-          <div className="flex items-center gap-1.5">
-            <Badge variant={bucketBadgeVariant(row.bucket)}>{BUCKET_LABELS[row.bucket]}</Badge>
-            {row.inferredLinkCount > 0 ? (
-              <Badge variant="neutral" title="Contains links inferred from history, not GPS field-validated">
-                Inferred
-              </Badge>
-            ) : null}
-          </div>
-        </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{row.validatedLinkCount}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-700">{row.pendingLinkCount}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">
-          {row.totalLinkCount}
-        </td>
-        <td className="whitespace-nowrap px-3 py-2.5">
-          {canExpand ? (
-            <button
-              type="button"
-              onClick={onToggle}
-              className="rounded-sm border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-500"
-            >
-              {expanded ? "Hide" : `View ${row.totalLinkCount}`}
-            </button>
-          ) : (
-            <span className="text-xs font-medium text-slate-400">None</span>
-          )}
-        </td>
-      </tr>
-      {expanded && canExpand ? (
-        <tr className="border-b border-orange-100 bg-slate-50">
-          <td colSpan={10} className="px-3 py-3">
-            <div className="space-y-2">
-              {row.links.map((link) => (
-                <div key={link.linkId} className="rounded-sm border border-slate-200 bg-white px-3 py-2">
+    <div className="space-y-2">
+      {links.map((link) => (
+                <div key={link.linkId} className="border border-slate-200 bg-white px-3 py-2">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{link.pharmacyName}</span>
-                  {link.pharmacyCode ? (
-                    <span className="whitespace-nowrap text-xs font-medium text-slate-500">({link.pharmacyCode})</span>
-                  ) : null}
+                  <span className="text-sm font-semibold text-slate-900">{link.pharmacyName}</span>
                   <span className="text-slate-300">·</span>
-                  <span className="whitespace-nowrap text-sm text-slate-700">{link.distributorName}</span>
+                  <span className="text-sm text-slate-700">{link.distributorName}</span>
                   {link.distributorPharmacyCode ? (
-                    <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+                    <span className="text-xs font-medium text-slate-500">
                       code {link.distributorPharmacyCode}
                     </span>
                   ) : null}
@@ -489,11 +460,109 @@ function CustomerRow({ row, expanded, onToggle, onRequestDecision }: CustomerRow
                 ) : null}
                 </div>
               ))}
-            </div>
-          </td>
-        </tr>
+    </div>
+  );
+}
+
+function readinessBadges(row: CustomerPharmacyReadinessRow) {
+  return (
+    <>
+      <Badge variant={bucketBadgeVariant(row.bucket)}>{BUCKET_LABELS[row.bucket]}</Badge>
+      {row.inferredLinkCount > 0 ? (
+        <Badge variant="neutral" title="Contains links inferred from history, not GPS field-validated">
+          Inferred
+        </Badge>
       ) : null}
     </>
+  );
+}
+
+function LinksToggle({
+  row,
+  expanded,
+  onToggle,
+  detailId,
+}: {
+  row: CustomerPharmacyReadinessRow;
+  expanded: boolean;
+  onToggle: () => void;
+  detailId: string;
+}) {
+  if (row.totalLinkCount === 0) return <span className="text-xs font-medium text-slate-400">None</span>;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      {...rowDetailToggleProps(detailId, expanded)}
+      className="border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-500"
+    >
+      {expanded ? "Hide" : `View ${row.totalLinkCount}`}
+    </button>
+  );
+}
+
+function CustomerRow({ row, expanded, onToggle, onRequestDecision }: CustomerRowProps) {
+  const canExpand = row.totalLinkCount > 0;
+  const detailId = `mapping-links-${row.customerId}`;
+  const customerLine = [row.customerCode, row.customerType ? titleCase(row.customerType) : null]
+    .filter(Boolean)
+    .join(" · ");
+  const place = [row.areaName, row.governorateName].filter(Boolean);
+
+  return (
+    <>
+      <tr className="border-b border-orange-100 align-top">
+        <td className="min-w-0 break-words px-3 py-2.5">
+          <span className="block font-semibold text-slate-900">{row.customerName}</span>
+          {customerLine ? <span className="block text-xs text-slate-600">{customerLine}</span> : null}
+        </td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-slate-600">
+          {place.length === 0 ? "—" : place.map((part, index) => <span className="block" key={index}>{part}</span>)}
+        </td>
+        <td className="min-w-0 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">{readinessBadges(row)}</div>
+        </td>
+        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{row.validatedLinkCount}</td>
+        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{row.pendingLinkCount}</td>
+        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{row.totalLinkCount}</td>
+        <td className="px-3 py-2.5">
+          <LinksToggle row={row} expanded={expanded} onToggle={onToggle} detailId={detailId} />
+        </td>
+      </tr>
+      {expanded && canExpand ? (
+        <TableRowDetail colSpan={7} id={detailId}>
+          <LinkList links={row.links} onRequestDecision={onRequestDecision} />
+        </TableRowDetail>
+      ) : null}
+    </>
+  );
+}
+
+function CustomerCard({ row, expanded, onToggle, onRequestDecision }: CustomerRowProps) {
+  const detailId = `mapping-links-card-${row.customerId}`;
+  return (
+    <CrmCard
+      title={row.customerName}
+      status={readinessBadges(row)}
+      actions={<LinksToggle row={row} expanded={expanded} onToggle={onToggle} detailId={detailId} />}
+    >
+      <CrmFacts
+        facts={[
+          { label: "Code", value: row.customerCode ?? "—" },
+          { label: "Type", value: row.customerType ? titleCase(row.customerType) : "—" },
+          { label: "Area", value: row.areaName ?? "—" },
+          { label: "Governorate", value: row.governorateName ?? "—" },
+          { label: "Validated", value: row.validatedLinkCount },
+          { label: "Pending", value: row.pendingLinkCount },
+          { label: "Total", value: row.totalLinkCount },
+        ]}
+      />
+      {expanded && row.totalLinkCount > 0 ? (
+        <div className="mt-3" id={detailId}>
+          <LinkList links={row.links} onRequestDecision={onRequestDecision} />
+        </div>
+      ) : null}
+    </CrmCard>
   );
 }
 
@@ -584,7 +653,7 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
         </div>
 
         <div className="space-y-4 p-4">
-          <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+          <div className="border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
             <p className="font-semibold text-slate-900">{target.customerName}</p>
             <p className="text-slate-600">{target.pharmacyName}</p>
           </div>

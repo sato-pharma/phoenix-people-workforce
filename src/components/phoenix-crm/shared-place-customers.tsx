@@ -20,8 +20,8 @@
  * 🔴 A MANAGER'S BOARD (`mode="team"`) GETS NO DECISION CONTROL AND NO SENTENCE ABOUT ONE. He reads the
  * evidence and comments; who decides is not on his screen (owner, 2026-10-13).
  *
- * Desktop draws the module's `CrmTable` (`table-fixed` with a colgroup, never a min-width in a
- * scroller); a phone draws the same rows as cards. Square corners throughout.
+ * A desktop stacks the customers inside their building's own first cell (the list is one row per
+ * building); a phone draws the same customers as cards. Square corners throughout.
  */
 
 import { useState } from "react";
@@ -32,7 +32,7 @@ import { PlaceCheckNotes, type PlaceCheckNotesMode } from "@/components/phoenix-
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/refusal-reason-field";
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
-import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
+import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
@@ -512,31 +512,18 @@ export function SeatedCustomers({
           ))}
         </CrmCardsOnPhone>
       ) : null}
+      {/* On a desktop the customers sit in their building's own first cell, one block each: a table
+          inside a table cell would be a second row for the same building. */}
       {layout !== "cards" ? (
-        <CrmTable columns={["42%", "30%", "28%"]}>
-          <thead>
-            <tr>
-              <th className={crmThClassName}>Customer and rep</th>
-              <th className={crmThClassName}>What the timetable says</th>
-              <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {customers.map((customer) => (
-              <tr key={customer.key} className="even:bg-slate-50/60">
-                <td className={crmTdClassName}>
-                  <Who customer={customer} mode={mode} />
-                </td>
-                <td className={crmTdClassName}>
-                  <Timetable customer={customer} mode={mode} noTimetable={noTimetable} venueTimetablePath={venueTimetablePath} />
-                </td>
-                <td className={crmTdClassName}>
-                  <LastColumn customer={customer} mode={mode} noTimetable={noTimetable} noteIndex={noteIndex} scope="table" />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </CrmTable>
+        <div className="hidden min-w-0 md:block">
+          {customers.map((customer) => (
+            <div key={customer.key} className="space-y-3 border-t border-slate-100 px-4 py-3 first:border-t-0">
+              <Who customer={customer} mode={mode} />
+              <Timetable customer={customer} mode={mode} noTimetable={noTimetable} venueTimetablePath={venueTimetablePath} />
+              <LastColumn customer={customer} mode={mode} noTimetable={noTimetable} noteIndex={noteIndex} scope="table" />
+            </div>
+          ))}
+        </div>
       ) : null}
     </div>
   );

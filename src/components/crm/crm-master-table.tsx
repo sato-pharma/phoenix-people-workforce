@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from "reac
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, TriangleAlert, X } from "lucide-react";
 
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { PortalRecordCard, PortalRecordFields } from "@/components/employee-portal/portal-primitives";
 import {
   formatVendorLocal,
@@ -492,10 +493,21 @@ function portalCardHeader(dataset: CrmMasterData["dataset"], row: CrmMasterRow):
 const ALL_FIELDS_BUTTON =
   "inline-flex min-h-10 items-center gap-1 border px-2.5 py-1 text-phx-xs font-bold transition md:min-h-8";
 
-function AllFieldsButton({ count, isOpen, onToggle }: { count: number; isOpen: boolean; onToggle: () => void }) {
+function AllFieldsButton({
+  count,
+  detailId,
+  isOpen,
+  onToggle,
+}: {
+  count: number;
+  /** The id of the row's opened panel, when it is a table-row panel. */
+  detailId?: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   return (
     <button
-      aria-expanded={isOpen}
+      {...(detailId ? rowDetailToggleProps(detailId, isOpen) : { "aria-expanded": isOpen })}
       className={`${ALL_FIELDS_BUTTON} ${
         isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
       }`}
@@ -633,18 +645,21 @@ function PortalMasterRow({
             {/* The row's expander rides in its first cell, where the eye starts the row. */}
             {index === 0 && restCount > 0 ? (
               <span className="mt-2 block">
-                <AllFieldsButton count={restCount} isOpen={isOpen} onToggle={onToggle} />
+                <AllFieldsButton
+                  count={restCount}
+                  detailId={`master-fields-${row.id}`}
+                  isOpen={isOpen}
+                  onToggle={onToggle}
+                />
               </span>
             ) : null}
           </td>
         ))}
       </tr>
       {isOpen && restFields.length > 0 ? (
-        <tr className="bg-slate-50/70">
-          <td className="px-3 py-3" colSpan={columns.length}>
-            <PortalRecordFields fields={restFields} />
-          </td>
-        </tr>
+        <TableRowDetail colSpan={columns.length} id={`master-fields-${row.id}`}>
+          <PortalRecordFields fields={restFields} />
+        </TableRowDetail>
       ) : null}
     </>
   );
@@ -1305,7 +1320,7 @@ function RowGroup({
         <td className="whitespace-nowrap px-3 py-2 text-right">
           <div className="inline-flex items-center gap-1">
             <button
-              aria-expanded={isOpen}
+              {...rowDetailToggleProps(`master-json-${row.id}`, isOpen)}
               className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition ${
                 isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
               }`}
@@ -1319,13 +1334,11 @@ function RowGroup({
         </td>
       </tr>
       {isOpen ? (
-        <tr className="border-b border-slate-100 bg-slate-950">
-          <td className="p-0" colSpan={columns.length + 1}>
-            <pre className="max-h-96 overflow-auto px-4 py-3 text-phx-xs leading-5 text-emerald-200">
-              {JSON.stringify(row.raw_payload ?? {}, null, 2)}
-            </pre>
-          </td>
-        </tr>
+        <TableRowDetail className="p-0" colSpan={columns.length + 1} id={`master-json-${row.id}`}>
+          <pre className="max-h-96 overflow-auto bg-slate-950 px-4 py-3 text-phx-xs leading-5 text-emerald-200">
+            {JSON.stringify(row.raw_payload ?? {}, null, 2)}
+          </pre>
+        </TableRowDetail>
       ) : null}
     </>
   );

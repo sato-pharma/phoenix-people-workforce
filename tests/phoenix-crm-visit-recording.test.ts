@@ -432,4 +432,11 @@ export function runPhoenixCrmVisitRecordingTests(): void {
     assert.match(screen, /\{ visitId: row\.visitId, decision, note \}/, "the comment travels with an approval as well as a refusal");
     assert.match(screen, /Approve and send/, "and the approve button offers the comment box");
   }
+  // ── Tables say every fact once: the Switched on cell never repeats the switch's own On or Off ──
+  {
+    const screen = read("src/components/phoenix-crm/visit-recording-admin.tsx");
+    assert.doesNotMatch(screen, /\|\| "On"/, "the Switched on cell does not say On beside the switch that says On");
+    assert.doesNotMatch(screen, /if \(!rep\.required\) return "Off"/, "nor Off beside the switch that says Off");
+    assert.match(screen, /switchedOnText\(rep\) \|\| "—"/, "an empty cell is a dash");
+  }
 }

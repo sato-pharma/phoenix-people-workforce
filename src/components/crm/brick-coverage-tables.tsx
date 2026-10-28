@@ -49,7 +49,7 @@ function CoverageBar({ value }: { value: number }) {
       <div className="h-1 w-16 bg-slate-100">
         <div className={`h-full ${tone.bar}`} style={{ width: `${Math.max(2, value)}%` }} />
       </div>
-      <span className={`min-w-[34px] text-right font-black ${tone.text}`}>{value}%</span>
+      <span className={`w-10 shrink-0 text-right font-black ${tone.text}`}>{value}%</span>
     </div>
   );
 }
@@ -210,11 +210,11 @@ export function BrickCoverageRepTable({
             <tbody className="divide-y divide-slate-100">
               {table.rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
-                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                  <td className="break-words px-3 py-2 font-semibold text-slate-900">
                     {row.repName}
                     <span className="ml-2 text-phx-2xs font-normal text-slate-400">{row.areaNames}</span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.line}</td>
                   <td className="px-3 py-2">
                     <CoverageBar value={row.salesCoveragePct} />
                   </td>
@@ -326,12 +326,12 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
             <tbody className="divide-y divide-slate-100">
               {table.rows.map((row, index) => (
                 <tr className="bg-white hover:bg-slate-50" key={`${row.repKey}-${row.brickName}-${index}`}>
-                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                  <td className="break-words px-3 py-2 font-semibold text-slate-900">
                     {row.repName}
                     <span className="ml-2 text-phx-2xs font-normal text-slate-400">{row.line}</span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.brickName}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaName}</td>
+                  <td className="break-words px-3 py-2 font-semibold text-slate-900">{row.brickName}</td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.areaName}</td>
                   <td className="px-3 py-2 text-right font-bold text-slate-900">{row.units.toLocaleString()}</td>
                   <td className={`px-3 py-2 text-right font-black ${row.pctOfRepSales >= 25 ? "text-rose-700" : "text-slate-600"}`}>
                     {row.pctOfRepSales}%
@@ -393,12 +393,12 @@ export function BrickCoverageUnmeasuredTable({ rows }: { month: string; rows: Br
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
-                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                  <td className="break-words px-3 py-2 font-semibold text-slate-900">
                     {row.repName}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaNames}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-amber-700">{row.reason}</td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.line}</td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.areaNames}</td>
+                  <td className="break-words px-3 py-2 text-amber-700">{row.reason}</td>
                 </tr>
               ))}
             </tbody>
@@ -451,9 +451,9 @@ export function BrickCoverageVacancyTable({ rows }: { rows: CoverageFilterVacanc
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={`${row.lineCode}:${row.areaCode}:${row.seatId}`}>
-                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.areaName}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.lineName}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.regionName}</td>
+                  <td className="break-words px-3 py-2 font-semibold text-slate-900">{row.areaName}</td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.lineName}</td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.regionName}</td>
                 </tr>
               ))}
             </tbody>
