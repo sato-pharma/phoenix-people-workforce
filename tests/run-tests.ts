@@ -2897,6 +2897,7 @@ import { runBrevoWebhookBearerAuthTests } from "./brevo-webhook-bearer-auth.test
 import { runPublicSurfaceHardeningTests } from "./public-surface-hardening.test.ts";
 import { runMyCandidatesTidyTests } from "./my-candidates-tidy.test.ts";
 import { runSamePharmacyCrossUseFlagTests } from "./same-pharmacy-cross-use-flag.test.ts";
+import { runSickLeaveReachesHrApprovalsTests } from "./sick-leave-reaches-hr-approvals.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11480,6 +11481,7 @@ await runTest(
   runOutstationDuplicateTripGuardTests,
 );
 await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
+await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);
 
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

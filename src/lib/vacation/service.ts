@@ -76,6 +76,7 @@ import {
   resolveStageLabel,
   shouldIncludeManagerOfManagerStep,
   shouldIncludeThirdManagementStep,
+  sickLeaveTurnForViewer,
   stepOrderForStepKey,
 } from "@/lib/vacation/approval-flow";
 import {
@@ -5657,6 +5658,45 @@ export async function getVacationAwaitingBadgeSource(
     centerRows: buildVacationActionCenterRows({ access, candidateRows, directory: null, stepsByRequest }),
     scopedRows,
   };
+}
+
+/**
+ * Whose turn it is on each open sick leave, for this viewer: "management" (the direct manager or
+ * the manager's manager), "hr", or absent (not this viewer's to decide).
+ *
+ * WHY (2026-10-28): sick leave is the one type on the legacy PARALLEL flow — the managers and HR
+ * decide side by side and the status stays `pending_manager` until the last of them does. The
+ * approvals hub used to read HR's turn as `pending_hr`, a status a sick leave never reaches, so a
+ * sick leave filed on 27 Oct was invisible in HR's list and badge, and one from 3 Oct sat 25 days
+ * the same way. The turn is read here from the pending approval steps, by the same rule
+ * `getPendingVacationApprovalStepForActor` applies when the decision is posted
+ * (`sickLeaveTurnForViewer`).
+ */
+export async function getSickLeaveTurnsForViewer(
+  access: AccessContext,
+  requests: VacationRequestRecord[],
+): Promise<Map<string, "management" | "hr">> {
+  const turns = new Map<string, "management" | "hr">();
+  // applyVacationDecisionLegacy refuses anything not `pending_manager`, so nothing else is a turn.
+  const open = requests.filter((request) => request.vacationType === "sick" && request.status === "pending_manager");
+  if (open.length === 0) return turns;
+  const isHrActor = isAllVacationVisibility(access);
+  const stepsByRequest = await fetchVacationApprovalStepsForRequests(open.map((request) => request.id));
+  for (const request of open) {
+    const turn = sickLeaveTurnForViewer({
+      isHrActor,
+      pendingSteps: (stepsByRequest.get(request.id) ?? [])
+        .filter((step) => step.status === "pending")
+        .map((step) => ({ matchesViewer: approvalStepMatchesAccess(access, step), stepKey: step.stepKey })),
+    });
+    if (turn) turns.set(request.id, turn);
+  }
+  return turns;
+}
+
+/** Whether HR has accepted the evidence a sick or compensatory leave needs before HR approves it. */
+export function hasAcceptedRequiredVacationEvidence(request: VacationRequestRecord) {
+  return hasAcceptedRequiredEvidence(request);
 }
 
 function assertVacationControlAuthority(access: AccessContext) {

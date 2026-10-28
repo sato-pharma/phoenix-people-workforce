@@ -11,7 +11,9 @@ import {
   canManageVacationRecords,
   getVacationActionCenterData,
   getVacationAwaitingBadgeSource,
+  getSickLeaveTurnsForViewer,
   getVacationReportData,
+  hasAcceptedRequiredVacationEvidence,
   isAllVacationVisibility,
   listStrandedVacationRequests,
   type StrandedVacationRow,
@@ -243,12 +245,6 @@ function toActionFlags(a: VacationActionAvailability): ApprovalActionFlags {
   };
 }
 
-// HR acknowledgement authority for vacation is Super Admin / system ONLY (per the confirmed
-// approver model — Talent Acquisition is explicitly NOT a leave approver). Reuse the vacation
-// module's own gate (isAllVacationVisibility) rather than the broader isHrAuthorityRole set (which
-// also includes Talent Acquisition) so the two never drift apart again.
-const isHrActor = isAllVacationVisibility;
-
 // ── Vacation buckets ──────────────────────────────────────────────────────────
 
 export type VacationApprovalsBuckets = {
@@ -264,8 +260,9 @@ export type VacationApprovalsBuckets = {
  * includes rows where the caller is a *later* pending approver (all buttons disabled)
  * — that is exactly the "coming to you" set. Sick leave uses the legacy parallel flow
  * and is NOT in the Action Center source, so its pending items are folded in from the
- * report source (best-effort: manager's turn = pending_manager & assigned manager; HR's
- * turn = pending_hr & HR/Super-Admin actor).
+ * report source. Its status stays `pending_manager` until the last approver decides, so
+ * the turn is read from its pending approval steps (getSickLeaveTurnsForViewer) — never
+ * from the status, which for HR was `pending_hr` and never true (2026-10-28).
  */
 export async function getVacationApprovalsForResponder(access: AccessContext): Promise<VacationApprovalsBuckets> {
   // Defensive: a system-authority actor (Super Admin / scope=system, e.g. a shared HR login with
@@ -297,11 +294,11 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
  * The one place the vacation awaiting/upcoming split is decided — the hub pages and the sidebar badge
  * both come through here, so a badge can never count a request the page would not list.
  */
-function partitionVacationApprovals(
+async function partitionVacationApprovals(
   access: AccessContext,
   centerRows: VacationActionCenterRow[],
   reportRows: VacationRequestRecord[],
-): VacationApprovalsBuckets {
+): Promise<VacationApprovalsBuckets> {
   const hrId = access.hrId?.trim() ?? "";
   const awaiting: VacationActionCenterRow[] = [];
   const upcoming: VacationActionCenterRow[] = [];
@@ -313,16 +310,23 @@ function partitionVacationApprovals(
     else upcoming.push(row);
   }
 
-  // Legacy sick-leave pending items (not covered by the Action Center source).
-  const hrActor = isHrActor(access);
+  // Legacy sick-leave pending items (not covered by the Action Center source). The turn comes from
+  // the pending approval steps — the manager, the manager's manager and HR decide side by side, and
+  // the status stays pending_manager for all of them.
   const seen = new Set(awaiting.concat(upcoming).map((r) => r.id));
-  for (const record of reportRows) {
-    if (record.vacationType !== "sick") continue;
-    if (seen.has(record.id)) continue;
-    if (isViewer(record.employeeHrId, hrId)) continue;
-    const managerTurn = record.status === "pending_manager" && isViewer(record.managerHrId, hrId);
-    const hrTurn = record.status === "pending_hr" && hrActor;
-    if (managerTurn || hrTurn) awaiting.push(sickRecordAsActionRow(record, true));
+  const sickCandidates = reportRows.filter(
+    (record) => record.vacationType === "sick" && !seen.has(record.id) && !isViewer(record.employeeHrId, hrId),
+  );
+  const sickTurns = await getSickLeaveTurnsForViewer(access, sickCandidates).catch((error) => {
+    logLoadFailure("Approvals hub sick-leave turn read failed", {
+      labels: { event: "approvals_hub_sick_leave_turns_failed", hrId: access.hrId, role: access.role, scope: access.scope },
+      error,
+    });
+    return new Map<string, "management" | "hr">();
+  });
+  for (const record of sickCandidates) {
+    const turn = sickTurns.get(record.id);
+    if (turn) awaiting.push(sickRecordAsActionRow(record, turn));
   }
 
   // Own submissions live on the dedicated "My Requests" tab (getMyVacationRequestItems below),
@@ -349,34 +353,36 @@ async function getVacationAwaitingForBadge(access: AccessContext): Promise<Vacat
     });
     return null;
   });
-  return partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? []).awaiting;
+  return (await partitionVacationApprovals(access, source?.centerRows ?? [], source?.scopedRows ?? [])).awaiting;
 }
 
-/** Shape a legacy sick-leave record into the Action-Center row form (single-step, best-effort). */
-function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolean): VacationActionCenterRow {
+/**
+ * Shape a legacy sick-leave record, on the viewer's turn, into the Action-Center row form.
+ *
+ * A manager's turn gets Approve; HR's turn gets "Acknowledge as HR" (the HR approve), greyed with
+ * its reason until HR has accepted the sick note — the server refuses the HR approval without it.
+ */
+function sickRecordAsActionRow(record: VacationRequestRecord, turn: "management" | "hr"): VacationActionCenterRow {
   // Sick leave is the one type still on the LEGACY PARALLEL flow — it has no ordered approval
   // steps, so the stalled-approver override (which decides "the active management step") has
-  // nothing to point at. Off on both branches, deliberately.
-  const noOverride = { enabled: false, disabledReason: "Sick leave does not use the stepped approval flow." };
-  const availability: VacationActionAvailability = actionable
-    ? {
-        approve: { enabled: true, disabledReason: null },
-        reject: { enabled: true, disabledReason: null },
-        acknowledge: { enabled: false, disabledReason: null },
-        assign: { enabled: false, disabledReason: null },
-        return: { enabled: true, disabledReason: null },
-        overrideApprove: noOverride,
-        overrideReject: noOverride,
-      }
-    : {
-        approve: { enabled: false, disabledReason: "Not your turn." },
-        reject: { enabled: false, disabledReason: "Not your turn." },
-        acknowledge: { enabled: false, disabledReason: "Not your turn." },
-        assign: { enabled: false, disabledReason: "Not your turn." },
-        return: { enabled: false, disabledReason: "Not your turn." },
-        overrideApprove: noOverride,
-        overrideReject: noOverride,
-      };
+  // nothing to point at. Off, deliberately, and with no reason so it is not drawn as a greyed button.
+  const noOverride = { enabled: false, disabledReason: null };
+  const evidenceAccepted = hasAcceptedRequiredVacationEvidence(record);
+  const availability: VacationActionAvailability = {
+    approve: { enabled: turn === "management", disabledReason: null },
+    reject: { enabled: true, disabledReason: null },
+    acknowledge:
+      turn === "hr"
+        ? {
+            enabled: evidenceAccepted,
+            disabledReason: evidenceAccepted ? null : "Accept the sick note under Evidence first — HR approval needs it.",
+          }
+        : { enabled: false, disabledReason: null },
+    assign: { enabled: false, disabledReason: null },
+    return: { enabled: true, disabledReason: null },
+    overrideApprove: noOverride,
+    overrideReject: noOverride,
+  };
   return {
     ...record,
     approvalSteps: [],
@@ -385,7 +391,7 @@ function sickRecordAsActionRow(record: VacationRequestRecord, actionable: boolea
     actionAvailability: availability,
     adminOverride: null,
     slaAgeDays: record.slaStatus?.businessDaysPending ?? 0,
-    viewerStepKind: "management",
+    viewerStepKind: turn,
   };
 }
 
@@ -718,9 +724,34 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     };
   }
 
-  // 2) Read-only — decided / terminal / own / out-of-turn. Full record via the scoped report.
+  // 2) Sick leave on the viewer's turn — not in the Action Center source (legacy parallel flow), so
+  //    without this it fell to the read-only branch below with nothing to press. Otherwise read-only
+  //    — decided / terminal / own / out-of-turn. Full record via the scoped report either way.
   const report = await getVacationReportData(access, { requestId: id, status: "all" }).catch(() => null);
   const record = report?.rows.find((r) => r.id === id) ?? report?.rows[0] ?? null;
+  if (record && record.vacationType === "sick" && !isViewer(record.employeeHrId, hrId)) {
+    const turn = (await getSickLeaveTurnsForViewer(access, [record]).catch(() => null))?.get(record.id);
+    if (turn) {
+      const sickRow = sickRecordAsActionRow(record, turn);
+      return {
+        notFound: false,
+        record: sickRow,
+        typeLabel: vacationTypeLabel(record.vacationType),
+        steps: await fetchVacationStepsDirect(id),
+        actions: toActionFlags(sickRow.actionAvailability),
+        actionReasons: toActionReasons(sickRow.actionAvailability),
+        adminOverride: null,
+        viewerStepKind: turn,
+        stageLabel: record.stageLabel ?? null,
+        slaAgeDays: sickRow.slaAgeDays,
+        readOnly: false,
+        readOnlyReason: null,
+        canReviewAttachments: true,
+        canReviewEvidence: isAllVacationVisibility(access),
+        canAdminManage,
+      };
+    }
+  }
   if (!record) {
     return {
       notFound: true,
