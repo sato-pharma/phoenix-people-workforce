@@ -118,15 +118,13 @@ export function ReturnedAgeingDesk({ rows }: Props) {
               <tr key={row.id} className="border-b border-[#f1f4f6] align-top hover:bg-orange-50/40">
                 <td className="px-3 py-2">
                   <p className="break-words font-bold text-slate-900">{row.requesterName}</p>
-                  <p className="text-phx-xs text-slate-500">{row.requesterHrId.toUpperCase()}</p>
                 </td>
                 <td className="px-3 py-2">
                   <p className="break-words font-semibold text-slate-800" dir="auto">
                     {row.pharmacyName}
                   </p>
                   <p className="text-phx-xs text-slate-500">
-                    {row.phoenixPharmacyCode}
-                    {row.distributorCodes.length > 0 ? ` · ${row.distributorCodes.join(", ")}` : " · no code"}
+                    {row.distributorCodes.length > 0 ? row.distributorCodes.join(", ") : "No distributor code"}
                   </p>
                 </td>
                 <td className="px-3 py-2 font-bold text-slate-900">{money(row.salesValue)}</td>
@@ -154,7 +152,6 @@ export function ReturnedAgeingDesk({ rows }: Props) {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="break-words text-sm font-black text-slate-900">{row.requesterName}</p>
-                <p className="text-phx-xs text-slate-500">{row.requesterHrId.toUpperCase()}</p>
               </div>
               <span className={`shrink-0 px-1.5 py-0.5 text-phx-xs font-black ${ageTone(row.daysWaiting)}`}>
                 {row.daysWaiting}d
@@ -164,8 +161,7 @@ export function ReturnedAgeingDesk({ rows }: Props) {
               {row.pharmacyName}
             </p>
             <p className="text-phx-xs text-slate-500">
-              {row.phoenixPharmacyCode}
-              {row.distributorCodes.length > 0 ? ` · ${row.distributorCodes.join(", ")}` : " · no code"}
+              {row.distributorCodes.length > 0 ? row.distributorCodes.join(", ") : "No distributor code"}
             </p>
             <p className="mt-1 text-phx-sm text-slate-600">
               {describeDirectOrderBasketUnits(row, row.items)} · {money(row.salesValue)}
@@ -191,7 +187,6 @@ export function ReturnedAgeingDesk({ rows }: Props) {
             return (
               <article key={rep.hrId.toLowerCase()} className="border border-phx-line p-2.5">
                 <p className="break-words text-phx-sm font-black text-slate-900">{rep.name}</p>
-                <p className="text-phx-xs text-slate-500">{rep.hrId.toUpperCase()}</p>
                 <p className="mt-1 text-phx-sm text-slate-700">
                   {rep.rows.length} order{rep.rows.length === 1 ? "" : "s"} · {money(value)}
                 </p>

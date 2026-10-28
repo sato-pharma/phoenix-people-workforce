@@ -287,8 +287,8 @@ function SheetEditor({
               <div className="break-words text-phx-2xs text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
               {obs ? (
                 obs.status === "empty"
-                  ? <div className="mt-0.5 truncate text-phx-2xs font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
-                  : <div className="mt-0.5 truncate text-phx-2xs font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
+                  ? <div className="mt-0.5 break-words text-phx-2xs font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
+                  : <div className="mt-0.5 break-words text-phx-2xs font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
               ) : null}
             </div>
             <label className="flex shrink-0 flex-col items-end gap-0.5">

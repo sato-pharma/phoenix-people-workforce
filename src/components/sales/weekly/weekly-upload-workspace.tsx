@@ -623,7 +623,7 @@ export function WeeklyUploadWorkspace({
               {distributors.length === 0 && <option value="">No distributors registered</option>}
               {distributors.map((d) => (
                 <option key={d.code} value={d.code}>
-                  {d.name} ({d.code})
+                  {d.name}
                 </option>
               ))}
             </SearchableSelect>
@@ -1154,7 +1154,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
                   className="break-words border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2"
                   key={region.regionCode}
                 >
-                  {region.regionName} ({region.regionCode})
+                  {region.regionName}
                 </span>
               ))}
             </div>
@@ -2129,7 +2129,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
           <tbody>
             {rows.map((row) => (
               <tr key={row.code} className="border-t border-phx-paper-2">
-                <td className="break-words px-2 py-1.5 font-bold text-phx-ink">{row.name} <span className="font-medium text-phx-ink-faint">({row.code})</span></td>
+                <td className="break-words px-2 py-1.5 font-bold text-phx-ink">{row.name}</td>
                 {weeks.map((week, index) => {
                   const cell = row.cells[index];
                   return (
@@ -2154,7 +2154,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
         {rows.map((row) => (
           <PhoneCard key={`card-${row.code}`}>
             <p className="break-words text-sm font-bold text-phx-ink">
-              {row.name} <span className="font-medium text-phx-ink-faint">({row.code})</span>
+              {row.name}
             </p>
             <div className="mt-2 grid grid-cols-4 gap-1.5">
               {row.cells.map((cell) => (
