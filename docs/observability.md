@@ -1469,13 +1469,22 @@ every reset was gone before anyone looked.
 | `oomKills` | out-of-memory kills since the last minute |
 | `postgresStartedAt`, `authStartedAt`, `postgresUp` | when the database and the sign-in service last started |
 | `counterReset` | true when a counter went backwards — the server restarted between two readings |
+| `stale` | true when Supabase served the same snapshot as last minute — no rate on that line |
+| `intervalS` | how far apart the two snapshots behind the rates really are, by the server's own CPU clock |
 | `readMs` | how long the read took |
 
-The first line after a start has the rates as `null`, because a rate needs two readings. Supabase
-refreshes these figures on its own schedule, not on every request: two reads 20 seconds apart on
-28 October returned identical counters (so no CPU share), while two reads 66 seconds apart gave
-91% idle, 7% user and 6 disk-wait page reads a minute. A minute is the right interval, and a rare
-`cpuPercent: null` mid-run means a refresh was missed, not a fault.
+The first line after a start has the rates as `null`, because a rate needs two readings.
+
+**The rates run on the server's own clock, not on ours** (fixed the same night it shipped). Supabase
+refreshes these figures about every 62 seconds, not on every request: on 28 October fresh snapshots
+first appeared at 03:24:37, 03:25:40 and 03:26:42 Cairo. Read every 60 seconds, about one minute in 25
+gets the same snapshot back. The next minute's counters then span two refreshes, and divided by our 60
+seconds every rate came out about **double** — the third line after the first deploy did exactly that.
+Each CPU adds one second per second across its modes, so the summed CPU seconds divided by
+`cpuCount` is the true distance between two snapshots. A snapshot whose CPU seconds did not move is
+the last one again: it is logged `stale: true` with no rates, and the reading before it stays the base
+for the next minute. A stale line still counts toward the five-minute memory rule, because it repeats
+the last real figure; at the measured refresh, five readings in a row cover at least four real snapshots.
 
 **Reading it back:**
 
@@ -1526,7 +1535,7 @@ reads. It needs no migration, no new table and no paid resource.
 caused the resets. The next reset leaves its own lead-up in the log, and that is what answers it.
 
 Pinned by `tests/db-host-metrics.test.ts`: the parser against a sample in Supabase's own format, the
-rates and a counter reset, both alarm rules and their once-a-day limit, the start-up gate, the URL and
+rates on the CPU clock, the doubled minute and the stale repeat, a counter reset, both alarm rules and their once-a-day limit, the start-up gate, the URL and
 the wiring (timeout, no overlap, named agent, no email, no static import). A live read through the
 same parser on 28 October returned every field. The
 five-minute rule and the strict "under 100 MB" line were each confirmed by breaking them and
