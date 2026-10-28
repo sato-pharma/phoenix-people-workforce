@@ -4347,7 +4347,8 @@ export async function getMarketingRequestDecisionSummary(
   })
     .then((twins) => twins.map(describeTwinForApprover))
     .catch(() => [] as MarketingDecisionTwin[]);
-  // Same pharmacy, same person, BOTH modules (owner, 2026-10-28) — named, never decided. Never throws.
+  // Same pharmacy, same person, BOTH modules (owner, 2026-10-28) — only the direct orders above their
+  // product's normal deal; named, never decided. Never throws.
   const samePharmacyDirectOrders = await loadSamePharmacyFlagForMarketingRequest({
     requestId: request.id,
     requesterHrId: request.requesterHrId,
