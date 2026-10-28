@@ -150,7 +150,7 @@ export function describeDurationMonths(months: number | null | undefined): strin
 }
 
 /** Arabic counts in three bands — one, two, and then either side of ten. One rule, three units. */
-function countedNoun(
+export function countedNoun(
   count: number,
   one: string,
   two: string,
@@ -233,7 +233,7 @@ export function describeServiceDurationEn(
  * certificate rules that line for a human rather than printing a period it cannot stand behind, the
  * same answer every other blank on these papers gives.
  */
-function serviceSpan(
+export function serviceSpan(
   fromIso: string | null | undefined,
   toIso: string | null | undefined,
 ): { years: number; months: number; days: number } | null {

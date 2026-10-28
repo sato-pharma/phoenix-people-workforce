@@ -29,12 +29,12 @@
  * choices below are that requirement and not house style, and a later session tidying them will
  * break the thing they were for without anything going red:
  *
- *   1. PROSE, NOT A FACTS GRID. The Arabic certificate carries a bordered identity table; every
- *      cell border in it becomes its own vector rectangle on import, and every cell its own text
- *      box, so a seven-row grid arrives as roughly forty separate elements somebody has to drag.
- *      The same facts read perfectly well inside the sentence, which is how an English certificate
- *      of experience is written anyway — this is the rare case where the import-friendly shape and
- *      the correct shape are the same one.
+ *   1. PROSE CARRIES THE FACTS, AND THERE IS STILL NO TABLE. A bordered table becomes a vector
+ *      rectangle per cell border and a text box per cell on import — roughly forty elements for a
+ *      seven-row grid. The certificate's design (owner, 2026-10-28; `experience-certificate-design.ts`)
+ *      adds a three-row reference list beside the title, the period in figures and three signing
+ *      boxes: each is drawn with a handful of rules, not a table, and each repeats a fact the
+ *      sentences already state, so an import gains some elements to tidy and loses no fact.
  *
  *   2. REAL TEXT, NEVER OUTLINES OR AN IMAGE. Chromium keeps text as text with the font embedded,
  *      which is what makes it editable on the other side. Nothing here may be rasterised, and the
@@ -56,8 +56,14 @@ import {
   HOUSE_MARK_SRC,
 } from "@/lib/hiring-pack/house-identity";
 import {
+  certificateMonthYear,
+  certificateSignCellsHtml,
+  certificateSpanHtml,
+  EXPERIENCE_CERTIFICATE_DESIGN_CSS,
+} from "@/lib/hiring-pack/experience-certificate-design";
+import {
   premiumDocumentStylesheet,
-  premiumLetterhead,
+  premiumMasthead,
   premiumPageChrome,
 } from "@/lib/hiring-pack/premium-identity";
 import {
@@ -139,6 +145,10 @@ export type ExperienceCertificateEnValues = {
   departed: boolean;
   /** Whether the period can be stated at all — see `service-period.ts`. */
   countable: boolean;
+  /** The same period as plain `YYYY-MM-DD`, for the figures under the first paragraph. */
+  startsOn: string | null;
+  endsOn: string | null;
+  issuedOn: string;
 };
 
 /**
@@ -177,6 +187,9 @@ export function buildExperienceCertificateEnValues(
     issueDate: formatLongDateEn(today),
     departed: service.departed,
     countable: service.countable,
+    startsOn: service.startsOn,
+    endsOn: service.endsOn,
+    issuedOn: today,
   };
 }
 
@@ -196,18 +209,47 @@ function renderCopy(values: ExperienceCertificateEnValues): string {
     ? `${sentenceCase(p.subject)} is no longer in the employment of the company.`
     : `${sentenceCase(p.subject)} remains in the employment of the company as at the date of this certificate.`;
 
-  return `<article class="cert">
-    ${premiumLetterhead({
-      legalNameAr: systemLegalEntity.legalNameAr,
-      legalNameEn: systemLegalEntity.legalNameEn,
-      purposeEn: "Issued at the employee's request · One copy retained in the service file",
-      subtitleEn: `Issued on ${values.issueDate}`,
-      titleAr: "شهادة خبرة",
-      titleEn: "Certificate of Experience",
+  const issuedMonth = certificateMonthYear(values.issuedOn, "en");
+
+  // THE ORDER OF THE CHILDREN IS LOAD-BEARING. Hand-placed marks are stored as positional paths
+  // measured inside this article — the stamp box is `section:nth-of-type(2) > div:nth-of-type(1) >
+  // span:nth-of-type(3)` — so the hero and the holder are `div`s, the words and the signing block are
+  // the only two `section`s, the signing row is the signing section's only `div`, and the chrome is
+  // appended LAST.
+  return `<article class="cert xc">
+    ${premiumMasthead({
+      legalNameAr: "",
+      legalNameEn: null,
+      title: "Human Resources",
+      titleLang: "en",
+      subtitles: [{ text: `Head Office · Cairo${issuedMonth ? ` · ${issuedMonth}` : ""}`, lang: "en" }],
     })}
 
-    <section class="cert__body">
-      <h2 class="cert__salutation">To whom it may concern,</h2>
+    <div class="xc-hero">
+      <div>
+        <p class="xc-kicker xc-micro"><i class="xc-dia"></i>Record of service</p>
+        <h2>Certificate of<b>Experience.</b></h2>
+        <p class="xc-tar" lang="ar" dir="rtl">شهادة خبرة</p>
+        <div class="xc-tick"><i></i><i></i><i></i></div>
+        <p class="xc-purpose">Issued at the employee's request · One copy retained in the service file</p>
+      </div>
+      <dl class="xc-facts">
+        <div><dt>Issued on</dt><dd>${escapeHtml(values.issueDate)}</dd></div>
+        <div><dt>Employee code</dt><dd>${value("HR_ID", values.hrId)}</dd></div>
+        <div><dt>National ID</dt><dd>${value("NATIONAL_ID", values.nationalId)}</dd></div>
+      </dl>
+    </div>
+
+    <div class="xc-holder">
+      <div>
+        <span class="xc-micro">Certificate holder</span>
+        <div class="xc-nm">${escapeHtml(values.honorific)} <b>${value("EMPLOYEE_NAME_EN", values.employeeName)}</b></div>
+      </div>
+      <div class="xc-role"><b>${value("JOB_TITLE_EN", values.jobTitle)}</b>${escapeHtml(systemLegalEntity.legalNameEn)}</div>
+    </div>
+
+    <section class="cert__body xc-text">
+      <h2 class="cert__salutation xc-salute">To whom it may concern,</h2>
 
       <p>This is to certify that ${escapeHtml(values.honorific)} ${value(
         "EMPLOYEE_NAME_EN",
@@ -223,6 +265,14 @@ function renderCopy(values: ExperienceCertificateEnValues): string {
         values.hireDate,
       )} to ${value("SERVICE_END_EN", values.serviceEnd)}${duration}.</p>
 
+      ${certificateSpanHtml({
+        lang: "en",
+        startsOn: values.startsOn,
+        endsOn: values.endsOn,
+        departed: values.departed,
+        countable: values.countable,
+      })}
+
       <p>Throughout this period ${p.subject} held the position of ${value(
         "JOB_TITLE_EN",
         values.jobTitle,
@@ -232,16 +282,12 @@ function renderCopy(values: ExperienceCertificateEnValues): string {
       it may concern, without any liability on the company towards third parties.</p>
     </section>
 
-    <section class="cert__sign">
+    <section class="cert__sign xc-sign">
+      <p class="pm-shead xc-micro">Signed and stamped</p>
       <p class="cert__signfor">For ${escapeHtml(systemLegalEntity.legalNameEn)} — Human Resources</p>
-      <div class="cert__signrow">
-        <span><em>Name and title</em></span>
-        <span><em>Signature</em></span>
-        <span><em>Company stamp</em></span>
-      </div>
+      ${certificateSignCellsHtml(["Name and title", "Signature", "Company stamp"])}
     </section>
-
-    <p class="cert__foot">Certificate of Experience · Issued by Human Resources</p>${premiumPageChrome()}
+    ${premiumPageChrome()}
   </article>`;
 }
 
@@ -284,100 +330,39 @@ ${HOUSE_IDENTITY_CSS}
    picks one up either. Same guard, and the same reason, as the payslip's. */
 *, *::before, *::after { box-sizing: border-box; border-radius: 0 !important; }
 
-@page { size: A4; margin: 18mm 20mm 16mm; }
-
 html, body { margin: 0; padding: 0; background: #e2e8f0; }
 body {
   /* A LATIN STACK, and every face in it is one Windows already has, so HR's own printout matches
      what the server produces as closely as two machines can. The Arabic papers' stack is not used
      here: it leads with Tahoma for Arabic metrics, which is not the face an English letter wants.
      HOUSE_TYPE is deliberately NOT read — it names Aptos, which is the WORKBOOK face; see the
-     note on that constant for why it does not reach the documents. */
+     note on that constant for why it does not reach the documents. The certificate itself sets
+     the premium Latin stack (Segoe UI, then the server's Noto Sans) — see the design file. */
   font-family: "Segoe UI", Calibri, Candara, "Helvetica Neue", Arial, sans-serif;
   color: var(--phx-doc-body);
   font-size: 10.5pt;
   line-height: 1.6;
 }
 
+/* The sheet on screen; the premium stylesheet below adds its padding and the A4 page with no
+   margin, which is what lets the frame and the foot reach the edges. */
 .cert {
   width: 210mm;
   min-height: 297mm;
   margin: 0 auto 8mm;
-  padding: 18mm 20mm 16mm;
   background: #fff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, .25);
 }
 .cert + .cert { page-break-before: always; break-before: page; }
 
-.cert__body { margin-top: 9mm; }
-
-.cert__salutation {
-  margin: 0 0 5mm;
-  color: var(--phx-doc-deep);
-  font-size: 11.5pt; font-weight: 700; letter-spacing: .01em;
-}
-
-/* Justified, with generous leading. This is the whole document — four paragraphs — so it can afford
-   the space, and a certificate that fills its page reads as a considered letter rather than a
-   receipt. */
-.cert__body p { margin: 0 0 5mm; text-align: justify; }
-.cert__body p:last-child { margin-bottom: 0; }
-
-/* A filled value and an empty one. The fill is Brand Deep and semibold — carried by TYPE, never by
-   a highlight, which is the ink rule: a tinted box behind every value would put a fill on two
-   thirds of the page. */
-.fill { color: var(--phx-doc-deep); font-weight: 600; }
-.rule-line { color: var(--phx-doc-muted); letter-spacing: .04em; }
-
-.cert__sign { margin-top: 14mm; border-top: .5pt solid var(--phx-doc-hair); padding-top: 4mm; }
-/* THE SIGNING SPACE ITSELF — 38mm of it, and the number is the seal's.
- *
- * WHY THIS MARGIN IS WHERE THE ROOM LIVES. Each space below is a WESTERN signature line: the rule
- * is drawn across the TOP of its span with the caption beneath, so what is signed and stamped goes
- * ABOVE the rule, and the only thing holding that space open is this margin. At 10mm there was
- * barely room to sign and none at all to stamp — the company seal is 34mm across, so it had nowhere
- * to go but below its own caption and across the footer.
- *
- * The Arabic certificate reached the same place from the other side and is the precedent for the
- * number: its stamp cell was raised from 12mm to 36mm because "the 34mm seal spilled over its own
- * heading and below the table". 38mm here is that 34mm with a little air.
- *
- * ALL THREE COLUMNS GAIN IT, not only the stamp. They are one grid row, a signature needs room as
- * much as a seal does, and giving the third column alone a taller space would leave the three rules
- * at different heights — the one thing a row of signing lines must not do.
- *
- * MEASURED, NOT ESTIMATED. This paper sets a min-height of a full page and its own note says it is meant to
- * fill its page, so 28mm of new space is exactly the change that silently produces a second sheet.
- * Rendered through Chromium before and after the change: ONE page per copy both times. */
-.cert__signfor {
-  margin: 0 0 38mm;
-  color: var(--phx-doc-deep); font-size: 10pt; font-weight: 700;
-}
-/* Three signing spaces on one row. A grid rather than a table: a table draws cell borders that
-   become their own elements in an imported PDF, and the rule under each space is all that is
-   wanted. */
-.cert__signrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
-.cert__signrow span {
-  display: block;
-  border-top: .5pt solid var(--phx-doc-hair);
-  padding-top: 1.5mm;
-}
-.cert__signrow em {
-  color: var(--phx-doc-muted); font-size: 8pt; font-style: normal; font-weight: 600;
-}
-
-.cert__foot {
-  margin: 12mm 0 0;
-  color: var(--phx-doc-muted); font-size: 7.5pt; font-weight: 600; text-align: center;
-}
-
 @media print {
   html, body { background: #fff; }
-  .cert { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+  .cert { width: auto; min-height: 0; margin: 0; box-shadow: none; }
 }
 
 ${PRINT_BANNER_CSS}
 ${premiumDocumentStylesheet(".cert")}
+${EXPERIENCE_CERTIFICATE_DESIGN_CSS}
 </style>
 </head>
 <body>

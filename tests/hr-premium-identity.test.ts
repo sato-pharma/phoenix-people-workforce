@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 import { COMPANY_DETAILS_DEFAULT } from "../src/lib/hiring-pack/company-details.ts";
 import { CONTRACT_TEMPLATES, currentContractTemplate } from "../src/lib/hiring-pack/contract-text.ts";
+import { renderExperienceCertificateArHtml } from "../src/lib/hiring-pack/experience-certificate-ar.ts";
 import { renderExperienceCertificateEnHtml } from "../src/lib/hiring-pack/experience-certificate-en.ts";
 import { houseLetterhead } from "../src/lib/hiring-pack/house-identity.ts";
 import {
@@ -167,9 +168,17 @@ const PREMIUM_BAND = /<svg class="pm-band"[^>]*>[\s\S]*?<path d="M[^"]*Q[\s\S]*?
 /**
  * THE PAPERS THE OWNER ANSWERED "CHANGE" ON — his review page, 2026-10-13 about 00:40 Cairo. The
  * English certificate of experience and the English salary letter wear it outright; the exit interview
- * is the one HR paper that does. Every other paper the pack prints is a "keep".
+ * is the one HR paper that does. Every other paper the pack prints is a "keep" — except the Arabic
+ * certificate of experience, which he had ticked "keep" and moved to the certificate's own design on
+ * 2026-10-28 ("make this the certificate of experience in the hr forms module"), so it wears the
+ * identity through `experience-certificate-ar.ts` rather than through a switch.
  */
-const CHANGED_PAPERS = ["certificate of experience (English)", "salary letter (English)", "exit-interview-v1"];
+const CHANGED_PAPERS = [
+  "certificate of experience (English)",
+  "certificate of experience (Arabic)",
+  "salary letter (English)",
+  "exit-interview-v1",
+];
 
 /**
  * Renders under every paper's premium switch ON, then puts the owner's answers back. The switches
@@ -260,7 +269,13 @@ function currentNormalPapers(): ReadonlyArray<readonly [string, string]> {
     if (!held || held.version < paper.version) currentByFamily.set(family, paper);
   }
   for (const paper of currentByFamily.values()) {
-    papers.push([paper.id, renderHrPaperHtml(paper.kind === "certificate" ? left : live, 2, paper)]);
+    // The certificate of experience is the one HR paper the print route hands to its own renderer
+    // (`render-paper.ts`), in the certificate's design since 2026-10-28.
+    if (paper.kind === "certificate") {
+      papers.push(["certificate of experience (Arabic)", renderExperienceCertificateArHtml(left, 2)]);
+      continue;
+    }
+    papers.push([paper.id, renderHrPaperHtml(live, 2, paper)]);
   }
   return papers;
 }
@@ -290,7 +305,7 @@ function testThePapersTheOwnerSaidKeepPrintAsToday(): void {
   const papers = currentNormalPapers();
   assert.equal(papers.length, 24, "seven pack papers and the seventeen current HR papers (nineteen less two archived versions)");
   const kept = papers.filter(([name]) => !CHANGED_PAPERS.includes(name));
-  assert.equal(kept.length, 21, "twenty-four papers less the three he said 'change' on");
+  assert.equal(kept.length, 20, "twenty-four papers less the four that wear the identity");
   for (const [name, html] of kept) {
     assert.ok(!isPremiumPaper(html), `${name}: he said keep, so it carries no premium page chrome`);
     assert.ok(!/\bpm-[a-z]/.test(html), `${name}: he said keep, so no premium class is on it`);
@@ -314,8 +329,10 @@ function testEveryPremiumBranchStillRendersWhenItsSwitchIsOn(): void {
  *
  * Hand-placed stamps and signatures are anchored by positional paths measured inside a copy —
  * `table:nth-of-type(1) > … > td:nth-of-type(2)` on the Arabic salary letter, `article:nth-of-type(1)
- * > section:nth-of-type(2)` on the English certificate (both live on 2026-10-12). Chrome added in
- * front of them would move every one. So in each copy, nothing the paper says may follow it.
+ * > section:nth-of-type(2)` on the English certificate (both live on 2026-10-12), and
+ * `section:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(3)` — the stamp box — on both
+ * certificates of experience since their shared design (2026-10-28). Chrome added in front of them
+ * would move every one. So in each copy, nothing the paper says may follow it.
  */
 function testTheChromeIsAppendedLastInEveryCopy(): void {
   withEveryPaperPremium(() => {

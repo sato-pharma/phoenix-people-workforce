@@ -1044,7 +1044,7 @@ function testTheTableAdmitsEveryBuiltInDocument() {
  * artifact — here that means compiling the emitted script and running it against a DOM stub.
  *
  * WHAT IT CAUGHT. The English certificate of experience prints TWO copies
- * (`experienceCertificateCopies`) as two `<article class="cert">` elements and carries no `.copy`
+ * (`experienceCertificateCopies`) as two `<article class="cert xc">` elements and carries no `.copy`
  * class at all, so the scope falls back to the document body. With a singular `querySelector` the
  * layer found the first article's anchor and stopped: the employee's copy was stamped and the
  * service file's copy was blank, with nothing on either page to say so.

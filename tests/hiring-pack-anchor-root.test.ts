@@ -12,7 +12,9 @@ import { anchorRootFor } from "../src/lib/hiring-pack/anchor-root.ts";
 // step that names one of them, and `querySelectorAll` then finds exactly that one.
 //
 // Measured in Chromium against the English certificate of experience on 2026-09-29 — two
-// `<article class="cert">`, no `.copy` anywhere:
+// `<article class="cert">`, no `.copy` anywhere. The certificate's own design (2026-10-28) keeps that
+// shape — `<article class="cert xc">`, the signing block still the second `section` and its row still
+// that section's first `div` — so the same two paths still answer 1 and 2:
 //
 //   article:nth-of-type(1) > section:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(3)  -> 1 match
 //   section:nth-of-type(2) > div:nth-of-type(1) > span:nth-of-type(3)                           -> 2 matches
@@ -49,19 +51,32 @@ function el(tagName: string, className = "", children: Node[] = []): Node {
   return node;
 }
 
-/** The English certificate's shape: two sibling articles under the body, and no `.copy` anywhere. */
+/**
+ * The English certificate's shape: two sibling articles under the body, and no `.copy` anywhere. Its
+ * children are the certificate design's (`experience-certificate-en.ts`): the premium masthead and its
+ * band, the hero and the holder, the words, the signing block, and the page chrome last.
+ */
 function englishCertificate(): { body: Node; stampCells: Node[] } {
   const stampCells: Node[] = [];
   const copy = () => {
-    const cell = el("span", "", [el("em")]);
+    const cell = el("span", "xc-cell", [el("em", "xc-lbl")]);
     stampCells.push(cell);
-    return el("article", "cert", [
-      el("section", "cert__body", [el("p")]),
-      el("section", "cert__sign", [
+    return el("article", "cert xc", [
+      el("header", "pm-mast", [el("img"), el("div", "pm-mast__mid")]),
+      el("svg"),
+      el("div", "xc-hero"),
+      el("div", "xc-holder"),
+      el("section", "cert__body xc-text", [el("p")]),
+      el("section", "cert__sign xc-sign", [
+        el("p", "pm-shead xc-micro"),
         el("p", "cert__signfor"),
-        el("div", "cert__signrow", [el("span", "", [el("em")]), el("span", "", [el("em")]), cell]),
+        el("div", "cert__signrow xc-cells", [
+          el("span", "xc-cell", [el("em", "xc-lbl")]),
+          el("span", "xc-cell", [el("em", "xc-lbl")]),
+          cell,
+        ]),
       ]),
-      el("p", "cert__foot"),
+      el("div", "pm-chrome"),
     ]);
   };
   const body = el("body", "", [el("div", "print-banner"), copy(), copy()]);

@@ -70,6 +70,7 @@ import {
   buildExperienceCertificateEnValues,
   renderExperienceCertificateEnHtml,
 } from "../src/lib/hiring-pack/experience-certificate-en.ts";
+import { renderExperienceCertificateArHtml } from "../src/lib/hiring-pack/experience-certificate-ar.ts";
 import {
   collectHiringPackGaps,
   emptyOffboardingProfile,
@@ -224,7 +225,7 @@ function copyCount(html: string): number {
  * and reports the document as breaching its own rule. What a reader receives is the article.
  */
 function certificateOnly(html: string): string {
-  const start = html.indexOf('<article class="cert">');
+  const start = html.indexOf('<article class="cert xc">');
   const end = html.lastIndexOf("</article>");
   assert.ok(start >= 0 && end > start, "the certificate page must contain a certificate");
   return html.slice(start, end);
@@ -796,10 +797,10 @@ function testTheCertificateStatesServiceBothWays(): void {
  * Egyptian house style turns this red rather than shipping a testimonial the company never made.
  */
 function testTheCertificateOmitsPaySeparationAndConduct(): void {
-  const html = renderHrPaperHtml(
+  // The paper HR prints — the certificate's own renderer since 2026-10-28 (`render-paper.ts`).
+  const html = renderExperienceCertificateArHtml(
     packFixture({ departed: true, lastWorkingDate: "2026-08-31" }),
     1,
-    HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
   );
 
   for (const forbidden of ["11,000", "11000", "14,300", "الأجر", "راتب", "مرتب"]) {
@@ -819,8 +820,13 @@ function testTheCertificateOmitsPaySeparationAndConduct(): void {
   }
 
   // It is its own kind, which is what keeps it out of the pool an archived LETTER resolves within
-  // and off the absence-date warning that belongs to the two notices.
-  assert.ok(html.includes("copy--certificate"), "the certificate is not rendered as a letter");
+  // and off the absence-date warning that belongs to the two notices. It prints in the certificate's
+  // own design, and the house renderer still draws the kind as a certificate, never as a letter.
+  assert.ok(html.includes('<article class="copy xc xc--ar">'), "the certificate prints in its own design");
+  assert.ok(
+    renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1).includes("copy--certificate"),
+    "the certificate is not rendered as a letter",
+  );
   assert.ok(
     !html.includes("The absence dates print blank"),
     "the absence-date warning belongs to the notices, not here",
@@ -952,7 +958,9 @@ function testTheEnglishCertificateReadsCorrectly(): void {
   assert.ok(page.includes('<html lang="en" dir="ltr">'), "the English certificate lays out LTR");
   assert.ok(!/\{\{[A-Z_]+\}\}/.test(html), "no unsubstituted token reaches the page");
   assert.ok(html.includes("To whom it may concern"), "it opens as a letter to a third party");
-  assert.ok(html.includes("Certificate of Experience"), "and carries its English title");
+  // Set as the identity's two-weight title since 2026-10-28: a light "Certificate of" over a heavy
+  // "Experience."
+  assert.ok(/Certificate of\s*<b>Experience\.<\/b>/.test(html), "and carries its English title");
   assert.ok(html.includes("شهادة خبرة"), "with the Arabic name under it, per the house identity");
 
   // THE MONTH IS SPELLED OUT. "08 / 09 / 2026" is two different days either side of the Atlantic,
@@ -1093,7 +1101,7 @@ function testTheEnglishCertificateStaysImportable(): void {
     3,
   );
   assert.equal(
-    page.split('<article class="cert">').length - 1,
+    page.split('<article class="cert xc">').length - 1,
     3,
     "one article per copy, so one copy is one page and one page is one artboard",
   );
@@ -1129,7 +1137,7 @@ function testEveryHouseColourSurvivesABrowserPrint(): void {
     ["contract renewal annex", renderContractRenewalHtml(pack, 1)],
     ["non-renewal notice", renderContractNonRenewalHtml(pack, 1)],
     ["employment contract", renderContractHtml(pack, 1)],
-    ["certificate of experience (Arabic)", renderHrPaperHtml(pack, 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1)],
+    ["certificate of experience (Arabic)", renderExperienceCertificateArHtml(pack, 1)],
     ["certificate of experience (English)", renderExperienceCertificateEnHtml(pack, 1)],
     ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
     ["social status sheet", renderHrPaperHtml(pack, 1, HR_PAPER_SOCIAL_STATUS_V1)],
@@ -1292,7 +1300,7 @@ function testEveryMastheadCarriesTheBand(): void {
     ["contract", renderContractHtml(pack, 1)],
     ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
     ["absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V2)],
-    ["experience certificate", renderHrPaperHtml(pack, 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1)],
+    ["experience certificate", renderExperienceCertificateArHtml(pack, 1)],
   ];
 
   for (const [name, html] of rendered) {
@@ -1392,19 +1400,29 @@ function testTheCustodyReturnProtocolIsNotSealed(): void {
  * الاسم والصفة / التوقيع / خاتم الشركة and the NDA's reads التوقيع والختم: those headings are the
  * instruction to whoever presses the real stamp, so deleting them would leave nowhere to press it
  * and would quietly make the clearance's بختم الشركة clause unsatisfiable.
+ *
+ * Since the certificate's own design (2026-10-28) all three of its boxes are BLANK on both languages:
+ * "Blank box, sign by hand" — anyone with access to HR forms can print one, so none leaves without a
+ * person signing it. A box holding anything but its caption is a printed signature or a printed seal.
  */
 function testTheStampColumnSurvivesWithAnEmptyCell(): void {
-  const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1);
-  assert.ok(html.includes("خاتم الشركة"), "the certificate keeps its Company stamp column heading");
-  const tbody = /<table class="doc-sig">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html);
-  assert.ok(tbody, "the certificate must still carry its signature table");
-  const cells = [...tbody[1].matchAll(/<td class="doc-sig__cell"[\s\S]*?<\/td>/g)].map((m) => m[0]);
-  assert.equal(cells.length, 3, "الاسم والصفة / التوقيع / خاتم الشركة");
-  assert.deepEqual(
-    cells.filter((cell) => cell.includes("phx-seal")),
-    [],
-    "no cell on the certificate is pre-stamped",
-  );
+  const certificates: ReadonlyArray<readonly [string, string, string]> = [
+    ["Arabic certificate", renderExperienceCertificateArHtml(packFixture(), 1), "خاتم الشركة"],
+    ["English certificate", renderExperienceCertificateEnHtml(packFixture(), 1), "Company stamp"],
+  ];
+  for (const [name, html, stampHeading] of certificates) {
+    const row = /<div class="cert__signrow xc-cells">([\s\S]*?)<\/div>/.exec(html);
+    assert.ok(row, `the ${name} must still carry its signing row`);
+    const cells = [...row[1].matchAll(/<span class="xc-cell">([\s\S]*?)<\/span>/g)].map((m) => m[1]);
+    assert.equal(cells.length, 3, `${name}: name and title / signature / company stamp`);
+    assert.ok(cells[2].includes(stampHeading), `the ${name} keeps its Company stamp heading`);
+    assert.deepEqual(
+      cells.map((cell) => cell.replace(/<em class="xc-lbl">[^<]*<\/em>/, "").trim()),
+      ["", "", ""],
+      `every box on the ${name} is blank — signed and stamped by hand`,
+    );
+    assert.ok(!html.includes("phx-seal"), `no box on the ${name} is pre-stamped`);
+  }
 
   // The NDA's التوقيع والختم column is the other shape, and it is blank too.
   const nda = renderHrPaperHtml(packFixture(), 1, HR_PAPER_NDA_V1);
@@ -1534,35 +1552,49 @@ function testTheLettersPackGovernmentFormsPrintAsIssued(): void {
 }
 
 /**
- * THE ENGLISH CERTIFICATE KEEPS ROOM TO SIGN AND STAMP IN.
+ * THE CERTIFICATES KEEP ROOM TO SIGN AND STAMP IN, AND NEVER PUSH IT ONTO A SECOND SHEET.
  *
- * Its three signing spaces are WESTERN signature lines - the rule is drawn across the TOP of each
- * span with the caption beneath - so what is signed and stamped goes ABOVE the rule, and the only
- * thing holding that space open is the bottom margin of .cert__signfor. At its original 10mm the
- * company seal, which is 34mm across, had nowhere to go but below its own caption and over the
- * footer.
+ * Since the certificate's own design (2026-10-28) its three boxes are blank on both languages and are
+ * signed and stamped by hand INSIDE them. They take what the sheet has left: each copy is a column one
+ * sheet tall, and the boxes grow into the space under the words. Measured in Chrome that day: 38 to
+ * 40 mm with a short name, 25 to 30 mm with a four-part name and a two-line job title, and every
+ * paper on one A4 sheet. The fixed 36 mm and 30 mm boxes before it had carried the long-name papers
+ * onto a second sheet.
  *
- * PINNED AS A MINIMUM, not as an exact value, because the number that matters is "at least the
- * seal" - a later tightening for any other reason is free to take it to 40mm and not to 20mm.
- * Asserted against the EMITTED stylesheet rather than the source: this repo has shipped three
- * defects from reading a generated string instead of the bytes it produces.
+ * PINNED ON THE EMITTED STYLESHEET, not the source: a box that cannot grow, a floor under 22 mm, or a
+ * ceiling under 34 mm (the stamp HR presses) is what this refuses.
  */
-function testTheEnglishCertificateLeavesRoomForTheSeal(): void {
-  const html = renderExperienceCertificateEnHtml(packFixture(), 1);
-  const rule = html.match(/\.cert__signfor\s*\{[^}]*\}/);
-  assert.ok(rule, "the certificate must still carry a .cert__signfor rule");
+function testTheCertificatesLeaveRoomToSignAndStamp(): void {
+  const papers = [
+    ["English", renderExperienceCertificateEnHtml(packFixture(), 1)],
+    ["Arabic", renderExperienceCertificateArHtml(packFixture(), 1)],
+  ] as const;
+  for (const [name, html] of papers) {
+    assert.ok(
+      /\.xc \{ display: flex; flex-direction: column; \}/.test(html),
+      `${name}: each copy is a column, so the signing block can take what the sheet has left`,
+    );
+    assert.ok(
+      /@media print \{ \.xc \{ min-height: 296mm; \} \}/.test(html),
+      `${name}: printed, the column is one sheet tall (296 mm, so rounding never spills an empty sheet)`,
+    );
+    assert.ok(/\.xc-sign \{[^}]*flex: 1 0 auto;/.test(html), `${name}: the signing block grows into the space left`);
 
-  const margin = rule[0].match(/margin:\s*0\s+0\s+(\d+(?:\.\d+)?)mm/);
-  assert.ok(margin, "the signing space must be set as a bottom margin in mm - got: " + rule[0]);
-  assert.ok(
-    Number(margin[1]) >= 34,
-    "the signing space is " + margin[1] + "mm - the company seal is 34mm across, so anything less " +
-      "puts the stamp over its own caption and the footer",
-  );
+    const cells = /\.xc-cells \{[^}]*\}/.exec(html)?.[0] ?? "";
+    assert.ok(cells.includes("flex: 1 1 0;"), `${name}: the boxes grow and shrink with the space - got: ${cells}`);
+    const floor = Number(/min-height:\s*(\d+(?:\.\d+)?)mm/.exec(cells)?.[1]);
+    const ceiling = Number(/max-height:\s*(\d+(?:\.\d+)?)mm/.exec(cells)?.[1]);
+    assert.ok(floor >= 22, `${name}: the boxes never fall under 22 mm, room to sign - got ${floor}`);
+    assert.ok(ceiling >= 34, `${name}: the boxes reach the stamp's size when the sheet allows - got ${ceiling}`);
+    assert.ok(
+      !/\.xc-cell \{[^}]*(?<![-\w])height:/.test(html),
+      `${name}: no fixed box height — that is what pushed a long name onto a second sheet`,
+    );
+  }
 }
 
 export function runHrFormsHousePapersTests(): void {
-  testTheEnglishCertificateLeavesRoomForTheSeal();
+  testTheCertificatesLeaveRoomToSignAndStamp();
   testTheLettersPackPapersAreFilledFromTheRecord();
   testTheExitInterviewPrintsBothLanguagesAndNoAnswers();
   testTheLettersPackGovernmentFormsPrintAsIssued();
