@@ -1,3 +1,5 @@
+"use client";
+
 import type { DirectOrderRepCountersResult } from "@/lib/direct-orders/rep-counters";
 import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
