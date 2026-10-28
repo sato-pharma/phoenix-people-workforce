@@ -88,6 +88,7 @@ import { fileURLToPath } from "node:url";
 
 import { explainDevServerExit } from "./dev-server-exit-reason.mjs";
 import { resolveHeapCap } from "./dev-server-heap-cap.mjs";
+import { resolveLeanMode } from "./dev-server-lean.mjs";
 
 const override = process.env.PHOENIX_DEV_BUNDLER?.trim().toLowerCase();
 const isWindows = process.platform === "win32";
@@ -95,7 +96,9 @@ const isWindows = process.platform === "win32";
 // Pass through anything the caller added, e.g. `pnpm run dev --port 3100`. A bundler flag among
 // them is the caller's own choice (`dev:turbopack` is this launcher plus --turbopack), so it wins
 // over the variable and the platform default, and Next receives it once rather than beside a second.
-const passthrough = process.argv.slice(2);
+// `--lean` is the launcher's own flag (scripts/dev-server-lean.mjs) and never reaches Next.
+const lean = resolveLeanMode(process.argv.slice(2), process.env);
+const passthrough = lean.passthrough;
 const bundlerFlag = passthrough.find((arg) => arg === "--webpack" || arg === "--turbopack" || arg === "--turbo");
 
 let bundler;
@@ -280,9 +283,9 @@ if (running.length > 0) {
 // Every path that starts a dev server now comes through here: the package.json dev scripts,
 // scripts/dev-supervisor.ps1, and AGENTS.md 5's worktree line. .claude/hooks/bash-guard.mjs C7
 // denies a raw `next dev` at the command line.
-const heap = resolveHeapCap(process.env);
+const heap = resolveHeapCap(lean.env);
 if (heap.warning) console.warn(heap.warning);
-const childEnv = { ...process.env };
+const childEnv = { ...lean.env };
 if (heap.nodeOptions) childEnv.NODE_OPTIONS = heap.nodeOptions;
 else delete childEnv.NODE_OPTIONS;
 
@@ -324,6 +327,7 @@ console.log(
   `[dev-server] ${process.platform} -> ${bundler}` +
     (bundlerFlag ? ` (${bundlerFlag} flag)` : override ? " (PHOENIX_DEV_BUNDLER override)" : "") +
     `  | ${heap.note}` +
+    (lean.note ? `  | ${lean.note}` : "") +
     `  | ${bindNote}` +
     `  | next ${args.join(" ")}` +
     (haveBin ? "" : "  (next not found in node_modules - falling back to PATH)"),

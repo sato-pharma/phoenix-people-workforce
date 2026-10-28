@@ -2616,6 +2616,7 @@ import { runVacationBackfillHireGuardTests } from "./vacation-backfill-hire-guar
 import { runCrmVacationBackfillMarkerTests } from "./crm-vacation-backfill-marker.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
+import { runDevServerLeanTests } from "./dev-server-lean.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
@@ -10146,6 +10147,11 @@ await runTest(
 await runTest(
   "dev launcher caps the dev server's heap at 4,096 MB where Next alone hands it half of RAM: the cap reaches Next's own process, a cap the caller already set always wins, PHOENIX_DEV_HEAP_MB tunes it or turns it off, the installed Next still honours the cap and restarts at 80%, and every start path goes through the launcher",
   runDevServerHeapCapTests,
+);
+
+await runTest(
+  "`dev:lean` runs the dev server the way it was measured to fit on a 16 GB laptop: --lean turns off the server compilers' source maps, keeps webpack's cache in memory only and caps the heap at 2,560 MB, Next never sees the flag, a value the caller set wins, the browser bundle keeps its maps, `next build` is never touched, and the installed Next still names the plugin the switch removes",
+  runDevServerLeanTests,
 );
 
 await runTest(
