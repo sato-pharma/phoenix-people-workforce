@@ -103,7 +103,7 @@ function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; ro
         <div className="px-4 py-3">
           <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Decision comment</p>
           {row.finalDecisionNote ? (
-            <p className="mt-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-phx-sm font-medium leading-snug text-slate-700">
+            <p className="mt-1.5 border-l-2 border-slate-200 py-1 pl-2.5 text-phx-sm font-medium leading-snug text-slate-700">
               &ldquo;{row.finalDecisionNote}&rdquo;
             </p>
           ) : (

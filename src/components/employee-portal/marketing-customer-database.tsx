@@ -26,7 +26,7 @@ import type {
   MarketingValidationStatus,
   MarketingVenueMergeCandidate,
 } from "@/lib/marketing-requests/types";
-import { validationStatusLabel } from "@/lib/customer-360/labels";
+import { humanizeCode } from "@/lib/format/code-label";
 import { linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
@@ -148,7 +148,7 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           )}
         </span>
       }
-      status={<Badge variant={statusVariant(row.validationStatus)}>{validationStatusLabel(row.validationStatus) ?? ""}</Badge>}
+      status={<Badge variant={statusVariant(row.validationStatus)}>{humanizeCode(row.validationStatus)}</Badge>}
       title={row.customerName || row.pharmacyName || "Customer row"}
     >
       {/* In the card BODY, not the `status` slot. Measured both at 375px: the status slot does NOT
@@ -614,7 +614,7 @@ export function MarketingCustomerDatabase() {
                   </td>
                   <td className="min-w-0 break-words px-3 py-3">
                     <span className="inline-flex flex-col items-start gap-1">
-                      <Badge variant={statusVariant(row.validationStatus)}>{validationStatusLabel(row.validationStatus) ?? ""}</Badge>
+                      <Badge variant={statusVariant(row.validationStatus)}>{humanizeCode(row.validationStatus)}</Badge>
                       <LinkFieldEvidenceBadge link={row} />
                     </span>
                   </td>

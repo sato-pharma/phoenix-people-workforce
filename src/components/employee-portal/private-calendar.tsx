@@ -2067,7 +2067,7 @@ function SourceNotesLegend({ items }: { items: PrivateCalendarItem[] }) {
   }
   if (sources.size === 0) return null;
   return (
-    <section aria-label="Where these entries come from" className="border border-slate-200 bg-slate-50 px-4 py-3">
+    <section aria-label="Where these entries come from" className="border-y border-slate-200 px-4 py-3">
       <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
         <FileSearch className="h-3 w-3" />
         Recorded in
