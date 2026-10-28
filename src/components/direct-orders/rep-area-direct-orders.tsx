@@ -128,10 +128,10 @@ export function RepAreaDirectOrders({ report }: Props) {
                   <span className="font-black text-slate-900">Counted in {formatPeriod(group.month)}</span>
                   <span className="text-phx-xs font-semibold text-slate-500">{` · ${lineCount(group.rows.length)}`}</span>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                <td className="break-words px-3 py-2 text-right font-black tabular-nums text-slate-900">
                   {units(group.units)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                <td className="break-words px-3 py-2 text-right font-black tabular-nums text-slate-900">
                   {formatEgpFull(group.value)}
                 </td>
               </tr>
@@ -147,10 +147,10 @@ export function RepAreaDirectOrders({ report }: Props) {
                   </td>
                   <td className="break-words px-3 py-2.5 text-slate-700">{row.productName}</td>
                   <td className="px-3 py-2.5 text-slate-700">{dayLabel(row.orderDate)}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
+                  <td className="break-words px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
                     {units(row.units)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
+                  <td className="break-words px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
                     {formatEgpFull(row.salesValue)}
                   </td>
                 </tr>
@@ -162,8 +162,8 @@ export function RepAreaDirectOrders({ report }: Props) {
               <td className="px-3 py-3 font-black text-slate-900" colSpan={3}>
                 All months
               </td>
-              <td className="whitespace-nowrap px-3 py-3 text-right font-black tabular-nums text-slate-900">{units(totalUnits)}</td>
-              <td className="whitespace-nowrap px-3 py-3 text-right font-black tabular-nums text-slate-900">
+              <td className="break-words px-3 py-3 text-right font-black tabular-nums text-slate-900">{units(totalUnits)}</td>
+              <td className="break-words px-3 py-3 text-right font-black tabular-nums text-slate-900">
                 {formatEgpFull(totalValue)}
               </td>
             </tr>

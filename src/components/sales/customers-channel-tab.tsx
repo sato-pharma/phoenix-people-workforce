@@ -429,7 +429,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
               ) : null}
               <p className="mt-1 text-xs text-slate-500">{row.clientAddress || "—"}</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                {row.distributorName} · {row.areaName} · {row.brickName || row.brickId}
+                {row.distributorName} · {row.areaName} / {row.regionName} · {row.brickName || row.brickId}
               </p>
               <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <div>

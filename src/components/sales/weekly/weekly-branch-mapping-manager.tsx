@@ -188,7 +188,7 @@ export function WeeklyBranchMappingManager({
       <option value="">{row.excluded ? "— excluded —" : "Select…"}</option>
       {regions.map((region) => (
         <option key={region.regionCode} value={region.regionCode}>
-          {region.regionName} ({region.regionCode})
+          {region.regionName}
         </option>
       ))}
     </SearchableSelect>
@@ -203,7 +203,7 @@ export function WeeklyBranchMappingManager({
       <option value="">Whole region</option>
       {areasForRegion(row.regionCode).map((area) => (
         <option key={area.areaCode} value={area.areaCode}>
-          {area.areaName} ({area.areaCode})
+          {area.areaName}
         </option>
       ))}
     </SearchableSelect>
@@ -371,7 +371,7 @@ export function WeeklyBranchMappingManager({
             <option value="">Select…</option>
             {regions.map((region) => (
               <option key={region.regionCode} value={region.regionCode}>
-                {region.regionName} ({region.regionCode})
+                {region.regionName}
               </option>
             ))}
           </SearchableSelect>
@@ -386,7 +386,7 @@ export function WeeklyBranchMappingManager({
             <option value="">Whole region</option>
             {areasForRegion(draft.regionCode).map((area) => (
               <option key={area.areaCode} value={area.areaCode}>
-                {area.areaName} ({area.areaCode})
+                {area.areaName}
               </option>
             ))}
           </SearchableSelect>
@@ -458,22 +458,22 @@ export function WeeklyBranchMappingManager({
         <table className="hidden w-full table-fixed text-sm md:table">
           {isStock ? (
             <colgroup>
-              <col className="w-[18%]" />
-              <col className="w-[14%]" />
+              <col className="w-[25%]" />
+              <col className="w-[12%]" />
+              <col className="w-[7%]" />
+              <col className="w-[19%]" />
+              <col className="w-[19%]" />
               <col className="w-[8%]" />
-              <col className="w-[20%]" />
-              <col className="w-[20%]" />
-              <col className="w-[9%]" />
-              <col className="w-[11%]" />
+              <col className="w-[10%]" />
             </colgroup>
           ) : (
             <colgroup>
-              <col className="w-[20%]" />
-              <col className="w-[16%]" />
-              <col className="w-[22%]" />
-              <col className="w-[22%]" />
-              <col className="w-[9%]" />
-              <col className="w-[11%]" />
+              <col className="w-[27%]" />
+              <col className="w-[13%]" />
+              <col className="w-[21%]" />
+              <col className="w-[21%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
             </colgroup>
           )}
           <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
@@ -495,18 +495,24 @@ export function WeeklyBranchMappingManager({
                 </td>
               </tr>
             )}
-            {rows.map((row) => [
+            {rows.map((row) => (
               <tr className="border-t border-[#FFE8D6] align-middle" key={row.id}>
-                <td className="break-words px-3 py-2 font-semibold text-phx-ink">{row.branchHeaderRaw || row.rawBranch}</td>
+                <td className="break-words px-3 py-2 font-semibold text-phx-ink">
+                  {row.branchHeaderRaw || row.rawBranch}
+                  {row.split ? (
+                    <div className="mt-1.5 font-normal">
+                      <SplitDetail split={row.split} />
+                    </div>
+                  ) : null}
+                </td>
                 <td className="break-words px-3 py-2 text-phx-ink-soft">{row.rawBranch}</td>
                 {isStock && <td className="px-3 py-2 text-phx-ink-soft">{row.branchColumnIndex ?? "—"}</td>}
                 <td className="px-3 py-2">{regionSelect(row)}</td>
                 <td className="px-3 py-2">{areaSelect(row)}</td>
                 <td className="px-3 py-2 text-center">{excludeBox(row)}</td>
                 <td className="px-3 py-2 text-right">{removeButton(row)}</td>
-              </tr>,
-              row.split ? <SplitBand columns={isStock ? 7 : 6} key={`${row.id}-split`} split={row.split} /> : null,
-            ])}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -519,9 +525,8 @@ export function WeeklyBranchMappingManager({
  * calculation like this". So the arithmetic sits under the branch it belongs to rather than in a
  * separate report — the same screen the mapping is corrected on.
  *
- * It is a BAND rather than a column because a nine-area split cannot live in a table cell without
- * being cut with an ellipsis. Each area is its own chip, whole and on one line, and the band is
- * free to use the table's full width.
+ * It sits inside the branch's own first cell (never a second row under it); each area is its own
+ * chip and the chips wrap onto further lines when the cell is narrow.
  *
  * The SENTENCE above the chips is a different thing and must wrap. It carried `whitespace-nowrap`,
  * and a note reading "Pinned to Gharbia 1 (Tanta) …" then wanted 482px inside a 281px cell, which
@@ -542,7 +547,7 @@ function SplitDetail({ split }: { split: WeeklyBranchSplitPreview }) {
           )}
           {entry.shares.map((share) => (
             <span
-              className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]"
+              className="break-words border border-[#FFD8B4] bg-white px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]"
               key={share.areaCode}
             >
               {share.areaName} <span className="text-phx-accent-press">{share.percentLabel}</span>
@@ -551,16 +556,6 @@ function SplitDetail({ split }: { split: WeeklyBranchSplitPreview }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSplitPreview }) {
-  return (
-    <tr className="bg-[#FFFBF7]">
-      <td className="px-3 pb-2.5 pt-0" colSpan={columns}>
-        <SplitDetail split={split} />
-      </td>
-    </tr>
   );
 }
 

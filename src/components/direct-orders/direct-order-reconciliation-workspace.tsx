@@ -3,6 +3,12 @@
 import { useMemo, useState } from "react";
 
 import type { DirectSalesReconciliationResult } from "@/lib/direct-orders/types";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 const money = (n: number | null | undefined) =>
@@ -93,44 +99,65 @@ export function DirectOrderReconciliationWorkspace({ result }: { result: DirectS
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-3 py-2 font-semibold">Period</th>
-              <th className="px-3 py-2 font-semibold">Line</th>
-              <th className="px-3 py-2 font-semibold">Region</th>
-              <th className="px-3 py-2 font-semibold">Product</th>
-              <th className="px-3 py-2 text-right font-semibold">Manual value</th>
-              <th className="px-3 py-2 text-right font-semibold">Module value</th>
-              <th className="px-3 py-2 text-right font-semibold">Overlap exposure</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
+      <PortalResponsiveDataList
+        empty={<p className="border border-slate-200 px-3 py-8 text-center text-slate-400">No overlapping direct-sales buckets.</p>}
+        getKey={(o, i) => `${o.period}-${o.line}-${o.regionCode}-${o.productCode}-${i}`}
+        items={rows}
+        renderCard={(o) => (
+          <PortalRecordCard accent="rose" meta={`${o.period} · ${o.line}`} title={o.productCode}>
+            <PortalRecordFields
+              fields={[
+                { label: "Region", value: o.regionCode },
+                { label: "Manual value", value: money(o.manualValue) },
+                { label: "Module value", value: money(o.moduleValue) },
+                { label: "Overlap exposure", value: money(o.overlapExposure) },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[12%]" />
+                <col className="w-[14%]" />
+                <col className="w-[16%]" />
+                <col className="w-[22%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+              </colgroup>
+            }
+          >
+            <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-slate-400">
-                  No overlapping direct-sales buckets.
-                </td>
+                <th className="px-3 py-2 font-semibold">Period</th>
+                <th className="px-3 py-2 font-semibold">Line</th>
+                <th className="px-3 py-2 font-semibold">Region</th>
+                <th className="px-3 py-2 font-semibold">Product</th>
+                <th className="px-3 py-2 text-right font-semibold">Manual value</th>
+                <th className="px-3 py-2 text-right font-semibold">Module value</th>
+                <th className="px-3 py-2 text-right font-semibold">Overlap exposure</th>
               </tr>
-            ) : (
-              rows.map((o, i) => (
+            </thead>
+            <tbody>
+              {rows.map((o, i) => (
                 <tr key={`${o.period}-${o.line}-${o.regionCode}-${o.productCode}-${i}`} className="border-t border-slate-100">
-                  <td className="px-3 py-2 tabular-nums">{o.period}</td>
-                  <td className="px-3 py-2">{o.line}</td>
-                  <td className="px-3 py-2">{o.regionCode}</td>
-                  <td className="px-3 py-2">{o.productCode}</td>
+                  <td className="break-words px-3 py-2 tabular-nums">{o.period}</td>
+                  <td className="break-words px-3 py-2">{o.line}</td>
+                  <td className="break-words px-3 py-2">{o.regionCode}</td>
+                  <td className="break-words px-3 py-2">{o.productCode}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(o.manualValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money(o.moduleValue)}</td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums text-rose-700">
                     {money(o.overlapExposure)}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }

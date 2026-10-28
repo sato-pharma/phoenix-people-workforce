@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { WeeklyAliasKind, WeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { CrmCard, CrmCardsOnPhone, CrmFacts } from "@/components/phoenix-crm/ui";
 import { cn } from "@/lib/utils";
 
 
@@ -222,7 +223,7 @@ export function WeeklyProductMappingManager({
           <>
             <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-9 min-w-[14rem] px-2"
+              className="h-9 w-full px-2 sm:w-56"
               disabled={busy}
               value={distributor}
               onChange={(event) => {
@@ -232,7 +233,7 @@ export function WeeklyProductMappingManager({
             >
               {data.distributors.map((option) => (
                 <option key={option.code} value={option.code}>
-                  {option.name} ({option.code})
+                  {option.name}
                 </option>
               ))}
             </SearchableSelect>
@@ -292,7 +293,7 @@ export function WeeklyProductMappingManager({
             <option value="">Select…</option>
             {products.map((product) => (
               <option key={product.code} value={product.code}>
-                {product.name} ({product.code}){product.priced && product.lined ? "" : " ⚠"}
+                {product.name}{product.priced && product.lined ? "" : " ⚠"}
               </option>
             ))}
           </SearchableSelect>
@@ -327,16 +328,48 @@ export function WeeklyProductMappingManager({
 
       {/* Table */}
       <div className="rounded-[6px] border border-phx-line bg-white shadow-sm">
-        <table className="w-full table-fixed text-sm">
+        {/* Below md every alias is a card carrying the same facts and the same Remove button. */}
+        <CrmCardsOnPhone>
+          {aliases.length === 0 ? (
+            <p className="px-3 py-4 text-center text-sm text-phx-ink-faint">No aliases yet — add one above or upload the template.</p>
+          ) : null}
+          {aliases.map((alias) => (
+            <CrmCard
+              actions={
+                <button
+                  className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
+                  disabled={busy}
+                  onClick={() => void mutate({ action: "delete", id: alias.id })}
+                  type="button"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                </button>
+              }
+              key={alias.id}
+              status={
+                alias.resolvable ? undefined : (
+                  <span className="inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase text-amber-700">
+                    <AlertTriangle className="h-3 w-3" /> fix price/line in master
+                  </span>
+                )
+              }
+              title={alias.alias}
+            >
+              <CrmFacts
+                facts={[
+                  { label: "Kind", value: <span className="capitalize">{alias.aliasKind}</span> },
+                  { label: "Master product", value: alias.productName },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+        <table className="hidden w-full table-fixed text-sm md:table">
           <colgroup>
-            <col className="w-[24%] md:w-[28%]" />
-            <col className="w-[14%] md:w-[14%]" />
-            <col className="w-[33%] md:w-[42%]" />
-            {/* The Remove button measures 95px with its padding, so the action column keeps a
-                wider share on a phone — a fixed column narrower than its button CLIPS it, and
-                the wrapper never scrolls to reveal what was cut. Measured in a browser at
-                375px: 26% gave the cell 89px and lost the last 6px of the label. */}
-            <col className="w-[29%] md:w-[16%]" />
+            <col className="w-[28%]" />
+            <col className="w-[14%]" />
+            <col className="w-[42%]" />
+            <col className="w-[16%]" />
           </colgroup>
           <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
@@ -357,10 +390,9 @@ export function WeeklyProductMappingManager({
             {aliases.map((alias) => (
               <tr className="border-t border-[#FFE8D6] align-middle" key={alias.id}>
                 <td className="break-words px-3 py-2 font-semibold text-phx-ink">{alias.alias}</td>
-                <td className="break-words px-3 py-2 text-phx-ink-soft">{alias.aliasKind}</td>
+                <td className="break-words px-3 py-2 capitalize text-phx-ink-soft">{alias.aliasKind}</td>
                 <td className="break-words px-3 py-2">
                   <span className="font-semibold text-phx-ink">{alias.productName}</span>
-                  <span className="ml-1 text-phx-xs font-medium text-phx-ink-faint">{alias.productCode}</span>
                   {!alias.resolvable && (
                     <span className="ml-2 inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase text-amber-700">
                       <AlertTriangle className="h-3 w-3" /> fix price/line in master

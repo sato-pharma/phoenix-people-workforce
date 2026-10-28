@@ -17,6 +17,7 @@ import { useTransition } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts } from "@/components/phoenix-crm/ui";
 import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/lib/sales/format";
 import type { ReferenceGapKind, SalesReferenceGaps } from "@/lib/sales/reference-gaps";
@@ -66,7 +67,23 @@ function MonthlyMissing({ data, loadError }: { data: SalesReferenceGaps | null; 
             title={group.label}
           >
             <div>
-              <table className="w-full table-fixed text-left text-sm">
+              <CrmCardsOnPhone>
+                {group.gaps.map((gap) => (
+                  <CrmCard
+                    key={gap.code}
+                    title={gap.code}
+                  >
+                    <CrmFacts
+                      facts={[
+                        { label: "Rows affected", value: formatNumber(gap.affectedRows) },
+                        { label: "Distributors", value: joinCapped(gap.distributors) },
+                        { label: "Periods", value: joinCapped(gap.periods) },
+                      ]}
+                    />
+                  </CrmCard>
+                ))}
+              </CrmCardsOnPhone>
+              <table className="hidden w-full table-fixed text-left text-sm md:table">
                 <colgroup>
                   <col className="w-[22%]" />
                   <col className="w-[16%]" />

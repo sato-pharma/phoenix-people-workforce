@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
+import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
+import { PortalDesktopTable, PortalRecordCard, PortalRecordFields, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { adminPanelClassName, adminPanelHeaderClassName, adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -111,6 +113,10 @@ export function SharedDirectOrderReport({ token }: Props) {
     );
   }
 
+  const statusText = (r: DirectOrderReportRow) => describeDirectOrderStatus(r.status, r.salesMonth).label;
+  const qtyText = (r: DirectOrderReportRow) =>
+    r.basketUnits?.qty ?? (r.qty == null ? "—" : r.qty.toLocaleString("en-US"));
+
   const total = rows.reduce((sum, r) => sum + (Number(r.salesValue) || 0), 0);
 
   return (
@@ -133,36 +139,67 @@ export function SharedDirectOrderReport({ token }: Props) {
         <span><span className="font-black uppercase tracking-wider text-slate-400">Total value </span>{money(total)}</span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-phx-sm">
-          <thead>
-            <tr className="border-b border-[#eef1f3] bg-slate-50 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Requester</th>
-              <th className="px-3 py-2">Venue</th>
-              <th className="px-3 py-2">Product</th>
-              <th className="px-3 py-2 text-right">Qty</th>
-              <th className="px-3 py-2 text-right">Value</th>
-              <th className="px-3 py-2">Area</th>
-              <th className="px-3 py-2">Sales month</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-b border-[#f1f4f6]">
-                <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">{r.status.replace(/_/g, " ")}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">{r.requesterName}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900" dir="auto">{r.pharmacyName}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">{r.productName}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums">{r.basketUnits?.qty ?? (r.qty == null ? "—" : r.qty.toLocaleString("en-US"))}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.areaName || "—"}</td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.salesMonth ?? "—"}</td>
+      <PortalResponsiveDataList
+        empty={<p className="px-4 py-8 text-center text-sm text-slate-400">No direct orders in this report.</p>}
+        getKey={(r) => r.id}
+        items={rows}
+        renderCard={(r) => (
+          <PortalRecordCard meta={r.requesterName} status={statusText(r)} title={r.pharmacyName}>
+            <PortalRecordFields
+              fields={[
+                { label: "Product", value: r.productName },
+                { label: "Qty", value: qtyText(r) },
+                { label: "Value", value: money(r.salesValue) },
+                { label: "Area", value: r.areaName || "—" },
+                { label: "Sales month", value: r.salesMonth ?? "—" },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[12%]" />
+                <col className="w-[15%]" />
+                <col className="w-[19%]" />
+                <col className="w-[17%]" />
+                <col className="w-[8%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[8%]" />
+              </colgroup>
+            }
+          >
+            <thead>
+              <tr className="border-b border-[#eef1f3] bg-slate-50 text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Requester</th>
+                <th className="px-3 py-2">Venue</th>
+                <th className="px-3 py-2">Product</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Value</th>
+                <th className="px-3 py-2">Area</th>
+                <th className="px-3 py-2">Sales month</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-[#f1f4f6] align-top">
+                  <td className="break-words px-3 py-1.5 text-slate-700">{statusText(r)}</td>
+                  <td className="break-words px-3 py-1.5 text-slate-800">{r.requesterName}</td>
+                  <td className="break-words px-3 py-1.5 font-semibold text-slate-900" dir="auto">{r.pharmacyName}</td>
+                  <td className="break-words px-3 py-1.5 text-slate-700">{r.productName}</td>
+                  <td className="break-words px-3 py-1.5 text-right tabular-nums">{qtyText(r)}</td>
+                  <td className="break-words px-3 py-1.5 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
+                  <td className="break-words px-3 py-1.5 text-slate-600">{r.areaName || "—"}</td>
+                  <td className="break-words px-3 py-1.5 text-slate-600">{r.salesMonth ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
       <p className="border-t border-[#eef1f3] px-4 py-2 text-phx-xs text-slate-400">
         This view is read-only and reflects the data at the time shown above. Reload for the latest.
       </p>

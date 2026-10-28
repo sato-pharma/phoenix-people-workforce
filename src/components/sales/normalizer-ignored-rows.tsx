@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
 import type { PreviewIgnoredRow } from "@/lib/sales/recognize";
 import { cn } from "@/lib/utils";
@@ -48,16 +49,11 @@ export function NormalizerIgnoredRows({ rows, ignoredCount }: { rows: readonly P
         </p>
       ) : null}
       <div className="border border-phx-line">
-        <table className="w-full table-fixed text-sm">
-          <colgroup>
-            <col className="w-[52%]" />
-            <col className="w-[14%]" />
-            <col className="w-[34%]" />
-          </colgroup>
+        <CrmTable columns={["52%", "14%", "34%"]}>
           <thead className="bg-[#0B0B0B] text-phx-paper-2">
             <tr>
               {["Product (sheet row)", "Units", "Why it was ignored"].map((h) => (
-                <th className="px-3 py-2 text-left" key={h}>{h}</th>
+                <th className="break-words px-3 py-2 text-left" key={h}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -68,12 +64,28 @@ export function NormalizerIgnoredRows({ rows, ignoredCount }: { rows: readonly P
                   <span className="block font-semibold text-slate-900" dir="auto">{row.productName}</span>
                   <span className="block font-mono text-xs">{row.rawProduct} · {row.fileName ? `${row.fileName} · ` : ""}row {row.rowNumber.toLocaleString("en-US")}</span>
                 </td>
-                <td className="px-3 py-1.5 align-top font-semibold tabular-nums text-slate-900">{row.qty.toLocaleString("en-US")}</td>
+                <td className="break-words px-3 py-1.5 align-top font-semibold tabular-nums text-slate-900">{row.qty.toLocaleString("en-US")}</td>
                 <td className="break-words px-3 py-1.5 align-top text-slate-600">{REASON_LABEL[row.reason]}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
+        <CrmCardsOnPhone>
+          {shown.map((row, i) => (
+            <CrmCard
+              key={`${row.rowNumber}-${i}`}
+              meta={`${row.rawProduct} · ${row.fileName ? `${row.fileName} · ` : ""}row ${row.rowNumber.toLocaleString("en-US")}`}
+              title={<span dir="auto">{row.productName}</span>}
+            >
+              <CrmFacts
+                facts={[
+                  { label: "Units", value: row.qty.toLocaleString("en-US") },
+                  { label: "Why it was ignored", value: REASON_LABEL[row.reason] },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import type { DirectOrderRepCountersResult } from "@/lib/direct-orders/rep-counters";
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { data: DirectOrderRepCountersResult };
@@ -92,85 +93,14 @@ export function RepCountersTable({ data }: Props) {
         </span>
       </header>
 
-      {/* Desktop: the full table. */}
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
-              <th className="px-3 py-2">Rep</th>
-              <th className="px-3 py-2">Area</th>
-              <th className="px-3 py-2">Held</th>
-              <th className="px-3 py-2">Held value</th>
-              <th className="px-3 py-2">Expired</th>
-              {/* The proven outcome, next to the pending ones. Before this existed, a module that
-                  had been cleaned up read as a module where nothing had ever happened. */}
-              <th className="px-3 py-2">Rejected venues</th>
-              <th className="px-3 py-2">Orders rejected</th>
-              <th className="px-3 py-2">Evidence sent</th>
-              <th className="px-3 py-2">Existed after all</th>
-              <th className="px-3 py-2">Refused a match</th>
-              <th className="px-3 py-2">Last held</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.hrId} className="border-b border-[#f1f4f6] align-top hover:bg-orange-50/40">
-                <td className="px-3 py-2">
-                  {/* Owner's rule: human-readable names, never raw codes. */}
-                  <p className="font-bold text-slate-900">{row.name}</p>
-                  <p className="text-phx-xs text-slate-500">{row.role}</p>
-                </td>
-                <td className="px-3 py-2 text-slate-700">{row.areaName || "—"}</td>
-                <td className="px-3 py-2">{count(row.held)}</td>
-                <td className="px-3 py-2 font-bold text-slate-900">{money(row.heldValue)}</td>
-                <td className="px-3 py-2">{count(row.expired)}</td>
-                <td className="px-3 py-2">{count(row.rejectedPharmacies, "signal")}</td>
-                <td className="whitespace-nowrap px-3 py-2">
-                  {count(row.ordersRejected, "signal")}
-                  {/* An explicit separator, not just a margin. `ml-1` is 4px, and between an amber
-                      count badge and grey money that reads as one number — "2266,112 EGP" — which
-                      is precisely the wrong impression for the column that names what somebody did.
-                      The mobile card already used "·"; this makes the two agree. */}
-                  {row.ordersRejectedValue > 0 ? (
-                    <span className="ml-2 text-phx-xs text-slate-500">· {money(row.ordersRejectedValue)}</span>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2">{count(row.validationsSubmitted)}</td>
-                <td className="px-3 py-2">{count(row.matchedExisting, "signal")}</td>
-                <td className="px-3 py-2">{count(row.suggestionsRefused, "signal")}</td>
-                <td className="px-3 py-2 text-phx-sm text-slate-500">{cairoStamp(row.lastHeldAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-phx-line bg-slate-50 text-phx-sm font-black text-slate-900">
-              <td className="px-3 py-2 uppercase tracking-wider">Total</td>
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2">{totals.held}</td>
-              <td className="px-3 py-2">{money(totals.heldValue)}</td>
-              <td className="px-3 py-2">{totals.expired}</td>
-              <td className="px-3 py-2">{totals.rejectedPharmacies}</td>
-              <td className="whitespace-nowrap px-3 py-2">
-                {totals.ordersRejected}
-                {totals.ordersRejectedValue > 0 ? (
-                  <span className="ml-2 font-bold">· {money(totals.ordersRejectedValue)}</span>
-                ) : null}
-              </td>
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2">{totals.matchedExisting}</td>
-              <td className="px-3 py-2" />
-              <td className="px-3 py-2" />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      {/* Mobile: cards. The owner's rule is that mobile never gets a table. */}
-      <div className="space-y-2 p-3 md:hidden">
-        {rows.map((row) => (
-          <article key={row.hrId} className="block border border-phx-line p-3">
-            <p className="text-sm font-black text-slate-900">{row.name}</p>
-            <p className="text-phx-xs text-slate-500">
+      <PortalResponsiveDataList
+        empty={null}
+        getKey={(row) => row.hrId}
+        items={rows}
+        renderCard={(row) => (
+          <article className="block p-3">
+            <p className="break-words text-sm font-black text-slate-900">{row.name}</p>
+            <p className="break-words text-phx-xs text-slate-500">
               {row.role}
               {row.areaName ? ` · ${row.areaName}` : ""}
             </p>
@@ -204,8 +134,95 @@ export function RepCountersTable({ data }: Props) {
               <span>last held {cairoStamp(row.lastHeldAt)}</span>
             </div>
           </article>
-        ))}
-      </div>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[20%]" />
+                <col className="w-[13%]" />
+                <col className="w-[8%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+              </colgroup>
+            }
+          >
+            <thead>
+              <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                <th className="px-3 py-2">Rep</th>
+                <th className="px-3 py-2">Held</th>
+                <th className="px-3 py-2">Expired</th>
+                {/* The proven outcome, next to the pending ones. Before this existed, a module that
+                    had been cleaned up read as a module where nothing had ever happened. */}
+                <th className="px-3 py-2">Rejected venues</th>
+                <th className="px-3 py-2">Orders rejected</th>
+                <th className="px-3 py-2">Evidence sent</th>
+                <th className="px-3 py-2">Existed after all</th>
+                <th className="px-3 py-2">Refused a match</th>
+                <th className="px-3 py-2">Last held</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.hrId} className="border-b border-[#f1f4f6] align-top hover:bg-orange-50/40">
+                  <td className="break-words px-3 py-2">
+                    {/* Owner's rule: human-readable names, never raw codes. The area rides in the
+                        same cell as the role, so the table fits without a column of its own. */}
+                    <p className="font-bold text-slate-900">{row.name}</p>
+                    <p className="text-phx-xs text-slate-500">
+                      {row.role}
+                      {row.areaName ? ` · ${row.areaName}` : ""}
+                    </p>
+                  </td>
+                  <td className="break-words px-3 py-2">
+                    <p>{count(row.held)}</p>
+                    <p className="font-bold text-slate-900">{money(row.heldValue)}</p>
+                  </td>
+                  <td className="px-3 py-2">{count(row.expired)}</td>
+                  <td className="px-3 py-2">{count(row.rejectedPharmacies, "signal")}</td>
+                  <td className="break-words px-3 py-2">
+                    {count(row.ordersRejected, "signal")}
+                    {/* An explicit separator, not just a margin: between an amber count badge and
+                        grey money a bare gap reads as one number — "2266,112 EGP". */}
+                    {row.ordersRejectedValue > 0 ? (
+                      <span className="ml-2 text-phx-xs text-slate-500">· {money(row.ordersRejectedValue)}</span>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2">{count(row.validationsSubmitted)}</td>
+                  <td className="px-3 py-2">{count(row.matchedExisting, "signal")}</td>
+                  <td className="px-3 py-2">{count(row.suggestionsRefused, "signal")}</td>
+                  <td className="break-words px-3 py-2 text-phx-sm text-slate-500">{cairoStamp(row.lastHeldAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-phx-line bg-slate-50 text-phx-sm font-black text-slate-900">
+                <td className="px-3 py-2 uppercase tracking-wider">Total</td>
+                <td className="break-words px-3 py-2">
+                  <p>{totals.held}</p>
+                  <p>{money(totals.heldValue)}</p>
+                </td>
+                <td className="px-3 py-2">{totals.expired}</td>
+                <td className="px-3 py-2">{totals.rejectedPharmacies}</td>
+                <td className="break-words px-3 py-2">
+                  {totals.ordersRejected}
+                  {totals.ordersRejectedValue > 0 ? (
+                    <span className="ml-2 font-bold">· {money(totals.ordersRejectedValue)}</span>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2">{totals.matchedExisting}</td>
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2" />
+              </tr>
+            </tfoot>
+          </PortalDesktopTable>
+        )}
+      />
     </section>
   );
 }

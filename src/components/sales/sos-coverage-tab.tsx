@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, TrendingUp } from "luc
 import { useEffect, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Button } from "@/components/ui/button";
 import { customerKey, savedCustomerKeys } from "@/lib/sales/customer-key";
 import type { CoverageSummary, DistributorCoverageRow, PersistentUnmappedCustomer } from "@/lib/sales/import-coverage";
@@ -156,6 +157,9 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
                     <span className="block">
                       last {new Date(row.latestCommittedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
                     </span>
+                    <span className="mt-1 flex items-center gap-1.5">
+                      trend <TrendDots values={row.trend} />
+                    </span>
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-right align-top"><PctBadge pct={row.latestResolvedPct} /></td>
@@ -195,12 +199,19 @@ function DriftAlertsTable({ alerts }: { alerts: DriftAlert[] }) {
   const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-phx-xs tracking-[0.14em]" };
   return (
     <div>
-      <table className="w-full table-fixed text-sm">
-        <colgroup>
-          <col className="w-[44%]" />
-          <col className="w-[26%]" />
-          <col className="w-[30%]" />
-        </colgroup>
+      <CrmCardsOnPhone>
+        {table.rows.map((alert) => (
+          <CrmCard key={alert.batchId} title={alert.distributorCode}>
+            <CrmFacts
+              facts={[
+                { label: "Drift count", value: formatNumber(alert.brickDriftCount) },
+                { label: "Import date", value: new Date(alert.committedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) },
+              ]}
+            />
+          </CrmCard>
+        ))}
+      </CrmCardsOnPhone>
+      <CrmTable columns={["44%", "26%", "30%"]} className="text-sm">
         <thead>
           <tr className="bg-[#020617] text-left text-white">
             <SortableTh label="Distributor" sortKey="distributorCode" {...thProps} />
@@ -214,13 +225,13 @@ function DriftAlertsTable({ alerts }: { alerts: DriftAlert[] }) {
             <tr key={alert.batchId} className="border-t border-[#EEF2F7]">
               <td className="break-words px-4 py-2.5 font-semibold text-phx-ink">{alert.distributorCode}</td>
               <td className="px-4 py-2.5 text-right font-bold text-orange-600">{formatNumber(alert.brickDriftCount)}</td>
-              <td className="px-4 py-2.5 text-right text-phx-ink-soft">
+              <td className="break-words px-4 py-2.5 text-right text-phx-ink-soft">
                 {new Date(alert.committedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
               </td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </CrmTable>
     </div>
   );
 }
@@ -273,6 +284,26 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
     }
   }
 
+  const brickCell = (r: PersistentUnmappedCustomer) => {
+    const key = keyOf(r);
+    if (savedKeys.has(key)) {
+      return <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Mapped</span>;
+    }
+    return (
+      <SearchableSelect
+        className="h-9 w-full px-2"
+        disabled={saving || bricks.length === 0}
+        onChange={(e) => setPicked((prev) => ({ ...prev, [key]: e.target.value }))}
+        value={picked[key] ?? ""}
+      >
+        <option value="">Select a brick…</option>
+        {bricks.map((b) => (
+          <option key={b.id} value={b.id}>{b.name}</option>
+        ))}
+      </SearchableSelect>
+    );
+  };
+
   return (
     <div className="space-y-3 p-5">
       <div className="flex items-center justify-between gap-3">
@@ -291,13 +322,24 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
         </Button>
       </div>
       <div>
-        <table className="w-full table-fixed text-sm">
-          <colgroup>
-            <col className="w-[34%]" />
-            <col className="w-[18%]" />
-            <col className="w-[14%]" />
-            <col className="w-[34%]" />
-          </colgroup>
+        <CrmCardsOnPhone>
+          {rows.map((r) => (
+            <CrmCard
+              key={keyOf(r)}
+              meta={r.customerName || "name not captured"}
+              title={r.customerCode}
+            >
+              <CrmFacts
+                facts={[
+                  { label: "Distributor", value: r.distributorCode },
+                  { label: "Imports", value: formatNumber(r.importCount) },
+                ]}
+              />
+              <div className="mt-2">{brickCell(r)}</div>
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+        <CrmTable className="text-sm" columns={["34%", "18%", "14%", "34%"]}>
           <thead>
             <tr className="bg-[#020617] text-left">
               {["Customer", "Distributor", "Imports", "Assign brick"].map((h) => (
@@ -306,41 +348,21 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const key = keyOf(r);
-              const isSaved = savedKeys.has(key);
-              return (
-                <tr key={key} className="border-t border-[#EEF2F7]">
-                  <td className="break-words px-4 py-2 align-top">
-                    <span className="font-semibold text-phx-ink">{r.customerCode}</span>
-                    {/* The name used to be capped at 220px and ellipsised. The column owns
-                        the width now, so it wraps and the whole name is readable. */}
-                    {r.customerName ? <span className="block break-words text-xs text-phx-ink-soft">{r.customerName}</span> : <span className="block text-xs italic text-phx-ink-faint">name not captured</span>}
-                  </td>
-                  <td className="break-words px-4 py-2 align-top text-phx-ink-soft">{r.distributorCode}</td>
-                  <td className="px-4 py-2 align-top tabular-nums text-phx-ink-soft">{formatNumber(r.importCount)}</td>
-                  <td className="px-4 py-2 align-top">
-                    {isSaved ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Mapped</span>
-                    ) : (
-                      <SearchableSelect
-                        className="h-9 w-full px-2"
-                        disabled={saving || bricks.length === 0}
-                        onChange={(e) => setPicked((prev) => ({ ...prev, [key]: e.target.value }))}
-                        value={picked[key] ?? ""}
-                      >
-                        <option value="">Select a brick…</option>
-                        {bricks.map((b) => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </SearchableSelect>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {rows.map((r) => (
+              <tr key={keyOf(r)} className="border-t border-[#EEF2F7]">
+                <td className="break-words px-4 py-2 align-top">
+                  <span className="font-semibold text-phx-ink">{r.customerCode}</span>
+                  {/* The name used to be capped at 220px and ellipsised. The column owns
+                      the width now, so it wraps and the whole name is readable. */}
+                  {r.customerName ? <span className="block break-words text-xs text-phx-ink-soft">{r.customerName}</span> : <span className="block text-xs italic text-phx-ink-faint">name not captured</span>}
+                </td>
+                <td className="break-words px-4 py-2 align-top text-phx-ink-soft">{r.distributorCode}</td>
+                <td className="break-words px-4 py-2 align-top tabular-nums text-phx-ink-soft">{formatNumber(r.importCount)}</td>
+                <td className="px-4 py-2 align-top">{brickCell(r)}</td>
+              </tr>
+            ))}
           </tbody>
-        </table>
+        </CrmTable>
       </div>
       {message ? <p className="text-xs font-semibold text-emerald-700">{message}</p> : null}
     </div>
