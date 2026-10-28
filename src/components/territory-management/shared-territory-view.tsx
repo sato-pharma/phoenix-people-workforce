@@ -221,7 +221,7 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
           <h1 className="text-base font-black text-white">{label ?? "Territory Preview"}</h1>
         </div>
         {area ? (
-          <p className="text-phx-sm font-bold whitespace-nowrap text-slate-300">
+          <p className="min-w-0 break-words text-phx-sm font-bold text-slate-300">
             {area.areaName} — {area.bricks.length} bricks on the map
           </p>
         ) : null}
@@ -295,9 +295,9 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
               <h2 className="text-phx-xs font-black tracking-wider text-slate-500 uppercase">
                 Bricks in {area.areaName}
               </h2>
-              <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 overflow-x-auto sm:grid-cols-2 lg:grid-cols-3">
+              <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
                 {area.bricks.map((brick) => (
-                  <li className="text-phx-md whitespace-nowrap text-slate-700" key={brick.brickId}>
+                  <li className="min-w-0 break-words text-phx-md text-slate-700" key={brick.brickId}>
                     {brick.brickName}
                   </li>
                 ))}
@@ -311,9 +311,9 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
                 <h2 className="text-phx-xs font-black tracking-wider text-slate-500 uppercase">
                   Also in this area, not yet placed on the map ({area.unlocated.length})
                 </h2>
-                <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 overflow-x-auto sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
                   {area.unlocated.map((brick) => (
-                    <li className="text-phx-md whitespace-nowrap text-slate-500" key={brick.brickId}>
+                    <li className="min-w-0 break-words text-phx-md text-slate-500" key={brick.brickId}>
                       {brick.brickName}
                     </li>
                   ))}

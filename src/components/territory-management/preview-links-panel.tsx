@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import {
+  PortalDesktopTable,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
@@ -215,7 +216,7 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
           <p className="text-sm font-medium text-green-900">
             Ready — this link covers {created.areaCount} areas. Send it to whoever needs it.
           </p>
-          <code className="block overflow-x-auto rounded-md border border-green-200 bg-white px-2 py-1.5 text-xs whitespace-nowrap">
+          <code className="block min-w-0 break-all rounded-md border border-green-200 bg-white px-2 py-1.5 text-xs">
             {previewUrl(created.token)}
           </code>
           <button
@@ -230,9 +231,7 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
 
       {links.length > 0 ? (
         <div className="border-t pt-3">
-          {/* Six columns, and every one of them was `whitespace-nowrap` inside an overflow-x-auto —
-              a sideways-scrolling phone, which is the golden rule's exact defect. Cards below md,
-              table from md up. PortalResponsiveDataList (not the stacking pattern) because no row
+          {/* Cards below md, a fixed-layout table with a colgroup from md up — no sideways scroll. PortalResponsiveDataList (not the stacking pattern) because no row
               holds an unsaved edit: "Switch off" acts immediately and re-reads the list, so the two
               copies of a row can never disagree about a pending change. */}
           <PortalResponsiveDataList
@@ -269,47 +268,54 @@ export function TerritoryPreviewLinksPanel({ productionUrl }: Props) {
               );
             }}
             renderTable={() => (
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="text-muted-foreground text-xs uppercase">
-                      <th className="px-2 py-1">Label</th>
-                      <th className="px-2 py-1 whitespace-nowrap">Areas</th>
-                      <th className="px-2 py-1 whitespace-nowrap">Stops working</th>
-                      <th className="px-2 py-1 whitespace-nowrap">Opens</th>
-                      <th className="px-2 py-1 whitespace-nowrap">Status</th>
-                      <th className="px-2 py-1"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {links.map((link) => {
-                      const state = linkState(link, loadedAtMs);
-                      return (
-                        <tr className="border-t" key={link.id}>
-                          {/* The one column that may hold long free text, so it WRAPS rather than
-                              widening the table. The other five are short and stay nowrap. */}
-                          <td className="px-2 py-1.5 font-medium">{link.label ?? "—"}</td>
-                          <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{link.areaCount}</td>
-                          <td className="px-2 py-1.5 whitespace-nowrap">{cairo(link.expiresAt)}</td>
-                          <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{link.accessCount}</td>
-                          <td className="px-2 py-1.5 whitespace-nowrap">{state}</td>
-                          <td className="px-2 py-1.5 whitespace-nowrap">
-                            {state === "active" ? (
-                              <button
-                                className="text-destructive text-xs underline"
-                                onClick={() => void revoke(link.id)}
-                                type="button"
-                              >
-                                Switch off
-                              </button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[30%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[18%]" />
+                  </colgroup>
+                }
+              >
+                <thead>
+                  <tr className="text-muted-foreground text-xs uppercase">
+                    <th className="px-2 py-1">Label</th>
+                    <th className="px-2 py-1">Areas</th>
+                    <th className="px-2 py-1">Stops working</th>
+                    <th className="px-2 py-1">Opens</th>
+                    <th className="px-2 py-1">Status</th>
+                    <th className="px-2 py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {links.map((link) => {
+                    const state = linkState(link, loadedAtMs);
+                    return (
+                      <tr className="border-t" key={link.id}>
+                        <td className="min-w-0 break-words px-2 py-1.5 font-medium">{link.label ?? "—"}</td>
+                        <td className="px-2 py-1.5 tabular-nums">{link.areaCount}</td>
+                        <td className="min-w-0 break-words px-2 py-1.5">{cairo(link.expiresAt)}</td>
+                        <td className="px-2 py-1.5 tabular-nums">{link.accessCount}</td>
+                        <td className="min-w-0 break-words px-2 py-1.5">{state}</td>
+                        <td className="px-2 py-1.5">
+                          {state === "active" ? (
+                            <button
+                              className="text-destructive text-xs underline"
+                              onClick={() => void revoke(link.id)}
+                              type="button"
+                            >
+                              Switch off
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </PortalDesktopTable>
             )}
           />
         </div>

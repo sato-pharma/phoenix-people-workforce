@@ -237,34 +237,15 @@ export function runCrmMobileTableCardTests() {
         "inlined, re-point this assertion rather than deleting it.",
     );
 
-    const nameSpans = (body[0].match(/className="[^"]*"/g) ?? []).filter((span) =>
-      span.includes("whitespace-nowrap"),
+    // 2026-10-28 (tables say every fact once, and fit the screen): the table is table-fixed and
+    // never scrolls, so a name wraps at EVERY width -- no `whitespace-nowrap`, not even from `md`.
+    assert.ok(
+      !/whitespace-nowrap/.test(body[0]),
+      "ResolvedChain must not carry any whitespace-nowrap: both names wrap in the card and in the fixed-layout row.",
     );
     assert.ok(
-      nameSpans.length > 0,
-      "ResolvedChain no longer gates nowrap on a breakpoint at all. That is safe for the page, but " +
-        "the desktop row is then free to wrap mid-name inside a 960px table -- use " +
-        "`md:whitespace-nowrap` so each half keeps its own behaviour.",
+      (body[0].match(/break-words/g) ?? []).length >= 2,
+      "ResolvedChain's hinge-manager and resolved-MR spans must both carry break-words.",
     );
-
-    for (const span of nameSpans) {
-      const classes = span.slice('className="'.length, -1).split(/\s+/);
-      assert.ok(
-        !classes.includes("whitespace-nowrap"),
-        "ResolvedChain has a span with an unconditional `whitespace-nowrap`: " +
-          span +
-          ". It holds a person's name, and below md it renders inside a mobile card with no " +
-          "overflow-hidden, so a 55-character name pushes the whole 375px page sideways " +
-          "(measured: documentElement.scrollWidth 376 against a 375 viewport). Use " +
-          "`md:whitespace-nowrap` -- one line on desktop, wrapping on a phone.",
-      );
-      assert.ok(
-        classes.includes("md:whitespace-nowrap"),
-        "ResolvedChain span " +
-          span +
-          " must keep `md:whitespace-nowrap`, so the desktop row -- which scrolls inside " +
-          "PortalDesktopTable -- still puts the name on one line.",
-      );
-    }
   }
 }
