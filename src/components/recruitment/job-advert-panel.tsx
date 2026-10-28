@@ -508,7 +508,6 @@ export function JobAdvertPanel() {
             <PortalRecordCard title={channel.name}>
               <PortalRecordFields
                 fields={[
-                  { label: "Code", value: channel.code },
                   {
                     label: "Where",
                     value: platformOf(channel.kind).broadcast
@@ -544,23 +543,21 @@ export function JobAdvertPanel() {
             <PortalDesktopTable
               cols={
                 <colgroup>
+                  <col className="w-[22%]" />
                   <col className="w-[20%]" />
-                  <col className="w-[18%]" />
+                  <col className="w-[22%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[19%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[23%]" />
+                  <col className="w-[26%]" />
                 </colgroup>
               }
             >
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                  <th className="whitespace-nowrap p-2">Channel</th>
-                  <th className="whitespace-nowrap p-2">Where</th>
-                  <th className="whitespace-nowrap p-2">Code</th>
-                  <th className="whitespace-nowrap p-2">Apply line</th>
-                  <th className="whitespace-nowrap p-2">Status</th>
-                  <th className="whitespace-nowrap p-2">Post it</th>
+                  <th className="break-words p-2">Channel</th>
+                  <th className="break-words p-2">Where</th>
+                  <th className="break-words p-2">Apply line</th>
+                  <th className="break-words p-2">Status</th>
+                  <th className="break-words p-2">Post it</th>
                 </tr>
               </thead>
               <tbody>
@@ -573,7 +570,6 @@ export function JobAdvertPanel() {
                         <span className="mt-1 block text-[12px] text-amber-700">Broadcast — ask the admin</span>
                       ) : null}
                     </td>
-                    <td className="break-words p-2 font-mono text-xs text-slate-600">{channel.code}</td>
                     <td className="p-2">
                       <Input
                         aria-label={`Apply line for ${channel.name}`}
@@ -661,8 +657,8 @@ export function JobAdvertPanel() {
             >
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                  <th className="whitespace-nowrap p-2">Handset</th>
-                  <th className="whitespace-nowrap p-2">Forwards from</th>
+                  <th className="break-words p-2">Handset</th>
+                  <th className="break-words p-2">Forwards from</th>
                 </tr>
               </thead>
               <tbody>
@@ -772,9 +768,9 @@ export function JobAdvertPanel() {
             >
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                  <th className="whitespace-nowrap p-2">Group</th>
-                  <th className="whitespace-nowrap p-2">Candidates</th>
-                  <th className="whitespace-nowrap p-2">Last CV</th>
+                  <th className="break-words p-2">Group</th>
+                  <th className="break-words p-2">Candidates</th>
+                  <th className="break-words p-2">Last CV</th>
                 </tr>
               </thead>
               <tbody>

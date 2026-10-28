@@ -59,6 +59,7 @@ import {
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import { phxFieldClassName, phxLabelClassName } from "@/components/ui/form-tokens";
 import { adminChipDepthClassName, adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { cn } from "@/lib/utils";
 
 /** One row of the report's own file-list response — the CV file is the one whose kind is "cv". */
@@ -510,14 +511,16 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
  * fragment so the two <tr>s share the open state cleanly and the detail's colSpan stays in one place.
  */
 function FragmentRow({ row, isOpen, onToggle }: { row: ManagerCvEngagementRow; isOpen: boolean; onToggle: () => void }) {
+  const detailId = `manager-engagement-detail-${row.managerHrId}`;
   return (
     <>
       <tr
         className={cn(
           "cursor-pointer border-b border-slate-100 align-top transition-colors last:border-0 hover:bg-orange-50/40",
-          isOpen ? "bg-orange-50/50 shadow-[inset_3px_0_0_#f97316]" : "",
+          isOpen ? "bg-orange-50/50" : "",
         )}
         onClick={onToggle}
+        {...rowDetailToggleProps(detailId, isOpen)}
       >
         <td className="px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -542,11 +545,9 @@ function FragmentRow({ row, isOpen, onToggle }: { row: ManagerCvEngagementRow; i
         </td>
       </tr>
       {isOpen ? (
-        <tr className="border-b border-slate-100 bg-slate-50/60 last:border-0">
-          <td className="px-4 py-4" colSpan={7}>
-            <ManagerCandidateList candidates={row.candidates} />
-          </td>
-        </tr>
+        <TableRowDetail className="px-4 py-4" colSpan={7} id={detailId}>
+          <ManagerCandidateList candidates={row.candidates} />
+        </TableRowDetail>
       ) : null}
     </>
   );

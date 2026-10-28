@@ -1709,7 +1709,7 @@ function PipelineTab({
                       key={application.id}
                       className={
                         selectedId === application.id
-                          ? "bg-orange-50 shadow-[inset_3px_0_0_#f97316]"
+                          ? "bg-orange-50"
                           : "cursor-pointer transition-colors hover:bg-slate-50"
                       }
                       onClick={() => selectApplication(application.id)}
@@ -1725,7 +1725,7 @@ function PipelineTab({
                       <td className="px-3 py-2">
                         <StagePill tone={stageTone(application.stage)}>{applicationStageLabel(application.stage)}</StagePill>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2">
+                      <td className="break-words px-3 py-2">
                         <WaitingInStage application={application} asOf={asOf} />
                       </td>
                       <td className="break-words px-3 py-2 text-xs">
@@ -2122,9 +2122,8 @@ function RequisitionCard({
           run={run}
         />
       }
-      meta={requisition.jobTitle}
       status={<StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>}
-      title={requisition.requisitionCode}
+      title={requisition.jobTitle}
     >
       <PortalRecordFields
         fields={[
@@ -2495,8 +2494,7 @@ function RequisitionsTab({
             <PortalDesktopTable
               cols={
                 <colgroup>
-                  <col className="w-[14%]" />
-                  <col className="w-[26%]" />
+                  <col className="w-[40%]" />
                   <col className="w-[16%]" />
                   <col className="w-[24%]" />
                   <col className="w-[20%]" />
@@ -2505,7 +2503,6 @@ function RequisitionsTab({
             >
               <thead>
                 <tr>
-                  <th>Code</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th>Hiring manager</th>
@@ -2515,7 +2512,6 @@ function RequisitionsTab({
               <tbody>
                 {requisitions.map((requisition) => (
                   <tr className="transition-colors hover:bg-slate-50" key={requisition.id}>
-                    <td className="break-words px-3 py-2 text-xs font-bold tabular-nums text-slate-700">{requisition.requisitionCode}</td>
                     <td className="break-words px-3 py-2 font-semibold text-slate-950">{requisition.jobTitle}</td>
                     <td className="px-3 py-2">
                       <StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>
@@ -5693,7 +5689,7 @@ function CandidatesTab({
                           <StagePill tone={candidateStatusTone(candidate.status)}>
                             <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
                           </StagePill>
-                          <span className="whitespace-nowrap">{cairoDateTime(candidate.createdAt)}</span>
+                          <span className="break-words">{cairoDateTime(candidate.createdAt)}</span>
                           {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
                           {(() => {
                             const channel = candidateSourceChannel(candidate.source, candidate.sourceContext);
