@@ -17,6 +17,7 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { forecastRoiStatusLabel } from "@/lib/marketing-requests/roi-labels";
 import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-pharmacy-cross-use-flag";
 
@@ -213,7 +214,12 @@ export function MarketingRequestDecisionConfirmation({
                 ))}
               </div>
               {/* Desktop: table */}
-              <table className="mt-2 hidden w-full border-collapse text-sm md:table">
+              <table className="mt-2 hidden w-full table-fixed border-collapse text-sm md:table">
+                <colgroup>
+                  <col className="w-[60%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[25%]" />
+                </colgroup>
                 <thead>
                   <tr className="bg-slate-950 text-white">
                     <th className="px-3 py-2 text-left font-medium">Product</th>
@@ -224,7 +230,7 @@ export function MarketingRequestDecisionConfirmation({
                 <tbody>
                   {summary.products.map((product, index) => (
                     <tr key={`${product.name}-${index}`} className="border-b border-orange-100">
-                      <td className="px-3 py-2 text-slate-950">{product.name}</td>
+                      <td className="min-w-0 break-words px-3 py-2 text-slate-950">{product.name}</td>
                       <td className="px-3 py-2 text-right text-slate-600">{product.quantity}</td>
                       <td className="px-3 py-2 text-right text-slate-950">{egp(product.value)}</td>
                     </tr>
@@ -395,7 +401,7 @@ export function MarketingRequestDecisionConfirmation({
               value={
                 summary.roiCoverageRatio === null
                   ? null
-                  : `${Math.round(summary.roiCoverageRatio * 100)}%${summary.roiStatus ? ` · ${summary.roiStatus.replace(/_/g, " ")}` : ""}`
+                  : `${Math.round(summary.roiCoverageRatio * 100)}%${summary.roiStatus ? ` · ${forecastRoiStatusLabel(summary.roiStatus)}` : ""}`
               }
             />
             <DetailField label="Direct sales tracked" value={summary.trackDirectSales ? "Yes" : "No"} />
