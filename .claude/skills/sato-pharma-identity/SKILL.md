@@ -1,6 +1,6 @@
 ---
 name: sato-pharma-identity
-description: Sato Pharma's visual identity — the "SHARP" design system (navy ink, one brand blue, 1px rules, micro labels, 90° corners), the real logo files including the Arabic calligraphic wordmark (ساتو فارما), the certificate design (A4 landscape, Pinyon Script name, Arabic watermark), the business card (Montserrat), and the satopharma.com website tokens and components. Use whenever building or styling anything for Sato Pharma or the Future Talents Program — a certificate, PDF, poster, card, email, slide, web page, app screen or dashboard — in any repo.
+description: Sato Pharma's visual identity — the "SHARP" design system (navy ink, one brand blue, 1px rules, micro labels, 90° corners), the real logo files including the Arabic calligraphic wordmark (ساتو فارما), the certificate design (A4 landscape, Pinyon Script name, Arabic watermark), the business card (Montserrat), the satopharma.com website tokens and components, and the LinkedIn post identity (navy, white and flat gold, 1080×1350). Use whenever building or styling anything for Sato Pharma or the Future Talents Program — a certificate, PDF, poster, card, email, slide, LinkedIn or social post, web page, app screen or dashboard — in any repo.
 ---
 
 # Sato Pharma identity
@@ -37,12 +37,14 @@ assets/
   sato-pharma.png           dark mark, for white grounds       355×134
   sato-pharma-reverse.png   reverse mark, for navy grounds
   sato-pharma-arabic.png    real Arabic calligraphic wordmark   1136×842, cropped to its ink
+  sato-pharma-arabic-gold.png  the same wordmark flattened to gold #c8a462 (LinkedIn posts)
   website-logo.svg          the website header logo
   fonts/certificate-name.ttf  Pinyon Script (OFL) — the certificate name only
   fonts/sans-bold.ttf, sans-regular.ttf  Montserrat (OFL) — the business card
   fonts/OFL.txt, README.md  licence (must travel with the fonts) and the reasoning
 reference/certificate/      FTP-Portal src/lib at 8370eef — the PDF documents
 reference/website/          Sato-Pharma-Website at 1b83c5e — Tailwind + React components
+reference/linkedin/         the LinkedIn post template (post.html) and its layout proof
 ```
 
 Copy files out of this folder into the target repo. Never link to this folder from a project —
@@ -70,6 +72,7 @@ and flag it.
 | tint / tint line | `#f3f9fc` / `#b9d8e9` | blue-tinted chips and figure strips |
 | on navy | ink.rule `#26313b`, edge `#3a4652`, label `#6f7c86`, muted `#9aa6af`, text `#8d9aa4` |
 | status | success `#15803d`, warning `#b45309`, danger `#b91c1c` |
+| gold (LinkedIn only) | on white `#a07a3a`, on navy `#c8a462` — flat, like foil; see "LinkedIn post" |
 
 ## Typography
 
@@ -84,7 +87,8 @@ and flag it.
 
 1. Every corner is 90°. No `rounded-*`, no border-radius. (Only exception: the business card's contact discs.)
 2. No soft shadows, no glows, no gradient washes. Hierarchy comes from 1px rules and weight.
-3. One brand blue. Navy masses, white paper, hairline greys.
+3. One brand blue. Navy masses, white paper, hairline greys. (The LinkedIn post is the one place
+   gold replaces the blue accents — see below.)
 4. No circles as furniture — no pie charts, ring gauges or round seals. Seals are square tiles.
 5. A rule is measured to what sits on it (an underline is the word's width; a divider is the column's).
 6. Navy bands close with a 3px brand-blue **seam** and may carry the `.ink-grid` (white 3% hairlines, 56px).
@@ -150,6 +154,49 @@ edges, butted cards, crop marks. Code: `reference/certificate/business-card.ts`.
 It is copied from the FTP portal, so it expects a `Journey` object and reads assets from
 `public/` — adapt the input type and the asset paths, keep the geometry. Needs Node ≥ 22.6 to
 run `.ts` directly, or compile with the project's TypeScript.
+
+## LinkedIn post (1080×1350, 4:5) — approved 2026-10-29
+
+The owner's LinkedIn identity, approved on the Dr Salma Labib welcome post. **The look is FINAL**:
+each new post changes the words, the portrait and the portrait's geometry — never the palette, the
+gold or the layout. Template: `reference/linkedin/post.html` (every line to change is marked
+`EDIT`); `reference/linkedin/layout-proof.png` shows the grid with a placeholder where the photo goes
+(the real photo's white ground makes its box invisible, so the text never looks covered).
+
+**Anatomy**, top to bottom, on white paper with an 80px margin:
+1. Gold corner brackets (44px, 1.5px) inset 30px in all four corners — gold `#a07a3a` on white, `#c8a462` on navy.
+2. Head: the dark Sato mark top left, a grey micro label top right (`PEOPLE ANNOUNCEMENT`), a 1px grey rule.
+3. Left column, 372px: a gold micro eyebrow (`WELCOME TO THE TEAM`), the name at 100px — first line
+   regular, surname bold, each line within about 460px — then a gold 1px rule ending in a small gold
+   lozenge, then one sentence at 24px naming Sato Pharma and the person, the name in bold ink.
+4. Right: the portrait standing on the band — a chest-up photo on a white studio ground whose bottom
+   edge cuts through the body, placed so its bottom edge is the band's top edge.
+5. Navy band, 310px, closed at the top by a 3px gold seam, with the 56px ink grid at 2.5%: two figures
+   (gold micro label over a 40px white bold value, a 1px divider between them), a hairline, then
+   `SATO PHARMA` and `WWW.SATOPHARMA.COM`. The Arabic wordmark in gold at 16% sits on the right,
+   236px tall, its right edge on the trim (never cropped).
+
+**Gold is flat ink, never metal**: no gradient, sheen, glint, glow or texture — exactly as a foil
+stamp prints. Gold replaces the blue accents on this piece only; the logo keeps its own colours.
+
+**Making a new post:**
+1. Copy into one working folder: `post.html`; `assets/sato-pharma.png`; `assets/sato-pharma-arabic-gold.png`;
+   `assets/fonts/sans-regular.ttf` and `sans-bold.ttf` into `fonts/`.
+2. Prepare the portrait as `portrait.png`: lift only the near-white ground to pure white so the photo's
+   edges vanish — Python/PIL: `lut=[v if v<240 else min(255, round(240+(v-240)*1.5)) for v in range(256)]`,
+   then `im.point(lut*3)`. The subject (all below 240) is untouched. Never retouch the person.
+3. Fit the portrait (`.portrait` left/width): `left:330px; width:800px` suits a near-square crop. Then
+   check, on the render: the body clears the text column's right edge (x 452) by 24px or more at every
+   height the text occupies; the subject stays inside the right trim; the head sits below the head rule.
+4. Render at 2× with Edge (no Chrome needed):
+   `msedge --headless=new --disable-gpu --hide-scrollbars --user-data-dir=<folder>/.edge --force-device-scale-factor=2 --window-size=1080,1350 --virtual-time-budget=3000 --screenshot=<folder>/post.png file:///<folder>/post.html`
+   → 2160×2700 PNG.
+5. Look at the PNG, and measure: the right trim column and the photo's edges must read pure white
+   (255), and no sentence may end on a single word (`text-wrap: pretty` is on the lede).
+
+**Words**: only facts that are on record (name, title, date — read the date from Phoenix, never guess);
+never invent a person's background. The caption goes with the picture, in English, a few short
+paragraphs and a handful of hashtags (`#SatoPharma` first). Never mention how the post was made.
 
 ## Licences
 
