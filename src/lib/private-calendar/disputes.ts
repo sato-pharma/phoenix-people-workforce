@@ -13,7 +13,7 @@ import { storeDisputeCenterAttachments } from "@/lib/dispute-center/attachment-s
 import { recordCaseEvent } from "@/lib/dispute-center/events.ts";
 import { tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
-import type { PrivateCalendarSource } from "@/lib/private-calendar/logic";
+import { privateCalendarHrIdPattern, type PrivateCalendarSource } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Private Calendar data-accuracy disputes. An employee flags that what the
@@ -196,7 +196,7 @@ export async function listMyPrivateCalendarDataDisputes(access: AccessContext): 
   const { data, error } = await getSupabaseAdmin()
     .from("private_calendar_data_disputes")
     .select(DISPUTE_COLUMNS)
-    .eq("employee_hr_id", employeeHrId)
+    .ilike("employee_hr_id", privateCalendarHrIdPattern(employeeHrId))
     .order("created_at", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as DisputeRow[]).map(mapDisputeRow);
@@ -230,7 +230,7 @@ export async function listDisputesForEmployee(input: {
   const { data, error } = await getSupabaseAdmin()
     .from("private_calendar_data_disputes")
     .select(DISPUTE_COLUMNS)
-    .eq("employee_hr_id", input.employeeHrId)
+    .ilike("employee_hr_id", privateCalendarHrIdPattern(input.employeeHrId))
     .gte("dispute_date", input.start)
     .lte("dispute_date", input.end);
   if (error) throw error;

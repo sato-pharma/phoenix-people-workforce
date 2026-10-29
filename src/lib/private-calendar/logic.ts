@@ -261,6 +261,16 @@ export function privateCalendarHrIdKey(value: string | null | undefined) {
   return normalizeHrIdForAccess(value) ?? "";
 }
 
+/**
+ * An HR id as a case-blind PostgREST `ilike` pattern, with `%`, `_` and `\` escaped so it matches
+ * that one id and nothing else. Review requests are written with the signed-in login's spelling
+ * (`pd-0026`) while the calendar reads the employee master's (`PD-0026`), so an `.eq` between
+ * the two found no request at all — every badge, status and correction was silently missing.
+ */
+export function privateCalendarHrIdPattern(value: string) {
+  return value.trim().replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
   const a = privateCalendarHrIdKey(left);
   const b = privateCalendarHrIdKey(right);

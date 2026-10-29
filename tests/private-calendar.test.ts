@@ -13,6 +13,7 @@ import {
   mapExcuseRowToPrivateCalendarItem,
   mapVacationRowToPrivateCalendarItem,
   PRIVATE_CALENDAR_PAGE_SIZE,
+  privateCalendarHrIdPattern,
   readAllPrivateCalendarRows,
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
@@ -311,6 +312,20 @@ export async function runPrivateCalendarTests() {
       withoutCorrectedDayFindings(repDay, buildAcceptedCorrectionItems([dispute("d-3", "Field day", "pending_review")])).length,
       repDay.length,
       "a pending request clears nothing",
+    );
+  }
+
+  {
+    // Review requests are stored with the login's spelling (pd-0026) and the calendar asks with the
+    // employee master's (PD-0026): an exact match found none of the 31 on production (2026-10-29).
+    assert.equal(privateCalendarHrIdPattern(" PD-0026 "), "PD-0026", "the pattern is the trimmed id itself");
+    assert.equal(privateCalendarHrIdPattern("A_1%\\"), "A\\_1\\%\\\\", "wildcards are escaped, so the pattern matches one id only");
+    const disputesSource = readFileSync("src/lib/private-calendar/disputes.ts", "utf8");
+    assert.doesNotMatch(disputesSource, /\.eq\(\s*"employee_hr_id"/, "a review request is never read by an exact, case-sensitive HR id");
+    assert.equal(
+      (disputesSource.match(/\.ilike\("employee_hr_id", privateCalendarHrIdPattern\(/g) ?? []).length,
+      2,
+      "the calendar's read and the employee's own list both match the HR id whatever its case",
     );
   }
 
