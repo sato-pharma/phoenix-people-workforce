@@ -414,9 +414,10 @@ export function VisitLogForm({
   const router = useRouter();
   const [visitType, setVisitType] = useState<LogVisitType>(initialVisitType);
   const [unplannedReason, setUnplannedReason] = useState(initialReason ?? "");
-  // The reason is OPTIONAL (owner, 2026-10-29): it was asked before this form, so the box starts closed
-  // even when he left it blank — he opens it with "Add a reason" if he wants to write one.
-  const [reasonOpen, setReasonOpen] = useState(false);
+  // The reason is OPTIONAL, never removed (owner, 2026-10-29: "I told you I wanted it optional. You removed
+  // it.") — the question stays on screen, open, whenever no reason is written yet, marked "(optional)".
+  // Only a reason he already wrote folds behind "Change the reason".
+  const [reasonOpen, setReasonOpen] = useState(initialVisitType === "out_of_plan" && !initialReason?.trim());
   // A district manager entering starts on Double visit: his "My own visit" is closed (owner, 2026-10-16).
   // Not on a territory with no rep, where Double visit is closed too — the step then says where his
   // visit goes instead of pre-picking one the save would refuse.
