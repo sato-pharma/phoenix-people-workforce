@@ -207,6 +207,12 @@ const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: str
     chip: "border-l-[3px] border-l-slate-500 bg-slate-100",
     swatch: "bg-slate-500",
   },
+  // A day an admin verified on the employee's review request (2026-10-29) — lime, a hue no source and no exception wears.
+  correction: {
+    accent: "border-l-lime-700",
+    chip: "border-l-[3px] border-l-lime-700 bg-lime-50",
+    swatch: "bg-lime-700",
+  },
 };
 
 function kindAccentColor(kind: PrivateCalendarActivityKind) {
