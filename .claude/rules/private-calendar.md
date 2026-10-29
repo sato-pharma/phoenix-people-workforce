@@ -26,6 +26,7 @@ Moved from `time-off` on 2026-10-26, word for word, when that module's pointer p
 ### Production hooks (moved from AGENTS.md §2.3)
 
 - 🔒 **AN APPROVED PLAN COVERS NO DAY IN THE NO-ACTIVITY ENGINE** (owner, 2026-10-12). `isCovered` in `src/lib/private-calendar/logic.ts` names no plan: a day whose only entry is an approved plan reads **No Activity Recorded**, plus an `info` note **"Planned, but nothing recorded"** naming what was planned — the comparison beside the finding, never instead of it. The flag is `plannedActivityIsRecordedNowhereElse` (renamed from `plannedActivityCoversTheDay`, which is how a display fact became a money decision) and it is DISPLAY only. Account: `docs/private-calendar-plan-is-never-coverage.md`. Pinned by `tests/private-calendar-plan-source.test.ts`.
+- 🔒 **AN OUTSTATION TRIP COVERS EVERY DAY IT SPANS** (owner, 2026-10-29: "if their is an expense it must automatic appeared in his private calendar"). `src/lib/private-calendar/outstation-trip-items.ts` reads the SAME fold deductions uses (`loadOutstationTripDays`, any trip not rejected, cancelled or withdrawn — a submitted claim counts), in all three passes of `service.ts`; never a second state rule. Pinned by `tests/private-calendar-outstation-trips.test.ts`.
 
 ### Private calendar sources
 

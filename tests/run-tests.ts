@@ -2787,6 +2787,7 @@ import { runPayrollCopilotSettlementSlotSafetyTests } from "./payroll-copilot-se
 import { runPrivateCalendarDoubleVisitDaysTests } from "./private-calendar-double-visit-days.test.ts";
 import { runDoubleVisitReseatedAccountOverrideTests } from "./double-visit-reseated-account-override.test.ts";
 import { runPrivateCalendarPlanSourceTests } from "./private-calendar-plan-source.test.ts";
+import { runPrivateCalendarOutstationTripsTests } from "./private-calendar-outstation-trips.test.ts";
 import { runPrivateCalendarsAdminAnyEmployeeTests } from "./private-calendars-admin-any-employee.test.ts";
 import { runStoreSplitDriftTests } from "./store-split-drift.test.ts";
 import { runOfficeAllocationDriftTests } from "./office-allocation-drift.test.ts";
@@ -10987,6 +10988,10 @@ await runTest(
 await runTest(
   "an APPROVED weekly plan covers a private-calendar day only where Phoenix records that activity nowhere else (Travel, Admin, Meeting, Training, Event, Other), while a planned Field, Double Visit, Office, Vacation, Excuse or National Vacation day with nothing recorded keeps its exception, no unapproved plan is read at all, a plan never silences a Late punch, and both the calendar and the company no-activity engine Deductions reads load the same source",
   runPrivateCalendarPlanSourceTests,
+);
+await runTest(
+  "every outstation trip claimed in Phoenix Expenses that is not rejected, cancelled or withdrawn puts each of its days on the private calendar and clears No Activity Recorded, a submitted claim included, only the asked people's trips are read whatever case their HR id is stored in, and the workspace, the company no-activity engine Deductions reads and the day evidence a reviewer reads all load the same trips",
+  runPrivateCalendarOutstationTripsTests,
 );
 await runTest(
   "/admin/private-calendars reaches EVERY employee — no role shortlist narrows the picker, all six filters (name or HR id, line, area, department, title, employment status) are read, rendered, applied and carried on the row links, the selected employee resolves against the whole directory so a filter change cannot break an open calendar link, a failed read says so, and the company-wide table is table-fixed with a colgroup that merges its middle columns on a phone",
