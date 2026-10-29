@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  Sato Pharma LinkedIn post: people announcement, 1080x1350 CSS (4:5), rendered at 2x = 2160x2700.
+  Approved by the owner on 2026-10-29 (the Dr Salma Labib welcome post). The look is FINAL: change the
+  words, the portrait and the portrait's geometry; never the palette, the gold or the layout.
+  Lives in a folder holding: post.html, portrait.png, sato-pharma.png, sato-pharma-arabic-gold.png,
+  fonts/sans-regular.ttf, fonts/sans-bold.ttf (all copied from the skill; see SKILL.md, "LinkedIn post").
+  Every line to edit is marked EDIT.
+-->
+<title>Welcome Dr Salma Labib</title><!-- EDIT -->
+<style>
+  @font-face { font-family: "Sans"; font-weight: 400; src: url("fonts/sans-regular.ttf") format("truetype"); }
+  @font-face { font-family: "Sans"; font-weight: 700; src: url("fonts/sans-bold.ttf") format("truetype"); }
+
+  :root {
+    --ink: #111820;
+    --body: #45515a;
+    --faint: #8a959d;
+    --line: #dde4e8;
+    /* flat foil gold: a deeper one that reads on white, a lighter one that reads on navy */
+    --gold: #a07a3a;
+    --gold-on-navy: #c8a462;
+    --navy-rule: #26313b;
+    --navy-edge: #3a4652;
+    --navy-muted: #9aa6af;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1350px; background: #fff; }
+  body { font-family: "Sans", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+
+  .page { position: relative; width: 1080px; height: 1350px; overflow: hidden; background: #fff; }
+
+  .micro {
+    font-weight: 700; font-size: 15px; letter-spacing: 0.2em; text-transform: uppercase; line-height: 1;
+  }
+
+  /* gold corner brackets, inset 30px, as on engraved stationery */
+  .corner { position: absolute; width: 44px; height: 44px; z-index: 4; }
+  .corner.tl { left: 30px; top: 30px; border-left: 1.5px solid var(--gold); border-top: 1.5px solid var(--gold); }
+  .corner.tr { right: 30px; top: 30px; border-right: 1.5px solid var(--gold); border-top: 1.5px solid var(--gold); }
+  .corner.bl { left: 30px; bottom: 30px; border-left: 1.5px solid var(--gold-on-navy); border-bottom: 1.5px solid var(--gold-on-navy); }
+  .corner.br { right: 30px; bottom: 30px; border-right: 1.5px solid var(--gold-on-navy); border-bottom: 1.5px solid var(--gold-on-navy); }
+
+  /* head */
+  .mark { position: absolute; left: 66px; top: 62px; height: 58px; }
+  .head-label { position: absolute; right: 80px; top: 84px; color: var(--faint); }
+  .head-rule { position: absolute; left: 80px; right: 80px; top: 156px; height: 1px; background: var(--line); }
+
+  /* portrait stands on the band: its bottom edge is the band's top edge.
+     EDIT left/width to the photo's crop (values below suit a near-square chest-up crop, 1122x1130).
+     Checks: the body clears the lede column (right edge x 452) by 24px or more at every height the
+     text occupies, the subject stays inside the right trim, and the head sits below the head rule. */
+  .portrait { position: absolute; left: 330px; width: 800px; bottom: 310px; z-index: 1; }
+
+  /* text column */
+  .copy { position: absolute; left: 80px; top: 296px; width: 372px; z-index: 2; }
+  .eyebrow { color: var(--gold); }
+  .name { margin-top: 30px; white-space: nowrap; color: var(--ink); font-size: 100px; line-height: 0.98; letter-spacing: -0.015em; }
+  .name .first { font-weight: 400; display: block; }
+  .name .last { font-weight: 700; display: block; }
+  .divider { margin-top: 40px; display: flex; align-items: center; gap: 10px; }
+  .divider .rule { flex: 1; height: 1px; background: var(--gold); }
+  .divider .lozenge { width: 7px; height: 7px; background: var(--gold); transform: rotate(45deg); flex: none; }
+  .lede { margin-top: 30px; color: var(--body); font-size: 24px; line-height: 1.5; text-wrap: pretty; }
+  .lede strong { color: var(--ink); font-weight: 700; }
+
+  /* navy band */
+  .band {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 310px; background: var(--ink);
+    border-top: 3px solid var(--gold-on-navy); overflow: hidden; z-index: 3;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  /* the calligraphy as a faint gold stamp; its right edge (where both words begin) lies on the trim */
+  .watermark { position: absolute; right: 0; top: 34px; height: 236px; opacity: 0.16; }
+  .facts { position: absolute; left: 80px; right: 80px; top: 62px; display: flex; }
+  .fact { position: relative; }
+  .fact + .fact { margin-left: 56px; padding-left: 56px; border-left: 1px solid var(--navy-edge); }
+  .fact .label { color: var(--gold-on-navy); }
+  .fact .value { margin-top: 18px; color: #fff; font-weight: 700; font-size: 40px; line-height: 1; letter-spacing: -0.005em; }
+  .base { position: absolute; left: 80px; right: 80px; bottom: 58px; }
+  .base-rule { height: 1px; background: var(--navy-rule); }
+  .base-row { margin-top: 26px; display: flex; justify-content: space-between; }
+  .base-row .l { color: #fff; }
+  .base-row .r { color: var(--navy-muted); }
+</style>
+</head>
+<body>
+<div class="page">
+  <img class="mark" src="sato-pharma.png" alt="Sato Pharma">
+  <div class="micro head-label">People announcement</div><!-- EDIT: the kind of post -->
+  <div class="head-rule"></div>
+
+  <img class="portrait" src="portrait.png" alt="Dr Salma Labib"><!-- EDIT -->
+
+  <div class="copy">
+    <div class="micro eyebrow">Welcome to the team</div><!-- EDIT -->
+    <!-- EDIT: first line regular, surname bold; keep each line within ~460px at 100px -->
+    <h1 class="name"><span class="first">Dr Salma</span><span class="last">Labib</span></h1>
+    <div class="divider"><span class="rule"></span><span class="lozenge"></span></div>
+    <!-- EDIT: one sentence naming Sato Pharma and the person; only facts that are on record -->
+    <p class="lede">Sato Pharma is honored to welcome <strong>Dr Salma Labib</strong>, who joins us to lead the training and development of our people.</p>
+  </div>
+
+  <div class="band">
+    <img class="watermark" src="sato-pharma-arabic-gold.png" alt="">
+    <div class="facts">
+      <div class="fact">
+        <div class="micro label">Joined</div><!-- EDIT -->
+        <div class="value">25 October 2026</div><!-- EDIT -->
+      </div>
+      <div class="fact">
+        <div class="micro label">Position</div><!-- EDIT -->
+        <div class="value">Training Manager</div><!-- EDIT -->
+      </div>
+    </div>
+    <div class="base">
+      <div class="base-rule"></div>
+      <div class="base-row">
+        <div class="micro l">Sato Pharma</div>
+        <div class="micro r">www.satopharma.com</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+</div>
+</body>
+</html>
