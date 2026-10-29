@@ -6,6 +6,8 @@ import ExcelJS from "exceljs";
 import { dosesPerRun, type RunGeometry, yieldForRuns } from "../src/lib/production-planning/geometry.ts";
 import {
   formatQty,
+  isBoughtBySato,
+  type MaterialSupplier,
   MEASURE_UNITS,
   MEASURE_UNITS_PER_LARGE,
   parsePct,
@@ -14,6 +16,7 @@ import {
 } from "../src/lib/production-planning/rules.ts";
 import {
   computePlan,
+  effectiveSupplier,
   materialsForProduct,
   otherProductsUsingMaterial,
   type LoadedComposition,
@@ -66,6 +69,7 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 const MIGRATION = "supabase/migrations/20261020200000_production_planning_royanoxicam.sql";
 const FACTORY_MOVE = "supabase/migrations/20261021004800_production_planning_royanoxicam_egyphar.sql";
 const NO_SAMPLES = "supabase/migrations/20261024150548_prodplan_products_default_sample_units.sql";
+const SUPPLIER_LINK = "supabase/migrations/20261029000100_prodplan_product_materials_supplier.sql";
 const WORKSPACE_SCREEN = "src/components/production-planning/production-planning-workspace.tsx";
 
 const EGYPHAR = "loc-egyphar";
@@ -215,6 +219,7 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
       const row = compositions.find((candidate) => candidate.materialId === item.id) ?? null;
       return {
         alsoUsedByProductIds: otherProductsUsingMaterial(data, "prod-royanoxicam", item.id).map((p) => p.id),
+        supplier: effectiveSupplier(data, "prod-royanoxicam", item.id, row),
         basePerDisplay: (item.basePerDisplay / QTY_SCALE).toString(),
         baseUnit: item.baseUnit,
         code: item.code,
@@ -285,6 +290,19 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
       updatedByLogin: null,
     },
   };
+}
+
+/** One exported component of the screen, up to the next export — enough to say what it renders. */
+function exportedBody(source: string, name: string): string {
+  const start = source.indexOf(`export function ${name}(`);
+  assert.ok(start >= 0, `the screen should export ${name}`);
+  const next = source.indexOf("\nexport function ", start + 1);
+  return source.slice(start, next < 0 ? undefined : next);
+}
+
+/** The planning data with the product link naming who brings a material that has no line. */
+function withLinkSuppliers(links: [string, MaterialSupplier][]): ProductionPlanningData {
+  return { ...planningData(), linkSupplierByProductId: new Map([["prod-royanoxicam", new Map(links)]]) };
 }
 
 /** The row in column A carrying exactly this label. */
@@ -565,5 +583,103 @@ export async function runProductionPlanningRoyanoxicamTests() {
     screen,
     /setSampleUnits\(workspace\.plan\.sampleUnits\)/,
     "the form takes its samples from the plan it is showing, so a product switch cannot carry them over",
+  );
+  // ── Sato supplies four things, and the foil is one of them ──────────────────────────────────────
+  //
+  // The owner, 2026-10-29: "In Roya Noxicam tablet, we only supply the active material, Laura
+  // Noxicam boxes, pamphlet, and aluminium foil only. We don't supply inactive materials." The foil
+  // still has no line — its weight per box is his to give ("leave empty for now") — so who brings it
+  // lives on the product link, `prodplan_product_materials.supplier`. 🔴 A line in force always wins.
+  const ONE_BATCH = { mode: "total_boxes", productId: "prod-royanoxicam", requestedQty: "10000", sampleUnits: "0" };
+  const linked = withLinkSuppliers([
+    [BLISTER_ALU.id, "sato"],
+    // A link that disagrees with a line, to prove the line wins.
+    [LACTOSE.id, "sato"],
+  ]);
+  const linkedPlan = computePlan(linked, ONE_BATCH);
+  const foil = rowOf(linkedPlan, "BLISTER_ALU_ROYANOXICAM");
+  assert.equal(foil.supplier, "sato", "🔴 the foil reads Sato's — the link answers for a material with no line");
+  assert.equal(
+    foil.excludedReason,
+    "no_composition",
+    "and it is still a gap, never a zero: the amount per box has not been entered",
+  );
+  assert.equal(foil.contributesToBuyList, false, "so nothing is bought for it until he gives the amount");
+  assert.equal(
+    rowOf(linkedPlan, "LACTOSE_MONO_200").supplier,
+    "factory",
+    "🔴 a line in force always wins over the link — the lactose stays the factory's",
+  );
+  assert.equal(rowOf(linkedPlan, "LACTOSE_MONO_200").excludedReason, "factory_supplies");
+  assert.equal(effectiveSupplier(linked, "prod-royanoxicam", BLISTER_ALU.id, null), "sato");
+  assert.equal(effectiveSupplier(linked, null, BLISTER_ALU.id, null), null, "no product, no link to read");
+  assert.equal(
+    effectiveSupplier(planningData(), "prod-royanoxicam", BLISTER_ALU.id, null),
+    null,
+    "no link at all still reads nobody has said",
+  );
+
+  // The water and the alcohol are the factory's and never get a line (Q.S. — they evaporate). A
+  // factory link with no line is the factory's material, not a gap in the formula.
+  const qsPlan = computePlan(withLinkSuppliers([[BLISTER_ALU.id, "factory"]]), ONE_BATCH);
+  assert.equal(
+    rowOf(qsPlan, "BLISTER_ALU_ROYANOXICAM").excludedReason,
+    "factory_supplies",
+    "a factory material with no line reads as the factory's, never as formula not entered",
+  );
+
+  // The workspace carries the same answer, so the screen can sort his materials from the factory's.
+  const linkedWire = workspaceFor(linked, linkedPlan);
+  assert.equal(linkedWire.materials.find((item) => item.code === "BLISTER_ALU_ROYANOXICAM")?.supplier, "sato");
+  assert.equal(linkedWire.materials.find((item) => item.code === "LACTOSE_MONO_200")?.supplier, "factory");
+
+  // ── The Cost and Stock tabs list only what Sato buys ───────────────────────────────────────────
+  // He kept the formula complete, so Formula and Planner still show the factory's lines; only the
+  // money and the store leave them out.
+  assert.equal(isBoughtBySato("factory"), false, "the factory's materials leave the Cost and Stock tabs");
+  assert.equal(isBoughtBySato("sato"), true);
+  assert.equal(isBoughtBySato(null), true, "nobody has said is never hidden — it might be his");
+  assert.equal(isBoughtBySato("shared_unsettled"), true, "and an unsettled split stays listed until it is settled");
+  assert.match(
+    screen,
+    /workspace\.materials\.filter\(\(material\) => isBoughtBySato\(material\.supplier\)\)/,
+    "the view keeps exactly the materials Sato buys",
+  );
+  for (const tab of ["StockTab", "CostTab"]) {
+    const body = exportedBody(screen, tab);
+    assert.match(
+      body,
+      /const \{ data, factoryHidden \} = satoBoughtView\(workspace\)/,
+      `🔴 ${tab} reads the Sato-bought view, never the whole formula`,
+    );
+    assert.match(
+      body,
+      /<FactoryHiddenNote count=\{factoryHidden\} \/>/,
+      `and ${tab} says how many it left out — a short list is never silent`,
+    );
+  }
+
+  // The rows the link answers for, off the migration itself.
+  const supplierSql = stripSqlComments(readFileSync(SUPPLIER_LINK, "utf8").replace(/\r\n/g, "\n"));
+  assert.match(supplierSql, /add column if not exists supplier text null/, "the link gains a nullable supplier");
+  assert.match(
+    supplierSql,
+    /check \(supplier is null or supplier in \('sato', 'factory', 'shared_unsettled'\)\)/,
+    "and takes the same three suppliers a formula line does",
+  );
+  assert.match(
+    supplierSql,
+    /set supplier = 'sato'[\s\S]*?p\.code = 'ROYANOXICAM'[\s\S]*?m\.code = 'BLISTER_ALU_ROYANOXICAM'/,
+    "the foil is Sato's",
+  );
+  assert.match(
+    supplierSql,
+    /set supplier = 'factory'[\s\S]*?p\.code = 'ROYANOXICAM'[\s\S]*?m\.code in \('PURIFIED_WATER', 'ETHYL_ALCOHOL'\)/,
+    "the water and the alcohol are the factory's",
+  );
+  assert.equal(
+    /prodplan_compositions|qty_per_basis/.test(supplierSql),
+    false,
+    "and no formula line is written — the foil's amount is still his to give",
   );
 }

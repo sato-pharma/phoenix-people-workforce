@@ -198,7 +198,9 @@ export function resolveMaterialRequirement(
       balanceAfterRunsMicro: null,
       coverRunsMicro: null,
       contributesToBuyList: false,
-      excludedReason: "no_composition",
+      // The factory's own Q.S. materials (Royanoxicam's water and alcohol) never get a line, and are
+      // not a gap: they are simply not his to buy.
+      excludedReason: input.supplier === "factory" ? "factory_supplies" : "no_composition",
     };
   }
 

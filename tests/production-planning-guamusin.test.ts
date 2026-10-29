@@ -273,6 +273,7 @@ function workspaceFor(data: ProductionPlanningData, plan: WirePlan): WireWorkspa
         // Through the real helper, not a hard-coded `[]`: a fixture that asserted "nothing else uses
         // it" would be the one shape this field exists to disprove.
         alsoUsedByProductIds: otherProductsUsingMaterial(data, "prod-guamusin", item.id).map((p) => p.id),
+        supplier: composition?.supplier ?? null,
         basePerDisplay: (item.basePerDisplay / QTY_SCALE).toString(),
         baseUnit: item.baseUnit,
         code: item.code,

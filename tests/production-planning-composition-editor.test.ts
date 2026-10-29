@@ -205,13 +205,17 @@ export function runProductionPlanningCompositionEditorTests() {
     "🔴 the field opens on the DISPLAY figure, never on the stored base one",
   );
   assert.match(openLine, /setLineBasis\(line\?\.basis \?\? "per_dose"\)/, "a new line opens on the common basis");
-  assert.match(openLine, /setLineSupplier\(line\?\.supplier \?\? "factory"\)/, "and on the common supplier");
+  assert.match(
+    openLine,
+    /setLineSupplier\(line\?\.supplier \?\? material\.supplier \?\? "factory"\)/,
+    "and on who the product link says brings it, else the common supplier",
+  );
 
   // ── The selects offer exactly what the service accepts ─────────────────────────────────────────
 
   assert.match(
     workspace,
-    /import \{ COMPOSITION_BASES, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS \} from "@\/lib\/production-planning\/rules"/,
+    /import \{[^}]*\bCOMPOSITION_BASES\b[^}]*\bMATERIAL_SUPPLIERS\b[^}]*\bSETTLED_SUPPLIERS\b[^}]*\} from "@\/lib\/production-planning\/rules"/,
     "🔴 the enums come from the module's own kernel — a retyped list is how a select and the " +
       "table's own CHECK start to disagree",
   );

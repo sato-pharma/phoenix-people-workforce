@@ -103,6 +103,12 @@ export type WireMaterial = {
    * list that is wrong in a way that reads as right. Empty for a material only this product uses.
    */
   alsoUsedByProductIds: string[];
+  /**
+   * Who brings it for THIS product: the formula line in force, else the product link's own supplier,
+   * else null (nobody has said). The Cost and Stock tabs list only what Sato buys
+   * (`isBoughtBySato`), so Royanoxicam's foil — Sato's, with no line yet — must read Sato here.
+   */
+  supplier: WireSupplier | null;
   composition: {
     basis: WireBasis;
     qtyPerBasis: string;
