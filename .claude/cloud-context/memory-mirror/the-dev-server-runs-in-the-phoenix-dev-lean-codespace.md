@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 582c1791-304f-48de-a31d-b6f360f331b9
-  modified: 2026-10-29T01:22:01.764Z
+  modified: 2026-10-29T19:06:06.989Z
 ---
 
 Since 2026-10-29 (~03:46 Cairo) the owner's GitHub account has ONE Codespace, display name **phoenix dev lean**
@@ -20,8 +20,14 @@ HTTP 200 "Command Center"; server resident 2.7 GB; lowest free 3.9 GB of 7.9; la
   so it stops at the Pro quota (180 core-hours, so about 90 hours on 2 cores). Stop it after use: `gh codespace stop -c <name>`.
 - **ssh trap:** `gh codespace ssh` offers `~/.ssh/id_ed25519`, which is NOT on his GitHub account → "Permission denied
   (publickey)". Always pass `-- -i ~/.ssh/codespaces.auto -o IdentitiesOnly=yes` before the remote command.
+- **fetch trap (2026-10-29 ~22:10 Cairo):** the plain ssh shell has no `GITHUB_TOKEN`, so `git fetch` dies with "could
+  not read Username". Run git inside `bash -lc "…"` — the login shell loads the token and fetch works.
 - **Settings:** `/workspaces/phoenix-people-workforce/.env.local` is the STAGING copy from `_wt-dev-lean-test`
   (outbound keys blank, `PHOENIX_EMAIL_FORCE_TESTING=true`). It persists while the Codespace exists.
+  🔴 On 2026-10-29 it ran on PRODUCTION settings for one calendar check (his word, 19:38 Cairo). It was put back
+  to staging, and the production copy was deleted on his word at ~21:35 Cairo: no env file in the Codespace names
+  `ozucdzovmcqvepbozvqf` now. Before any start, read which ref `.env.local` names (`grep NEXT_PUBLIC_SUPABASE_URL`);
+  never bring production settings in without his word.
 - **Recipe:** start it → ssh: `setsid nohup node scripts/dev-server.mjs --lean --port 3000 > /tmp/dev.log 2>&1 < /dev/null &`
   → locally `gh codespace ports forward 3000:3100 -c <name>` (backgrounded; 3100 stays out of the restart script's
   3000-3010 hold) → browser pane `http://localhost:3100/api/dev-auth?role=Super%20Admin&next=/admin`.

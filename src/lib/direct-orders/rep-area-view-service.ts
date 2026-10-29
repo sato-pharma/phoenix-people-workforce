@@ -1,6 +1,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isDirectOrderOnRepLine, lineHasDirectOrders } from "@/lib/direct-orders/line-scope";
 import { forbiddenError } from "@/lib/http/api-errors";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -24,7 +25,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //   · only orders already COUNTED TO SALES — `status = 'approved'` AND a Finance-booked
 //     `sales_month` (owner, 2026-09-24: "only counted orders"), from 2026-07 onward;
 //   · scoped to the rep's own area(s) via the pharmacy's `area_code`, the same territory
-//     idea as the ROI Tracker's area route.
+//     idea as the ROI Tracker's area route;
+//   · AND to the rep's own LINE via the order's `line` (owner, 2026-10-29). An area is shared by
+//     every line, so the area alone showed Pedia reps 40 Anti Infective orders and Anti Infective
+//     reps 20 Pedia ones; a CNS rep — whose line runs no direct orders — saw 87 and now sees none.
 //
 // WHICH areas are "the rep's own" (owner, 2026-09-25 — "all the rep's areas", matching Sales vs
 // Target): their `employees.area_id`, PLUS every area their own organogram REP seat covers, with
@@ -66,6 +70,8 @@ export type RepAreaDirectOrderRow = {
 
 export type RepAreaDirectOrdersReport = {
   rows: RepAreaDirectOrderRow[];
+  /** True when the rep's line runs no direct orders (CNS) — the page sends him home. */
+  lineRunsNoDirectOrders?: boolean;
   /** The viewer's own area name(s), for the header. */
   areaNames: string[];
   totalUnits: number;
@@ -196,6 +202,7 @@ type RequestRow = {
   collection_date: string | null;
   decided_at: string | null;
   created_at: string | null;
+  line: string | null;
   product_code: string | null;
   product_name: string | null;
   qty: number | string | null;
@@ -295,6 +302,14 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
     seatAreas,
   };
 
+  // The rep's own line bounds what he sees (owner, 2026-10-29). A line that runs no direct orders
+  // (CNS) sees nothing and is sent home; a rep with no line on record sees nothing rather than
+  // every line's orders in his area — fail closed.
+  const repLine = scope.lineCode ?? viewer?.lineName ?? null;
+  if (!lineHasDirectOrders(repLine)) {
+    return { ...EMPTY, lineRunsNoDirectOrders: Boolean(String(repLine ?? "").trim()) };
+  }
+
   // Every code the rep could cover in any month this window shows; each order is then checked
   // against its OWN counted month below, so a merge never reaches back before it starts.
   const { year, month } = currentCairoDateParts();
@@ -372,7 +387,7 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
       const { data, error } = await supabase
         .from("direct_order_requests")
         .select(
-          "id, pharmacy_id, sales_month, collection_date, decided_at, created_at, product_code, product_name, qty, sales_value",
+          "id, pharmacy_id, sales_month, collection_date, decided_at, created_at, line, product_code, product_name, qty, sales_value",
         )
         .eq("status", "approved")
         .not("sales_month", "is", null)
@@ -384,8 +399,10 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
       return (data ?? []) as RequestRow[];
     })
   ).flat();
-  // Each order stays only if its pharmacy's area was the rep's in the month it was COUNTED.
+  // Each order stays only if it is the rep's own LINE and its pharmacy's area was the rep's in the
+  // month it was COUNTED. Without the line test another line's orders in the same area leak in.
   const requests = fetched.filter((request) => {
+    if (!isDirectOrderOnRepLine(request.line, repLine)) return false;
     const pharmacy = pharmacyById.get(request.pharmacy_id);
     return Boolean(pharmacy && request.sales_month && scopeFor(request.sales_month).has(pharmacy.areaCode));
   });

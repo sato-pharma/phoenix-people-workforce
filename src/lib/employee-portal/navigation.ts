@@ -749,8 +749,9 @@ export function resolveEmployeePortalNavVisibility(
   const showRoiIntelligenceTab = showSalesIntelligence || isNationalSalesManager;
   const showDirectOrdersTab = !isCnsLine && isDirectOrderRequesterRole(resolvedRole);
   // The Medical Rep's read-only "Direct Orders in my area" window (owner, 2026-09-24). Bounded to
-  // the rep's own area server-side; not tied to the requester workspace above.
-  const showAreaDirectOrdersTab = canUseEmployeePortalAreaDirectOrders(resolvedRole);
+  // the rep's own area AND line server-side; not tied to the requester workspace above. CNS runs no
+  // direct orders, so a CNS rep is never offered it (owner, 2026-10-29) — the page bounces him too.
+  const showAreaDirectOrdersTab = !isCnsLine && canUseEmployeePortalAreaDirectOrders(resolvedRole);
   // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30).
   const showMilestonesTab = canUseEmployeePortalMilestones(resolvedRole);
   // Production Planner — by NAME, never by role (see the field's comment above).
