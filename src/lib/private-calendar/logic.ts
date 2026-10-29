@@ -410,12 +410,14 @@ function attendanceTitle(status: string, checkIn: string | null, checkOut: strin
   return `Attendance - ${statusLabel}`;
 }
 
-// Stacked chip lines for the month-grid day cell: Office / From ** / To ** / Full day.
+// The month-grid day cell's lines: "Office · Full day", then "9:03 AM – 5:04 PM" (owner, 2026-10-29: "make it simple
+// when I look at the calendar" — it was four stacked lines, Office / From / To / Full day, the tallest entry on most days).
+// What the day was and when stay two separate lines, never one crammed one.
 function attendanceChipLines(status: string, checkIn: string | null, checkOut: string | null, halfDayVacationPart?: "am_only" | "pm_only") {
   const statusLabel = attendanceStatusLabel(status, halfDayVacationPart);
-  if (checkIn && checkOut) return ["Office", `From ${checkIn}`, `To ${checkOut}`, statusLabel];
-  if (checkIn) return ["Office", `Punch ${checkIn}`, statusLabel];
-  return ["Attendance", statusLabel];
+  if (checkIn && checkOut) return [`Office · ${statusLabel}`, `${checkIn} – ${checkOut}`];
+  if (checkIn) return [`Office · ${statusLabel}`, `Punch ${checkIn}`];
+  return [`Attendance · ${statusLabel}`];
 }
 
 // The chip's colour follows the SAME judgement the exception strip makes, never the raw status
@@ -782,6 +784,32 @@ export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCo
       title: `Verified: ${claims.join(" · ")}`,
     } satisfies PrivateCalendarItem;
   });
+}
+
+/** Where a review request points: its person, its day, and the entry it was filed against (none for a whole day). */
+export type PrivateCalendarRequestTarget = {
+  disputeDate: string;
+  employeeHrId: string;
+  itemSource: PrivateCalendarSource | null;
+  itemSourceRecordId: string | null;
+};
+
+/** The entry an item-scoped review request was filed against. */
+export function privateCalendarRequestMatchesItem(target: PrivateCalendarRequestTarget, item: PrivateCalendarItem): boolean {
+  return privateCalendarHrIdKey(target.employeeHrId) === privateCalendarHrIdKey(item.employeeHrId)
+    && target.disputeDate === item.startDate
+    && target.itemSource === item.source
+    && (target.itemSourceRecordId == null || target.itemSourceRecordId === item.sourceRecordId);
+}
+
+/**
+ * An accepted request the calendar already SHOWS needs no status line of its own (owner, 2026-10-29: "remove dups"): a
+ * whole-day one IS its "Verified correction" entry (buildAcceptedCorrectionItems), an item-scoped one is the
+ * "Admin-verified correction" line on the item it names. Each used to ALSO print a "Data Correction Verified" finding on
+ * the same day. An item-scoped request whose entry is gone keeps its finding — nothing else would say it was verified.
+ */
+export function privateCalendarAcceptedRequestIsShown(target: PrivateCalendarRequestTarget, items: readonly PrivateCalendarItem[]): boolean {
+  return target.itemSource == null || items.some((item) => privateCalendarRequestMatchesItem(target, item));
 }
 
 /**

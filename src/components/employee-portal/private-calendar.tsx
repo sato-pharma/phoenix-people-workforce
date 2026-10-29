@@ -467,32 +467,29 @@ function VisitDayTile({ item, tile, viewMode }: { item: PrivateCalendarItem; til
     { label: "PM", value: tile.split.pm },
     { label: "Pharmacies", value: tile.split.pharmacies, violet: true },
   ];
-  const tags = [PRIVATE_CALENDAR_COMPANION_LABELS[tile.companion], PRIVATE_CALENDAR_CATEGORY_LABELS[tile.category], planText].filter(
-    (tag): tag is string => Boolean(tag),
-  );
+  // Plain lines, no boxes (owner, 2026-10-29: "this is a mess … make it simple when I look at the calendar"): the kind on
+  // one line, the plan state under it, the three figures side by side, then who and where. It used to box every tag and
+  // stack the figures as a three-row table, which made a visit the tallest thing on the page.
+  const kindText = [PRIVATE_CALENDAR_COMPANION_LABELS[tile.companion], PRIVATE_CALENDAR_CATEGORY_LABELS[tile.category]].join(" · ");
+  const places = [...tile.bricks, ...tile.areas];
   return (
     <span
       className={[
-        "block px-1.5 py-1.5 text-phx-2xs font-semibold leading-tight text-slate-600 [overflow-wrap:anywhere]",
+        "block space-y-1 px-1.5 py-1 text-phx-2xs font-semibold leading-tight text-slate-600 [overflow-wrap:anywhere]",
         kindChipTone(privateCalendarItemKind(item)),
         severityOutline(item.severity),
       ].join(" ")}
       title={chipTitle(item, viewMode)}
     >
-      {viewMode === "team" && item.employeeName ? <bdi className="mb-1 block font-black text-slate-900">{item.employeeName}</bdi> : null}
-      <span className="flex flex-wrap gap-1">
-        {tags.map((tag) => (
-          <span className="bg-white/80 px-1 py-0.5 font-black uppercase tracking-[0.08em] text-slate-800 ring-1 ring-inset ring-black/10" key={tag}>
-            {tag}
-          </span>
-        ))}
-      </span>
-      <span className="mt-1.5 block divide-y divide-black/10 bg-white/85 ring-1 ring-inset ring-black/10">
+      {viewMode === "team" && item.employeeName ? <bdi className="block font-black text-slate-900">{item.employeeName}</bdi> : null}
+      <span className="block font-black uppercase tracking-[0.08em] text-slate-900">{kindText}</span>
+      {planText ? <span className="block text-slate-600">{planText}</span> : null}
+      <span className="flex flex-wrap gap-x-1.5 gap-y-0.5">
         {figures.map((figure) => (
           <span
             className={[
-              "flex flex-wrap items-center justify-between gap-x-2 px-1.5 py-0.5",
-              figure.violet && figure.value > 0 ? "bg-violet-600 text-white" : figure.value === 0 ? "text-slate-400" : "text-slate-900",
+              "inline-flex flex-wrap items-baseline gap-x-1",
+              figure.violet && figure.value > 0 ? "px-1 bg-violet-600 text-white" : figure.value === 0 ? "text-slate-400" : "text-slate-900",
             ].join(" ")}
             key={figure.label}
           >
@@ -502,25 +499,19 @@ function VisitDayTile({ item, tile, viewMode }: { item: PrivateCalendarItem; til
         ))}
       </span>
       {tile.withNames.length > 0 ? (
-        <span className="mt-1.5 block">
-          <span className="font-black uppercase tracking-[0.08em] text-slate-500">With </span>
+        <span className="block">
+          <span className="text-slate-500">With </span>
           <bdi className="font-black text-slate-900">{tile.withNames.join(", ")}</bdi>
         </span>
       ) : null}
-      {tile.bricks.length > 0 || tile.areas.length > 0 ? (
-        <span className="mt-1 block text-slate-600">
-          {tile.bricks.length > 0 ? (
-            <span className="block">
-              <span className="font-black uppercase tracking-[0.08em] text-slate-500">Brick </span>
-              <bdi>{tile.bricks.join(", ")}</bdi>
+      {places.length > 0 ? (
+        <span className="block text-slate-500">
+          {places.map((place, index) => (
+            <span key={`${place}-${index}`}>
+              {index > 0 ? " · " : null}
+              <bdi>{place}</bdi>
             </span>
-          ) : null}
-          {tile.areas.length > 0 ? (
-            <span className="block">
-              <span className="font-black uppercase tracking-[0.08em] text-slate-500">Area </span>
-              <bdi>{tile.areas.join(", ")}</bdi>
-            </span>
-          ) : null}
+          ))}
         </span>
       ) : null}
     </span>
@@ -1432,15 +1423,16 @@ export function PrivateCalendar({
               const dayExceptions = date ? exceptionsByDay.get(date) ?? [] : [];
               const selected = date === selectedDate;
               const isToday = date === today;
-              // Chips now stack their detail (name / count / area, or Office / From / To /
-              // status) across multiple lines instead of one crammed line, so fewer items
-              // fit before overflowing — show fewer per cell and give the cell more height.
+              // Three entries a day at most, findings first; the rest is "+ N more" and reads in full in the Daily
+              // Timeline. The entries are compact (owner, 2026-10-29: "make it simple"), so a busy day shows three
+              // where it used to show one beside a finding.
               const visibleExceptionCount = Math.min(dayExceptions.length, 2);
-              const visibleItemCount = Math.min(dayItems.length, dayExceptions.length > 0 ? 1 : 2);
+              const visibleItemCount = Math.min(dayItems.length, Math.max(1, 3 - visibleExceptionCount));
               const hiddenCount = dayItems.length + dayExceptions.length - visibleExceptionCount - visibleItemCount;
               // Friday — everyone's day off — is a quiet shade, so the working week reads at a glance.
               const isFriday = index % 7 === 5;
-              const dayNeedsReview = dayExceptions.some((exception) => exception.severity !== "info");
+              const dayReviewCount = dayExceptions.filter((exception) => exception.severity !== "info").length;
+              const dayNeedsReview = dayReviewCount > 0;
               const dayHasNoActivity = dayExceptions.some((exception) => exception.code === NO_ACTIVITY_CODE);
               // One marker per kind present that day, for the phone's compact month.
               const dayKinds = [...new Set(dayItems.map(privateCalendarItemKind))];
@@ -1482,18 +1474,17 @@ export function PrivateCalendar({
                     >
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
-                    <span className="hidden items-center gap-1 md:flex">
-                      {dayExceptions.length > 0 ? (
-                        <span className={["px-1.5 py-0.5 text-phx-2xs font-black", dayNeedsReview ? "bg-red-600 text-white" : "bg-indigo-100 text-indigo-700"].join(" ")}>
-                          {dayExceptions.length}
-                        </span>
-                      ) : null}
-                      {dayItems.length > 0 ? (
-                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black text-slate-600">
-                          {dayItems.length}
-                        </span>
-                      ) : null}
-                    </span>
+                    {/* ONE corner figure, and only for a day that needs review (owner, 2026-10-29: "chaos"). The two
+                        counters it replaced — findings in indigo or red, entries in grey — sat side by side on every
+                        day and said nothing the entries under them did not. */}
+                    {dayNeedsReview ? (
+                      <span
+                        className="hidden bg-red-600 px-1.5 py-0.5 text-phx-2xs font-black text-white md:inline"
+                        title={`${dayReviewCount} to review`}
+                      >
+                        {dayReviewCount}
+                      </span>
+                    ) : null}
                   </span>
                   {dayItems.length > 0 || dayExceptions.length > 0 ? (
                     <span className="flex flex-wrap justify-center gap-0.5 md:hidden">
@@ -1512,7 +1503,7 @@ export function PrivateCalendar({
                       </span>
                     </span>
                   ) : null}
-                  <span className="mt-1.5 hidden space-y-2 md:block">
+                  <span className="mt-1.5 hidden space-y-1 md:block">
                     {dayExceptions.slice(0, visibleExceptionCount).map((exception) => (
                       <span
                         className={["block px-1.5 py-1 text-phx-2xs font-black leading-tight [overflow-wrap:anywhere]", exceptionChipTone(exception)].join(" ")}
@@ -1535,8 +1526,9 @@ export function PrivateCalendar({
                         <span
                           className={[
                             // The first line names the entry (Office, the vacation type) in strong ink; the lines
-                            // under it are its detail in a softer one.
-                            "block divide-y divide-black/15 px-1.5 py-0.5 text-phx-2xs font-semibold leading-tight text-slate-600 [&>span:first-child]:font-black [&>span:first-child]:text-slate-900",
+                            // under it are its detail in a softer one. No rule between the lines: a short entry
+                            // drawn as a ruled table is what made the month read as a mess.
+                            "block space-y-0.5 px-1.5 py-1 text-phx-2xs font-semibold leading-tight text-slate-600 [&>span:first-child]:font-black [&>span:first-child]:text-slate-900",
                             kindChipTone(privateCalendarItemKind(item)),
                             severityOutline(item.severity),
                           ].join(" ")}
@@ -1544,7 +1536,7 @@ export function PrivateCalendar({
                           title={chipTitle(item, viewMode)}
                         >
                           {lines.map((line, lineIndex) => (
-                            <span className="block py-1 [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
+                            <span className="block [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
                           ))}
                         </span>
                       );
