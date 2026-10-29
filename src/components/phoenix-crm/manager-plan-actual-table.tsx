@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { CrmNote, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
 import { buildPlanVsActual, type ManagerDayPlan, type PlanRowOutcome, type PlanVsActualRow, type PlanVsActualSummary } from "@/lib/phoenix-crm/manager-day-plan";
 import { managerVisitAreaLines, managerVisitClock, managerVisitCustomerType, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
-import { planActualRowWords, planActualSaysNoPlan } from "@/lib/phoenix-crm/manager-visit-table";
+import { planActualRowWords, planActualSaysNoPlan, visitsOnlyRows } from "@/lib/phoenix-crm/manager-visit-table";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +29,10 @@ import { cn } from "@/lib/utils";
  *    and a customer or place always read by NAME. The AM · PM · Pharmacies golden rule: a half is its own chip, a
  *    pharmacy its own word, and nothing here adds one to another.
  * 🔴 Pure markup — no state, no fetch — so a client screen and a server page draw it identically.
+ * 🔴 VISITS ONLY (owner, 2026-10-29) — the private calendar's visit entry that carries no manager plan (a visit a
+ *    manager rode, a rep's own day) draws the visits alone: no Plan column, no "No sent plan covers this day" note, no
+ *    kind chip (the entry's own headline says "Double visit with …" once), and each visit reads Planned or Unplanned
+ *    from its own flag — the very flag the day's tile counts.
  */
 
 const OUTCOME_STYLES: Record<PlanRowOutcome, { chip: string; accent: string }> = {
@@ -129,7 +133,7 @@ function Fact({ children, label }: { children: ReactNode; label: string }) {
  * The verdict — matching the plan or not — then who was seen and how, then the rest of the visit's record at the foot of
  * the same cell: who came along, the products, a pharmacy's feedback and the comment.
  */
-function StatusCell({ row }: { row: PlanVsActualRow }) {
+function StatusCell({ row, visitsOnly = false }: { row: PlanVsActualRow; visitsOnly?: boolean }) {
   const visit = row.actual;
   const words = planActualRowWords(row);
   const type = visit ? managerVisitCustomerType(visit) : "";
@@ -137,8 +141,9 @@ function StatusCell({ row }: { row: PlanVsActualRow }) {
     <div className="grid min-w-0 gap-1.5">
       {words.verdict || visit ? (
         <div className="flex flex-wrap items-center gap-1.5">
+          {visitsOnly ? <HalfChip half={row.half} /> : null}
           {words.verdict ? <Chip className={OUTCOME_STYLES[row.outcome].chip}>{words.verdict}</Chip> : null}
-          {visit ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
+          {visit && !visitsOnly ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
           {visit?.enteredByAdmin ? <Chip className="border-slate-300 bg-white text-slate-700">{MISSED_RECORD_MARK}</Chip> : null}
         </div>
       ) : null}
@@ -351,16 +356,77 @@ export function ManagerPlanActualTable({
   );
 }
 
-/** The table for a day's plan and visits — what a screen that holds them in pieces (the private calendar) draws. */
+/** The visits alone, each Planned or Unplanned by its own flag: the half and the verdict lead the visit's own cell. */
+export function VisitsOnlyTable({ rows }: { rows: readonly PlanVsActualRow[] }) {
+  return (
+    <div className="@container grid min-w-0 gap-3">
+      <div className="hidden min-w-0 @min-[720px]:block">
+        <CrmTable columns={["46%", "22%", "32%"]} desktopOnly={false}>
+          <thead>
+            <tr>
+              <th className={TH_CLASS}>Visit</th>
+              <th className={TH_CLASS}>Area · Brick</th>
+              <th className={TH_CLASS}>Address · Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr className={cn("align-top", index % 2 === 0 ? "bg-white" : "bg-slate-50/40")} key={row.id}>
+                <td className={cn("border-b border-l-4 border-b-slate-100 px-3 py-3 align-top", OUTCOME_STYLES[row.outcome].accent)}>
+                  <StatusCell row={row} visitsOnly />
+                </td>
+                <td className="border-b border-slate-100 px-3 py-3 align-top">
+                  <AreaBrickCell row={row} />
+                </td>
+                <td className="border-b border-slate-100 px-3 py-3 align-top">
+                  <AddressTimeCell row={row} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </CrmTable>
+      </div>
+
+      <div className="grid min-w-0 gap-2.5 @min-[720px]:hidden">
+        {rows.map((row) => (
+          <article className={cn("min-w-0 border border-l-4 border-slate-200 bg-white", OUTCOME_STYLES[row.outcome].accent)} key={row.id}>
+            <div className="grid min-w-0 gap-3 px-3 py-3">
+              <StatusCell row={row} visitsOnly />
+              <section className="grid gap-1 border-t border-slate-100 pt-3">
+                <Label>Area · Brick</Label>
+                <AreaBrickCell row={row} />
+              </section>
+              <section className="grid gap-1 border-t border-slate-100 pt-3">
+                <Label>Address · Time</Label>
+                <AddressTimeCell row={row} />
+              </section>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The table for a day's plan and visits — what a screen that holds them in pieces (the private calendar) draws.
+ * `visitsOnly`: the entry carries no manager plan, so the visits are drawn alone (`VisitsOnlyTable`).
+ */
 export function ManagerPlanActual({
   plan,
   planUnread,
   visits,
+  visitsOnly = false,
 }: {
   plan: ManagerDayPlan | null;
   planUnread: boolean;
   visits: readonly ManagerDayVisit[];
+  visitsOnly?: boolean;
 }) {
+  if (visitsOnly && !plan && !planUnread) {
+    const rows = visitsOnlyRows(visits);
+    return rows.length === 0 ? null : <VisitsOnlyTable rows={rows} />;
+  }
   const { rows, summary } = buildPlanVsActual(plan, visits);
   if (rows.length === 0) return null;
   return <ManagerPlanActualTable plan={plan} planUnread={planUnread} rows={rows} summary={summary} />;

@@ -29,6 +29,8 @@
 
 
 ## Inbox — new notes land here
+- [optional means still asked, never hidden](optional-means-still-asked-never-hidden.md) - "make it optional" changes the validation and label only; the question stays open on screen
+- [the dev server runs in the phoenix dev lean Codespace](the-dev-server-runs-in-the-phoenix-dev-lean-codespace.md) - 2-core, staging, $0 budget; ssh needs -i ~/.ssh/codespaces.auto
 
 
 

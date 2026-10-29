@@ -321,7 +321,7 @@ export async function runKpisBoardWorkbookTests() {
   assert.equal(byBrick.value(helio, "Doctors visited"), 1);
   assert.equal(byBrick.value(helio, "Coverage"), 0.5, "coverage stored as a fraction, as every percentage in the file is");
   assert.equal(byBrick.value(helio, "Exact"), 1);
-  assert.equal(byBrick.value(helio, "Below"), 1, "the doctor never seen is short of what was asked");
+  assert.equal(byBrick.value(helio, "Below"), 0, "the doctor never seen is in no Below, as he is in no Frequency tile Below — Coverage counts him");
   assert.equal(byBrick.value(helio, "Above"), 0);
   assert.ok(!byBrick.headers.has("On plan") && !byBrick.headers.has("Over plan"), "never the words the owner retired");
 

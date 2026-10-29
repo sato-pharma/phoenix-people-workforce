@@ -5,6 +5,7 @@ import { stampKpiDoctorBricks, type KpiCoverageDoctor, type KpiRepRow } from "..
 import { buildKpiBrickRows, kpiBrickFrequencyColumns, type KpiBrickRow } from "../src/lib/crm/kpis-brick-table.ts";
 import { KPI_DOCTOR_BRICK_NONE, KPI_DOCTOR_NOT_VALIDATED } from "../src/lib/crm/kpis-doctor-filters.ts";
 import type { DoctorFrequencyStatus } from "../src/lib/crm/phoenix-kpi-rules.ts";
+import { frequencyStatusOf } from "../src/lib/crm/rep-doctor-lists.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -104,14 +105,30 @@ export function runKpiBrickTableTests() {
   const phoenix = kpiBrickFrequencyColumns(true);
   assert.deepEqual(phoenix.map((column) => column.label), ["At norm", "Below norm", "No grade"]);
   const heliopolis = rows[0];
-  assert.deepEqual(legacy.map((column) => column.count(heliopolis)), [2, 2, 0], "Below counts the doctors never seen, as the rep row's Below does");
+  assert.deepEqual(legacy.map((column) => column.count(heliopolis)), [2, 0, 0], "Heliopolis's two never-seen doctors are in no legacy column");
   assert.equal(
-    legacy.reduce((sum, column) => sum + column.count(heliopolis), 0),
+    legacy.reduce((sum, column) => sum + column.count(heliopolis), 0) + heliopolis.notVisited,
     heliopolis.judged,
-    "the three legacy columns add up to the doctors judged",
+    "the three legacy columns and the never seen add up to the doctors judged",
+  );
+  // The Frequency tile's Below on the plan rules is `underDoctors`: seen, but fewer times than due. A
+  // doctor never seen is "missed" there, never "under" — owner, 2026-10-29: "make the brick table's
+  // Below match the Frequency tile".
+  assert.equal(frequencyStatusOf({ actual: 1, plannedCalls: 2, plannedToDate: 2 }), "under");
+  assert.equal(frequencyStatusOf({ actual: 0, plannedCalls: 2, plannedToDate: 2 }), "missed");
+  assert.equal(
+    rows.reduce((sum, row) => sum + legacy[1].count(row), 0),
+    [...repA, ...repB].filter((entry) => entry.placeValidated !== undefined && entry.frequency?.status === "below").length,
+    "the legacy Below over every brick is the tile's Below — the doctors seen too few times, never the never seen",
+  );
+  assert.equal(
+    rows.reduce((sum, row) => sum + phoenix[1].count(row), 0),
+    rows.reduce((sum, row) => sum + row.below + row.notVisited, 0),
+    "the Phoenix Below norm keeps the never seen, as the Phoenix tile's frequency.below does",
   );
   assert.deepEqual(phoenix.map((column) => column.count(heliopolis)), [2, 2, 1]);
-  assert.deepEqual(legacy[1].statuses, ["below", "not-visited"], "a Below count links to the same two verdicts it counts");
+  assert.deepEqual(legacy[1].statuses, ["below"], "a Below count links to the one verdict it counts");
+  assert.deepEqual(phoenix[1].statuses, ["below", "not-visited"], "a Below norm count links to the same two verdicts it counts");
   assert.deepEqual(phoenix[0].statuses, ["exact", "at-norm"]);
 
   // ── 3. One read stamps every list; a failed read stamps nothing ────────────────────────────────

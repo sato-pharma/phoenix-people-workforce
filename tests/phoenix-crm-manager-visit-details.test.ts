@@ -18,7 +18,15 @@ import {
 } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
 import { phoenixCrmDayPath } from "../src/lib/phoenix-crm/modules.ts";
 import { buildPlanVsActual, planCustomerKey, type ManagerDayPlan } from "../src/lib/phoenix-crm/manager-day-plan.ts";
-import { managerVisitPlaceNote, managerVisitTerritoryLine, planActualRowWords, planActualSaysNoPlan } from "../src/lib/phoenix-crm/manager-visit-table.ts";
+import {
+  managerVisitPlaceNote,
+  managerVisitTerritoryLine,
+  planActualRowWords,
+  planActualSaysNoPlan,
+  VISIT_PLANNED_LABEL,
+  VISIT_UNPLANNED_LABEL,
+  visitsOnlyRows,
+} from "../src/lib/phoenix-crm/manager-visit-table.ts";
 import { ownVisitBucket } from "../src/lib/phoenix-crm/server/manager-plan-readers.ts";
 import { managerOwnVisitItem } from "../src/lib/private-calendar/manager-own-visit-items.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
@@ -259,9 +267,9 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
 
     const calendarScreen = source("src/components/employee-portal/private-calendar.tsx");
     assert.equal(
-      (calendarScreen.match(/<ManagerPlanActual plan=\{item\.managerPlan \?\? null\} planUnread=\{item\.managerPlanUnread === true\} visits=\{item\.managerVisits\} \/>/g) ?? []).length,
+      (calendarScreen.match(/<ManagerPlanActual plan=\{item\.managerPlan \?\? null\} planUnread=\{item\.managerPlanUnread === true\} visits=\{item\.managerVisits\} visitsOnly \/>/g) ?? []).length,
       2,
-      "the day list and the timeline both draw the plan-against-actual table",
+      "the day list and the timeline both draw the plan-against-actual table — the visits alone when the entry carries no plan",
     );
     // The polish pass on the screen itself (owner, 2026-10-20: "premium polish, full polish").
     // Owner, 2026-10-23: the month cell is a SUMMARY — counts and tags, no customer — and a visit is read in full in the table
@@ -371,7 +379,9 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     // ONE table, four columns, in the owner's order (2026-10-20): the plan, the actual status (matching or not), the area and
     // brick of the actual, then the address and the time.
     const headers = [...table.matchAll(/<th className=\{TH_CLASS\}>([^<]+)<\/th>/g)].map((match) => match[1]);
-    assert.deepEqual(headers, ["Plan", "Actual status", "Area · Brick", "Address · Time"], "one table: plan, actual status, area and brick, address and time — in that order");
+    assert.deepEqual(headers.slice(0, 4), ["Plan", "Actual status", "Area · Brick", "Address · Time"], "one table: plan, actual status, area and brick, address and time — in that order");
+    // The visits alone (an entry with no manager plan, 2026-10-29) drop the Plan column and keep the rest in the same order.
+    assert.deepEqual(headers.slice(4), ["Visit", "Area · Brick", "Address · Time"], "the visits-only table: the visit with its own Planned or Unplanned, then where and when");
     assert.match(table, /<CrmTable columns=\{\["20%", "36%", "17%", "27%"\]\} desktopOnly=\{false\}>/, "the module's one table primitive (fixed layout, colgroup), four named widths that fill the panel — and shown by the container query, never the viewport");
     assert.doesNotMatch(table, /colSpan/, "the rest of a visit's record sits in its own status cell — never a fifth column, never a spanning row (owner, 2026-10-28)");
     assert.match(source("src/lib/phoenix-crm/manager-visit-table.ts"), /done: "Matches the plan\.",/, "a planned customer that was visited reads as matching the plan");
@@ -522,6 +532,24 @@ function everyonesVisitsInFull(): void {
     ],
   );
   assert.match(table, /if \(!row\.plan\) return <HalfChip half=\{row\.half\} \/>;/, "a row nobody planned holds its half in the plan column, and nothing more");
+
+  // A ride-along or a rep's day carries no manager plan: its visits are drawn ALONE, each Planned or Unplanned by its
+  // own flag — the very flag the month tile counts. Owner, 2026-10-29: 6 Oct's tile said "7 planned · 1 unplanned"
+  // while the table under it said "No sent plan covers this day" and called none of them planned.
+  {
+    const ownFlag = visitsOnlyRows([
+      visit({ bucket: "PM", id: "v:pm", listType: "PM", planned: false }),
+      visit({ bucket: "AM", id: "v:am", planned: true }),
+    ]);
+    assert.deepEqual(
+      ownFlag.map((row) => [row.half, row.outcomeLabel, row.plan]),
+      [["AM", VISIT_PLANNED_LABEL, null], ["PM", VISIT_UNPLANNED_LABEL, null]],
+      "AM before PM, each visit's own Planned or Unplanned, no plan column to judge against",
+    );
+    assert.deepEqual([VISIT_PLANNED_LABEL, VISIT_UNPLANNED_LABEL], ["Planned", "Unplanned"], "Phoenix CRM's own words");
+    assert.match(table, /if \(visitsOnly && !plan && !planUnread\) \{/, "only an entry with no plan — and no plan that failed to load — draws the visits alone");
+    assert.match(table, /\{visit && !visitsOnly \? <Chip className=\{KIND_STYLES\[visit\.kind\]\}>/, "the visits-only rows print no kind chip — the entry's own headline already says it");
+  }
 
   // The private calendar: the visits hang on the entry that already counts them.
   const door = item({

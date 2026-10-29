@@ -13,6 +13,7 @@ import {
   mapExcuseRowToPrivateCalendarItem,
   mapVacationRowToPrivateCalendarItem,
   PRIVATE_CALENDAR_PAGE_SIZE,
+  PRIVATE_CALENDAR_VERIFIED_MARK,
   privateCalendarAcceptedRequestIsShown,
   privateCalendarHrIdPattern,
   readAllPrivateCalendarRows,
@@ -292,8 +293,15 @@ export async function runPrivateCalendarTests() {
     ]);
     assert.equal(corrections.length, 1, "two accepted whole-day requests on one day are ONE entry; a pending or item-scoped one adds none");
     assert.equal(corrections[0]?.source, "correction");
-    assert.equal(corrections[0]?.title, "Verified: Training · Training in Cairo");
+    assert.equal(corrections[0]?.title, "Training · Training in Cairo", "the bold line is what the person did, never a \"Verified\" heading (owner, 2026-10-29)");
+    assert.equal(corrections[0]?.status, "Verified");
+    assert.deepEqual(corrections[0]?.chipLines, ["Training · Training in Cairo", PRIVATE_CALENDAR_VERIFIED_MARK], "the activity first, the small ✓ mark last");
+    assert.equal(PRIVATE_CALENDAR_VERIFIED_MARK, "✓ Verified");
     assert.equal(corrections[0]?.detailLines.length, 2, "each verified claim is listed with where it was verified");
+    assert.ok(
+      corrections.every((item) => (item.chipLines ?? []).every((line) => !/review request|proof/i.test(line))),
+      "that it came from an approved review request is said in the day's details only, never on the tile",
+    );
 
     // The same claim filed twice for one day — Shahd's "Training" via CRM Double Visit and via Manager Confirmation,
     // because the first acceptance showed nothing — is one claim with two proofs, never "Training · Training".
@@ -302,13 +310,20 @@ export async function runPrivateCalendarTests() {
       dispute("d-6", " training ", "accepted"),
       dispute("d-7", "Training in Cairo", "accepted"),
     ]);
-    assert.equal(repeated[0]?.title, "Verified: Training · Training in Cairo", "an identical claim is named once");
-    assert.deepEqual(repeated[0]?.chipLines, ["Verified correction", "Training", "Training in Cairo"]);
+    assert.equal(repeated[0]?.title, "Training · Training in Cairo", "an identical claim is named once");
+    assert.deepEqual(repeated[0]?.chipLines, ["Training · Training in Cairo", PRIVATE_CALENDAR_VERIFIED_MARK]);
     assert.deepEqual(
       repeated[0]?.detailLines,
-      ["Training — verified via CRM / iReports360 (Double Visit) and Manager Confirmation.", "Training in Cairo — verified via Manager Confirmation."],
+      [
+        "Training — from an approved review request · proof: CRM / iReports360 (Double Visit) and Manager Confirmation",
+        "Training in Cairo — from an approved review request · proof: Manager Confirmation",
+      ],
       "its proofs are joined on one line",
     );
+    // One claim is already the bold line, so its detail line does not name it again.
+    const single = buildAcceptedCorrectionItems([dispute("d-8", "Physical Training – Pediatrics Line Outside the Company", "accepted")]);
+    assert.equal(single[0]?.title, "Physical Training – Pediatrics Line Outside the Company");
+    assert.deepEqual(single[0]?.detailLines, ["From an approved review request · proof: Manager Confirmation"]);
 
     // ONE THING, ONE LINE ON ITS DAY (owner, 2026-10-29: "remove dups"). An accepted request the calendar already shows
     // draws no "Data Correction Verified" finding beside it — 11 to 15 October each read the finding AND the entry.
@@ -902,9 +917,11 @@ export async function runPrivateCalendarTests() {
   );
   assert.match(
     privateCalendarUiSource,
-    /<span className="block \[overflow-wrap:anywhere\]" key=\{lineIndex\}>\{line\}<\/span>/,
+    /<span\s+className=\{\["block \[overflow-wrap:anywhere\]", line === PRIVATE_CALENDAR_VERIFIED_MARK \? "font-bold text-emerald-700" : ""\]\.join\(" "\)\}\s+key=\{lineIndex\}\s*>\s*\{line\}\s*<\/span>/,
     "each chip line must render as its own block-level row, fully unclamped, so the day cell grows to fit every word (no per-line padding: the rows sit tight, 2026-10-29)",
   );
+  // The verified mark is a small line in plain green ink — no fill, no badge (owner, 2026-10-29).
+  assert.doesNotMatch(privateCalendarUiSource, /PRIVATE_CALENDAR_VERIFIED_MARK \? "[^"]*\bbg-/, "the ✓ Verified mark wears no fill");
   // Stacked chip lines stay apart — by a small gap and a stronger first line, never a rule (owner, 2026-10-29: the
   // month read as "chaos"; a two-line Office entry drawn as a four-row ruled table was most of it).
   assert.match(
@@ -914,14 +931,16 @@ export async function runPrivateCalendarTests() {
   );
   assert.doesNotMatch(privateCalendarUiSource, /divide-y divide-black\/15/, "no ruled line between a chip's lines");
   // Colours live in ONE table keyed by kind of day (kindTones), read by every helper. A double visit
-  // — regular or campaign — wears fuchsia in all three slots (accent, chip, swatch), never blue or
-  // indigo (too close to vacation's sky at chip size), and no other kind wears fuchsia.
+  // wears fuchsia in all three slots (accent, chip, swatch), never blue or indigo (too close to
+  // vacation's sky at chip size), and no other kind wears fuchsia. A visit's kind is who went — the
+  // campaign kinds are retired (owner, 2026-10-29), so the table holds no `_campaign` key at all.
   const kindTonesBlock = privateCalendarUiSource.match(/const kindTones: Record<[^>]+> = \{([\s\S]*?)\n\};/)?.[1] ?? "";
   assert.ok(kindTonesBlock, "the calendar keeps one colour table keyed by kind of day");
   const kindToneEntries = new Map(
     [...kindTonesBlock.matchAll(/\n {2}(\w+): \{([\s\S]*?)\n {2}\}/g)].map((match) => [match[1], match[2]] as const),
   );
-  for (const kind of ["double_regular", "double_campaign"]) {
+  assert.ok(![...kindToneEntries.keys()].some((kind) => kind.endsWith("_campaign")), "no campaign kind has a colour of its own");
+  for (const kind of ["double_regular"]) {
     const entry = kindToneEntries.get(kind) ?? "";
     for (const slot of ["accent", "chip", "swatch"]) {
       const value = entry.match(new RegExp(`${slot}: "([^"]*)"`))?.[1] ?? "";
