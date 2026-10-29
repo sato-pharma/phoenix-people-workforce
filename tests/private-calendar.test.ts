@@ -614,6 +614,7 @@ export async function runPrivateCalendarTests() {
     excuse: 1,
     field_visit: 0,
     holiday: 0,
+    interview: 0,
     outstation: 0,
     plan: 0,
     total: 3,
