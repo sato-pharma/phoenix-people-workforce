@@ -1602,10 +1602,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       voice_note_path: visit.voiceNotePath,
       voice_note_seconds: visit.voiceNoteSeconds,
       voice_note_bytes: visit.voiceNoteBytes,
-      // Off the plan, if that is what it turns out to be. The reason is sent whatever the rep chose —
-      // the database asks for it only when its OWN test says the customer was not on a sent plan, so a
-      // rep who chose "planned" for a doctor who was not planned is refused here and shown the box,
-      // rather than quietly filed as planned. Where the approval starts is resolved from the
+      // Off the plan, if that is what it turns out to be. The reason is sent whatever the rep chose, and
+      // it is OPTIONAL (owner, 2026-10-29): the database's OWN test decides the kind, so a rep who chose
+      // "planned" for a doctor who was not planned is filed off the plan and raised for its approval —
+      // never quietly filed as planned — with or without a reason. Where the approval starts is resolved from the
       // organogram, never from the phone: a territory with no manager seat above it begins at SFE.
       unplanned_reason: visit.unplannedReason,
       // The outcome. Already dropped-not-refused by parseVisitOutcome; the function does the same

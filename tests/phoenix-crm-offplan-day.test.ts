@@ -335,7 +335,7 @@ export function runPhoenixCrmOffplanDayTests(): void {
 
     // It removes the typing: the sentence is a reason the save itself accepts, unchanged.
     const parsed = parseUnplannedReason(movedDayReason([SAT, MON, TUE]));
-    assert.ok(parsed.ok, "the filled-in reason passes the reason's own floor and ceiling");
+    assert.ok(parsed.ok, "the filled-in reason passes the reason's own ceiling");
     assert.equal(parsed.ok && parsed.value, "Planned for Saturday 3 Oct, Monday 5 Oct and Tuesday 6 Oct; seen today instead.");
     // His own plan, in his own module's words — never a check on him, never "doctor".
     for (const text of [movedDayReason([TUE]) ?? "", plannedForText([TUE]) ?? "", "Filled in from your plan. Change it if you went for another reason."]) {

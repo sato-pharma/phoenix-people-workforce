@@ -816,12 +816,13 @@ const STILL_PLANNED = "supabase/migrations/20261002125244_phoenix_crm_still_plan
  * for each pharmacy that box names, 20261004005543 checks a new pharmacy again under one lock,
  * 20261006234611 lets a chain visit take a product manager as its second person, and
  * 20261010180118 files a visit under the AM or PM session of the building it was made at, and
- * 20261027185332 takes any mix of companions on one visit — so the
- * "Still planned" branch below is byte-identical in all nine and the rule is unchanged. **Move this constant with every later
+ * 20261027185332 takes any mix of companions on one visit, and 20261029193650 makes the out-of-plan
+ * reason optional — so the
+ * "Still planned" branch below is byte-identical in all ten and the rule is unchanged. **Move this constant with every later
  * migration that recreates the function** — that is the whole point of the assertion it feeds, which
  * is what tells the next session where the live definition lives.
  */
-const SAVE_VISIT_DEFINER = "supabase/migrations/20261027185332_phoenix_crm_visit_any_companions.sql";
+const SAVE_VISIT_DEFINER = "supabase/migrations/20261029193650_phoenix_crm_out_of_plan_reason_optional.sql";
 const ONE_TAP_VISIT = "supabase/migrations/20260929235553_phoenix_crm_one_tap_visit.sql";
 const EDIT_REQUESTS = "supabase/migrations/20261002002251_phoenix_crm_plan_edit_requests.sql";
 const DEADLINE = "supabase/migrations/20261002122000_phoenix_crm_plan_deadline_2355.sql";

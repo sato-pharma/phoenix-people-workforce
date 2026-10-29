@@ -247,7 +247,7 @@ export async function loadTestApprovals(viewer: PhoenixCrmViewer): Promise<TestA
       waitingSince: formatPhoenixDateTime(view.raisedAt),
       waitingSinceIso: view.raisedAt,
       details: [
-        `Why: ${view.clarification}`,
+        view.clarification ? `Why: ${view.clarification}` : "Why: no reason written",
         view.managerDecidedByName ? `Manager's step taken by ${view.managerDecidedByName}${view.managerNote ? `: ${view.managerNote}` : ""}` : null,
       ].filter((line): line is string => Boolean(line)),
       approve: { decision: "approve", label: "Approve" },

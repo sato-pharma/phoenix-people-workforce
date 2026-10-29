@@ -88,7 +88,7 @@ import {
 import { MANAGER_OWN_VISIT_ON_VACANT_LINE, MANAGER_OWN_VISIT_ON_VACANT_NOTE } from "@/lib/phoenix-crm/manager-plan-rules";
 import { SAMPLE_MATERIALS, SAMPLE_QUANTITY_MAX, type SamplesGiven } from "@/lib/phoenix-crm/samples";
 import type { PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
-import { OUT_OF_LIST_REP_NOTE, UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
+import { OUT_OF_LIST_REP_NOTE, UNPLANNED_REASON_MAX } from "@/lib/phoenix-crm/unplanned-rules";
 import {
   RECORDING_IN_FLIGHT_NEXT,
   UNSAVED_VOICE_NOTE_LEAVE_LABEL,
@@ -414,9 +414,9 @@ export function VisitLogForm({
   const router = useRouter();
   const [visitType, setVisitType] = useState<LogVisitType>(initialVisitType);
   const [unplannedReason, setUnplannedReason] = useState(initialReason ?? "");
-  // The reason box is open when there is no reason yet — including when the server says a visit he
-  // chose as planned was not on a plan sent for today, and asks for one.
-  const [reasonOpen, setReasonOpen] = useState(initialVisitType === "out_of_plan" && !initialReason);
+  // The reason is OPTIONAL (owner, 2026-10-29): it was asked before this form, so the box starts closed
+  // even when he left it blank — he opens it with "Add a reason" if he wants to write one.
+  const [reasonOpen, setReasonOpen] = useState(false);
   // A district manager entering starts on Double visit: his "My own visit" is closed (owner, 2026-10-16).
   // Not on a territory with no rep, where Double visit is closed too — the step then says where his
   // visit goes instead of pre-picking one the save would refuse.
@@ -516,7 +516,7 @@ export function VisitLogForm({
 
   // Each required step, answered or not — the same tests `draft` applies, in the same order, so the
   // header marks and the bar's jump agree with what Log visit would refuse.
-  const reasonDone = visitType !== "out_of_plan" || unplannedReason.trim().length >= UNPLANNED_REASON_MIN;
+  const reasonDone = visitType !== "out_of_plan" || unplannedReason.trim().length <= UNPLANNED_REASON_MAX;
   const whoDone = kind === "single" || (company ? company.ok : who.manager !== null && (kind !== "chain" || who.senior !== null));
   const productsDone = products.length > 0;
   const commentDone = commentLength > 0;
@@ -648,8 +648,8 @@ export function VisitLogForm({
 
   function draft(visitId: string, formOpenSeconds: number | null): Draft {
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
-    if (visitType === "out_of_plan" && unplannedReason.trim().length < UNPLANNED_REASON_MIN) {
-      return { ok: false, problem: "Write why you visited this customer off your plan." };
+    if (visitType === "out_of_plan" && unplannedReason.trim().length > UNPLANNED_REASON_MAX) {
+      return { ok: false, problem: `Keep the reason under ${UNPLANNED_REASON_MAX} characters.` };
     }
     // A rep's slots come from the one list (visit-company.ts); a manager's from his own two boxes.
     let slots: {
@@ -834,7 +834,7 @@ export function VisitLogForm({
         <CrmBlock title="Check the visit, then log it">
           <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
             <SummaryLine label="Customer" value={`${customer.name} · ${logVisitTypeLabel(visitType)}`} />
-            {visitType === "out_of_plan" ? <SummaryLine label="Why you went" value={unplannedReason.trim() || "Not written yet"} /> : null}
+            {visitType === "out_of_plan" ? <SummaryLine label="Why you went" value={unplannedReason.trim() || "Not written (optional)"} /> : null}
             <SummaryLine label="Who was on the visit" value={whoLine} />
             <SummaryLine label="Products discussed" value={products.length > 0 ? products.join(", ") : "None chosen yet"} />
             <SummaryLine
@@ -914,28 +914,30 @@ export function VisitLogForm({
         ) : null}
         {visitType === "out_of_plan" && !reasonOpen ? (
           <CrmNote className="mt-2" title="Out of plan · it counts once it is approved" tone="info">
-            <span className="block whitespace-pre-line" dir="auto">
-              {unplannedReason}
-            </span>
+            {unplannedReason.trim() ? (
+              <span className="block whitespace-pre-line" dir="auto">
+                {unplannedReason}
+              </span>
+            ) : null}
             <span className="mt-1 block">{decidersText(form)}</span>
             <CrmButton className="mt-2" disabled={saving} onClick={() => setReasonOpen(true)}>
-              Change the reason
+              {unplannedReason.trim() ? "Change the reason" : "Add a reason"}
             </CrmButton>
           </CrmNote>
         ) : null}
         {visitType === "out_of_plan" && reasonOpen ? (
           <div className="mt-3 grid min-w-0 gap-2">
             <CrmNote title="This customer is not on today's sent plan" tone="info">
-              Write why you went. {decidersText(form)} Until then it counts in nothing — not your call rate, not coverage, not frequency.
+              Why you went is optional. {decidersText(form)} Until then it counts in nothing — not your call rate, not coverage, not frequency.
             </CrmNote>
             <CrmField
               hint={
-                unplannedReason.trim().length < UNPLANNED_REASON_MIN
-                  ? `At least ${UNPLANNED_REASON_MIN} characters.`
+                unplannedReason.trim().length === 0
+                  ? "Optional — you can leave it blank."
                   : `${UNPLANNED_REASON_MAX - unplannedReason.length} characters left.`
               }
               htmlFor={STEP_REASON}
-              label="Why you went"
+              label="Why you went (optional)"
             >
               <textarea
                 className={crmTextareaClassName}
