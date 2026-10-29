@@ -19,11 +19,14 @@ import { loadOutstationTripPrivateCalendarItems } from "@/lib/private-calendar/o
 import { attachVisitDetails, loadPrivateCalendarVisitDetails } from "@/lib/private-calendar/visit-detail-items";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
+import { employeeHolidayList } from "@/lib/vacation/employee-holiday-list";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import {
   buildPrivateCalendarHierarchyIndex,
   canReadPrivateCalendarEmployee,
   buildAcceptedCorrectionItems,
+  privateCalendarAcceptedRequestIsShown,
+  privateCalendarRequestMatchesItem,
   buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
   derivePrivateCalendarExceptions,
@@ -164,10 +167,10 @@ function filterItemsByEmployees(items: PrivateCalendarItem[], employees: Employe
 // An accepted data dispute never mutates the original synced item — it overlays
 // a visible "Admin-verified correction" note on top, so the original source
 // data stays fully auditable alongside the verified truth. Only accepted,
-// item-scoped disputes annotate the matching item directly; every dispute
-// (any status, item-scoped or whole-day) also gets a standalone status
-// exception via appendDisputeStatusExceptions below, so the employee always
-// sees where their request stands even before/without a decision.
+// item-scoped disputes annotate the matching item directly; a pending or
+// declined request, and an accepted one the calendar does not already show,
+// gets a standalone status exception via appendDisputeStatusExceptions below,
+// so the employee always sees where their request stands.
 function applyAcceptedDisputeOverlays(
   items: PrivateCalendarItem[],
   disputes: PrivateCalendarDataDispute[],
@@ -175,11 +178,7 @@ function applyAcceptedDisputeOverlays(
   const acceptedItemScoped = disputes.filter((dispute) => dispute.status === "accepted" && dispute.itemSource != null);
   if (acceptedItemScoped.length === 0) return items;
   return items.map((item) => {
-    const matching = acceptedItemScoped.find((dispute) =>
-      privateCalendarHrIdKey(dispute.employeeHrId) === privateCalendarHrIdKey(item.employeeHrId)
-      && dispute.disputeDate === item.startDate
-      && dispute.itemSource === item.source
-      && (dispute.itemSourceRecordId == null || dispute.itemSourceRecordId === item.sourceRecordId));
+    const matching = acceptedItemScoped.find((dispute) => privateCalendarRequestMatchesItem(dispute, item));
     if (!matching) return item;
     const note = `Admin-verified correction: ${matching.claimText} (verified via ${matching.claimSourceText})`;
     return {
@@ -192,15 +191,18 @@ function applyAcceptedDisputeOverlays(
 
 // Employee-visible status/history: every review request the employee submitted
 // shows up on its day, worded and colored per status — pending (info, still
-// awaiting a Super Admin decision), accepted (info, same "verified correction"
-// wording the item-level overlay above uses for item-scoped ones), or rejected
-// (warning, with the admin's note so the employee knows why).
+// awaiting a Super Admin decision), accepted (info — ONLY when the calendar does
+// not already show it as an entry or an item's overlay, see
+// privateCalendarAcceptedRequestIsShown), or rejected (warning, with the admin's note so
+// the employee knows why).
 function appendDisputeStatusExceptions(
   exceptions: PrivateCalendarException[],
   disputes: PrivateCalendarDataDispute[],
+  items: PrivateCalendarItem[],
 ): PrivateCalendarException[] {
   if (disputes.length === 0) return exceptions;
-  const statusExceptions: PrivateCalendarException[] = disputes.map((dispute) => {
+  const unshown = disputes.filter((dispute) => dispute.status !== "accepted" || !privateCalendarAcceptedRequestIsShown(dispute, items));
+  const statusExceptions: PrivateCalendarException[] = unshown.map((dispute) => {
     if (dispute.status === "pending_review") {
       return {
         code: "data_review_pending",
@@ -245,7 +247,10 @@ function appendDisputeStatusExceptions(
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<PrivateCalendarItem[]> {
   try {
     const result = await getConfirmedNationalHolidays({ month, year });
-    return result.holidays
+    // One day off is ONE entry (owner, 2026-10-29: "remove dups"): on 8 Oct 2026 "Armed Forces Day", confirmed off its
+    // 6 Oct date, and "Day off for Armed Forces Day" are both injected so neither disappears from the rules — the
+    // calendar shows them as the one day they are, the same way the employee's holiday list does.
+    return employeeHolidayList(result.holidays)
       .filter((holiday) => rangesOverlap(holiday.startDate, holiday.endDate ?? holiday.startDate, start, end))
       .map((holiday) => mapHolidayToPrivateCalendarItem({
         description: holiday.description,
@@ -531,7 +536,7 @@ export async function getPrivateCalendarWorkspace(input: {
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
   // An accepted whole-day request is an entry of its own, and the day it verifies stops reading "No Activity Recorded".
   const correctionItems = decorateItemsWithEmployeeMetadata(buildAcceptedCorrectionItems(employeeDisputes), employees);
-  const exceptionsWithStatuses = appendDisputeStatusExceptions(withoutCorrectedDayFindings(exceptions, correctionItems), employeeDisputes);
+  const exceptionsWithStatuses = appendDisputeStatusExceptions(withoutCorrectedDayFindings(exceptions, correctionItems), employeeDisputes, items);
 
   // The reply thread under each request. One batched read for the whole month, and best-effort: a
   // thread that fails to load must leave the calendar itself intact, so it falls back to none — the

@@ -13,6 +13,7 @@ import {
   mapExcuseRowToPrivateCalendarItem,
   mapVacationRowToPrivateCalendarItem,
   PRIVATE_CALENDAR_PAGE_SIZE,
+  privateCalendarAcceptedRequestIsShown,
   privateCalendarHrIdPattern,
   readAllPrivateCalendarRows,
   suppressFieldVisitAttendanceProblems,
@@ -98,7 +99,7 @@ export async function runPrivateCalendarTests() {
   assert.equal(attendance.sourceTable, "attendance_raw_punches");
   assert.ok(attendance.detailLines.some((line) => line.includes("Working hours: 08:01")));
   assert.equal(attendance.title, "Office 9:03 AM to 5:04 PM - Full day", "a Complete attendance day must render as an Office time range, not a generic status label");
-  assert.deepEqual(attendance.chipLines, ["Office", "From 9:03 AM", "To 5:04 PM", "Full day"], "the month-grid chip must stack Office/From/To/status on separate lines instead of one crammed line");
+  assert.deepEqual(attendance.chipLines, ["Office · Full day", "9:03 AM – 5:04 PM"], "the month-grid chip reads what the day was, then when — two lines, never four stacked (Office/From/To/status) and never one crammed line");
 
   // A Complete day judged against a HALVED requirement (an approved Am/Pm-Only
   // vacation covers the other half) is a normal half working day — it must never
@@ -120,7 +121,7 @@ export async function runPrivateCalendarTests() {
     timeLong: "04:10",
   });
   assert.equal(halfDayVacationAttendanceItem.title, "Office 8:50 AM to 1:00 PM - Half day", "a half-day-vacation-adjusted Complete day must read 'Half day', not 'Full day'");
-  assert.deepEqual(halfDayVacationAttendanceItem.chipLines, ["Office", "From 8:50 AM", "To 1:00 PM", "Half day"], "the month-grid chip must also say Half day, not Full day, when a half-day vacation covers the other half");
+  assert.deepEqual(halfDayVacationAttendanceItem.chipLines, ["Office · Half day", "8:50 AM – 1:00 PM"], "the month-grid chip must also say Half day, not Full day, when a half-day vacation covers the other half");
 
   const lateAttendance = mapAttendanceRowToPrivateCalendarItem({
     actualFirstPunch: "9:45 AM",
@@ -307,6 +308,38 @@ export async function runPrivateCalendarTests() {
       repeated[0]?.detailLines,
       ["Training — verified via CRM / iReports360 (Double Visit) and Manager Confirmation.", "Training in Cairo — verified via Manager Confirmation."],
       "its proofs are joined on one line",
+    );
+
+    // ONE THING, ONE LINE ON ITS DAY (owner, 2026-10-29: "remove dups"). An accepted request the calendar already shows
+    // draws no "Data Correction Verified" finding beside it — 11 to 15 October each read the finding AND the entry.
+    const target = (itemSource: "attendance" | null, itemSourceRecordId: string | null = null) => ({
+      disputeDate: "2026-10-11",
+      employeeHrId: "PD-0026",
+      itemSource,
+      itemSourceRecordId,
+    });
+    const officeEntry: PrivateCalendarItem = {
+      ...corrections[0]!,
+      employeeHrId: "pd-0026",
+      source: "attendance",
+      sourceRecordId: "attendance-11",
+      startDate: "2026-10-11",
+    };
+    assert.equal(privateCalendarAcceptedRequestIsShown(target(null), []), true, "a whole-day acceptance IS its Verified correction entry");
+    assert.equal(
+      privateCalendarAcceptedRequestIsShown(target("attendance", "attendance-11"), [officeEntry]),
+      true,
+      "an item-scoped acceptance is the Admin-verified correction line on the entry it names (HR id compared without case)",
+    );
+    assert.equal(
+      privateCalendarAcceptedRequestIsShown(target("attendance", "attendance-12"), [officeEntry]),
+      false,
+      "an item-scoped acceptance whose entry is gone keeps its finding — nothing else would say it was verified",
+    );
+    assert.equal(
+      privateCalendarAcceptedRequestIsShown({ ...target("attendance"), disputeDate: "2026-10-12" }, [officeEntry]),
+      false,
+      "another day's entry never stands in for it",
     );
 
     const repDay = derivePrivateCalendarExceptions({
@@ -716,6 +749,16 @@ export async function runPrivateCalendarTests() {
   );
   assert.match(
     serviceSource,
+    /employeeHolidayList\(result\.holidays\)/,
+    "one holiday is one entry: the official day and its observed day off fold into the same list the employee portal reads (8 October showed twice)",
+  );
+  assert.match(
+    serviceSource,
+    /!privateCalendarAcceptedRequestIsShown\(dispute, items\)/,
+    "an accepted request the calendar already shows draws no Data Correction Verified finding beside its entry",
+  );
+  assert.match(
+    serviceSource,
     /function expandHrIdLookupKeys/,
     "private calendar must expand employee HR_ID filters into known casing dialects",
   );
@@ -859,14 +902,17 @@ export async function runPrivateCalendarTests() {
   );
   assert.match(
     privateCalendarUiSource,
-    /<span className="block py-1 \[overflow-wrap:anywhere\]" key=\{lineIndex\}>\{line\}<\/span>/,
-    "each chip line must render as its own block-level row, fully unclamped, so the day cell grows to fit every word",
+    /<span className="block \[overflow-wrap:anywhere\]" key=\{lineIndex\}>\{line\}<\/span>/,
+    "each chip line must render as its own block-level row, fully unclamped, so the day cell grows to fit every word (no per-line padding: the rows sit tight, 2026-10-29)",
   );
+  // Stacked chip lines stay apart — by a small gap and a stronger first line, never a rule (owner, 2026-10-29: the
+  // month read as "chaos"; a two-line Office entry drawn as a four-row ruled table was most of it).
   assert.match(
     privateCalendarUiSource,
-    /divide-y divide-black\/15/,
-    "stacked chip lines (each 'sentence' — DV partner / AM-PM count / area) must be visually separated from the line below them",
+    /"block space-y-0\.5 px-1\.5 py-1 text-phx-2xs font-semibold leading-tight text-slate-600 \[&>span:first-child\]:font-black \[&>span:first-child\]:text-slate-900"/,
+    "stacked chip lines (the entry's name, then its detail) must stay visibly apart from the line below them",
   );
+  assert.doesNotMatch(privateCalendarUiSource, /divide-y divide-black\/15/, "no ruled line between a chip's lines");
   // Colours live in ONE table keyed by kind of day (kindTones), read by every helper. A double visit
   // — regular or campaign — wears fuchsia in all three slots (accent, chip, swatch), never blue or
   // indigo (too close to vacation's sky at chip size), and no other kind wears fuchsia.
@@ -1039,7 +1085,7 @@ export async function runPrivateCalendarTests() {
 
   // A LONE PUNCH READS "Punch", never "From": a 5:06 PM punch is almost certainly a departure.
   assert.equal(singlePunchNoDeduction.title, "Office punch 9:03 AM - Single punch", "a lone punch must not claim to be the arrival");
-  assert.deepEqual(singlePunchNoDeduction.chipLines, ["Office", "Punch 9:03 AM", "Single punch"], "the month-grid chip must say Punch, not From");
+  assert.deepEqual(singlePunchNoDeduction.chipLines, ["Office · Single punch", "Punch 9:03 AM"], "the month-grid chip must say Punch, not From");
 
   // HALF-DAY VACATION reads the house label ("PM only"), never the raw code cased ("Pm Only").
   assert.equal(halfDayVacation.time, "PM only", "a half-day vacation's time must read 'PM only'");
@@ -1130,6 +1176,6 @@ export async function runPrivateCalendarTests() {
     /await loadWorkspace\(year, month, selectedEmployee\.hrId, selectedDate, viewMode\)\.catch\(\(\) => undefined\);/,
     "a sent review request must re-read the month so its pending status shows at once",
   );
-  assert.match(privateCalendarUiSource, /"mt-1\.5 hidden space-y-2 md:block"/, "the full day-cell entries must show from md up only");
+  assert.match(privateCalendarUiSource, /"mt-1\.5 hidden space-y-1 md:block"/, "the full day-cell entries must show from md up only");
   assert.match(privateCalendarUiSource, /"flex flex-wrap justify-center gap-0\.5 md:hidden"/, "a phone must get one colour marker per kind instead of the entries");
 }
