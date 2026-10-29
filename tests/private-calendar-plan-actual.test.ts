@@ -194,6 +194,16 @@ export function runPrivateCalendarPlanActualTests(): void {
     "PM | With Hassan Mohamed | Double visit with Hassan Mohamed Ali · PM 6 · PH 0 | match",
   ], "each planned half sits beside its share of the visit, ✓, and the visit is not repeated as an unplanned row");
 
+  // The Mahalla trip claim on that field day is the day's travel: it sits in the first visit row, never "Not on the plan".
+  const oct28Trip = buildDayPlanActual(
+    [withRepHalf("AM"), withRepHalf("PM")],
+    [doubleVisit("Hassan Mohamed Ali", { am: 1, pm: 6, pharmacies: 0 }), recorded("outstation", ["Outstation trip", "Claim pending"], "trip-28")],
+  );
+  assert.deepEqual(view(oct28Trip), [
+    "AM | With Hassan Mohamed | Double visit with Hassan Mohamed Ali · AM 1 + Outstation trip · Claim pending | match",
+    "PM | With Hassan Mohamed | Double visit with Hassan Mohamed Ali · PM 6 · PH 0 | match",
+  ], "an outstation trip on a planned field day is that day's travel, never a row of its own");
+
   // A visit with somebody else is a ✗ that says who it was not with — and still shows what was done.
   const otherRep = buildDayPlanActual([withRepHalf("AM")], [doubleVisit("Mina Farouk", { am: 2, pm: 0, pharmacies: 0 })]);
   assert.deepEqual(view(otherRep), ["AM | With Hassan Mohamed | Double visit with Mina Farouk · AM 2 | miss (Not with Hassan Mohamed)"]);

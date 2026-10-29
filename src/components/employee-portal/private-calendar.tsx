@@ -16,7 +16,7 @@ import {
 
 
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
-import { formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import { visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
 import { managerVisitLine } from "@/lib/phoenix-crm/manager-visit-detail";
 import {
   PRIVATE_CALENDAR_COMPANION_LABELS,
@@ -1845,7 +1845,7 @@ function KeyFigures({
   // A workspace from before the visit summary existed (an old cached response) reads as none.
   const visits = visitSummary ?? null;
   const visitsReady = sourceReadiness.double_visit !== false && sourceReadiness.field_visit !== false;
-  const allVisits = visits ? formatVisitCountSplit(visits.all) : "AM 0 · PM 0 · Pharmacies 0";
+  const allVisits = privateCalendarTileCountsText(visits?.all ?? { am: 0, pm: 0, pharmacies: 0 });
   return (
     <div className="border-t border-slate-200">
       <button
@@ -1873,7 +1873,7 @@ function KeyFigures({
         <div id="private-calendar-key-figures">
           {/* Row one — every visit, per colour, AM · PM · Pharmacies apart. */}
           <div className="border-t border-slate-100 bg-white px-4 py-3">
-            <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Visits · AM, PM and Pharmacies counted apart</p>
+            <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Visits · AM, PM and PH counted apart</p>
             <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {privateCalendarVisitKinds.map((kind) => {
               const split = visits?.[kind];
@@ -1883,7 +1883,7 @@ function KeyFigures({
                   label={privateCalendarActivityKindLabels[kind]}
                   ready={visitsReady}
                   swatch={kindSwatchColor(kind)}
-                  value={split && visitCountSplitTotal(split) > 0 ? formatVisitCountSplit(split, { compact: true }) : "None"}
+                  value={split && visitCountSplitTotal(split) > 0 ? privateCalendarTileCountsText(split) : "None"}
                 />
               );
             })}
@@ -1957,7 +1957,7 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
             </div>
             <p className="mt-2 text-phx-xs font-bold text-slate-700">
               <span className="font-black uppercase tracking-[0.1em] text-slate-500">Visits </span>
-              {row.visitCounts ? formatVisitCountSplit(row.visitCounts) : "AM 0 · PM 0 · Pharmacies 0"}
+              {privateCalendarTileCountsText(row.visitCounts ?? { am: 0, pm: 0, pharmacies: 0 })}
             </p>
           </article>
         ))}

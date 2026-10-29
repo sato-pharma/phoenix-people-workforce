@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 import {
   addBucketToSplit,
@@ -198,8 +199,23 @@ export function runVisitCountGoldenRuleTests() {
   assert.match(ui, /"grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 px-4 py-3 lg:grid-cols-4 lg:items-end"/, "the filters are at most two rows on a desk (four across) — no seven-column strip");
   assert.doesNotMatch(ui, /function Metric\(/, "the eight tall metric cards are gone");
   assert.doesNotMatch(ui, /h-10 w-full/, "the filter controls are the narrow 36px height");
-  assert.match(ui, /formatVisitCountSplit\(split, \{ compact: true \}\)/, "the key figures print each kind's visits AM · PM · Pharmacies apart");
-  assert.match(ui, /formatVisitCountSplit\(row\.visitCounts\)/, "the team snapshot prints each person's visits AM · PM · Pharmacies apart");
+  assert.match(ui, /privateCalendarTileCountsText\(split\)/, "the key figures print each kind's visits AM · PM · PH apart, in the tile's own words");
+  assert.match(ui, /privateCalendarTileCountsText\(row\.visitCounts/, "the team snapshot prints each person's visits AM · PM · PH apart, in the tile's own words");
+  // Owner, 2026-10-29: "write PH" — one day never reads "PH 3" on its tile and "Pharmacies 3" on its card.
+  for (const [label, file] of [
+    ["the calendar page", "src/components/employee-portal/private-calendar.tsx"],
+    ["a rep's own visit cards", "src/lib/private-calendar/field-visits.ts"],
+    ["a double or chain visit card", "src/lib/double-visit-analytics/service.ts"],
+  ] as const) {
+    let code = stripComments(readFileSync(file, "utf8"));
+    if (file.endsWith("service.ts")) {
+      const start = code.indexOf("function doubleVisitCalendarItem(");
+      code = code.slice(start, code.indexOf("\n}\n", start));
+    }
+    // A quoted string or a JSX text node between two tags.
+    assert.doesNotMatch(code, /["`>][^"`<>\n]*Pharmacies[^"`<>\n]*["`<]/, `${label} prints PH, never the word Pharmacies`);
+  }
+  assert.match(readFileSync("src/lib/private-calendar/field-visits.ts", "utf8"), /isVisit \? privateCalendarTileCountsText\(group\.split\)/, "a rep's own visit card counts AM · PM · PH like its tile");
   assert.match(ui, /window\.localStorage/, "a viewer's open or folded choice is remembered in their browser");
   assert.match(ui, /catch \{\s*\n\s*return null;/, "a blocked storage read falls back to the defaults, never throws");
 

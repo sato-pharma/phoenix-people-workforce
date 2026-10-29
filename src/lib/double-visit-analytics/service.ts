@@ -35,6 +35,7 @@ import {
   type ClassifiedDoubleVisitRow,
   type PrivateCalendarVisitKind,
 } from "@/lib/private-calendar/activity-kinds";
+import { privateCalendarTileCountsText } from "@/lib/private-calendar/day-tile";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
   PHOENIX_VISIT_DETAIL_COLUMNS,
@@ -48,7 +49,6 @@ import {
 import {
   addBucketToSplit,
   emptyVisitCountSplit,
-  formatVisitCountSplit,
   pharmacyCellNote,
   pharmacyCellValue,
   pharmacyRecordingOf,
@@ -2624,7 +2624,8 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
   // Phoenix employee record (their replacement may not even be onboarded yet) — say so
   // plainly rather than silently presenting an unverified name as confirmed.
   const identityUnverified = side === "performed" && group.some((entry) => entry.row.visited_employee_status === "resigned");
-  const counts = formatVisitCountSplit(split, { compact: true });
+  // The tile's own words, so the day card and its tile never print one day two ways ("AM 0 · PM 8 · PH 3").
+  const counts = privateCalendarTileCountsText(split);
   return privateCalendarItem({
     activityKind: kind,
     chipLines: [

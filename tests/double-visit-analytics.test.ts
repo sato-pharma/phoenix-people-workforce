@@ -151,8 +151,8 @@ export function runDoubleVisitAnalyticsTests() {
   );
   assert.match(
     service,
-    /const counts = formatVisitCountSplit\(split, \{ compact: true \}\);/,
-    "the chip's visit count must come from the golden-rule formatter, never a hand-built AM · PM pair",
+    /const counts = privateCalendarTileCountsText\(split\);/,
+    "the chip's visit count is the tile's own three figures, AM · PM · PH (owner, 2026-10-29), never a hand-built AM · PM pair",
   );
   assert.match(
     service,

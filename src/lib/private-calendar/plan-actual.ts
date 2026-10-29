@@ -14,7 +14,7 @@
 //              names who to go with matches only a visit made with that person; with someone else it is ✗.
 //   · office ↔ an office punch.
 //   · leave  ↔ a vacation, an excuse or a national holiday.
-//   · travel ↔ an outstation trip.
+//   · travel ↔ an outstation trip. On a field day the trip is that day's travel and sits in the visit row it served.
 //   · other  ↔ a CRM activity or a verified correction, else an office punch (a meeting or training in the building).
 //
 // Pure and client-safe — the day panel imports it. It reads structured fields only (`planActivity`, the visit tile),
@@ -160,6 +160,18 @@ export function buildDayPlanActual(planItems: readonly PrivateCalendarItem[], ac
       }
     }
     rows.push(row);
+  }
+
+  // An outstation trip on a field day is that field day's travel: it sits in the visit row it served, never as a "Not on
+  // the plan" row of its own (28 Oct on production: "With Hassan Mohamed" in Mahalla, and the Mahalla trip claim).
+  const fieldRow = rows.find((row) => row.plan?.type === "visit" && row.match === "match")
+    ?? rows.find((row) => row.plan?.type === "visit" && row.actual.length > 0);
+  if (fieldRow) {
+    for (const item of others) {
+      if (claimedOthers.has(item.id) || privateCalendarItemKind(item) !== "outstation") continue;
+      claimedOthers.add(item.id);
+      fieldRow.actual.push(recordedText(item));
+    }
   }
 
   // What was recorded that no plan entry asked for — the whole of an unclaimed entry, or the half of a visit entry the

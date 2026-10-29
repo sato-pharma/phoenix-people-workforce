@@ -15,7 +15,7 @@
 
 import { mergeDayMapVisitPages } from "@/lib/attendance/crm-day-maps";
 import { collapseDuplicateVisitSubmissions, CRM_DOUBLE_VISIT_TYPE_CODES, queryVisits, scanVisitsForRange } from "@/lib/crm/reads.ts";
-import { addVisitToSplit, emptyVisitCountSplit, formatVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { addVisitToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { CRM_LEAVE_VISIT_TYPE_CODES } from "@/lib/crm/visit-type-meaning";
 import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
@@ -26,6 +26,7 @@ import {
   visitCategoryOfType,
   type PrivateCalendarActivityKind,
 } from "@/lib/private-calendar/activity-kinds";
+import { privateCalendarTileCountsText } from "@/lib/private-calendar/day-tile";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 
 // `contact_name`, never `customer_name`: the mirror leaves customer_name empty on 100% of rows
@@ -263,7 +264,7 @@ export async function loadFieldVisitPrivateCalendarItems(
       // turned out to be empty everywhere.
       const partners = group.partners.size > 0 ? [...group.partners].join(", ") : null;
       const isVisit = group.kind !== "vacation" && group.kind !== "other_crm";
-      const counts = isVisit ? formatVisitCountSplit(group.split, { compact: true }) : countedList(group.activities);
+      const counts = isVisit ? privateCalendarTileCountsText(group.split) : countedList(group.activities);
       const headline = group.kind === "vacation" ? "Annual vacation logged in CRM" : kindLabel;
       items.push({
         activityKind: group.kind,
@@ -276,7 +277,7 @@ export async function loadFieldVisitPrivateCalendarItems(
           ...customerList,
         ],
         description: isVisit
-          ? "Logged CRM field visits from the live iReports360 visit mirror, AM · PM · Pharmacies apart."
+          ? "Logged CRM field visits from the live iReports360 visit mirror, AM · PM · PH apart."
           : group.kind === "vacation"
             ? "An annual vacation day the employee logged in CRM, from the live iReports360 visit mirror."
             : "CRM activity other than a customer visit, from the live iReports360 visit mirror.",
