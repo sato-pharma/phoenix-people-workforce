@@ -30,6 +30,11 @@ export default async function EmployeePortalAreaDirectOrdersPage() {
   }
 
   const report = await getRepAreaDirectOrders(access);
+  // CNS runs no direct orders (owner, 2026-10-29): the sidebar hides the row, and a typed address
+  // is sent home too rather than shown an empty window.
+  if (report.lineRunsNoDirectOrders) {
+    redirect("/employee-portals");
+  }
 
   // Badge and title are the sidebar's own section and label ("Sales" · "Area Direct Orders"), so the
   // page is called what the rep tapped. The date shown is when an order was PLACED, never collected.
