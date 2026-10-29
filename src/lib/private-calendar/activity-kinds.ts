@@ -1,9 +1,16 @@
 // The Private Calendar's colour key (owner, 2026-09-21): every CRM visit is coloured by WHO went —
-// single (alone), double (with a manager) or chain (with a manager and a senior manager) — crossed
-// with WHAT kind of visit it was — regular or campaign. Six visit colours, beside the non-visit
-// sources (attendance, vacation, excuse, national holiday) and "Other CRM activity" (meetings,
-// training, admin work and the rest). Every visit count is AM · PM · Pharmacies apart — see
-// src/lib/crm/visit-count-buckets.ts, THE golden-rule helper.
+// single (alone), double (with a manager) or chain (with a manager and a senior manager). Three visit
+// colours, beside the non-visit sources (attendance, vacation, excuse, national holiday) and "Other CRM
+// activity" (meetings, training, admin work and the rest). Every visit count is AM · PM · Pharmacies
+// apart — see src/lib/crm/visit-count-buckets.ts, THE golden-rule helper.
+//
+// 🔴 PHOENIX WORDS, NEVER THE VENDOR'S (owner, 2026-10-29: "what is double regular, double campaign? … write
+// double visit with Hana Abdelaziz"). Regular and campaign are iReports360's visit types ("Regular Visit",
+// "Campaign (Prospection)"); Phoenix CRM calls a visit Single, Double or Chain, planned or unplanned. So the kind
+// is WHO went and nothing else, named as Phoenix CRM names it (PHOENIX_VISIT_KIND_LABELS), and a campaign visit
+// joins its day's entry instead of making a second one beside it. The ids keep their `_regular` ending so a saved
+// filter or link still resolves. Regular/campaign survives only inside the chain pairing below, where it is a
+// matching key, never a word on screen.
 //
 // Pure: no database, so the pairing below is unit-tested on plain rows.
 
@@ -18,11 +25,13 @@ import {
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { CAMPAIGN_TYPE, REGULAR_TYPE, UNLABELED_FIELD_VISIT_TYPE } from "@/lib/crm/visit-types";
+import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import type { PrivateCalendarItem, PrivateCalendarSource } from "@/lib/private-calendar/logic";
 
 export type PrivateCalendarVisitCompanion = "single" | "double" | "chain";
 export type PrivateCalendarVisitCategory = "regular" | "campaign";
-export type PrivateCalendarVisitKind = `${PrivateCalendarVisitCompanion}_${PrivateCalendarVisitCategory}`;
+/** Who went. The `_regular` ending is a legacy of the retired regular/campaign split, kept so stored ids resolve. */
+export type PrivateCalendarVisitKind = `${PrivateCalendarVisitCompanion}_regular`;
 export type PrivateCalendarActivityKind =
   | Exclude<PrivateCalendarSource, "double_visit" | "field_visit">
   | PrivateCalendarVisitKind
@@ -30,11 +39,8 @@ export type PrivateCalendarActivityKind =
 
 export const privateCalendarVisitKinds = [
   "single_regular",
-  "single_campaign",
   "double_regular",
-  "double_campaign",
   "chain_regular",
-  "chain_campaign",
 ] as const satisfies readonly PrivateCalendarVisitKind[];
 
 export const privateCalendarActivityKinds = [
@@ -55,12 +61,9 @@ export const privateCalendarActivityKindLabels: Record<PrivateCalendarActivityKi
   excuse: "Excuse",
   holiday: "National holiday",
   plan: "Approved plan",
-  single_regular: "Single · Regular",
-  single_campaign: "Single · Campaign",
-  double_regular: "Double · Regular",
-  double_campaign: "Double · Campaign",
-  chain_regular: "Chain · Regular",
-  chain_campaign: "Chain · Campaign",
+  single_regular: PHOENIX_VISIT_KIND_LABELS.single,
+  double_regular: PHOENIX_VISIT_KIND_LABELS.double,
+  chain_regular: PHOENIX_VISIT_KIND_LABELS.chain,
   other_crm: "Other CRM activity",
   outstation: "Outstation trip",
   correction: "Admin-verified correction",
@@ -70,15 +73,19 @@ export function isPrivateCalendarVisitKind(kind: PrivateCalendarActivityKind): k
   return (privateCalendarVisitKinds as readonly string[]).includes(kind);
 }
 
-export function privateCalendarVisitKind(
-  companion: PrivateCalendarVisitCompanion,
-  category: PrivateCalendarVisitCategory,
-): PrivateCalendarVisitKind {
-  return `${companion}_${category}`;
+/** The kind of a visit: who went, and nothing else (see the header — regular or campaign is not a kind). */
+export function privateCalendarVisitKind(companion: PrivateCalendarVisitCompanion): PrivateCalendarVisitKind {
+  return `${companion}_regular`;
+}
+
+/** The companion a visit kind names: "single", "double" or "chain". */
+export function privateCalendarVisitCompanion(kind: PrivateCalendarVisitKind): PrivateCalendarVisitCompanion {
+  return kind.slice(0, kind.indexOf("_")) as PrivateCalendarVisitCompanion;
 }
 
 /** Regular for a regular call (0) and for the unlabelled field visit (-30), which the CRM domain
- * counts "in its normal place" as a regular visit; campaign for -8; null for everything else. */
+ * counts "in its normal place" as a regular visit; campaign for -8; null for everything else.
+ * Read as "is this row a customer visit at all" and as the chain pairing's key — never printed. */
 export function visitCategoryOfType(visitType: number | null | undefined): PrivateCalendarVisitCategory | null {
   if (visitType === CAMPAIGN_TYPE) return "campaign";
   if (visitType === REGULAR_TYPE || visitType === UNLABELED_FIELD_VISIT_TYPE) return "regular";
@@ -105,11 +112,8 @@ export type PrivateCalendarVisitSummary = Record<PrivateCalendarVisitKind, Visit
 export function emptyPrivateCalendarVisitSummary(): PrivateCalendarVisitSummary {
   return {
     all: emptyVisitCountSplit(),
-    chain_campaign: emptyVisitCountSplit(),
     chain_regular: emptyVisitCountSplit(),
-    double_campaign: emptyVisitCountSplit(),
     double_regular: emptyVisitCountSplit(),
-    single_campaign: emptyVisitCountSplit(),
     single_regular: emptyVisitCountSplit(),
   };
 }

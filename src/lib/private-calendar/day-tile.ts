@@ -5,9 +5,13 @@
 // … regular or campaign, planned or unplanned … if double, show the medical rep, the brick … don't mention names
 // [of pharmacies or customers]. When I press on the day, the details appear down."
 //
-// So the tile is a SUMMARY and never a list of customers: the kind (Single · Double · Chain), the category (Regular ·
-// Campaign), whether the visits were on the plan, the three figures apart, who the visit was made with, and where.
-// Every customer, address and per-visit card stays in the Daily Timeline table under the grid.
+// So the tile is a SUMMARY and never a list of customers: the kind and who it was made with, whether the visits were on
+// the plan, the three figures apart, and where. Every customer, address and per-visit card stays in the Daily Timeline
+// table under the grid.
+//
+// Owner, 2026-10-29, in PHOENIX words (never iReports360's "Regular" / "Campaign"): "write double visit with Hana
+// Abdelaziz", and the three figures "AM 1 · PM 7 · PH 0" — one plain line, the same look for each, no figure shouting
+// (the pharmacy count used to wear a violet fill, the loudest thing on the tile for the number no KPI reads).
 //
 // Pure and client-safe — the grid imports it. It reads only structured fields of the item (`activityKind`,
 // `visitCounts`, `managerVisits`, `tileWith`, `tileWithPeople`, `tileAreas`, `employeeAreaName`), never `chipLines`, which are text for the
@@ -15,10 +19,11 @@
 
 import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { emptyVisitCountSplit, visitCountSplitTotal, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { PHOENIX_VISIT_KIND_LABELS } from "@/lib/phoenix-crm/visit-kind-labels";
 import {
   isPrivateCalendarVisitKind,
   privateCalendarItemKind,
-  type PrivateCalendarVisitCategory,
+  privateCalendarVisitCompanion,
   type PrivateCalendarVisitCompanion,
 } from "@/lib/private-calendar/activity-kinds";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
@@ -26,7 +31,6 @@ import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 export type PrivateCalendarDayTile = {
   areas: string[];
   bricks: string[];
-  category: PrivateCalendarVisitCategory;
   companion: PrivateCalendarVisitCompanion;
   /** Of the Phoenix CRM visits behind the entry, how many were on the plan. Null when no visit says (an iReports360 day). */
   plan: { planned: number; unplanned: number } | null;
@@ -36,16 +40,25 @@ export type PrivateCalendarDayTile = {
   withNames: string[];
 };
 
+/** "Single visit", "Double visit", "Chain visit" — Phoenix CRM's own names, never re-typed. */
 export const PRIVATE_CALENDAR_COMPANION_LABELS: Record<PrivateCalendarVisitCompanion, string> = {
-  chain: "Chain",
-  double: "Double",
-  single: "Single",
+  chain: PHOENIX_VISIT_KIND_LABELS.chain,
+  double: PHOENIX_VISIT_KIND_LABELS.double,
+  single: PHOENIX_VISIT_KIND_LABELS.single,
 };
 
-export const PRIVATE_CALENDAR_CATEGORY_LABELS: Record<PrivateCalendarVisitCategory, string> = {
-  campaign: "Campaign",
-  regular: "Regular",
-};
+/** The tile's bold line: "Double visit with Hana Abdelaziz", "Chain visit with Mina Farouk, Nour Samy", "Single visit". */
+export function privateCalendarTileHeadline(tile: Pick<PrivateCalendarDayTile, "companion" | "withNames">): string {
+  const kind = PRIVATE_CALENDAR_COMPANION_LABELS[tile.companion];
+  return tile.withNames.length > 0 ? `${kind} with ${tile.withNames.join(", ")}` : kind;
+}
+
+/** The three figures, plain and apart: "AM 1 · PM 7 · PH 0". */
+export const PRIVATE_CALENDAR_TILE_FIGURE_LABELS = { am: "AM", pm: "PM", pharmacies: "PH" } as const;
+
+export function privateCalendarTileCountsText(split: VisitCountSplit): string {
+  return (["am", "pm", "pharmacies"] as const).map((key) => `${PRIVATE_CALENDAR_TILE_FIGURE_LABELS[key]} ${split[key]}`).join(" · ");
+}
 
 /** Each text once, in the order met, compared without case or stray spaces. */
 function distinctTexts(values: ReadonlyArray<string | null | undefined>): string[] {
@@ -133,7 +146,7 @@ export function privateCalendarDayTile(item: PrivateCalendarItem): PrivateCalend
   if (!isPrivateCalendarVisitKind(kind)) return null;
   const split = splitOf(item);
   if (!split) return null;
-  const [companion, category] = kind.split("_") as [PrivateCalendarVisitCompanion, PrivateCalendarVisitCategory];
+  const companion = privateCalendarVisitCompanion(kind);
   const visits = item.managerVisits ?? [];
 
   // Where: the visits' own brick and area win, then what the loader knew of the entry, then the employee's own area.
@@ -153,7 +166,6 @@ export function privateCalendarDayTile(item: PrivateCalendarItem): PrivateCalend
   return {
     areas,
     bricks: distinctTexts(visits.map((visit) => visit.brickName)),
-    category,
     companion,
     plan: visits.length > 0 ? { planned, unplanned: visits.length - planned } : null,
     split,

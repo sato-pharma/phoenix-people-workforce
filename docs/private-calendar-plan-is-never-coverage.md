@@ -75,3 +75,42 @@ payroll himself.
 | `tests/deductions-half-day.test.ts` | The half-day rule: `judgeHalfDay` reads no plan, and the connector imports no plan source. |
 
 All three run inside the required `validate` job.
+
+## The Plan | Actual table — the comparison, drawn (2026-10-29)
+
+His words, on Ahmed Sharaf's October: *"put in a table, put each point beside the point"*. Before this, one person's
+day drew the approved plan as cards of its own beside the day's records. On 27 Oct the reader saw an attendance card
+and then two separate APPROVED PLAN cards (AM Office, PM Office). On 28 Oct two plan cards said "With Hassan Mohamed"
+beside a double visit with Hassan Mohamed. He had to pair them up by eye.
+
+Now one person's day opens with ONE table. Each planned half-day is a row: the plan, what was recorded for that
+half, and a ✓ or ✗.
+
+- **What it reads.** `buildDayPlanActual` (`src/lib/private-calendar/plan-actual.ts`) is a pure function. It reads
+  the plan's STRUCTURED `planActivity` (`{ type, half, withName, place, signedOffBy }`) and the visit tile, never a
+  title. Both plan sources set that field in `src/lib/private-calendar/plan-items.ts`:
+  - the weekly plan (`employee_plan_items`): the half comes from its times, and `withName` is the double visit's rep;
+  - a manager's Phoenix CRM week (`phoenix_crm_manager_plan_slots`): a half-day with a rep names that rep, and With my
+    manager names the manager.
+- **What proves what.**
+  - A visit plan is matched to the day's visit entry by half: AM by the AM figure, PM by PM + PH, a whole day by any.
+    If the plan names who to go with, only a visit with that person matches. `samePersonName` treats two spellings as
+    one person when one name is the start of the other: Phoenix writes "Hana Abdelaziz", the visit mirror "Hana
+    Abdelaziz Samir Abdelaziz". A visit with someone else is ✗ "Not with …", and the visit is still shown.
+  - Office needs an office punch. An attendance row with no punch is ✗ "No office punch".
+  - Leave needs a vacation, an excuse or a holiday.
+  - Travel needs an outstation trip.
+  - Anything else (training, a meeting) is proven by a CRM activity or a verified correction. Failing those, an office
+    punch counts, since a training in the building leaves a punch and nothing else.
+- **What no plan asked for.** It gets its own NEUTRAL "Not on the plan" row, never a ✗. The same goes for the half of
+  a visit entry the plan did not reach: a planned AM with a rep, then six PM visits.
+- **Where it shows.** The table (`DayPlanActualTable`, `src/components/employee-portal/private-calendar-plan-actual.tsx`)
+  is `table-fixed` with a `<colgroup>`. Below its own 560 px it turns into cards (`@container`). It is square, in
+  plain ink. It replaces the plan cards in the ONE-PERSON view only. The team view keeps its plan cards, because a
+  single table would pair one person's plan with another person's record.
+- **A ride-along with no `managerPlan`.** The visit entry draws the visits table in visits-only mode
+  (`visitsOnlyRows`): no "No sent plan covers this day" note, and each visit shows its own Planned or Unplanned. The
+  6 Oct tile used to say "7 planned · 1 unplanned" while its details called none of them planned.
+
+🔴 **It is a display, and nothing more.** It feeds no coverage, no deduction and no KPI, so the ruling above stands
+unchanged: the plan is read to COMPARE, never to excuse. Pinned by `tests/private-calendar-plan-actual.test.ts`.

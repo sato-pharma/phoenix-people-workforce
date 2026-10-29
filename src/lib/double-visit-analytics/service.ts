@@ -35,6 +35,7 @@ import {
   type ClassifiedDoubleVisitRow,
   type PrivateCalendarVisitKind,
 } from "@/lib/private-calendar/activity-kinds";
+import { privateCalendarTileCountsText } from "@/lib/private-calendar/day-tile";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import {
   PHOENIX_VISIT_DETAIL_COLUMNS,
@@ -48,12 +49,10 @@ import {
 import {
   addBucketToSplit,
   emptyVisitCountSplit,
-  formatVisitCountSplit,
   pharmacyCellNote,
   pharmacyCellValue,
   pharmacyRecordingOf,
   pharmacyValueText,
-  visitCountSplitTotal,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
 import { doubleVisitCountBucket, entryPeriodLabel, sumDoubleVisitSplit } from "@/lib/double-visit-analytics/count-bucket";
@@ -2538,7 +2537,6 @@ function privateCalendarItem(input: {
   activityKind: PrivateCalendarVisitKind;
   chipLines: string[];
   date: string;
-  description: string;
   detailLines: string[];
   employeeHrId: string;
   employeeName: string | null;
@@ -2554,9 +2552,11 @@ function privateCalendarItem(input: {
 }): PrivateCalendarItem {
   return {
     activityKind: input.activityKind,
-    approvalImpact: "Double Visit evidence is read-only field activity context. It does not mutate attendance, leave, deductions, payroll, or compliance decisions.",
+    // No "read-only context" boilerplate and no description (owner, 2026-10-29: the day details said everything twice):
+    // the card is the kind, who with, the counts and the area, each once.
+    approvalImpact: null,
     chipLines: input.chipLines,
-    description: input.description,
+    description: null,
     detailLines: input.detailLines,
     employeeDepartmentName: null,
     employeeHrId: input.employeeHrId,
@@ -2600,11 +2600,13 @@ function groupCalendarRows(rows: ClassifiedCalendarRow[], keyFn: (entry: Classif
 }
 
 function calendarVisitKind(entry: ClassifiedCalendarRow): PrivateCalendarVisitKind {
-  return privateCalendarVisitKind(entry.companion, entry.category);
+  return privateCalendarVisitKind(entry.companion);
 }
 
-// One double or chain calendar item: the kind (who went × regular/campaign), who went with the
-// calendar owner, and the visits AM · PM · Pharmacies apart — never a pharmacy inside PM.
+// One double or chain calendar item: the kind (who went — Phoenix's "Double visit" / "Chain visit", never the vendor's
+// regular/campaign), who went with the calendar owner, and the visits AM · PM · Pharmacies apart — never a pharmacy
+// inside PM. Owner, 2026-10-29: each fact ONCE on the card — the kind is its chip, "With <name>" its title, the counts
+// its time, the area its one detail row. No "Line" row: the mirror's line name ("Pedia") is not a Phoenix line name.
 function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performed" | "received") {
   const first = group[0];
   const ownerHrId = side === "performed" ? first.row.double_visitor_hr_id : first.row.visited_employee_hr_id;
@@ -2613,35 +2615,28 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
   const kindLabel = privateCalendarActivityKindLabels[kind];
   const split = emptyVisitCountSplit();
   for (const entry of group) addBucketToSplit(split, entry.bucket, 1, entry.row.from_phoenix === true);
-  const total = visitCountSplitTotal(split);
   const companionPeople = group.flatMap((entry) => doubleVisitCompanionPeople(entry, side));
   const companions = companionPeople.map((person) => person.name);
   const withNames = joinedDistinct(companions, "Unmapped or vacant");
   const areaLabel = joinedDistinct(group.map((entry) => entry.row.area_name), "Unmapped");
-  const lineLabel = joinedDistinct(group.map((entry) => entry.row.line_name), "Unmapped");
   // Resolved to a resigned employee -> dbRowFromMirrorVisit already substituted the raw
   // CRM name/area for display, but that identity has not been matched to a current
   // Phoenix employee record (their replacement may not even be onboarded yet) — say so
   // plainly rather than silently presenting an unverified name as confirmed.
   const identityUnverified = side === "performed" && group.some((entry) => entry.row.visited_employee_status === "resigned");
-  const counts = formatVisitCountSplit(split, { compact: true });
+  // The tile's own words, so the day card and its tile never print one day two ways ("AM 0 · PM 8 · PH 3").
+  const counts = privateCalendarTileCountsText(split);
   return privateCalendarItem({
     activityKind: kind,
     chipLines: [
-      kindLabel,
-      `With ${withNames}`,
+      `${kindLabel} with ${withNames}`,
       counts,
       areaLabel,
       ...(identityUnverified ? ["Name from CRM, unmatched to an employee record"] : []),
     ],
     date: first.row.activity_date,
-    description: `${total} ${kindLabel} visit${total === 1 ? "" : "s"} ${side === "performed" ? "performed" : "received"}, from the live iReports360 visit mirror.`,
     detailLines: [
-      `Kind: ${kindLabel}`,
-      `Visits: ${formatVisitCountSplit(split)}`,
-      `${side === "performed" ? "With" : "Double visitor"}: ${withNames}`,
       `Area: ${areaLabel}`,
-      `Line: ${lineLabel}`,
       ...(identityUnverified
         ? ["Note: this name/area comes straight from the CRM sync — it could not be matched to a current Phoenix employee record (the CRM account may have been reassigned to a new hire)."]
         : []),
@@ -2658,7 +2653,7 @@ function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performe
       return name ? [{ hrId: nullableText(person.hrId), name }] : [];
     }),
     time: counts,
-    title: `${kindLabel}: ${total} visit${total === 1 ? "" : "s"} with ${withNames} - ${areaLabel}`,
+    title: `With ${withNames}`,
     visitCounts: split,
     visitRecords: group.map((entry) => ({
       bucket: entry.bucket,

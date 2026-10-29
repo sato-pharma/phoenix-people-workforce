@@ -2808,6 +2808,7 @@ import { runPhoenixFieldSetOnAdminReportsTests } from "./phoenix-field-set-on-ad
 import { runChainVisitOneVisitBothManagersTests } from "./chain-visit-one-visit-both-managers.test.ts";
 import { runManagerOwnVisitsEverywhereTests } from "./manager-own-visits-everywhere.test.ts";
 import { runPrivateCalendarDayTileTests } from "./private-calendar-day-tile.test.ts";
+import { runPrivateCalendarPlanActualTests } from "./private-calendar-plan-actual.test.ts";
 import { runPrivateCalendarNoticePeriodTests } from "./private-calendar-notice-period.test.ts";
 import { runPhoenixCrmOffplanDayTests } from "./phoenix-crm-offplan-day.test.ts";
 import { runPhoenixCrmBulkDropTests } from "./phoenix-crm-bulk-drop.test.ts";
@@ -11078,8 +11079,12 @@ await runTest(
   runPrivateCalendarNoticePeriodTests,
 );
 await runTest(
-  "The private calendar's day tile is a summary (owner, 2026-10-23): a visit entry shows its kind (single, double, chain), regular or campaign, planned or unplanned where a Phoenix visit says it, the AM, PM and Pharmacies figures apart (the pharmacy in violet), who the visit was made with, and the brick and area, each read from a structured field and never parsed out of the text lines; no customer or per-visit row is in the tile, the details read in the Daily Timeline table, and the page is square-edged and flat",
+  "The private calendar's day tile is a summary (owner, 2026-10-23, in Phoenix words 2026-10-29): a visit entry reads \"Double visit with Hana Abdelaziz\" (one kind per companion, never Regular or Campaign), planned or unplanned where a Phoenix visit says it, the figures as one plain line \"AM 1 · PM 7 · PH 0\" with no violet, and the brick and area, each read from a structured field and never parsed out of the text lines; no customer or per-visit row is in the tile, the details read in the Daily Timeline table, and the page is square-edged and flat",
   runPrivateCalendarDayTileTests,
+);
+await runTest(
+  "One person's day in the private calendar is ONE Plan | Actual table (owner, 2026-10-29: \"put each point beside the point\"): each planned half-day sits beside what was recorded for it with a ✓ or ✗ read from the plan's structured activity and the visit tile, never a title — a plan with a rep matches only a visit with that rep, Office needs an office punch — whatever no plan asked for is its own neutral Not on the plan row, both plan sources carry the activity, and the table fits its box square and flat, replacing the plan cards in the one-person view only",
+  runPrivateCalendarPlanActualTests,
 );
 await runTest(
   "Phoenix CRM off-plan day and moved day (owner, 2026-10-02): the off-plan visits waiting at the viewer's step are one card per rep per visit day, oldest first, and a person still decides each visit — Approve all is the per-visit decision once per visit through the one decide route, behind a confirm, naming any that fail; an out-of-plan visit to a customer on the SENT plan for another day of the same field week (Saturday to Thursday, Friday with the week before) fills the reason with that day for the rep to change, and the approver reads that day from the plan as it stood at the visit's captured_at, never a returned day, a plan sent after, or a passed day he was seen on, and never from the rep's text",
