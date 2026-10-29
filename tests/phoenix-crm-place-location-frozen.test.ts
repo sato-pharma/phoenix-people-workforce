@@ -174,15 +174,17 @@ function runServerTests() {
   // passes on code typecheck rejects is worse than no test — it says the layer is guarded.
   assert.match(geography[1], /resolveEvidenceLocation\(\s*\{[^}]*\blatitude: point\.lat\b/, "the clean address is resolved from the fixed point's latitude");
   assert.match(geography[1], /resolveEvidenceLocation\(\s*\{[^}]*\blongitude: point\.lon\b/, "the clean address is resolved from the fixed point's longitude");
-  assert.match(geography[1], /resolveBrickForPoint\(point\.lat, point\.lon, centroids,/, "the brick is resolved from the fixed point");
+  assert.match(geography[1], /fileBrickForPoint\(point\.lat, point\.lon, centroids,/, "the brick is resolved from the fixed point");
   // 🔴 AND THE CAPTURING SEAT'S TERRITORY GOES WITH IT. Without this argument the nearest centroid
   // wins outright, and 34 live centroids sit on coordinates two AREAS share — so a capture's area
   // would be decided by array order. It filed a Faisal hospital in Imbaba on 2026-10-10.
-  assert.match(
-    geography[1],
-    /resolveBrickForPoint\([^)]*\{ areaCodes: territory\.areaCodes, withinKm: BRICK_TRUST_KM \}\)/,
-    "and the seat's own area breaks a near tie, inside the same trust radius",
-  );
+  // And past the trust radius only that own area reaches, up to OWN_AREA_REACH_KM (owner, 2026-10-29:
+  // "Rep's own area"); the rule itself is pinned by behaviour in runPhoenixCrmCaptureBrickTerritoryTests.
+  const filing = geography[1].match(/fileBrickForPoint\(point\.lat, point\.lon, centroids, \{([^}]*)\}\)/);
+  assert.ok(filing, "the brick is filed by the one shared filing rule");
+  assert.match(filing[1], /\bareaCodes: territory\.areaCodes\b/, "and the seat's own area breaks a near tie");
+  assert.match(filing[1], /\btrustKm: BRICK_TRUST_KM\b/, "inside the same trust radius the match is judged by");
+  assert.match(filing[1], /\breachKm: OWN_AREA_REACH_KM\b/, "and only the own area reaches past it");
   assert.equal(
     placeLocation.split("resolveEvidenceLocation(").length - 1,
     1,

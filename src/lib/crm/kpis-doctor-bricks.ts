@@ -5,16 +5,18 @@
  * ## Where the brick comes from
  *
  * A doctor's brick is the one his VALIDATED live photo was filed in: `phoenix_crm_places.brick_name`,
- * set once by `resolvePinGeography` (the nearest Phoenix brick within `BRICK_TRUST_KM`, the capturing
- * seat's area breaking a tie). It is read here and never recomputed, so the KPIs and Customer 360
- * (`customer-360/server/sources.ts`, `loadPhoenix`) can never put one doctor in two bricks.
+ * set once by `resolvePinGeography` (`fileBrickForPoint`: a brick within `BRICK_TRUST_KM`, else the
+ * capturing seat's own area's nearest within `OWN_AREA_REACH_KM`). It is read here and never
+ * recomputed, so the KPIs and Customer 360 (`customer-360/server/sources.ts`, `loadPhoenix`) can never
+ * put one doctor in two bricks.
  *
  * ## The three answers, and the fourth that is not one
  *
  *   - a brick name: validated, and the photo sits in that brick;
- *   - null: validated, but the photo was further than the trust radius from any brick, or the
- *     customer has no active place left;
- *   - missing from the map: no validated Phoenix customer carries his contact — "Not validated yet";
+ *   - null: validated, but the photo sits further than the reach from every brick of the seat's area;
+ *   - missing from the map: no validated Phoenix customer of his still has an ACTIVE place — "Not
+ *     validated yet". A customer whose places were all retired, or who never had one, has no live
+ *     photo behind him, so he is not validated on this list (owner, 2026-10-29: "Not validated yet");
  *   - the whole read returns null when it failed. The board then stamps NOTHING, so the list shows no
  *     brick at all rather than calling every doctor "not validated" — a statement about a rep's work.
  *
@@ -57,6 +59,9 @@ const isActive = (customer: KpiBrickCustomer) => String(customer.status ?? "").t
  * Picks each contact's brick from his validated customers and their active places. Pure, so the
  * choice is pinned by a test with no database near it.
  *
+ * Only a customer with an active place counts: no live place, no live photo behind the validation
+ * (owner, 2026-10-29 — 26 validated customers had only retired places, 4 never had one).
+ *
  * One contact can be validated on more than one customer (a doctor on two lines), and one customer
  * can hold more than one active place (29 on 2026-10-29). The customer still on a list beats a dropped
  * one, then the latest validation wins; among that customer's places a place with a brick beats one
@@ -66,17 +71,6 @@ export function chooseKpiDoctorBricks(
   customers: readonly KpiBrickCustomer[],
   places: readonly KpiBrickPlace[],
 ): Map<number, string | null> {
-  const chosen = new Map<number, KpiBrickCustomer>();
-  for (const customer of customers) {
-    const contactId = phoenixContactId(customer);
-    if (contactId == null || !customer.validated_at) continue;
-    const held = chosen.get(contactId);
-    const better =
-      !held ||
-      (isActive(customer) && !isActive(held)) ||
-      (isActive(customer) === isActive(held) && customer.validated_at > (held.validated_at ?? ""));
-    if (better) chosen.set(contactId, customer);
-  }
   const placeOf = new Map<string, KpiBrickPlace>();
   for (const place of places) {
     const held = placeOf.get(place.customer_id);
@@ -87,6 +81,17 @@ export function chooseKpiDoctorBricks(
       (hasBrick && !heldHasBrick) ||
       (hasBrick === heldHasBrick && (place.created_at ?? "") < (held.created_at ?? ""));
     if (better) placeOf.set(place.customer_id, place);
+  }
+  const chosen = new Map<number, KpiBrickCustomer>();
+  for (const customer of customers) {
+    const contactId = phoenixContactId(customer);
+    if (contactId == null || !customer.validated_at || !placeOf.has(customer.id)) continue;
+    const held = chosen.get(contactId);
+    const better =
+      !held ||
+      (isActive(customer) && !isActive(held)) ||
+      (isActive(customer) === isActive(held) && customer.validated_at > (held.validated_at ?? ""));
+    if (better) chosen.set(contactId, customer);
   }
   const out = new Map<number, string | null>();
   for (const [contactId, customer] of chosen) {
