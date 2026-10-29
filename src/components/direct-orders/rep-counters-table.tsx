@@ -3,21 +3,22 @@
 import type { DirectOrderRepCountersResult } from "@/lib/direct-orders/rep-counters";
 import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { data: DirectOrderRepCountersResult };
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 
-const cairoStamp = (iso: string | null) =>
-  iso
-    ? new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Africa/Cairo",
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(iso))
-    : "—";
+// Built once, through the helper whose bytes the server and the browser agree on (React #418).
+const cairoStampFormatter = stableEnGbFormatter({
+  timeZone: "Africa/Cairo",
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const cairoStamp = (iso: string | null) => (iso ? cairoStampFormatter.format(new Date(iso)) : "—");
 
 /**
  * A count that means something gets weight; a zero stays quiet.
