@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Button } from "@/components/ui/button";
 import { customerKey, savedCustomerKeys } from "@/lib/sales/customer-key";
 import type { BrickSuggestionView, UnmappedCustomer } from "@/lib/sales/brick-suggestions";
@@ -112,6 +113,23 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
     void accept(pendingHigh).finally(() => setBusyAll(false));
   };
 
+  const acceptControl = (s: BrickSuggestionView, rowKey: string) =>
+    accepted.has(rowKey) ? (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+        <CheckCircle2 className="h-3.5 w-3.5" /> Added
+      </span>
+    ) : (
+      <Button
+        className="h-7 rounded-md px-3 text-xs font-bold"
+        disabled={busy}
+        onClick={() => acceptOne(s)}
+        type="button"
+        variant="secondary"
+      >
+        {busyCode === rowKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Accept"}
+      </Button>
+    );
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
@@ -134,58 +152,51 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
       <p className="text-xs text-phx-ink-soft">
         Matched to an already-mapped customer with the same name (or name + address). Accepting writes to the mapping sheet — re-run Preview to see them resolve.
       </p>
-      <div className="overflow-hidden rounded-lg border border-phx-line">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Suggested brick</th>
-              <th className="px-3 py-2">Match</th>
-              <th className="px-3 py-2 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {suggestions.map((s) => {
-              const rowKey = customerKey(s.distributorCode, s.customerCode);
-              const isAccepted = accepted.has(rowKey);
-              return (
-                <tr key={rowKey} className="border-t border-[#EEF2F7]">
-                  <td className="px-3 py-1.5">
-                    <span className="font-semibold text-phx-ink">{s.customerCode}</span>
-                    {s.customerName ? <span className="block max-w-[160px] truncate text-xs text-phx-ink-soft">{s.customerName}</span> : null}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span className="font-medium text-phx-ink">{s.brickName}</span>
-                    <span className="block text-xs text-phx-ink-faint">from {s.sourceDistributorCode}</span>
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <Badge variant={s.confidence === "high" ? "success" : "neutral"}>
-                      {s.confidence === "high" ? "name + address" : "name only"}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-1.5 text-right">
-                    {isAccepted ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Added
-                      </span>
-                    ) : (
-                      <Button
-                        className="h-7 rounded-md px-3 text-xs font-bold"
-                        disabled={busy}
-                        onClick={() => acceptOne(s)}
-                        type="button"
-                        variant="secondary"
-                      >
-                        {busyCode === rowKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Accept"}
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <CrmTable columns={["30%", "28%", "20%", "22%"]}>
+        <thead>
+          <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <th className="break-words px-3 py-2">Customer</th>
+            <th className="break-words px-3 py-2">Suggested brick</th>
+            <th className="break-words px-3 py-2">Match</th>
+            <th className="break-words px-3 py-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {suggestions.map((s) => {
+            const rowKey = customerKey(s.distributorCode, s.customerCode);
+            return (
+              <tr key={rowKey} className="border-t border-[#EEF2F7] align-top">
+                <td className="break-words px-3 py-1.5 font-semibold text-phx-ink">{s.customerName || s.customerCode}</td>
+                <td className="break-words px-3 py-1.5">
+                  <span className="font-medium text-phx-ink">{s.brickName}</span>
+                  <span className="block text-xs text-phx-ink-faint">from {s.sourceDistributorCode}</span>
+                </td>
+                <td className="break-words px-3 py-1.5">
+                  <Badge variant={s.confidence === "high" ? "success" : "neutral"}>
+                    {s.confidence === "high" ? "name + address" : "name only"}
+                  </Badge>
+                </td>
+                <td className="px-3 py-1.5 text-right">{acceptControl(s, rowKey)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </CrmTable>
+      <CrmCardsOnPhone>
+        {suggestions.map((s) => {
+          const rowKey = customerKey(s.distributorCode, s.customerCode);
+          return (
+            <CrmCard actions={acceptControl(s, rowKey)} key={rowKey} title={s.customerName || s.customerCode}>
+              <CrmFacts
+                facts={[
+                  { label: "Suggested brick", value: `${s.brickName} (from ${s.sourceDistributorCode})` },
+                  { label: "Match", value: s.confidence === "high" ? "name + address" : "name only" },
+                ]}
+              />
+            </CrmCard>
+          );
+        })}
+      </CrmCardsOnPhone>
       {message ? <p className="text-xs font-semibold text-emerald-700">{message}</p> : null}
     </div>
   );
@@ -249,20 +260,14 @@ function SplitPlanSection({ plan }: { plan: ImportSplitPlan | undefined }) {
       ) : null}
 
       {splitting.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-phx-line">
-          <table className="w-full table-fixed text-sm">
-            <colgroup>
-              <col style={{ width: "30%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "34%" }} />
-              <col style={{ width: "16%" }} />
-            </colgroup>
+        <>
+          <CrmTable columns={["30%", "20%", "34%", "16%"]}>
             <thead>
               <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-                <th className="px-3 py-2">Customer</th>
-                <th className="px-3 py-2">City</th>
-                <th className="px-3 py-2">Spreads across</th>
-                <th className="px-3 py-2 text-right">Units each</th>
+                <th className="break-words px-3 py-2">Customer</th>
+                <th className="break-words px-3 py-2">City</th>
+                <th className="break-words px-3 py-2">Spreads across</th>
+                <th className="break-words px-3 py-2 text-right">Units each</th>
               </tr>
             </thead>
             <tbody>
@@ -274,14 +279,27 @@ function SplitPlanSection({ plan }: { plan: ImportSplitPlan | undefined }) {
                   </td>
                   <td className="break-words px-3 py-2">{c.group ?? "—"}</td>
                   <td className="break-words px-3 py-2 text-phx-ink-soft">{c.targetAreas.join(", ")}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
+                  <td className="break-words px-3 py-2 text-right tabular-nums">
                     {formatNumber(Math.round(c.unitsPerArea * 100) / 100)}
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </CrmTable>
+          <CrmCardsOnPhone>
+            {splitting.slice(0, 25).map((c) => (
+              <CrmCard key={`${c.clientCode}-${c.originArea}`} meta={c.originArea} title={c.clientName || c.clientCode}>
+                <CrmFacts
+                  facts={[
+                    { label: "City", value: c.group ?? "—" },
+                    { label: "Units each", value: formatNumber(Math.round(c.unitsPerArea * 100) / 100) },
+                    { label: "Spreads across", value: c.targetAreas.join(", ") },
+                  ]}
+                />
+              </CrmCard>
+            ))}
+          </CrmCardsOnPhone>
+        </>
       ) : null}
 
       {whole.length > 0 ? (
@@ -412,26 +430,36 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
           {diff && diff.brickDriftSamples.length > 0 ? (
             <div className="space-y-1.5">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Brick drift — resolved brick ≠ stored mapping</p>
-              <div className="overflow-hidden rounded-lg border border-phx-line">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-                      <th className="px-3 py-2">Customer</th>
-                      <th className="px-3 py-2">Stored brick</th>
-                      <th className="px-3 py-2">Resolved brick</th>
+              <CrmTable columns={["34%", "33%", "33%"]}>
+                <thead>
+                  <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                    <th className="break-words px-3 py-2">Customer</th>
+                    <th className="break-words px-3 py-2">Stored brick</th>
+                    <th className="break-words px-3 py-2">Resolved brick</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diff.brickDriftSamples.map((row) => (
+                    <tr key={row.customerCode} className="border-t border-[#EEF2F7] align-top">
+                      <td className="break-words px-3 py-1.5 font-medium text-phx-ink">{row.customerCode}</td>
+                      <td className="break-words px-3 py-1.5 text-phx-ink-soft">{row.mappedBrickId}</td>
+                      <td className="break-words px-3 py-1.5 text-orange-600">{row.resolvedBrickId}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {diff.brickDriftSamples.map((row) => (
-                      <tr key={row.customerCode} className="border-t border-[#EEF2F7]">
-                        <td className="px-3 py-1.5 font-medium text-phx-ink">{row.customerCode}</td>
-                        <td className="px-3 py-1.5 text-phx-ink-soft">{row.mappedBrickId}</td>
-                        <td className="px-3 py-1.5 text-orange-600">{row.resolvedBrickId}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </CrmTable>
+              <CrmCardsOnPhone>
+                {diff.brickDriftSamples.map((row) => (
+                  <CrmCard key={row.customerCode} title={row.customerCode}>
+                    <CrmFacts
+                      facts={[
+                        { label: "Stored brick", value: row.mappedBrickId },
+                        { label: "Resolved brick", value: row.resolvedBrickId },
+                      ]}
+                    />
+                  </CrmCard>
+                ))}
+              </CrmCardsOnPhone>
             </div>
           ) : null}
         </div>

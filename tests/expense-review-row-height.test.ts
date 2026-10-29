@@ -37,11 +37,9 @@ export function runExpenseReviewRowHeightTests() {
   // All five of them, because a table row is as tall as its tallest cell: leave one at py-3 and the
   // other four save nothing at all. That is the same class of mistake as optimising the wrong column.
   const reviewRowCells = [
-    'className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-2 align-top',
-    '"whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft"',
-    '"whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top font-mono text-xs text-text-secondary',
-    '"whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top text-text-secondary',
-    '"sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-2 align-top',
+    'className="min-w-0 break-words border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft"',
+    '"min-w-0 break-words border-b border-slate-100 px-3 py-2 align-top text-xs group-hover:bg-phx-accent-soft"',
+    '"min-w-0 border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft"',
   ];
   for (const cell of reviewRowCells) {
     assert.ok(
@@ -52,10 +50,20 @@ export function runExpenseReviewRowHeightTests() {
   }
   assert.equal(
     (source.match(/px-3 py-2 align-top/g) ?? []).length,
-    5,
-    "exactly five review-row cells take px-3 py-2 — the person cell, the three detail variants and " +
+    3,
+    "exactly three review-row cells take px-3 py-2 — the Employee cell, the merged-fact cell and " +
       "the HR Decision cell",
   );
+
+  // ── The review table fits the screen: merged cells, no sideways scroll ────
+  assert.match(source, /<table className="w-full table-fixed text-left text-sm">/, "w-full table-fixed, no w-max");
+  assert.match(source, /<colgroup>[\s\S]*columnPercentages\.map/, "a percentage colgroup");
+  assert.doesNotMatch(
+    source,
+    /border-separate|overflow-x-auto|min-w-\[|whitespace-nowrap|sticky (left|right)-0/,
+    "no border-separate, scroll wrapper, min-width, nowrap or sticky left/right column in the review table",
+  );
+  assert.ok(!/\bhrId\b[^\n]*font-mono/.test(source), "the HR id is not a cell of the review table");
 
   // ── The header keeps py-3, deliberately ────────────────────────────────────
   // A column heading is read once; a row is read 489 times. Shrinking the header buys one row's worth

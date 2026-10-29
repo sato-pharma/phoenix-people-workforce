@@ -23,6 +23,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { Input } from "@/components/ui/input";
 import {
   PortalDesktopTable,
@@ -418,16 +419,17 @@ function ExpandableMrRow({
     );
     return [...rows].sort((a, b) => b.date.localeCompare(a.date));
   }, [visitLog, score.hrId, periodFilter]);
+  const detailId = `mr-history-${hk(score.hrId)}`;
 
   return (
     <>
-      <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={onToggle}>
+      <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={onToggle} {...rowDetailToggleProps(detailId, open)}>
         <td className="w-8 px-3 py-3 text-slate-400">
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </td>
         <td className="px-3 py-3">
           <p className="text-sm font-semibold text-slate-800">{score.mrName}</p>
-          <p className="text-xs text-slate-400">{score.hrId} · {score.areaName ?? "No area"}</p>
+          {score.areaName ? <p className="break-words text-xs text-slate-400">{score.areaName}</p> : null}
         </td>
         <td className="px-3 py-3 text-sm text-slate-600">{fmtDate(score.hireDate)}</td>
         <td className="px-3 py-3 text-xs">
@@ -453,14 +455,20 @@ function ExpandableMrRow({
         </td>
       </tr>
       {open && (
-        <tr className="bg-slate-50">
-          <td colSpan={10} className="px-6 py-4">
+        <TableRowDetail className="px-6 py-4" colSpan={10} id={detailId}>
             {mrHistory.length === 0 ? (
               <p className="text-sm text-slate-400">
                 No visits recorded for this MR{periodFilter !== "ALL" ? ` in ${periodFilter}` : ""}.
               </p>
             ) : (
-              <table className="w-full text-left text-sm">
+              <table className="w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead>
                   <tr className="text-xs font-black uppercase tracking-wide text-slate-500">
                     <th className="pb-2 pr-6">Date</th>
@@ -474,8 +482,8 @@ function ExpandableMrRow({
                   {mrHistory.map((e, i) => (
                     <tr key={`${e.date}-${hk(e.doubleVisitorHrId) || e.doubleVisitorName || "dv"}-${e.period}-${e.visitCount}-${i}`} className="border-t border-slate-200">
                       <td className="py-1.5 pr-6 font-semibold text-slate-800">{fmtDate(e.date)}</td>
-                      <td className="py-1.5 pr-6 text-slate-700">{e.doubleVisitorName ?? e.doubleVisitorHrId ?? "—"}</td>
-                      <td className="py-1.5 pr-6 text-slate-600">{e.area ?? "—"}</td>
+                      <td className="min-w-0 break-words py-1.5 pr-6 text-slate-700">{e.doubleVisitorName ?? "—"}</td>
+                      <td className="min-w-0 break-words py-1.5 pr-6 text-slate-600">{e.area ?? "—"}</td>
                       <td className="py-1.5 pr-6">
                         {entryPeriodLabel(e) !== "UNKNOWN" ? (
                           <span className={`rounded px-1.5 py-0.5 text-xs font-black ${periodPillClass(entryPeriodLabel(e))}`}>{entryPeriodLabel(e)}</span>
@@ -487,8 +495,7 @@ function ExpandableMrRow({
                 </tbody>
               </table>
             )}
-          </td>
-        </tr>
+        </TableRowDetail>
       )}
     </>
   );
@@ -523,7 +530,7 @@ function MrScoreCard({
     <PortalRecordCard
       accent={score.band === "critical" ? "rose" : score.band === "warning" ? "amber" : "emerald"}
       title={score.mrName}
-      meta={<span>{score.hrId} · {score.areaName ?? "No area"}</span>}
+      meta={score.areaName ? <span>{score.areaName}</span> : undefined}
       status={<span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>}
       actions={
         <button
@@ -574,8 +581,8 @@ function MrScoreCard({
               >
                 <div className="min-w-0">
                   <p className="font-bold text-slate-800">{fmtDate(e.date)}</p>
-                  <p className="truncate text-slate-500">
-                    {e.doubleVisitorName ?? e.doubleVisitorHrId ?? "—"} · {e.area ?? "—"}
+                  <p className="break-words text-slate-500">
+                    {e.doubleVisitorName ?? "—"} · {e.area ?? "—"}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -646,7 +653,7 @@ function LeaderboardCard({
     <PortalRecordCard
       accent="slate"
       title={row.managerName}
-      meta={<span>#{rank} · {row.managerHrId.toUpperCase()}</span>}
+      meta={<span>#{rank}</span>}
       status={<RoleBadge role={row.roleCode} />}
       actions={
         <button
@@ -714,7 +721,7 @@ function MrBreakdownCard({
     <PortalRecordCard
       accent={overFocused ? "orange" : "slate"}
       title={row.name}
-      meta={<span>{row.hrId ?? "No HR ID"} · {row.area ?? "No area"}</span>}
+      meta={row.area ? <span>{row.area}</span> : undefined}
       status={
         row.score ? (
           <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
@@ -791,7 +798,7 @@ function NeglectedMrCard({ onOpen, score }: { onOpen: (score: DoubleVisitMrScore
     <PortalRecordCard
       accent={score.band === "critical" ? "rose" : "amber"}
       title={score.mrName}
-      meta={<span>{score.hrId} · {score.managerName ?? "No manager"}</span>}
+      meta={score.managerName ? <span>{score.managerName}</span> : undefined}
       status={<span className={`rounded px-2 py-1 text-xs font-black uppercase ring-1 ${bandClass(score.band)}`}>{score.band}</span>}
       actions={
         <button
@@ -870,7 +877,7 @@ export function DoubleVisitAnalyticsWorkspace({
     for (const e of visitLogPerDoubleVisitor(visitLog)) {
       const mKey = hk(e.doubleVisitorHrId);
       if (!mKey) continue;
-      const existing = map.get(mKey) ?? { dvs: 0, lastDate: null, mrs: new Set<string>(), name: e.doubleVisitorName ?? e.doubleVisitorHrId ?? mKey };
+      const existing = map.get(mKey) ?? { dvs: 0, lastDate: null, mrs: new Set<string>(), name: e.doubleVisitorName ?? "Unnamed manager" };
       existing.dvs += e.visitCount;
       const visited = hk(e.visitedHrId);
       if (visited) existing.mrs.add(visited);
@@ -979,7 +986,7 @@ export function DoubleVisitAnalyticsWorkspace({
   }
 
   function focusMr(score: DoubleVisitMrScore) {
-    setMrSearch(score.hrId);
+    setMrSearch(score.mrName);
     setExpandedMrKeys(new Set([hk(score.hrId)]));
     setActiveTab("mr-status");
   }
@@ -1317,7 +1324,6 @@ export function DoubleVisitAnalyticsWorkspace({
                           <td className="px-3 py-2.5 text-sm font-bold tabular-nums text-slate-400">{index + 1}</td>
                           <td className="px-3 py-2.5">
                             <p className="text-sm font-bold text-slate-800">{row.managerName}</p>
-                            <p className="text-xs text-slate-400">{row.managerHrId.toUpperCase()}</p>
                           </td>
                           <td className="px-3 py-2.5"><RoleBadge role={row.roleCode} /></td>
                           <td className="px-3 py-2.5">
@@ -1363,7 +1369,7 @@ export function DoubleVisitAnalyticsWorkspace({
                   {dashboard.heatmap.byArea.length === 0 && <p className="text-sm text-slate-400">No coverage data in range.</p>}
                   {dashboard.heatmap.byArea.slice(0, 20).map((row) => (
                     <div key={row.label} className="grid grid-cols-[1fr_100px_80px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
-                      <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
+                      <span className="min-w-0 break-words text-sm font-semibold text-slate-800">{row.label}</span>
                       <div className="relative h-2 rounded bg-slate-100">
                         <div className="absolute left-0 top-0 h-2 rounded bg-phx-accent" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
                       </div>
@@ -1379,7 +1385,7 @@ export function DoubleVisitAnalyticsWorkspace({
                   {dashboard.heatmap.byLine.length === 0 && <p className="text-sm text-slate-400">No coverage data in range.</p>}
                   {dashboard.heatmap.byLine.slice(0, 20).map((row) => (
                     <div key={row.label} className="grid grid-cols-[1fr_100px_80px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
-                      <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
+                      <span className="min-w-0 break-words text-sm font-semibold text-slate-800">{row.label}</span>
                       <div className="relative h-2 rounded bg-slate-100">
                         <div className="absolute left-0 top-0 h-2 rounded bg-phx-accent" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
                       </div>
@@ -1420,10 +1426,9 @@ export function DoubleVisitAnalyticsWorkspace({
                   ].join(" ")}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-bold text-slate-800">{m.managerName}</p>
+                    <p className="min-w-0 break-words text-sm font-bold text-slate-800">{m.managerName}</p>
                     <RoleBadge role={summaryByKey.get(mKey)?.roleCode ?? null} />
                   </div>
-                  <p className="text-xs text-slate-400">{m.managerHrId}</p>
                   <div className="mt-1.5 flex items-center gap-3">
                     <span className="text-xs font-semibold text-slate-600">{fmt(m.actualDvs)} DVs</span>
                     <span className="text-xs text-slate-400">·</span>
@@ -1459,9 +1464,7 @@ export function DoubleVisitAnalyticsWorkspace({
                     <RoleBadge role={selectedSummary?.roleCode ?? null} />
                   </div>
                   <p className="text-sm text-slate-500">
-                    {selectedSummary?.managerHrId.toUpperCase() ?? selectedExec?.managerHrId ?? selectedManagerKey.toUpperCase()}
-                    {selectedSummary?.role ? ` · ${selectedSummary.role}` : ""}
-                    {periodLabel ? ` · ${periodLabel} breakdown` : ""}
+                    {[selectedSummary?.role, periodLabel ? `${periodLabel} breakdown` : null].filter(Boolean).join(" · ")}
                   </p>
                 </div>
 
@@ -1559,7 +1562,7 @@ export function DoubleVisitAnalyticsWorkspace({
                               <tr key={row.key} className="border-t border-slate-100">
                                 <td className="px-3 py-2.5">
                                   <p className="text-sm font-semibold text-slate-800">{row.name}</p>
-                                  <p className="text-xs text-slate-400">{row.hrId ?? "No HR ID"} · {row.area ?? "No area"}</p>
+                                  {row.area ? <p className="break-words text-xs text-slate-400">{row.area}</p> : null}
                                 </td>
                                 <td className="px-3 py-2.5">
                                   <div className="flex items-center gap-2">
@@ -1862,7 +1865,7 @@ export function DoubleVisitAnalyticsWorkspace({
                       <tr key={score.hrId} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => focusMr(score)}>
                         <td className="px-3 py-2.5">
                           <p className="font-semibold text-slate-800">{score.mrName}</p>
-                          <p className="text-xs text-slate-400">{score.hrId}</p>
+                          {score.areaName ? <p className="break-words text-xs text-slate-400">{score.areaName}</p> : null}
                         </td>
                         <td className="px-3 py-2.5 text-slate-600">{score.managerName ?? "—"}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-800">{score.dvsLast90Days}</td>

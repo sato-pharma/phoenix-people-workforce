@@ -1,5 +1,6 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -382,9 +383,9 @@ export function ValidatedCustomerDetailView({
                       ? "Reverted"
                       : transfer.directOrderValidationStatus === "pending" || !transfer.directOrderValidationStatus
                         ? "Waiting on the Direct Order desk"
-                        : `Decided there: ${transfer.directOrderValidationStatus.replace(/_/g, " ")}`,
+                        : `Decided there: ${humanizeCode(transfer.directOrderValidationStatus)}`,
                 },
-                { label: "Transferred by", value: transfer.transferredByName || transfer.transferredByHrId },
+                { label: "Transferred by", value: transfer.transferredByName || "—" },
                 { label: "Transferred at", value: cairoDateTime(transfer.transferredAt) },
                 { label: "Phoenix code", value: transfer.phoenixPharmacyCode || "Not assigned" },
                 { label: "Reverted at", value: transfer.revertedAt ? cairoDateTime(transfer.revertedAt) : "Not reverted" },
@@ -449,7 +450,7 @@ export function ValidatedCustomerDetailView({
             fields={[
               { label: "Code", value: customer.customerCode || "Not recorded" },
               { label: "Type", value: customer.customerType || "Not recorded" },
-              { label: "Validation", value: customer.validationStatus.replace(/_/g, " ") },
+              { label: "Validation", value: humanizeCode(customer.validationStatus) },
               { label: "Evidence", value: customer.evidenceStatus || "missing" },
               { label: "Validated by", value: customer.validatedByName || "Not recorded" },
               { label: "Manager", value: customer.managerName || "Not recorded" },
@@ -607,7 +608,7 @@ export function ValidatedCustomerDetailView({
                     { label: "Customer code", value: pharmacy.distributorCustomerCode || "Not resolved" },
                     { label: "Address", value: pharmacy.capturedAddress || "Not captured" },
                     { label: "Evidence", value: pharmacy.evidenceStatus || "missing" },
-                    { label: "Validation", value: (pharmacy.validationStatus || "pending").replace(/_/g, " ") },
+                    { label: "Validation", value: humanizeCode(pharmacy.validationStatus || "pending") },
                   ]}
                 />
                 {pharmacy.photoUrl ? (

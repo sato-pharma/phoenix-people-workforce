@@ -118,7 +118,6 @@ function PersonChanges({ person }: { person: ImportPersonChanges }) {
     <div className="border border-border bg-card">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-border px-3 py-2">
         <span className="text-sm font-bold text-text">{person.fullName}</span>
-        <span className="text-xs font-semibold text-text-secondary">{person.hrId}</span>
         {person.rowNumber === null ? null : (
           <span className="text-xs text-text-secondary">{`row ${person.rowNumber} in your file`}</span>
         )}
@@ -408,7 +407,6 @@ export function EmployeeImportReview({
                   </td>
                   <td className="break-words px-3 py-2 align-top text-xs text-text">
                     <span className="font-semibold">{finding.fullName}</span>
-                    <span className="ms-1 text-text-secondary">{finding.hrId}</span>
                   </td>
                   <td className="break-words px-3 py-2 align-top text-xs text-text-secondary">{finding.column}</td>
                   <td className="break-words px-3 py-2 align-top text-xs">
@@ -435,7 +433,6 @@ export function EmployeeImportReview({
               >
                 <p className="flex flex-wrap items-baseline gap-x-2 text-xs">
                   <span className="font-bold text-text">{finding.fullName}</span>
-                  <span className="text-text-secondary">{finding.hrId}</span>
                   <span className="text-text-secondary">
                     {finding.rowNumber === null ? "whole file" : `row ${finding.rowNumber}`}
                   </span>

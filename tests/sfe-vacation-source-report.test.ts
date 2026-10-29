@@ -486,8 +486,11 @@ export function runSfeVacationSourceReportTests() {
   // and mobile gets real cards - which is the owner's standing admin-shell rule anyway, and the
   // thing the portal guard was actually asking for.
   assert.ok(
-    TABLE_SOURCE.includes('className="hidden overflow-x-auto md:block"'),
-    "the desktop table must be the md-and-up branch, scrolling inside its own container rather than widening the page",
+    TABLE_SOURCE.includes('className="hidden md:block"') &&
+      !/overflow-x-auto/.test(TABLE_SOURCE.slice(TABLE_SOURCE.indexOf('className="hidden md:block"'), TABLE_SOURCE.indexOf("Mobile cards (below md)"))) &&
+      /<table className="w-full table-fixed border-collapse/.test(TABLE_SOURCE) &&
+      /<colgroup>/.test(TABLE_SOURCE),
+    "the desktop table must be the md-and-up branch, fixed-layout with a colgroup, fitting the page instead of scrolling sideways",
   );
   assert.ok(
     /md:hidden[\s\S]{0,400}<VacationRowCard/.test(TABLE_SOURCE),

@@ -132,8 +132,8 @@ export function runExpenseDashboardTripsTableFitsTheScreenTests() {
     `${DASHBOARD}: "whitespace-nowrap" is back in the trip ledger. In a table-fixed cell it runs ` +
       `the value out of its own column — which no wrapper-level measurement shows you.`,
   );
-  const tripIdLine = ledger.match(/<span className="([^"]*)">\s*\{trip\.tripId \|\| "N\/A"\}\s*<\/span>/);
-  assert.ok(tripIdLine, `${DASHBOARD}: could not find the desktop trip-ID line ({trip.tripId || "N/A"}).`);
+  const tripIdLine = ledger.match(/<span className="([^"]*)">\s*\{trip\.tripId \|\| "—"\}\s*<\/span>/);
+  assert.ok(tripIdLine, `${DASHBOARD}: could not find the desktop trip-ID line ({trip.tripId || "—"}).`);
   assert.ok(
     tripIdLine[1].split(/\s+/).includes("break-words"),
     `${DASHBOARD}: the trip-ID line is "${tripIdLine[1]}" — it lost "break-words".`,
@@ -146,19 +146,26 @@ export function runExpenseDashboardTripsTableFitsTheScreenTests() {
 
   // 7. Nothing was dropped in the merge: every column the old table showed still renders.
   for (const [what, needle] of [
-    ["trip ID", "{trip.tripId || \"N/A\"}"],
+    ["trip ID", "{trip.tripId || \"—\"}"],
     ["employee", "{trip.ownerName || \"Employee\"}"],
-    ["type", "{trip.requestType || \"N/A\"}"],
-    ["from", "{trip.fromCity || \"Unknown\"}"],
-    ["to", "{trip.toCity || \"Unknown\"}"],
+    ["type", "{trip.requestType || \"—\"}"],
+    ["from", "{trip.fromCity || \"—\"}"],
+    ["to", "{trip.toCity || \"—\"}"],
     ["total", "{formatMoney(trip.total)}"],
     ["km", "{formatKm(trip.km)}"],
     ["status", "<StatusPill category={category} />"],
-    ["transport", "{trip.transportationType || \"N/A\"}"],
+    ["transport", "{trip.transportationType || \"—\"}"],
     ["extra tickets", "ticketCountsByRequestId?.[requestId]"],
   ] as const) {
     assert.ok(ledger.includes(needle), `${DASHBOARD}: the trip table no longer renders the ${what} (${needle}).`);
   }
+
+  // 7b. The opened panel is the row's own (TableRowDetail), never a hand-written second row, and
+  //     the row names the panel it controls. Filler is a dash, never "N/A".
+  assert.ok(
+    ledger.includes("<TableRowDetail") && ledger.includes("rowDetailToggleProps(") && !ledger.includes("N/A"),
+    `${DASHBOARD}: the opened trip panel must be a TableRowDetail opened by a row carrying rowDetailToggleProps, with no "N/A" filler.`,
+  );
 
   // 8. The map card's blurred circle stays clipped by its own parent, so it can never widen main.
   const heatmap = readFileSync(HEATMAP, "utf8");

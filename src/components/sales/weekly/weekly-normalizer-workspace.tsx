@@ -8,6 +8,7 @@ import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "
 import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalizer-controls";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CrmCard, CrmCardsOnPhone, CrmFacts } from "@/components/phoenix-crm/ui";
 import { cn } from "@/lib/utils";
 import {
   phxFieldClassName,
@@ -408,7 +409,7 @@ export function WeeklyNormalizerWorkspace({
                       <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", k.strong ? "from-orange-500 via-orange-400 to-amber-300" : "from-slate-400 via-slate-300 to-slate-200")} />
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
+                          <p className="break-words text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
                           <p className={cn("mt-1 text-xl font-black tabular-nums", k.strong ? "text-orange-700" : "text-slate-900")}>{k.value}</p>
                         </div>
                         <Icon aria-hidden="true" className={cn("h-4 w-4 shrink-0 transition-colors", k.strong ? "text-orange-400" : "text-slate-300 group-hover:text-orange-400")} />
@@ -485,7 +486,22 @@ export function WeeklyNormalizerWorkspace({
                       Product ID rides under Product, and Branch/Region/Area become one
                       Territory cell. table-fixed + the colgroup below make the width
                       structural, so no data can push this sideways. */}
-                  <table className="w-full table-fixed text-sm">
+                  <CrmCardsOnPhone>
+                    {preview.sampleCoded.map((r, i) => (
+                      <CrmCard key={`${r.itemCode}|${r.branchCode}|${i}`} meta={r.officialLine} title={r.productName}>
+                        <CrmFacts
+                          facts={[
+                            { label: "Code", value: r.itemCode || "—" },
+                            { label: "Territory", value: `${r.branchName || r.branchCode} · ${r.regionName || r.regionCode || "—"} · ${r.areaCode ?? "—"}` },
+                            { label: "Net units", value: num(r.netQty) },
+                            { label: "Stock", value: num(r.stockQty) },
+                            { label: "Value", value: num(r.salesValue) },
+                          ]}
+                        />
+                      </CrmCard>
+                    ))}
+                  </CrmCardsOnPhone>
+                  <table className="hidden w-full table-fixed text-sm md:table">
                     <colgroup>
                       <col className="w-[10%]" />
                       <col className="w-[22%]" />
@@ -501,7 +517,6 @@ export function WeeklyNormalizerWorkspace({
                         <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={`${r.itemCode}|${r.branchCode}|${i}`}>
                           <td className="break-words px-3 py-1.5 font-mono text-phx-md text-slate-600">{r.itemCode}</td>
                           <td className="break-words px-3 py-1.5 text-slate-600">
-                            <span className="font-mono text-phx-md font-semibold text-slate-900">{r.productCode}</span>
                             <span className="block">{r.productName}</span>
                           </td>
                           <td className="break-words px-3 py-1.5 text-slate-600">{r.officialLine}</td>
@@ -546,7 +561,27 @@ export function WeeklyNormalizerWorkspace({
                   {preview.unknownProducts.length > 0 ? (
                     <div className="border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
-                      <table className="w-full table-fixed text-sm">
+                      <CrmCardsOnPhone>
+                        {preview.unknownProducts.map((u) => (
+                          <CrmCard
+                            key={u.key}
+                            status={aiConfidence[u.key] != null ? <ConfidenceBadge pct={aiConfidence[u.key]} /> : undefined}
+                            title={u.itemName || u.itemCode || "—"}
+                          >
+                            <CrmFacts
+                              facts={[
+                                { label: "Raw code", value: u.itemCode || "—" },
+                                { label: "Rows", value: u.rows.toLocaleString() },
+                                { label: "Net units", value: num(u.netQty) },
+                              ]}
+                            />
+                            <div className="mt-2 min-w-0">
+                              <ComboBox onChange={(v) => setProductPicks((p) => ({ ...p, [u.key]: v }))} options={productOptions} placeholder="Type product or code…" value={productPicks[u.key] ?? ""} />
+                            </div>
+                          </CrmCard>
+                        ))}
+                      </CrmCardsOnPhone>
+                      <table className="hidden w-full table-fixed text-sm md:table">
                         <colgroup>
                           <col className="w-[16%]" />
                           <col className="w-[24%]" />
@@ -581,7 +616,38 @@ export function WeeklyNormalizerWorkspace({
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown branches ({preview.unknownBranches.length}) — a branch is a distributor depot, so the Area is optional: leave it blank to keep the branch region-only</p>
                       {/* Nine columns did not fit. Side+Col merge into Source, and Rows+Net
                           units into Volume, rather than shrinking the type. */}
-                      <table className="w-full table-fixed text-sm">
+                      <CrmCardsOnPhone>
+                        {preview.unknownBranches.map((b) => {
+                          const region = regionPicks[b.key] ?? "";
+                          const areaOptions = areaOptionsFor(region);
+                          return (
+                            <CrmCard
+                              key={b.key}
+                              meta={b.rawBranch || "—"}
+                              status={aiConfidence[b.key] != null ? <ConfidenceBadge pct={aiConfidence[b.key]} /> : undefined}
+                              title={b.branchName || b.branchColumnHeader || b.rawBranch || "—"}
+                            >
+                              <CrmFacts
+                                facts={[
+                                  { label: "Source", value: `${b.sourceFileType} · col ${b.branchColumnIndex ?? "—"}` },
+                                  { label: "Volume", value: `${b.rows.toLocaleString()} rows · ${num(b.netQty)} units` },
+                                ]}
+                              />
+                              <div className="mt-2 min-w-0 space-y-2">
+                                <ComboBox onChange={(v) => { setRegionPicks((p) => ({ ...p, [b.key]: v })); setAreaPicks((p) => ({ ...p, [b.key]: "" })); }} options={regionOptions} placeholder="Type region…" value={region} />
+                                <ComboBox
+                                  disabled={!region || region === BRANCH_EXCLUDE_CODE}
+                                  onChange={(v) => setAreaPicks((p) => ({ ...p, [b.key]: v }))}
+                                  options={areaOptions}
+                                  placeholder={region === BRANCH_EXCLUDE_CODE ? "not applicable" : region ? "region-only — or pick an area" : "pick a region first"}
+                                  value={areaPicks[b.key] ?? ""}
+                                />
+                              </div>
+                            </CrmCard>
+                          );
+                        })}
+                      </CrmCardsOnPhone>
+                      <table className="hidden w-full table-fixed text-sm md:table">
                         <colgroup>
                           <col className="w-[13%]" />
                           <col className="w-[17%]" />
@@ -634,7 +700,20 @@ export function WeeklyNormalizerWorkspace({
                   {preview.blockedIssues.length > 0 ? (
                     <div className="border border-amber-200">
                       <p className="flex items-center gap-2 bg-amber-500 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />No mapping here can fix these ({preview.blockedIssues.length}) — they are master-data repairs</p>
-                      <table className="w-full table-fixed text-sm">
+                      <CrmCardsOnPhone>
+                        {preview.blockedIssues.map((issue) => (
+                          <CrmCard key={`${issue.field}|${issue.message}`} title={issue.field}>
+                            <CrmFacts
+                              facts={[
+                                { label: "What is wrong", value: issue.message },
+                                { label: "Value", value: issue.value ?? "—" },
+                                { label: "Rows", value: issue.rows.toLocaleString() },
+                              ]}
+                            />
+                          </CrmCard>
+                        ))}
+                      </CrmCardsOnPhone>
+                      <table className="hidden w-full table-fixed text-sm md:table">
                         <colgroup>
                           <col className="w-[18%]" />
                           <col className="w-[46%]" />
@@ -659,7 +738,21 @@ export function WeeklyNormalizerWorkspace({
                   {preview.excludedItems.length > 0 ? (
                     <div className="border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-slate-300" />Held out on purpose ({preview.excludedItems.length}) — mapped to IGNORE, counted here so nothing is dropped silently</p>
-                      <table className="w-full table-fixed text-sm">
+                      <CrmCardsOnPhone>
+                        {preview.excludedItems.map((item) => (
+                          <CrmCard key={`${item.itemCode}|${item.itemName}`} title={item.itemName || item.itemCode || "—"}>
+                            <CrmFacts
+                              facts={[
+                                { label: "Item code", value: item.itemCode || "—" },
+                                { label: "Rows", value: item.rows.toLocaleString() },
+                                { label: "Net units", value: num(item.netQty) },
+                                { label: "Stock", value: num(item.stockQty) },
+                              ]}
+                            />
+                          </CrmCard>
+                        ))}
+                      </CrmCardsOnPhone>
+                      <table className="hidden w-full table-fixed text-sm md:table">
                         <colgroup>
                           <col className="w-[20%]" />
                           <col className="w-[32%]" />
@@ -686,7 +779,21 @@ export function WeeklyNormalizerWorkspace({
                   {preview.excludedBranches.length > 0 ? (
                     <div className="border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-slate-300" />Branches held out on purpose ({preview.excludedBranches.length}) — mapped to Exclude, counted here so nothing is dropped silently</p>
-                      <table className="w-full table-fixed text-sm">
+                      <CrmCardsOnPhone>
+                        {preview.excludedBranches.map((branch) => (
+                          <CrmCard key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`} title={branch.branchName || branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}>
+                            <CrmFacts
+                              facts={[
+                                { label: "Branch", value: branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—") },
+                                { label: "Rows", value: branch.rows.toLocaleString() },
+                                { label: "Net units", value: num(branch.netQty) },
+                                { label: "Stock", value: num(branch.stockQty) },
+                              ]}
+                            />
+                          </CrmCard>
+                        ))}
+                      </CrmCardsOnPhone>
+                      <table className="hidden w-full table-fixed text-sm md:table">
                         <colgroup>
                           <col className="w-[20%]" />
                           <col className="w-[32%]" />

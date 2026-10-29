@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { WeeklyProductScopeAdmin, WeeklyScopeAssignment } from "@/lib/sales/weekly/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { CrmCard, CrmCardsOnPhone, CrmFacts } from "@/components/phoenix-crm/ui";
 import { cn } from "@/lib/utils";
 
 
@@ -44,6 +45,18 @@ export function WeeklyScopeManager({
     }
   }
 
+  const productNameByCode = useMemo(
+    () => new Map((data?.products ?? []).map((product) => [product.code, product.name])),
+    [data],
+  );
+  const editAssignment = (assignment: WeeklyScopeAssignment) =>
+    setEditing({
+      hrId: assignment.hrId,
+      name: assignment.name,
+      role: assignment.role,
+      codes: new Set(assignment.productCodes),
+    });
+
   if (!data) {
     return (
       <div className="p-6">
@@ -76,7 +89,7 @@ export function WeeklyScopeManager({
       <div className="flex flex-wrap items-center gap-2 border border-phx-line bg-white p-3">
         <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Add product owner</span>
         <SearchableSelect
-          className="h-9 min-w-[16rem] px-2"
+          className="h-9 w-full px-2 sm:w-64"
           disabled={busy}
           value=""
           onChange={(event) => {
@@ -87,7 +100,7 @@ export function WeeklyScopeManager({
           <option value="">{data.eligibleWithoutScope.length ? "Select a person…" : "No unassigned PM/GPM/Marketing"}</option>
           {data.eligibleWithoutScope.map((person) => (
             <option key={person.hrId} value={person.hrId}>
-              {person.name} · {person.role} ({person.hrId})
+              {person.name} · {person.role}
             </option>
           ))}
         </SearchableSelect>
@@ -95,14 +108,45 @@ export function WeeklyScopeManager({
 
       {/* Current assignments */}
       <div className="border border-phx-line bg-white">
-        <table className="w-full table-fixed text-sm">
+        {/* Below md every owner is a card carrying the same facts and the same Edit button. */}
+        <CrmCardsOnPhone>
+          {data.assignments.length === 0 ? (
+            <p className="px-3 py-4 text-center text-sm text-phx-ink-faint">No product owners assigned yet.</p>
+          ) : null}
+          {data.assignments.map((assignment) => (
+            <CrmCard
+              actions={
+                <button
+                  className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
+                  onClick={() => editAssignment(assignment)}
+                  type="button"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+              }
+              key={assignment.hrId}
+              meta={assignment.role}
+              title={assignment.name}
+            >
+              <CrmFacts
+                facts={[
+                  {
+                    label: "Products",
+                    value: assignment.productCodes.length
+                      ? assignment.productCodes.map((code) => productNameByCode.get(code) ?? code).join(", ")
+                      : "—",
+                  },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+        <table className="hidden w-full table-fixed text-sm md:table">
           <colgroup>
-            <col className="w-[28%] md:w-[26%]" />
-            <col className="w-[20%] md:w-[22%]" />
-            <col className="w-[28%] md:w-[40%]" />
-            {/* The Edit button cannot shrink below about 62px, so the action column keeps a
-                wider share on a phone — a fixed column narrower than its button CLIPS it. */}
-            <col className="w-[24%] md:w-[12%]" />
+            <col className="w-[26%]" />
+            <col className="w-[22%]" />
+            <col className="w-[40%]" />
+            <col className="w-[12%]" />
           </colgroup>
           <thead className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-wide text-phx-ink-soft">
             <tr>
@@ -125,14 +169,7 @@ export function WeeklyScopeManager({
                 key={assignment.hrId}
                 assignment={assignment}
                 products={data.products}
-                onEdit={() =>
-                  setEditing({
-                    hrId: assignment.hrId,
-                    name: assignment.name,
-                    role: assignment.role,
-                    codes: new Set(assignment.productCodes),
-                  })
-                }
+                onEdit={() => editAssignment(assignment)}
               />
             ))}
           </tbody>
@@ -169,7 +206,6 @@ function AssignmentRow({
           wanted 75px in a 62px cell, because "Marketing" alone is wider than the content box. */}
       <td className="break-words px-3 py-2">
         <div className="font-bold text-phx-ink">{assignment.name}</div>
-        <div className="text-phx-xs font-medium text-phx-ink-faint">{assignment.hrId}</div>
       </td>
       <td className="break-words px-3 py-2 text-phx-ink-2">{assignment.role}</td>
       <td className="px-3 py-2">
@@ -234,7 +270,7 @@ function EditDrawer({
         <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
           <div>
             <div className="text-sm font-black text-phx-ink">{person.name}</div>
-            <div className="text-phx-xs font-medium text-phx-ink-faint">{person.role} · {person.hrId}</div>
+            <div className="text-phx-xs font-medium text-phx-ink-faint">{person.role}</div>
           </div>
           <button className="text-phx-ink-faint transition hover:text-phx-ink" onClick={onClose} type="button">
             <X className="h-5 w-5" />
@@ -278,7 +314,6 @@ function EditDrawer({
                   {checked && <Check className="h-3 w-3" />}
                 </span>
                 <span className="font-semibold text-phx-ink">{product.name}</span>
-                <span className="ml-auto text-phx-xs font-medium text-phx-ink-faint">{product.code}</span>
               </button>
             );
           })}

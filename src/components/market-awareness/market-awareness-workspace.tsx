@@ -868,16 +868,13 @@ function RequestTab({
                       <span className="block break-words text-phx-sm font-black text-phx-ink">
                         {activityName(activity)}
                       </span>
-                      <span className="mt-0.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
-                        {activity.activityCode}
-                      </span>
                     </td>
                     <td className="break-words px-2 py-3 text-phx-xs font-bold text-phx-ink-soft">
                       {activity.primaryLine.name}
                     </td>
                     <td className="break-words px-2 py-3">
                       <span className="block break-words text-phx-xs font-bold text-phx-ink-soft">
-                        {activity.areaName ?? activity.areaCode}
+                        {activity.areaName ?? "—"}
                       </span>
                       <span className="mt-0.5 block break-words text-phx-3xs font-medium text-phx-ink-faint">
                         {activity.regionName ?? ""}
@@ -926,9 +923,6 @@ function RequestTab({
                       </span>
                       <StatusChip status={activity.status} />
                     </span>
-                    <span className="block break-words text-phx-3xs font-medium text-phx-ink-faint">
-                      {activity.activityCode}
-                    </span>
                     {["draft", "returned"].includes(activity.status) ? (
                       <span
                         className="inline-flex w-fit items-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1.5 text-phx-3xs font-black uppercase tracking-[0.10em] text-phx-accent-ink"
@@ -947,7 +941,7 @@ function RequestTab({
                       <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
                         <MapPin aria-hidden="true" className="h-3 w-3 shrink-0 text-phx-ink-faint" />
                         <span className="break-words">
-                          {activity.areaName ?? activity.areaCode} · {activity.primaryLine.name}
+                          {activity.areaName ? `${activity.areaName} · ` : ""}{activity.primaryLine.name}
                         </span>
                       </span>
                       <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold text-phx-ink-soft">
@@ -1010,7 +1004,7 @@ function TrackingTab({
               <option value="">Pick an activity</option>
               {choices.map((activity) => (
                 <option key={activity.id} value={activity.id}>
-                  {`${activityName(activity)} — ${activity.areaName ?? activity.areaCode} — ${cairoDate(activity.startDate)}`}
+                  {`${activityName(activity)} — ${activity.areaName ?? "no area"} — ${cairoDate(activity.startDate)}`}
                 </option>
               ))}
             </select>
@@ -1140,7 +1134,7 @@ function ActivitySummary({ activity }: { activity: Activity }) {
   const facts: Array<[string, string]> = [
     ["Type", activity.activityType.name],
     ["Primary line", activity.primaryLine.name],
-    ["Area", activity.areaName ?? activity.areaCode],
+    ["Area", activity.areaName ?? "—"],
     ["Region", activity.regionName ?? "Not recorded"],
     ["Starts", cairoDate(activity.startDate)],
     ["Approved value", money(activity.approvedCost ?? activity.estimatedCost, activity.currency)],
@@ -1150,7 +1144,7 @@ function ActivitySummary({ activity }: { activity: Activity }) {
   ];
 
   return (
-    <Panel kicker={activity.activityCode} title={activityName(activity)}>
+    <Panel title={activityName(activity)}>
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusChip status={activity.status} />

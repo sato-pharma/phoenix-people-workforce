@@ -128,6 +128,9 @@ function tableSourceTests(): void {
   assert.doesNotMatch(table, /<colgroup className/, "one colgroup, never two switched by hiding one");
   assert.match(table, /<div className="md:hidden" role="list">/, "a phone gets the cards");
   assert.match(table, /<CandidateRow\b/, "the cards are the workspace's own row");
+  assert.match(table, /<TableRowDetail\b[^>]*colSpan=\{wideColumns\.length\}/, "the opened row's panel is the joined TableRowDetail, spanning every column");
+  assert.match(table, /rowDetailToggleProps\(/, "the opening toggle names the panel it controls");
+  assert.doesNotMatch(table, /<td className="p-3" colSpan/, "no hand-written second row under a candidate");
   const breakpoints = [...table.matchAll(/@min-\[(\d+)px\]/g)].map((match) => Number(match[1]));
   assert.ok(breakpoints.length >= 4, `expected the container breakpoints, found ${breakpoints.length}`);
   assert.deepEqual([...new Set(breakpoints)], [TABLE_WIDE_MIN_PX], "every container breakpoint is TABLE_WIDE_MIN_PX");

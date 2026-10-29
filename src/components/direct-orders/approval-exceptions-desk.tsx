@@ -101,7 +101,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
               <p className="break-words text-sm font-bold text-slate-900">
                 {describeDirectOrderBasketUnits(row, row.items)}
               </p>
-              <p className="truncate text-phx-xs text-slate-500">
+              <p className="break-words text-phx-xs text-slate-500">
                 {row.requesterName} · {row.pharmacyName}
               </p>
             </div>

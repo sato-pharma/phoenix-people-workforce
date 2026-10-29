@@ -373,8 +373,17 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
       )}
 
       {/* Table — black header, thin light-orange grid */}
-      <div className="overflow-x-auto border border-slate-200">
-        <table className="w-full border-collapse text-sm">
+      <div className="border border-slate-200">
+        <table className="hidden w-full table-fixed border-collapse text-sm md:table">
+          <colgroup>
+            <col className="w-[13%]" />
+            <col className="w-[11%]" />
+            <col className="w-[17%]" />
+            <col className="w-[12%]" />
+            <col className="w-[22%]" />
+            <col className="w-[9%]" />
+            <col className="w-[16%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
               <th className="px-3 py-2.5">Report #</th>
@@ -400,33 +409,47 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
                 className="cursor-pointer border-t border-orange-100 bg-white transition hover:bg-orange-50/60"
                 onClick={() => setSelected(row)}
               >
-                <td className="px-3 py-2 font-mono text-xs font-bold text-orange-600">{row.report_number}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
+                <td className="break-words px-3 py-2 font-mono text-xs font-bold text-orange-600">{row.report_number}</td>
+                <td className="break-words px-3 py-2 text-xs text-slate-500">
                   {new Date(row.created_at).toLocaleDateString()}
                 </td>
-                <td className="px-3 py-2">
-                  <span className="text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</span>
-                  {row.submitted_by_hr_id && (
-                    <span className="ml-1 text-xs text-slate-500">({row.submitted_by_hr_id})</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-xs text-slate-700">
+                <td className="break-words px-3 py-2 text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</td>
+                <td className="break-words px-3 py-2 text-xs text-slate-700">
                   {row.patient_initials ?? "—"}
                   {row.patient_sex && <span className="ml-1 text-slate-500">({row.patient_sex})</span>}
                 </td>
-                <td className="max-w-[180px] px-3 py-2 text-xs text-slate-700">
-                  <span className="line-clamp-2">{row.reactions_summary.join(", ") || "—"}</span>
-                </td>
+                <td className="break-words px-3 py-2 text-xs text-slate-700">{row.reactions_summary.join(", ") || "—"}</td>
                 <td className="px-3 py-2">
                   <SeriousChip serious={row.is_serious} />
                 </td>
-                <td className="max-w-[140px] px-3 py-2 text-xs text-slate-700">
-                  <span className="line-clamp-1">{row.outcome_summary ?? "—"}</span>
-                </td>
+                <td className="break-words px-3 py-2 text-xs text-slate-700">{row.outcome_summary ?? "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        <div className="divide-y divide-orange-100 md:hidden">
+          {rows.length === 0 && !loading && (
+            <p className="px-3 py-10 text-center text-sm font-semibold text-slate-500">No reports found.</p>
+          )}
+          {rows.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="block w-full min-w-0 break-words bg-white px-3 py-3 text-left text-xs text-slate-700"
+              onClick={() => setSelected(row)}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-orange-600">{row.report_number}</span>
+                <SeriousChip serious={row.is_serious} />
+              </span>
+              <span className="mt-1 block text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</span>
+              <span className="block text-slate-500">{new Date(row.created_at).toLocaleDateString()}</span>
+              <span className="block">Patient: {row.patient_initials ?? "—"}{row.patient_sex ? ` (${row.patient_sex})` : ""}</span>
+              <span className="block">Reactions: {row.reactions_summary.join(", ") || "—"}</span>
+              <span className="block">Outcome: {row.outcome_summary ?? "—"}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Pagination */}

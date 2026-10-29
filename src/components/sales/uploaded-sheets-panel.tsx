@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Trash2 } from "lucide-react";
 
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { humanizeCode } from "@/lib/format/code-label";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
 
@@ -87,6 +89,23 @@ export function UploadedSheetsPanel({
     }
   }
 
+  const statusChip = (batch: SourceOfSalesUploadBatch) => (
+    <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+      {humanizeCode(batch.status)}
+    </span>
+  );
+  const deleteButton = (batch: SourceOfSalesUploadBatch) => (
+    <button
+      aria-label="Delete uploaded sheet"
+      className="inline-flex text-phx-ink-faint transition hover:text-rose-600 disabled:opacity-50"
+      disabled={busyId === batch.batchId}
+      onClick={() => remove(batch)}
+      type="button"
+    >
+      {busyId === batch.batchId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+    </button>
+  );
+
   return (
     <div className={`${card} p-4 sm:p-5`}>
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -119,7 +138,7 @@ export function UploadedSheetsPanel({
       {selectedPeriod && pending.length > 0 && (
         <div className="mt-3 flex flex-wrap items-start gap-2 rounded-[6px] border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs font-semibold text-amber-800">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span><b>{pending.length}</b> still pending for {formatPeriod(selectedPeriod)}: {pending.map((d) => `${d.name} (${d.code})`).join(", ")}</span>
+          <span><b>{pending.length}</b> still pending for {formatPeriod(selectedPeriod)}: {pending.map((d) => d.name).join(", ")}</span>
         </div>
       )}
       {selectedPeriod && pending.length === 0 && periods.length > 0 && (
@@ -128,17 +147,32 @@ export function UploadedSheetsPanel({
         </div>
       )}
 
-      <div className="mt-3 rounded-[6px] border border-phx-line">
-        <table className="w-full table-fixed text-sm">
-          <colgroup>
-            <col className="w-[22%]" />
-            <col className="w-[12%]" />
-            <col className="w-[11%]" />
-            <col className="w-[13%]" />
-            <col className="w-[14%]" />
-            <col className="w-[20%]" />
-            <col className="w-[8%]" />
-          </colgroup>
+      <div className="mt-3 border border-phx-line">
+        {rows.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-phx-ink-faint md:hidden">
+            {periods.length === 0 ? "No sheets uploaded yet." : `No sheets uploaded for ${formatPeriod(selectedPeriod)}.`}
+          </p>
+        ) : null}
+        <CrmCardsOnPhone>
+          {rows.map((batch) => (
+            <CrmCard
+              actions={deleteButton(batch)}
+              key={batch.batchId}
+              status={statusChip(batch)}
+              title={batch.distributorName}
+            >
+              <CrmFacts
+                facts={[
+                  { label: "Rows", value: num(batch.rowCount) },
+                  { label: "Value", value: money(batch.totalValue) },
+                  { label: "Uploaded", value: formatDate(batch.createdAt) },
+                  { label: "File", value: batch.fileName || "—" },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+        <CrmTable columns={["22%", "12%", "11%", "13%", "14%", "20%", "8%"]}>
           <thead className={darkHead}>
             <tr>
               <th className="px-3 py-2">Distributor</th>
@@ -160,17 +194,11 @@ export function UploadedSheetsPanel({
             )}
             {rows.map((batch) => (
               <tr className="border-t border-[#FFE8D6]" key={batch.batchId}>
-                <td className="break-words px-3 py-2 font-bold text-phx-ink">
-                  {batch.distributorName} <span className="font-mono text-xs text-phx-ink-faint">{batch.distributorCode}</span>
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                    {batch.status}
-                  </span>
-                </td>
+                <td className="break-words px-3 py-2 font-bold text-phx-ink">{batch.distributorName}</td>
+                <td className="px-3 py-2">{statusChip(batch)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(batch.rowCount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalValue)}</td>
-                <td className="px-3 py-2 tabular-nums text-phx-ink-2">{formatDate(batch.createdAt)}</td>
+                <td className="break-words px-3 py-2 text-right tabular-nums">{money(batch.totalValue)}</td>
+                <td className="break-words px-3 py-2 tabular-nums text-phx-ink-2">{formatDate(batch.createdAt)}</td>
                 <td className="px-3 py-2 text-phx-ink-soft">
                   {/* The name used to be sliced at 28 characters to hold the width down,
                       which silently dropped the rest of it. The column wraps now, so the
@@ -180,21 +208,11 @@ export function UploadedSheetsPanel({
                     <span className="min-w-0 break-words">{batch.fileName || "—"}</span>
                   </span>
                 </td>
-                <td className="px-3 py-2 text-right">
-                  <button
-                    aria-label="Delete uploaded sheet"
-                    className="inline-flex text-phx-ink-faint transition hover:text-rose-600 disabled:opacity-50"
-                    disabled={busyId === batch.batchId}
-                    onClick={() => remove(batch)}
-                    type="button"
-                  >
-                    {busyId === batch.batchId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  </button>
-                </td>
+                <td className="px-3 py-2 text-right">{deleteButton(batch)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
       </div>
     </div>
   );

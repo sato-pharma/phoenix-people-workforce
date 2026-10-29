@@ -224,7 +224,7 @@ export function DailyDeductionsWorkspace({
       } else {
         byEmployee.set(line.employeeHrIdCompact, {
           key: line.employeeHrIdCompact,
-          name: line.employeeName ?? line.employeeHrId,
+          name: line.employeeName ?? "—",
           lines: [line],
           amount: line.amount,
         });
@@ -341,7 +341,7 @@ export function DailyDeductionsWorkspace({
       });
       setMessage({
         tone: "success",
-        text: `Withdrew ${line.employeeName ?? line.employeeHrId} · ${dailyDeductionConnectorLabels[line.category]}. The other released deductions are unchanged.`,
+        text: `Withdrew ${line.employeeName ?? "—"} · ${dailyDeductionConnectorLabels[line.category]}. The other released deductions are unchanged.`,
       });
       loadActive();
     } catch (error) {
@@ -426,7 +426,7 @@ export function DailyDeductionsWorkspace({
                       {releasedLines.map((line) => (
                         <tr key={line.id} className="border-b border-slate-100 odd:bg-slate-50/60">
                           <td className="px-3 py-2">
-                            <p className="font-semibold text-slate-900">{line.employeeName ?? line.employeeHrId}</p>
+                            <p className="font-semibold text-slate-900">{line.employeeName ?? "—"}</p>
                             <p className="text-xs text-slate-500">{dailyDeductionConnectorLabels[line.category]}</p>
                           </td>
                           <td className="px-3 py-2 tabular-nums text-slate-900">
@@ -456,7 +456,7 @@ export function DailyDeductionsWorkspace({
                   {releasedLines.map((line) => (
                     <div key={line.id} className="space-y-1.5 border border-slate-200 bg-white p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-slate-900">{line.employeeName ?? line.employeeHrId}</span>
+                        <span className="font-semibold text-slate-900">{line.employeeName ?? "—"}</span>
                         <span className="tabular-nums text-sm font-black text-slate-900">{money(line.amount)} EGP</span>
                       </div>
                       <p className="text-xs font-medium text-slate-500">

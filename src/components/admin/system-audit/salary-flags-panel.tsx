@@ -1,5 +1,6 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { useState } from "react";
 
@@ -24,8 +25,7 @@ const PAGE_SIZE = 25;
 
 function flagTypeLabel(value: string | null) {
   if (!value) return "Unspecified";
-  const words = value.replace(/_/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return humanizeCode(value);
 }
 
 function severityLabel(value: string | null) {

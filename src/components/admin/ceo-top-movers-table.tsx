@@ -152,8 +152,14 @@ export function CeoTopMoversTable({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+      <div>
+        <table className="w-full table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-[10%]" />
+            <col className="w-[50%]" />
+            <col className="w-[22%]" />
+            <col className="w-[18%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
               <th className="px-2 py-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
@@ -193,14 +199,14 @@ export function CeoTopMoversTable({
                       #{i + 1}
                     </td>
                     <td className="px-2 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1 w-16 shrink-0 bg-slate-100">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <div className="h-1 w-12 shrink-0 bg-slate-100">
                           <div
                             className="h-full bg-orange-400"
                             style={{ width: `${Math.max(3, (row.value / maxVal) * 100)}%` }}
                           />
                         </div>
-                        <span className="font-semibold text-slate-800">{row.label}</span>
+                        <span className="min-w-0 break-words font-semibold text-slate-800">{row.label}</span>
                       </div>
                     </td>
                     <td className="px-2 py-2 text-right font-bold text-slate-900">

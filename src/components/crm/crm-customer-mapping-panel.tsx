@@ -383,17 +383,17 @@ export function CrmCustomerMappingPanel({
               <tbody className="divide-y divide-orange-100">
                 {filtered.map((customer) => (
                   <tr key={customer.crmContactId} className="odd:bg-white even:bg-orange-50/30">
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{customer.crmContactId}</td>
+                    <td className="break-words px-3 py-2.5 font-semibold text-slate-700">{customer.crmContactId}</td>
                     <td className="px-3 py-2.5 font-medium text-slate-900">{customer.crmContactName}</td>
-                    <td className={isNeverVisited(customer) ? "px-3 py-2.5 text-xs font-semibold text-slate-500" : "whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500"}>
+                    <td className={isNeverVisited(customer) ? "px-3 py-2.5 text-xs font-semibold text-slate-500" : "break-words px-3 py-2.5 font-semibold text-rose-500"}>
                       {visitCountLabel(customer)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.firstSeen)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.lastSeen)}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(customer.firstSeen)}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(customer.lastSeen)}</td>
                     <td className="px-3 py-2.5">
                       <ResolutionCell customer={customer} onResolved={handleResolved} />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">
+                    <td className="break-words px-3 py-2.5">
                       {isNeverVisited(customer) ? (
                         <span className="text-xs text-slate-400">No visits to open</span>
                       ) : (

@@ -95,10 +95,11 @@ function matches(query: string, values: ReadonlyArray<string>): boolean {
   return values.some((value) => value.toLowerCase().includes(needle));
 }
 
+/** Who switched it on and when; empty when off or unrecorded, because the switch beside it already says On or Off. */
 function switchedOnText(rep: RecordingRepRow): string {
-  if (!rep.required) return "Off";
+  if (!rep.required) return "";
   const when = rep.setAt ? `${formatPhoenixLongDate(rep.setAt)}, ${cairoClock(rep.setAt).slice(0, 5)}` : null;
-  return [rep.setByName ? `By ${rep.setByName}` : null, when].filter(Boolean).join(" · ") || "On";
+  return [rep.setByName ? `By ${rep.setByName}` : null, when].filter(Boolean).join(" · ");
 }
 
 function visitWhenText(row: RecordingListRow): string {
@@ -426,7 +427,7 @@ export function VisitRecordingAdmin({ view }: { view: VisitRecordingAdminView })
                 >
                   <div className="grid min-w-0 gap-2">
                     {repSwitch(rep)}
-                    {rep.required ? <p className="break-words text-xs font-semibold text-slate-500">{switchedOnText(rep)}</p> : null}
+                    {switchedOnText(rep) ? <p className="break-words text-xs font-semibold text-slate-500">{switchedOnText(rep)}</p> : null}
                   </div>
                 </CrmCard>
               ))}
@@ -444,7 +445,7 @@ export function VisitRecordingAdmin({ view }: { view: VisitRecordingAdminView })
                       {rep.lineName}
                       <div className="mt-1 text-xs font-semibold text-slate-500">{[rep.areaName, rep.regionName].filter(Boolean).join(" · ")}</div>
                     </td>
-                    <td className={crmTdClassName}>{switchedOnText(rep)}</td>
+                    <td className={crmTdClassName}>{switchedOnText(rep) || "—"}</td>
                     <td className={crmTdClassName}>{repSwitch(rep)}</td>
                   </tr>
                 ))}

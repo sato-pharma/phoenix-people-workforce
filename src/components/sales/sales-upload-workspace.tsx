@@ -7,6 +7,7 @@ import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Grid3x3, Info,
 import { BulkImportWorkspace } from "@/components/sales/bulk-import-workspace";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { DistributorWorkspaceShell } from "@/components/sales/distributor-workspace-shell";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { UploadedSheetsPanel } from "@/components/sales/uploaded-sheets-panel";
@@ -69,6 +70,21 @@ const panel = "rounded-2xl border border-phx-line bg-white/95 shadow-[0_8px_22px
 // Weekly-style step UI tokens (match /sales/weekly exactly).
 const stepCard = "rounded-[6px] border border-phx-line bg-white shadow-sm";
 const darkHead = "bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
+// Tables that carry a live picker fit the screen without a second copy of every row: on `md` and up a
+// fixed-layout table over a percentage <colgroup>; below `md` the SAME rows stack as cards, each value
+// under its own label (the pattern normalizer-workspace.tsx uses for its unknown-value tables).
+const stackTable = "block w-full text-left text-sm md:table md:table-fixed";
+const stackCols = "hidden md:table-column-group";
+const stackHead = "hidden text-left text-phx-xs font-bold uppercase text-phx-ink-faint md:table-header-group";
+const stackBody = "block md:table-row-group";
+const stackRow = "block border-t border-slate-100 px-2 py-2 md:table-row md:p-0";
+const stackCell = "block break-words px-1 py-1 align-top md:table-cell md:px-3 md:py-1.5";
+
+/** A card's field name on a phone; the column header says it on a desktop. */
+function StackLabel({ children }: { children: React.ReactNode }) {
+  return <span className="mb-0.5 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400 md:hidden">{children}</span>;
+}
+
 export const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 export const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 export const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -116,28 +132,42 @@ export function BreakdownTable({ title, headLabel, rows }: { title: string; head
   return (
     <div className="overflow-hidden rounded-[6px] border border-phx-line">
       <div className={darkHead}>{title}</div>
-      <div className="max-h-72 overflow-auto">
-        <table className="w-full text-sm">
+      <div className="max-h-72 overflow-y-auto">
+        <CrmTable columns={["46%", "14%", "14%", "26%"]}>
           <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
-              <th className="px-3 py-1.5">{headLabel}</th>
-              <th className="px-3 py-1.5 text-right">Qty</th>
-              <th className="px-3 py-1.5 text-right">Bonus</th>
-              <th className="px-3 py-1.5 text-right">Value</th>
+              <th className="break-words px-3 py-1.5">{headLabel}</th>
+              <th className="break-words px-3 py-1.5 text-right">Qty</th>
+              <th className="break-words px-3 py-1.5 text-right">Bonus</th>
+              <th className="break-words px-3 py-1.5 text-right">Value</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && <tr><td className="px-3 py-3 text-center text-phx-ink-faint" colSpan={4}>—</td></tr>}
             {rows.map((r) => (
               <tr className="border-t border-[#FFE8D6]" key={r.code}>
-                <td className="px-3 py-1.5 font-semibold text-phx-ink">{r.label}{r.parent ? <span className="ml-1 text-phx-xs font-medium text-phx-ink-faint">· {r.parent}</span> : null}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{num(r.totalQty)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{num(r.totalBonusQty)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{money(r.totalValue)}</td>
+                <td className="break-words px-3 py-1.5 align-top font-semibold text-phx-ink">{r.label}{r.parent ? <span className="ml-1 text-phx-xs font-medium text-phx-ink-faint">· {r.parent}</span> : null}</td>
+                <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{num(r.totalQty)}</td>
+                <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{num(r.totalBonusQty)}</td>
+                <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{money(r.totalValue)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
+        <CrmCardsOnPhone>
+          {rows.length === 0 ? <p className="px-3 py-3 text-center text-phx-ink-faint">—</p> : null}
+          {rows.map((r) => (
+            <CrmCard key={`${r.code}-card`} title={<>{r.label}{r.parent ? <span className="ml-1 font-medium text-slate-500">· {r.parent}</span> : null}</>}>
+              <CrmFacts
+                facts={[
+                  { label: "Qty", value: num(r.totalQty) },
+                  { label: "Bonus", value: num(r.totalBonusQty) },
+                  { label: "Value", value: money(r.totalValue) },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
       </div>
     </div>
   );
@@ -216,17 +246,21 @@ function ProfileViewer({ summary }: { summary?: DistributorProfileSummary }) {
   return (
     <div className="rounded-xl border border-phx-line">
       <div className="border-b border-phx-line px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">What the system reads in this distributor&apos;s file</div>
-      <table className="w-full text-sm">
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col className="w-[34%]" />
+          <col className="w-[66%]" />
+        </colgroup>
         <tbody>
           {rows.map((r) => (
             <tr className="border-b border-phx-paper-2 last:border-0" key={r.label}>
-              <td className="w-40 px-4 py-1.5 font-semibold text-phx-ink">{r.label}</td>
-              <td className="px-4 py-1.5 font-mono text-xs text-phx-ink-soft">{r.value.length ? r.value.join(", ") : <span className="italic text-phx-ink-faint">—</span>}</td>
+              <td className="break-words px-4 py-1.5 align-top font-semibold text-phx-ink">{r.label}</td>
+              <td className="break-words px-4 py-1.5 font-mono text-xs text-phx-ink-soft">{r.value.length ? r.value.join(", ") : <span className="italic text-phx-ink-faint">—</span>}</td>
             </tr>
           ))}
           <tr>
-            <td className="px-4 py-1.5 font-semibold text-phx-ink">Value</td>
-            <td className="px-4 py-1.5 text-xs text-phx-ink-soft">{summary.valueSource === "sheet" ? "taken from the sheet" : "recomputed from master price"}{summary.hasDateColumn ? "" : " · no date column — pick a period"}</td>
+            <td className="break-words px-4 py-1.5 align-top font-semibold text-phx-ink">Value</td>
+            <td className="break-words px-4 py-1.5 text-xs text-phx-ink-soft">{summary.valueSource === "sheet" ? "taken from the sheet" : "recomputed from master price"}{summary.hasDateColumn ? "" : " · no date column — pick a period"}</td>
           </tr>
         </tbody>
       </table>
@@ -426,28 +460,35 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
       </div>
       <p className="text-xs text-phx-ink-2">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
       <div className="overflow-visible rounded-[6px] border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
+        <table className={stackTable}>
+          <colgroup className={stackCols}>
+            <col style={{ width: "30%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "60%" }} />
+          </colgroup>
+          <thead className={stackHead}>
             <tr>
               <th className="px-3 py-1.5">Product</th>
               <th className="px-3 py-1.5 text-right">Rows</th>
               <th className="px-3 py-1.5">Your decision</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className={stackBody}>
             {items.map((item) => {
               const decision = decisions[item.raw];
               return (
-                <tr className="border-t border-slate-100" key={item.raw}>
-                  <td className="px-3 py-2">
+                <tr className={stackRow} key={item.raw}>
+                  <td className={stackCell}>
+                    <StackLabel>Product</StackLabel>
                     {item.displayName !== item.raw ? (
-                      <span className="font-medium text-phx-ink">{item.displayName}<span className="ml-1 font-mono text-phx-xs text-phx-ink-faint">({item.raw})</span></span>
+                      <span className="font-medium text-phx-ink">{item.displayName}</span>
                     ) : (
                       <span><span className="font-mono text-xs font-semibold text-phx-ink">{item.raw}</span><span className="ml-1 text-phx-xs text-phx-ink-faint">no name in sheet</span></span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{item.count.toLocaleString()}</td>
-                  <td className="px-3 py-2">
+                  <td className={cn(stackCell, "tabular-nums text-phx-ink-2 md:text-right")}><StackLabel>Rows</StackLabel>{item.count.toLocaleString()}</td>
+                  <td className={stackCell}>
+                    <StackLabel>Your decision</StackLabel>
                     <div className="flex items-center gap-2 flex-wrap">
                       <select
                         className={phxSelectClassName}
@@ -463,7 +504,7 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
                         <option value="include">Include → map to product</option>
                       </select>
                       {decision === "include" ? (
-                        <div className="w-56">
+                        <div className="w-full min-w-0 md:w-56">
                           <MappingCombobox
                             onChange={(code) => setProductCodes((p) => ({ ...p, [item.raw]: code }))}
                             options={productOptions}
@@ -691,8 +732,14 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
             ) : null}
           </div>
           <div className="overflow-visible rounded-[6px] border border-amber-200 bg-white">
-            <table className="w-full text-sm">
-              <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
+            <table className={stackTable}>
+              <colgroup className={stackCols}>
+                <col style={{ width: "20%" }} />
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "50%" }} />
+              </colgroup>
+              <thead className={stackHead}>
                 <tr>
                   <th className="px-3 py-1.5">Value in sheet</th>
                   <th className="px-3 py-1.5">Name in sheet</th>
@@ -700,15 +747,16 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                   <th className="px-3 py-1.5">Map to {g.type === "product" ? "product" : "brick"}</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className={stackBody}>
                 {g.items.map((u) => {
                   const k = mapKey(g.type, u.raw);
                   return (
-                    <tr className="border-t border-[#FFE8D6]" key={k}>
-                      <td className="px-3 py-1.5 align-top font-mono text-xs font-semibold text-phx-ink">{u.raw || <span className="italic text-phx-ink-faint">(blank)</span>}</td>
-                      <td className="px-3 py-1.5 align-top text-phx-ink-2">{u.rawName || <span className="italic text-phx-ink-faint">—</span>}</td>
-                      <td className="px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{u.count.toLocaleString()}</td>
-                      <td className="px-3 py-1.5">
+                    <tr className={cn(stackRow, "border-[#FFE8D6]")} key={k}>
+                      <td className={cn(stackCell, "font-mono text-xs font-semibold text-phx-ink")}><StackLabel>Value in sheet</StackLabel>{u.raw || <span className="italic text-phx-ink-faint">(blank)</span>}</td>
+                      <td className={cn(stackCell, "text-phx-ink-2")}><StackLabel>Name in sheet</StackLabel>{u.rawName || <span className="italic text-phx-ink-faint">—</span>}</td>
+                      <td className={cn(stackCell, "tabular-nums text-phx-ink-2 md:text-right")}><StackLabel>Rows</StackLabel>{u.count.toLocaleString()}</td>
+                      <td className={stackCell}>
+                        <StackLabel>Map to {g.type === "product" ? "product" : "brick"}</StackLabel>
                         {excluded[k] ? (
                           <div className="flex items-center gap-2">
                             <span className="rounded-full bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Excluded — rows will be skipped</span>
@@ -724,7 +772,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                                 onChange={(e) => toggle(g.type, u.raw, e.target.checked)}
                                 type="checkbox"
                               />
-                              <div className="w-56"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
+                              <div className="min-w-0 flex-1 md:w-56 md:flex-none"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
                               {g.type === "product" ? (
                                 <button
                                   className="shrink-0 rounded px-1.5 py-0.5 text-phx-xs font-bold text-phx-ink-faint transition hover:bg-slate-100 hover:text-slate-600"
@@ -739,7 +787,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                             {aiAnswers[k] && (selected[k] ?? "") === (aiAnswers[k].code ?? "") ? (
                               <div className="pl-6"><AiAnswerNote answer={aiAnswers[k]} productOptions={g.options} /></div>
                             ) : u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
-                              <p className="mt-0.5 pl-6 text-phx-xs text-phx-ink-soft">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
+                              <p className="mt-0.5 pl-6 text-phx-xs text-phx-ink-soft">Suggested: {u.suggestionLabel}</p>
                             ) : null}
                           </>
                         )}

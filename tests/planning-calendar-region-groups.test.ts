@@ -91,7 +91,7 @@ export async function runPlanningCalendarRegionGroupsTests() {
   assert.doesNotMatch(ui, /item\.region \|\| item\.lineName/, "the month tile's meta never shows a line where the region goes");
   // The day's details table fits its columns: a cell wraps rather than spilling into the next column or
   // past the table's edge (the HR ACKNOWLEDGED badge and the Chain Visit text did, 2026-10-24).
-  const detailsTable = ui.slice(ui.indexOf('"Region / Location", "Area", "Medical Rep"'), ui.indexOf("</PortalDesktopTable>"));
+  const detailsTable = ui.slice(ui.indexOf('"Employee", "Activity", "Medical Rep"'), ui.indexOf("</PortalDesktopTable>"));
   assert.ok(detailsTable.length > 0, "the details table is found");
   assert.doesNotMatch(detailsTable, /<td className="whitespace-nowrap|<span className="whitespace-nowrap">\{row\.conflictWarning\}|inline-flex whitespace-nowrap border px-2/, "no details cell is held on one line past its column");
   // A chain visit is not a row of its own on top of the people's own rows (owner, 2026-10-24: "you see the

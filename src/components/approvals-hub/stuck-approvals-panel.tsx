@@ -7,6 +7,9 @@ import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName
 import type { StuckApprovalManagerOption } from "@/lib/approvals-hub/service";
 import type { WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import type { ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
+import { employmentStatusLabel } from "@/lib/employees/employment-status-label";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
+import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type { StrandedDirectOrderRow } from "@/lib/direct-orders/service";
 import type { StrandedVacationRow } from "@/lib/vacation/service";
@@ -103,7 +106,7 @@ function ReassignRow(props: {
               <option value="">Select new manager…</option>
               {props.managerOptions.map((option) => (
                 <option key={option.hrId} value={option.hrId}>
-                  {option.name} ({option.hrId})
+                  {option.name}
                 </option>
               ))}
             </select>
@@ -176,7 +179,7 @@ function CloseStrandedOrderRow(props: { order: StrandedDirectOrderRow }) {
           {describeDirectOrderBasketUnits(order, order.items)} · {egp.format(order.salesValue)} EGP
         </p>
         <p className="mt-0.5 break-words text-xs text-rose-600">
-          Raised by {order.requesterName}, who is {(order.requesterEmploymentStatus ?? "no longer active").replace(/_/g, " ")}
+          Raised by {order.requesterName}, who is {(employmentStatusLabel(order.requesterEmploymentStatus) || "no longer active").toLowerCase()}
           {" — "}nobody can answer the return
         </p>
         <p className="mt-0.5 break-words text-xs text-slate-500">
@@ -260,13 +263,13 @@ function CloseStrandedVacationRow(props: { vacation: StrandedVacationRow }) {
     <div className={`${adminSoftPanelClassName} px-4 py-3`}>
       <div className="min-w-0">
         <p className="break-words text-sm font-bold text-slate-900">
-          {vacation.employeeName} ({vacation.employeeHrId})
+          {vacation.employeeName}
         </p>
         <p className="break-words text-xs text-slate-500">
-          {vacation.vacationType} · {vacation.startDate} to {vacation.endDate} · {vacation.requestCode}
+          {vacationTypeLabel(vacation.vacationType)} · {vacation.startDate} to {vacation.endDate} · {vacation.requestCode}
         </p>
         <p className="mt-0.5 break-words text-xs text-rose-600">
-          {vacation.employeeName} is {(vacation.employeeEmploymentStatus ?? "no longer active").replace(/_/g, " ")}
+          {vacation.employeeName} is {(employmentStatusLabel(vacation.employeeEmploymentStatus) || "no longer active").toLowerCase()}
           {" — "}nobody can resubmit it
         </p>
         <p className="mt-0.5 break-words text-xs text-slate-500">
@@ -356,9 +359,9 @@ export function StuckApprovalsPanel({
           weeklyPlans.map((plan) => (
             <ReassignRow
               key={plan.planId}
-              primary={`${plan.employeeName} (${plan.employeeHrId})`}
-              secondary={`Status: ${plan.status.replace(/_/g, " ")}`}
-              currentApprover={plan.managerName || plan.managerHrId || "no manager on record"}
+              primary={plan.employeeName}
+              secondary={`Status: ${requestStatusLabel(plan.status)}`}
+              currentApprover={plan.managerName || "no manager on record"}
               endpoint={`/api/weekly-plans/${encodeURIComponent(plan.planId)}/reassign`}
               managerOptions={managerOptions}
             />
@@ -373,9 +376,9 @@ export function StuckApprovalsPanel({
           excuses.map((excuse) => (
             <ReassignRow
               key={excuse.requestId}
-              primary={`${excuse.employeeName} (${excuse.employeeHrId})`}
-              secondary={`Excuse date: ${excuse.excuseDate ?? "n/a"}`}
-              currentApprover={excuse.managerName || excuse.managerHrId || "no manager on record"}
+              primary={excuse.employeeName}
+              secondary={`Excuse date: ${excuse.excuseDate ?? "—"}`}
+              currentApprover={excuse.managerName || "no manager on record"}
               endpoint={`/api/excuses/${encodeURIComponent(excuse.requestId)}/reassign`}
               managerOptions={managerOptions}
             />

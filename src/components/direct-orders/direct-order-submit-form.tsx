@@ -17,6 +17,7 @@ import { DistributorCustomerPicker } from "@/components/direct-orders/distributo
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
+import { humanizeCode } from "@/lib/format/code-label";
 import { cn } from "@/lib/utils";
 import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
 
@@ -1031,10 +1032,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 {campaignOptionsForLine.map((option) => (
                   <option key={option.id} value={option.id}>
                     {[
-                      option.requestCode,
                       option.customerName,
                       option.areaName,
-                      option.status === "active" ? null : option.status.replace(/_/g, " "),
+                      option.status === "active" ? null : humanizeCode(option.status),
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -1058,7 +1058,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 every duplicate cluster in production was a rep re-entering a pharmacy she had
                 already used successfully — twice on the same day, in the worst case — and until
                 today her own history was the one list the form never showed her. */}
-            <div className="mt-1 flex overflow-x-auto border border-[#eef1f3]">
+            <div className="mt-1 flex flex-wrap border border-[#eef1f3]">
               {(
                 [
                   { mode: "mine", label: "My venues" },
@@ -1070,7 +1070,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   key={tab.mode}
                   type="button"
                   onClick={() => setPharmacyMode(tab.mode)}
-                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider ${
+                  className={`px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider ${
                     pharmacyMode === tab.mode ? "bg-orange-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
                   }`}
                 >
@@ -1109,18 +1109,17 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           key={pharmacy.id}
                           type="button"
                           onClick={() => setPickedMine(pharmacy)}
-                          className={`block w-full overflow-x-auto border px-2.5 py-1.5 text-left ${
+                          className={`block w-full min-w-0 break-words border px-2.5 py-1.5 text-left ${
                             chosen ? "border-emerald-400 bg-emerald-50" : "border-[#eef1f3] bg-white hover:bg-slate-50"
                           }`}
                         >
-                          <span className="block whitespace-nowrap text-phx-md font-black text-slate-900" dir="auto">
+                          <span className="block break-words text-phx-md font-black text-slate-900" dir="auto">
                             {pharmacy.pharmacyName}
                           </span>
-                          <span className="block whitespace-nowrap text-phx-xs font-semibold text-slate-600">
-                            {pharmacy.phoenixPharmacyCode}
-                            {codeLine ? ` · ${codeLine}` : " · no distributor code"}
+                          <span className="block break-words text-phx-xs font-semibold text-slate-600">
+                            {codeLine || "No distributor code"}
                           </span>
-                          <span className="block whitespace-nowrap text-phx-xs text-slate-500" dir="auto">
+                          <span className="block break-words text-phx-xs text-slate-500" dir="auto">
                             {areas.find((area) => area.areaCode === pharmacy.areaCode)?.areaName ||
                               pharmacy.areaCode ||
                               "No area on file"}
@@ -1277,24 +1276,23 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           key={`${hit.source}-${hit.phoenixPharmacyCode ?? ""}-${hit.distributorCode ?? ""}-${hit.customerCode ?? ""}`}
                           className="flex items-start justify-between gap-2 border border-sky-200 bg-white px-2 py-1.5"
                         >
-                          <div className="min-w-0 overflow-x-auto">
-                            <span className="block whitespace-nowrap text-phx-sm font-bold text-slate-800" dir="auto">
+                          <div className="min-w-0">
+                            <span className="block break-words text-phx-sm font-bold text-slate-800" dir="auto">
                               {hit.pharmacyName}
                             </span>
-                            <span className="block whitespace-nowrap text-phx-xs font-semibold text-slate-600">
+                            <span className="block break-words text-phx-xs font-semibold text-slate-600">
                               {hit.distributorCode
                                 ? `${hit.distributorName || hit.distributorCode} · code ${hit.customerCode}`
                                 : "No distributor code on file"}
-                              {hit.phoenixPharmacyCode ? ` · ${hit.phoenixPharmacyCode}` : ""}
                             </span>
-                            <span className="block whitespace-nowrap text-phx-xs text-slate-500" dir="auto">
+                            <span className="block break-words text-phx-xs text-slate-500" dir="auto">
                               {hit.areaName || hit.areaCode || "No area"} · {hit.regionName || hit.regionCode || "No region"}
                               {hit.pharmacyAddress ? ` · ${hit.pharmacyAddress}` : ""}
                             </span>
                           </div>
                           <button
                             type="button"
-                            className="shrink-0 whitespace-nowrap border border-sky-600 px-2 py-1 text-phx-sm font-black text-sky-700 hover:bg-sky-100"
+                            className="shrink-0 border border-sky-600 px-2 py-1 text-phx-sm font-black text-sky-700 hover:bg-sky-100"
                             onClick={() => applySuggestedPharmacy(hit)}
                           >
                             Yes, this one
@@ -1374,15 +1372,15 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           key={`${conflict.distributorCode}-${conflict.customerCode}`}
                           className="border border-rose-200 bg-white px-2 py-1.5"
                         >
-                          <div className="overflow-x-auto">
-                            <span className="block whitespace-nowrap text-phx-md font-black text-slate-900" dir="auto">
+                          <div className="min-w-0">
+                            <span className="block break-words text-phx-md font-black text-slate-900" dir="auto">
                               {conflict.heldBy.pharmacyName}
                             </span>
-                            <span className="block whitespace-nowrap text-phx-xs font-semibold text-slate-600">
-                              {conflict.heldBy.phoenixPharmacyCode} · {conflict.distributorName || conflict.distributorCode} · code{" "}
+                            <span className="block break-words text-phx-xs font-semibold text-slate-600">
+                              {conflict.distributorName || conflict.distributorCode} · code{" "}
                               {conflict.customerCode}
                             </span>
-                            <span className="block whitespace-nowrap text-phx-xs text-slate-500" dir="auto">
+                            <span className="block break-words text-phx-xs text-slate-500" dir="auto">
                               {conflict.heldBy.areaName || conflict.heldBy.areaCode || "No area"} ·{" "}
                               {conflict.heldBy.regionName || conflict.heldBy.regionCode || "No region"}
                               {conflict.heldBy.pharmacyAddress ? ` · ${conflict.heldBy.pharmacyAddress}` : ""}
@@ -1392,7 +1390,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                             type="button"
                             className={cn(
                               phxButtonApproveDenseClassName,
-                              "mt-1.5 w-full whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider",
+                              "mt-1.5 w-full px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider",
                             )}
                             onClick={() =>
                               applySuggestedPharmacy({
@@ -1430,7 +1428,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     ) : (
                       <button
                         type="button"
-                        className={`mt-1.5 w-full whitespace-nowrap border border-slate-400 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`}
+                        className={`mt-1.5 w-full border border-slate-400 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50 ${adminControlDepthClassName}`}
                         onClick={() => setAcknowledgedCodeConflict(true)}
                       >
                         No — mine is a different pharmacy
@@ -1499,20 +1497,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           <p className="px-4 py-6 text-sm text-slate-500">You have not submitted any direct orders yet.</p>
         ) : (
           <>
-            {/* Desktop only (FITS-THE-SCREEN GOLDEN RULE — AGENTS.md §4). The old table sat behind
-                `overflow-x-auto` over a `min-w-[640px]` floor: a min-width floor forced beyond a
-                container's real width is the bug the rule names, not a fix for it, and every cell
-                below it carried `whitespace-nowrap` — so on a 375px phone this ONE table dragged
-                the whole form out to 782px wide (431px of horizontal overflow across 191 spilling
-                elements, measured 2026-09-03) and even clipped 82 elements past `main`'s edge on a
-                1440px desktop, where this section's own grid column is narrower than 640px. Eight
-                nowrap columns were never going to fit a phone regardless of shrinking — the fix is
-                `table-fixed` + a `<colgroup>` so the table always exactly fills its container
-                (never wider, never narrower), text WRAPS instead of forcing width (the ellipsis ban
-                is untouched), and two related pairs merge into one column each (Qty+bonus,
-                Status+waiting-on) rather than shrinking type to fit. Mobile gets the card list
-                below instead, per the admin-shell convention: desktop shows full tables, mobile
-                never does. */}
+            {/* Desktop only (fits-the-screen golden rule): `table-fixed` + a `<colgroup>` so the table
+                always exactly fills its container, text WRAPS, and two related pairs merge into one
+                column each (Qty+bonus, Status+waiting-on). Mobile gets the card list below. */}
             <div className="hidden md:block">
               <table className="w-full table-fixed border-collapse text-sm">
                 <colgroup>
@@ -1547,7 +1534,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         <div className="mt-0.5 text-phx-xs text-slate-500">
                           {bonusCell(r)}
                           {r.bonusOverCap ? (
-                            <span className="ml-1 inline-block rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                            <span className="ml-1 inline-block bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
                               over cap
                             </span>
                           ) : null}
@@ -1608,7 +1595,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     <p className="text-slate-600">
                       Bonus: <span className="font-bold text-slate-900">{bonusCell(r)}</span>
                       {r.bonusOverCap ? (
-                        <span className="ml-1 inline-block rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                        <span className="ml-1 inline-block bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
                           over cap
                         </span>
                       ) : null}

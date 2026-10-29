@@ -518,7 +518,7 @@ function statusFromFlexibleHours(input: {
     deductionValue: result.deductionDays <= 0 ? "0" : deductionValue != null ? deductionValue.toFixed(2) : "Base salary missing",
     earlyLeaveMinutes: "",
     lateMinutes: result.lateMinutes > 0 ? String(result.lateMinutes) : "",
-    recommendedAction: result.reason,
+    recommendedAction: result.reason ?? "",
     status,
   };
 }

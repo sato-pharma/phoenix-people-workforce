@@ -15,6 +15,7 @@ import {
   emptyMonthlyClosingFilter,
   type MonthlyClosingFilter,
 } from "@/components/sales/monthly-closing-filters";
+import { CrmCard, CrmCardsOnPhone, CrmFacts } from "@/components/phoenix-crm/ui";
 import { Button } from "@/components/ui/button";
 import { MatrixScroller } from "@/components/ui/matrix-scroller";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -108,6 +109,16 @@ function Achievement({ ratio }: { ratio: number | null }) {
 }
 
 /** "new" when the month before has nothing on record; "—" when it stood at zero or below (returns). */
+/** The "Achievement" heading, short on a phone where a narrow column cannot hold the whole word. */
+function AchievementHead() {
+  return (
+    <>
+      <span className="hidden sm:inline">Achievement</span>
+      <span className="sm:hidden">Ach %</span>
+    </>
+  );
+}
+
 function Growth({ ratio }: { ratio: PerformanceReviewGrowth }) {
   if (ratio == null) return <span className="text-xs italic text-slate-400">new</span>;
   if (ratio === GROWTH_NO_BASE) return <span className="text-xs text-slate-400">—</span>;
@@ -267,7 +278,7 @@ function SeriesTable({
   // Same ruling as the closing matrix — the scroll stays.
   return (
     <MatrixScroller>
-      <table className="w-full min-w-[52rem] border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+      <table className="w-full border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead className="border-b border-slate-200 bg-slate-50/80">
           <tr>
             <th className={headClassName}>{rowHeading}</th>
@@ -758,7 +769,7 @@ export function ClosingPerformanceReviewWorkspace({
       >
         {/* Desktop gets the full table; a phone gets cards — the admin shell never shows a wide table on mobile. */}
         <div className="hidden lg:block">
-          {/* min-w-[64rem] made this scroll on any 1024-1280px screen, which is the
+          {/* A width floor made this scroll on any 1024-1280px screen, which is the
               width most of these are read at. The colgroup owns it now. */}
           <table className="w-full table-fixed border-collapse">
             <colgroup>
@@ -828,7 +839,7 @@ export function ClosingPerformanceReviewWorkspace({
         </div>
         <div className="space-y-3 p-4 lg:hidden">
           {review.areas.map((area, index) => (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" key={area.regionCode + "-" + area.areaCode}>
+            <div className="border border-slate-200 bg-white p-4" key={area.regionCode + "-" + area.areaCode}>
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-2">
                   <RegionDot regionCode={area.regionCode} />
@@ -850,6 +861,17 @@ export function ClosingPerformanceReviewWorkspace({
               </p>
             </div>
           ))}
+          <div className="border border-slate-300 bg-slate-100/80 p-4">
+            <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-700">
+              {line} {DOT} {totalLabel}
+            </p>
+            <p className="mt-2 text-sm font-semibold text-slate-700">
+              <Figure value={review.totals.salesValue} />
+              <span className="text-slate-400"> of </span>
+              <Figure value={review.totals.targetValue} />
+              <span className="ml-2"><Achievement ratio={review.totals.achievement} /></span>
+            </p>
+          </div>
         </div>
       </AdminTableShell>
 
@@ -859,6 +881,7 @@ export function ClosingPerformanceReviewWorkspace({
       >
         <div className="grid gap-0 lg:grid-cols-2">
           <div className="border-b border-slate-200 lg:border-b-0 lg:border-r">
+            <div className="hidden md:block">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
                 <col className="w-[40%]" />
@@ -871,7 +894,7 @@ export function ClosingPerformanceReviewWorkspace({
                   <th className={headClassName}>District manager</th>
                   <th className={headClassName}>Areas</th>
                   <th className={headClassName + " text-right"}>Sales value</th>
-                  <th className={headClassName + " text-right"}>Achievement</th>
+                  <th className={headClassName + " text-right"}><AchievementHead /></th>
                 </tr>
               </thead>
               <tbody>
@@ -890,8 +913,23 @@ export function ClosingPerformanceReviewWorkspace({
                 ))}
               </tbody>
             </table>
+            </div>
+            <CrmCardsOnPhone>
+              {review.managers.map((group) => (
+                <CrmCard key={group.label + ":card"} title={group.label}>
+                  <CrmFacts
+                    facts={[
+                      { label: "Areas", value: group.areaCount },
+                      { label: "Sales value", value: <Figure value={group.salesValue} /> },
+                      { label: "Achievement", value: <Achievement ratio={group.achievement} /> },
+                    ]}
+                  />
+                </CrmCard>
+              ))}
+            </CrmCardsOnPhone>
           </div>
           <div>
+            <div className="hidden md:block">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
                 <col className="w-[40%]" />
@@ -904,7 +942,7 @@ export function ClosingPerformanceReviewWorkspace({
                   <th className={headClassName}>Region</th>
                   <th className={headClassName}>Areas</th>
                   <th className={headClassName + " text-right"}>Sales value</th>
-                  <th className={headClassName + " text-right"}>Achievement</th>
+                  <th className={headClassName + " text-right"}><AchievementHead /></th>
                 </tr>
               </thead>
               <tbody>
@@ -923,6 +961,20 @@ export function ClosingPerformanceReviewWorkspace({
                 ))}
               </tbody>
             </table>
+            </div>
+            <CrmCardsOnPhone>
+              {review.regions.map((group) => (
+                <CrmCard key={group.regionCode + ":card"} title={group.regionName}>
+                  <CrmFacts
+                    facts={[
+                      { label: "Areas", value: group.areaCount },
+                      { label: "Sales value", value: <Figure value={group.salesValue} /> },
+                      { label: "Achievement", value: <Achievement ratio={group.achievement} /> },
+                    ]}
+                  />
+                </CrmCard>
+              ))}
+            </CrmCardsOnPhone>
           </div>
         </div>
       </AdminTableShell>
@@ -931,7 +983,7 @@ export function ClosingPerformanceReviewWorkspace({
         description="A family spans several concentrations, so it is measured by value. Units show only where the family happens to be a single product code."
         title="Family performance"
       >
-        <div>
+        <div className="hidden md:block">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
               <col className="w-[26%]" />
@@ -948,7 +1000,7 @@ export function ClosingPerformanceReviewWorkspace({
                 <th className={headClassName + " text-right"}>Units</th>
                 <th className={headClassName + " text-right"}>Sales value</th>
                 <th className={headClassName + " text-right"}>Target value</th>
-                <th className={headClassName + " text-right"}>Achievement</th>
+                <th className={headClassName + " text-right"}><AchievementHead /></th>
               </tr>
             </thead>
             <tbody>
@@ -973,6 +1025,24 @@ export function ClosingPerformanceReviewWorkspace({
             </tbody>
           </table>
         </div>
+        <CrmCardsOnPhone>
+          {review.families.map((family) => (
+            <CrmCard key={family.family + ":card"} title={family.family}>
+              <CrmFacts
+                facts={[
+                  { label: "Products", value: family.productCount },
+                  {
+                    label: "Units",
+                    value: family.unitsAreAddable ? <Figure value={family.salesUnits} /> : <span className="text-xs italic text-slate-400">several products</span>,
+                  },
+                  { label: "Sales value", value: <Figure value={family.salesValue} /> },
+                  { label: "Target value", value: <Figure value={family.targetValue} /> },
+                  { label: "Achievement", value: <Achievement ratio={family.achievement} /> },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
       </AdminTableShell>
 
       <AdminTableShell

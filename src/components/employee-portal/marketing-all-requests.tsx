@@ -19,6 +19,7 @@ import type {
   MarketingAllRequestsRow,
   MarketingAllRequestsWorkspace,
 } from "@/lib/marketing-requests/types";
+import { forecastRoiStatusLabel, marketingRequestStatusLabel } from "@/lib/marketing-requests/roi-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { adminControlDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -39,7 +40,7 @@ function statusVariant(status: MarketingAllRequestsRow["status"]): "success" | "
 }
 
 function statusLabel(status: MarketingAllRequestsRow["status"]) {
-  return status.replace(/_/g, " ");
+  return marketingRequestStatusLabel(status);
 }
 
 /**
@@ -79,7 +80,7 @@ function TextCell({ value }: { value: string | null | undefined }) {
 
 function CodeCell({ value }: { value: string | null | undefined }) {
   return (
-    <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
+    <span className="bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
       {value || "-"}
     </span>
   );
@@ -318,7 +319,7 @@ export function MarketingAllRequests() {
                     <td className="px-4 py-3"><TextCell value={cairoDate(row.payDate)} /></td>
                     <td className="px-4 py-3"><TextCell value={cairoDate(row.submittedAt)} /></td>
                     <td className="px-4 py-3">
-                      <TextCell value={row.roiStatus ? row.roiStatus.replace(/_/g, " ") : null} />
+                      <TextCell value={row.roiStatus ? forecastRoiStatusLabel(row.roiStatus) : null} />
                     </td>
                   </tr>
                 ))}

@@ -30,6 +30,7 @@ import {
 
 import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { CountUpNumber } from "@/components/ui/count-up";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { cn } from "@/lib/utils";
 import type { BrickNode, VsTargetNode, VsTargetTotals } from "@/lib/sales/vs-target";
 import type { VsTargetDashboardData } from "@/lib/sales/vs-target-page";
@@ -183,7 +184,7 @@ function HierarchyTable({
                         // The row stays clickable for a mouse; this button is what a keyboard reaches.
                         <button
                           type="button"
-                          aria-expanded={isOpen}
+                          {...rowDetailToggleProps(`vs-target-bricks-${node.key.replace(/[^A-Za-z0-9_-]/g, "-")}`, isOpen)}
                           onClick={(event) => {
                             event.stopPropagation();
                             onDrill(node);
@@ -233,11 +234,9 @@ function HierarchyTable({
                     </td>
                   </tr>
                   {isOpen ? (
-                    <tr className="border-b border-slate-200 bg-slate-50">
-                      <td className="px-4 py-4" colSpan={5}>
-                        <BrickPanel bricks={bricks ?? null} loading={Boolean(bricksLoading)} />
-                      </td>
-                    </tr>
+                    <TableRowDetail colSpan={5} id={`vs-target-bricks-${node.key.replace(/[^A-Za-z0-9_-]/g, "-")}`}>
+                      <BrickPanel bricks={bricks ?? null} loading={Boolean(bricksLoading)} />
+                    </TableRowDetail>
                   ) : null}
                 </Fragment>
               );

@@ -15,7 +15,7 @@ type PageProps = {
   params: Promise<{ clientCode: string; distributor: string }>;
 };
 
-const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
+const headerCell = "px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
 
 export default async function CustomerDetailPage({ params }: PageProps) {
   const access = await resolveAuthenticatedPageAccess();
@@ -85,8 +85,14 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       />
 
       <AdminTableShell description="Each product this customer purchased (from this distributor), with computed value." title="Sales by Product">
-        <div className="overflow-x-auto p-4 md:p-5">
-          <table className="w-full min-w-[640px] text-sm">
+        <div className="p-4 md:p-5">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[40%]" />
+              <col className="w-[22%]" />
+              <col className="w-[14%]" />
+              <col className="w-[24%]" />
+            </colgroup>
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
                 <th className={headerCell}>Product</th>
@@ -97,17 +103,17 @@ export default async function CustomerDetailPage({ params }: PageProps) {
             </thead>
             <tbody className="divide-y divide-phx-line">
               {detail.productTotals.map((product) => (
-                <tr className="text-slate-600" key={product.productCode}>
-                  <td className="px-3 py-2.5 font-semibold text-phx-ink">{product.productName} <span className="text-xs text-slate-400">{product.productCode}</span></td>
-                  <td className="px-3 py-2.5">{product.officialLine}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(product.totalUnits)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(product.totalValue)}</td>
+                <tr className="align-top text-slate-600" key={product.productCode}>
+                  <td className="min-w-0 break-words px-3 py-2.5 font-semibold text-phx-ink">{product.productName}</td>
+                  <td className="min-w-0 break-words px-3 py-2.5">{product.officialLine}</td>
+                  <td className="min-w-0 break-words px-3 py-2.5 text-right tabular-nums">{formatNumber(product.totalUnits)}</td>
+                  <td className="min-w-0 break-words px-3 py-2.5 text-right tabular-nums">{formatCurrency(product.totalValue)}</td>
                 </tr>
               ))}
               <tr className="bg-[#FDEAD0] font-black text-slate-900">
                 <td className="px-3 py-2.5" colSpan={2}>Total</td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(detail.totalUnits)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(detail.totalValue)}</td>
+                <td className="min-w-0 break-words px-3 py-2.5 text-right tabular-nums">{formatNumber(detail.totalUnits)}</td>
+                <td className="min-w-0 break-words px-3 py-2.5 text-right tabular-nums">{formatCurrency(detail.totalValue)}</td>
               </tr>
             </tbody>
           </table>
@@ -115,27 +121,35 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       </AdminTableShell>
 
       <AdminTableShell description="Every sales line for this customer." title="Sales Detail">
-        <div className="overflow-x-auto p-4 md:p-5">
-          <table className="w-full min-w-[760px] text-sm">
+        <div className="p-4 md:p-5">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[40%]" />
+              <col className="w-[14%]" />
+              <col className="w-[28%]" />
+            </colgroup>
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
-                <th className={headerCell}>Period</th>
-                <th className={headerCell}>Product</th>
-                <th className={headerCell}>Line</th>
-                <th className={headerCell}>Brick</th>
+                <th className={headerCell}>Period / Brick</th>
+                <th className={headerCell}>Product / Line</th>
                 <th className={`${headerCell} text-right`}>Qty</th>
                 <th className={`${headerCell} text-right`}>Value</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-phx-line">
               {detail.lines.map((line, index) => (
-                <tr className="text-slate-600" key={`${line.invoicePeriod}:${line.productCode}:${index}`}>
-                  <td className="whitespace-nowrap px-3 py-2.5">{line.invoicePeriod ?? "—"}</td>
-                  <td className="px-3 py-2.5 font-semibold text-phx-ink">{line.productName} <span className="text-xs text-slate-400">{line.productCode}</span></td>
-                  <td className="px-3 py-2.5">{line.officialLine}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{line.brickId}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(line.qty)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(line.value)}</td>
+                <tr className="align-top text-slate-600" key={`${line.invoicePeriod}:${line.productCode}:${index}`}>
+                  <td className="min-w-0 break-words px-3 py-2.5">
+                    <p>{line.invoicePeriod ?? "—"}</p>
+                    {line.brickId ? <p className="text-xs text-slate-500">{line.brickId}</p> : null}
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-2.5">
+                    <p className="font-semibold text-phx-ink">{line.productName}</p>
+                    {line.officialLine ? <p className="text-xs text-slate-500">{line.officialLine}</p> : null}
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-2.5 text-right tabular-nums">{formatNumber(line.qty)}</td>
+                  <td className="min-w-0 break-words px-3 py-2.5 text-right tabular-nums">{formatCurrency(line.value)}</td>
                 </tr>
               ))}
             </tbody>

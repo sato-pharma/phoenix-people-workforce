@@ -488,7 +488,7 @@ function pharmacyLine(entry: MissingStockPharmacy): string {
 
 function PharmacyLines({ entries }: { entries: ReadonlyArray<MissingStockPharmacy> }) {
   return (
-    <ul className="divide-y divide-slate-100 border border-slate-200 bg-white">
+    <ul className="divide-y divide-slate-100 border border-slate-200">
       {entries.map((entry) => (
         <li className="break-words px-3 py-2 text-sm font-semibold leading-6 text-slate-700" dir="auto" key={`${entry.seatId}|${entry.pharmacy}`}>
           {pharmacyLine(entry)}
@@ -546,7 +546,7 @@ export function StockSection({ idPrefix, resource }: { idPrefix: string; resourc
       ) : (
         <ReportList
           columns={["28%", "20%", null, "16%"]}
-          explain="The most pharmacies short first. Open a product for each pharmacy, the territory, and when it last said so."
+          explain="The most pharmacies short first. Open a product for the other pharmacies, the territory, and when each last said so."
           hasData={(product: MissingStockProduct) => product.missing.some((entry) => entry.chasePromised)}
           headers={[
             "Product",
@@ -567,12 +567,14 @@ export function StockSection({ idPrefix, resource }: { idPrefix: string; resourc
                   { label: "Latest", value: product.missing[0] ? pharmacyLine(product.missing[0]) : "—" },
                 ]}
               />
-              <div className="mt-3">
-                <PharmaciesToggle onToggle={onToggle} open={open} />
-              </div>
-              {open ? (
+              {product.missing.length > 1 ? (
                 <div className="mt-3">
-                  <PharmacyLines entries={product.missing} />
+                  <PharmaciesToggle onToggle={onToggle} open={open} />
+                </div>
+              ) : null}
+              {open && product.missing.length > 1 ? (
+                <div className="mt-3">
+                  <PharmacyLines entries={product.missing.slice(1)} />
                 </div>
               ) : null}
             </CrmCard>
@@ -590,12 +592,11 @@ export function StockSection({ idPrefix, resource }: { idPrefix: string; resourc
                 </p>
                 {product.missing.length > 1 ? <p className="mt-0.5 text-xs text-slate-500">{`and ${plural(product.missing.length - 1, "more", "more")}`}</p> : null}
               </td>
-              <td className={crmTdClassName}>
-                <PharmaciesToggle onToggle={onToggle} open={open} />
-              </td>
+              <td className={crmTdClassName}>{product.missing.length > 1 ? <PharmaciesToggle onToggle={onToggle} open={open} /> : null}</td>
             </>
           )}
-          renderOpen={(product) => <PharmacyLines entries={product.missing} />}
+          // The first pharmacy is already in the row ("Where"); the panel carries the rest.
+          renderOpen={(product) => <PharmacyLines entries={product.missing.slice(1)} />}
           searchWords={(product) => [product.product, ...product.missing.flatMap((entry) => [entry.pharmacy, entry.territoryName])]}
           words={{
             ...LIST_WORDS,

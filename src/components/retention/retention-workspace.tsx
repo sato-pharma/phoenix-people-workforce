@@ -706,8 +706,7 @@ export function RetentionWorkspace({
                       {conversation.employeeName}
                     </p>
                     <p className="break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
-                      {conversation.employeeHrId}
-                      {conversation.jobTitle ? ` · ${conversation.jobTitle}` : ""}
+                      {conversation.jobTitle ?? "—"}
                     </p>
                   </td>
                   <td className="px-4 py-3">
@@ -825,8 +824,7 @@ function ConversationCard({
             {conversation.employeeName}
           </p>
           <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
-            {conversation.employeeHrId}
-            {conversation.jobTitle ? ` · ${conversation.jobTitle}` : ""}
+            {conversation.jobTitle ?? "—"}
           </p>
         </div>
         <KindChip kind={conversation.kind} />

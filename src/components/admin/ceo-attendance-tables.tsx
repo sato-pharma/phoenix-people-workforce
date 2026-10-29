@@ -19,7 +19,6 @@ export type ChronicLateRow = { name: string; hrId: string; lateDays: number; lat
 const MOL_COLS = [
   { key: "name",  accessor: (r: ManagerOnLeave) => r.name,  type: "string" as const, defaultDir: "asc" as const },
   { key: "role",  accessor: (r: ManagerOnLeave) => r.role,  type: "string" as const, defaultDir: "asc" as const },
-  { key: "hrId",  accessor: (r: ManagerOnLeave) => r.hrId,  type: "string" as const, defaultDir: "asc" as const },
 ];
 
 function ManagersOnLeaveTable({ rows }: { rows: ManagerOnLeave[] }) {
@@ -53,31 +52,32 @@ function ManagersOnLeaveTable({ rows }: { rows: ManagerOnLeave[] }) {
           className="h-8 shrink-0"
         />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+      <div>
+        <table className="w-full table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-[60%]" />
+            <col className="w-[40%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort}
                 className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="Role" sortKey="role" sort={table.sort} onSort={table.toggleSort}
                 className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
-              <SortableTh label="HR ID" sortKey="hrId" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {table.rows.length === 0 ? (
-              <TableNoResults colSpan={3} filtered={table.isFiltered} label="managers" />
+              <TableNoResults colSpan={2} filtered={table.isFiltered} label="managers" />
             ) : (
               table.rows.map((r) => (
                 <tr key={r.hrId} className="bg-white hover:bg-amber-50/60">
-                  <td className="px-3 py-2 font-semibold text-slate-800">{r.name}</td>
-                  <td className="px-3 py-2">
+                  <td className="break-words px-3 py-2 font-semibold text-slate-800">{r.name}</td>
+                  <td className="break-words px-3 py-2">
                     <span className="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-phx-3xs font-bold text-amber-700">
                       {r.role}
                     </span>
                   </td>
-                  <td className="px-3 py-2 font-mono text-phx-2xs text-slate-400">{r.hrId}</td>
                 </tr>
               ))
             )}
@@ -133,8 +133,12 @@ function AbsenteesTable({ rows, allCount }: { rows: AbsenteeRow[]; allCount: num
           Showing {rows.length} of {allCount} absentees.
         </p>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+      <div>
+        <table className="w-full table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-[60%]" />
+            <col className="w-[40%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort}
@@ -149,8 +153,8 @@ function AbsenteesTable({ rows, allCount }: { rows: AbsenteeRow[]; allCount: num
             ) : (
               table.rows.map((r) => (
                 <tr key={r.hrId} className="bg-white hover:bg-rose-50/60">
-                  <td className="px-3 py-2 font-semibold text-slate-800">{r.name}</td>
-                  <td className="px-3 py-2 text-slate-500">{r.department || "—"}</td>
+                  <td className="break-words px-3 py-2 font-semibold text-slate-800">{r.name}</td>
+                  <td className="break-words px-3 py-2 text-slate-500">{r.department || "—"}</td>
                 </tr>
               ))
             )}
@@ -206,8 +210,13 @@ function ChronicLateTable({ rows }: { rows: ChronicLateRow[] }) {
           className="h-8 shrink-0"
         />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+      <div>
+        <table className="w-full table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-[60%]" />
+            <col className="w-[20%]" />
+            <col className="w-[20%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort}
@@ -224,7 +233,7 @@ function ChronicLateTable({ rows }: { rows: ChronicLateRow[] }) {
             ) : (
               table.rows.map((r) => (
                 <tr key={r.hrId} className="bg-white hover:bg-amber-50/40">
-                  <td className="px-3 py-2 font-semibold text-slate-800">{r.name}</td>
+                  <td className="break-words px-3 py-2 font-semibold text-slate-800">{r.name}</td>
                   <td className="px-3 py-2 text-right font-bold text-slate-700">{r.lateDays}</td>
                   <td className={`px-3 py-2 text-right font-black ${r.lateRate >= 50 ? "text-rose-700" : r.lateRate >= 30 ? "text-amber-700" : "text-slate-600"}`}>
                     {r.lateRate.toFixed(0)}%

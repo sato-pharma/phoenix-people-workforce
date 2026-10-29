@@ -1,5 +1,7 @@
 "use client";
 
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -1310,7 +1312,7 @@ function useExpandedPharmacies({
 }
 
 /** The "target pharmacies" drill-down shown under an expanded request — shared by both the
- *  desktop row (inside a <td colSpan>) and the mobile card (inside a plain <div>) so the two
+ *  desktop row (inside its TableRowDetail panel) and the mobile card (inside a plain <div>) so the two
  *  presentations never drift. Each pharmacy can itself expand to show its matched sales detail
  *  (Product / Month / Qty / Value), which gets its own desktop-table/mobile-card split. */
 function PharmacyDrilldownPanel({
@@ -1452,6 +1454,7 @@ function RequestAccordionRow({
   const { pharmacies, loading, error } = useExpandedPharmacies({ cachedPharmacies, expanded, includeRestricted, onPharmaciesLoaded, requestId: row.requestId });
 
   const locationLabel = [row.line, row.region, row.areaName].filter(Boolean).join(" / ") || "—";
+  const detailId = `coverage-request-detail-${row.requestId}`;
 
   return (
     <>
@@ -1462,7 +1465,7 @@ function RequestAccordionRow({
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") onToggle();
         }}
-        aria-expanded={expanded}
+        {...rowDetailToggleProps(detailId, expanded)}
         className="cursor-pointer border-b border-[rgba(249,115,22,0.22)] align-top transition hover:bg-orange-50/40"
       >
         {/* Request · status · pay date */}
@@ -1471,10 +1474,10 @@ function RequestAccordionRow({
           <span className="mt-1 block text-slate-600">
             {STATUS_BADGE_CLASS[row.status] ? (
               <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
-                {STATUS_LABELS[row.status] ?? row.status}
+                {STATUS_LABELS[row.status] ?? requestStatusLabel(row.status)}
               </span>
             ) : (
-              <span className="text-phx-xs font-semibold">{STATUS_LABELS[row.status] ?? row.status}</span>
+              <span className="text-phx-xs font-semibold">{STATUS_LABELS[row.status] ?? requestStatusLabel(row.status)}</span>
             )}
           </span>
           <span className="mt-1 block text-xs text-slate-500">Paid {row.payDate ? formatPayDate(row.payDate) : "not yet"}</span>
@@ -1508,11 +1511,9 @@ function RequestAccordionRow({
         </td>
       </tr>
       {expanded ? (
-        <tr className="border-b border-[rgba(249,115,22,0.22)] bg-slate-50">
-          <td colSpan={REQUEST_TABLE_COLUMN_COUNT} className="px-3 py-3">
-            <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
-          </td>
-        </tr>
+        <TableRowDetail colSpan={REQUEST_TABLE_COLUMN_COUNT} id={detailId}>
+          <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
+        </TableRowDetail>
       ) : null}
     </>
   );
@@ -1576,10 +1577,10 @@ function RequestAccordionCard({
             label: "Status",
             value: STATUS_BADGE_CLASS[row.status] ? (
               <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
-                {STATUS_LABELS[row.status] ?? row.status}
+                {STATUS_LABELS[row.status] ?? requestStatusLabel(row.status)}
               </span>
             ) : (
-              STATUS_LABELS[row.status] ?? row.status
+              STATUS_LABELS[row.status] ?? requestStatusLabel(row.status)
             ),
           },
           { label: "Pay date", value: formatPayDate(row.payDate) },

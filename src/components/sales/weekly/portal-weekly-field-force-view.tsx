@@ -45,6 +45,7 @@ import {
   fieldForceLeagueColumns,
   fieldForceProductColumns,
 } from "@/components/sales/weekly/weekly-table-widths";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import type {
   FieldForceRep,
   PortalWeeklyFieldForce,
@@ -488,11 +489,13 @@ function RepRow({
   const share = totalValue > 0 ? rep.value / totalValue : 0;
   const tone = toneOf(rep);
   const weekPeak = peakOf(weeks, rep.valueByWeek);
+  const detailId = `field-force-products-${rep.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 
   return (
     <>
       <tr
         onClick={onToggle}
+        {...rowDetailToggleProps(detailId, expanded)}
         className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/40 ${
           expanded ? "bg-orange-50/60" : ""
         }`}
@@ -562,11 +565,9 @@ function RepRow({
         </td>
       </tr>
       {expanded ? (
-        <tr>
-          <td colSpan={weeks.length + 2} className="bg-slate-50/80 px-3 py-3">
-            <ProductGrid rep={rep} weeks={weeks} gapWeeks={gapWeeks} layout="table" />
-          </td>
-        </tr>
+        <TableRowDetail colSpan={weeks.length + 2} id={detailId}>
+          <ProductGrid rep={rep} weeks={weeks} gapWeeks={gapWeeks} layout="table" />
+        </TableRowDetail>
       ) : null}
     </>
   );
@@ -604,7 +605,7 @@ function ProductGrid({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-3 py-2">
         <Package className="h-3.5 w-3.5 shrink-0 text-orange-500" />
         <p className="min-w-0 break-words text-phx-2xs font-black tracking-[0.04em] text-slate-500">
-          {`${weeklyPersonLabel(rep.label)} · units per product, week by week`}
+          Units per product, week by week
         </p>
         <span className="min-w-0 break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
           {`${rep.products.length} product${rep.products.length === 1 ? "" : "s"} · ${rep.lineName}`}

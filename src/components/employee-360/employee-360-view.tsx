@@ -14,6 +14,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { humanizeCode } from "@/lib/format/code-label";
 import { Fragment, type ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -699,7 +700,7 @@ function IdentityHero({
             )}
             {subject.employmentStatus && subject.employmentStatus !== "active" ? (
               <span className="border border-amber-400 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-800">
-                {subject.employmentStatus.replace(/_/g, " ")}
+                {humanizeCode(subject.employmentStatus)}
               </span>
             ) : null}
           </div>

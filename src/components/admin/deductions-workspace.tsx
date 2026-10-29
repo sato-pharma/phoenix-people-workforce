@@ -31,6 +31,7 @@ import {
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 
 import { DisputesTab } from "./deductions-disputes-tab";
 
@@ -1966,6 +1967,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                                     className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                                     onClick={() => setEditingId(editingId === row.id ? null : row.id)}
                                     type="button"
+                                    {...rowDetailToggleProps(`deduction-days-${row.id}`, editingId === row.id)}
                                   >
                                     {editingId === row.id ? "Close days" : "Edit days"}
                                   </button>
@@ -1979,11 +1981,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                         </td>
                       </tr>
                       {canDecide && editingId === row.id ? (
-                        <tr className="border-b border-slate-200 bg-white">
-                          <td className="px-4 pb-3" colSpan={canDecide ? 7 : 6}>
-                            <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
-                          </td>
-                        </tr>
+                        <TableRowDetail colSpan={canDecide ? 7 : 6} id={`deduction-days-${row.id}`}>
+                          <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
+                        </TableRowDetail>
                       ) : null}
                     </Fragment>
                   );
@@ -2016,8 +2016,8 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       <StatusBadge status={row.decision?.decisionStatus ?? null} />
                     </div>
                   </div>
-                  <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
-                  <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
                     {row.unit === "days" ? `${appliedDays}${narrowed ? ` of ${row.rawValue}` : ""} day(s)` : ""} ·{" "}
                     {amount != null ? `${money(amount)} EGP` : "requires review"}
                   </p>

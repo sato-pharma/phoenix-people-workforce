@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import type { ReviewPersonRow, ReviewRoleRow } from "@/lib/business-review/sources/roles";
 import { formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
+import { employmentStatusLabel } from "@/lib/employees/employment-status-label";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
@@ -238,12 +239,12 @@ export function CustomersByAreaTable({
             <tbody>
               {ranked.map((a) => (
                 <tr className="border-b border-border/60 last:border-0" key={`${a.line ?? ""}-${a.area}`}>
-                  <td className={cn(TD, "whitespace-nowrap font-semibold")}>
+                  <td className={cn(TD, "break-words font-semibold")}>
                     {a.area}
                     {a.vacant && <VacantChip />}
                   </td>
-                  {showLine && <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>{a.line}</td>}
-                  <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>{a.dm}</td>
+                  {showLine && <td className={cn(TD, "break-words text-muted-foreground")}>{a.line}</td>}
+                  <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
                   {months.map((m) => (
                     <td className={TDR} key={m}>
                       {num(a.customersByMonth[m] ?? 0)}
@@ -352,7 +353,7 @@ export function RoleActivityTable({ roles, scopeNote }: { roles: ReviewRoleRow[]
             <tbody>
               {roles.map((r) => (
                 <tr className="border-b border-border/60 last:border-0" key={r.role}>
-                  <td className={cn(TD, "whitespace-nowrap font-semibold")}>{r.role}</td>
+                  <td className={cn(TD, "break-words font-semibold")}>{r.role}</td>
                   <td className={TDR}>{num(r.headcount)}</td>
                   <td className={TDR}>{num(r.people)}</td>
                   <td className={cn(TDR, "font-semibold")}>{num(r.fieldVisits)}</td>
@@ -420,7 +421,7 @@ export function PeopleActivityTable({
                 <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{p.name}</h3>
                 <p className="mt-0.5 min-w-0 break-words text-xs font-semibold text-slate-500">
                   {p.jobTitle || p.role}
-                  {p.employmentStatus !== "active" ? ` · ${p.employmentStatus}` : ""}
+                  {p.employmentStatus !== "active" ? ` · ${employmentStatusLabel(p.employmentStatus)}` : ""}
                 </p>
               </div>
               {/* `shrink-0` — the chip is `whitespace-nowrap`, so a flex parent that is allowed to
@@ -471,15 +472,15 @@ export function PeopleActivityTable({
               {shown.map((p, i) => (
                 <tr className="border-b border-border/60 last:border-0" key={p.hrId}>
                   <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
-                  <td className={cn(TD, "whitespace-nowrap font-semibold")}>
+                  <td className={cn(TD, "break-words font-semibold")}>
                     {p.name}
                     {p.employmentStatus !== "active" && (
                       <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold uppercase text-muted-foreground">
-                        {p.employmentStatus}
+                        {employmentStatusLabel(p.employmentStatus)}
                       </span>
                     )}
                   </td>
-                  <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>{p.jobTitle || p.role}</td>
+                  <td className={cn(TD, "break-words text-muted-foreground")}>{p.jobTitle || p.role}</td>
                   <td className={cn(TDR, "font-semibold")}>{num(p.fieldVisits)}</td>
                   <td className={TDR}>{p.avgPerActiveMonth.toFixed(1)}</td>
                   <td className={TDR}>{num(p.ridesLed)}</td>

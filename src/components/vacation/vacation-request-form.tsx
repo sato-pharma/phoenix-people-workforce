@@ -1119,7 +1119,13 @@ function NationalEgyptianVacationPanel() {
           <>
             {/* Desktop table (xs+) */}
             <div className="hidden md:block overflow-hidden border border-slate-200 bg-white">
-              <table className="w-full border-collapse text-left text-phx-sm">
+              <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+                <colgroup>
+                  <col className="w-[40%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
                 <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
                     <th className="border-b border-r border-slate-100 px-3 py-2">Holiday</th>

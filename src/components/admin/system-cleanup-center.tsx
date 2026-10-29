@@ -27,6 +27,7 @@ import type {
 } from "@/lib/admin/system-cleanup";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
+import { humanizeCode } from "@/lib/format/code-label";
 
 
 type FilterState = {
@@ -49,7 +50,7 @@ const defaultFilters: FilterState = {
 const emptyCleanupRecords: SystemCleanupRecord[] = [];
 
 function statusLabel(value: string) {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return humanizeCode(value);
 }
 
 function safetyBadge(record: Pick<SystemCleanupRecord, "safetyState">) {
@@ -92,13 +93,6 @@ function buildQuery(filters: FilterState) {
   if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) params.set("dateTo", filters.dateTo);
   return params.toString();
-}
-
-function compactId(value: string) {
-  const displayValue = value.startsWith("employee_plan_headers:") || value.startsWith("weekly_plans:")
-    ? value.slice(value.indexOf(":") + 1)
-    : value;
-  return displayValue.length > 12 ? `${displayValue.slice(0, 8)}...${displayValue.slice(-4)}` : displayValue;
 }
 
 export function SystemCleanupCenter({
@@ -361,23 +355,31 @@ export function SystemCleanupCenter({
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
+              <colgroup>
+                <col className="w-[4%]" />
+                <col className="w-[22%]" />
+                <col className="w-[15%]" />
+                <col className="w-[13%]" />
+                <col className="w-[16%]" />
+                <col className="w-[20%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead className="bg-slate-100 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                 <tr>
-                  <th className="w-10 px-3 py-3">
+                  <th className="px-3 py-3">
                     <input
+                      aria-label="Select every deletable record"
                       checked={records.some((record) => record.canDelete) && records.filter((record) => record.canDelete).every((record) => selected.has(targetKey(recordTarget(record))))}
                       className="h-4 w-4 rounded border-slate-300"
                       onChange={toggleAllSafe}
                       type="checkbox"
                     />
                   </th>
-                  <th className="px-3 py-3">Module</th>
+                  <th className="px-3 py-3">Module · record</th>
                   <th className="px-3 py-3">Employee</th>
-                  <th className="px-3 py-3">Record</th>
-                  <th className="px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Date</th>
+                  <th className="px-3 py-3">Status · date</th>
                   <th className="px-3 py-3">Safety</th>
                   <th className="px-3 py-3">Impact</th>
                   <th className="px-3 py-3">Action</th>
@@ -390,6 +392,7 @@ export function SystemCleanupCenter({
                     <tr key={key} className={cn("bg-white", !record.canDelete && "bg-slate-50")}>
                       <td className="px-3 py-3 align-top">
                         <input
+                          aria-label={`Select ${record.title}`}
                           checked={selected.has(key)}
                           className="h-4 w-4 rounded border-slate-300"
                           disabled={!record.canDelete}
@@ -397,29 +400,23 @@ export function SystemCleanupCenter({
                           type="checkbox"
                         />
                       </td>
-                      <td className="px-3 py-3 align-top">
+                      <td className="min-w-0 break-words px-3 py-3 align-top">
                         <div className="font-bold text-slate-900">{record.moduleLabel}</div>
+                        <div className="mt-1 text-slate-700">{record.title}</div>
                       </td>
-                      <td className="px-3 py-3 align-top">
-                        <div className="font-bold text-slate-900">{record.employeeName ?? "Unknown"}</div>
-                        <div className="mt-1 font-mono text-xs text-slate-500">{record.employeeHrId ?? "No HR ID"}</div>
-                      </td>
-                      <td className="max-w-[260px] px-3 py-3 align-top">
-                        <div className="truncate font-bold text-slate-900" title={record.title}>{record.title}</div>
-                        <div className="mt-1 font-mono text-xs text-slate-500" title={record.recordId}>{compactId(record.recordId)}</div>
-                      </td>
-                      <td className="px-3 py-3 align-top">
+                      <td className="min-w-0 break-words px-3 py-3 align-top font-bold text-slate-900">{record.employeeName ?? "—"}</td>
+                      <td className="min-w-0 break-words px-3 py-3 align-top">
                         <Badge variant="neutral">{statusLabel(record.status)}</Badge>
+                        <div className="mt-1 text-slate-600">{record.dateLabel}</div>
                       </td>
-                      <td className="px-3 py-3 align-top text-slate-600">{record.dateLabel}</td>
-                      <td className="px-3 py-3 align-top">
+                      <td className="min-w-0 break-words px-3 py-3 align-top">
                         <div className="space-y-1">
                           {safetyBadge(record)}
-                          {record.blockReason ? <div className="max-w-[220px] text-xs leading-5 text-rose-700">{record.blockReason}</div> : null}
+                          {record.blockReason ? <div className="text-xs leading-5 text-rose-700">{record.blockReason}</div> : null}
                         </div>
                       </td>
-                      <td className="max-w-[300px] px-3 py-3 align-top">
-                        <div className="line-clamp-2 text-xs leading-5 text-slate-600">{record.impact.join(" | ")}</div>
+                      <td className="min-w-0 break-words px-3 py-3 align-top text-xs leading-5 text-slate-600">
+                        {record.impact.join(" | ")}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <Button
@@ -437,13 +434,56 @@ export function SystemCleanupCenter({
                 })}
                 {records.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-10 text-center text-sm font-semibold text-slate-500" colSpan={9}>
+                    <td className="px-3 py-10 text-center text-sm font-semibold text-slate-500" colSpan={7}>
                       No records match the current filters.
                     </td>
                   </tr>
                 ) : null}
               </tbody>
             </table>
+          </div>
+          <div className="divide-y divide-slate-100 md:hidden">
+            {records.map((record) => {
+              const key = targetKey(recordTarget(record));
+              return (
+                <div className={cn("space-y-2 px-4 py-3", !record.canDelete && "bg-slate-50")} key={key}>
+                  <div className="flex items-start gap-2">
+                    <input
+                      aria-label={`Select ${record.title}`}
+                      checked={selected.has(key)}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+                      disabled={!record.canDelete}
+                      onChange={() => toggleSelected(record)}
+                      type="checkbox"
+                    />
+                    <div className="min-w-0 flex-1 break-words">
+                      <div className="font-bold text-slate-900">{record.moduleLabel}</div>
+                      <div className="text-slate-700">{record.title}</div>
+                      <div className="text-sm text-slate-600">{record.employeeName ?? "—"}</div>
+                    </div>
+                    <Badge variant="neutral">{statusLabel(record.status)}</Badge>
+                  </div>
+                  <div className="text-xs text-slate-600">{record.dateLabel}</div>
+                  <div className="space-y-1">
+                    {safetyBadge(record)}
+                    {record.blockReason ? <div className="break-words text-xs leading-5 text-rose-700">{record.blockReason}</div> : null}
+                  </div>
+                  <div className="break-words text-xs leading-5 text-slate-600">{record.impact.join(" | ")}</div>
+                  <Button
+                    className="h-9 w-full gap-2 px-3"
+                    disabled={actionLoading}
+                    onClick={() => void postAction("preview", [recordTarget(record)])}
+                    variant="secondary"
+                  >
+                    <ShieldAlert className="h-4 w-4" />
+                    Preview
+                  </Button>
+                </div>
+              );
+            })}
+            {records.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm font-semibold text-slate-500">No records match the current filters.</p>
+            ) : null}
           </div>
         </section>
 
@@ -459,8 +499,14 @@ export function SystemCleanupCenter({
               </Badge>
             </div>
             <div className="grid gap-4 p-4 lg:grid-cols-[1fr_420px]">
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="min-w-[760px] w-full text-left text-sm">
+              <div className="rounded-lg border border-slate-200">
+                <table className="hidden w-full table-fixed text-left text-sm md:table">
+                  <colgroup>
+                    <col className="w-[30%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[28%]" />
+                  </colgroup>
                   <thead className="bg-slate-100 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
                       <th className="px-3 py-3">Record</th>
@@ -472,20 +518,16 @@ export function SystemCleanupCenter({
                   <tbody className="divide-y divide-slate-100">
                     {preview.map((record) => (
                       <tr key={targetKey(recordTarget(record))}>
-                        <td className="px-3 py-3 align-top">
+                        <td className="min-w-0 break-words px-3 py-3 align-top">
                           <div className="font-bold text-slate-900">{record.moduleLabel}</div>
                           <div className="mt-1 text-slate-700">{record.title}</div>
-                          <div className="mt-1 font-mono text-xs text-slate-500">{compactId(record.recordId)}</div>
                         </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="font-bold text-slate-900">{record.employeeName ?? "Unknown"}</div>
-                          <div className="mt-1 font-mono text-xs text-slate-500">{record.employeeHrId ?? "No HR ID"}</div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
+                        <td className="min-w-0 break-words px-3 py-3 align-top font-bold text-slate-900">{record.employeeName ?? "—"}</td>
+                        <td className="min-w-0 break-words px-3 py-3 align-top">
                           {safetyBadge(record)}
-                          {record.blockReason ? <div className="mt-2 max-w-[220px] text-xs leading-5 text-rose-700">{record.blockReason}</div> : null}
+                          {record.blockReason ? <div className="mt-2 text-xs leading-5 text-rose-700">{record.blockReason}</div> : null}
                         </td>
-                        <td className="px-3 py-3 align-top text-xs leading-5 text-slate-600">
+                        <td className="min-w-0 break-words px-3 py-3 align-top text-xs leading-5 text-slate-600">
                           {record.impact.map((item) => (
                             <div key={item}>{item}</div>
                           ))}
@@ -494,6 +536,22 @@ export function SystemCleanupCenter({
                     ))}
                   </tbody>
                 </table>
+                <div className="divide-y divide-slate-100 md:hidden">
+                  {preview.map((record) => (
+                    <div className="space-y-1 break-words px-3 py-3" key={targetKey(recordTarget(record))}>
+                      <div className="font-bold text-slate-900">{record.moduleLabel}</div>
+                      <div className="text-slate-700">{record.title}</div>
+                      <div className="text-sm text-slate-600">{record.employeeName ?? "—"}</div>
+                      {safetyBadge(record)}
+                      {record.blockReason ? <div className="text-xs leading-5 text-rose-700">{record.blockReason}</div> : null}
+                      <div className="text-xs leading-5 text-slate-600">
+                        {record.impact.map((item) => (
+                          <div key={item}>{item}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="rounded-lg border border-slate-200 p-4">
                 <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
@@ -549,32 +607,43 @@ export function SystemCleanupCenter({
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
               Cleanup Results
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-[900px] w-full text-left text-sm">
-                <thead className="bg-slate-100 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                  <tr>
-                    <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Module</th>
-                    <th className="px-3 py-3">Employee</th>
-                    <th className="px-3 py-3">Record</th>
-                    <th className="px-3 py-3">Message</th>
+            <table className="hidden w-full table-fixed text-left text-sm md:table">
+              <colgroup>
+                <col className="w-[12%]" />
+                <col className="w-[20%]" />
+                <col className="w-[22%]" />
+                <col className="w-[46%]" />
+              </colgroup>
+              <thead className="bg-slate-100 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Module</th>
+                  <th className="px-3 py-3">Employee</th>
+                  <th className="px-3 py-3">Message</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {results.map((result) => (
+                  <tr key={`${result.moduleKey}:${result.recordId}`}>
+                    <td className="px-3 py-3 align-top">{resultBadge(result)}</td>
+                    <td className="min-w-0 break-words px-3 py-3 align-top font-bold text-slate-900">{statusLabel(result.moduleKey)}</td>
+                    <td className="min-w-0 break-words px-3 py-3 align-top font-bold text-slate-900">{result.employeeName ?? "—"}</td>
+                    <td className="min-w-0 break-words px-3 py-3 align-top text-slate-700">{result.message}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {results.map((result) => (
-                    <tr key={`${result.moduleKey}:${result.recordId}`}>
-                      <td className="px-3 py-3">{resultBadge(result)}</td>
-                      <td className="px-3 py-3 font-bold text-slate-900">{statusLabel(result.moduleKey)}</td>
-                      <td className="px-3 py-3">
-                        <div className="font-bold text-slate-900">{result.employeeName ?? "Unknown"}</div>
-                        <div className="mt-1 font-mono text-xs text-slate-500">{result.employeeHrId ?? "No HR ID"}</div>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-xs text-slate-500">{compactId(result.recordId)}</td>
-                      <td className="px-3 py-3 text-slate-700">{result.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
+            <div className="divide-y divide-slate-100 md:hidden">
+              {results.map((result) => (
+                <div className="space-y-1 break-words px-4 py-3" key={`${result.moduleKey}:${result.recordId}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-slate-900">{statusLabel(result.moduleKey)}</span>
+                    {resultBadge(result)}
+                  </div>
+                  <div className="text-sm text-slate-600">{result.employeeName ?? "—"}</div>
+                  <div className="text-sm text-slate-700">{result.message}</div>
+                </div>
+              ))}
             </div>
           </section>
         ) : null}

@@ -82,7 +82,7 @@ export function MyMapList({
             meta={
               <>
                 {customerMeta(row.customer, row.pin) || null}
-                <span className="block">{row.pin.brick ?? "Brick not named"}</span>
+                {row.pin.brick ? <span className="block">{row.pin.brick}</span> : null}
                 {showTerritory && row.territory ? <span className="block">{territoryText(row.territory)}</span> : null}
               </>
             }
@@ -119,7 +119,7 @@ export function MyMapList({
                 </div>
               </td>
               <td className={crmTdClassName}>
-                <p className="break-words">{row.pin.brick ?? "Not named"}</p>
+                <p className="break-words">{row.pin.brick ?? "—"}</p>
                 {showTerritory && row.territory ? <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{territoryText(row.territory)}</p> : null}
               </td>
               <td className={crmTdClassName}>

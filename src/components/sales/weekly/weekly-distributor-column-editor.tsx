@@ -166,9 +166,9 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
-            <select className={cn(phxSelectClassName, "h-9 min-w-64")} onChange={(e) => pick(e.target.value)} value={selected}>
+            <select className={cn(phxSelectClassName, "h-9 w-full sm:w-64")} onChange={(e) => pick(e.target.value)} value={selected}>
               {contracts.map((c) => (
-                <option key={c.code} value={c.code}>{c.name} ({c.code}){c.isCustom ? " · edited" : ""}</option>
+                <option key={c.code} value={c.code}>{c.name}{c.isCustom ? " · edited" : ""}</option>
               ))}
             </select>
           </label>
@@ -283,12 +283,12 @@ function SheetEditor({
           return (
           <div className="flex items-center justify-between gap-3 bg-white px-3 py-2" key={field.field}>
             <div className="min-w-0">
-              <div className="truncate text-phx-sm font-bold text-phx-ink">{field.label}</div>
-              <div className="truncate text-phx-2xs text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
+              <div className="break-words text-phx-sm font-bold text-phx-ink">{field.label}</div>
+              <div className="break-words text-phx-2xs text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
               {obs ? (
                 obs.status === "empty"
-                  ? <div className="mt-0.5 truncate text-phx-2xs font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
-                  : <div className="mt-0.5 truncate text-phx-2xs font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
+                  ? <div className="mt-0.5 break-words text-phx-2xs font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
+                  : <div className="mt-0.5 break-words text-phx-2xs font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
               ) : null}
             </div>
             <label className="flex shrink-0 flex-col items-end gap-0.5">

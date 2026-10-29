@@ -309,8 +309,8 @@ export function runMarketingPharmacyLicenseVerdictTests() {
 
     // ── 8d. Both layouts. The owner's standing rule is desktop tables, mobile cards — a column
     //        added to only one half is invisible to whichever audience uses the other.
-    const registerHasDesktopColumn = /<th className="px-4 py-3">Licence vs Sign<\/th>/.test(registerSource)
-      && /<td className="px-4 py-3"><LicenseVerdictCell value=\{row\.licenseNameMatchesSign\} \/><\/td>/.test(registerSource);
+    const registerHasDesktopColumn = /<th className="px-3 py-3">Licence vs Sign<\/th>/.test(registerSource)
+      && /<td className="min-w-0 break-words px-3 py-3"><LicenseVerdictCell value=\{row\.licenseNameMatchesSign\} \/><\/td>/.test(registerSource);
     assert.ok(
       registerHasDesktopColumn,
       "the desktop table must carry a licence column with a matching cell — a header without a cell shifts every column after it",

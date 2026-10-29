@@ -55,6 +55,7 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { formatOutstationDescriptionInline } from "@/lib/outstation/description-format";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { adminControlDepthClassName, adminPanelDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 
@@ -204,7 +205,7 @@ function formatKm(value: number) {
 }
 
 function formatDate(value: string) {
-  if (!value) return "N/A";
+  if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return stableEnGbFormatter({
@@ -695,7 +696,7 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
           <PortalRecordCard
             meta={formatDate(trip.date)}
             status={<StatusPill category={mapStatusCategory(trip.status)} />}
-            title={trip.tripId || "N/A"}
+            title={trip.tripId || "—"}
           >
             <PortalRecordFields
               fields={[
@@ -738,13 +739,13 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
             <tbody className="divide-y divide-slate-100">
               {trips.map((trip) => (
                 <tr className="hover:bg-slate-50" key={`${trip.tripId}-${trip.date}-unresolved`}>
-                  <td className="whitespace-nowrap px-3 py-2 font-mono text-phx-xs font-bold text-slate-600">{trip.tripId || "N/A"}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDate(trip.date)}</td>
+                  <td className="break-words px-3 py-2 font-mono text-phx-xs font-bold text-slate-600">{trip.tripId || "—"}</td>
+                  <td className="break-words px-3 py-2 text-slate-700">{formatDate(trip.date)}</td>
                   <td className="px-3 py-2 text-slate-800">{trip.ownerName || "Employee"}</td>
                   <td className="px-3 py-2 text-slate-700">{trip.requestType || "—"}</td>
                   <td className="px-3 py-2 text-slate-500">{trip.fromCity || trip.from || "—"}</td>
                   <td className="px-3 py-2 text-slate-700">{trip.transportationType || "—"}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-slate-900">{formatMoney(trip.total)}</td>
+                  <td className="break-words px-3 py-2 text-right font-semibold text-slate-900">{formatMoney(trip.total)}</td>
                   <td className="px-3 py-2"><StatusPill category={mapStatusCategory(trip.status)} /></td>
                 </tr>
               ))}
@@ -787,7 +788,7 @@ export function PersonalExpenseWorkloadDashboard({
 
     return source.map((expense) => ({
       hrId: normalizeString(expense.hrId),
-      ownerName: normalizeString(expense.specialist || expense.hrId || "Employee"),
+      ownerName: normalizeString(expense.specialist || "Employee"),
       tripId: normalizeString(expense.tripId),
       date: normalizeString(expense.date),
       toDate: normalizeString(expense.toDate),
@@ -2212,13 +2213,14 @@ export function PersonalExpenseWorkloadDashboard({
                         <tr
                           className="cursor-pointer transition hover:bg-orange-50/40"
                           onClick={() => setExpandedTripKey((prev) => prev === tripKey ? null : tripKey)}
+                          {...rowDetailToggleProps(`trip-detail-${tripKey}`, isExpanded)}
                         >
                           <td className={`align-top ${cellPaddingClass}`}>
                             <span className="block break-words font-mono text-phx-xs font-semibold text-slate-600">
-                              {trip.tripId || "N/A"}
+                              {trip.tripId || "—"}
                             </span>
                             <span className="mt-0.5 block break-words text-phx-sm text-slate-700">
-                              {trip.requestType || "N/A"}
+                              {trip.requestType || "—"}
                             </span>
                           </td>
                           <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
@@ -2228,10 +2230,10 @@ export function PersonalExpenseWorkloadDashboard({
                             {formatDate(trip.date)}
                           </td>
                           <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            <span className="block break-words">{trip.fromCity || "Unknown"}</span>
+                            <span className="block break-words">{trip.fromCity || "—"}</span>
                             <span className="block break-words">
                               <span className="font-normal text-slate-400">→ </span>
-                              {trip.toCity || "Unknown"}
+                              {trip.toCity || "—"}
                             </span>
                           </td>
                           <td className={`align-top text-right ${cellPaddingClass}`}>
@@ -2245,7 +2247,7 @@ export function PersonalExpenseWorkloadDashboard({
                           <td className={`align-top ${cellPaddingClass}`}>
                             <StatusPill category={category} />
                             <span className="mt-1 block break-words text-phx-sm text-slate-700">
-                              {trip.transportationType || "N/A"}
+                              {trip.transportationType || "—"}
                               {(() => {
                                 const requestId = parseOutstationRequestId(trip.tripId);
                                 const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
@@ -2262,17 +2264,16 @@ export function PersonalExpenseWorkloadDashboard({
                           </td>
                         </tr>
                         {isExpanded && (
-                          <tr>
-                            <td className="border-b border-slate-200 p-0" colSpan={7}>
-                              <div className="border-l-4 border-orange-400 bg-slate-50 px-4 py-4">
+                          <TableRowDetail className="p-0" colSpan={7} id={`trip-detail-${tripKey}`}>
+                              <div className="border-l-4 border-orange-400 px-4 py-4">
                                 <div className="grid gap-4 text-phx-sm sm:grid-cols-2 lg:grid-cols-4">
                                   <div>
                                     <p className={labelClass}>Full Route</p>
-                                    <p className="mt-1 font-semibold leading-snug text-slate-800">{trip.from || "N/A"}</p>
-                                    <p className="leading-snug text-slate-500">→ {trip.to || "N/A"}</p>
+                                    {trip.from ? <p className="mt-1 break-words font-semibold leading-snug text-slate-800">{trip.from}</p> : null}
+                                    {trip.to ? <p className="break-words leading-snug text-slate-500">→ {trip.to}</p> : null}
                                     {trip.toDate && trip.date !== trip.toDate && (
                                       <p className="mt-1 text-slate-400">
-                                        {formatDate(trip.date)} — {formatDate(trip.toDate)}
+                                        Until {formatDate(trip.toDate)}
                                       </p>
                                     )}
                                   </div>
@@ -2377,8 +2378,7 @@ export function PersonalExpenseWorkloadDashboard({
                                   );
                                 })()}
                               </div>
-                            </td>
-                          </tr>
+                          </TableRowDetail>
                         )}
                       </Fragment>
                     );
@@ -2425,10 +2425,10 @@ export function PersonalExpenseWorkloadDashboard({
                     <div className="px-3 py-3 pl-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="whitespace-nowrap font-mono text-phx-xs font-bold text-slate-600">
-                            {trip.tripId || "N/A"}
+                          <p className="break-words font-mono text-phx-xs font-bold text-slate-600">
+                            {trip.tripId || "—"}
                           </p>
-                          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-bold text-slate-800">
+                          <p className="mt-0.5 break-words text-phx-sm font-bold text-slate-800">
                             {trip.ownerName || "Employee"}
                           </p>
                           <p className="mt-0.5 text-phx-xs text-slate-500">

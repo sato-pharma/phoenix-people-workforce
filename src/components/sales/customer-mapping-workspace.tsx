@@ -251,7 +251,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                             <span className="mt-1 block text-xs text-slate-500 md:hidden">{row.customerAddress || "—"}</span>
                             <span className="block text-xs text-slate-500 md:hidden">{row.distributorName}</span>
                             <span className="block text-xs text-slate-500 md:hidden">
-                              {`${row.brickName || row.brickId || "—"} · ${row.areaName || row.areaCode || "—"} / ${row.regionName || row.regionCode || "—"}`}
+                              {`${row.brickName || row.brickId || "—"} · ${row.areaName || "—"} / ${row.regionName || "—"}`}
                             </span>
                           </td>
                           {/* The address WRAPS — it used to be clamped to two lines, which is the
@@ -263,12 +263,10 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                             <span className="block text-xs text-slate-400">{row.brickId || "—"}</span>
                           </td>
                           <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
-                            <span className="block">{row.areaName || "—"}</span>
-                            <span className="block text-xs text-slate-400">{row.areaCode || "—"}</span>
+                            {row.areaName || "—"}
                           </td>
                           <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
-                            <span className="block">{row.regionName || "—"}</span>
-                            <span className="block text-xs text-slate-400">{row.regionCode || "—"}</span>
+                            {row.regionName || "—"}
                           </td>
                           <td className="break-words px-3 py-2.5 align-top">
                             <span className="font-mono text-xs font-semibold text-slate-700">{row.masterCustomerId}</span>

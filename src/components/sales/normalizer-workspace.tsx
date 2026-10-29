@@ -1187,24 +1187,25 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                         selectedCount={countSelected("p")}
                         total={preview.unknownProducts.length}
                       />
-                      <table className="w-full table-fixed text-sm">
-                        <colgroup>
-                          <col className="w-[5%]" />
-                          <col className="w-[18%]" />
-                          <col className="w-[26%]" />
-                          <col className="w-[11%]" />
-                          <col className="w-[40%]" />
+                      <table className={stackTable}>
+                        <colgroup className={stackCols}>
+                          <col style={{ width: "5%" }} />
+                          <col style={{ width: "18%" }} />
+                          <col style={{ width: "26%" }} />
+                          <col style={{ width: "11%" }} />
+                          <col style={{ width: "40%" }} />
                         </colgroup>
-                        <thead className="bg-slate-100"><tr><th className="px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
-                        <tbody>
+                        <thead className={stackHead}><tr><th className="px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className={cn(stackHeadCell, h === "Rows" && "text-right")} key={h} scope="col">{h}</th>)}</tr></thead>
+                        <tbody className={stackBody}>
                           {visibleRows("p", preview.unknownProducts).map((u) => (
-                            <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
-                              <td className="px-2 py-1.5 align-top"><input aria-label={`Tick ${u.rawName || u.raw}`} checked={selected[`p:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("p", u.raw, e.target.checked)} type="checkbox" /></td>
-                              <td className="px-3 py-1.5 align-top font-semibold text-slate-900"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{u.raw}</span><CopyBtn text={u.raw} /></span></td>
-                              <td className="px-3 py-1.5 align-top text-slate-600"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{u.rawName}</span><CopyBtn text={u.rawName} /></span></td>
-                              <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
-                              <td className="min-w-0 px-3 py-1.5 align-top">
-                                <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`p:${u.raw}`]: v }))} options={productOptions} placeholder="Type product or code…" value={picks[`p:${u.raw}`] ?? ""} />
+                            <tr className={stackRow} key={u.raw}>
+                              <td className={stackTickCell}><RowTick checked={selected[`p:${u.raw}`] ?? false} label={u.rawName || u.raw} onChange={(on) => toggleRow("p", u.raw, on)} /></td>
+                              <td className={cn(stackCell, "font-semibold text-slate-900")}><StackLabel>Raw code</StackLabel><span className="flex items-start gap-1"><span className="min-w-0 break-words [overflow-wrap:anywhere]">{u.raw}</span><CopyBtn text={u.raw} /></span></td>
+                              <td className={cn(stackCell, "text-slate-600")}><StackLabel>Raw name</StackLabel><span className="flex items-start gap-1"><span className="min-w-0 break-words [overflow-wrap:anywhere]">{u.rawName}</span><CopyBtn text={u.rawName} /></span></td>
+                              <td className={cn(stackCell, "font-semibold tabular-nums text-slate-700 md:text-right")}><StackLabel>Rows</StackLabel>{u.count.toLocaleString()}</td>
+                              <td className={cn(stackCell, "min-w-0")}>
+                                <StackLabel>Phoenix product</StackLabel>
+                                <ComboBox className="min-w-0" onChange={(v) => setPicks((p) => ({ ...p, [`p:${u.raw}`]: v }))} options={productOptions} placeholder="Type product or code…" value={picks[`p:${u.raw}`] ?? ""} />
                               </td>
                             </tr>
                           ))}

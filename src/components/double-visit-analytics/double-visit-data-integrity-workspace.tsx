@@ -12,6 +12,8 @@ import type {
   DoubleVisitIntegrityReport,
 } from "@/lib/double-visit-analytics/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { humanizeCode } from "@/lib/format/code-label";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import {
   phxFieldClassName,
   phxSelectClassName,
@@ -63,6 +65,15 @@ function SortHeader<T extends string>({
         {isActive ? dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
       </button>
     </th>
+  );
+}
+
+function IssueBadge({ issue }: { issue: DoubleVisitIntegrityIssue }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1.5 break-words bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-rose-700">
+      <AlertTriangle className="h-3 w-3 shrink-0" />
+      {ISSUE_TYPE_LABELS[issue.issueType]}
+    </span>
   );
 }
 
@@ -201,7 +212,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                     <div>
                       <p className="font-semibold text-slate-900">{importRow.sourceFilename}</p>
                       <p className="text-phx-xs text-slate-500">
-                        {formatDate(importRow.uploadedAt)} · {importRow.sourceType} · {importRow.status} · {importRow.totalRows} rows
+                        {formatDate(importRow.uploadedAt)} · {humanizeCode(importRow.sourceType)} · {humanizeCode(importRow.status)} · {importRow.totalRows} rows
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-3 text-phx-xs font-bold uppercase tracking-wide">
@@ -212,7 +223,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                         <span className="text-rose-600">{importRow.vacantOrUnmappedVisitCount} vacant/unmapped</span>
                       )}
                       {importRow.missingVisitedHrIdCount > 0 && (
-                        <span className="text-rose-600">{importRow.missingVisitedHrIdCount} missing visited HR ID</span>
+                        <span className="text-rose-600">{importRow.missingVisitedHrIdCount} with no visited person recorded</span>
                       )}
                     </div>
                   </div>
@@ -228,7 +239,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                 type="text"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name or HR ID…"
+                placeholder="Search name…"
                 className={cn(phxFieldClassName, "pl-8")}
               />
             </div>
@@ -244,51 +255,57 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
             </select>
           </div>
 
-          <div className="overflow-x-auto border border-slate-200 bg-white">
-            <table className="w-full min-w-[1080px] text-left text-sm">
-              <thead className="bg-slate-900">
-                <tr>
-                  <SortHeader label="Date" sortKey="date" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Issue" sortKey="issue" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Double Visitor" sortKey="visitor" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Visited" sortKey="visited" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Area" sortKey="area" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Line" sortKey="line" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Source File" sortKey="source" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                  <SortHeader label="Visits" sortKey="visits" activeKey={sortKey} dir={sortDir} onSort={onSort} align="right" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-100">
-                {sorted.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">No flagged rows match these filters.</td></tr>
-                ) : (
-                  sorted.map((issue, index) => (
+          {sorted.length === 0 ? (
+            <div className="border border-slate-200 bg-white px-3 py-8 text-center text-sm text-slate-500">No flagged rows match these filters.</div>
+          ) : (
+            <div className="border border-slate-200 bg-white">
+              <CrmTable columns={["10%", "15%", "16%", "16%", "11%", "10%", "14%", "8%"]}>
+                <thead className="bg-slate-900">
+                  <tr>
+                    <SortHeader label="Date" sortKey="date" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Issue" sortKey="issue" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Double Visitor" sortKey="visitor" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Visited" sortKey="visited" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Area" sortKey="area" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Line" sortKey="line" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Source File" sortKey="source" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                    <SortHeader label="Visits" sortKey="visits" activeKey={sortKey} dir={sortDir} onSort={onSort} align="right" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-orange-100">
+                  {sorted.map((issue, index) => (
                     <tr key={issue.id} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
-                      <td className="whitespace-nowrap px-3 py-2.5">{formatDate(issue.activityDate)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-rose-700">
-                          <AlertTriangle className="h-3 w-3" />
-                          {ISSUE_TYPE_LABELS[issue.issueType]}
-                        </span>
+                      <td className="min-w-0 break-words px-3 py-2.5">{formatDate(issue.activityDate)}</td>
+                      <td className="min-w-0 px-3 py-2.5">
+                        <IssueBadge issue={issue} />
                       </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium text-slate-900">{issue.doubleVisitorName ?? "—"}</p>
-                        <p className="text-phx-xs text-slate-400">{issue.doubleVisitorHrIdRaw ?? "no HR ID recorded"}</p>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium text-slate-900">{issue.visitedName ?? "—"}</p>
-                        <p className="text-phx-xs text-slate-400">{issue.visitedHrIdRaw ?? "no HR ID recorded"}</p>
-                      </td>
-                      <td className="px-3 py-2.5">{issue.areaName ?? "—"}</td>
-                      <td className="px-3 py-2.5">{issue.lineName ?? "—"}</td>
-                      <td className="px-3 py-2.5">{issue.sourceFilename ?? "—"}</td>
+                      <td className="min-w-0 break-words px-3 py-2.5 font-medium text-slate-900">{issue.doubleVisitorName ?? "—"}</td>
+                      <td className="min-w-0 break-words px-3 py-2.5 font-medium text-slate-900">{issue.visitedName ?? "—"}</td>
+                      <td className="min-w-0 break-words px-3 py-2.5">{issue.areaName ?? "—"}</td>
+                      <td className="min-w-0 break-words px-3 py-2.5">{issue.lineName ?? "—"}</td>
+                      <td className="min-w-0 break-words px-3 py-2.5">{issue.sourceFilename ?? "—"}</td>
                       <td className="px-3 py-2.5 text-right font-bold tabular-nums">{issue.visitCount}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </CrmTable>
+              <CrmCardsOnPhone>
+                {sorted.map((issue) => (
+                  <CrmCard key={issue.id} meta={formatDate(issue.activityDate)} status={<IssueBadge issue={issue} />} title={issue.doubleVisitorName ?? "—"}>
+                    <CrmFacts
+                      facts={[
+                        { label: "Visited", value: issue.visitedName ?? "—" },
+                        { label: "Visits", value: issue.visitCount },
+                        { label: "Area", value: issue.areaName ?? "—" },
+                        { label: "Line", value: issue.lineName ?? "—" },
+                        { label: "Source file", value: issue.sourceFilename ?? "—" },
+                      ]}
+                    />
+                  </CrmCard>
+                ))}
+              </CrmCardsOnPhone>
+            </div>
+          )}
         </>
       )}
     </div>

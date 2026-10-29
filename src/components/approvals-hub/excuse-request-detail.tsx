@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import type { ExcuseApprovalDetail } from "@/lib/approvals-hub/service";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
 
 type Props = {
@@ -49,7 +50,7 @@ export function ExcuseRequestDetail({ detail, backHref }: Props) {
           </p>
         </div>
         <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
-          {String(req.status).replace(/_/g, " ")}
+          {requestStatusLabel(req.status)}
         </span>
       </div>
 
@@ -65,10 +66,6 @@ export function ExcuseRequestDetail({ detail, backHref }: Props) {
             <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
           </header>
           <dl className="px-4 py-2">
-            <Row label="Code" value={req.requestCode} />
-            <Row label="Employee" value={`${req.employeeName} (${req.employeeHrId})`} />
-            <Row label="Excuse type" value={req.excuseType === "morning" ? "Morning" : "Afternoon"} />
-            <Row label="Date" value={req.excuseDate} />
             <Row label="Duration" value={`${req.durationHours} hours`} />
             <Row label="Line" value={req.lineName} />
             <Row label="Department" value={req.departmentName} />

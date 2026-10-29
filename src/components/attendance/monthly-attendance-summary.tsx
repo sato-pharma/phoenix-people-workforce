@@ -12,6 +12,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import {
+  PortalDesktopTable,
   PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
@@ -69,7 +70,7 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
         title="Monthly Attendance Summary"
         actions={(
           <a
-            className={`inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-phx-accent-line hover:bg-white/[0.16] hover:text-white ${rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
+            className={`inline-flex items-center justify-center gap-2 border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-phx-accent-line hover:bg-white/[0.16] hover:text-white ${rows.length === 0 ? "pointer-events-none opacity-50" : ""}`}
             href={`/api/attendance/monthly-summary/export?month=${encodeURIComponent(month)}`}
           >
             <Download className="h-4 w-4" />
@@ -158,7 +159,7 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
         description="Counts only cover expected working days — weekly offs, holidays, approved leave, and future days are excluded."
         title={`Employee Summary — ${month}`}
       >
-        {/* Cards below md, the fourteen-column table from md up — the owner's standing rule, and a
+        {/* Cards below md, the ten-column table from md up — the owner's standing rule, and a
             hard acceptance criterion for the two HR seats: "desktop shows full tables/dashboards,
             mobile never does". This page reached an HR rail on 2026-09-05, when the Attendance hub
             row was replaced by its cards and Monthly Summary became a row of its own. Before that
@@ -177,11 +178,7 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
             <PortalRecordCard
               accent={row.absentDays > 2 ? "rose" : row.absentDays > 0 ? "amber" : "emerald"}
               meta={
-                <span>
-                  {row.employeeHrId}
-                  {row.jobTitle ? ` · ${row.jobTitle}` : ""}
-                  {row.department ? ` · ${row.department}` : ""}
-                </span>
+                <span>{[row.jobTitle, row.department].filter(Boolean).join(" · ")}</span>
               }
               title={row.employeeName}
             >
@@ -202,48 +199,60 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
             </PortalRecordCard>
           )}
           renderTable={() => (
-        <div className="phoenix-horizontal-scroll hidden max-h-[70vh] overflow-auto md:block">
-          <table className="min-w-[1400px] border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-              <tr>
-                <th className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-4 py-3">Employee ID</th>
-                <th className="sticky left-32 z-30 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]">Name</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Job Title</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Expected</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Present</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Absent</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">On Leave</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Late</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Early Leave</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Single Punch</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Exceptions</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Deduction Days</th>
-                <th className="border-b border-slate-200 px-4 py-3">Deduction Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr className="group text-sm hover:bg-slate-50/60" key={row.employeeHrId}>
-                  <td className="sticky left-0 z-20 w-32 min-w-32 whitespace-nowrap border-b border-r border-slate-100 bg-white px-4 py-3 font-semibold text-slate-800 group-hover:bg-slate-50">{row.employeeHrId}</td>
-                  <td className="sticky left-32 z-20 w-56 min-w-56 whitespace-nowrap border-b border-r border-slate-100 bg-white px-4 py-3 text-slate-700 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)] group-hover:bg-slate-50">{row.employeeName}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.jobTitle || "-"}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{row.department || "-"}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold tabular-nums text-slate-800">{row.expectedWorkingDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-emerald-700">{row.presentDays}</td>
-                  <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-bold tabular-nums ${absentTone(row.absentDays)}`}>{row.absentDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.leaveDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.lateCount}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.earlyLeaveCount}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.singlePunchCount}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.exceptionDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold tabular-nums text-slate-800">{row.totalDeductionDays}</td>
-                  <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 tabular-nums text-slate-700">{row.totalDeductionValue}</td>
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[24%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+              }
+            >
+              <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                <tr>
+                    <th className="border-b border-slate-200 px-3 py-3">Employee</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Expected</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Present</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Absent</th>
+                    <th className="border-b border-slate-200 px-3 py-3">On Leave</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Late</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Early Leave</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Single Punch</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Exceptions</th>
+                    <th className="border-b border-slate-200 px-3 py-3">Deduction</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr className="text-sm" key={row.employeeHrId}>
+                    <td className="break-words border-b border-slate-100 px-3 py-3 text-slate-700">
+                      <span className="font-semibold text-slate-800">{row.employeeName}</span>
+                      {row.jobTitle ? <div className="text-xs text-slate-500">{row.jobTitle}</div> : null}
+                      {row.department ? <div className="text-xs text-slate-500">{row.department}</div> : null}
+                    </td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.expectedWorkingDays}</td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.presentDays}</td>
+                    <td className={`border-b border-slate-100 px-3 py-3 font-bold tabular-nums ${absentTone(row.absentDays)}`}>{row.absentDays}</td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.leaveDays}</td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.lateCount}</td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.earlyLeaveCount}</td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.singlePunchCount}</td>
+                    <td className="border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">{row.exceptionDays}</td>
+                    <td className="break-words border-b border-slate-100 px-3 py-3 tabular-nums text-slate-700">
+                      <span className="font-semibold text-slate-800">{row.totalDeductionDays}</span>
+                      <div className="text-xs">{row.totalDeductionValue}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
           )}
         />
       </AdminTableShell>

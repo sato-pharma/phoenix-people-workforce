@@ -9,6 +9,13 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import type { AttendanceAnalyticsData } from "@/lib/attendance/analytics";
 
 type Props = {
@@ -96,26 +103,26 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
           description="Expected to work today but no fingerprint punch yet. Approved leave is already excluded — counts update as punches sync."
           title={`Not Punched In Today (${today.absentees.length})`}
         >
-          <div className="max-h-[40vh] overflow-auto">
-            <table className="w-full border-separate border-spacing-0 text-left">
-              <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                <tr>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
-                  <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
-                  <th className="border-b border-slate-200 px-4 py-3">Department</th>
+          <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+            <colgroup>
+                <col className="w-[50%]" />
+                <col className="w-[50%]" />
+            </colgroup>
+            <thead className={`${portalStackingHeadClassName} bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500`}>
+              <tr>
+                  <th className="border-b border-slate-200 px-3 py-3">Employee</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Department</th>
+              </tr>
+            </thead>
+            <tbody className={portalStackingBodyClassName}>
+              {today.absentees.map((absentee) => (
+                <tr className={`${portalStackingRowClassName} text-sm`} key={absentee.employeeHrId}>
+                  <PortalStackingCell className="break-words border-b border-slate-100 font-semibold text-slate-800" label="Employee">{absentee.employeeName}</PortalStackingCell>
+                  <PortalStackingCell className="break-words border-b border-slate-100 text-slate-700" label="Department">{absentee.department || "—"}</PortalStackingCell>
                 </tr>
-              </thead>
-              <tbody>
-                {today.absentees.map((absentee) => (
-                  <tr className="text-sm hover:bg-slate-50/60" key={absentee.employeeHrId}>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold text-slate-800">{absentee.employeeHrId}</td>
-                    <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{absentee.employeeName}</td>
-                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">{absentee.department || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </AdminTableShell>
       ) : null}
 
@@ -123,82 +130,93 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
         description={`Employees with ${3}+ late days in the last 30 days, worst first.`}
         title={`Chronic Late Offenders (${chronicLate.length})`}
       >
-        <div className="max-h-[50vh] overflow-auto">
-          <table className="w-full border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
+          <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+            <colgroup>
+                <col className="w-[40%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+            </colgroup>
+            <thead className={`${portalStackingHeadClassName} bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500`}>
               <tr>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Late Days</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Present Days</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Late Rate</th>
-                <th className="border-b border-slate-200 px-4 py-3">Total Late Minutes</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Employee</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Late Days</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Present Days</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Late Rate</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Total Late Minutes</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className={portalStackingBodyClassName}>
               {chronicLate.map((entry) => (
-                <tr className="text-sm hover:bg-slate-50/60" key={entry.employeeHrId}>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold text-slate-800">{entry.employeeHrId}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{entry.employeeName}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 text-slate-700">{entry.department || "-"}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-bold tabular-nums text-rose-700">{entry.lateDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{entry.presentDays}</td>
-                  <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold tabular-nums ${rateCellClass(entry.lateRate)}`}>{entry.lateRate}%</td>
-                  <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 tabular-nums text-slate-700">{entry.totalLateMinutes}</td>
+                <tr className={`${portalStackingRowClassName} text-sm`} key={entry.employeeHrId}>
+                  <PortalStackingCell className="break-words border-b border-slate-100 text-slate-700" label="Employee">
+                    <span className="font-semibold text-slate-800">{entry.employeeName}</span>
+                    {entry.department ? <div className="text-xs text-slate-500">{entry.department}</div> : null}
+                  </PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 font-bold tabular-nums text-rose-700" label="Late Days">{entry.lateDays}</PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 tabular-nums text-slate-700" label="Present Days">{entry.presentDays}</PortalStackingCell>
+                  <PortalStackingCell className={`border-b border-slate-100 font-semibold tabular-nums ${rateCellClass(entry.lateRate)}`} label="Late Rate">{entry.lateRate}%</PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 tabular-nums text-slate-700" label="Total Late Minutes">{entry.totalLateMinutes}</PortalStackingCell>
                 </tr>
               ))}
               {chronicLate.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>
+                <tr className={portalStackingRowClassName}>
+                  <PortalStackingCell className="py-8 text-center text-sm text-slate-500" colSpan={5} label="Result">
                     No chronic late offenders in the last 30 days.
-                  </td>
+                  </PortalStackingCell>
                 </tr>
               ) : null}
             </tbody>
           </table>
-        </div>
       </AdminTableShell>
 
       <AdminTableShell
         description="Late and absence rates per department over the last 30 days. Cell color steps from green (healthy) to red (needs attention)."
         title="Department Comparison"
       >
-        <div className="max-h-[50vh] overflow-auto">
-          <table className="w-full border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
+          <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+            <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+            </colgroup>
+            <thead className={`${portalStackingHeadClassName} bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500`}>
               <tr>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Headcount</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Expected Days</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Present Days</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Late Days</th>
-                <th className="border-b border-r border-slate-200 px-4 py-3">Late Rate</th>
-                <th className="border-b border-slate-200 px-4 py-3">Absence Rate</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Department</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Headcount</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Expected Days</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Present Days</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Late Days</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Late Rate</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Absence Rate</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className={portalStackingBodyClassName}>
               {departments.map((entry) => (
-                <tr className="text-sm hover:bg-slate-50/60" key={entry.department}>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold text-slate-800">{entry.department}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{entry.headcount}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{entry.expectedDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{entry.presentDays}</td>
-                  <td className="whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 tabular-nums text-slate-700">{entry.lateDays}</td>
-                  <td className={`whitespace-nowrap border-b border-r border-slate-100 px-4 py-3 font-semibold tabular-nums ${rateCellClass(entry.lateRate)}`}>{entry.lateRate}%</td>
-                  <td className={`whitespace-nowrap border-b border-slate-100 px-4 py-3 font-semibold tabular-nums ${rateCellClass(entry.absenceRate)}`}>{entry.absenceRate}%</td>
+                <tr className={`${portalStackingRowClassName} text-sm`} key={entry.department}>
+                  <PortalStackingCell className="break-words border-b border-slate-100 font-semibold text-slate-800" label="Department">{entry.department}</PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 tabular-nums text-slate-700" label="Headcount">{entry.headcount}</PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 tabular-nums text-slate-700" label="Expected Days">{entry.expectedDays}</PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 tabular-nums text-slate-700" label="Present Days">{entry.presentDays}</PortalStackingCell>
+                  <PortalStackingCell className="border-b border-slate-100 tabular-nums text-slate-700" label="Late Days">{entry.lateDays}</PortalStackingCell>
+                  <PortalStackingCell className={`border-b border-slate-100 font-semibold tabular-nums ${rateCellClass(entry.lateRate)}`} label="Late Rate">{entry.lateRate}%</PortalStackingCell>
+                  <PortalStackingCell className={`border-b border-slate-100 font-semibold tabular-nums ${rateCellClass(entry.absenceRate)}`} label="Absence Rate">{entry.absenceRate}%</PortalStackingCell>
                 </tr>
               ))}
               {departments.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>
+                <tr className={portalStackingRowClassName}>
+                  <PortalStackingCell className="py-8 text-center text-sm text-slate-500" colSpan={7} label="Result">
                     No department data available for the last 30 days.
-                  </td>
+                  </PortalStackingCell>
                 </tr>
               ) : null}
             </tbody>
           </table>
-        </div>
       </AdminTableShell>
 
       <AdminTableShell
@@ -209,14 +227,14 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
           {weeklyTrend.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-500">No trend data available.</p>
           ) : (
-            <div className="flex items-end gap-3 overflow-x-auto pb-2">
+            <div className="flex items-end gap-1 pb-2 sm:gap-3">
               {weeklyTrend.map((week) => {
                 const heightPct = Math.max(8, Math.round((week.expectedDays / maxWeeklyExpected) * 100));
                 const presentPct = week.expectedDays > 0
                   ? Math.round((week.presentDays / week.expectedDays) * 100)
                   : 0;
                 return (
-                  <div className="flex min-w-20 flex-1 flex-col items-center gap-2" key={week.isoWeek}>
+                  <div className="flex min-w-0 flex-1 flex-col items-center gap-2" key={week.isoWeek}>
                     <div className="text-xs font-bold tabular-nums text-slate-700">{week.absenceRate}%</div>
                     <div className="flex h-40 w-full items-end">
                       <div

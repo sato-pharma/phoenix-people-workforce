@@ -63,6 +63,7 @@ import { shouldRenderSalesPanels } from "@/lib/employee-portal/sales-scope";
 import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { humanizeCode } from "@/lib/format/code-label";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
@@ -762,7 +763,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           />
           <SmartInsightCard
             label="Next Payroll"
-            value={payroll.latestBatchStatus ? payroll.latestBatchStatus.replace(/_/g, " ") : "No payroll run"}
+            value={payroll.latestBatchStatus ? humanizeCode(payroll.latestBatchStatus) : "No payroll run"}
           />
           <SmartInsightCard
             label="Rank in Team"
@@ -776,7 +777,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
             <div className="flex items-center justify-between">
               <p className="text-phx-xs font-medium uppercase tracking-[0.12em] text-slate-500">Trend</p>
               <p className={`text-sm font-medium ${growthNegative ? "text-rose-600" : "text-emerald-600"}`}>
-                {sales.growthVsLastMonthPercent === null ? "N/A" : `${sales.growthVsLastMonthPercent.toFixed(1)}%`}
+                {sales.growthVsLastMonthPercent === null ? "—" : `${sales.growthVsLastMonthPercent.toFixed(1)}%`}
               </p>
             </div>
             <div className="mt-2 flex justify-end">
@@ -2841,7 +2842,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
     { label: "Total Expenses", value: egp(totalExpenses), delta: "0%" },
     { label: "Cost per Trip", value: egp(avgCostPerTrip), delta: "0%" },
     { label: "Cost per KM", value: totalDistance > 0 ? `EGP ${(totalExpenses / totalDistance).toFixed(1)}` : "EGP 0", delta: "0%" },
-    { label: "Highest Single Trip", value: egp(Math.max(0, ...(workload?.recentTrips.map(t => t.cost) ?? []))), delta: "N/A" },
+    { label: "Highest Single Trip", value: egp(Math.max(0, ...(workload?.recentTrips.map(t => t.cost) ?? []))), delta: "" },
   ];
 
   const expenseTrend = workload?.expenseTrend ?? [];
@@ -3050,7 +3051,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                   <div key={`${metric.label}-${i}`} className="text-center">
                     <p className="mb-1 text-phx-3xs font-bold text-slate-400">{day}</p>
                     <div
-                      className="flex h-8 items-center justify-center rounded text-xs font-semibold text-white"
+                      className="flex h-8 items-center justify-center text-xs font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (metric.data[i] / metric.max) * 0.8})` }}
                     >
                       {metric.data[i]}
@@ -3062,8 +3063,9 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           ))}
         </div>
         {/* Desktop table for >=480px */}
-        <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
-          <table className="w-full border-collapse text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <colgroup><col className="w-[16%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[12%]" /></colgroup>
             <thead>
               <tr>
                 <th className={gridHeaderClass}>Metric</th>
@@ -3082,7 +3084,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 {heatmapData.trips.map((value, index) => (
                   <td key={index} className={gridCellClass}>
                     <div
-                      className="flex h-8 items-center justify-center rounded text-sm font-semibold text-white"
+                      className="flex h-8 items-center justify-center text-sm font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (value / 6) * 0.8})` }}
                     >
                       {value}
@@ -3095,7 +3097,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 {heatmapData.distance.map((value, index) => (
                   <td key={index} className={gridCellClass}>
                     <div
-                      className="flex h-8 items-center justify-center rounded text-sm font-semibold text-white"
+                      className="flex h-8 items-center justify-center text-sm font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (value / 520) * 0.8})` }}
                     >
                       {value}
@@ -3108,7 +3110,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 {heatmapData.expenses.map((value, index) => (
                   <td key={index} className={gridCellClass}>
                     <div
-                      className="flex h-8 items-center justify-center rounded text-sm font-semibold text-white"
+                      className="flex h-8 items-center justify-center text-sm font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (value / 3600) * 0.8})` }}
                     >
                       {value}
@@ -3161,8 +3163,9 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           ))}
         </div>
         {/* Desktop table for >=480px */}
-        <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
-          <table className="w-full border-collapse text-left text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-left text-sm">
+            <colgroup><col className="w-[28%]" /><col className="w-[24%]" /><col className="w-[16%]" /><col className="w-[16%]" /><col className="w-[16%]" /></colgroup>
             <thead>
               <tr>
                 <th className={gridHeaderClass}>Employee Name</th>
@@ -3205,7 +3208,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               <div key={item.label} className="rounded border border-slate-100 bg-slate-50/50 p-4">
                 <p className="text-xs font-medium text-slate-500">{item.label}</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">{item.value}</p>
-                <p className="mt-1 text-xs text-slate-400">{item.delta}</p>
+                {item.delta ? <p className="mt-1 text-xs text-slate-400">{item.delta}</p> : null}
               </div>
             ))}
           </div>
@@ -3263,8 +3266,9 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             ))}
           </div>
           {/* Desktop table for >=480px */}
-          <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
-            <table className="w-full border-collapse text-left text-sm">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
+              <colgroup><col className="w-[40%]" /><col className="w-[15%]" /><col className="w-[20%]" /><col className="w-[25%]" /></colgroup>
               <thead>
                 <tr>
                   <th className={gridHeaderClass}>Territory</th>
@@ -3335,14 +3339,13 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           ))}
         </div>
         {/* Desktop table for >=480px */}
-        <div className="hidden overflow-x-auto rounded border border-slate-100 md:block">
-          <table className="w-full border-collapse text-left text-sm">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-left text-sm">
+            <colgroup><col className="w-[13%]" /><col className="w-[17%]" /><col className="w-[14%]" /><col className="w-[14%]" /><col className="w-[12%]" /><col className="w-[12%]" /><col className="w-[18%]" /></colgroup>
             <thead>
               <tr>
-                <th className={`${gridHeaderClass} whitespace-nowrap`}>Trip ID</th>
-                <th className={gridHeaderClass}>Date</th>
-                <th className={gridHeaderClass}>Employee</th>
-                <th className={gridHeaderClass}>Role</th>
+                <th className={gridHeaderClass}>Date / Trip</th>
+                <th className={gridHeaderClass}>Employee / Role</th>
                 <th className={gridHeaderClass}>From</th>
                 <th className={gridHeaderClass}>To</th>
                 <th className={gridHeaderClass}>Type</th>
@@ -3353,19 +3356,23 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             <tbody>
               {recentTrips.map((trip) => (
                 <tr key={trip.id} className="transition hover:bg-slate-50/60">
-                  <td className={`${gridCellClass} whitespace-nowrap font-mono text-xs text-slate-600`}>{trip.id}</td>
-                  <td className={`${gridCellClass} whitespace-nowrap text-slate-900`}>{trip.date}</td>
-                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.employee}</td>
-                  <td className={gridCellClass}>
-                    <Badge variant="neutral">{trip.role}</Badge>
+                  <td className={`${gridCellClass} break-words text-slate-900`}>
+                    {trip.date}
+                    <span className="mt-0.5 block font-mono text-xs text-slate-500">{trip.id}</span>
                   </td>
-                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.from}</td>
-                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.to}</td>
+                  <td className={`${gridCellClass} break-words text-slate-600`}>
+                    {trip.employee}
+                    <span className="mt-1 block">
+                      <Badge variant="neutral">{trip.role}</Badge>
+                    </span>
+                  </td>
+                  <td className={`${gridCellClass} break-words text-slate-600`}>{trip.from}</td>
+                  <td className={`${gridCellClass} break-words text-slate-600`}>{trip.to}</td>
                   <td className={gridCellClass}>
                     <Badge variant="neutral">{trip.type}</Badge>
                   </td>
-                  <td className={`${gridCellClass} whitespace-nowrap text-slate-600`}>{trip.distance} km</td>
-                  <td className={`${gridCellClass} whitespace-nowrap font-semibold text-slate-900`}>{egp(trip.cost)}</td>
+                  <td className={`${gridCellClass} break-words text-slate-600`}>{trip.distance} km</td>
+                  <td className={`${gridCellClass} break-words font-semibold text-slate-900`}>{egp(trip.cost)}</td>
                 </tr>
               ))}
             </tbody>
@@ -3428,7 +3435,7 @@ export function HRContractSection({ data }: { data: MedicalRepPortalData }) {
           <MetricCard label="Probation Status" value={data.hrContract.probationStatus} tooltip="Probation status" />
           <MetricCard label="Employment Status" value={data.hrContract.employmentStatus} />
           <MetricCard label="Payroll Eligibility" value={data.hrContract.payrollEligibility} tooltip="Payroll status" />
-          <MetricCard label="Days Remaining" value={daysRemaining === null ? "N/A" : `${daysRemaining} days`} />
+          <MetricCard label="Days Remaining" value={daysRemaining === null ? "—" : `${daysRemaining} days`} />
         </div>
       </Card>
     </section>

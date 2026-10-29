@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { CrmIntegrityData, CrmIntegrityRow } from "@/lib/crm-integrity/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 
 // Both formatters below render with timeZone "UTC", for two DIFFERENT reasons — neither is a
 // missed Cairo conversion, and "fixing" either one shifts a real number.
@@ -83,6 +83,41 @@ function SpeedFeasibilityBadge({ row }: { row: CrmIntegrityRow }) {
   );
 }
 
+function AgentCell({ row }: { row: CrmIntegrityRow }) {
+  return (
+    <>
+      <p className="font-medium text-slate-900">{row.agentName ?? "—"}</p>
+      {row.agentHrId ? null : <p className="text-phx-xs text-rose-500">Unmapped</p>}
+    </>
+  );
+}
+
+// The visit's contact, how it matched, and the check-in's contact only when it is a different person
+// (an exact match names the same contact, so it is said once).
+function ContactCell({ row }: { row: CrmIntegrityRow }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="break-words font-medium text-slate-900">{row.contactName ?? row.customerName ?? "—"}</p>
+      <ContactMatchBadge row={row} />
+      {row.contactMatchState === "nearest_different_contact" ? (
+        <p className="break-words text-phx-xs font-medium text-amber-700">Checked in at {row.checkinContactName ?? "—"}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckinCell({ row }: { row: CrmIntegrityRow }) {
+  if (!row.checkinDate) return <span className="text-slate-400">—</span>;
+  const where =
+    row.checkinAddress || (row.checkinLat != null && row.checkinLon != null ? `${row.checkinLat.toFixed(5)}, ${row.checkinLon.toFixed(5)}` : "");
+  return (
+    <>
+      <p className="font-medium text-slate-900">{formatTime(row.checkinDate)}</p>
+      {where ? <p className="break-words text-phx-xs text-slate-500">{where}</p> : null}
+    </>
+  );
+}
+
 export function CrmIntegrityWorkspace({
   data,
   initialFilters,
@@ -150,65 +185,58 @@ export function CrmIntegrityWorkspace({
             </button>
           </div>
 
-          <div className="overflow-x-auto border border-slate-200 bg-white">
-            <table className="w-full min-w-[1600px] text-left text-sm">
-              <thead className="bg-slate-900">
-                <tr>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Date</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Agent</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visit Contact</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Contact Match</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Check-in Contact</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Check-in Time / GPS</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Save Lag</th>
-                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Speed Feasibility</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-100">
-                {data.rows.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</td></tr>
-                ) : (
-                  data.rows.map((row, index) => (
+          {data.rows.length === 0 ? (
+            <div className="border border-slate-200 bg-white px-3 py-8 text-center text-sm text-slate-500">No visits match these filters.</div>
+          ) : (
+            <div className="border border-slate-200 bg-white">
+              <CrmTable columns={["12%", "14%", "24%", "20%", "15%", "15%"]}>
+                <thead className="bg-slate-900">
+                  <tr>
+                    <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Date</th>
+                    <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Agent</th>
+                    <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visit contact</th>
+                    <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Check-in time / GPS</th>
+                    <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Save lag</th>
+                    <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Speed feasibility</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-orange-100">
+                  {data.rows.map((row, index) => (
                     <tr key={row.id} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
-                      <td className="whitespace-nowrap px-3 py-2.5">{formatDate(row.visitDate)}</td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium text-slate-900">{row.agentName ?? "—"}</p>
-                        <p className={cn("text-phx-xs", row.agentHrId ? "text-slate-400" : "text-rose-500")}>{row.agentHrId ?? "unmapped"}</p>
+                      <td className="min-w-0 break-words px-3 py-2.5">{formatDate(row.visitDate)}</td>
+                      <td className="min-w-0 break-words px-3 py-2.5">
+                        <AgentCell row={row} />
                       </td>
-                      <td className="px-3 py-2.5">{row.contactName ?? row.customerName ?? "—"}</td>
-                      <td className="px-3 py-2.5"><ContactMatchBadge row={row} /></td>
-                      <td className="px-3 py-2.5">
-                        {row.contactMatchState === "no_checkin" ? (
-                          <span className="text-slate-400">—</span>
-                        ) : (
-                          <span className={cn(row.contactMatchState === "nearest_different_contact" ? "font-medium text-amber-700" : "text-slate-700")}>
-                            {row.checkinContactName ?? "—"}
-                          </span>
-                        )}
+                      <td className="min-w-0 break-words px-3 py-2.5">
+                        <ContactCell row={row} />
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        {row.checkinDate ? (
-                          <>
-                            <p className="font-medium text-slate-900">{formatTime(row.checkinDate)}</p>
-                            <p
-                              className="max-w-[220px] truncate text-phx-xs text-slate-500"
-                              title={row.checkinLat != null && row.checkinLon != null ? `${row.checkinLat}, ${row.checkinLon}` : undefined}
-                            >
-                              {row.checkinAddress || (row.checkinLat != null && row.checkinLon != null ? `${row.checkinLat.toFixed(5)}, ${row.checkinLon.toFixed(5)}` : "—")}
-                            </p>
-                          </>
-                        ) : (
-                          <span className="text-slate-400">No check-in</span>
-                        )}
+                      <td className="min-w-0 break-words px-3 py-2.5">
+                        <CheckinCell row={row} />
                       </td>
-                      <td className="px-3 py-2.5"><SaveLagBadge row={row} /></td>
-                      <td className="px-3 py-2.5"><SpeedFeasibilityBadge row={row} /></td>
+                      <td className="min-w-0 break-words px-3 py-2.5"><SaveLagBadge row={row} /></td>
+                      <td className="min-w-0 break-words px-3 py-2.5"><SpeedFeasibilityBadge row={row} /></td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </CrmTable>
+              <CrmCardsOnPhone>
+                {data.rows.map((row) => (
+                  <CrmCard key={row.id} meta={formatDate(row.visitDate)} title={row.agentName ?? (row.agentHrId ? "—" : "Unmapped agent")}>
+                    <div className="grid gap-3 text-sm">
+                      <ContactCell row={row} />
+                      <CheckinCell row={row} />
+                      <CrmFacts
+                        facts={[
+                          { label: "Save lag", value: <SaveLagBadge row={row} /> },
+                          { label: "Speed feasibility", value: <SpeedFeasibilityBadge row={row} /> },
+                        ]}
+                      />
+                    </div>
+                  </CrmCard>
+                ))}
+              </CrmCardsOnPhone>
+            </div>
+          )}
 
           <div className="flex items-center justify-between border border-slate-200 bg-white px-4 py-3 text-sm">
             <span className="text-slate-500">

@@ -55,7 +55,7 @@ export function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">{label}</dt>
-      <dd className="-mx-0.5 mt-0.5 overflow-x-auto whitespace-nowrap px-0.5 text-sm font-semibold text-slate-900">
+      <dd className="mt-0.5 min-w-0 break-words text-sm font-semibold text-slate-900">
         {value}
       </dd>
     </div>
@@ -80,7 +80,7 @@ export function HeroStat({
   return (
     <div className={`border px-4 py-3 ${tone === "orange" ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-slate-50"}`}>
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <p className={`mt-1 whitespace-nowrap text-xl font-black ${tone === "orange" ? "text-orange-700" : "text-slate-900"}`}>
+      <p className={`mt-1 break-words text-xl font-black ${tone === "orange" ? "text-orange-700" : "text-slate-900"}`}>
         {value}
       </p>
     </div>
@@ -99,9 +99,7 @@ export function FieldGroup({ children, title }: { children: ReactNode; title: st
       <p className="mb-2 border-b border-slate-100 pb-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
         {title}
       </p>
-      <div className="overflow-x-auto">
-        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">{children}</dl>
-      </div>
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">{children}</dl>
     </div>
   );
 }
@@ -121,18 +119,22 @@ export function FieldTable({ rows, title }: { rows: Array<{ label: string; value
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-1.5">
         <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">{title}</p>
       </div>
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col style={{ width: "34%" }} />
+          <col style={{ width: "66%" }} />
+        </colgroup>
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.label} className={index % 2 ? "bg-slate-50/60" : "bg-white"}>
               <th
                 scope="row"
-                className="w-[38%] whitespace-nowrap border-b border-slate-100 px-3 py-2 text-left align-top text-phx-2xs font-black uppercase tracking-wider text-slate-400 sm:w-[30%]"
+                className="break-words border-b border-slate-100 px-3 py-2 text-left align-top text-phx-2xs font-black uppercase tracking-wider text-slate-400 "
               >
                 {row.label}
               </th>
               <td className="border-b border-slate-100 px-3 py-2 align-top">
-                <div className="-mx-0.5 overflow-x-auto whitespace-nowrap px-0.5 font-semibold text-slate-900">
+                <div className="min-w-0 break-words font-semibold text-slate-900">
                   {row.value}
                 </div>
               </td>

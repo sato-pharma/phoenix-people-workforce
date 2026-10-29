@@ -1,3 +1,5 @@
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
+import { humanizeCode } from "@/lib/format/code-label";
 import { AlertTriangle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -187,7 +189,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
           ["Warnings", payrollWarningRows],
           ["Failed", result.failedRows],
         ].map(([label, value]) => (
-          <div className="rounded-[22px] border border-phx-line bg-[#FCFDFE] p-4" key={label}>
+          <div className="border border-phx-line bg-[#FCFDFE] p-4" key={label}>
             <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
             <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-phx-ink">{value}</p>
           </div>
@@ -195,7 +197,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
       </div>
 
       {resignationAlarmCount > 0 && (
-        <div className="mt-4 rounded-[22px] border border-phx-accent-line bg-phx-accent-soft p-4">
+        <div className="mt-4 border border-phx-accent-line bg-phx-accent-soft p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-phx-accent-press">
               <AlertTriangle className="h-5 w-5" aria-hidden="true" />
@@ -214,7 +216,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
                       className="rounded-full border border-[#FED7AA] bg-white px-3 py-1 text-xs font-semibold text-[#9A3412]"
                       key={`${candidate.row}-${candidate.hrId}`}
                     >
-                      {candidate.hrId} - {candidate.fullName}
+                      {candidate.fullName}
                     </span>
                   ))}
                   {resignationAlarmCount > resignationPreview.length && (
@@ -229,7 +231,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
         </div>
       )}
 
-      <div className="mt-4 overflow-hidden rounded-[24px] border border-phx-line">
+      <div className="mt-4 overflow-hidden border border-phx-line">
         <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
             Validation Totals
@@ -283,48 +285,61 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
       </div>
 
       {issuePreview.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-[24px] border border-phx-line">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-phx-line bg-phx-paper">
-                {["Row", "HR ID", "Column", "Type", "Message"].map((column) => (
-                  <th
-                    className="px-3 py-3 font-medium text-phx-ink-soft"
-                    key={column}
-                  >
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {issuePreview.map((issue, index) => (
-                <tr key={`${issue.row}-${issue.code}-${index}`}>
-                  <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">
-                    {issue.row}
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">
-                    {issue.hrId ?? "-"}
-                  </td>
-                  <td className="px-3 py-3 text-phx-ink-soft">
-                    {issue.column ?? "-"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <Badge
-                      variant={
-                        issue.severity === "error" ? "danger" : "warning"
-                      }
-                    >
-                      {issue.code}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-3 text-phx-ink">{issue.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
+        <div className="mt-4 overflow-hidden border border-phx-line">
+          <PortalResponsiveDataList
+            empty={null}
+            getKey={(issue, index) => `${issue.row}-${issue.code}-${index}`}
+            items={issuePreview}
+            renderCard={(issue) => (
+              <div className="space-y-1 px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-mono text-xs text-phx-ink-soft">
+                    Row {issue.row} · HR ID {issue.hrId ?? "—"} · {issue.column ?? "—"}
+                  </p>
+                  <Badge variant={issue.severity === "error" ? "danger" : "warning"}>{humanizeCode(issue.code)}</Badge>
+                </div>
+                <p className="break-words text-sm text-phx-ink">{issue.message}</p>
+              </div>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[8%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[46%]" />
+                  </colgroup>
+                }
+              >
+                <thead>
+                  <tr className="border-b border-phx-line bg-phx-paper">
+                    {["Row", "HR ID", "Column", "Type", "Message"].map((column) => (
+                      <th className="px-3 py-3 font-medium text-phx-ink-soft" key={column}>
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {issuePreview.map((issue, index) => (
+                    <tr key={`${issue.row}-${issue.code}-${index}`}>
+                      <td className="break-words px-3 py-3 font-mono text-xs text-phx-ink-soft">{issue.row}</td>
+                      <td className="break-words px-3 py-3 font-mono text-xs text-phx-ink-soft">{issue.hrId ?? "—"}</td>
+                      <td className="break-words px-3 py-3 text-phx-ink-soft">{issue.column ?? "—"}</td>
+                      <td className="px-3 py-3">
+                        <Badge variant={issue.severity === "error" ? "danger" : "warning"}>
+                          {humanizeCode(issue.code)}
+                        </Badge>
+                      </td>
+                      <td className="break-words px-3 py-3 text-phx-ink">{issue.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         </div>
       )}
     </Card>

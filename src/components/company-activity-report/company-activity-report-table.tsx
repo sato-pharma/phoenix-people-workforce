@@ -178,7 +178,7 @@ function CountBadge({ tone, value }: { tone: "accent" | "danger" | "neutral" | "
 function NoSignalNote({ row }: { row: CompanyActivityEmployeeSummary }) {
   if (row.hasAttendanceChannel && row.hasCrmChannel) return null;
   const missing = [!row.hasAttendanceChannel && "no device", !row.hasCrmChannel && "no CRM id"].filter(Boolean).join(", ");
-  return <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-bold text-amber-600">⚠ {missing}</p>;
+  return <p className="mt-0.5 text-phx-2xs font-bold text-amber-600">⚠ {missing}</p>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -232,7 +232,7 @@ function SortableHeader({
 }) {
   return (
     <th
-      className="cursor-pointer select-none whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100"
+      className="cursor-pointer select-none border-b border-r border-slate-100 px-3 py-2.5 transition hover:bg-slate-100"
       onClick={() => onSort(sortKey)}
     >
       <span className="inline-flex items-center gap-1">
@@ -268,14 +268,18 @@ function EmployeeSummaryCard({ href, row }: { href: string; row: CompanyActivity
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
-          <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-500">{row.employeeHrId}</p>
-          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{[row.jobTitle, row.lineName].filter(Boolean).join(" / ") || "—"}</p>
+          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{row.jobTitle ?? "—"}</p>
+          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{orgLine(row)}</p>
           <NoSignalNote row={row} />
         </div>
         <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
       </div>
 
       <div className="mt-2.5 grid grid-cols-4 gap-2">
+        <div>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Working days</p>
+          <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{row.workingDays}</p>
+        </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Office</p>
           <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{row.officePresentDays}</p>
@@ -295,6 +299,7 @@ function EmployeeSummaryCard({ href, row }: { href: string; row: CompanyActivity
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Leave</p>
           <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{row.leaveApprovedDays}</p>
+          <p className="text-phx-2xs font-medium text-slate-400">{row.leavePendingDays} pending</p>
         </div>
       </div>
 
@@ -704,14 +709,24 @@ export function CompanyActivityReportTable({
             ) : (
               <>
                 {/* Desktop table (md+) */}
-                <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full border-collapse text-left text-phx-sm">
+                <div className="hidden md:block">
+                  <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+                    <colgroup>
+                      <col style={{ width: "27%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "11%" }} />
+                      <col style={{ width: "11%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "9%" }} />
+                    </colgroup>
                     <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                       <tr>
                         <SortableHeader active={sortKey === "employee"} direction={sortDirection} onSort={toggleSort} sortKey="employee">
                           Employee
                         </SortableHeader>
-                        <th className="whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5">Org</th>
                         <SortableHeader active={sortKey === "workingDays"} direction={sortDirection} onSort={toggleSort} sortKey="workingDays">
                           Working Days
                         </SortableHeader>
@@ -727,60 +742,54 @@ export function CompanyActivityReportTable({
                         <SortableHeader active={sortKey === "leaveApproved"} direction={sortDirection} onSort={toggleSort} sortKey="leaveApproved">
                           Leave
                         </SortableHeader>
-                        <th className="whitespace-nowrap border-b border-r border-slate-100 px-3 py-2.5">Pending</th>
                         <SortableHeader active={sortKey === "noEntry"} direction={sortDirection} onSort={toggleSort} sortKey="noEntry">
                           No Entry
                         </SortableHeader>
                         <SortableHeader active={sortKey === "conflict"} direction={sortDirection} onSort={toggleSort} sortKey="conflict">
                           Conflict
                         </SortableHeader>
-                        <th className="whitespace-nowrap border-b border-slate-100 px-3 py-2.5">Days</th>
+                        <th className="border-b border-slate-100 px-3 py-2.5">Days</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {pageRows.map((row) => (
                         <tr key={row.employeeHrId} className="bg-white align-top transition hover:bg-orange-50/30">
-                          <td className="border-r border-slate-100 px-3 py-2.5">
-                            <p className="whitespace-nowrap font-bold text-slate-900">{row.employeeName}</p>
-                            <p className="mt-0.5 whitespace-nowrap font-mono text-phx-2xs font-medium text-slate-400">{row.employeeHrId}</p>
+                          <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2.5">
+                            <p className="break-words font-bold text-slate-900">{row.employeeName}</p>
+                            <p className="mt-0.5 break-words text-phx-xs font-semibold text-slate-800">{row.jobTitle ?? "—"}</p>
+                            <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{orgLine(row)}</p>
                             <NoSignalNote row={row} />
                           </td>
-                          <td className="border-r border-slate-100 px-3 py-2.5">
-                            <p className="whitespace-nowrap font-semibold text-slate-800">{row.jobTitle ?? "—"}</p>
-                            <p className="mt-0.5 whitespace-nowrap text-phx-xs font-medium text-slate-500">{orgLine(row)}</p>
-                          </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">
                             {row.workingDays}
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-semibold text-slate-700">
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center font-semibold text-slate-700">
                             {row.officePresentDays}
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center">
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                             <span className="font-semibold text-slate-700">{row.totalCrmVisits}</span>
                             <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.crmFieldVisitDays} field days</p>
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center">
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                             <CountBadge tone="accent" value={row.campaignVisits} />
                             <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">
                               {row.campaignVisitDays} {row.campaignVisitDays === 1 ? "day" : "days"}
                               {row.campaignVisitDays > 0 ? ` · ${(row.campaignVisits / row.campaignVisitDays).toFixed(1)}/day` : ""}
                             </p>
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-semibold text-slate-700">
-                            {row.leaveApprovedDays}
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center">
+                            <span className="font-semibold text-slate-700">{row.leaveApprovedDays}</span>
+                            <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.leavePendingDays} pending</p>
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-semibold text-slate-700">
-                            {row.leavePendingDays}
-                          </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center">
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                             <CountBadge tone="danger" value={row.noEntryDays} />
                           </td>
-                          <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center">
+                          <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                             <CountBadge tone="warn" value={row.conflictDays} />
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2.5">
+                          <td className="px-3 py-2.5">
                             <Link
-                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                              className="inline-flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                               href={drilldownHref(row.employeeHrId)}
                             >
                               View <ChevronRight className="h-3 w-3" />

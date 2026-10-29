@@ -331,8 +331,13 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
         {detail.products.length === 0 ? (
           <p className="text-phx-xs font-medium italic text-slate-400">No products were listed on this request.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div>
+            <table className="w-full table-fixed text-left">
+              <colgroup>
+                <col className="w-[56%]" />
+                <col className="w-[14%]" />
+                <col className="w-[30%]" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200">
                   <th className="pb-1 text-phx-3xs font-bold uppercase tracking-[0.1em] text-slate-400">Product</th>
@@ -343,7 +348,7 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
               <tbody>
                 {detail.products.map((product) => (
                   <tr className="border-b border-slate-100 last:border-0" key={product.name}>
-                    <td className="py-1 text-phx-sm font-bold text-slate-900">{product.name}</td>
+                    <td className="break-words py-1 text-phx-sm font-bold text-slate-900">{product.name}</td>
                     <td className="py-1 text-right text-phx-sm font-medium text-slate-700">{product.quantity}</td>
                     <td className="py-1 text-right text-phx-sm font-bold text-slate-900">{egp(product.value) ?? "-"}</td>
                   </tr>

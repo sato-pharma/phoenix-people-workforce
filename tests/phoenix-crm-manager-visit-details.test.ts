@@ -180,8 +180,7 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
   {
     const day = { am: 1, date: "2026-10-19", hrId: "B-120", pm: 1, visits: 2 };
     const bare = managerOwnVisitItem(day);
-    assert.equal(bare.detailLines.length, 2, "the count-only entry is exactly what it was: a kind line and a count line");
-    assert.equal(bare.detailLines[1], "Visits: 2");
+    assert.deepEqual(bare.detailLines, [], "the count-only entry has no detail line: its kind is the chip's first line and its count is the title (said once)");
     assert.equal(bare.managerVisits, undefined, "no details asked, none attached");
 
     const full = managerOwnVisitItem(day, [visit({ id: "own:1" }), visit({ bucket: "PM", id: "own:2", customerName: "Dr. Samir Fathy", loggedAt: "2026-10-19T13:05:00Z", loggedHalf: "PM" })]);

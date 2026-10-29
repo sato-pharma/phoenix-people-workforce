@@ -322,6 +322,8 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
   // input and the code combobox carried `w-56`; two of those plus an Add button cannot fit inside
   // 283px, so the table reached 561px and the wrapper's `overflow-auto` scrolled it sideways.
   const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  // The mapped target is shown by its name; the code stays only when the list has no name for it.
+  const targetName = (code: string) => options.find((option) => option.code === code)?.name || code;
   const addRawInput = <input className={phxFieldClassName} onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} />;
   const addCodePicker = <MappingCombobox onChange={setAddCode} options={options} placeholder={codeLabel} value={addCode} />;
   const addButton = (
@@ -361,7 +363,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
           <div className="flex items-start justify-between gap-2 border border-phx-line p-3" key={`${r.normalizedAlias}-${r.code}`}>
             <div className="min-w-0">
               <span className="block break-words font-semibold text-phx-ink">{r.alias || r.normalizedAlias}</span>
-              <span className="mt-0.5 block break-words font-mono text-xs text-phx-ink">{r.code}</span>
+              <span className="mt-0.5 block break-words text-xs text-phx-ink">{targetName(r.code)}</span>
             </div>
             {deleteButton(r)}
           </div>
@@ -384,7 +386,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
             {rows.map((r) => (
               <tr className="border-b border-[#FFE8D6] align-top" key={`${r.normalizedAlias}-${r.code}`}>
                 <td className="break-words px-3 py-2 font-semibold text-phx-ink">{r.alias || r.normalizedAlias}</td>
-                <td className="break-words px-3 py-2 font-mono text-xs text-phx-ink">{r.code}</td>
+                <td className="break-words px-3 py-2 text-xs text-phx-ink">{targetName(r.code)}</td>
                 <td className="px-3 py-2 text-right">{deleteButton(r)}</td>
               </tr>
             ))}
