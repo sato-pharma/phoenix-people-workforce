@@ -7,6 +7,11 @@ import {
   UNNAMED_AREA,
   UNNAMED_PRODUCT,
 } from "@/lib/direct-orders/rep-area-view-service";
+import {
+  directOrderLineKey,
+  isDirectOrderOnRepLine,
+  lineHasDirectOrders,
+} from "@/lib/direct-orders/line-scope";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Direct Orders in my area" — the Medical Rep's VIEW-ONLY window (owner, 2026-09-24).
@@ -201,4 +206,31 @@ export function runDirectOrdersRepAreaViewTests() {
   const catalogLine = catalogEntry.slice(0, catalogEntry.indexOf("},"));
   assert.ok(catalogLine.length > 0, "the catalog must declare the page");
   assert.match(catalogLine, /roles: \["Medical Rep"\]/, "the catalog entry is Medical-Rep only");
+
+  // ── THE LINE BOUND (owner, 2026-10-29: "a leak between orders products between lines") ─────
+  // An area is shared by every line. Read by area alone, the window showed Pedia reps 40 Anti
+  // Infective orders and Anti Infective reps 20 Pedia ones on production; CNS reps saw 87.
+  assert.equal(directOrderLineKey("Anti Infective"), directOrderLineKey("anti_infective"), "the order's line name and the seat map's line code must compare equal");
+  assert.equal(directOrderLineKey("Anti-Infective"), "antiinfective");
+  assert.equal(isDirectOrderOnRepLine("Pedia", "pedia"), true, "a Pedia order belongs on a Pedia rep's screen");
+  assert.equal(isDirectOrderOnRepLine("Anti Infective", "pedia"), false, "LEAK: an Anti Infective order must never reach a Pedia rep");
+  assert.equal(isDirectOrderOnRepLine("Pedia", "anti_infective"), false, "LEAK: a Pedia order must never reach an Anti Infective rep");
+  assert.equal(isDirectOrderOnRepLine("Pedia", ""), false, "a rep with no line sees nothing — fail closed, never every line");
+  assert.equal(isDirectOrderOnRepLine("", "pedia"), false, "an order with no line belongs to no rep's line");
+  assert.equal(lineHasDirectOrders("CNS"), false, "CNS runs no direct orders");
+  assert.equal(lineHasDirectOrders("cns"), false, "CNS by its seat code too");
+  assert.equal(lineHasDirectOrders(""), false, "a blank line is never a window onto every line");
+  assert.equal(lineHasDirectOrders("Pedia"), true);
+  assert.equal(lineHasDirectOrders("anti_infective"), true);
+
+  // The service reads the order's line and filters on it; a CNS rep is answered empty and sent home.
+  assert.match(service, /"id, pharmacy_id, sales_month, collection_date, decided_at, created_at, line, /, "the order's own line must be read");
+  assert.match(service, /if \(!isDirectOrderOnRepLine\(request\.line, repLine\)\) return false;/, "LEAK: every order must be tested against the rep's own line");
+  assert.match(service, /if \(!lineHasDirectOrders\(repLine\)\) \{/, "a line with no direct orders (CNS) or no line at all must read nothing");
+  assert.match(page, /if \(report\.lineRunsNoDirectOrders\) \{\s*redirect\(/, "a CNS rep typing the address is sent home");
+  assert.match(
+    navigation,
+    /const showAreaDirectOrdersTab = !isCnsLine && canUseEmployeePortalAreaDirectOrders\(resolvedRole\);/,
+    "the sidebar must not offer the window to a CNS rep",
+  );
 }
