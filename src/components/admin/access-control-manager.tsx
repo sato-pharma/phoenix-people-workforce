@@ -54,9 +54,22 @@ import {
 import { displayTitleForRole } from "@/lib/auth/hr-functions";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { phxWhatsAppShareButtonClassName, phxWhatsAppSendButtonClassName } from "@/components/ui/brand-tokens";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
+
+/**
+ * WhatsApp mark. Drawn inline because lucide-react ships no brand icons and a generic chat bubble does
+ * not read as "this opens WhatsApp" — the same path the organogram and the CRM forecast buttons carry.
+ */
+function WhatsAppGlyph({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden className={className} fill="currentColor" focusable="false" viewBox="0 0 24 24">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
+    </svg>
+  );
+}
 
 type EmployeeOption = {
   hrId: string;
@@ -335,6 +348,10 @@ export function AccessControlManager({
   const [uploadResults, setUploadResults] = React.useState<RowResult[] | null>(null);
   const [permissionSaving, setPermissionSaving] = React.useState<string | null>(null);
   const [setupLinkMessage, setSetupLinkMessage] = React.useState<string | null>(null);
+  // The prepared WhatsApp chat, held in state so the callout can render a REAL ANCHOR for it.
+  // 🔴 NEVER a window.open after the await: a popup blocker swallows a navigation that is not a direct
+  // click, which is exactly what both existing link buttons learned the hard way.
+  const [setupLinkWhatsApp, setSetupLinkWhatsApp] = React.useState<{ loginId: string; name: string; url: string } | null>(null);
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
   const [selectedLoginIds, setSelectedLoginIds] = React.useState<Set<string>>(() => new Set());
   const [bulkSending, setBulkSending] = React.useState<"copy" | "email" | null>(null);
@@ -575,14 +592,15 @@ export function AccessControlManager({
     setData(payload);
   }
 
-  async function sendSetupLink(user: AccessUserRow, deliveryMode: "copy" | "email") {
+  async function sendSetupLink(user: AccessUserRow, deliveryMode: "copy" | "email" | "whatsapp") {
     if (!canManageUsers) {
       setError("You do not have permission to generate password links.");
       return;
     }
+    const verb = deliveryMode === "email" ? "Email" : deliveryMode === "whatsapp" ? "Prepare a WhatsApp message carrying" : "Generate and copy";
     requestGovernanceConfirmation({
-      body: `${deliveryMode === "email" ? "Email" : "Generate and copy"} a one-time ${user.forcePasswordReset ? "setup" : "reset"} link for ${user.name} (${user.loginId}). The link is token-safe in audit records, but it can set account credentials before expiry.`,
-      confirmLabel: deliveryMode === "email" ? "Send link" : "Generate link",
+      body: `${verb} a one-time ${user.forcePasswordReset ? "setup" : "reset"} link for ${user.name} (${user.loginId}). The link is token-safe in audit records, but it can set account credentials before expiry.${deliveryMode === "whatsapp" ? " Phoenix opens the chat with the message written; you press send." : ""}`,
+      confirmLabel: deliveryMode === "email" ? "Send link" : deliveryMode === "whatsapp" ? "Prepare message" : "Generate link",
       onConfirm: async (reason) => {
         await performSendSetupLink(user, deliveryMode, reason);
       },
@@ -591,9 +609,10 @@ export function AccessControlManager({
     });
   }
 
-  async function performSendSetupLink(user: AccessUserRow, deliveryMode: "copy" | "email", governanceReason: string) {
+  async function performSendSetupLink(user: AccessUserRow, deliveryMode: "copy" | "email" | "whatsapp", governanceReason: string) {
     setError(null);
     setSetupLinkMessage(null);
+    setSetupLinkWhatsApp(null);
     setSetupLinkSending(`${user.loginId}:${deliveryMode}`);
 
     try {
@@ -608,14 +627,17 @@ export function AccessControlManager({
         method: "POST",
       });
       const payload = (await response.json().catch(() => null)) as
-        | { deliveryMessage?: string; message?: string; setupUrl?: string }
+        | { deliveryMessage?: string; message?: string; setupUrl?: string; whatsAppUrl?: string }
         | null;
 
       if (!response.ok) {
         throw new Error(payload?.message ?? "Password link could not be sent.");
       }
 
-      if (deliveryMode === "copy" && payload?.setupUrl) {
+      if (deliveryMode === "whatsapp" && payload?.whatsAppUrl) {
+        setSetupLinkWhatsApp({ loginId: user.loginId, name: user.name, url: payload.whatsAppUrl });
+        setSetupLinkMessage(payload.deliveryMessage ?? `WhatsApp message ready for ${user.name}.`);
+      } else if (deliveryMode === "copy" && payload?.setupUrl) {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(payload.setupUrl);
           setSetupLinkMessage(`Password link copied to clipboard for ${user.loginId}.`);
@@ -893,6 +915,34 @@ export function AccessControlManager({
           {setupLinkSending === `${user.loginId}:email` ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
           Email link
         </button>
+        {/*
+          Rendered only when the register holds a number this person can be reached on: no button is
+          always better than a live password link opened in the wrong chat. The press prepares the
+          message; the admin sends it from his own WhatsApp (nothing in the WhatsApp API can carry a
+          free-form credential link to someone outside a 24-hour window).
+
+          🔴 THE GREEN IS WHATSAPP'S OWN BRAND TOKEN, not this row's pastel skin: every WhatsApp
+          button in the app wears one look (owner, 2026-10-07), and a hand-written emerald here is
+          refused by tests/form-design-system.test.ts section 6. The token carries colour and no
+          height, so the control keeps the row's geometry.
+        */}
+        {user.hasWhatsApp && (
+          <button
+            aria-label={`${user.forcePasswordReset ? "Send setup link on WhatsApp" : "Send reset link on WhatsApp"} to ${user.name}`}
+            className={cn(
+              phxWhatsAppShareButtonClassName,
+              layout === "stacked" ? "h-9 px-3" : "h-8 px-2.5",
+              "justify-center transition-all duration-160 ease-out active:scale-95 disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+            disabled={setupLinkSending !== null || !user.isActive}
+            onClick={() => sendSetupLink(user, "whatsapp")}
+            title={!user.isActive ? "Inactive users cannot receive password links." : "Prepare the message in WhatsApp — you press send"}
+            type="button"
+          >
+            {setupLinkSending === `${user.loginId}:whatsapp` ? <LoadingSpinner className="h-3.5 w-3.5" /> : <WhatsAppGlyph className="h-3.5 w-3.5" />}
+            WhatsApp
+          </button>
+        )}
         <button
           aria-label={`${user.forcePasswordReset ? "Copy setup link" : "Copy reset link"} for ${user.name}`}
           className={`${buttonBase} border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`}
@@ -1021,7 +1071,28 @@ export function AccessControlManager({
       {setupLinkMessage && (
         <AdminCallout tone="success">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span className="break-all">{setupLinkMessage}</span>
+          <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+            <span className="break-all">{setupLinkMessage}</span>
+            {/*
+              🔴 A REAL ANCHOR, NOT A SCRIPTED window.open. The chat opens on the admin's own click,
+              so no popup blocker stands between the prepared message and WhatsApp — and on a phone it
+              hands straight to the WhatsApp app.
+            */}
+            {setupLinkWhatsApp && (
+              <a
+                className={cn(
+                  phxWhatsAppSendButtonClassName,
+                  "min-h-11 justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DA851]",
+                )}
+                href={setupLinkWhatsApp.url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <WhatsAppGlyph className="h-4 w-4 shrink-0" />
+                Open WhatsApp chat with {setupLinkWhatsApp.name}
+              </a>
+            )}
+          </div>
         </AdminCallout>
       )}
 

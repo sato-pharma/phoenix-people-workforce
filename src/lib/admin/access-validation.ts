@@ -41,7 +41,7 @@ export type PermissionOverrideRequest = GovernanceRequest & {
 };
 
 export type PasswordSetupRequest = GovernanceRequest & {
-  deliveryMode: "copy" | "email";
+  deliveryMode: "copy" | "email" | "whatsapp";
   loginId: string;
   purpose: "reset" | "setup";
 };
@@ -164,8 +164,10 @@ export function parsePasswordSetupRequest(body: unknown): PasswordSetupRequest {
   const payload = asRecord(body);
   const deliveryMode = requiredTrimmedString(payload.deliveryMode ?? "email", "deliveryMode");
   const purpose = requiredTrimmedString(payload.purpose ?? "reset", "purpose");
-  if (deliveryMode !== "copy" && deliveryMode !== "email") {
-    throw validationError("deliveryMode must be 'copy' or 'email'.");
+  // 'whatsapp' prepares a wa.me link for the admin to press; it is accepted here and NOT in the bulk
+  // parser below, because wa.me addresses exactly one chat — see the note there.
+  if (deliveryMode !== "copy" && deliveryMode !== "email" && deliveryMode !== "whatsapp") {
+    throw validationError("deliveryMode must be 'copy', 'email' or 'whatsapp'.");
   }
   if (purpose !== "setup" && purpose !== "reset") {
     throw validationError("purpose must be 'setup' or 'reset'.");
@@ -182,6 +184,9 @@ export function parsePasswordSetupRequest(body: unknown): PasswordSetupRequest {
 export function parseBulkPasswordSetupRequest(body: unknown): BulkPasswordSetupRequest {
   const payload = asRecord(body);
   const deliveryMode = requiredTrimmedString(payload.deliveryMode ?? "email", "deliveryMode");
+  // 🔴 NO 'whatsapp' IN BULK, AND IT IS NOT AN OVERSIGHT. A wa.me link opens ONE chat: a batch of them
+  // would be a queue of browser tabs the admin has to press in turn, and nothing in WhatsApp can
+  // address several chats or a group at once. WhatsApp stays a per-person button on the row.
   if (deliveryMode !== "copy" && deliveryMode !== "email") {
     throw validationError("deliveryMode must be 'copy' or 'email'.");
   }
