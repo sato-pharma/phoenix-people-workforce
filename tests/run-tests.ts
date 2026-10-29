@@ -7938,7 +7938,7 @@ await runTest(
 );
 
 await runTest(
-  "Phoenix CRM Place checks survives a grown field (production outage 2026-10-07: the page crashed with UND_ERR_HEADERS_OVERFLOW once active places crossed ~395): the id-keyed reads go through selectByIds, which dedupes and drops nullish ids, keeps every .in() chunk (IN_ID_CHUNK) below the ~395 overflow cliff and keyset-pages each chunk on id so the 1,000-row cap cannot shorten it; dedupeIds drops nulls and empties and keeps order; and neither loadValidatedPlaces nor loadValidationReviews issues a bare .in() any more",
+  "Phoenix CRM Place checks survives a grown field (production outage 2026-10-07: the page crashed with UND_ERR_HEADERS_OVERFLOW once active places crossed ~395): the id-keyed reads go through selectByIds, which dedupes and drops nullish ids, keeps every .in() chunk (IN_ID_CHUNK) below the ~395 overflow cliff and keyset-pages each chunk on id so the 1,000-row cap cannot shorten it; dedupeIds drops nulls and empties and keeps order; and neither loadValidatedPlaces nor loadValidationReviews issues a bare .in() any more; and the validated-places pages walk the primary key while the newest-first order is made in code (production read audit, 2026-10-28)",
   runPhoenixCrmPlaceChecksInOverflowTests,
 );
 

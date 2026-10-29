@@ -862,8 +862,17 @@ export type ValidatedPlaceRow = {
  * so on the day it was measured the page showed 400 of 612 and presented that as the field — and the
  * 30-day floor made the board's own "Any time" period a lie. The whole set goes to the browser on
  * purpose: the board filters rep, line, region, area, list, period and text IN THE BROWSER, so a server
- * page would make every filter answer about one page. It pages with a total order and stops, newest
- * first, at a ceiling far above the field, and says so when it does.
+ * page would make every filter answer about one page. It pages with a total order and stops at a
+ * ceiling far above the field, and says so when it does.
+ *
+ * 🔴 THE PAGES WALK THE PRIMARY KEY; THE NEWEST-FIRST ORDER IS MADE HERE, NOT IN THE DATABASE (production
+ * read audit, 28 Oct 2026). There is no index on `created_at`, so `ORDER BY created_at DESC, id DESC`
+ * made every one of the ~5 pages a load reads scan and sort the whole table (4,178 rows at about 1.8 KB
+ * each) to return 1,000 of them — 1,440 calls, 116 s over 25–28 Oct. `id` alone is still a total order,
+ * which is all the pager needs, and the primary key serves it with no sort. The rows are then put back
+ * in `created_at desc, id desc` by `newestValidatedFirst`, so the board shows exactly the order it did.
+ * At the ceiling the read keeps the first 10,000 by id rather than the newest — with the whole table
+ * under half of that, today's answer is the same, and `capped` still says when it happens.
  */
 export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
   const seats = placeChecksSeatScope(viewer);
@@ -878,14 +887,12 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
           "id, seat_id, customer_id, is_test, label, address, brick_name, area_name, lat, lon, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, created_by_hr_id, created_at, signboard_check, shared_place_id, schedule_check",
         )
         .eq("status", "active");
-      return seatScoped(query, seats)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false });
+      return seatScoped(query, seats).order("id", { ascending: false });
     },
     { maxRows: 10_000, whenFull: "stop", what: "The validated places in use", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(read.error);
-  const places = read.rows;
+  const places = [...read.rows].sort(newestValidatedFirst);
   if (places.length === 0) return { rows: [], capped: false };
 
   const customerIds = [...new Set(places.map((row) => String(row.customer_id)))];
@@ -974,6 +981,23 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
       };
     });
   return { rows, capped: read.capped };
+}
+
+/**
+ * `created_at desc, id desc` — the order `loadValidatedPlaces` used to ask the database for. Time is
+ * compared as an instant first (an offset in the text cannot reorder it); two stamps in the same
+ * millisecond fall back to the text, which carries the microseconds; then the id, compared as plain
+ * text because a lowercase uuid string sorts exactly as Postgres sorts the uuid.
+ */
+function newestValidatedFirst(left: Row, right: Row): number {
+  const leftAt = String(left.created_at ?? "");
+  const rightAt = String(right.created_at ?? "");
+  const byInstant = Date.parse(rightAt) - Date.parse(leftAt);
+  if (Number.isFinite(byInstant) && byInstant !== 0) return byInstant;
+  if (leftAt !== rightAt) return leftAt < rightAt ? 1 : -1;
+  const leftId = String(left.id);
+  const rightId = String(right.id);
+  return leftId === rightId ? 0 : leftId < rightId ? 1 : -1;
 }
 
 /** The stored timetable verdict, read as defensively as the signboard's: unrecognised is "not read". */
