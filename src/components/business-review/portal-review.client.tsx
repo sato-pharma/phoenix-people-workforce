@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import type { ConcentrationFacts } from "@/lib/business-review/concentration";
 import type { ReviewMetricId } from "@/lib/business-review/pack/metrics";
 import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
+import { isResignedStatus } from "@/lib/business-review/employment-status";
 import {
   ConcentrationPanels,
   CustomersPerMonthTable,
@@ -351,6 +352,12 @@ export function BusinessReviewPortal({
   // Earners over the STAFFED areas with a target — a vacant area is graded but never earns (earnerTally).
   const earners = useMemo(() => earnerTally(areas), [areas]);
   const vacantAreas = useMemo(() => areas.filter((a) => a.vacant), [areas]);
+  // "Hide vacant and resigned" drops a leaver from the people lists the way the admin review does.
+  // Rows only: every figure above is summed from the unfiltered areas, so no number moves.
+  const visiblePeople = useMemo(
+    () => (excludeVacant ? people.filter((p) => !isResignedStatus(p.employmentStatus)) : people),
+    [people, excludeVacant],
+  );
   const failAreas = useMemo(
     () =>
       graded
@@ -406,8 +413,8 @@ export function BusinessReviewPortal({
           </p>
         </div>
         <label className="flex shrink-0 items-center gap-2.5 rounded border border-slate-200 bg-white px-3 py-2">
-          <Switch checked={excludeVacant} label="Exclude vacant territories" onChange={setExcludeVacant} />
-          <span className="whitespace-nowrap text-sm font-bold text-slate-700">Exclude vacant</span>
+          <Switch checked={excludeVacant} label="Hide vacant and resigned" onChange={setExcludeVacant} />
+          <span className="whitespace-nowrap text-sm font-bold text-slate-700">Hide vacant and resigned</span>
         </label>
       </div>
       {/* A GET form, so applying a window re-runs this page's server-side scope resolution
@@ -947,6 +954,8 @@ export function BusinessReviewPortal({
             </LongList>
           </PortalSection>
 
+          {/* Hidden with the switch, like every other vacant row; the Vacant areas tile above keeps its count. */}
+          {excludeVacant ? null : (
           <PortalSection
             description="Listed separately so they never distort an earner count or a failure count."
             eyebrow="Coverage"
@@ -1011,6 +1020,7 @@ export function BusinessReviewPortal({
               )}
             />
           </PortalSection>
+          )}
         </div>
       ) : null}
 
@@ -1221,13 +1231,13 @@ export function BusinessReviewPortal({
           {shows("rep-rows") ? (
           <RepRowsTable
             areas={visibleAreas}
-            people={people}
+            people={visiblePeople}
             scopeNote={scopeLabel}
             visitsAvailable={visitsAvailable}
           />
           ) : null}
           {shows("customers-per-month") ? (
-            <CustomersPerMonthTable months={months} people={people} scopeNote={scopeLabel} />
+            <CustomersPerMonthTable months={months} people={visiblePeople} scopeNote={scopeLabel} />
           ) : null}
         </div>
       ) : null}

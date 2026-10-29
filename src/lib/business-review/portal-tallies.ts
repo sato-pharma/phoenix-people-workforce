@@ -19,7 +19,7 @@ type AreaLike = { vacant: boolean; hasTarget: boolean; allProducts: SliceLike };
 export type UndrawnDistrict = {
   name: string;
   sales: number;
-  /** Why it has no card: no target in the window, or the "Exclude vacant" switch is on. */
+  /** Why it has no card: no target in the window, or the "Hide vacant and resigned" switch is on. */
   reason: "no target" | "vacant hidden";
 };
 
@@ -54,7 +54,7 @@ export function districtCardsRemainder<T extends DistrictLike>(
 export function districtCardsRemainderText(remainder: DistrictCardsRemainder, money: (value: number) => string): string | null {
   if (remainder.remainderSales === 0) return null;
   const named = remainder.undrawn.map((district) => {
-    const why = district.reason === "no target" ? "no target in this window" : "hidden by Exclude vacant";
+    const why = district.reason === "no target" ? "no target in this window" : "hidden by Hide vacant and resigned";
     return `${district.name} ${money(district.sales)} (${why})`;
   });
   const where = named.length > 0 ? ` It sits in ${named.join(", ")}, which draws no card.` : "";

@@ -15,6 +15,7 @@ import { stripComments } from "./support/comment-strip.ts";
 const CANONICAL = "src/lib/business-review/canonical.ts";
 const ROLES = "src/lib/business-review/sources/roles.ts";
 const DASHBOARD = "src/components/business-review/dashboard.client.tsx";
+const PORTAL = "src/components/business-review/portal-review.client.tsx";
 
 export function runBusinessReviewResignedVacancyTests() {
   // ── 1. the one authority for "has left" ──────────────────────────────────────────────────────
@@ -75,10 +76,32 @@ export function runBusinessReviewResignedVacancyTests() {
       drops >= 2,
       `${DASHBOARD}: both the company and line people tables must drop resigned reps when "Exclude vacant" is on — found ${drops}.`,
     );
-    // The toggle now says what it does.
+    // The toggle says what it does, in the owner's words (2026-10-29: one switch, "Hide vacant and resigned").
     assert.ok(
-      src.includes("Exclude vacant &amp; resigned"),
-      `${DASHBOARD}: the toggle label must say it removes resigned as well as vacant.`,
+      (src.match(/>Hide vacant and resigned</g) ?? []).length >= 2,
+      `${DASHBOARD}: both admin toggles must read "Hide vacant and resigned".`,
+    );
+  }
+
+  // ── 5. The manager portal's switch hides resigned people too, and its vacant-areas list ────────
+  {
+    const src = stripComments(readFileSync(PORTAL, "utf8"));
+    assert.ok(src.includes(">Hide vacant and resigned<"), `${PORTAL}: the portal switch must read "Hide vacant and resigned".`);
+    assert.ok(!src.includes("Exclude vacant"), `${PORTAL}: the old "Exclude vacant" wording must be gone.`);
+    assert.match(
+      src,
+      /excludeVacant \? people\.filter\(\(p\) => !isResignedStatus\(p\.employmentStatus\)\) : people/,
+      `${PORTAL}: the switch must drop resigned people from the people lists.`,
+    );
+    const peopleProps = src.match(/people=\{[a-zA-Z]+\}/g) ?? [];
+    assert.ok(
+      peopleProps.length >= 2 && peopleProps.every((prop) => prop === "people={visiblePeople}"),
+      `${PORTAL}: every people list must read the switched list — found ${peopleProps.join(", ")}.`,
+    );
+    assert.match(
+      src,
+      /\{excludeVacant \? null : \(\s*<PortalSection[\s\S]{0,200}title=\{\x60Vacant areas \(/,
+      `${PORTAL}: the Vacant areas list must hide while the switch is on.`,
     );
   }
 }

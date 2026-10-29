@@ -430,8 +430,8 @@ function CompanyDashboard({
         subtitle={narrowed ? `filtered view · ≥90% = earner · viewing as ${viewerRole}` : `${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
-          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant and resigned territories" />
-          <span className="text-sm font-medium">Exclude vacant &amp; resigned</span>
+          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Hide vacant and resigned" />
+          <span className="text-sm font-medium">Hide vacant and resigned</span>
         </label>
       </ReviewHeader>
 
@@ -551,8 +551,8 @@ function LineDashboard({
         subtitle={narrowed ? `filtered view · ≥90% = earner · viewing as ${viewerRole}` : `all products · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
-          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant and resigned territories" />
-          <span className="text-sm font-medium">Exclude vacant &amp; resigned</span>
+          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Hide vacant and resigned" />
+          <span className="text-sm font-medium">Hide vacant and resigned</span>
         </label>
       </ReviewHeader>
 
