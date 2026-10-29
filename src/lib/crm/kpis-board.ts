@@ -87,6 +87,7 @@ import {
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { buildKpiManagerRows, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { loadKpiDoctorBricks } from "@/lib/crm/kpis-doctor-bricks";
+import { buildKpiBrickRows, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
 import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
@@ -350,6 +351,13 @@ export type KpiRepRow = {
    * the rep has neither a CRM id nor an hr id, and then there is no list to open.
    */
   coverageRepKey?: string | null;
+
+  /**
+   * How many doctors on this rep's list have no validated live photo yet (owner, 2026-10-29). Stamped
+   * by `getKpisBoard` on the Coverage and Frequency tabs, and ONLY when the brick read landed — left
+   * undefined it prints nothing, never a 0. A just-started rep is judged by nothing, so never stamped.
+   */
+  notValidatedDoctors?: number | null;
 };
 
 /**
@@ -384,7 +392,7 @@ export type KpiCoverageDoctor = {
   due: boolean;
   /**
    * The brick of his validated live photo, and whether he is validated at all — stamped by
-   * `getKpisBoard` from `loadKpiDoctorBricks` for the one open rep (owner, 2026-10-29). Both stay
+   * `getKpisBoard` from ONE `loadKpiDoctorBricks` read over every rep's list (owner, 2026-10-29). Both stay
    * undefined when that read failed, and then the list prints no brick rather than a wrong one
    * (see `KpiDoctorFilterable`).
    */
@@ -433,17 +441,20 @@ export function selectKpiCoverageRep(reps: readonly KpiRepRow[], requested: stri
 }
 
 /**
- * The legacy doctor list's rows for one rep, in the Coverage tab's shape: doctors (SP contacts) on
- * the plan and nothing else — exactly the population `plannedDoctors` counts in
- * buildRepDoctorListsBoard. Off-plan visits and pharmacies are the other columns' business.
+ * The legacy doctor list's rows for EVERY rep, keyed by the builder's rep key, in the Coverage tab's
+ * shape: doctors (SP contacts) on the plan and nothing else — exactly the population `plannedDoctors`
+ * counts in buildRepDoctorListsBoard. Off-plan visits and pharmacies are the other columns' business.
+ * One pass, so the team's brick table (owner, 2026-10-29) costs no more than one rep's list.
  */
-export function legacyKpiCoverageDoctors(
+export function groupLegacyKpiCoverageDoctors(
   doctors: readonly RepDoctorListDoctorRow[],
-  repKey: string,
-): Array<Omit<KpiCoverageDoctor, "due">> {
-  return doctors
-    .filter((doctor) => doctor.repKey === repKey && doctor.kind === "sp" && doctor.status !== "off_plan")
-    .map((doctor) => ({
+): Map<string, Array<Omit<KpiCoverageDoctor, "due">>> {
+  const out = new Map<string, Array<Omit<KpiCoverageDoctor, "due">>>();
+  for (const doctor of doctors) {
+    if (doctor.kind !== "sp" || doctor.status === "off_plan") continue;
+    const list = out.get(doctor.repKey) ?? [];
+    out.set(doctor.repKey, list);
+    list.push({
       contactCrmId: doctor.contactCrmId,
       // The builder fills a missing name with "Contact <id>", and the board prints names, never ids.
       name: doctor.contactName === `Contact ${doctor.contactCrmId}` ? null : doctor.contactName,
@@ -453,7 +464,56 @@ export function legacyKpiCoverageDoctors(
       lastVisitDate: doctor.status === "seen" ? doctor.lastVisitDate : null,
       planDates: doctor.planDates,
       frequency: planFrequency(doctor),
-    }));
+    });
+  }
+  return out;
+}
+
+/** One rep's rows of {@link groupLegacyKpiCoverageDoctors} — the same grouping, so the two never disagree. */
+export function legacyKpiCoverageDoctors(
+  doctors: readonly RepDoctorListDoctorRow[],
+  repKey: string,
+): Array<Omit<KpiCoverageDoctor, "due">> {
+  return groupLegacyKpiCoverageDoctors(doctors).get(repKey) ?? [];
+}
+
+/** A rep's doctor list on the Coverage and Frequency tabs, before the brick stamps. */
+export type KpiRepDoctorList = { row: KpiRepRow; doctors: ReadonlyArray<Omit<KpiCoverageDoctor, "due">> };
+
+/**
+ * Stamps the bricks of ONE read over every rep's list (owner, 2026-10-29) and builds the team's brick
+ * table from them. Pure, so the rules are pinned by a test with no database near it:
+ *
+ *   - `bricks` null (the read failed): no doctor is stamped, no rep gets a not-validated count and
+ *     there is no team table — nobody is called "not validated" on a read that never landed;
+ *   - a just-started rep's list is stamped (his own list still filters by brick), but he gets no count
+ *     and stays out of the team table, as he stays out of the team tiles;
+ *   - each rep's `notValidatedDoctors` is the number of his doctors missing from the read.
+ */
+export function stampKpiDoctorBricks(
+  lists: readonly KpiRepDoctorList[],
+  bricks: ReadonlyMap<number, string | null> | null,
+): { doctorsOf: Map<KpiRepRow, ReadonlyArray<Omit<KpiCoverageDoctor, "due">>>; teamBricks: KpiBrickRow[] | null } {
+  const doctorsOf = new Map<KpiRepRow, ReadonlyArray<Omit<KpiCoverageDoctor, "due">>>();
+  for (const { row, doctors } of lists) {
+    if (!bricks) {
+      doctorsOf.set(row, doctors);
+      continue;
+    }
+    doctorsOf.set(
+      row,
+      doctors.map((doctor) => ({
+        ...doctor,
+        brick: bricks.get(doctor.contactCrmId) ?? null,
+        placeValidated: bricks.has(doctor.contactCrmId),
+      })),
+    );
+    if (!row.justStarted) row.notValidatedDoctors = doctors.filter((doctor) => !bricks.has(doctor.contactCrmId)).length;
+  }
+  const teamBricks = bricks
+    ? buildKpiBrickRows(lists.filter(({ row }) => !row.justStarted).map(({ row }) => doctorsOf.get(row) ?? []))
+    : null;
+  return { doctorsOf, teamBricks };
 }
 
 /** The owner's plan-basis words for one doctor, from the status `rep-doctor-lists` already computed. */
@@ -669,6 +729,12 @@ export type KpisBoard = {
    * always null when the board was built for any other tab.
    */
   coverageDetail?: KpiCoverageDetail | null;
+  /**
+   * Coverage and frequency per brick across every rep on screen (owner, 2026-10-29: "a brick view for
+   * managers across all their reps"), from `buildKpiBrickRows`. Just-started reps are left out, so its
+   * Planned total is the team tile's. Null when the lists were not asked for or the brick read failed.
+   */
+  teamBricks?: KpiBrickRow[] | null;
 };
 
 /** One place on a podium. `value` is already the percentage the caption prints. */
@@ -1285,6 +1351,7 @@ export async function getKpisBoard(input: {
     kpiRulesNote: null,
     phoenixTotals: null,
     coverageDetail: null,
+    teamBricks: null,
   };
 
   if (scope.kind === "none") {
@@ -1465,34 +1532,47 @@ export async function getKpisBoard(input: {
   // The same filter state, read the way a manager row can answer it — see applyKpiManagerFilters.
   const managers = applyKpiManagerFilters(scopedManagers, filters);
 
-  // THE COVERAGE TAB'S DOCTOR LISTS, for one rep. Chosen from `reps` — after the scope gate AND the
-  // filters — so a URL can only ever open a rep who is already on screen. Read from whichever rules
-  // scored his row, so the two lists always add up to the Covered and Not reached numbers beside them.
+  // THE DOCTOR LISTS, for every rep on screen, when the Coverage or Frequency tab asked for them. Read
+  // from whichever rules scored EACH rep's row — a board can hold both at once, and a rep still on
+  // the vendor's rules must get the plan-basis list that adds up to his row. The reads behind them are
+  // already uncapped and company-wide on these tabs, so every list here is complete.
+  const legacyLists = input.coverageDoctors ? groupLegacyKpiCoverageDoctors(docList.doctors) : null;
+  const repLists: KpiRepDoctorList[] = input.coverageDoctors
+    ? reps.flatMap((row) =>
+        row.coverageRepKey
+          ? [
+              {
+                row,
+                doctors:
+                  phoenix && row.phoenix
+                    ? phoenix.coverageDoctorsFor(row.agentHrId)
+                    : (legacyLists?.get(row.coverageRepKey) ?? []),
+              },
+            ]
+          : [],
+      )
+    : [];
+  // Each doctor's brick, from the validated live photo, in ONE read over every list: the Brick filter,
+  // the By brick tables, the team's brick table and each row's not-validated count all come from it.
+  // A failed read stamps nothing, so no doctor is called "not validated" on a read that never landed.
+  // No contacts at all resolves to an empty map with no round trip, so a null here means only "not
+  // asked" or "failed" — the export says which (kpis-board-workbook.ts).
+  const doctorBricks = input.coverageDoctors
+    ? await loadKpiDoctorBricks(repLists.flatMap(({ doctors }) => doctors.map((doctor) => doctor.contactCrmId)))
+    : null;
+  const { doctorsOf, teamBricks } = stampKpiDoctorBricks(repLists, doctorBricks);
+
+  // THE OPEN REP'S LIST. Chosen from `reps` — after the scope gate AND the filters — so a URL can only
+  // ever open a rep who is already on screen; his list is the one stamped above, never read twice.
   const coverageRep = input.coverageDoctors ? selectKpiCoverageRep(reps, input.coverageDoctors.rep) : null;
   const coverageRepKey = coverageRep?.coverageRepKey ?? null;
-  // Read from whichever rules scored THIS rep's row — a board can hold both at once, and a rep still
-  // on the vendor's rules must get the plan-basis list that adds up to his row.
-  const coverageDoctors: ReadonlyArray<Omit<KpiCoverageDoctor, "due">> | null =
-    coverageRep && coverageRepKey
-      ? phoenix && coverageRep.phoenix
-        ? phoenix.coverageDoctorsFor(coverageRep.agentHrId)
-        : legacyKpiCoverageDoctors(docList.doctors, coverageRepKey)
-      : null;
-  // Each doctor's brick, from his validated live photo, for the Brick filter and the By brick table.
-  // A failed read stamps nothing, so no doctor is called "not validated" on a read that never landed.
-  const doctorBricks = coverageDoctors ? await loadKpiDoctorBricks(coverageDoctors.map((doctor) => doctor.contactCrmId)) : null;
+  const coverageDoctors = coverageRep ? (doctorsOf.get(coverageRep) ?? null) : null;
   const coverageDetail =
     coverageRep && coverageRepKey && coverageDoctors
       ? buildKpiCoverageDetail({
           repKey: coverageRepKey,
           repName: coverageRep.repName,
-          doctors: doctorBricks
-            ? coverageDoctors.map((doctor) => ({
-                ...doctor,
-                brick: doctorBricks.get(doctor.contactCrmId) ?? null,
-                placeValidated: doctorBricks.has(doctor.contactCrmId),
-              }))
-            : coverageDoctors,
+          doctors: coverageDoctors,
           todayIso: input.todayIso,
         })
       : null;
@@ -1570,6 +1650,7 @@ export async function getKpisBoard(input: {
     reps,
     managers,
     coverageDetail,
+    teamBricks,
     kpiReports,
     scopedReps: scopedReps.length,
     noGpsFeedShown,

@@ -374,18 +374,20 @@ export function runKpiReportFilterWiringTests() {
   // The Brick filter leads the doctor bar, and the coverage header cuts the whole list by brick, each
   // brick a link into the list narrowed to it.
   assert.match(doctorBar, /const GROUPS[^=]*= \[\s*\{ key: "bricks", title: "Brick"/, "the Brick filter is the first group");
-  assert.match(view, /<CoverageBreakdown rows=\{brickCoverageRows\(context, all\)\}/, "the By brick table counts the whole list");
-  assert.match(view, /doctor: \{ \.\.\.board\.filters\.doctor, bricks: \[value\] \}/, "each brick links into its own doctors");
+  assert.match(view, /<BrickBreakdown context=\{context\} rows=\{buildKpiBrickRows\(\[all\]\)\}/, "the By brick table counts the whole list");
+  assert.match(view, /doctor: \{ \.\.\.board\.filters\.doctor, bricks: \[row\.brick\]/, "each brick links into its own doctors");
   assert.match(view, /kpiDoctorBrickLabel\(doctor\)\]/, "each doctor row prints his brick");
 
   // The board stamps the brick ONLY when the read landed: a failed read must not call every doctor
-  // "not validated", which is a statement about the rep's work.
+  // "not validated", which is a statement about the rep's work. The stamp is one pure function now,
+  // pinned by behaviour in tests/kpis-brick-table.test.ts; here, that the board goes through it.
   const board = code("src/lib/crm/kpis-board.ts");
   assert.match(
     board,
-    /doctors: doctorBricks\s*\?\s*coverageDoctors\.map\(\(doctor\) => \(\{[\s\S]*?placeValidated: doctorBricks\.has\(doctor\.contactCrmId\),[\s\S]*?\}\)\)\s*:\s*coverageDoctors,/,
+    /export function stampKpiDoctorBricks\([\s\S]*?if \(!bricks\) \{\s*doctorsOf\.set\(row, doctors\);\s*continue;/,
     "the brick is stamped only on a read that landed",
   );
+  assert.match(board, /stampKpiDoctorBricks\(repLists, doctorBricks\)/, "and the board stamps through it");
   const bricks = code("src/lib/crm/kpis-doctor-bricks.ts");
   assert.match(bricks, /catch \(error\) \{[^}]*return null;/, "a failed brick read answers null, never an empty map");
   assert.ok(!/\.or\(/.test(bricks), "the brick read takes two plain .in() reads, never an or() string");

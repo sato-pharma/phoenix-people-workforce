@@ -12,12 +12,22 @@
  *
  * Wears the house identity (SATO-DIS-2026-01): the masthead, the blue header band, the hairline grid
  * and the 6% zebra. The status signal colours ONLY the percentage cells, by the board's own bands.
+ *
+ * FROM THE COVERAGE AND FREQUENCY TABS (owner, 2026-10-29: "Brick on the KPIs Excel export") the board
+ * arrives with its doctor lists, and the file adds three things, each the screen's own:
+ *   - a "Not validated yet" column on the reps sheet — the count under each rep's Coverage figure;
+ *   - a "By brick" sheet — the team's brick table, `board.teamBricks`, counted as the screen counts it;
+ *   - a "Doctors" sheet when a rep's list is open — his doctors narrowed by the doctor filters on screen
+ *     (`filterKpiDoctors`), so a brick picked on the board is the brick in the file.
+ * When the bricks could not be read the cover says so and the column prints "Not read", never a 0.
  */
 
 import ExcelJS from "exceljs";
-import type { KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
+import type { KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 import { kpiIndexOf } from "@/lib/crm/kpi-index";
 import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
+import { KPI_FREQUENCY_STATUS_LABEL, kpiBrickFrequencyColumns, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
+import { countActiveKpiDoctorFilter, filterKpiDoctors, kpiDoctorBrickLabel } from "@/lib/crm/kpis-doctor-filters";
 import { kpiBandOf, kpiFlagLabel, kpiFlagsOf } from "@/lib/crm/kpis-filters";
 import { buildHouseCoverSheet } from "@/lib/export/house-table-workbook";
 import {
@@ -38,14 +48,24 @@ export const KPI_EXPORT_MARKERS = {
   noScore: "No score",
   justStarted: "Just started",
   notRecorded: "Not recorded",
+  /** A count the bricks would have given, when the bricks could not be read. */
+  notRead: "Not read",
+  nameNotOnPlan: "Name not on the plan",
+  notVisited: KPI_FREQUENCY_STATUS_LABEL["not-visited"],
 } as const;
+
+/** What the route knows about the board that the board does not say itself. */
+export type KpisWorkbookOptions = {
+  /** True when the export came from the Coverage or Frequency tab, so the bricks were asked for. */
+  doctorLists?: boolean;
+};
 
 /** A cell value: a number with its format, a date, a marker in words, or blank. */
 type Cell =
   | { kind: "pct"; value: number | null; marker: string }
   | { kind: "rate"; value: number | null; marker: string }
   | { kind: "count"; value: number }
-  | { kind: "date"; value: string | null }
+  | { kind: "date"; value: string | null; marker?: string }
   | { kind: "text"; value: string | null };
 
 type Column<Row> = { header: string; width: number; cell: (row: Row) => Cell };
@@ -111,8 +131,21 @@ function text(value: string | null | undefined): Cell {
   return { kind: "text", value: value?.trim() || null };
 }
 
-function repColumns(board: KpisBoard): Array<Column<KpiRepRow>> {
+/** The reps sheet's "Not validated yet": the count, the board's words for a new rep, or "Not read". */
+function notValidatedCell(row: KpiRepRow, bricksRead: boolean): Cell {
+  if (row.justStarted) return { kind: "text", value: KPI_EXPORT_MARKERS.justStarted };
+  if (!bricksRead) return { kind: "text", value: KPI_EXPORT_MARKERS.notRead };
+  // Read, and still no count: the rep has no doctor list on the plan to count.
+  if (row.notValidatedDoctors == null) return { kind: "text", value: KPI_EXPORT_MARKERS.noPlan };
+  return { kind: "count", value: row.notValidatedDoctors };
+}
+
+function repColumns(board: KpisBoard, bricks: { asked: boolean; read: boolean }): Array<Column<KpiRepRow>> {
   const rules = board.kpiRules;
+  const notValidated: Array<Column<KpiRepRow>> =
+    bricks.asked || bricks.read
+      ? [{ header: "Not validated yet", width: 11, cell: (row) => notValidatedCell(row, bricks.read) }]
+      : [];
   return [
     { header: "Medical rep", width: 28, cell: (row) => text(row.repName) },
     { header: "Hire date", width: 13, cell: (row) => ({ kind: "date", value: row.hireDate ?? null }) },
@@ -123,6 +156,7 @@ function repColumns(board: KpisBoard): Array<Column<KpiRepRow>> {
     { header: "Coverage", width: 11, cell: (row) => planPct(row, row.coveragePct) },
     { header: "Doctors planned", width: 11, cell: (row) => ({ kind: "count", value: row.plannedDoctors }) },
     { header: "Doctors visited", width: 11, cell: (row) => ({ kind: "count", value: row.visitedDoctors }) },
+    ...notValidated,
     { header: "Frequency", width: 11, cell: (row) => planPct(row, row.frequencyPct) },
     { header: `AM vs ${board.amTarget} a day`, width: 12, cell: amPct },
     { header: "AM verified", width: 10, cell: (row) => proved(row, row.amVerified, "count") },
@@ -187,6 +221,47 @@ function managerColumns(board: KpisBoard): Array<Column<KpiManagerRow>> {
   ];
 }
 
+/** The By brick sheet: the screen's columns, in the board's own frequency words. */
+function brickColumns(board: KpisBoard): Array<Column<KpiBrickRow>> {
+  return [
+    { header: "Brick", width: 30, cell: (row) => text(row.label) },
+    { header: "Reps", width: 9, cell: (row) => ({ kind: "count", value: row.reps }) },
+    { header: "Doctors planned", width: 11, cell: (row) => ({ kind: "count", value: row.planned }) },
+    { header: "Doctors visited", width: 11, cell: (row) => ({ kind: "count", value: row.covered }) },
+    {
+      header: "Coverage",
+      width: 11,
+      cell: (row) => ({
+        kind: "pct",
+        value: row.planned > 0 ? Math.round((row.covered / row.planned) * 100) : null,
+        marker: KPI_EXPORT_MARKERS.noPlan,
+      }),
+    },
+    ...kpiBrickFrequencyColumns(board.kpiRules === "phoenix").map(
+      (column): Column<KpiBrickRow> => ({ header: column.label, width: 11, cell: (row) => ({ kind: "count", value: column.count(row) }) }),
+    ),
+  ];
+}
+
+/** The open rep's doctors, as the list on screen prints each one. */
+function doctorColumns(): Array<Column<KpiCoverageDoctor>> {
+  return [
+    { header: "Doctor", width: 30, cell: (row) => text(row.name ?? KPI_EXPORT_MARKERS.nameNotOnPlan) },
+    { header: "Speciality", width: 18, cell: (row) => text(row.speciality) },
+    { header: "Grade", width: 8, cell: (row) => text(row.grade) },
+    { header: "Brick", width: 24, cell: (row) => text(kpiDoctorBrickLabel(row) ?? KPI_EXPORT_MARKERS.notRead) },
+    { header: "Days planned", width: 10, cell: (row) => ({ kind: "count", value: row.planDates.length }) },
+    { header: "First planned day", width: 13, cell: (row) => ({ kind: "date", value: row.planDates[0] ?? null }) },
+    { header: "Visits", width: 9, cell: (row) => ({ kind: "count", value: row.visits }) },
+    {
+      header: "Last visit",
+      width: 13,
+      cell: (row) => ({ kind: "date", value: row.lastVisitDate, marker: KPI_EXPORT_MARKERS.notVisited }),
+    },
+    { header: "Verdict", width: 14, cell: (row) => text(row.frequency ? KPI_FREQUENCY_STATUS_LABEL[row.frequency.status] : null) },
+  ];
+}
+
 function writeCell(cell: ExcelJS.Cell, value: Cell, zebra: boolean) {
   houseBodyStyle(cell, { zebra, size: 9.5 });
   const markerFont = { color: { argb: HOUSE_XLSX_COLORS.muted }, italic: true, name: HOUSE_XLSX_FONT, size: 9 };
@@ -230,7 +305,7 @@ function writeCell(cell: ExcelJS.Cell, value: Cell, zebra: boolean) {
         cell.numFmt = "dd mmm yyyy";
         cell.alignment = { horizontal: "left", vertical: "middle" };
       } else {
-        cell.value = KPI_EXPORT_MARKERS.notRecorded;
+        cell.value = value.marker ?? KPI_EXPORT_MARKERS.notRecorded;
         cell.font = markerFont;
       }
       return;
@@ -304,7 +379,11 @@ function pctWords(value: number | null, marker: string): string {
 /**
  * The workbook for one board. `generatedAtIso` is passed in so a test can pin the cover's time.
  */
-export async function buildKpisBoardWorkbook(board: KpisBoard, generatedAtIso: string): Promise<Buffer> {
+export async function buildKpisBoardWorkbook(
+  board: KpisBoard,
+  generatedAtIso: string,
+  options: KpisWorkbookOptions = {},
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
   workbook.created = new Date(generatedAtIso);
@@ -316,6 +395,20 @@ export async function buildKpisBoardWorkbook(board: KpisBoard, generatedAtIso: s
       : `${board.reps.length} of ${board.scopedReps} reps (filtered as on screen)`;
   const subtitle = `${board.monthLabel} · ${board.range.periodLabel} · ${board.scopeLabel}`;
   const { totals } = board;
+  const bricks = { asked: Boolean(options.doctorLists), read: board.teamBricks != null };
+  const detail = board.coverageDetail ?? null;
+  const allDoctors = detail ? [...detail.covered, ...detail.notCovered] : [];
+  const doctors = detail ? filterKpiDoctors(allDoctors, board.filters.doctor) : [];
+  const doctorsShown = detail
+    ? `${doctors.length} of ${allDoctors.length} doctors on ${detail.repName}'s list${
+        countActiveKpiDoctorFilter(board.filters.doctor) > 0 ? ", as filtered on screen" : ""
+      }`
+    : null;
+  const brickRows: Array<[string, string]> = bricks.read
+    ? [["Bricks", "Each doctor's brick is the one the doctor's validated live photo was filed in"]]
+    : bricks.asked
+      ? [["Bricks", "The doctors' bricks could not be read, so this file holds no brick figures"]]
+      : [];
 
   buildHouseCoverSheet(workbook, {
     title: "Field Force KPIs",
@@ -337,12 +430,14 @@ export async function buildKpisBoardWorkbook(board: KpisBoard, generatedAtIso: s
       [`Team PM vs ${board.pmTarget} a day`, pctWords(totals.pmAttainmentPct, KPI_EXPORT_MARKERS.noCalls)],
       ["Team overall", pctWords(board.kpiIndex.overallPct, KPI_EXPORT_MARKERS.noScore)],
       ["How overall is scored", board.kpiIndex.method],
+      ...brickRows,
+      ...(doctorsShown ? ([["Doctors", doctorsShown]] as Array<[string, string]>) : []),
       ...(board.holidaysComplete
         ? []
         : ([["Holidays", "A holiday calendar could not be read, so call rates may read low."]] as Array<[string, string]>)),
       houseGeneratedRow(generatedAtIso),
     ],
-    emphasise: (key) => key === "Holidays",
+    emphasise: (key) => key === "Holidays" || (key === "Bricks" && !bricks.read),
   });
 
   writeTableSheet(workbook, {
@@ -350,7 +445,7 @@ export async function buildKpisBoardWorkbook(board: KpisBoard, generatedAtIso: s
     title: "Medical reps",
     subtitle,
     provenance: [shown],
-    columns: repColumns(board),
+    columns: repColumns(board, bricks),
     rows: board.reps,
     empty: board.scopeReason ?? "No medical rep matches this board.",
   });
@@ -364,6 +459,32 @@ export async function buildKpisBoardWorkbook(board: KpisBoard, generatedAtIso: s
     rows: board.managers,
     empty: "No manager sits above the reps on this board.",
   });
+
+  if (board.teamBricks) {
+    writeTableSheet(workbook, {
+      sheetName: "By brick",
+      title: "By brick",
+      subtitle: `${subtitle} · every rep's planned doctors by the brick of the doctor's validated live photo`,
+      provenance: [
+        `${board.teamBricks.length} bricks · a doctor two reps both plan counts once for each, as Planned does · reps who have just started are left out`,
+      ],
+      columns: brickColumns(board),
+      rows: board.teamBricks,
+      empty: "No planned doctor on this board to put in a brick.",
+    });
+  }
+
+  if (detail && doctorsShown) {
+    writeTableSheet(workbook, {
+      sheetName: "Doctors",
+      title: `Doctors · ${detail.repName}`,
+      subtitle,
+      provenance: [doctorsShown],
+      columns: doctorColumns(),
+      rows: doctors,
+      empty: "No doctor on this list matches the filters on screen.",
+    });
+  }
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

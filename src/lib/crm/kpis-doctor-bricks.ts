@@ -18,15 +18,22 @@
  *   - the whole read returns null when it failed. The board then stamps NOTHING, so the list shows no
  *     brick at all rather than calling every doctor "not validated" — a statement about a rep's work.
  *
- * Read for one rep's list per page load, as the doctor lists themselves are (kpis-board.ts).
+ * Read ONCE per page load over every rep's list on the Coverage and Frequency tabs (kpis-board.ts),
+ * so the team's By brick table and each row's not-validated count come from the same answer as the
+ * open rep's list. Up to `WHOLE_READ_FROM` contacts the read asks for those contacts by id; above it,
+ * a company-wide plan list would take dozens of chunked round trips, so it reads every validated
+ * customer and every active place in pages instead. The chooser is the same either way.
  */
 
 import { phoenixContactId, PHOENIX_VALIDATED_AT_COLUMN } from "@/lib/customer-360/validated";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { asyncPool } from "@/lib/utils/async-pool";
 
 const IN_CHUNK = 150;
 const PARALLEL_CHUNKS = 4;
+/** Above this many contacts the whole validated set is cheaper to page through than to ask for by id. */
+export const WHOLE_READ_FROM = 600;
 
 /** The columns of a validated customer the chooser reads. */
 export type KpiBrickCustomer = {
@@ -88,6 +95,20 @@ export function chooseKpiDoctorBricks(
   return out;
 }
 
+/**
+ * The whole read's answer: the chooser over every validated customer and every active place, narrowed
+ * to the contacts asked for. A contact's customers are exactly the ones `phoenixContactId` files under
+ * him, so the chunked read (by either contact id) and this one give each asked-for contact the same brick.
+ */
+export function chooseWantedKpiDoctorBricks(
+  contactIds: readonly number[],
+  customers: readonly KpiBrickCustomer[],
+  places: readonly KpiBrickPlace[],
+): Map<number, string | null> {
+  const wanted = new Set(contactIds);
+  return new Map([...chooseKpiDoctorBricks(customers, places)].filter(([contactId]) => wanted.has(contactId)));
+}
+
 function chunk<T>(values: readonly T[]): T[][] {
   const out: T[][] = [];
   for (let at = 0; at < values.length; at += IN_CHUNK) out.push(values.slice(at, at + IN_CHUNK));
@@ -113,6 +134,22 @@ export async function loadKpiDoctorBricks(contactIds: readonly number[]): Promis
   try {
     const db = getSupabaseAdmin();
     const customerColumns = `id, status, ${PHOENIX_VALIDATED_AT_COLUMN}, reference_contact_crm_id, own_contact_crm_id`;
+    if (ids.length > WHOLE_READ_FROM) {
+      // Every validated customer and every active place (3,868 and 4,017 on 2026-10-29), paged by id:
+      // about five round trips where the chunked reads below would take thirty or more. The answer is
+      // then narrowed to the contacts asked for, so the map holds exactly what the chunked read would.
+      const [customers, places] = await Promise.all([
+        fetchAllRows<KpiBrickCustomer>(
+          () => db.from("phoenix_crm_customers").select(customerColumns).not(PHOENIX_VALIDATED_AT_COLUMN, "is", null).eq("is_test", false),
+          "id",
+        ),
+        fetchAllRows<KpiBrickPlace>(
+          () => db.from("phoenix_crm_places").select("id, customer_id, brick_name, created_at").eq("is_test", false).eq("status", "active"),
+          "id",
+        ),
+      ]);
+      return chooseWantedKpiDoctorBricks(ids, customers, places);
+    }
     // Two plain `in` reads rather than one `or(…)`: a contact is carried over from iReports360
     // (reference) or minted by Phoenix for a customer a rep added himself (own), and `phoenixContactId`
     // decides which one a customer is known by.

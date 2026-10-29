@@ -21,6 +21,11 @@ export const dynamic = "force-dynamic";
  * seat with CRM access — and the SAME `getKpisBoard`, so the scope gate inside it decides whose rows
  * the file holds: a District Manager exports his own district and nothing wider. The query string is
  * the board's own (month, period and every advanced filter), so the file is what was on screen.
+ *
+ * From the Coverage and Frequency tabs the link also carries the tab, the open rep and his doctor
+ * filters (owner, 2026-10-29), so the board is built WITH its doctor lists: the file then adds the
+ * team's By brick sheet, each rep's not-validated count and the open rep's doctors as filtered. `rep`
+ * is only a request here too — getKpisBoard opens a rep already on this viewer's board, or none.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -45,16 +50,18 @@ export async function GET(request: NextRequest) {
 
     const today = cairoTodayIso();
     const month = resolveRepsPlansMonth(searchParams.get("month") ?? undefined, today);
+    const tab = searchParams.get("tab");
+    const doctorsTab = tab === "coverage" || tab === "frequency";
     const board = await getKpisBoard({
       access,
       month,
       period: searchParams.get("period") ?? undefined,
       todayIso: today,
       filters: parseKpiFilters(params),
-      coverageDoctors: null,
+      coverageDoctors: doctorsTab ? { rep: searchParams.get("rep") || null } : null,
     });
 
-    const buffer = await buildKpisBoardWorkbook(board, new Date().toISOString());
+    const buffer = await buildKpisBoardWorkbook(board, new Date().toISOString(), { doctorLists: doctorsTab });
 
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,

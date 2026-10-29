@@ -279,11 +279,12 @@ export function runKpiCoverageRepSelectionTests() {
     "getKpisBoard chooses the open rep from the filtered, in-scope rows",
   );
 
-  // The admin page asks for the lists on the Coverage tab alone, so no other tab ships a doctor list.
+  // The admin page asks for the lists on the Coverage and Frequency tabs — one list, read two ways, as
+  // the portal reports read it (owner, 2026-10-29: frequency by brick) — so no other tab ships one.
   assert.match(
     read("app/(admin)/admin/kpis/page.tsx"),
-    /coverageDoctors: tab === "coverage" \? \{ rep: one\(params\?\.rep\) \?\? null \} : null/,
-    "the admin KPIs page asks for the doctor lists on the Coverage tab",
+    /coverageDoctors: tab === "coverage" \|\| tab === "frequency" \? \{ rep: one\(params\?\.rep\) \?\? null \} : null/,
+    "the admin KPIs page asks for the doctor lists on the Coverage and Frequency tabs only",
   );
   // The portal split the board on 2026-10-14: the doctor lists went with the Coverage and Frequency
   // reports (one list, read two ways), and the consolidated KPIs page ships none at all.
