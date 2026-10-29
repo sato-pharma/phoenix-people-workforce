@@ -1437,6 +1437,10 @@ export function StockTab({
     const found = data.locations.find((location) => location.id === id);
     return found ? S.name(found) : id;
   };
+  // 🔴 THIS product's factory, never the first location flagged as one. Royanoxicam is made at two
+  // factories, and the other one's store is no place to record this product's stock.
+  const ownFactoryId = selectedProductOf(data)?.factoryLocationId ?? null;
+  const ownLocations = data.locations.filter((location) => !location.isFactory || location.id === ownFactoryId);
 
   // A delivery is the amount SENT and is added to what is already held, so the field asks for a
   // different number from the other three sources and says which balance it lands on. The sum
@@ -1483,7 +1487,7 @@ export function StockTab({
                 value={locationId}
               >
                 <option value="">{t.stockLocation}</option>
-                {data.locations.map((location) => (
+                {ownLocations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {S.name(location)}
                   </option>
@@ -1592,9 +1596,7 @@ export function StockTab({
               // 🔴 The SUMMED figure the server computed, not `stock.find(...)`. With lots, several
               // rows share a location, and `find` would show one batch as if it were the whole
               // balance — reading 100 kg where 230 kg is held.
-              const factory = material.heldByLocation.find(
-                (row) => data.locations.find((location) => location.id === row.locationId)?.isFactory,
-              );
+              const factory = material.heldByLocation.find((row) => row.locationId === ownFactoryId);
               const own = material.heldByLocation.find(
                 (row) => !data.locations.find((location) => location.id === row.locationId)?.isFactory,
               );

@@ -718,12 +718,33 @@ function factoryLocationIdFor(data: ProductionPlanningData, product: LoadedProdu
   return product.factoryLocationId ?? data.locations.find((location) => location.isFactory)?.id ?? null;
 }
 
+/**
+ * The stock ONE product can draw on — its own factory and Sato's own stores, never another factory.
+ *
+ * 🔴 Royanoxicam is made at TWO factories from 2026-10-29: Egyphar (no stock) and Medizen (old stock
+ * of the active, the foil, the box and the leaflet). Without this filter Medizen's boxes sat in the
+ * Egyphar plan's "Sato store" column and came off its buy list — stock in another factory's store
+ * cannot be used in this factory's batch. The same was already true, unseen, of DBK's citric acid on
+ * Ivyronc's plan. A product with no product given (`null`) keeps every lot.
+ */
+function stockForProduct(data: ProductionPlanningData, product: LoadedProduct | null | undefined): readonly LoadedStock[] {
+  if (!product) return data.stock;
+  const ownFactoryId = factoryLocationIdFor(data, product);
+  const otherFactories = new Set(
+    data.locations.filter((location) => location.isFactory && location.id !== ownFactoryId).map((location) => location.id),
+  );
+  if (otherFactories.size === 0) return data.stock;
+  return data.stock.filter((row) => !otherFactories.has(row.locationId));
+}
+
 /** The lots of one product's materials, ready for `evaluateExpiry`. */
 function expiryLotsFor(data: ProductionPlanningData, productId: string | null): ExpiryLot[] {
   const materials = materialsForProduct(data, productId);
   const byId = new Map(materials.map((material) => [material.id, material]));
   const lots: ExpiryLot[] = [];
-  for (const row of data.stock) {
+  // Only the lots this product could use: the expiry sweep walks every product, so a lot at another
+  // factory is still reported once, under the product made there.
+  for (const row of stockForProduct(data, data.products.find((candidate) => candidate.id === productId))) {
     const material = byId.get(row.materialId);
     if (!material) continue;
     lots.push({
@@ -937,7 +958,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
   const compositions = data.compositionsByProductId.get(product.id) ?? [];
   const compositionByMaterialId = new Map(compositions.map((row) => [row.materialId, row]));
   const factoryLocationId = factoryLocationIdFor(data, product);
-  const stockByMaterialId = heldByMaterialAndLocation(data.stock);
+  const stockByMaterialId = heldByMaterialAndLocation(stockForProduct(data, product));
   const priceByMaterialId = new Map(data.prices.map((row) => [row.materialId, row]));
 
   const materials = materialsForProduct(data, product.id);
@@ -1278,10 +1299,12 @@ export async function getProductionPlanningWorkspace(
   const compositions = productId ? data.compositionsByProductId.get(productId) ?? [] : [];
   const compositionByMaterialId = new Map(compositions.map((row) => [row.materialId, row]));
   // Hoisted out of the map below: folding every lot once per material is quadratic, and the stock
-  // table is the longest list on this screen.
-  const heldByMaterial = heldByMaterialAndLocation(data.stock);
+  // table is the longest list on this screen. Only the selected product's own factory and Sato's
+  // stores: the Stock tab must agree with the plan beside it.
+  const productStock = stockForProduct(data, data.products.find((candidate) => candidate.id === productId));
+  const heldByMaterial = heldByMaterialAndLocation(productStock);
   const lotsByMaterialAndLocation = new Map<string, LoadedStock[]>();
-  for (const row of data.stock) {
+  for (const row of productStock) {
     const key = `${row.materialId}/${row.locationId}`;
     const list = lotsByMaterialAndLocation.get(key) ?? [];
     list.push(row);
@@ -1350,7 +1373,7 @@ export async function getProductionPlanningWorkspace(
           : null,
         // One row per LOT, soonest expiry first, with the undated packaging lots last. The screen
         // reads this straight into its own rows, so the order here IS the order he sees.
-        stock: data.stock
+        stock: productStock
           .filter((row) => row.materialId === material.id)
           .slice()
           .sort((a, b) => (a.expiryDate ?? "9999-12-31").localeCompare(b.expiryDate ?? "9999-12-31"))
@@ -2314,7 +2337,7 @@ function computePlanInternal(data: ProductionPlanningData, productId: string) {
   const compositions = data.compositionsByProductId.get(productId) ?? [];
   const compositionByMaterialId = new Map(compositions.map((row) => [row.materialId, row]));
   const factoryLocationId = factoryLocationIdFor(data, product);
-  const stockByMaterialId = heldByMaterialAndLocation(data.stock);
+  const stockByMaterialId = heldByMaterialAndLocation(stockForProduct(data, product));
 
   const requirements = materialsForProduct(data, productId).map((material) => {
     const composition = compositionByMaterialId.get(material.id) ?? null;

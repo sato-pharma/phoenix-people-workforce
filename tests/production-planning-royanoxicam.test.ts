@@ -17,6 +17,8 @@ import {
 import {
   computePlan,
   effectiveSupplier,
+  evaluateExpiryForProduct,
+  type LoadedStock,
   materialsForProduct,
   otherProductsUsingMaterial,
   type LoadedComposition,
@@ -70,10 +72,13 @@ const MIGRATION = "supabase/migrations/20261020200000_production_planning_royano
 const FACTORY_MOVE = "supabase/migrations/20261021004800_production_planning_royanoxicam_egyphar.sql";
 const NO_SAMPLES = "supabase/migrations/20261024150548_prodplan_products_default_sample_units.sql";
 const SUPPLIER_LINK = "supabase/migrations/20261029000100_prodplan_product_materials_supplier.sql";
+const MEDIZEN_MIGRATION = "supabase/migrations/20261029040000_production_planning_royanoxicam_medizen.sql";
+const SERVICE = "src/lib/production-planning/service.ts";
 const WORKSPACE_SCREEN = "src/components/production-planning/production-planning-workspace.tsx";
 
 const EGYPHAR = "loc-egyphar";
 const SATO_STORE = "loc-sato";
+const MEDIZEN = "loc-medizen";
 
 /** Royanoxicam: a fixed 31 kg batch counted in MILLIGRAMS, 155 mg a tablet, 20 tablets a box. */
 const ROYANOXICAM: RunGeometry = {
@@ -305,6 +310,55 @@ function withLinkSuppliers(links: [string, MaterialSupplier][]): ProductionPlann
   return { ...planningData(), linkSupplierByProductId: new Map([["prod-royanoxicam", new Map(links)]]) };
 }
 
+/** One counted lot, as the loader hands it over. */
+function lot(materialId: string, locationId: string, qty: string, expiryDate: string | null = null): LoadedStock {
+  return {
+    asOfDate: "2026-04-19",
+    expiryDate,
+    locationId,
+    materialId,
+    note: null,
+    qty: parseQty(qty),
+    source: "factory_report",
+  };
+}
+
+/**
+ * Royanoxicam at TWO factories — Egyphar's product and Medizen's, the same formula — with Medizen's
+ * old stock in Medizen's store and whatever else the caller puts in `stock`.
+ */
+function twoFactoryData(stock: LoadedStock[]): ProductionPlanningData {
+  const base = planningData();
+  const egyphar = base.products[0]!;
+  return {
+    ...base,
+    compositionsByProductId: new Map([
+      ...base.compositionsByProductId,
+      ["prod-royanoxicam-medizen", base.compositionsByProductId.get("prod-royanoxicam") ?? []],
+    ]),
+    locations: [
+      ...base.locations,
+      { code: "MEDIZEN", id: MEDIZEN, isFactory: true, nameAr: "ميديزن", nameEn: "Medizen" },
+    ],
+    materialIdsByProductId: new Map([
+      ...base.materialIdsByProductId,
+      ["prod-royanoxicam-medizen", base.materialIdsByProductId.get("prod-royanoxicam") ?? new Set<string>()],
+    ]),
+    products: [
+      { ...egyphar, nameEn: "Royanoxicam 8 mg — Egyphar" },
+      {
+        ...egyphar,
+        code: "ROYANOXICAM_MEDIZEN",
+        factoryLocationId: MEDIZEN,
+        id: "prod-royanoxicam-medizen",
+        manufacturerName: "Medizen Pharmaceutical Industries",
+        nameEn: "Royanoxicam 8 mg — Medizen",
+      },
+    ],
+    stock,
+  };
+}
+
 /** The row in column A carrying exactly this label. */
 function rowOfLabel(sheet: ExcelJS.Worksheet, label: string): number {
   const matches: number[] = [];
@@ -321,8 +375,10 @@ function rowOfLabel(sheet: ExcelJS.Worksheet, label: string): number {
  * 🔴 `\r` is stripped first: `core.autocrlf=true` puts CRLF in this laptop's working tree and the
  * CI runner checks out LF, so a reader that does not normalise is red here and green there.
  */
-function compositionRowsFromMigration(): { code: string; basis: string; qty: number; supplier: string }[] {
-  const sql = stripSqlComments(readFileSync(MIGRATION, "utf8").replace(/\r\n/g, "\n"));
+function compositionRowsFromMigration(
+  path: string = MIGRATION,
+): { code: string; basis: string; qty: number; supplier: string }[] {
+  const sql = stripSqlComments(readFileSync(path, "utf8").replace(/\r\n/g, "\n"));
   const rows: { code: string; basis: string; qty: number; supplier: string }[] = [];
   const pattern = /\('([A-Z0-9_]+)',\s*'(per_dose|per_box)',\s*([0-9.]+),\s*'(sato|factory)'/g;
   for (const match of sql.matchAll(pattern)) {
@@ -682,4 +738,150 @@ export async function runProductionPlanningRoyanoxicamTests() {
     false,
     "and no formula line is written — the foil's amount is still his to give",
   );
+  // ── Royanoxicam at a SECOND factory: Medizen, with its own old stock ────────────────────────────
+  //
+  // The owner, 2026-10-29, sending Medizen's stock sheet of 19/04/2026: Egyphar has no stock, Medizen
+  // does, so the same product is added on Medizen with that stock and the same composition. Each
+  // factory is its own product; 🔴 another factory's store is NEVER counted. Before
+  // `stockForProduct`, any store not flagged as THIS product's factory read as "Sato's own store",
+  // so Medizen's 10,244 boxes sat in the Egyphar plan and came off its buy list.
+  const MEDIZEN_STOCK = [lot(BOX_20.id, MEDIZEN, "10244"), lot(LORNOXICAM.id, MEDIZEN, "131", "2026-12-06")];
+  const EGYPHAR_BATCH = { ...ONE_BATCH, productId: "prod-royanoxicam" };
+  const MEDIZEN_BATCH = { ...ONE_BATCH, productId: "prod-royanoxicam-medizen" };
+
+  const bare = computePlan(twoFactoryData([]), EGYPHAR_BATCH);
+  const egypharPlan = computePlan(twoFactoryData(MEDIZEN_STOCK), EGYPHAR_BATCH);
+  for (const code of ["BOX_ROYANOXICAM_20", "LORNOXICAM"]) {
+    const row = rowOf(egypharPlan, code);
+    const before = rowOf(bare, code);
+    assert.equal(row.heldElsewhere, before.heldElsewhere, `🔴 Medizen's ${code} is not in Egyphar's own-store column`);
+    assert.equal(row.heldAtFactory, before.heldAtFactory, `nor in Egyphar's factory column`);
+    assert.equal(row.heldTotal, before.heldTotal, `so Egyphar holds no ${code} it did not hold before`);
+    assert.equal(row.toBuy, before.toBuy, `and Egyphar's buy list for ${code} is unchanged by Medizen's stock`);
+  }
+
+  // Sato's own store still counts for every product — the filter drops other FACTORIES only.
+  const satoHeld = computePlan(twoFactoryData([...MEDIZEN_STOCK, lot(BOX_20.id, SATO_STORE, "1000")]), EGYPHAR_BATCH);
+  assert.notEqual(
+    rowOf(satoHeld, "BOX_ROYANOXICAM_20").heldElsewhere,
+    rowOf(bare, "BOX_ROYANOXICAM_20").heldElsewhere,
+    "boxes in Sato's own store are held for the Egyphar batch",
+  );
+  assert.notEqual(
+    rowOf(satoHeld, "BOX_ROYANOXICAM_20").toBuy,
+    rowOf(bare, "BOX_ROYANOXICAM_20").toBuy,
+    "and they come off its buy list",
+  );
+
+  // Medizen's own product reads Medizen's stock as held at its factory.
+  const medizenBare = computePlan(twoFactoryData([]), MEDIZEN_BATCH);
+  const medizenPlan = computePlan(twoFactoryData(MEDIZEN_STOCK), MEDIZEN_BATCH);
+  assert.notEqual(
+    rowOf(medizenPlan, "BOX_ROYANOXICAM_20").heldAtFactory,
+    rowOf(medizenBare, "BOX_ROYANOXICAM_20").heldAtFactory,
+    "Medizen's boxes are held at Medizen's factory for Medizen's batch",
+  );
+  assert.equal(
+    rowOf(medizenPlan, "BOX_ROYANOXICAM_20").heldElsewhere,
+    rowOf(medizenBare, "BOX_ROYANOXICAM_20").heldElsewhere,
+    "and never read as Sato's own store",
+  );
+  assert.notEqual(
+    rowOf(medizenPlan, "BOX_ROYANOXICAM_20").toBuy,
+    rowOf(medizenBare, "BOX_ROYANOXICAM_20").toBuy,
+    "so they come off Medizen's buy list",
+  );
+
+  // The expiry sweep walks every product, so a lot is reported once — under the product made there.
+  const expiryData = twoFactoryData(MEDIZEN_STOCK);
+  assert.equal(
+    evaluateExpiryForProduct(expiryData, "prod-royanoxicam", "2026-11-01").some((row) => row.locationId === MEDIZEN),
+    false,
+    "🔴 Medizen's lornoxicam is never an Egyphar expiry",
+  );
+  assert.deepEqual(
+    evaluateExpiryForProduct(expiryData, "prod-royanoxicam-medizen", "2026-11-01").map((row) => [row.code, row.locationId]),
+    [["LORNOXICAM", MEDIZEN]],
+    "it is Medizen's, and it is reported",
+  );
+
+  // The service reads the raw stock list in ONE place, the filter itself.
+  const service = readFileSync(SERVICE, "utf8");
+  const helperStart = service.indexOf("function stockForProduct(");
+  assert.ok(helperStart >= 0, "the service keeps one stock filter");
+  const helper = service.slice(helperStart, service.indexOf("\n}\n", helperStart));
+  assert.equal(
+    (service.match(/\bdata\.stock\b/g) ?? []).length,
+    (helper.match(/\bdata\.stock\b/g) ?? []).length,
+    "🔴 every reader of the stock goes through stockForProduct — a second `data.stock` is another factory's stock leaking",
+  );
+
+  // The Stock tab records and reads THIS product's factory only.
+  const stockTab = exportedBody(screen, "StockTab");
+  assert.match(stockTab, /const ownFactoryId = selectedProductOf\(data\)\?\.factoryLocationId \?\? null/);
+  assert.match(
+    stockTab,
+    /\{ownLocations\.map\(\(location\) =>/,
+    "the store picker offers Sato's stores and this product's factory, never another factory",
+  );
+  assert.equal(/data\.locations\.map\(/.test(stockTab), false, "and nothing in the tab lists every location");
+  assert.match(
+    stockTab,
+    /const factory = material\.heldByLocation\.find\(\(row\) => row\.locationId === ownFactoryId\)/,
+    "the factory column is this product's factory, never the first one flagged",
+  );
+
+  // The migration, off the file.
+  const medizenSql = stripSqlComments(readFileSync(MEDIZEN_MIGRATION, "utf8").replace(/\r\n/g, "\n"));
+  assert.match(
+    medizenSql,
+    /insert into public\.prodplan_locations[\s\S]*?\('MEDIZEN', '[^']+', 'At the factory \(Medizen\)', true, 60\)/,
+    "Medizen is a factory store again, a new row — Egyphar keeps the old one",
+  );
+  assert.match(
+    medizenSql,
+    /'ROYANOXICAM_MEDIZEN',[\s\S]*?'mg',\s*31000000, 155, 155, 155, true, 20,\s*0,/,
+    "the same geometry to the digit: 31 kg of 155 mg tablets, 20 to a box, no samples",
+  );
+  assert.match(
+    medizenSql,
+    /set factory_location_id = l\.id[\s\S]*?l\.code = 'MEDIZEN'[\s\S]*?p\.code = 'ROYANOXICAM_MEDIZEN'/,
+    "made at Medizen",
+  );
+  assert.match(
+    medizenSql,
+    /set name_en = 'Royanoxicam 8 mg — Egyphar'[\s\S]*?where code = 'ROYANOXICAM'/,
+    "and the Egyphar product says so, so the two read apart in the picker",
+  );
+  assert.match(
+    medizenSql,
+    /select medizen\.id, pm\.material_id, pm\.sort_order, pm\.supplier[\s\S]*?egyphar\.code = 'ROYANOXICAM'/,
+    "the material list is Egyphar's own, order and supplier included — the foil stays Sato's",
+  );
+  const medizenLines = compositionRowsFromMigration(MEDIZEN_MIGRATION);
+  assert.deepEqual(
+    medizenLines,
+    compositionRowsFromMigration(),
+    "🔴 the SAME formula he sent: every one of the seed's lines, quantity, basis and supplier",
+  );
+  assert.equal(medizenLines.length, 13);
+  assert.equal(
+    medizenLines.some((row) => row.code === "BLISTER_ALU_ROYANOXICAM"),
+    false,
+    "the foil still has no line — its amount per box is his to give",
+  );
+  for (const [code, qty, expiry] of [
+    ["LORNOXICAM", "131.000000", "date '2026-12-06'"],
+    ["BLISTER_ALU_ROYANOXICAM", "71290.500000", "null::date"],
+    ["BOX_ROYANOXICAM_20", "10244.000000", "null::date"],
+    ["LEAFLET_ROYANOXICAM", "3990.000000", "null::date"],
+  ] as const) {
+    assert.match(
+      medizenSql,
+      new RegExp(`\\('${code}',\\s+${qty.replace(".", "\\.")}::numeric,\\s+${expiry.replace(/[()]/g, "\\$&")}`),
+      `Medizen holds ${qty} of ${code} on the 19/04/2026 sheet`,
+    );
+  }
+  assert.match(medizenSql, /date '2026-04-19', v\.expiry, 'factory_report'/, "counted on the sheet's own date");
+  assert.match(medizenSql, /where l\.code = 'MEDIZEN'\s+and not exists/, "at Medizen, and only once");
 }
