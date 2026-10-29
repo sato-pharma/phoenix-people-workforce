@@ -83,12 +83,12 @@ import {
   EMPTY_KPI_DOCTOR_FILTER,
   filterKpiDoctors,
   hasActiveKpiDoctorFilter,
-  KPI_DOCTOR_BRICK_NONE,
   KPI_DOCTOR_NOT_VALIDATED,
   KPI_DOCTOR_SORT_LABEL,
   kpiDoctorBrickLabel,
-  kpiDoctorBrickValue,
+  type KpiDoctorStatus,
 } from "@/lib/crm/kpis-doctor-filters";
+import { buildKpiBrickRows, KPI_FREQUENCY_STATUS_LABEL, kpiBrickFrequencyColumns, type KpiBrickRow } from "@/lib/crm/kpis-brick-table";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerMeasure, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
@@ -382,13 +382,20 @@ function sortHref(context: ViewContext, field: KpiSortField): string {
  * The workbook export's address: the board's own month, period and filters through the one query
  * builder, so the file can never hold a wider (or different) set of reps than the screen. The Weekly
  * tab's board is a span, not a picked period, so it exports the whole month — as leaving that tab does.
+ *
+ * On Coverage and Frequency it also carries the tab, the open rep and his doctor filters (owner,
+ * 2026-10-29: "Brick on the KPIs Excel export"), so the file adds the team's By brick sheet and the
+ * open rep's doctors exactly as filtered on screen. Every other tab exports as the Summary.
  */
-function kpisExportHref(board: KpisBoard, weekly: boolean): string {
+function kpisExportHref(context: ViewContext, weekly: boolean): string {
+  const { board, tab } = context;
+  const doctorsTab = tab === "coverage" || tab === "frequency";
   return `/api/crm/kpis-export?${buildKpisQuery({
     month: board.month,
     period: weekly ? "month" : board.range.periodKey,
-    tab: "summary",
+    tab: doctorsTab ? tab : "summary",
     filters: board.filters,
+    rep: doctorsTab ? context.openRep : null,
   })}`;
 }
 
@@ -1359,6 +1366,42 @@ function coverageDoctorsToggle(context: ViewContext, row: KpiRepRow, surface: "d
 }
 
 /**
+ * "N doctors not validated yet" under a rep's Coverage and Frequency figures (owner, 2026-10-29), a
+ * link that opens his list already narrowed to those doctors. Null when the count is 0 or was never
+ * read — a failed brick read prints nothing rather than a 0 — and for a rep who has just started.
+ */
+function notValidatedLink(context: ViewContext, row: KpiRepRow, surface: "desktop" | "mobile"): React.ReactNode {
+  const key = row.coverageRepKey;
+  const count = row.notValidatedDoctors ?? 0;
+  if (!key || count <= 0) return null;
+  const { board } = context;
+  return (
+    <Link
+      className="text-phx-3xs font-bold leading-4 text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500"
+      href={`${hrefWith(context, {
+        // A board of one rep opens that rep's list unasked, so the rep's key never rides in the URL.
+        rep: board.reps.length === 1 ? null : key,
+        filters: { ...board.filters, doctor: { ...EMPTY_KPI_DOCTOR_FILTER, bricks: [KPI_DOCTOR_NOT_VALIDATED] } },
+      })}#${coverageAnchor(surface, key)}`}
+    >
+      {count} doctor{count === 1 ? "" : "s"} not validated yet
+    </Link>
+  );
+}
+
+/** Two notes under one figure, one above the other; null when there is neither. */
+function stackExtras(first: React.ReactNode, second: React.ReactNode): React.ReactNode {
+  if (!first) return second || null;
+  if (!second) return first;
+  return (
+    <span className="flex flex-col items-start gap-1">
+      {first}
+      {second}
+    </span>
+  );
+}
+
+/**
  * "Open visits" for one rep on the Call Rate tab — the drill-down onto the very calls this row's rate
  * is made of, at /…/kpis/call-rate/[rep], scored over the same window the board is on.
  *
@@ -1804,7 +1847,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
                     ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
                     : "No planned doctors to be a percentage of"
                 }
-                extra={coverageFloorBadge(row)}
+                extra={stackExtras(coverageFloorBadge(row), notValidatedLink(context, row, "desktop"))}
                 fill={coverageFill(row)}
                 value={planPct(row, row.coveragePct)}
               />
@@ -1933,6 +1976,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
                     : `${row.actualCalls} of ${row.plannedCalls} planned calls made`
                   : "No planned doctors to be a percentage of"
               }
+              extra={notValidatedLink(context, row, "desktop")}
               fill={frequencyFill(row)}
               value={planPct(row, row.frequencyPct)}
             />
@@ -1959,6 +2003,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
 function RepCard({
   action,
   amTarget,
+  notValidated,
   pmTarget,
   rank,
   row,
@@ -1967,6 +2012,8 @@ function RepCard({
   /** A control under the card, e.g. the Coverage tab's "Show doctors". */
   action?: React.ReactNode;
   amTarget: number;
+  /** The Coverage and Frequency tabs' "N doctors not validated yet" link, printed under Coverage. */
+  notValidated?: React.ReactNode;
   pmTarget: number;
   rank?: number;
   row: KpiRepRow;
@@ -1986,7 +2033,7 @@ function RepCard({
       caption: row.hasMeasurablePlan
         ? `${row.visitedDoctors}/${row.plannedDoctors} planned`
         : "Nothing planned",
-      extra: coverageFloorBadge(row),
+      extra: stackExtras(coverageFloorBadge(row), notValidated),
       fill: coverageFill(row),
       label: "Coverage",
       value: planPct(row, row.coveragePct),
@@ -2207,32 +2254,156 @@ function BreakdownLabel({ row }: { row: CoverageGroupRow }) {
   );
 }
 
+/** A count in a brick line: a link into that brick's doctors with that verdict, when there are any. */
+function BrickCount({ count, href }: { count: number; href?: string }) {
+  if (count === 0 || !href) return <>{count}</>;
+  return (
+    <Link className="underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500" href={href}>
+      {count}
+    </Link>
+  );
+}
+
 /**
- * The open rep's doctors per brick of their validated live photo (owner, 2026-10-29: "filter by brick,
- * got the doctors in it, know who is covered and who is not covered"). Each brick links into the two
- * lists narrowed to it. Bricks are biggest first; the validated doctors with no brick on record and the
- * ones not validated yet park last. Empty when the bricks were not read, so the table is not printed.
+ * COVERAGE AND FREQUENCY PER BRICK of the doctors' validated live photo (owner, 2026-10-29: "filter by
+ * brick, got the doctors in it, know who is covered and who is not covered", then "frequency by brick
+ * … beside the coverage table"). The rows are `buildKpiBrickRows`, so the screen and the XLSX export
+ * count the same way. For the open rep each brick and each count is a link into his list narrowed to
+ * it; the team's table (`team`) links nowhere — no one list holds its doctors — and says how many reps
+ * plan doctors in each brick instead. Five columns on a desktop, one card per brick on a phone.
  */
-function brickCoverageRows(context: ViewContext, doctors: readonly KpiCoverageDoctor[]): CoverageGroupRow[] {
+function BrickBreakdown({
+  caption,
+  context,
+  rows,
+  team = false,
+  title,
+}: {
+  caption?: string;
+  context: ViewContext;
+  rows: readonly KpiBrickRow[];
+  team?: boolean;
+  title: string;
+}) {
+  if (rows.length === 0) return null;
   const { board } = context;
-  const rows = new Map<string, CoverageGroupRow & { value: string }>();
-  for (const doctor of doctors) {
-    const value = kpiDoctorBrickValue(doctor);
-    if (value === undefined) continue;
-    const row = rows.get(value) ?? {
-      value,
-      label: kpiDoctorBrickLabel(doctor) ?? value,
-      planned: 0,
-      covered: 0,
-      href: hrefWith(context, { filters: { ...board.filters, doctor: { ...board.filters.doctor, bricks: [value] } } }),
-    };
-    row.planned += 1;
-    if (doctor.visits > 0) row.covered += 1;
-    rows.set(value, row);
-  }
-  const rank = (value: string) => (value === KPI_DOCTOR_NOT_VALIDATED ? 2 : value === KPI_DOCTOR_BRICK_NONE ? 1 : 0);
-  return [...rows.values()]
-    .sort((left, right) => rank(left.value) - rank(right.value) || right.planned - left.planned || left.label.localeCompare(right.label));
+  const columns = kpiBrickFrequencyColumns(isPhoenix(board));
+  const hrefFor = (row: KpiBrickRow, statuses?: KpiDoctorStatus[]) =>
+    team
+      ? undefined
+      : hrefWith(context, {
+          filters: {
+            ...board.filters,
+            doctor: { ...board.filters.doctor, bricks: [row.brick], ...(statuses ? { statuses } : {}) },
+          },
+        });
+  const pctOf = (row: KpiBrickRow) => Math.round((row.covered / row.planned) * 100);
+  const repsText = (row: KpiBrickRow) => `${row.reps} rep${row.reps === 1 ? "" : "s"}`;
+  return (
+    <div className="min-w-0 border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
+        {caption ? <p className="mt-0.5 text-phx-3xs leading-4 text-slate-500">{caption}</p> : null}
+      </div>
+      <table className="hidden w-full table-fixed md:table">
+        <colgroup>
+          <col style={{ width: "31%" }} />
+          <col style={{ width: "21%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "16%" }} />
+        </colgroup>
+        <thead className="border-b border-slate-100">
+          <tr>
+            <th className={TH} scope="col">
+              Brick
+            </th>
+            <th className={TH} scope="col">
+              Coverage
+              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+                Covered ÷ planned
+              </span>
+            </th>
+            {columns.map((column) => (
+              <th className={TH} key={column.label} scope="col">
+                {column.label}
+                <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+                  {column.sub}
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row) => {
+            const pct = pctOf(row);
+            return (
+              <tr key={row.brick}>
+                <td className={TD} dir="auto">
+                  <BreakdownLabel row={{ label: row.label, planned: row.planned, covered: row.covered, href: hrefFor(row) }} />
+                  {team ? <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-500">{repsText(row)}</span> : null}
+                </td>
+                <td className={NUM}>
+                  <span className={`block font-black ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
+                  <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
+                  <span className="mt-1 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                    {row.covered} of {row.planned} seen
+                  </span>
+                </td>
+                {columns.map((column) => (
+                  <td className={NUM} key={column.label}>
+                    <BrickCount count={column.count(row)} href={hrefFor(row, column.statuses)} />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <ul className="divide-y divide-slate-100 md:hidden">
+        {rows.map((row) => {
+          const pct = pctOf(row);
+          return (
+            <li className="px-3 py-2.5" key={row.brick}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 text-sm font-semibold text-slate-900" dir="auto">
+                  <BreakdownLabel row={{ label: row.label, planned: row.planned, covered: row.covered, href: hrefFor(row) }} />
+                </span>
+                <span className={`text-sm font-black tabular-nums ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
+              </div>
+              <KpiMeter band={coverageBandOfPct(pct)} value={pct} />
+              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+                {row.covered} of {row.planned} planned doctors seen{team ? ` · ${repsText(row)}` : ""}
+              </span>
+              <span className="mt-0.5 block text-phx-3xs leading-4 text-slate-500">
+                {columns.map((column) => `${column.count(row)} ${column.label.toLowerCase()}`).join(" · ")}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * THE TEAM'S BRICKS on the Coverage and Frequency tabs (owner, 2026-10-29: "a brick view for managers
+ * across all their reps"), under the rep table. Every rep's list is counted on its own, as Planned is,
+ * so its totals are the tiles'; reps who have just started are left out of both.
+ */
+function TeamBricksSection({ context, rows }: { context: ViewContext; rows: readonly KpiBrickRow[] }) {
+  return (
+    <div className="border-t border-slate-100">
+      <KpiSection
+        description="Every rep's planned doctors, counted by the brick of the doctor's validated live photo. A doctor two reps both plan counts once for each, as Planned does, and reps who have just started are left out, as they are from the totals. Open a rep's doctors to see who is in each brick."
+        title="By brick · every rep on this board"
+      >
+        <div className="px-4 py-4 sm:px-5">
+          <BrickBreakdown context={context} rows={rows} team title="From the validated live photo" />
+        </div>
+      </KpiSection>
+    </div>
+  );
 }
 
 /** The coverage percentage's band — the same cut-offs the rep rows use, applied to a group's own percentage. */
@@ -2294,7 +2465,7 @@ function CoverageSummary({ context, detail }: { context: ViewContext; detail: Kp
           : `${needed} more doctor${needed === 1 ? "" : "s"} to cover to clear the ${floor}% floor (${Math.ceil((planned * floor) / 100)} of ${planned}).`}{" "}
         {board.isCurrentMonth ? "The period is still running, so doctors planned for later days are counted as not covered yet." : ""}
       </p>
-      <CoverageBreakdown rows={brickCoverageRows(context, all)} title="By brick · from the validated live photo" />
+      <BrickBreakdown context={context} rows={buildKpiBrickRows([all])} title="By brick · from the validated live photo" />
       <div className="grid gap-3 lg:grid-cols-2">
         <CoverageBreakdown rows={coverageGroups(all, (doctor) => gradeGroupOf(doctor.grade)).sort((l, r) => l.label.localeCompare(r.label))} title="By grade" />
         <CoverageBreakdown
@@ -2307,20 +2478,6 @@ function CoverageSummary({ context, detail }: { context: ViewContext; detail: Kp
 }
 
 // ── The Frequency report: one rep's doctors, each against what he should get ─────────────────
-
-/**
- * The words on a verdict. The first three are the owner's own (ACTIVITY_LABEL, "change vocab to below
- * exact above"); the rest are the Phoenix grade-norm words and the two states a count cannot judge.
- */
-const FREQUENCY_STATUS_LABEL: Record<DoctorFrequencyStatus, string> = {
-  exact: ACTIVITY_LABEL.on_plan,
-  below: ACTIVITY_LABEL.under,
-  above: ACTIVITY_LABEL.over,
-  "not-visited": "Not visited",
-  "not-due": ACTIVITY_LABEL.not_due,
-  "at-norm": "At norm",
-  ungraded: "Ungraded",
-};
 
 /** Which of the board's five tones each verdict wears, so a chip here reads like every other chip. */
 const FREQUENCY_STATUS_BAND: Record<DoctorFrequencyStatus, KpiBand> = {
@@ -2351,7 +2508,7 @@ function FrequencyStatusChip({ status }: { status: DoctorFrequencyStatus }) {
       className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip}`}
     >
       <span aria-hidden className={`h-1.5 w-1.5 ${tone.dot}`} />
-      {FREQUENCY_STATUS_LABEL[status]}
+      {KPI_FREQUENCY_STATUS_LABEL[status]}
     </span>
   );
 }
@@ -2684,6 +2841,13 @@ function FrequencyDoctors({
           </ul>
         </div>
       ) : null}
+
+      {/* The rep's WHOLE list per brick, like the tiles above: the filters narrow the table only. */}
+      <BrickBreakdown
+        context={context}
+        rows={buildKpiBrickRows([[...detail.covered, ...detail.notCovered]])}
+        title="By brick · from the validated live photo"
+      />
 
       <DoctorFilters context={context} doctors={rows.map((row) => row.doctor)} shown={visible.length} />
 
@@ -3442,7 +3606,7 @@ export function KpisBoardView({
                 <a
                   className="inline-flex h-9 items-center gap-2 whitespace-nowrap border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
                   download
-                  href={kpisExportHref(board, weekly)}
+                  href={kpisExportHref(context, weekly)}
                   title="Download this board as a styled Excel workbook"
                 >
                   <Download aria-hidden className="h-3.5 w-3.5" />
@@ -3818,6 +3982,7 @@ export function KpisBoardView({
                                     : undefined
                             }
                             amTarget={board.amTarget}
+                            notValidated={doctorsTab ? notValidatedLink(context, row, "mobile") : undefined}
                             pmTarget={board.pmTarget}
                             rank={context.showRank ? index + 1 : undefined}
                             row={row}
@@ -3850,6 +4015,10 @@ export function KpisBoardView({
                   {tab === "frequency" ? <FrequencyTable context={context} rows={board.reps} /> : null}
                 </div>
               </div>
+
+              {(tab === "coverage" || tab === "frequency") && board.reps.length > 1 && board.teamBricks && board.teamBricks.length > 0 ? (
+                <TeamBricksSection context={context} rows={board.teamBricks} />
+              ) : null}
 
               {/* THE MANAGER ROWS (owner, 2026-10-20), apart from the reps and after them: averages of
                   the rows beneath each manager, never counted in anything above. */}

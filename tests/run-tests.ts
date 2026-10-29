@@ -550,6 +550,7 @@ import {
   runKpiReportFilterWiringTests,
 } from "./kpis-report-filters.test.ts";
 import { runKpiDoctorBrickChooserTests } from "./kpis-doctor-bricks.test.ts";
+import { runKpiBrickTableTests, runKpiBrickWiringTests } from "./kpis-brick-table.test.ts";
 import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
@@ -4177,6 +4178,8 @@ await runTest("KPI report filters: every filter rides the URL, the brick filter 
 await runTest("KPI report filters: the doctor filters narrow rows by name, brick, speciality, grade, verdict, covered, timing, visits and last visit, park a blank last, and never call an unread doctor not validated", runKpiDoctorFilterTests);
 await runTest("KPI report filters: the tiles stay on the whole list, another rep opens unfiltered, the brick is stamped only on a read that landed, and the client bars stay dependency-free", runKpiReportFilterWiringTests);
 await runTest("KPI doctor bricks: each doctor is filed under his validated live photo's brick (the live customer over a dropped one, the newest validation, a place with a brick, then the earliest), and validated-with-no-brick is never not validated", runKpiDoctorBrickChooserTests);
+await runTest("KPI brick tables: every rep's list counted on its own, the frequency verdicts adding up to the doctors judged in the board's own words, one read stamping every list, a failed read stamping nothing, and a just-started rep left out of the team table and given no not-validated count", runKpiBrickTableTests);
+await runTest("KPI brick wiring: one brick read over every list, the open rep reusing it, the admin Frequency tab and the export asking for the lists on Coverage and Frequency only, and the brick table staying importable by the screen and the file", runKpiBrickWiringTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);

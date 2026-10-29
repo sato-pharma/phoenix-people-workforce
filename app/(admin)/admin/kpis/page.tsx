@@ -83,9 +83,10 @@ export default async function AdminKpisPage({ searchParams }: PageProps) {
         period: one(params?.period),
         todayIso: today,
         filters,
-        // The Coverage tab's doctor lists. `rep` is only a request: getKpisBoard honours it for a rep
-        // already on this viewer's board, and ignores it otherwise.
-        coverageDoctors: tab === "coverage" ? { rep: one(params?.rep) ?? null } : null,
+        // The Coverage and Frequency tabs' doctor lists — the open rep's list, the team's By brick table
+        // and each row's not-validated count all ride on them. `rep` is only a request: getKpisBoard
+        // honours it for a rep already on this viewer's board, and ignores it otherwise.
+        coverageDoctors: tab === "coverage" || tab === "frequency" ? { rep: one(params?.rep) ?? null } : null,
       });
     }
   } catch (error) {

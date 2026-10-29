@@ -297,7 +297,8 @@ export async function loadPhoenixRepKpis(input: {
     return computed;
   };
 
-  // Not cached: the Coverage tab asks for one rep per page load.
+  // Not cached: the Coverage and Frequency tabs ask once per rep on screen per page load (the team's
+  // brick table reads every list), and each call reads only that rep's own buckets.
   const coverageDoctorsFor = (hrKey: string | null): PhoenixCoverageDoctor[] =>
     computePhoenixCoverageDoctors(inputFor(canonicalHrIdKey(hrKey) ?? ""));
 

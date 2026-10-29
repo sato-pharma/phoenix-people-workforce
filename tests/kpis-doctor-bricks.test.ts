@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 
-import { chooseKpiDoctorBricks, type KpiBrickCustomer, type KpiBrickPlace } from "../src/lib/crm/kpis-doctor-bricks.ts";
+import {
+  chooseKpiDoctorBricks,
+  chooseWantedKpiDoctorBricks,
+  type KpiBrickCustomer,
+  type KpiBrickPlace,
+} from "../src/lib/crm/kpis-doctor-bricks.ts";
 
 /**
  * The brick each doctor on a rep's Coverage and Frequency list is filed under (owner, 2026-10-29: "the
@@ -71,4 +76,42 @@ export function runKpiDoctorBrickChooserTests() {
   const noPlace = chooseKpiDoctorBricks([customer()], []);
   assert.equal(noPlace.has(501), true, "a validated customer with no active place is still validated");
   assert.equal(noPlace.get(501), null);
+
+  // Above 600 doctors the board reads every validated customer and active place and narrows the answer
+  // (owner, 2026-10-29: one brick read for the whole team). It must give each doctor asked for the brick
+  // the chunked read gives him: the chunked read asks for customers by either contact id, then for those
+  // customers' places. A customer carrying both ids is filed under the carried-over one by both paths.
+  const pool = [
+    customer({ id: "a", reference_contact_crm_id: 501 }),
+    customer({ id: "b", reference_contact_crm_id: null, own_contact_crm_id: 902 }),
+    customer({ id: "both", reference_contact_crm_id: 700, own_contact_crm_id: 903 }),
+    customer({ id: "other", reference_contact_crm_id: 800 }),
+    customer({ id: "dropped-501", status: "Dropped", validated_at: "2026-10-20T09:00:00Z", reference_contact_crm_id: 501 }),
+  ];
+  const poolPlaces = [
+    place({ customer_id: "a", brick_name: "Heliopolis" }),
+    place({ customer_id: "b", brick_name: "Maadi" }),
+    place({ customer_id: "both", brick_name: "Dokki" }),
+    place({ customer_id: "other", brick_name: "Shubra" }),
+    place({ customer_id: "dropped-501", brick_name: "Zamalek" }),
+  ];
+  const asked = [501, 902, 903, 640];
+  const chunkedCustomers = pool.filter(
+    (row) => asked.includes(row.reference_contact_crm_id ?? -1) || asked.includes(row.own_contact_crm_id ?? -1),
+  );
+  const chunkedIds = new Set(chunkedCustomers.map((row) => row.id));
+  const chunked = chooseKpiDoctorBricks(chunkedCustomers, poolPlaces.filter((row) => chunkedIds.has(row.customer_id)));
+  const whole = chooseWantedKpiDoctorBricks(asked, pool, poolPlaces);
+  for (const contactId of asked) {
+    assert.equal(whole.has(contactId), chunked.has(contactId), `doctor ${contactId} is validated on both read paths or on neither`);
+    assert.equal(whole.get(contactId), chunked.get(contactId), `doctor ${contactId} gets the same brick on both read paths`);
+  }
+  assert.deepEqual(
+    [...whole].sort(([a], [b]) => a - b),
+    [
+      [501, "Heliopolis"],
+      [902, "Maadi"],
+    ],
+    "the whole read holds only the doctors asked for — never the rest of the company",
+  );
 }
