@@ -286,8 +286,8 @@ function OffPlanLines({ visit }: { visit: VisitRow }) {
   if (visit.unplanned) {
     return (
       <p className="break-words">
-        <span className="font-black text-slate-800">Off the plan: </span>
-        <span dir="auto">{visit.unplanned.clarification}</span>
+        <span className="font-black text-slate-800">Off the plan{visit.unplanned.clarification ? ": " : ""}</span>
+        {visit.unplanned.clarification ? <span dir="auto">{visit.unplanned.clarification}</span> : null}
         <span className="block">{visit.unplanned.note}</span>
       </p>
     );
@@ -494,9 +494,11 @@ function VisitTable({ detail, visits }: { detail: DetailDoor; visits: ReadonlyAr
                 </span>
                 {visit.unplanned ? (
                   <>
-                    <span className="mt-1 block text-xs text-slate-500" dir="auto">
-                      {visit.unplanned.clarification}
-                    </span>
+                    {visit.unplanned.clarification ? (
+                      <span className="mt-1 block text-xs text-slate-500" dir="auto">
+                        {visit.unplanned.clarification}
+                      </span>
+                    ) : null}
                     {/* What the approval waits on — the phone card prints it, so the table does too. */}
                     {visit.unplanned.note ? <span className="mt-0.5 block text-xs text-slate-500">{visit.unplanned.note}</span> : null}
                   </>

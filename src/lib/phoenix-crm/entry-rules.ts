@@ -1196,8 +1196,8 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   if (!fix.ok) return fix;
   if (!withinAccuracy(fix.value.accuracyMeters, VISIT_MAX_ACCURACY_METERS)) return { ok: false, error: roughFixForAVisit(fix.value) };
 
-  // The kind he chose. The reason is asked for here, before the save, so an off-plan visit never gets
-  // as far as the server without one — the server still decides which kind it really was.
+  // The kind he chose. The reason is OPTIONAL (owner, 2026-10-29) — blank travels as null and the visit
+  // is still raised for its approval; the server still decides which kind it really was.
   const visitType = parseVisitType(body.visitType);
   let unplannedReason: string | null = null;
   if (visitType === "out_of_plan") {

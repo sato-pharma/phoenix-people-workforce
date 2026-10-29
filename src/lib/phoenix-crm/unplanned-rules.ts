@@ -102,7 +102,12 @@ export type UnplannedVisitStage = "manager" | "sfe";
 
 export const UNPLANNED_FIRST_STATUSES = ["manager_pending", "sfe_pending"] as const;
 
-/** The rep's written "why I went". Long enough to be a reason, short enough to read on a phone. */
+/**
+ * The written "why he went". The REP's is OPTIONAL (owner, 2026-10-29: "Make this question optional") —
+ * he may leave it blank, and the visit is still raised for its approval exactly as before. The floor
+ * is the Super Admin's alone, when she records a visit a rep missed logging (missed-records.ts) and
+ * the manager deciding it has nobody else to ask. The ceiling binds everyone.
+ */
 export const UNPLANNED_REASON_MIN = 10;
 export const UNPLANNED_REASON_MAX = 500;
 export const UNPLANNED_DECISION_NOTE_MAX = 500;
@@ -256,17 +261,18 @@ export function kpiHoldBackOf(input: Parameters<typeof visitCountsInKpi>[0]): Kp
   return input.unplannedStatus === "refused" ? "refused" : "approval";
 }
 
-export type UnplannedReasonResult = { ok: true; value: string } | { ok: false; error: string };
+export type UnplannedReasonResult = { ok: true; value: string | null } | { ok: false; error: string };
 
 /**
- * The clarification, cleaned the same way the database cleans it (trim, collapse runs of whitespace)
- * so the two can never disagree about a length. The floor exists because "ok" is not a reason.
+ * The rep's clarification, cleaned the same way the database cleans it (trim, collapse runs of
+ * whitespace) so the two can never disagree about a length. OPTIONAL (owner, 2026-10-29): blank is
+ * null and accepted; only a reason over the ceiling is refused.
  */
 export function parseUnplannedReason(raw: unknown): UnplannedReasonResult {
   const text = String(raw ?? "")
     .trim()
     .replace(/\s+/g, " ");
-  if (text.length < UNPLANNED_REASON_MIN) return { ok: false, error: "Write why you visited this customer off your plan." };
+  if (text.length === 0) return { ok: true, value: null };
   if (text.length > UNPLANNED_REASON_MAX) return { ok: false, error: `Keep the reason under ${UNPLANNED_REASON_MAX} characters.` };
   return { ok: true, value: text };
 }

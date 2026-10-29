@@ -1517,8 +1517,8 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | Delivery[]
       eventType: "unplanned_visit_waiting",
       title: `Off-plan visit to approve: ${notice.customerName}`,
       message: notice.enteredByAdmin
-        ? `The Super Admin entered a visit ${rep} missed logging: ${notice.customerName} on ${territory}, off the plan, on ${day}. The reason given: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`
-        : `${rep} visited ${notice.customerName} on ${territory} off their plan on ${day}. They wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`,
+        ? `The Super Admin entered a visit ${rep} missed logging: ${notice.customerName} on ${territory}, off the plan, on ${day}. ${notice.clarification ? `The reason given: ${notice.clarification} — approve` : "Approve"} it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`
+        : `${rep} visited ${notice.customerName} on ${territory} off their plan on ${day}. ${notice.clarification ? `They wrote: ${notice.clarification} — approve` : "No reason was written. Approve"} it or refuse it in Phoenix CRM. It counts in nothing until ${steps} approve it.`,
       tab: "team",
       recordId: notice.visitId,
       // Per visit per STEP: `raised` is the manager's, `sfe_pending` the SFE step's — the same key the

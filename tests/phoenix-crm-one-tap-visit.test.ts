@@ -112,7 +112,8 @@ export function runPhoenixCrmOneTapVisitTests(): void {
     if (legacy.ok) assert.equal(legacy.value.visitType, "out_of_plan", "a caller one release behind saying \"unplanned\" means out of plan");
 
     const noReason = parseVisitDraft(visitBody({ visitType: "out_of_plan" }));
-    assert.equal(noReason.ok, false, "out of plan still needs his reason");
+    assert.equal(noReason.ok, true, "out of plan with no reason is a whole visit — the reason is optional (owner, 2026-10-29)");
+    if (noReason.ok) assert.equal(noReason.value.unplannedReason, null, "and a blank reason is saved as none");
 
     const outOfList = parseVisitDraft(visitBody({ visitType: "out_of_list" }));
     assert.equal(outOfList.ok, true, "out of list needs no reason — it waits on the customer being added, not on an approval");

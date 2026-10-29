@@ -65,13 +65,17 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
 
   // ── The reason ───────────────────────────────────────────────────────────────────────────────
   {
-    assert.equal(parseUnplannedReason("").ok, false, "an empty reason is no reason");
-    assert.equal(parseUnplannedReason("   ").ok, false, "whitespace is no reason");
-    assert.equal(parseUnplannedReason("ok").ok, false, '"ok" is not a reason a manager can act on');
-    assert.equal(parseUnplannedReason("x".repeat(UNPLANNED_REASON_MIN - 1)).ok, false, "one short of the floor is refused");
-
-    const justLong = parseUnplannedReason("x".repeat(UNPLANNED_REASON_MIN));
-    assert.equal(justLong.ok, true, "the floor itself is accepted");
+    // OPTIONAL (owner, 2026-10-29: "Make this question optional."). A blank reason is no reason
+    // written — accepted as null, and the visit still goes to its manager and SFE — and a short one
+    // is his to write. Only the ceiling is a refusal.
+    const blank = parseUnplannedReason("");
+    assert.equal(blank.ok, true, "an empty reason is accepted: the question is optional");
+    assert.equal(blank.ok && blank.value, null, "and is stored as no reason at all");
+    const spaces = parseUnplannedReason("   \n ");
+    assert.equal(spaces.ok && spaces.value, null, "whitespace is no reason written, never an empty string");
+    const short = parseUnplannedReason("ok");
+    assert.equal(short.ok && short.value, "ok", "a short reason is kept as he wrote it");
+    assert.equal(parseUnplannedReason("x".repeat(UNPLANNED_REASON_MIN - 1)).ok, true, "the missed-visit floor is not the rep's");
 
     // Cleaned the same way the database cleans it, so the two can never disagree about a length.
     const messy = parseUnplannedReason("  He   called me\n\nin for an urgent case  ");
@@ -80,6 +84,24 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
 
     assert.equal(parseUnplannedReason("x".repeat(UNPLANNED_REASON_MAX)).ok, true, "the ceiling itself is accepted");
     assert.equal(parseUnplannedReason("x".repeat(UNPLANNED_REASON_MAX + 1)).ok, false, "one over the ceiling is refused");
+
+    // The database agrees: the LATEST save refuses only an over-long reason, and the reason column
+    // takes a null. The Super Admin's missed-visit entry keeps its own 10-character floor.
+    const dir = new URL("../supabase/migrations/", import.meta.url);
+    const latest = (needle: RegExp) => {
+      const file = readdirSync(dir).filter((name) => name.endsWith(".sql")).sort().filter((name) => needle.test(readFileSync(new URL(name, dir), "utf8"))).at(-1);
+      assert.ok(file, `a migration matches ${needle}`);
+      return readFileSync(new URL(file, dir), "utf8");
+    };
+    const save = latest(/create or replace function public\.phoenix_crm_save_visit\(/);
+    assert.match(save, /if v_clarification is not null and char_length\(v_clarification\) > 500 then\s+raise exception 'phoenix_crm:clarification_required'/, "the rep's save refuses only a reason over the ceiling");
+    assert.doesNotMatch(save, /v_clarification is null or char_length\(v_clarification\) < /, "and never a blank or short one");
+    const column = latest(/add constraint phoenix_crm_unplanned_visits_clarification/);
+    assert.match(column, /alter column clarification drop not null/, "the reason column takes no reason");
+    assert.match(column, /check \(clarification is null or char_length\(clarification\) <= 500\)/, "and checks only the ceiling");
+
+    const picker = stripComments(readFileSync(new URL("../src/components/phoenix-crm/visit-customer-picker.tsx", import.meta.url), "utf8"));
+    assert.doesNotMatch(picker, /UNPLANNED_REASON_MIN/, "the out-of-plan question never holds Continue back for a short reason");
   }
 
   // ── An off-plan visit can never move plan-kept % ─────────────────────────────────────────────

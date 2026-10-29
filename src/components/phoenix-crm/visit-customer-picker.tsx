@@ -48,7 +48,7 @@ import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { offPlanBlock, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
-import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN } from "@/lib/phoenix-crm/unplanned-rules";
+import { UNPLANNED_REASON_MAX } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -377,6 +377,8 @@ export function VisitCustomerPicker({
 /**
  * Why he went to a customer off today's plan — asked BEFORE the visit form, so the form is the same
  * form for every visit. A sentence his manager can act on; it is his own approval, and he sees it.
+ * OPTIONAL (owner, 2026-10-29: "Make this question optional") — Continue with the box blank goes on,
+ * and the visit is still raised for its approval exactly as before.
  *
  * A customer on his sent plan for another day of this week arrives with the reason already written —
  * "Planned for Tuesday 6 Oct; seen today instead." (owner, 2026-10-02) — and he changes it or goes on.
@@ -402,7 +404,6 @@ export function OutOfPlanReason({
   onContinue: (reason: string) => void;
 }) {
   const [reason, setReason] = useState(initialReason);
-  const [problem, setProblem] = useState<string | null>(null);
   const length = reason.trim().length;
   // Inside Add visit's step form the form's own foot carries Back: one Back, never two.
   const framed = useInsideCrmStepForm();
@@ -412,10 +413,6 @@ export function OutOfPlanReason({
   const filled = movedDayReason(customer.plannedOtherDays);
 
   function next() {
-    if (length < UNPLANNED_REASON_MIN) {
-      setProblem(`Write why you went — at least ${UNPLANNED_REASON_MIN} characters.`);
-      return;
-    }
     onContinue(reason.trim());
   }
 
@@ -432,26 +429,22 @@ export function OutOfPlanReason({
           {deciders} Until then it counts in nothing — not your call rate, not coverage, not frequency.
         </CrmNote>
         <CrmField
-          error={problem}
           hint={
             filled !== null && reason.trim() === filled
               ? "Filled in from your plan. Change it if you went for another reason."
-              : length < UNPLANNED_REASON_MIN
-                ? `At least ${UNPLANNED_REASON_MIN} characters.`
+              : length === 0
+                ? "Optional — you can leave it blank."
                 : `${countText(UNPLANNED_REASON_MAX - reason.length)} left.`
           }
           htmlFor="phoenix-crm-out-of-plan-reason"
-          label="Why you went"
+          label="Why you went (optional)"
         >
           <textarea
             className={crmTextareaClassName}
             dir="auto"
             id="phoenix-crm-out-of-plan-reason"
             maxLength={UNPLANNED_REASON_MAX}
-            onChange={(event) => {
-              setProblem(null);
-              setReason(event.target.value);
-            }}
+            onChange={(event) => setReason(event.target.value)}
             placeholder="A sentence your manager can act on — what took you there."
             rows={3}
             value={reason}
