@@ -32,6 +32,7 @@ import { createTemporaryAuthPassword } from "@/lib/auth/password-setup";
 import { revokeAllCredentialsForLogin } from "@/lib/auth/webauthn";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { logError } from "@/lib/observability/log";
+import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const phoenixLines = ["CNS", "Pedia", "Anti Infective", "Office", "Other"] as const;
@@ -41,6 +42,12 @@ export type AccessUserRow = {
   createdAt: string;
   email: string | null;
   forcePasswordReset: boolean;
+  /**
+   * Whether the register holds a mobile number this person can be reached on in WhatsApp. Drives
+   * whether the row offers the WhatsApp link button at all — no button is always better than a live
+   * password link opened in the wrong chat.
+   */
+  hasWhatsApp: boolean;
   hrId: string | null;
   isActive: boolean;
   line: PhoenixLine;
@@ -168,6 +175,9 @@ function toUser(row: AccessUserDbRow, employee?: EmployeeDirectoryRow): AccessUs
     createdAt: row.created_at,
     email: row.email ?? employee?.workEmail ?? null,
     forcePasswordReset: Boolean(row.force_password_reset),
+    // The same repair the organogram's WhatsApp button uses: seven in ten stored numbers lost their
+    // leading zero to a spreadsheet import, and one that cannot be read with confidence is no number.
+    hasWhatsApp: hasWhatsAppNumber(employee?.mobileNumber),
     hrId,
     isActive: row.is_active,
     line,

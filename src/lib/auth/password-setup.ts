@@ -16,10 +16,15 @@ import {
   passwordResetCodeMetricLabel,
   type ResetCodeRow,
 } from "@/lib/auth/password-reset-code";
+import {
+  composePasswordSetupWhatsAppMessage,
+  passwordSetupWhatsAppUrl,
+} from "@/lib/auth/password-setup-whatsapp";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
 import { EMAIL_TEMPLATE_KEYS } from "@/lib/email-templates/service";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { toDialableLocalMobile, toWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const passwordSetupExpiryMs = 48 * 60 * 60 * 1000;
@@ -55,10 +60,12 @@ export type PasswordSetupPreview = {
 
 export type PasswordSetupLinkResult = {
   deliveryMessage: string;
-  deliveryMode: "copy" | "email";
+  deliveryMode: "copy" | "email" | "whatsapp";
   expiresAt: string;
   loginId: string;
   setupUrl?: string;
+  /** WhatsApp mode only: that person's chat with the message already written in it, for the admin to send. */
+  whatsAppUrl?: string;
 };
 
 export function createTemporaryAuthPassword() {
@@ -168,9 +175,37 @@ async function resolveDeliverableEmail(user: { email?: string | null; hr_id?: st
   }
 }
 
+/**
+ * The WhatsApp number a setup link may actually be carried to, or null.
+ *
+ * The register is the only source: `employees.mobile_number`, repaired by `toWhatsAppNumber` — seven
+ * in ten rows lost their leading zero to a spreadsheet import, and a handful hold two numbers in one
+ * field. A number that cannot be read with confidence returns null and the caller refuses the send,
+ * because the failure mode here is not a broken button: it is a live password link opened in a
+ * stranger's chat.
+ *
+ * A failed lookup degrades to "no number" rather than throwing, exactly like the email resolver, so a
+ * transient directory problem can never block link GENERATION in copy mode.
+ */
+async function resolveWhatsAppNumber(user: { hr_id?: string | null }) {
+  const hrId = String(user.hr_id ?? "").trim();
+  if (!hrId) return null;
+
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("employees")
+      .select("mobile_number")
+      .eq("hr_id", hrId)
+      .maybeSingle();
+    return toWhatsAppNumber((data as { mobile_number?: string | null } | null)?.mobile_number);
+  } catch {
+    return null;
+  }
+}
+
 export async function sendPasswordSetupLink(input: {
   actorLoginId?: string | null;
-  deliveryMode?: "copy" | "email";
+  deliveryMode?: "copy" | "email" | "whatsapp";
   governanceReason?: string | null;
   loginId: string;
   origin?: string | null;
@@ -196,6 +231,16 @@ export async function sendPasswordSetupLink(input: {
   if (deliveryMode === "email" && !deliverableEmail) {
     throw new Error(
       `User ${loginId} has no deliverable email address (checked app_auth_users.email and employees.work_email). Use the copy-link delivery mode instead.`,
+    );
+  }
+
+  // Resolved BEFORE the token is minted, like the email address above: every path below invalidates the
+  // person's outstanding tokens, bumps session_version and sets force_password_reset, so failing after
+  // that point would sign someone out to produce an error message.
+  const whatsAppNumber = deliveryMode === "whatsapp" ? await resolveWhatsAppNumber(user) : null;
+  if (deliveryMode === "whatsapp" && !whatsAppNumber) {
+    throw new Error(
+      `User ${loginId} has no readable mobile number on the employee register, so no WhatsApp chat can be opened. Use the copy-link delivery mode instead.`,
     );
   }
 
@@ -305,36 +350,70 @@ export async function sendPasswordSetupLink(input: {
   const emailSent = emailResult.deliveries.some((delivery) => delivery.channel === "email" && delivery.status === "sent");
   const emailDelivery = emailResult.deliveries.find((delivery) => delivery.channel === "email");
 
+  // The number as a person dials it (01012345678), not the 20… form wa.me wants: the audit trail is
+  // read by a human asking "which handset was this link opened on?".
+  const whatsAppLocalNumber = whatsAppNumber ? toDialableLocalMobile(whatsAppNumber) : null;
+
+  // Composed HERE and nowhere else. The URL sets a password, so the only copy of it that leaves the
+  // server is the one the admin is about to press send on — it is never stored, logged or re-derivable.
+  const whatsAppUrl =
+    deliveryMode === "whatsapp" && whatsAppNumber
+      ? passwordSetupWhatsAppUrl(
+          whatsAppNumber,
+          composePasswordSetupWhatsAppMessage({
+            expiresAt,
+            loginId,
+            name: user.name ?? "",
+            purpose,
+            setupUrl,
+          }),
+        )
+      : null;
+
   await writeRequiredAuditLog({
     actorLoginId: input.actorLoginId ?? null,
     entityId: loginId,
     entityType: "user",
     newValues: {
       action: "password_setup_link_generated",
-      delivery: deliveryMode === "email" && emailSent ? "email_sent" : "link_generated_only",
+      delivery:
+        deliveryMode === "whatsapp"
+          ? "whatsapp_link_prepared"
+          : deliveryMode === "email" && emailSent
+            ? "email_sent"
+            : "link_generated_only",
       deliveryMode,
       expiresAt,
       reason: input.governanceReason ?? null,
       purpose,
       sentTo: deliveryMode === "email" ? deliverableEmail : null,
+      // The handset the admin was handed, never the link itself.
+      sentToWhatsApp: whatsAppLocalNumber,
       token: "[redacted]",
       url: "[redacted]",
     },
     oldValues: null,
-    summary: `${deliveryMode === "email" ? "Sent" : "Generated"} ${purpose === "setup" ? "setup" : "reset"} link for ${loginId}`,
+    summary: `${deliveryMode === "email" ? "Sent" : deliveryMode === "whatsapp" ? "Prepared WhatsApp" : "Generated"} ${purpose === "setup" ? "setup" : "reset"} link for ${loginId}`,
   });
 
   return {
     deliveryMessage:
-      deliveryMode === "copy"
-        ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
-        : !emailSent
-          ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
-          : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${deliverableEmail}.`,
+      deliveryMode === "whatsapp"
+        ? `WhatsApp message ready for ${user.name?.trim() || loginId} on ${whatsAppLocalNumber}. Open the chat and press send — the link is live from now.`
+        : deliveryMode === "copy"
+          ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
+          : !emailSent
+            ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
+            : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${deliverableEmail}.`,
     deliveryMode,
     expiresAt,
     loginId,
+    // 🔴 THE RAW LINK LEAVES THE SERVER FOR THE COPY WORKFLOW AND NOTHING ELSE, and the WhatsApp mode
+    // is no exception: the live credential is already inside the prepared chat URL below, so handing
+    // it back a second time would widen where it can be read for no gain on screen.
+    // Pinned by tests/access-governance-hardening.test.ts.
     ...(deliveryMode === "copy" ? { setupUrl } : {}),
+    ...(whatsAppUrl ? { whatsAppUrl } : {}),
   } satisfies PasswordSetupLinkResult;
 }
 

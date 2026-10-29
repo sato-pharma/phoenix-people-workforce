@@ -1668,6 +1668,7 @@ import { runSelectCensusTests } from "./select-census.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runCiBuildRiskTests } from "./ci-build-risk.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
+import { runPasswordSetupWhatsAppTests } from "./password-setup-whatsapp.test.ts";
 import { runPasswordResetCodeEmailCarriesTheCodeTests } from "./password-reset-code-email-carries-the-code.test.ts";
 import { runDeductionsApprovedNotPushedFeedbackTests } from "./deductions-approved-not-pushed-feedback.test.ts";
 import { runDeductionsVacationSelfRetireTests } from "./deductions-vacation-self-retire.test.ts";
@@ -6162,6 +6163,9 @@ await runTest(
 );
 await runTest("CI docs-only classifier (AGENTS.md/CLAUDE.md/docs/agents-* must NOT skip the suite that polices them)", runCiDocsOnlyClassifierTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
+await runTest("password setup link over WhatsApp (the chat opens on THAT person number, never the group picker; "
+  + "the number is resolved before the token is minted; the expiry reads in Cairo through DST; bulk stays "
+  + "copy/email because wa.me opens one chat; a real anchor, never a blocked window.open)", runPasswordSetupWhatsAppTests);
 await runTest("self-service reset-by-code (6-digit format, login-bound HMAC, attempt cap, expiry, enumeration-safe mismatch)", runAuthPasswordResetCodeTests);
 await runTest("the reset-code email actually contains the 6 digits (its own template, metrics table rendered)", runPasswordResetCodeEmailCarriesTheCodeTests);
 await runTest(
