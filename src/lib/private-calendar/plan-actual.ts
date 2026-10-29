@@ -145,7 +145,8 @@ export function buildDayPlanActual(planItems: readonly PrivateCalendarItem[], ac
         if (plan.type === "office") return kind === "attendance";
         if (plan.type === "leave") return LEAVE_KINDS.has(kind);
         if (plan.type === "travel") return kind === "outstation";
-        return kind === "other_crm" || kind === "correction";
+        // A planned "Interviews" day (owner, 2026-10-29) is an `other` plan type; the interview on the recruitment calendar is what it planned.
+        return kind === "other_crm" || kind === "correction" || kind === "interview";
       };
       let found = others.filter(fits);
       // A meeting or a training held in the building leaves an office punch and nothing else.

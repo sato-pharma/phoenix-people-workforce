@@ -1414,6 +1414,53 @@ export async function listInterviewsForCalendarFeed(hrId: string, from: Date, to
   });
 }
 
+/** One interview as an attendee's PRIVATE CALENDAR shows it — see lib/private-calendar/interview-items.ts. */
+export type PrivateCalendarInterviewRow = {
+  id: string;
+  startsAt: string;
+  durationMinutes: number;
+  leadHrId: string | null;
+  /** The lead answered "I can't" — he is not expected there, so his calendar does not carry it. */
+  leadDeclined: boolean;
+  panelHrIds: string[];
+  candidateName: string;
+  jobTitle: string | null;
+  area: string | null;
+  line: string | null;
+  platform: InterviewPlatform;
+};
+
+/**
+ * Every interview starting between two instants, for the private calendar of the people who sit in it
+ * (owner, 2026-10-29: "if he have an interview from calendar throw it in his private calendars"). A
+ * SYSTEM read, like the reminder job's: the private calendar is already gated to the employee, his
+ * managers and HR, and each row reaches only the attendees named on it. A cancelled interview is a
+ * deleted row, so it simply is not here.
+ */
+export async function listInterviewsForPrivateCalendar(from: Date, to: Date): Promise<PrivateCalendarInterviewRow[]> {
+  const rows = (await bookingsBetween(from, to)).filter((row) => row.interviewer_hr_id || (row.panelist_hr_ids?.length ?? 0) > 0);
+  if (rows.length === 0) return [];
+  const candidates = await loadCandidates(rows.map((row) => row.candidate_id ?? ""));
+  const sessions = await loadSessionsById(rows.map((row) => row.session_id ?? ""));
+  return rows.map((row) => {
+    const candidate = row.candidate_id ? candidates.get(String(row.candidate_id)) : undefined;
+    const session = row.session_id ? sessions.get(String(row.session_id)) : undefined;
+    return {
+      area: row.interview_area ?? null,
+      candidateName: (candidate?.full_name || row.external_name || "Unnamed candidate").trim(),
+      durationMinutes: Number(row.duration_minutes),
+      id: String(row.id),
+      jobTitle: row.interview_job_title ?? candidate?.applied_for_job_title ?? null,
+      leadDeclined: row.interviewer_confirmation === "declined",
+      leadHrId: row.interviewer_hr_id ?? null,
+      line: row.interview_line ?? null,
+      panelHrIds: (row.panelist_hr_ids ?? []).filter(Boolean),
+      platform: session ? asPlatform(session.platform) : asPlatform(row.platform),
+      startsAt: row.starts_at,
+    };
+  });
+}
+
 export async function getInterviewSession(
   caller: InterviewCalendarCaller,
   sessionId: string,

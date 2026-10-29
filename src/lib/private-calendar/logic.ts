@@ -16,11 +16,11 @@ import {
   type PrivateCalendarVisitSummary,
 } from "@/lib/private-calendar/activity-kinds";
 
-export type PrivateCalendarSource = "attendance" | "correction" | "double_visit" | "excuse" | "field_visit" | "holiday" | "outstation" | "plan" | "vacation";
+export type PrivateCalendarSource = "attendance" | "correction" | "double_visit" | "excuse" | "field_visit" | "holiday" | "interview" | "outstation" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "outstation", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "outstation", "interview", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
@@ -29,6 +29,7 @@ export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> 
   excuse: "Excuse",
   field_visit: "Field Visit",
   holiday: "National vacation",
+  interview: "Interview",
   outstation: "Outstation trip",
   plan: "Approved plan",
   vacation: "Vacation",
@@ -707,6 +708,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
     excuse: 0,
     field_visit: 0,
     holiday: 0,
+    interview: 0,
     outstation: 0,
     plan: 0,
     total: items.length,
@@ -726,6 +728,7 @@ function sourceCounts() {
     excuse: 0,
     field_visit: 0,
     holiday: 0,
+    interview: 0,
     outstation: 0,
     plan: 0,
     vacation: 0,

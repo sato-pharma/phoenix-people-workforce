@@ -12,6 +12,9 @@ import {
   summarizePrivateCalendarVisits,
 } from "@/lib/private-calendar/activity-kinds";
 
+/** The finding that says a workday holds no record of work — the one a day's display-only items (a plan, an interview) must not hide. */
+const DAY_UNWORKED_CODES: ReadonlySet<string> = new Set(["no_activity_recorded"]);
+
 // Phoenix-identity export for the private calendar.
 // Every calendar day of the month gets exactly one row in a single table — never
 // split across a separate "Exceptions" table/sheet — so an employee's whole month
@@ -146,7 +149,7 @@ function exportEmployees(workspace: PrivateCalendarWorkspace): PrivateCalendarEm
 // month grid uses, so a multi-day item lands on every day it covers. Matching on startDate alone put
 // a 4-day vacation or a multi-day Eid on its first day only and left the remaining days reading "-",
 // i.e. "nothing to report" — and this sheet is the artifact HR keeps.
-function buildExportRows(workspace: PrivateCalendarWorkspace): ExportDayRow[] {
+export function buildExportRows(workspace: PrivateCalendarWorkspace): ExportDayRow[] {
   const dates = monthDatesFromWeeks(workspace.weeks);
   const employees = exportEmployees(workspace);
   const multiEmployee = employees.length > 1;
@@ -162,24 +165,29 @@ function buildExportRows(workspace: PrivateCalendarWorkspace): ExportDayRow[] {
       );
 
       if (dayItems.length > 0) {
+        // A day that holds only things that never cover it — an approved plan, an interview — still carries
+        // its "No Activity Recorded". Printing the items alone hid that finding from the sheet HR keeps.
+        const unworked = dayExceptions.filter((exception) => DAY_UNWORKED_CODES.has(exception.code));
         rows.push({
           date,
           dayLabel: formatDayName(date),
-          detail: dayItems
-            .map((item) => [compact(item.description), ...item.detailLines].filter(Boolean).join(" . "))
+          detail: [
+            ...dayItems.map((item) => [compact(item.description), ...item.detailLines].filter(Boolean).join(" . ")),
+            ...unworked.map((exception) => compact(exception.description)),
+          ]
             .filter(Boolean)
             .join(" || "),
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
-          severity: dayItems.some((item) => item.severity === "danger")
+          severity: [...dayItems, ...unworked].some((entry) => entry.severity === "danger")
             ? "danger"
-            : dayItems.some((item) => item.severity === "warning")
+            : [...dayItems, ...unworked].some((entry) => entry.severity === "warning")
               ? "warning"
               : dayItems[0].severity,
           source: [...new Set(dayItems.map((item) => privateCalendarActivityKindLabels[privateCalendarItemKind(item)]))].join(" + "),
           status: dayItems.map((item) => compact(item.status ?? "")).filter(Boolean).join(" | "),
           time: dayItems.map((item) => compact(item.time ?? "")).filter(Boolean).join(" | "),
-          title: dayItems.map((item) => compact(item.title)).join(" | "),
+          title: [...dayItems.map((item) => compact(item.title)), ...unworked.map((exception) => compact(exception.title))].join(" | "),
         });
         continue;
       }

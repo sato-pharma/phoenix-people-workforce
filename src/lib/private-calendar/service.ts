@@ -16,6 +16,7 @@ import { listDisputesForEmployee, type PrivateCalendarDataDispute } from "@/lib/
 import { listMessagesForDisputes } from "@/lib/private-calendar/dispute-messages";
 import { loadPlanPrivateCalendarItems } from "@/lib/private-calendar/plan-items";
 import { loadOutstationTripPrivateCalendarItems } from "@/lib/private-calendar/outstation-trip-items";
+import { loadInterviewPrivateCalendarItems } from "@/lib/private-calendar/interview-items";
 import { attachVisitDetails, loadPrivateCalendarVisitDetails } from "@/lib/private-calendar/visit-detail-items";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
@@ -454,7 +455,7 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, attendancePolicyRows, disputesByEmployee, visitDetails] =
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, attendancePolicyRows, disputesByEmployee, visitDetails] =
     await Promise.all([
       loadAttendanceItems(scopeHrIds, start, end),
       loadVacationItems(scopeHrIds, start, end),
@@ -477,6 +478,9 @@ export async function getPrivateCalendarWorkspace(input: {
       // Every outstation trip claimed in Phoenix Expenses (owner, 2026-10-29) — the same trip days the
       // deductions engine already spares; see lib/private-calendar/outstation-trip-items.ts.
       loadOutstationTripPrivateCalendarItems(scopeHrIds, start, end),
+      // Every interview he sits in on the recruitment calendar (owner, 2026-10-29) — DISPLAY ONLY: it never
+      // clears a day; see lib/private-calendar/interview-items.ts.
+      loadInterviewPrivateCalendarItems(scopeHrIds, start, end),
       loadAttendancePolicyScheduleRows(),
       // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): a dispute is read by
       // employee and date range alone — nothing loaded beside it feeds it — so it loads with the
@@ -500,6 +504,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...managerOwnVisits.items,
     ...plans.items,
     ...trips.items,
+    ...interviews.items,
   ], scopeEmployees), employees), visitDetails)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
@@ -527,6 +532,7 @@ export async function getPrivateCalendarWorkspace(input: {
     // field work readable? A degraded answer from either leaves the day under-covered.
     field_visit: fieldVisits.ready && phoenixWork.ready && managerOwnVisits.ready,
     holiday: true,
+    interview: interviews.ready,
     outstation: trips.ready,
     plan: plans.ready,
     vacation: vacations.ready,
@@ -764,7 +770,7 @@ export async function getPrivateCalendarDayEvidence(
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(start, end);
 
-  const [visitDetails, attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, ...holidaysByMonth] = await Promise.all([
+  const [visitDetails, attendance, vacations, excuses, doubleVisits, fieldVisits, phoenixWork, managerOwnVisits, plans, trips, interviews, ...holidaysByMonth] = await Promise.all([
     // A reviewer reads every visit of the disputed day in full, the same record the calendar shows (owner, 2026-10-21).
     loadPrivateCalendarVisitDetails(hrIds, start, end),
     loadAttendanceItems(hrIds, start, end),
@@ -781,6 +787,8 @@ export async function getPrivateCalendarDayEvidence(
     loadManagerOwnVisitPrivateCalendarItems(hrIds, start, end, { details: true }),
     loadPlanPrivateCalendarItems(hrIds, start, end),
     loadOutstationTripPrivateCalendarItems(hrIds, start, end),
+    // A reviewer sees the interview the employee sat in, exactly as his calendar shows it (display only).
+    loadInterviewPrivateCalendarItems(hrIds, start, end),
     ...months.map(({ year, month }) => loadHolidayItems(year, month, start, end)),
   ]);
 
@@ -792,6 +800,7 @@ export async function getPrivateCalendarDayEvidence(
   if (!fieldVisits.ready || !phoenixWork.ready || !managerOwnVisits.ready) unreadableSources.push("field_visit");
   if (!plans.ready) unreadableSources.push("plan");
   if (!trips.ready) unreadableSources.push("outstation");
+  if (!interviews.ready) unreadableSources.push("interview");
 
   // The same two passes the workspace runs: employee metadata on, then the field-visit suppression
   // keyed on (employee, date). Skipping the suppression would show a "Late" or "Single punch" flag
