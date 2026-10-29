@@ -249,6 +249,10 @@ and the 5xx bursts. That is the link VAL said was missing.
 
 ### 5.1 The doctor-list summaries read
 
+> **Built in the read-cuts pull request, 28 Oct 2026; not yet live.** The 14 offset pages became id ranges read by
+> `fetchAllRowsKeyset`, sized by the same exact count. Same-output check on production rows (plain `SELECT`, 28 Oct):
+> the ranges hold all **13,445** open rows, in 7 non-empty ranges, the largest 4,330 rows (MEASURED).
+
 1. **Code location:** `getRepListSummaries` in `src/lib/crm/contact-lists.ts`.
    - Its page size is 1,000 (line 44).
    - The function starts at line 311, and its offset pages are at line 328.
@@ -287,6 +291,10 @@ and the 5xx bursts. That is the link VAL said was missing.
 
 ### 5.2 Check-in pins on every Phoenix CRM list load
 
+> **Built in the read-cuts pull request, 28 Oct 2026; not yet live.** `loadObservedPointsFor` keeps its answer in
+> the shared read cache for up to 60 s, keyed by the exact doctor set, dropped by `refreshSharedCrmWindows`.
+> The loader is unchanged, so the answer is the same by construction (INFERRED).
+
 1. **Code location:**
    - `loadObservedPointsFor` in `src/lib/crm/shared-customers.ts:159`, called on every list load from
      `src/lib/phoenix-crm/server/list.ts:1457`.
@@ -324,6 +332,11 @@ and the 5xx bursts. That is the link VAL said was missing.
 7. **Rollback:** revert the commit. Nothing is stored outside the process.
 
 ### 5.3 The validated-places board
+
+> **Built in the read-cuts pull request, 28 Oct 2026; not yet live.** The rule-safe form: pages ordered by `id`
+> alone, the board's order made in code. Same-output check on production rows (plain `SELECT`, 28 Oct): the
+> in-code order equals `created_at desc, id desc` for all **3,845** active places, with 0 rows in a different
+> position (MEASURED).
 
 1. **Code location:** `loadValidatedPlaces` in `src/lib/phoenix-crm/server/validation-reviews.ts:868`. It reads
    every page through `readEveryPage` (line 870), ordered by `created_at` then `id`, with a 10,000-row cap
@@ -454,6 +467,7 @@ Each one is the owner's, one at a time.
   database's own load in the same minutes compared with the day before.
 
 **Second pull request, after one working day of sampler readings: the three read cuts of §5.1–5.3, together.**
+Built on 28 Oct; its body carries the before figures for 10:02–22:07 Cairo.
 
 - **Why wait a day:** that day's readings are the "before" figure for swapping that VAL §11 measures against. Without
   them, no one can say whether the cuts changed anything.

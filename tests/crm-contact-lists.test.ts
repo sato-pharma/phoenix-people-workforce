@@ -610,12 +610,24 @@ export function runCrmContactListsTests() {
       "the open-ended sequential paging loop must not come back",
     );
 
-    // ORDER BY the assignment's unique `id`. Without a total order, ranged paging has no defined row
-    // order between requests, so a contact can be counted twice or skipped and the picker's numbers
-    // come out quietly wrong — a wrong count reads exactly like a real one.
+    // SEEK on the assignment's unique `id`. Without a total order, paging has no defined row order
+    // between requests, so a contact can be counted twice or skipped and the picker's numbers come out
+    // quietly wrong — a wrong count reads exactly like a real one. fetchAllRowsKeyset orders by its
+    // cursor column, so `cursorColumn: "id"` is that total order.
     assert.ok(
-      block.includes('.order("id", { ascending: true })'),
-      "the sweep must order by id: it is the assignment table's identity key, and only a total order makes ranged paging deterministic",
+      block.includes('cursorColumn: "id"'),
+      "the sweep must seek on id: it is the assignment table's identity key, and only a total order makes paging deterministic",
+    );
+    // ID RANGES, NEVER OFFSETS (28 Oct 2026). An offset page makes Postgres walk and discard every
+    // earlier open row: page 14 walked ~14,000 rows to return 1,000, 9,487 buffer pages a build and the
+    // largest single read on the database (8.9% of all page reads over 25–28 Oct).
+    assert.ok(
+      !block.includes(".range("),
+      "the summaries must not page by offset — `.range(` walks every earlier open row on each page; split the id span with keysetRanges and seek inside each range",
+    );
+    assert.ok(
+      block.includes("keysetRanges(") && /fetchAllRowsKeyset(?:<[^(]*>)?\(/.test(block),
+      "the summaries must read contiguous id ranges (keysetRanges) and seek inside each one (fetchAllRowsKeyset) — the ranges cover every id, so no open row is lost or read twice",
     );
 
     // A CACHE WITH NO INVALIDATION IS A STALENESS BUG WEARING A PERFORMANCE COSTUME. While the vendor

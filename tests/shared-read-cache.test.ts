@@ -288,5 +288,29 @@ export async function runSharedReadCacheTests() {
     assert.ok(applies.length > 0 && busts.length >= applies.length, "RED every path that applies a doctor-list change must refresh the roster after it");
   }
 
-  console.log("shared read cache: 12 blocks passed");
+  // ── (13) The Phoenix CRM List's check-in pins are one shared copy per doctor set, display only ──
+  // Every List open re-read every check-in of the same doctors, cold: 8,527 reads of one shape over
+  // 25–28 Oct 2026, 234,221 of them from disk. The pin is a location for the address, the map link and
+  // the board colour (rowPoint, list-row-facts.ts) — nothing approves, pays or notifies from it.
+  {
+    const shared = code("src/lib/crm/shared-customers.ts");
+    const pins = shared.slice(shared.indexOf("export async function loadObservedPointsFor("));
+    assert.match(
+      pins,
+      /^export async function loadObservedPointsFor\(contactCrmIds: readonly number\[\]\): Promise<Map<number, ObservedPoint>> \{[\s\S]{0,400}?const key = sharedReadKey\(\{ ids: \[\.\.\.ids\]\.sort\(\(left, right\) => left - right\) \}\);\s*const \{ rows \} = await getOrLoadShared\(CRM_OBSERVED_POINTS, key, \(\) => readObservedPoints\(ids\),/,
+      "RED THE LIST'S CHECK-IN PINS ARE READ FRESH AGAIN: every List open re-reads every check-in of the same doctors — or the key stopped being the exact doctor set, which would serve one list's pins to another",
+    );
+    const read = shared.slice(shared.indexOf("async function readObservedPoints("));
+    assert.match(read, /^async function readObservedPoints\([^)]*\): Promise<ObservedPointRow\[\]> \{\s*const checkins = await loadCheckins\(/, "RED the copy keeps an ARRAY of pins: a Map does not survive the copy");
+
+    const windows = code("src/lib/crm/shared-windows.ts");
+    const refresh = windows.slice(windows.indexOf("export function refreshSharedCrmWindows("));
+    assert.match(
+      refresh.slice(0, refresh.indexOf("\n}")),
+      /bumpSharedReadGeneration\(CRM_OBSERVED_POINTS, reason\);/,
+      "RED a poll that wrote check-ins must drop the List's pins with the other CRM copies",
+    );
+  }
+
+  console.log("shared read cache: 13 blocks passed");
 }

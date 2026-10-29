@@ -10,11 +10,14 @@ import { bumpSharedReadGeneration } from "@/lib/cache/shared-read";
  */
 export const CRM_VISIT_WINDOWS = "crm:visit-windows";
 export const CRM_CHECKIN_WINDOWS = "crm:checkin-windows";
+/** The Phoenix CRM List's averaged check-in pins (`loadObservedPointsFor`, src/lib/crm/shared-customers.ts). */
+export const CRM_OBSERVED_POINTS = "crm:observed-points";
 
 /** Drops every shared CRM window copy, so the next dashboard read goes to the database. */
 export function refreshSharedCrmWindows(reason: string): void {
   bumpSharedReadGeneration(CRM_VISIT_WINDOWS, reason);
   bumpSharedReadGeneration(CRM_CHECKIN_WINDOWS, reason);
+  bumpSharedReadGeneration(CRM_OBSERVED_POINTS, reason);
 }
 
 /**

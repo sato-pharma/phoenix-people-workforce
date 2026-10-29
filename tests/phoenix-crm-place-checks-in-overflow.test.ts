@@ -112,6 +112,21 @@ function checkLoadersGoThroughSelectByIds(): void {
   // Since 2026-10-08 it reads EVERY review of the customer (status tells held from merely reviewed),
   // so the select carries status beside the id the pager seeks on.
   assert.match(validated, /selectByIds<Row>\(\s*"phoenix_crm_validation_reviews",\s*"id, place_id, status(?:, decided_by_hr_id, decided_at)?"/, "the review read carries id too");
+
+  // Production read audit, 28 Oct 2026: there is no index on `created_at`, so ordering the pages by it
+  // made every page scan and sort the whole table. The pages walk the primary key; the board's
+  // newest-first order is made in code, after the read.
+  assert.match(
+    validated,
+    /seatScoped\(query, seats\)\.order\("id", \{ ascending: false \}\)/,
+    "the validated-places pages are ordered by the primary key alone",
+  );
+  assert.doesNotMatch(validated, /\.order\("created_at"/, "no page of the validated-places read sorts on created_at");
+  assert.match(validated, /\.sort\(newestValidatedFirst\)/, "the rows are put back newest first in code");
+  const newest = /\nfunction newestValidatedFirst\([\s\S]*?\n\}/.exec(service)?.[0] ?? "";
+  assert.ok(newest, "newestValidatedFirst is still the function the rows are sorted by");
+  assert.match(newest, /right\.created_at/, "the in-code order is by created_at");
+  assert.match(newest, /leftId < rightId \? 1 : -1/, "a tie on created_at falls to id, descending");
 }
 
 /**

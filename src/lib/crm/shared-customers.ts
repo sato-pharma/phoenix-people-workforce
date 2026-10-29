@@ -1,3 +1,4 @@
+import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -11,11 +12,14 @@ const IN_CHUNK = 50;
 const PLAN_PAGE = 1000;
 /** Chunks read at once — the Reps List's own figure. */
 const CHUNK_CONCURRENCY = 4;
+/** One pin per doctor; the largest list measured was 197 doctors, so this holds every list many times over. */
+const OBSERVED_POINTS_SHARED_LIMITS = { maxEntries: 200, maxRowsTotal: 50_000 };
 
 import { getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { findSharedCustomers, type SharedWith } from "@/lib/crm/location-confidence";
 import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
 import { loadCheckins, loadContactRoster, loadPinsFor } from "@/lib/crm/reps-list";
+import { CRM_OBSERVED_POINTS } from "@/lib/crm/shared-windows";
 
 /**
  * 🔴 WHERE A DOCTOR ACTUALLY IS, from the check-ins already in the mirror (owner, 2026-09-30: "you
@@ -156,13 +160,38 @@ export async function loadVisitHistoryFor(contactCrmIds: readonly number[], opti
   return readContactVisitHistory(contactCrmIds, options);
 }
 
+type ObservedPointRow = ObservedPoint & { contactCrmId: number };
+
+/**
+ * Where reps have actually stood at each of these doctors — the averaged iReports360 check-in, for the
+ * List's address, map link and board colour. A LOCATION for display, never a judgement (rowPoint,
+ * list-row-facts.ts): nothing approves, pays or notifies from it.
+ *
+ * SHARED FOR A MINUTE (28 Oct 2026 production read audit). Every List open re-read every check-in of
+ * the same doctors, cold — 8,527 reads of one shape in three days, 234,221 of them disk reads, on a
+ * table that keeps falling out of memory — to make one small pin per doctor. Only that derived pin is
+ * kept, keyed by the exact doctors asked about, so a caller only ever receives the doctors its own
+ * scoped list named; at most `SHARED_READ_TTL_MS` old, the window the owner chose for display reads on
+ * 2026-10-16, and dropped at once by `refreshSharedCrmWindows` when a poll writes check-ins. The pins
+ * are kept as an array — a Map does not survive the copy — and a failed read throws and is never kept.
+ */
 export async function loadObservedPointsFor(contactCrmIds: readonly number[]): Promise<Map<number, ObservedPoint>> {
-  if (contactCrmIds.length === 0) return new Map();
-  const checkins = await loadCheckins(contactCrmIds);
+  const ids = [...new Set(contactCrmIds)];
+  if (ids.length === 0) return new Map();
+  const key = sharedReadKey({ ids: [...ids].sort((left, right) => left - right) });
+  const { rows } = await getOrLoadShared(CRM_OBSERVED_POINTS, key, () => readObservedPoints(ids), OBSERVED_POINTS_SHARED_LIMITS);
   const observed = new Map<number, ObservedPoint>();
+  for (const { contactCrmId, ...point } of rows ?? []) observed.set(contactCrmId, point);
+  return observed;
+}
+
+/** The live read behind `loadObservedPointsFor`: the doctors' check-ins, averaged to one pin each. */
+async function readObservedPoints(contactCrmIds: readonly number[]): Promise<ObservedPointRow[]> {
+  const checkins = await loadCheckins(contactCrmIds);
+  const observed: ObservedPointRow[] = [];
   for (const [contactCrmId, found] of checkins) {
     const point = averageCheckinPoint(found.points);
-    if (point) observed.set(contactCrmId, { ...point, address: found.seenAt.address });
+    if (point) observed.push({ ...point, address: found.seenAt.address, contactCrmId });
   }
   return observed;
 }

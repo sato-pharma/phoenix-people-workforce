@@ -34,6 +34,7 @@
 
 import { unstable_cache } from "next/cache";
 
+import { fetchAllRowsKeyset, keysetRanges } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
@@ -274,6 +275,29 @@ export function summarizeRepLists(records: readonly OpenAssignmentCountRecord[])
 }
 
 /**
+ * `walks - 1` even id cuts across the whole assignment table, for `keysetRanges` to turn into `walks`
+ * contiguous id ranges. The lowest and highest id are two one-row reads on the primary key with no
+ * filter, so each is an index endpoint, never a scan. The cuts only spread the work: open rows bunch
+ * by id (six of fourteen even ranges held none on 28 Oct 2026), and a dense range simply pages on.
+ */
+async function assignmentIdCuts(walks: number): Promise<number[]> {
+  if (walks <= 1) return [];
+  const supabase = getSupabaseAdmin();
+  const [lowest, highest] = await Promise.all(
+    [true, false].map((ascending) =>
+      supabase.from(CRM_CONTACT_ASSIGNMENTS_TABLE).select("id").order("id", { ascending }).limit(1).maybeSingle(),
+    ),
+  );
+  if (lowest.error) throw new Error(`Could not size the doctor lists: ${lowest.error.message}`);
+  if (highest.error) throw new Error(`Could not size the doctor lists: ${highest.error.message}`);
+  const low = Number((lowest.data as { id?: unknown } | null)?.id);
+  const high = Number((highest.data as { id?: unknown } | null)?.id);
+  if (!Number.isFinite(low) || !Number.isFinite(high) || high <= low) return [];
+  const step = (high - low + 1) / walks;
+  return Array.from({ length: walks - 1 }, (_unused, index) => Math.floor(low + step * (index + 1)));
+}
+
+/**
  * One summary row per rep who holds a list today, for the rep pickers.
  *
  * Counts come from the list rows themselves rather than from any counter column, so what the picker
@@ -304,6 +328,14 @@ export function summarizeRepLists(records: readonly OpenAssignmentCountRecord[])
  * is deterministic. The count and every page carry the same open-period filter, or the count would
  * size the fan-out for closed periods the pages never return.
  *
+ * THE PAGES ARE ID RANGES, NOT OFFSETS (28 Oct 2026). An OFFSET page makes Postgres walk and throw
+ * away every earlier open row, so page 14 walked ~14,000 rows to return 1,000: ~258,000 rows a build,
+ * 9,487 buffer pages a call, the largest single read on the database (8.9% of all page reads over
+ * 25–28 Oct, pg_stat_statements). Each walk now seeks inside its own id range on the primary key. The
+ * cuts are even steps across the table's whole id span; they only spread the work, and since the
+ * ranges are contiguous and the last is open-ended (keysetRanges), a row written mid-read can slow one
+ * walk but never be lost or read twice — which an offset sweep could do.
+ *
  * The try/catch stays OUT of the cached function deliberately, for the same reason
  * `loadBrickCentroids` does it: a transient database error must throw, never be written into the
  * cache as an empty roster that then reads as "no rep has a list" for five minutes.
@@ -317,23 +349,28 @@ export const getRepListSummaries = unstable_cache(
       .is("effective_to", null);
     if (countError) throw new Error(`Could not size the doctor lists: ${countError.message}`);
 
-    const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
-    const results = await Promise.all(
-      Array.from({ length: pages }, (_unused, page) =>
-        supabase
-          .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-          .select("id, agent_crm_id, agent_hr_id, list_type, updated_at")
-          .is("effective_to", null)
-          .order("id", { ascending: true })
-          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+    const ranges = keysetRanges(await assignmentIdCuts(Math.ceil((count ?? 0) / PAGE_SIZE)));
+    const walks = await Promise.all(
+      ranges.map((range) =>
+        fetchAllRowsKeyset<OpenAssignmentCountRecord & { id: number }>(
+          () => {
+            let query = supabase
+              .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+              .select("id, agent_crm_id, agent_hr_id, list_type, updated_at")
+              .is("effective_to", null);
+            if (range.from !== null) query = query.gte("id", range.from);
+            if (range.below !== null) query = query.lt("id", range.below);
+            return query;
+          },
+          { cursorColumn: "id", cursorOf: (row) => row.id },
+        ),
       ),
-    );
+    ).catch((error: { message?: string }) => {
+      throw new Error(`Could not read the doctor lists: ${error?.message ?? String(error)}`);
+    });
 
-    const records: OpenAssignmentCountRecord[] = [];
-    for (const { data, error } of results) {
-      if (error) throw new Error(`Could not read the doctor lists: ${error.message}`);
-      records.push(...((data ?? []) as unknown as OpenAssignmentCountRecord[]));
-    }
+    // The ranges are in ascending id order, so the rows arrive in the order one walk would return them.
+    const records: OpenAssignmentCountRecord[] = walks.flat();
     return summarizeRepLists(records);
   },
   ["crm-rep-list-summaries-by-hr-id"],
