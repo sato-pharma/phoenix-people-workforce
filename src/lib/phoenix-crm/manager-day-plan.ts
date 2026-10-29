@@ -78,7 +78,7 @@ function nameKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function halfOfVisit(visit: ManagerDayVisit): ManagerHalf {
+export function halfOfVisit(visit: Pick<ManagerDayVisit, "bucket" | "loggedHalf">): ManagerHalf {
   if (visit.bucket === "AM" || visit.bucket === "PM") return visit.bucket;
   return visit.loggedHalf ?? "PM";
 }

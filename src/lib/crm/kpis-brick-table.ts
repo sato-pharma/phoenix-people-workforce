@@ -13,7 +13,8 @@
  *     exactly as the team tiles and `plannedDoctors` count him. Covered: +1 when that rep saw him.
  *   - The frequency columns are the Frequency report's own definitions: a doctor is judged unless he is
  *     ungraded or not due yet; "on plan" is Exact or At norm; Below, Above and Not visited are the
- *     rest. So `onPlan + below + above + notVisited === judged` in every row.
+ *     rest. So `onPlan + below + above + notVisited === judged` in every row. On the plan rules the
+ *     never-seen are in no frequency column, as they are in no Frequency tile: Coverage counts them.
  *   - A doctor whose brick was never read (the read failed) is in no row, so a failed read builds no
  *     table rather than a table that calls everyone "not validated".
  */
@@ -71,8 +72,11 @@ export type KpiBrickRow = {
 /**
  * The three frequency columns of a brick line, in the board's own words for the rules that scored it:
  * Exact, Below and Above (the owner's, ACTIVITY_LABEL) or At norm, Below norm and No grade. Never "On
- * plan" or "Over plan". A doctor never seen is short of what was asked, so Below counts him too — as
- * the rep row's own Below does. Each column names the verdicts it counts, which are also the Verdict
+ * plan" or "Over plan". Below is the Frequency tile's own Below, and the rep row's, for the rules that
+ * scored it (owner, 2026-10-29: "make the brick table's Below match the Frequency tile"): on the plan
+ * rules a doctor seen at least once but fewer times than due (`underDoctors`; a doctor never seen is
+ * "missed" there, never "under"); on the Phoenix rules everyone under his grade norm, never-seen
+ * included (`frequency.below`). Each column names the verdicts it counts, which are also the Verdict
  * filter a count on screen links to. The screen and the XLSX export both read this one list.
  */
 export type KpiBrickFrequencyColumn = {
@@ -84,17 +88,15 @@ export type KpiBrickFrequencyColumn = {
 
 export function kpiBrickFrequencyColumns(phoenix: boolean): KpiBrickFrequencyColumn[] {
   const passing: KpiDoctorStatus[] = ["exact", "at-norm"];
-  const short: KpiDoctorStatus[] = ["below", "not-visited"];
-  const shortCount = (row: KpiBrickRow) => row.below + row.notVisited;
   return phoenix
     ? [
         { label: "At norm", sub: "The pass", count: (row) => row.onPlan, statuses: passing },
-        { label: "Below norm", sub: "Short, or never seen", count: shortCount, statuses: short },
+        { label: "Below norm", sub: "Short, or never seen", count: (row) => row.below + row.notVisited, statuses: ["below", "not-visited"] },
         { label: "No grade", sub: "Left out", count: (row) => row.ungraded, statuses: ["ungraded"] },
       ]
     : [
         { label: ACTIVITY_LABEL.on_plan, sub: "The only pass", count: (row) => row.onPlan, statuses: passing },
-        { label: ACTIVITY_LABEL.under, sub: "Short, or never seen", count: shortCount, statuses: short },
+        { label: ACTIVITY_LABEL.under, sub: "Seen, too few times", count: (row) => row.below, statuses: ["below"] },
         { label: ACTIVITY_LABEL.over, sub: "Also a deviation", count: (row) => row.above, statuses: ["above"] },
       ];
 }

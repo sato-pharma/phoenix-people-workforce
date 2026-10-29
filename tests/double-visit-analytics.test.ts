@@ -136,22 +136,23 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(service, /loadDoubleVisitPrivateCalendarItems/, "private calendar must receive Double Visit evidence");
   assert.doesNotMatch(service, /title: "Performed Double Visits"/, "performed double-visit items must show the visit count, visited name(s), and area instead of a generic title");
   assert.doesNotMatch(service, /title: "Received Double Visit"/, "received double-visit items must show the visit count, double-visitor name(s), and area instead of a generic title");
-  // One calendar item per person, day and KIND — double or chain, regular or campaign — titled
-  // with the kind, the people who went, and the area; its visits AM · PM · Pharmacies apart.
+  // One calendar item per person, day and KIND — Single, Double or Chain visit, one per companion, so a campaign visit
+  // joins its day's entry (owner, 2026-10-29). Each fact once: who went is the title, the kind in Phoenix words leads
+  // the month-grid line, then the visits AM · PM · PH apart, then the area.
   assert.match(
     service,
-    /title: `\$\{kindLabel\}: \$\{total\} visit\$\{total === 1 \? "" : "s"\} with \$\{withNames\} - \$\{areaLabel\}`/,
-    "a double-visit calendar title must read '<kind>: N visit(s) with <names> - <area>'",
+    /title: `With \$\{withNames\}`/,
+    "a double-visit calendar card is titled with who went — the kind is its chip and the counts its time, never repeated",
   );
   assert.match(
     service,
-    /chipLines: \[\s*kindLabel,\s*`With \$\{withNames\}`,\s*counts,\s*areaLabel,/,
-    "a double-visit month-grid chip must stack kind / with-names / AM · PM · Pharmacies / area on separate lines",
+    /chipLines: \[\s*`\$\{kindLabel\} with \$\{withNames\}`,\s*counts,\s*areaLabel,/,
+    "a double-visit month-grid chip must read 'Double visit with <names>' / AM · PM · PH / area on separate lines",
   );
   assert.match(
     service,
-    /const counts = formatVisitCountSplit\(split, \{ compact: true \}\);/,
-    "the chip's visit count must come from the golden-rule formatter, never a hand-built AM · PM pair",
+    /const counts = privateCalendarTileCountsText\(split\);/,
+    "the chip's visit count is the tile's own three figures, AM · PM · PH (owner, 2026-10-29), never a hand-built AM · PM pair",
   );
   assert.match(
     service,

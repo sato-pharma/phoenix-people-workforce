@@ -26,7 +26,7 @@
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
-import { readAllPrivateCalendarRows, type PrivateCalendarItem } from "@/lib/private-calendar/logic";
+import { readAllPrivateCalendarRows, type PrivateCalendarItem, type PrivateCalendarPlanActivity } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { weekOfLabel } from "@/lib/weekly-planning/plan-labels";
 import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
@@ -141,6 +141,30 @@ function timeRange(start: string | null | undefined, end: string | null | undefi
   return from ?? to ?? "Planned day";
 }
 
+const PLAN_TYPE_OF_ACTIVITY: Record<string, PrivateCalendarPlanActivity["type"]> = {
+  "double visit": "visit",
+  excuse: "leave",
+  field: "visit",
+  "national vacation": "leave",
+  office: "office",
+  travel: "travel",
+  vacation: "leave",
+};
+
+/** What a record can prove the planned activity happened by — see PrivateCalendarPlanActivity. Unknown types are `other`. */
+export function planActivityTypeOf(activityType: string | null | undefined): PrivateCalendarPlanActivity["type"] {
+  return PLAN_TYPE_OF_ACTIVITY[cleanText(activityType).toLowerCase()] ?? "other";
+}
+
+/** A weekly plan row's half from its times: ends by 13:00 → AM, starts at 13:00 or later → PM, anything else the whole day. */
+export function planHalfOfTimes(start: string | null | undefined, end: string | null | undefined): PrivateCalendarPlanActivity["half"] {
+  const from = shortTime(start);
+  const to = shortTime(end);
+  if (to && to <= "13:00" && (!from || from < to)) return "AM";
+  if (from && from >= "13:00") return "PM";
+  return "Full day";
+}
+
 function schemaMissing(error: unknown) {
   const text = error instanceof Error ? error.message : JSON.stringify(error);
   return /employee_plan_headers|employee_plan_items|schema cache|does not exist|PGRST205|42P01/i.test(text);
@@ -167,6 +191,7 @@ export function mapPlanRowToPrivateCalendarItem(
   // (decorateItemsWithEmployeeMetadata), so who actually signed this week off would otherwise be lost
   // on the one item where it is the whole point.
   if (nullableText(header.manager_name)) detailLines.push(`Signed off by: ${cleanText(header.manager_name)}`);
+  const label = activityType === title ? activityType : `${activityType} · ${title}`;
   return {
     // The plan is an intention, never a visit, so it carries no visit colour of its own.
     activityKind: "plan",
@@ -176,7 +201,7 @@ export function mapPlanRowToPrivateCalendarItem(
     approvalImpact: recordedNowhereElse
       ? "The only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
       : "The day still needs its own record: a punch, a logged visit or an approved request.",
-    chipLines: [activityType === title ? activityType : `${activityType} · ${title}`, ...(place ? [place] : [])],
+    chipLines: [label, ...(place ? [place] : [])],
     description: nullableText(item.notes),
     detailLines,
     employeeDepartmentName: null,
@@ -188,6 +213,14 @@ export function mapPlanRowToPrivateCalendarItem(
     exceptionFlags: [],
     id: `plan-${item.id}`,
     managerName: nullableText(header.manager_name),
+    planActivity: {
+      half: planHalfOfTimes(item.start_time, item.end_time),
+      label,
+      place,
+      signedOffBy: nullableText(header.manager_name),
+      type: planActivityTypeOf(item.activity_type),
+      withName: nullableText(item.double_visit_medical_rep_name),
+    },
     plannedActivityIsRecordedNowhereElse: recordedNowhereElse,
     // An APPROVED plan is news, never something to review — the same reasoning as an approved excuse.
     severity: "info",
@@ -220,12 +253,13 @@ export function mapManagerHalfDayToPrivateCalendarItem(
   if (halfDay.kind !== "admin" && halfDay.customerCount !== null) detailLines.push(`Customers planned: ${halfDay.customerCount}`);
   detailLines.push(weekOfLabel(halfDay.weekStart) || `Week: ${halfDay.weekStart}`);
   if (names.approver) detailLines.push(`Signed off by: ${names.approver}`);
+  const label = activityType === title ? activityType : `${activityType} · ${title}`;
   return {
     activityKind: "plan",
     approvalImpact: recordedNowhereElse
       ? "The only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
       : "The day still needs its own record: a punch, a logged visit or an approved request.",
-    chipLines: [activityType === title ? activityType : `${activityType} · ${title}`],
+    chipLines: [label],
     description: halfDay.note,
     detailLines,
     employeeDepartmentName: null,
@@ -237,6 +271,16 @@ export function mapManagerHalfDayToPrivateCalendarItem(
     exceptionFlags: [],
     id: `crm-plan-${halfDay.slotId}`,
     managerName: names.approver,
+    planActivity: {
+      half: halfDay.half,
+      // "With Hassan Mohamed" says it all; "Field · With Hassan Mohamed" said Field twice over in the table.
+      label: halfDay.kind === "admin" ? label : title,
+      // managerHalfDayText already names the area of every kind that has one.
+      place: null,
+      signedOffBy: names.approver,
+      type: planActivityTypeOf(activityType),
+      withName: halfDay.kind === "with_rep" ? names.rep : halfDay.kind === "with_senior" ? names.senior ?? null : null,
+    },
     plannedActivityIsRecordedNowhereElse: recordedNowhereElse,
     severity: "info",
     source: "plan",

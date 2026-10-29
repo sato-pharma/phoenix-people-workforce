@@ -27,11 +27,18 @@
  * function — two copies could disagree about a brick, and the row is frozen for good.
  */
 
-import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { fileBrickForPoint, loadBrickCentroids } from "@/lib/crm/brick-geo";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 
-/** A nearest brick centre further than this is not trusted as the place's brick. */
+/** A nearest brick centre further than this is not trusted as the place's brick on distance alone. */
 export const BRICK_TRUST_KM = 3;
+
+/**
+ * Past `BRICK_TRUST_KM`, how far the capturing seat's OWN area's nearest brick may sit and still be the
+ * place's brick (owner, 2026-10-29, "Rep's own area"). The furthest of the 204 validated places left
+ * with no brick sat 17.46 km from a dot; a neighbouring area's dot never reaches (`fileBrickForPoint`).
+ */
+export const OWN_AREA_REACH_KM = 20;
 
 /**
  * The territory the reading was taken in — the capturing seat's own area code(s).
@@ -80,10 +87,13 @@ export async function resolvePinGeography(
       { reuseNearbyAddress: true },
     ).catch(() => null),
   ]);
-  // The seat's own area breaks a near tie, inside the SAME trust radius the match is judged by — so a
-  // capture is never dragged into a territory it is further than `BRICK_TRUST_KM` from.
-  const brick = resolveBrickForPoint(point.lat, point.lon, centroids, { areaCodes: territory.areaCodes, withinKm: BRICK_TRUST_KM });
-  const trusted = brick && brick.distanceKm <= BRICK_TRUST_KM ? brick : null;
+  // The seat's own area breaks a near tie inside the trust radius; past it, only the seat's OWN area
+  // reaches further (`OWN_AREA_REACH_KM`), so a capture is never filed in a neighbouring territory.
+  const { filed: trusted, measured: brick } = fileBrickForPoint(point.lat, point.lon, centroids, {
+    areaCodes: territory.areaCodes,
+    trustKm: BRICK_TRUST_KM,
+    reachKm: OWN_AREA_REACH_KM,
+  });
   // 🔴 DID ANYBODY ACTUALLY LOOK? `centroids.length === 0` is READ, never inferred from a null brick:
   // `loadBrickCentroids` degrades to an empty list on any error, deliberately outside its cache, so an
   // empty list is the ONLY tell that the brick master could not be read. Without this, "the pin is

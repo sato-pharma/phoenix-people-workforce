@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { ManagerDayVisit } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
-import { privateCalendarDayTile, privateCalendarPlanText } from "../src/lib/private-calendar/day-tile.ts";
+import { privateCalendarVisitKind } from "../src/lib/private-calendar/activity-kinds.ts";
+import {
+  privateCalendarDayTile,
+  privateCalendarPlanText,
+  privateCalendarTileCountsText,
+  privateCalendarTileHeadline,
+} from "../src/lib/private-calendar/day-tile.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -12,17 +18,20 @@ import { stripComments } from "./support/comment-strip.ts";
  * names … regular or campaign, planned or unplanned … if double, the medical rep, the brick … when I press on the day,
  * the details appear down."*
  *
- *   1. a visit entry makes a tile of the kind, the category, the three figures apart, who it was made with, the brick
- *      and the area — every one read from a STRUCTURED field, never parsed out of the text lines;
+ *   1. a visit entry makes a tile of the kind and who it was made with, the three figures apart, the brick and the
+ *      area — every one read from a STRUCTURED field, never parsed out of the text lines;
  *   2. planned / unplanned is said only where a Phoenix visit says it, and a mix is counted;
  *   3. only a visit entry makes a tile — attendance, vacation and the rest keep their own chip;
  *   4. the grid draws no customer and no per-visit row in the tile, and the page wears the square-edge look.
+ *
+ * Owner, 2026-10-29, in Phoenix words: "write double visit with Hana Abdelaziz", the figures "AM 1 · PM 7 · PH 0" with
+ * one look for each (the violet pharmacy chip is gone), and no "Regular" / "Campaign" — a visit's kind is who went.
  */
 function entry(overrides: Partial<PrivateCalendarItem> = {}): PrivateCalendarItem {
   return {
     activityKind: "double_regular",
     approvalImpact: null,
-    chipLines: ["Double · Regular", "With Mina Farouk", "AM 2 · PM 1 · Pharmacies 1", "Nasr City", "AM · Dr. Hala Mansour · Cardiology"],
+    chipLines: ["Double visit with Mina Farouk", "AM 2 · PM 1 · PH 1", "Nasr City", "AM · Dr. Hala Mansour · Cardiology"],
     description: null,
     detailLines: [],
     employeeDepartmentName: null,
@@ -43,7 +52,7 @@ function entry(overrides: Partial<PrivateCalendarItem> = {}): PrivateCalendarIte
     startDate: "2026-10-19",
     status: "performed",
     time: null,
-    title: "Double · Regular: 4 visits",
+    title: "Double visit: 4 visits",
     visitCounts: { am: 2, pm: 1, pharmacies: 1 },
     ...overrides,
   };
@@ -118,7 +127,8 @@ export function runPrivateCalendarDayTileTests(): void {
     const tile = privateCalendarDayTile(entry({ tileAreas: ["Nasr City"], tileWith: ["Mina Farouk"] }));
     assert.ok(tile, "a double visit entry makes a tile");
     assert.equal(tile.companion, "double");
-    assert.equal(tile.category, "regular");
+    assert.equal(privateCalendarTileHeadline(tile), "Double visit with Mina Farouk", "the bold line is Phoenix CRM's own name for the visit, then who it was with");
+    assert.equal(privateCalendarTileCountsText(tile.split), "AM 2 · PM 1 · PH 1", "three figures, one look, PH for the pharmacies");
     assert.deepEqual(tile.split, { am: 2, pm: 1, pharmacies: 1 }, "AM, PM and Pharmacies stay apart — a pharmacy is never inside PM");
     assert.equal(tile.total, 4);
     assert.deepEqual(tile.withNames, ["Mina Farouk"]);
@@ -137,10 +147,20 @@ export function runPrivateCalendarDayTileTests(): void {
     assert.deepEqual(privateCalendarDayTile(entry({ employeeAreaName: "Giza", tileAreas: ["Nasr City"] }))?.areas, ["Nasr City"], "the entry's own area beats the employee's");
   }
 
-  // ── 2. Campaign, chain, single — and planned / unplanned only where a Phoenix visit says it ──────────────────
+  // ── 2. One kind per companion, and planned / unplanned only where a Phoenix visit says it ───────────────────
   {
-    assert.equal(privateCalendarDayTile(entry({ activityKind: "single_campaign" }))?.category, "campaign");
+    // A campaign call is no kind of its own: it joins the day's entry, so 21 Oct never draws a second tile beside it.
+    assert.deepEqual(
+      (["single", "double", "chain"] as const).map(privateCalendarVisitKind),
+      ["single_regular", "double_regular", "chain_regular"],
+      "the kind is who went, and nothing else",
+    );
     assert.equal(privateCalendarDayTile(entry({ activityKind: "chain_regular" }))?.companion, "chain");
+    assert.equal(privateCalendarTileHeadline({ companion: "single", withNames: [] }), "Single visit", "a single visit names nobody");
+    assert.equal(
+      privateCalendarTileHeadline({ companion: "chain", withNames: ["Mina Farouk", "Nour Samy"] }),
+      "Chain visit with Mina Farouk, Nour Samy",
+    );
 
     const visits = [
       phoenixVisit({ id: "rep:1", planned: true }),
@@ -194,12 +214,13 @@ export function runPrivateCalendarDayTileTests(): void {
     assert.doesNotMatch(page, /managerVisitClock|managerVisitCustomerType|managerVisitHalfLabel/, "no per-visit clock, customer or list in the grid");
     assert.match(page, /baseLines\.slice\(0, 2\)/, "a visit entry with no tile prints its kind and counts only — never the customers");
     assert.match(page, /<ManagerPlanActual /, "the visits are still read in full in the Daily Timeline");
-    assert.match(page, /bg-violet-600 text-white/, "the pharmacy figure wears the violet of the Phoenix CRM calendar");
+    assert.doesNotMatch(page, /bg-violet-600 text-white/, "no figure shouts: the pharmacy count lost its violet fill (owner, 2026-10-29)");
+    assert.match(page, /privateCalendarTileCountsText\(tile\.split\)/, "the three figures are one plain line");
+    assert.doesNotMatch(page, /PRIVATE_CALENDAR_CATEGORY_LABELS|Pharmacies<\//, "no Regular / Campaign label and no Pharmacies word on the tile");
     assert.doesNotMatch(page, /rounded-(?:sm|md|lg|xl|full)\b/, "square edges");
     assert.doesNotMatch(page, /\bshadow-(?:sm|md|lg|xl)\b/, "depth comes from the house ladder, never a bare Tailwind shadow");
     assert.match(page, /const panelClass = `overflow-hidden border border-slate-200 bg-white \$\{adminPanelDepthClassName\}`;/, "a panel wears the house panel depth");
     assert.match(page, /\[adminPanelHeaderClassName, "px-5 py-5"\]/, "the dark band is the house token, not a hand-rolled slate-950 with a rule of its own");
-    assert.match(page, /whitespace-nowrap font-black uppercase tracking-\[0\.08em\]/, "a figure's label keeps its word whole in a ~90px day column; the number wraps under it instead");
 
     const tileSource = stripComments(readFileSync("src/lib/private-calendar/day-tile.ts", "utf8"));
     assert.doesNotMatch(tileSource, /chipLines/, "the tile never reads the text lines");

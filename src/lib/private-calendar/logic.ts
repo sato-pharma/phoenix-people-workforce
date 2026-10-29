@@ -60,14 +60,13 @@ export type PrivateCalendarReportDetails = {
 export type PrivateCalendarTilePerson = { hrId: string | null; name: string };
 
 export type PrivateCalendarItem = {
-  // The colour the item wears — who went (single, double, chain) crossed with regular or campaign
-  // for a CRM visit; attendance, vacation, excuse, holiday or other CRM activity otherwise. Absent
-  // on items that predate the colour key: privateCalendarItemKind falls back by source.
+  // The colour the item wears — who went (single, double, chain) for a CRM visit; attendance, vacation,
+  // excuse, holiday or other CRM activity otherwise. Absent on items that predate the colour key:
+  // privateCalendarItemKind falls back by source.
   activityKind?: PrivateCalendarActivityKind;
   approvalImpact: string | null;
-  // Short, stacked lines for the cramped month-grid day-cell chip (e.g. ["Double · Regular",
-  // "With Omar", "AM 4 · PM 8 · Pharmacies 2", "Nasr City"]). Falls back to `title` on a single
-  // line when absent.
+  // Short, stacked lines for the cramped month-grid day-cell chip (e.g. ["Office · Full day",
+  // "9:03 AM – 5:04 PM"]). Falls back to `title` on a single line when absent.
   chipLines?: string[];
   description: string | null;
   detailLines: string[];
@@ -89,6 +88,9 @@ export type PrivateCalendarItem = {
   // excuses no day, whatever its title (owner, 2026-10-12). The flag is decided at read time and
   // carried on the item so the exceptions engine below stays free of a database import.
   plannedActivityIsRecordedNowhereElse?: boolean;
+  // Only on a `plan` item: what the plan said, in the fields the day's Plan | Actual table matches on
+  // (lib/private-calendar/plan-actual.ts) — never parsed back out of the title.
+  planActivity?: PrivateCalendarPlanActivity;
   reportDetails?: PrivateCalendarReportDetails | null;
   severity: PrivateCalendarSeverity;
   source: PrivateCalendarSource;
@@ -122,6 +124,24 @@ export type PrivateCalendarItem = {
   // plan was not asked for; `managerPlanUnread` says it was asked for and could not be read.
   managerPlan?: ManagerDayPlan;
   managerPlanUnread?: boolean;
+};
+
+/**
+ * What one approved plan entry said, reduced to what a record can prove (owner, 2026-10-29: "put each point beside the
+ * point"). `visit` is a Field or Double Visit day, or a half-day with a rep, a manager or an area; `office` waits for a
+ * punch; `leave` for a leave request, an excuse or the holiday calendar; `travel` for an outstation trip; `other`
+ * (Training, Meeting, Admin, Event) for a CRM activity or a verified correction.
+ */
+export type PrivateCalendarPlanActivity = {
+  half: "AM" | "PM" | "Full day";
+  /** The plan's own words: "Double Visit", "With Hassan Mohamed", "Office". */
+  label: string;
+  /** The plan's area, when it named one. */
+  place: string | null;
+  signedOffBy: string | null;
+  type: "visit" | "office" | "leave" | "travel" | "other";
+  /** The person the plan named to go with — a double visit's rep, a With my manager's manager. */
+  withName: string | null;
 };
 
 export type PrivateCalendarException = {
@@ -733,7 +753,13 @@ export type PrivateCalendarAcceptedCorrection = {
  * annotating its own item (applyAcceptedDisputeOverlays) and adds nothing here.
  *
  * Display only: the deductions read (getCompanyNoActivityDays) does not read review requests and is untouched.
+ *
+ * Owner, 2026-10-29: the BOLD line is what the person did ("Physical Training – Pediatrics Line Outside the Company"),
+ * and "verified" is a small ✓ mark under it — never a "Verified correction" heading above the activity. That it came
+ * from an approved review request, and the proof, are said once, in the day's details only, never on the tile.
  */
+export const PRIVATE_CALENDAR_VERIFIED_MARK = "✓ Verified";
+
 export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCorrection[]): PrivateCalendarItem[] {
   const byDay = new Map<string, PrivateCalendarAcceptedCorrection[]>();
   for (const dispute of disputes) {
@@ -754,13 +780,16 @@ export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCo
       byClaim.set(claimKey, entry);
     }
     const claims = Array.from(byClaim.values()).map((entry) => entry.claim);
+    const claimText = claims.join(" · ");
+    // One claim is already the title, so its detail line does not repeat it; several each name their own.
+    const proofLine = (entry: { claim: string; sources: string[]; notes: string[] }) =>
+      `${claims.length > 1 ? `${entry.claim} — from` : "From"} an approved review request · proof: ${entry.sources.join(" and ")}${entry.notes.length > 0 ? ` · Admin note: ${entry.notes.join(" · ")}` : ""}`;
     return {
       activityKind: "correction",
       approvalImpact: null,
-      chipLines: ["Verified correction", ...claims],
+      chipLines: [claimText, PRIVATE_CALENDAR_VERIFIED_MARK],
       description: null,
-      detailLines: Array.from(byClaim.values()).map((entry) =>
-        `${entry.claim} — verified via ${entry.sources.join(" and ")}.${entry.notes.length > 0 ? ` Admin note: ${entry.notes.join(" · ")}` : ""}`),
+      detailLines: Array.from(byClaim.values()).map(proofLine),
       employeeDepartmentName: null,
       employeeHrId: first.employeeHrId,
       employeeJobTitle: null,
@@ -777,9 +806,9 @@ export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCo
       sourceSystem: "Phoenix review requests",
       sourceTable: "private_calendar_data_disputes",
       startDate: first.disputeDate,
-      status: "Accepted",
+      status: "Verified",
       time: null,
-      title: `Verified: ${claims.join(" · ")}`,
+      title: claimText,
     } satisfies PrivateCalendarItem;
   });
 }

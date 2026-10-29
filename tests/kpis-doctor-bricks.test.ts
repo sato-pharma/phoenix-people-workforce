@@ -73,9 +73,17 @@ export function runKpiDoctorBrickChooserTests() {
   const noBrick = chooseKpiDoctorBricks([customer()], [place({ brick_name: "  " })]);
   assert.equal(noBrick.has(501), true);
   assert.equal(noBrick.get(501), null, "a blank brick is no brick");
+  // No live place, no live photo behind the validation (owner, 2026-10-29: "Not validated yet") — a
+  // customer whose places were all retired reads exactly like one never validated: missing from the map.
   const noPlace = chooseKpiDoctorBricks([customer()], []);
-  assert.equal(noPlace.has(501), true, "a validated customer with no active place is still validated");
-  assert.equal(noPlace.get(501), null);
+  assert.equal(noPlace.has(501), false, "a validated customer with no active place left reads Not validated yet");
+  // And a doctor validated twice is validated on the customer that still has a live place, even a
+  // dropped one, rather than called not validated because the listed customer's place was retired.
+  const liveElsewhere = chooseKpiDoctorBricks(
+    [customer({ id: "listed-retired" }), customer({ id: "dropped-live", status: "Dropped", validated_at: "2026-08-01T09:00:00Z" })],
+    [place({ customer_id: "dropped-live", brick_name: "Ain Shams" })],
+  );
+  assert.equal(liveElsewhere.get(501), "Ain Shams", "the customer with the live photo carries the doctor's brick");
 
   // Above 600 doctors the board reads every validated customer and active place and narrows the answer
   // (owner, 2026-10-29: one brick read for the whole team). It must give each doctor asked for the brick

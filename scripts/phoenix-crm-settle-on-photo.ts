@@ -44,10 +44,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { fileBrickForPoint, loadBrickCentroids } from "@/lib/crm/brick-geo";
 import { PLACE_MAX_ACCURACY_METERS } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
-import { BRICK_TRUST_KM, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
+import { BRICK_TRUST_KM, OWN_AREA_REACH_KM, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { placesFor, restampVisitLocations, type MeasurablePlace } from "@/lib/phoenix-crm/server/visit-locations";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -157,8 +157,12 @@ async function dryRun(): Promise<void> {
       continue;
     }
     const areaCode = seatAreas.get(String(row.seat_id)) ?? null;
-    const brick = resolveBrickForPoint(photo.lat, photo.lon, centroids, { areaCodes: areaCode ? [areaCode] : [], withinKm: BRICK_TRUST_KM });
-    const trusted = brick && brick.distanceKm <= BRICK_TRUST_KM ? brick : null;
+    // The live resolver's own filing rule, so the plan names the brick the write will store.
+    const trusted = fileBrickForPoint(photo.lat, photo.lon, centroids, {
+      areaCodes: areaCode ? [areaCode] : [],
+      trustKm: BRICK_TRUST_KM,
+      reachKm: OWN_AREA_REACH_KM,
+    }).filed;
     if ((trusted?.brickId ?? null) !== text(row.brick_id)) brickChanges += 1;
     if ((trusted?.areaCode ?? null) !== text(row.area_code)) areaChanges += 1;
     plan.push({

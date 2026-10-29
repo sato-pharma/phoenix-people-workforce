@@ -1732,9 +1732,10 @@ function lineCodeOf(seat: OrgSeat): string {
  *     `resolveEvidenceLocation` the photo's watermark uses, so the address ON the picture and the
  *     address in the row are one lookup and cannot disagree;
  *   - **brick**, **area**, **region** — the Phoenix territory the point physically fell in, from the
- *     nearest brick centroid, with the distance that justifies it kept beside them. A match further
- *     than `BRICK_TRUST_KM` names no brick at all rather than a fabricated neighbouring one, and the
- *     distance is stored either way: a wrong brick is only ever visible in that number.
+ *     nearest brick centroid, with the distance that justifies it kept beside them. Past
+ *     `BRICK_TRUST_KM` only the capturing seat's own area reaches, up to `OWN_AREA_REACH_KM`
+ *     (owner, 2026-10-29); beyond that no brick is named rather than a fabricated neighbouring one,
+ *     and the distance is stored either way: a wrong brick is only ever visible in that number.
  *
  * Before this the phone sent `address`, `zone` and `brick` and the row took them as given, so the
  * evidence of where a customer is could be typed over on the way. It cannot now: `PlaceDraft` no

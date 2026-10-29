@@ -277,7 +277,8 @@ export const REVISIT_WINDOW_VISITS = 3;
  * 3 km is `BRICK_TRUST_KM`'s own neighbourhood: a place inside it was matched to the brick, so this
  * flag is only ever raised on a place the brick lookup ALREADY recorded as `none_nearby` — the
  * distance is read from the row, never recomputed, so this board and the brick report cannot print
- * two different numbers for one place.
+ * two different numbers for one place. A place filed by reach into the seat's own area (owner,
+ * 2026-10-29, `OWN_AREA_REACH_KM`) is `matched`, so it is never flagged here whatever its distance.
  */
 export const BRICK_FAR_KM = 3;
 

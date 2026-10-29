@@ -16,13 +16,13 @@ import {
 
 
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
-import { formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import { visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
 import { managerVisitLine } from "@/lib/phoenix-crm/manager-visit-detail";
 import {
-  PRIVATE_CALENDAR_CATEGORY_LABELS,
   PRIVATE_CALENDAR_COMPANION_LABELS,
   privateCalendarDayTile,
   privateCalendarPlanText,
+  privateCalendarTileCountsText,
   type PrivateCalendarDayTile,
 } from "@/lib/private-calendar/day-tile";
 import {
@@ -34,6 +34,7 @@ import {
   type PrivateCalendarActivityKind,
 } from "@/lib/private-calendar/activity-kinds";
 import {
+  PRIVATE_CALENDAR_VERIFIED_MARK,
   privateCalendarHrIdKey,
   privateCalendarItemOccursOn,
   privateCalendarSourceLabels,
@@ -44,6 +45,8 @@ import {
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
+import { DayPlanActualTable } from "@/components/employee-portal/private-calendar-plan-actual";
+import { buildDayPlanActual } from "@/lib/private-calendar/plan-actual";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
@@ -165,9 +168,9 @@ const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: str
     chip: "border-l-[3px] border-l-violet-600 bg-violet-50",
     swatch: "bg-violet-600",
   },
-  // An approved plan is an INTENTION, not a record, so it wears the hatched treatment the campaign
-  // visits already use for "read me second", in neutral stone — no recorded source's hue, and visibly
-  // not one of them at a glance on a phone marker.
+  // An approved plan is an INTENTION, not a record, so it wears a hatched, dashed treatment for "read me
+  // second", in neutral stone — no recorded source's hue, and visibly not one of them at a glance on a
+  // phone marker.
   plan: {
     accent: "border-dashed border-l-stone-500",
     chip: "border border-l-[3px] border-dashed border-stone-300 border-l-stone-500 bg-white",
@@ -178,30 +181,15 @@ const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: str
     chip: "border-l-[3px] border-l-blue-700 bg-blue-50",
     swatch: "bg-blue-700",
   },
-  single_campaign: {
-    accent: "border-dashed border-l-blue-700",
-    chip: "border border-l-[3px] border-dashed border-blue-300 border-l-blue-700 bg-white",
-    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-blue-700)_0_2px,var(--color-blue-100)_2px_4px)]",
-  },
   double_regular: {
     accent: "border-l-fuchsia-700",
     chip: "border-l-[3px] border-l-fuchsia-700 bg-fuchsia-50",
     swatch: "bg-fuchsia-700",
   },
-  double_campaign: {
-    accent: "border-dashed border-l-fuchsia-700",
-    chip: "border border-l-[3px] border-dashed border-fuchsia-300 border-l-fuchsia-700 bg-white",
-    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-fuchsia-700)_0_2px,var(--color-fuchsia-100)_2px_4px)]",
-  },
   chain_regular: {
     accent: "border-l-teal-700",
     chip: "border-l-[3px] border-l-teal-700 bg-teal-50",
     swatch: "bg-teal-700",
-  },
-  chain_campaign: {
-    accent: "border-dashed border-l-teal-700",
-    chip: "border border-l-[3px] border-dashed border-teal-300 border-l-teal-700 bg-white",
-    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-teal-700)_0_2px,var(--color-teal-100)_2px_4px)]",
   },
   other_crm: {
     accent: "border-l-slate-500",
@@ -435,22 +423,16 @@ function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitl
 /**
  * A visit entry inside a month cell — a SUMMARY, never a list (owner, 2026-10-23: "in the calendar tile itself show the
  * count of the AM and the count of PM and the count of pharmacies, and if it is double or single … the area … don't
- * mention names … when I press on the day, the details appear down"). It prints the kind, the category, the plan state,
- * the three figures apart (a pharmacy in the violet of the Phoenix CRM calendar, never inside PM), who the visits were
- * made with, and the brick and the area. Every customer, address and per-visit card is the Daily Timeline's.
+ * mention names … when I press on the day, the details appear down"). Every customer, address and per-visit card is
+ * the Daily Timeline's.
+ *
+ * Owner, 2026-10-29, in Phoenix words: the bold line is "Double visit with Hana Abdelaziz" (never iReports360's
+ * "Double · Regular"), then planned or unplanned, then ONE plain counts line "AM 1 · PM 7 · PH 0" where every figure
+ * wears the same ink (the pharmacy count no longer shouts in violet), then the brick and the area.
  * Every name that may be Arabic sits in a `bdi`, so the browser's bidirectional rules never reorder it across a dot.
  */
 function VisitDayTile({ item, tile, viewMode }: { item: PrivateCalendarItem; tile: PrivateCalendarDayTile; viewMode: PrivateCalendarViewMode }) {
   const planText = privateCalendarPlanText(tile.plan);
-  const figures: Array<{ label: string; value: number; violet?: boolean }> = [
-    { label: "AM", value: tile.split.am },
-    { label: "PM", value: tile.split.pm },
-    { label: "Pharmacies", value: tile.split.pharmacies, violet: true },
-  ];
-  // Plain lines, no boxes (owner, 2026-10-29: "this is a mess … make it simple when I look at the calendar"): the kind on
-  // one line, the plan state under it, the three figures side by side, then who and where. It used to box every tag and
-  // stack the figures as a three-row table, which made a visit the tallest thing on the page.
-  const kindText = [PRIVATE_CALENDAR_COMPANION_LABELS[tile.companion], PRIVATE_CALENDAR_CATEGORY_LABELS[tile.category]].join(" · ");
   const places = [...tile.bricks, ...tile.areas];
   return (
     <span
@@ -462,28 +444,17 @@ function VisitDayTile({ item, tile, viewMode }: { item: PrivateCalendarItem; til
       title={chipTitle(item, viewMode)}
     >
       {viewMode === "team" && item.employeeName ? <bdi className="block font-black text-slate-900">{item.employeeName}</bdi> : null}
-      <span className="block font-black uppercase tracking-[0.08em] text-slate-900">{kindText}</span>
-      {planText ? <span className="block text-slate-600">{planText}</span> : null}
-      <span className="flex flex-wrap gap-x-1.5 gap-y-0.5">
-        {figures.map((figure) => (
-          <span
-            className={[
-              "inline-flex flex-wrap items-baseline gap-x-1",
-              figure.violet && figure.value > 0 ? "px-1 bg-violet-600 text-white" : figure.value === 0 ? "text-slate-400" : "text-slate-900",
-            ].join(" ")}
-            key={figure.label}
-          >
-            <span className="whitespace-nowrap font-black uppercase tracking-[0.08em]">{figure.label}</span>
-            <span className="text-xs font-black tabular-nums">{figure.value}</span>
-          </span>
-        ))}
+      <span className="block font-black text-slate-900">
+        {PRIVATE_CALENDAR_COMPANION_LABELS[tile.companion]}
+        {tile.withNames.length > 0 ? (
+          <>
+            {" with "}
+            <bdi>{tile.withNames.join(", ")}</bdi>
+          </>
+        ) : null}
       </span>
-      {tile.withNames.length > 0 ? (
-        <span className="block">
-          <span className="text-slate-500">With </span>
-          <bdi className="font-black text-slate-900">{tile.withNames.join(", ")}</bdi>
-        </span>
-      ) : null}
+      {planText ? <span className="block text-slate-600">{planText}</span> : null}
+      <span className="block font-bold tabular-nums text-slate-900">{privateCalendarTileCountsText(tile.split)}</span>
       {places.length > 0 ? (
         <span className="block text-slate-500">
           {places.map((place, index) => (
@@ -724,6 +695,18 @@ export function PrivateCalendar({
   );
   const selectedExceptions = useMemo(() => filteredExceptions.filter((exception) => exception.date === selectedDate), [filteredExceptions, selectedDate]);
   const timelineItems = useMemo(() => sortTimelineItems(withoutPlanDrawnByATable(selectedItems)), [selectedItems]);
+  // One person's day: the plan sits beside what was recorded in ONE table (owner, 2026-10-29: "put each point beside the
+  // point"), so the plan's own cards are not drawn under it as well. The team view keeps its plan cards — many people's
+  // plans in one table would pair one person's plan with another's record.
+  const dayPlanActualRows = useMemo(() => {
+    if (viewMode === "team") return [];
+    const planItems = timelineItems.filter((item) => !isRecordedEntry(item));
+    return planItems.length === 0 ? [] : buildDayPlanActual(planItems, timelineItems.filter(isRecordedEntry));
+  }, [timelineItems, viewMode]);
+  const dayCardItems = useMemo(
+    () => (dayPlanActualRows.length > 0 ? timelineItems.filter(isRecordedEntry) : timelineItems),
+    [dayPlanActualRows, timelineItems],
+  );
   // "Exceptions" and "Days w/ Issues" count what needs review only. An info exception is a review
   // request's own status (pending, verified) — news for the employee, never an issue; counting it
   // made a verified correction read as one more problem day.
@@ -1516,7 +1499,12 @@ export function PrivateCalendar({
                           title={chipTitle(item, viewMode)}
                         >
                           {lines.map((line, lineIndex) => (
-                            <span className="block [overflow-wrap:anywhere]" key={lineIndex}>{line}</span>
+                            <span
+                              className={["block [overflow-wrap:anywhere]", line === PRIVATE_CALENDAR_VERIFIED_MARK ? "font-bold text-emerald-700" : ""].join(" ")}
+                              key={lineIndex}
+                            >
+                              {line}
+                            </span>
                           ))}
                         </span>
                       );
@@ -1651,12 +1639,17 @@ export function PrivateCalendar({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <SourceNotesLegend items={timelineItems} />
-                  <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-                    {timelineItems.map((item) => (
-                      <TimelineItem item={item} key={item.id} showHrIds={showHrIds} showSourceTrace={deskDetail} viewMode={viewMode} />
-                    ))}
-                  </div>
+                  <DayPlanActualTable rows={dayPlanActualRows} />
+                  {dayCardItems.length > 0 ? (
+                    <>
+                      <SourceNotesLegend items={dayCardItems} />
+                      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                        {dayCardItems.map((item) => (
+                          <TimelineItem item={item} key={item.id} showHrIds={showHrIds} showSourceTrace={deskDetail} viewMode={viewMode} />
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               )}
             </section>
@@ -1762,7 +1755,7 @@ function PrivateCalendarAgenda({
                   ) : null}
                   {item.managerVisits && item.managerVisits.length > 0 ? (
                     <div className="mt-2.5 pl-[18px]">
-                      <ManagerPlanActual plan={item.managerPlan ?? null} planUnread={item.managerPlanUnread === true} visits={item.managerVisits} />
+                      <ManagerPlanActual plan={item.managerPlan ?? null} planUnread={item.managerPlanUnread === true} visits={item.managerVisits} visitsOnly />
                     </div>
                   ) : null}
                   {item.exceptionFlags.length > 0 ? (
@@ -1852,7 +1845,7 @@ function KeyFigures({
   // A workspace from before the visit summary existed (an old cached response) reads as none.
   const visits = visitSummary ?? null;
   const visitsReady = sourceReadiness.double_visit !== false && sourceReadiness.field_visit !== false;
-  const allVisits = visits ? formatVisitCountSplit(visits.all) : "AM 0 · PM 0 · Pharmacies 0";
+  const allVisits = privateCalendarTileCountsText(visits?.all ?? { am: 0, pm: 0, pharmacies: 0 });
   return (
     <div className="border-t border-slate-200">
       <button
@@ -1880,7 +1873,7 @@ function KeyFigures({
         <div id="private-calendar-key-figures">
           {/* Row one — every visit, per colour, AM · PM · Pharmacies apart. */}
           <div className="border-t border-slate-100 bg-white px-4 py-3">
-            <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Visits · AM, PM and Pharmacies counted apart</p>
+            <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Visits · AM, PM and PH counted apart</p>
             <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {privateCalendarVisitKinds.map((kind) => {
               const split = visits?.[kind];
@@ -1890,7 +1883,7 @@ function KeyFigures({
                   label={privateCalendarActivityKindLabels[kind]}
                   ready={visitsReady}
                   swatch={kindSwatchColor(kind)}
-                  value={split && visitCountSplitTotal(split) > 0 ? formatVisitCountSplit(split, { compact: true }) : "None"}
+                  value={split && visitCountSplitTotal(split) > 0 ? privateCalendarTileCountsText(split) : "None"}
                 />
               );
             })}
@@ -1964,7 +1957,7 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
             </div>
             <p className="mt-2 text-phx-xs font-bold text-slate-700">
               <span className="font-black uppercase tracking-[0.1em] text-slate-500">Visits </span>
-              {row.visitCounts ? formatVisitCountSplit(row.visitCounts) : "AM 0 · PM 0 · Pharmacies 0"}
+              {privateCalendarTileCountsText(row.visitCounts ?? { am: 0, pm: 0, pharmacies: 0 })}
             </p>
           </article>
         ))}
@@ -2161,7 +2154,7 @@ function TimelineItem({
             (owner, 2026-10-20). The same table the Phoenix CRM manager's day page draws. */}
         {item.managerVisits && item.managerVisits.length > 0 ? (
           <div className="mt-3">
-            <ManagerPlanActual plan={item.managerPlan ?? null} planUnread={item.managerPlanUnread === true} visits={item.managerVisits} />
+            <ManagerPlanActual plan={item.managerPlan ?? null} planUnread={item.managerPlanUnread === true} visits={item.managerVisits} visitsOnly />
           </div>
         ) : null}
 
@@ -2173,15 +2166,16 @@ function TimelineItem({
             source in the legend above the entries (SourceNotesLegend) - never on every entry. Database
             table names and record IDs (`ireports360_visits`, `v2_vacation_requests`, a UUID) are
             for the desk and stay per entry, because they differ per entry. */}
+        {/* Folded shut (owner, 2026-10-29: the day details repeated themselves) — the desk opens it when it needs the table and ID. */}
         {showSourceTrace ? (
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+          <details className="mt-4 border-t border-slate-100 pt-3">
+            <summary className="flex cursor-pointer items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
               <FileSearch className="h-3 w-3" />
               Source trace
-            </div>
+            </summary>
             <p className="mt-1 break-words text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
             {item.sourceRecordId ? <p className="break-all font-mono text-phx-xs text-slate-400">ID: {item.sourceRecordId}</p> : null}
-          </div>
+          </details>
         ) : null}
       </div>
     </article>
