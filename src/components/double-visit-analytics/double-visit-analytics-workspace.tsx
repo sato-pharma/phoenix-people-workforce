@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   PortalDesktopTable,
   PortalEmptyState,
@@ -278,6 +279,8 @@ type MrVisitRow = {
   area: string | null;
   dates: Set<string>;
   days: number;
+  /** The visited rep has resigned or the seat is vacant — hidden by "Hide vacant and resigned". */
+  departed: boolean;
   firstDate: string | null;
   hrId: string | null;
   key: string;
@@ -321,8 +324,9 @@ function buildManagerProfile(
     const key = hk(row.visitedHrId) || `name:${row.visitedName ?? "unknown"}`;
     const existing =
       byMr.get(key) ??
-      { am: 0, area: row.area, dates: new Set<string>(), days: 0, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pharmacies: 0, phoenix: 0, pm: 0, score: null, visits: 0, visitsPerDay: 0 };
+      { am: 0, area: row.area, dates: new Set<string>(), days: 0, departed: false, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pharmacies: 0, phoenix: 0, pm: 0, score: null, visits: 0, visitsPerDay: 0 };
     existing.visits += row.visitCount;
+    if (row.visitedStatus === "resigned" || row.visitedStatus === "vacant") existing.departed = true;
     const countBucket = entryCountBucket(row);
     if (countBucket === "AM") existing.am += row.visitCount;
     else if (countBucket === "PM") existing.pm += row.visitCount;
@@ -854,6 +858,7 @@ export function DoubleVisitAnalyticsWorkspace({
   const [sortKey, setSortKey] = useState<SortKey>("totalDvs");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [mrSearch, setMrSearch] = useState("");
+  const [hideVacantResigned, setHideVacantResigned] = useState(false);
   const [expandedMrKeys, setExpandedMrKeys] = useState<Set<string>>(new Set());
 
   const [dateFrom, setDateFrom] = useState(dashboard.dateFrom);
@@ -899,6 +904,12 @@ export function DoubleVisitAnalyticsWorkspace({
           )
         : null,
     [selectedManagerKey, visitLog, dashboard.mrScores, periodFilter, summaryByKey],
+  );
+  // "Hide vacant and resigned" hides ROWS only (owner, 2026-10-29). Every chip and figure above the
+  // lists reads the whole profile, so the concentration, over-focus and totals never move.
+  const visibleMrBreakdown = useMemo(
+    () => (managerProfile && hideVacantResigned ? managerProfile.mrBreakdown.filter((row) => !row.departed) : (managerProfile?.mrBreakdown ?? [])),
+    [managerProfile, hideVacantResigned],
   );
 
   // By-MR list: search only. Period scopes each MR's expanded history, never row
@@ -1152,6 +1163,12 @@ export function DoubleVisitAnalyticsWorkspace({
               value={mrSearch}
               onChange={(e) => setMrSearch(e.target.value)}
             />
+          )}
+          {activeTab === "managers" && (
+            <label className="flex items-center gap-2">
+              <Switch checked={hideVacantResigned} label="Hide vacant and resigned" onChange={setHideVacantResigned} />
+              <span className="text-sm font-bold text-slate-700">Hide vacant and resigned</span>
+            </label>
           )}
           {activeTab === "mr-status" && periodFilter !== "ALL" && (
             <span className="text-xs font-semibold text-slate-400">Period applies to each MR&apos;s expanded history.</span>
@@ -1518,7 +1535,7 @@ export function DoubleVisitAnalyticsWorkspace({
                       />
                     }
                     getKey={(row) => row.key}
-                    items={managerProfile.mrBreakdown}
+                    items={visibleMrBreakdown}
                     renderCard={(row) => (
                       <MrBreakdownCard
                         row={row}
@@ -1558,7 +1575,7 @@ export function DoubleVisitAnalyticsWorkspace({
                             </tr>
                           </thead>
                           <tbody>
-                            {managerProfile.mrBreakdown.map((row) => (
+                            {visibleMrBreakdown.map((row) => (
                               <tr key={row.key} className="border-t border-slate-100">
                                 <td className="px-3 py-2.5">
                                   <p className="text-sm font-semibold text-slate-800">{row.name}</p>
@@ -1596,7 +1613,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 </Card>
 
                 {/* Resigned / vacant-territory visits — resigned reps' accounts renamed to their area */}
-                {managerProfile.vacantTerritories.length > 0 && (
+                {!hideVacantResigned && managerProfile.vacantTerritories.length > 0 && (
                   <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
                     <div className="border-b border-slate-100 px-5 py-4">
                       <h3 className="text-base font-black text-slate-950">Resigned / Vacant Territory · {fmt(managerProfile.vacantVisits)} visits</h3>

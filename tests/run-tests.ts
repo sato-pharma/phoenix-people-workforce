@@ -1157,6 +1157,7 @@ import { runOrganogramPhantomSeatSuppressionTests } from "./organogram-phantom-s
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runOrganogramNodeDetailPrivacyTests } from "./organogram-node-detail-privacy.test.ts";
 import { runOrganogramAudienceTests } from "./organogram-audience.test.ts";
+import { runHideVacantResignedSwitchTests } from "./hide-vacant-resigned-switch.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
@@ -5386,6 +5387,10 @@ await runTest("organogram node-detail popup privacy boundary", runOrganogramNode
 await runTest(
   "organogram audience picker (scoped filters cascade, ticks beat filters, emails dedupe, and the export sheet stays work-fields-only)",
   runOrganogramAudienceTests,
+);
+await runTest(
+  "one Hide vacant and resigned switch on the org chart and double visits hides boxes, never counts",
+  runHideVacantResignedSwitchTests,
 );
 await runTest("probation stabilization", runProbationStabilizationTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);

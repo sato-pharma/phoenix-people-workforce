@@ -44,6 +44,7 @@ import { OrganogramAsOfBanner } from "@/components/organogram/organogram-as-of";
 import { OrganogramNodeDetailModal } from "@/components/organogram/organogram-node-detail-modal";
 import { OrganogramWhatsAppButton } from "@/components/organogram/whatsapp-button";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { Switch } from "@/components/ui/switch";
 import { formatDateOnly } from "@/lib/date-only";
 import { buildEmployeeMasterHref, employeeMasterBasePath } from "@/lib/employees/employee-master-link";
 import {
@@ -59,6 +60,7 @@ import {
   formatDistrictLaneCount,
   formatLaneSeatSummary,
 } from "@/lib/reports/organogram-counts";
+import { isLaneHidden, visibleLaneMembers } from "@/lib/reports/organogram-hide-vacant";
 import { calculateOrganogramStructureKpis } from "@/lib/reports/organogram-safety";
 import {
   type ManagerLane,
@@ -535,12 +537,14 @@ function ManagerLane({
   collapsedKeys,
   onToggle,
   onSelect,
+  hideVacantResigned = false,
 }: {
   group: ManagerLane;
   laneKey: string;
   collapsedKeys: Set<string>;
   onToggle: (key: string) => void;
   onSelect?: OnSelectNode;
+  hideVacantResigned?: boolean;
 }) {
   const isVacantManagerSeat = group.dsm?.type === "vacancy";
   const laneCollapsed = collapsedKeys.has(laneKey);
@@ -557,7 +561,12 @@ function ManagerLane({
   const dsmRow = group.dsm ?? null;
   const dsmFacts = isVacantManagerSeat ? "" : personFactsLine(dsmRow);
   const canOpenManager = Boolean(onSelect && dsmRow);
-  const memberTree = React.useMemo(() => buildMemberTree(group.members), [group.members]);
+  // "Hide vacant and resigned" drops the boxes before the tree is built, so a hidden seat's
+  // reports move up to the lane root instead of vanishing with it. Counts read every row.
+  const memberTree = React.useMemo(
+    () => buildMemberTree(visibleLaneMembers(group.members, hideVacantResigned)),
+    [group.members, hideVacantResigned],
+  );
   // Filled seats are dark slate, vacant seats warm orange — shared by the header row and the
   // Edit/Resign strip under it.
   const headerSurface = isVacantManagerSeat
@@ -1054,6 +1063,7 @@ function OrgChartTreeBody({
 }: OrgChartTreeProps) {
   // Change #2 — the pressed node's row; non-null opens the employee-master popup.
   const [selectedRow, setSelectedRow] = React.useState<OrganogramRow | null>(null);
+  const [hideVacantResigned, setHideVacantResigned] = React.useState(false);
   const handleSelectNode = React.useCallback((row: OrganogramRow) => {
     setSelectedRow(row);
   }, []);
@@ -1235,6 +1245,10 @@ function OrgChartTreeBody({
       {/* Whole-tree controls + structure export */}
       {hasContent ? (
         <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
+          <label className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm">
+            <Switch checked={hideVacantResigned} label="Hide vacant and resigned" onChange={setHideVacantResigned} />
+            <span>Hide vacant and resigned</span>
+          </label>
           <div className="inline-flex h-9 items-center gap-0.5 border border-phx-line bg-white px-1 text-phx-ink shadow-sm">
             <button
               aria-label="Zoom out"
@@ -1443,12 +1457,14 @@ function OrgChartTreeBody({
                 >
                   {directDsms.map((group, index) => {
                     const laneKey = tierLaneKey("t1", group, index);
+                    if (isLaneHidden(group, hideVacantResigned)) return null;
                     return (
                       <div className="flex flex-col" key={laneKey}>
                         <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
                         <ManagerLane
                           collapsedKeys={collapsedKeys}
                           group={group}
+                          hideVacantResigned={hideVacantResigned}
                           laneKey={laneKey}
                           onSelect={handleSelectNode}
                           onToggle={toggle}
@@ -1533,12 +1549,14 @@ function OrgChartTreeBody({
                       {childLanes.length > 0 ? (
                         childLanes.map((lane, laneIndex) => {
                           const childKey = childLaneKey(laneKey, lane, laneIndex);
+                          if (isLaneHidden(lane, hideVacantResigned)) return null;
                           return (
                             <div className="flex flex-col" key={childKey}>
                               <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
                               <ManagerLane
                                 collapsedKeys={collapsedKeys}
                                 group={lane}
+                                hideVacantResigned={hideVacantResigned}
                                 laneKey={childKey}
                                 onSelect={handleSelectNode}
                                 onToggle={toggle}
@@ -1572,12 +1590,14 @@ function OrgChartTreeBody({
                 >
                   {otherGroups.map((group, index) => {
                     const laneKey = `other-${group.name}-${index}`;
+                    if (isLaneHidden(group, hideVacantResigned)) return null;
                     return (
                       <div className="flex flex-col" key={laneKey}>
                         <div aria-hidden className="mx-auto h-3 w-0.5 bg-orange-300/70" />
                         <ManagerLane
                           collapsedKeys={collapsedKeys}
                           group={group}
+                          hideVacantResigned={hideVacantResigned}
                           laneKey={laneKey}
                           onSelect={handleSelectNode}
                           onToggle={toggle}
