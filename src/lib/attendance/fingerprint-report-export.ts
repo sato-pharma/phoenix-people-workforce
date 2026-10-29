@@ -9,7 +9,13 @@ import {
   writeAttendanceNote,
   type AttendanceSeverity,
 } from "@/lib/attendance/attendance-sheet-style";
-import type { FingerprintReportData, FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
+import { isNoRecordDay, mergeNoRecordDays, NO_RECORD_STATUS } from "@/lib/attendance/attendance-day-display";
+import type {
+  FingerprintPolicyDetailRow,
+  FingerprintReportColumnKey,
+  FingerprintReportData,
+  FingerprintReportRow,
+} from "@/lib/attendance/fingerprint-report";
 
 /**
  * The day's status, as a grade.
@@ -19,7 +25,8 @@ import type { FingerprintReportData, FingerprintReportRow } from "@/lib/attendan
  * the same way rather than each inventing a scale.
  */
 function statusSeverity(status: string): AttendanceSeverity {
-  if (status === "Complete") return "normal";
+  // A day with no punch is neutral, as on the page — never graded like an absence.
+  if (status === "Complete" || status === NO_RECORD_STATUS) return "normal";
   if (status === "Short day") return "watch";
   return "alert";
 }
@@ -28,7 +35,57 @@ function rowValues(data: FingerprintReportData, row: FingerprintReportRow) {
   return data.columns.map((column) => row[column.key] ?? "");
 }
 
-export async function generateFingerprintReportWorkbook(data: FingerprintReportData) {
+// The report's own MM/DD/YYYY, so a "No record" day sorts and reads like every punched day beside it.
+function displayDate(dateKey: string) {
+  const [year, month, day] = dateKey.split("-");
+  return `${month}/${day}/${year}`;
+}
+
+// A working day with no punch: who it is and which day, "No record", and nothing else — no punch,
+// no minutes, no deduction, never a zero that reads as a measured one.
+function noRecordCell(key: FingerprintReportColumnKey, dateKey: string, policy: FingerprintPolicyDetailRow | undefined) {
+  if (key === "date") return displayDate(dateKey);
+  if (key === "status") return NO_RECORD_STATUS;
+  if (key === "employeeHrId") return policy?.employeeHrId ?? "";
+  if (key === "employeeName") return policy?.employeeName ?? "";
+  if (key === "jobTitle") return policy?.jobTitle ?? "";
+  if (key === "department") return policy?.department ?? "";
+  return "";
+}
+
+type SheetRow = { status: string; values: string[] };
+
+function sheetRows(data: FingerprintReportData, noRecordDates: readonly string[] | undefined): SheetRow[] {
+  const punched = (row: FingerprintReportRow): SheetRow => ({ status: row.status, values: rowValues(data, row) });
+  if (!noRecordDates || noRecordDates.length === 0) return data.rows.map(punched);
+  const recorded = data.rows.map((row) => ({ rawDate: row.sortKey.slice(0, 10), row }));
+  const policy = data.policyDetails[0];
+  // The report's rows run oldest first (fingerprint-report.ts sorts by sortKey); the merge guesses
+  // the order from the first and last row, and one punch or none reads as newest first. The sort is
+  // stable, so two people on one day keep the report's order.
+  const merged = mergeNoRecordDays(recorded, noRecordDates).sort((a, b) => a.rawDate.localeCompare(b.rawDate));
+  return merged.map((entry) =>
+    isNoRecordDay(entry)
+      ? {
+          status: NO_RECORD_STATUS,
+          values: data.columns.map((column) => noRecordCell(column.key, entry.rawDate, policy)),
+        }
+      : punched(entry.row),
+  );
+}
+
+/**
+ * `noRecordDates` — the employee export's working days with no punch (`fingerprintNoRecordDates`),
+ * listed as "No record" in date order among the punched days, as the portal page lists them. The
+ * admin report passes none and is unchanged.
+ */
+export async function generateFingerprintReportWorkbook(
+  data: FingerprintReportData,
+  options: { noRecordDates?: readonly string[] } = {},
+) {
+  const rows = sheetRows(data, options.noRecordDates);
+  const noRecordCount = rows.length - data.rows.length;
+  const noRecordText = noRecordCount > 0 ? ` · No record: ${noRecordCount} working day${noRecordCount === 1 ? "" : "s"}` : "";
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemDocuments.workbookCreator;
   workbook.created = new Date();
@@ -43,7 +100,10 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   // expected, so nothing that reads this sheet moves.
   writeAttendanceMasthead(workbook, sheet, {
     columns: columnCount,
-    provenance: [`${data.summary.rows} row${data.summary.rows === 1 ? "" : "s"}`],
+    provenance: [
+      `${data.summary.rows} row${data.summary.rows === 1 ? "" : "s"}`,
+      ...(noRecordCount > 0 ? [`${noRecordCount} day${noRecordCount === 1 ? "" : "s"} with no record`] : []),
+    ],
     subtitle: `${data.filters.dateFrom} to ${data.filters.dateTo}`,
     title: systemDocuments.titles.fingerprintAttendanceReport,
   });
@@ -51,16 +111,16 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
     sheet,
     4,
     columnCount,
-    `Period: ${data.filters.dateFrom} to ${data.filters.dateTo} · Rows: ${data.summary.rows} · Deduction flags: ${data.summary.deductions}`,
+    `Period: ${data.filters.dateFrom} to ${data.filters.dateTo} · Rows: ${data.summary.rows} · Deduction flags: ${data.summary.deductions}${noRecordText}`,
   );
 
   sheet.getRow(5).values = data.columns.map((column) => column.label);
   styleAttendanceHeaderRow(sheet.getRow(5));
 
   const statusIndex = data.columns.findIndex((column) => column.key === "status") + 1;
-  data.rows.forEach((row, index) => {
+  rows.forEach((row, index) => {
     const excelRow = sheet.getRow(6 + index);
-    excelRow.values = rowValues(data, row);
+    excelRow.values = row.values;
     styleAttendanceBodyRow(excelRow, { zebra: index % 2 === 1 });
     if (statusIndex > 0) {
       excelRow.getCell(statusIndex).font = attendanceSeverityFont(statusSeverity(row.status));
@@ -70,7 +130,7 @@ export async function generateFingerprintReportWorkbook(data: FingerprintReportD
   data.columns.forEach((column, index) => {
     const longest = Math.max(
       column.label.length,
-      ...data.rows.slice(0, 500).map((row) => String(row[column.key] ?? "").length),
+      ...rows.slice(0, 500).map((row) => String(row.values[index] ?? "").length),
     );
     sheet.getColumn(index + 1).width = Math.min(Math.max(longest + 3, 14), 32);
   });

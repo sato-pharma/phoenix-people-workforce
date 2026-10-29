@@ -210,8 +210,28 @@ export function figureWindowLabel(coverage: ReviewCoverage): string {
  * packs: every one carried a SEP column of zeros, including reps with 151 customers in August,
  * while the cover of the same sheet said September's 13,450 CRM rows were held out and were real.
  */
-export function figureWindowPeriods(coverage: ReviewCoverage): readonly string[] {
+export function figureWindowPeriods(
+  coverage: Pick<ReviewCoverage, "figureWindow" | "window">,
+): readonly string[] {
   return coverage.figureWindow?.periods ?? coverage.window.periods;
+}
+
+/**
+ * The months the customer-grain figures — sales by brick, by customer and by channel — are read for:
+ * the figure window's months, and never a month whose distributor files have not landed.
+ *
+ * 🔴 `figureWindow` is NULL when nothing was held out, which is the ORDINARY case, so the loader's
+ * old `figureWindow?.periods ?? []` read NO months for every complete window: the brick, customer
+ * and channel pages of every viewer's pack and portal page came back empty. Measured 2026-10-29 on
+ * a rep's Jul–Sep pack: 0 · 0 · 0 on every channel beside EGP 222,448 of sales on its first page.
+ * A window where no month's files have landed has a null figure window too; every one of its months
+ * is `notUploaded`, so it still reads none.
+ */
+export function concentrationPeriods(
+  coverage: Pick<ReviewCoverage, "figureWindow" | "notUploaded" | "window">,
+): string[] {
+  const heldOut = new Set(coverage.notUploaded?.periods ?? []);
+  return figureWindowPeriods(coverage).filter((period) => !heldOut.has(period));
 }
 
 /** True when a figure fed by this source may be rendered as a number. When false the UI must

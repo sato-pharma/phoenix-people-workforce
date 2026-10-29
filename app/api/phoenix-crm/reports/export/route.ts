@@ -165,8 +165,10 @@ export async function GET(request: Request) {
     const dailyTo = search.get("dailyTo");
 
     // Loaded together; each service applies the viewer's scope again. `managers` is asked for even
-    // when the viewer has none — the service answers with an empty list, and a manager sheet with no
-    // rows is a real finding, unlike a section the viewer may not read at all.
+    // when the viewer has none — the service answers with an empty list — but it is WRITTEN only when
+    // the scope has a manager to show (`scope.hasManagers`), the same gate the screen offers the
+    // report behind. A rep's file used to carry a "per manager" sheet with no rows, a report his own
+    // tab never shows him (2026-10-29, "the pages is not having any data").
     // 🔴 THE NAMES AND THE ARRAY MUST STAY IN STEP. Two branches appended to this list on the same
     // evening — Wave 2's three and the daily plan — and a resolution that adds a name without its
     // loader in the same position silently hands one report's data to another. Read them together.
@@ -250,7 +252,7 @@ export async function GET(request: Request) {
       heard,
       includeTest,
       locations,
-      managers,
+      managers: scope.hasManagers ? managers : null,
       periodText:
         `${visits.period.from} to ${visits.period.to} · coverage${samples ? " and samples" : ""} for ${coverage.month.month}`
         + (capacity ? ` · grade against capacity for ${capacity.month.month}` : "")

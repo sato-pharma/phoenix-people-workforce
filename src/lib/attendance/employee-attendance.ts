@@ -1,5 +1,9 @@
 import { countLateOrEarlyDays, noRecordWorkingDays } from "@/lib/attendance/attendance-day-display";
-import { getFingerprintAttendanceReport, type FingerprintPolicyDetailRow } from "@/lib/attendance/fingerprint-report";
+import {
+  getFingerprintAttendanceReport,
+  type FingerprintPolicyDetailRow,
+  type FingerprintReportData,
+} from "@/lib/attendance/fingerprint-report";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
@@ -200,6 +204,26 @@ export async function getEmployeeAttendanceData(
     rows,
     summary,
   };
+}
+
+/**
+ * The working days of one employee's Fingerprint report with no punch at all — the "No record" rows
+ * the portal's Fingerprint Analytics page lists — so the workbook it exports carries the same days.
+ *
+ * 🔴 The page merged them in and the export did not, so a field rep who never punches got a sheet
+ * with a header and no rows beside a page full of "No record" days (2026-10-29, "the pages is not
+ * having any data"). Same rule as the page: working weekdays of the policy, national holidays and
+ * days still to come left out. No date range → none, exactly as the report itself has no rows then.
+ */
+export async function fingerprintNoRecordDates(data: FingerprintReportData, hrId: string): Promise<string[]> {
+  if (!data.hasDateRange) return [];
+  return loadNoRecordDates({
+    dateFrom: data.filters.dateFrom,
+    dateTo: data.filters.dateTo,
+    hrId,
+    policyDetails: data.policyDetails ?? [],
+    rows: data.rows.map((row) => ({ rawDate: row.sortKey.slice(0, 10) })),
+  });
 }
 
 async function loadNoRecordDates(input: {

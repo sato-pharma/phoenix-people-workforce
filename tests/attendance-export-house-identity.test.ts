@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type ExcelJS from "exceljs";
 import JSZip from "jszip";
 
@@ -225,6 +226,63 @@ export async function runAttendanceExportHouseIdentityTests() {
     assert.ok(
       !/phoenix/i.test(title),
       `${label}: the headline is the COMPANY's name for this document, never the app's. Found "${title}"`,
+    );
+  }
+
+  // ── 7. AN EMPLOYEE'S EXPORT LISTS THE DAYS WITH NO PUNCH, AS THE PAGE DOES (2026-10-29) ──────────
+  //
+  // The portal's Fingerprint Analytics page merges in the working days with no punch as "No record";
+  // the export it offers did not, so a field rep who never punches downloaded a header and no rows
+  // beside a page full of days. The days go in date order among the punched ones, carry who and when,
+  // and nothing else — no punch, no minutes, no deduction, never a measured-looking zero.
+  {
+    const oneRep = {
+      ...FINGERPRINT_FIXTURE,
+      columns: [...FINGERPRINT_FIXTURE.columns, { key: "deductionDays", label: "Deduction Days" }],
+      hasDateRange: true,
+      policyDetails: [{ department: "Sales", employeeHrId: "A-12", employeeName: "One", jobTitle: "Medical Rep" }],
+      rows: [
+        { date: "07/12/2026", deductionDays: "0", employeeHrId: "A-12", employeeName: "One", sortKey: "2026-07-12|A-12", status: "Complete" },
+      ],
+      summary: { deductions: 0, rows: 1 },
+    };
+    const withDays = await generateFingerprintReportWorkbook(oneRep as never, {
+      noRecordDates: ["2026-07-13", "2026-07-12", "2026-07-11"],
+    });
+    const sheet = withDays.worksheets[0];
+    const body = [6, 7, 8, 9].map((rowNumber) =>
+      [1, 2, 3, 4, 5].map((column) => String(sheet.getRow(rowNumber).getCell(column).value ?? "")),
+    );
+    assert.deepEqual(
+      body.slice(0, 3),
+      [
+        ["A-12", "One", "07/11/2026", "No record", ""],
+        ["A-12", "One", "07/12/2026", "Complete", "0"],
+        ["A-12", "One", "07/13/2026", "No record", ""],
+      ],
+      "a day with no punch is a row of its own, in date order, saying No record — and a recorded day is never doubled",
+    );
+    assert.deepEqual(body[3], ["", "", "", "", ""], "nothing after the last day");
+    assert.match(rowText(sheet, 4), /No record: 2 working days/, "the note says how many days had no record");
+    assert.equal(
+      sheet.getRow(6).getCell(4).font?.bold ?? false,
+      false,
+      "a day with no punch is neutral, never graded like an absence",
+    );
+
+    const none = await generateFingerprintReportWorkbook({ ...oneRep, rows: [], summary: { deductions: 0, rows: 0 } } as never, {
+      noRecordDates: ["2026-07-11"],
+    });
+    assert.equal(
+      String(none.worksheets[0].getRow(6).getCell(4).value ?? ""),
+      "No record",
+      "a rep with no punch at all gets his days, never an empty sheet",
+    );
+
+    const route = readFileSync(new URL("../app/api/attendance/employee-fingerprint-export/route.ts", import.meta.url), "utf8");
+    assert.ok(
+      route.includes("generateFingerprintReportWorkbook(data, { noRecordDates })"),
+      "the employee export passes the days with no record to the workbook",
     );
   }
 }

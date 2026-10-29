@@ -47,7 +47,7 @@ import {
   type ReviewBundle,
   type ReviewLine,
 } from "./canonical";
-import type { ReviewCoverage } from "./coverage";
+import { concentrationPeriods, type ReviewCoverage } from "./coverage";
 import { resolveReviewWindow, type ReviewWindow, type WindowResolution } from "./period";
 import { loadClosingDetailFacts, type ClosingDetailLoad } from "./sources/closing-detail";
 import type { AreaSummary, DmSummary, ProductRow, ReviewCompany, ReviewDataset } from "./types";
@@ -198,7 +198,7 @@ export async function loadBusinessReview(input?: {
  * brick on a chart the achievement beside it does not know about.
  */
 export async function loadReviewConcentration(input: {
-  coverage: Pick<ReviewCoverage, "figureWindow">;
+  coverage: Pick<ReviewCoverage, "figureWindow" | "notUploaded" | "window">;
   viewer: SourceMaskViewer;
   /**
    * The review lines whose rows the caller will read. Omitted = all three, which is what the pack
@@ -214,7 +214,9 @@ export async function loadReviewConcentration(input: {
    */
   lines?: readonly ReviewLine[];
 }): Promise<ClosingDetailLoad> {
-  const periods = input.coverage.figureWindow?.periods ?? [];
+  // 🔴 Never `figureWindow?.periods ?? []` — that field is null for every COMPLETE window, and the
+  // brick, customer and channel pages came back empty (`concentrationPeriods`, 2026-10-29).
+  const periods = concentrationPeriods(input.coverage);
   const wanted = input.lines ? new Set<ReviewLine>(input.lines) : null;
   return loadClosingDetailFacts({
     figurePeriods: periods,

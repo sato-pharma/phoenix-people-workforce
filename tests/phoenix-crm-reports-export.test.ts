@@ -687,6 +687,11 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     //    `managerSections` would have handed him a download missing the one month view he can open.
     assert.match(route, /readsCalendar\(viewer\) \? loadTeamCalendar\(/, "the calendar is gated by its own predicate, so the file matches the screen");
     assert.doesNotMatch(route, /managerSections \? loadTeamCalendar\(/, "and is no longer a manager-only section");
+    // 🔴 A REP'S FILE CARRIES NO "PER MANAGER" SHEET (2026-10-29). The managers report is asked for
+    //    whatever the scope, and the service answers a rep with an empty list; the screen offers the
+    //    report only behind `scope.hasManagers`, and the file now follows the same gate — the builder
+    //    writes no tab for null, where an empty list printed a header and no rows into a rep's download.
+    assert.match(route, /managers: scope\.hasManagers \? managers : null/, "the managers sheet is written only when the scope has a manager to show");
 
     const workbook = stripComments(readFileSync("src/lib/phoenix-crm/server/reports-workbook.ts", "utf8"));
     // 🔴 THE CALENDAR CELL IS A WORD, NEVER A FIGURE — on a both-halves day a single number is

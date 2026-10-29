@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateFingerprintReportWorkbook } from "@/lib/attendance/fingerprint-report-export";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
-import { assertCanViewEmployeeAttendance } from "@/lib/attendance/employee-attendance";
+import { assertCanViewEmployeeAttendance, fingerprintNoRecordDates } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
@@ -38,7 +38,10 @@ export async function GET(request: Request) {
     await assertCanViewEmployeeAttendance(access, targetHrId);
 
     const data = await getFingerprintAttendanceReport({ dateFrom, dateTo, exactEmployeeHrId: targetHrId });
-    const workbook = await generateFingerprintReportWorkbook(data);
+    // The working days with no punch, listed as "No record" exactly as the page lists them — never
+    // an empty sheet for a rep who works in the field and does not punch.
+    const noRecordDates = await fingerprintNoRecordDates(data, targetHrId);
+    const workbook = await generateFingerprintReportWorkbook(data, { noRecordDates });
     const buffer = await workbook.xlsx.writeBuffer();
 
     return new NextResponse(buffer, {

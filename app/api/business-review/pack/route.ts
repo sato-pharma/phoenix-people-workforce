@@ -54,6 +54,7 @@ import {
   loadReviewConcentration,
   REVIEW_LINE_CODES,
 } from "@/lib/business-review/service";
+import { reviewRepName } from "@/lib/business-review/rep-name";
 import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
@@ -123,14 +124,17 @@ export async function GET(request: Request) {
 
     // A rep's pack must read as HIS — his name and his territory, not "Medical Rep · own territory"
     // (owner, 2026-09-30). His display name is not on the session (AccessContext carries no name), so
-    // it is taken from the review's own people rows and set onto the scope the label is built from.
+    // it is taken from the review's own people rows — or, when they hold no row for him, from
+    // `employees` (`reviewRepName`) — and set onto the scope the label is built from.
     const labelScope =
       scope.kind === "rep"
         ? {
             ...scope,
-            viewerName:
-              dsByLine.get(scope.line)?.people.find((p) => p.hrId.toUpperCase() === scope.hrId)?.name ??
-              scope.viewerName,
+            viewerName: await reviewRepName({
+              fallback: scope.viewerName,
+              hrId: scope.hrId,
+              people: dsByLine.get(scope.line)?.people ?? [],
+            }),
           }
         : scope;
 
