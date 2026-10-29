@@ -41,9 +41,11 @@ const LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-50
 const SEND =
   "border border-slate-900 bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-slate-700";
 
-type ChipGroup = "statuses" | "seen" | "timing" | "grades" | "specialities";
+type ChipGroup = "bricks" | "statuses" | "seen" | "timing" | "grades" | "specialities";
 
+// Brick leads: "filter by brick, got the doctors in it, know who is covered and who is not" (owner, 2026-10-29).
 const GROUPS: ReadonlyArray<{ key: ChipGroup; title: string; hint: string }> = [
+  { key: "bricks", title: "Brick", hint: "From the doctor's validated live photo." },
   { key: "statuses", title: "Verdict", hint: "The Frequency report's reading of each doctor." },
   { key: "seen", title: "Seen in the period", hint: "At least one visit counts as covered." },
   { key: "timing", title: "Timing", hint: "Only a doctor with no visit can be late." },
@@ -157,7 +159,7 @@ export function KpisDoctorFilterBar({
               <input
                 className={cn(phxFieldClassName, "min-w-0 text-base")}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Doctor name, speciality or grade"
+                placeholder="Doctor name, speciality, grade or brick"
                 type="search"
                 value={query}
               />

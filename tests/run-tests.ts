@@ -549,6 +549,7 @@ import {
   runKpiReportFilterUrlTests,
   runKpiReportFilterWiringTests,
 } from "./kpis-report-filters.test.ts";
+import { runKpiDoctorBrickChooserTests } from "./kpis-doctor-bricks.test.ts";
 import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
@@ -4172,9 +4173,10 @@ await runTest("KPIs board tables fit the screen (every column holds the width it
 await runTest("KPIs board hire date and XLSX export (the join stamps each rep's hire date from the directory; the workbook writes it as a real date cell, keeps AM and PM as two columns, and prints the screen's marker words instead of a 0)", runKpisBoardWorkbookTests);
 await runTest("the portal KPIs split: a summary page and a Frequency, Coverage and Call Rate report each (the tabs partition with none lost or on both, view and rep ride only where they mean something, a retired ?tab= forwards, every report keeps the KPIs gates, the sidebar heading and its catalog and registry rows agree, and the call rate is never averaged)", runKpisReportsSplitTests);
 await runTest("KPI report filters: a range on any column never swallows an absence and reads the figure as printed", runKpiRangeFilterTests);
-await runTest("KPI report filters: every filter rides the URL, doctor filters only where a doctor list prints, an unreadable value is dropped", runKpiReportFilterUrlTests);
-await runTest("KPI report filters: the doctor filters narrow rows by name, speciality, grade, verdict, covered, timing, visits and last visit, and park a blank last", runKpiDoctorFilterTests);
-await runTest("KPI report filters: the tiles stay on the whole list, another rep opens unfiltered, and the client bars stay dependency-free", runKpiReportFilterWiringTests);
+await runTest("KPI report filters: every filter rides the URL, the brick filter pipe-joined, doctor filters only where a doctor list prints, an unreadable value is dropped", runKpiReportFilterUrlTests);
+await runTest("KPI report filters: the doctor filters narrow rows by name, brick, speciality, grade, verdict, covered, timing, visits and last visit, park a blank last, and never call an unread doctor not validated", runKpiDoctorFilterTests);
+await runTest("KPI report filters: the tiles stay on the whole list, another rep opens unfiltered, the brick is stamped only on a read that landed, and the client bars stay dependency-free", runKpiReportFilterWiringTests);
+await runTest("KPI doctor bricks: each doctor is filed under his validated live photo's brick (the live customer over a dropped one, the newest validation, a place with a brick, then the earliest), and validated-with-no-brick is never not validated", runKpiDoctorBrickChooserTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);

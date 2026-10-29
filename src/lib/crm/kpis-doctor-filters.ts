@@ -33,6 +33,17 @@ export type KpiDoctorFilterable = {
   /** False when every day the plan booked this doctor is still ahead. */
   due: boolean;
   frequency?: { status: string } | undefined;
+  /**
+   * The brick of the doctor's VALIDATED live photo (`phoenix_crm_places.brick_name`), stamped by the
+   * board for the one open rep. Read together with `placeValidated`:
+   *   - `placeValidated` undefined: the brick was never read (or the read failed). The doctor is in no
+   *     brick, the Brick filter is not offered for him, and he is never called "not validated".
+   *   - `placeValidated` false: the read ran and he has no validated customer yet.
+   *   - `placeValidated` true and `brick` null: validated, but the photo is further than the trust
+   *     radius from any Phoenix brick, or the customer has no active place.
+   */
+  brick?: string | null;
+  placeValidated?: boolean;
 };
 
 /** The Frequency report's verdicts, worst first — the order the chips are offered in. */
@@ -86,9 +97,11 @@ export const KPI_DOCTOR_SORT_LABEL: Record<KpiDoctorSort, string> = {
 };
 
 export type KpiDoctorFilter = {
-  /** Free text matched against the doctor's name, speciality and grade. */
+  /** Free text matched against the doctor's name, speciality, grade and brick. */
   query: string;
   specialities: string[];
+  /** Brick names, or `KPI_DOCTOR_BRICK_NONE` / `KPI_DOCTOR_NOT_VALIDATED` (owner, 2026-10-29). */
+  bricks: string[];
   /** `Grade A`, `Grade B`, `Grade C` or `No grade` — the groups the report's own breakdown uses. */
   grades: string[];
   statuses: KpiDoctorStatus[];
@@ -106,6 +119,7 @@ export type KpiDoctorFilter = {
 export const EMPTY_KPI_DOCTOR_FILTER: KpiDoctorFilter = {
   query: "",
   specialities: [],
+  bricks: [],
   grades: [],
   statuses: [],
   seen: [],
@@ -122,6 +136,7 @@ export const EMPTY_KPI_DOCTOR_FILTER: KpiDoctorFilter = {
 export const KPI_DOCTOR_PARAMS = {
   query: "dq",
   specialities: "dspec",
+  bricks: "dbrick",
   grades: "dgrade",
   statuses: "dstat",
   seen: "dseen",
@@ -135,6 +150,31 @@ export const KPI_DOCTOR_PARAMS = {
 } as const;
 
 export const KPI_DOCTOR_PARAM_KEYS: readonly string[] = Object.values(KPI_DOCTOR_PARAMS);
+
+/** The Brick filter's two values that are not a brick name. Brackets keep them clear of any real brick. */
+export const KPI_DOCTOR_BRICK_NONE = "(no-brick)";
+export const KPI_DOCTOR_BRICK_NONE_LABEL = "Validated · no brick on record";
+export const KPI_DOCTOR_NOT_VALIDATED = "(not-validated)";
+export const KPI_DOCTOR_NOT_VALIDATED_LABEL = "Not validated yet";
+
+/**
+ * The value the Brick filter files a doctor under: his brick's name, `KPI_DOCTOR_BRICK_NONE`,
+ * `KPI_DOCTOR_NOT_VALIDATED`, or undefined when the brick was never read — and an undefined doctor
+ * matches no brick choice and is counted in no brick.
+ */
+export function kpiDoctorBrickValue(doctor: Pick<KpiDoctorFilterable, "brick" | "placeValidated">): string | undefined {
+  if (doctor.placeValidated === undefined) return undefined;
+  if (!doctor.placeValidated) return KPI_DOCTOR_NOT_VALIDATED;
+  return doctor.brick?.trim() || KPI_DOCTOR_BRICK_NONE;
+}
+
+/** The words a brick value is printed in; undefined (never read) prints nothing. */
+export function kpiDoctorBrickLabel(doctor: Pick<KpiDoctorFilterable, "brick" | "placeValidated">): string | undefined {
+  const value = kpiDoctorBrickValue(doctor);
+  if (value === KPI_DOCTOR_NOT_VALIDATED) return KPI_DOCTOR_NOT_VALIDATED_LABEL;
+  if (value === KPI_DOCTOR_BRICK_NONE) return KPI_DOCTOR_BRICK_NONE_LABEL;
+  return value;
+}
 
 /** The value a facet uses for "this doctor has no speciality on the plan". */
 export const KPI_DOCTOR_NO_SPECIALITY = "(none)";
@@ -194,6 +234,8 @@ export function parseKpiDoctorFilter(params: Record<string, string | string[] | 
     query: (read(KPI_DOCTOR_PARAMS.query) ?? "").trim().slice(0, 120),
     // A pipe, not a comma: a speciality's own name may carry a comma.
     specialities: splitList(read(KPI_DOCTOR_PARAMS.specialities), "|"),
+    // A pipe for the same reason: a brick's name may carry a comma.
+    bricks: splitList(read(KPI_DOCTOR_PARAMS.bricks), "|"),
     grades: splitList(read(KPI_DOCTOR_PARAMS.grades), ","),
     statuses: keepKnown(splitList(read(KPI_DOCTOR_PARAMS.statuses), ","), KPI_DOCTOR_STATUSES),
     seen: keepKnown(splitList(read(KPI_DOCTOR_PARAMS.seen), ","), KPI_DOCTOR_SEEN),
@@ -215,6 +257,7 @@ export function kpiDoctorFilterToParams(filter: KpiDoctorFilter): Record<string,
   };
   if (filter.query.trim()) out[KPI_DOCTOR_PARAMS.query] = filter.query.trim();
   put(KPI_DOCTOR_PARAMS.specialities, filter.specialities, "|");
+  put(KPI_DOCTOR_PARAMS.bricks, filter.bricks, "|");
   put(KPI_DOCTOR_PARAMS.grades, filter.grades);
   put(KPI_DOCTOR_PARAMS.statuses, filter.statuses);
   put(KPI_DOCTOR_PARAMS.seen, filter.seen);
@@ -238,6 +281,7 @@ export function countActiveKpiDoctorFilter(filter: KpiDoctorFilter): number {
   return (
     (filter.query.trim() ? 1 : 0) +
     filter.specialities.length +
+    filter.bricks.length +
     filter.grades.length +
     filter.statuses.length +
     filter.seen.length +
@@ -255,7 +299,7 @@ function norm(value: string | null | undefined): string {
 export function matchesKpiDoctorFilter(doctor: KpiDoctorFilterable, filter: KpiDoctorFilter): boolean {
   const needle = filter.query.trim().toLowerCase();
   if (needle) {
-    const haystack = [doctor.name, doctor.speciality, doctor.grade].filter(Boolean).join(" ").toLowerCase();
+    const haystack = [doctor.name, doctor.speciality, doctor.grade, doctor.brick].filter(Boolean).join(" ").toLowerCase();
     if (!haystack.includes(needle)) return false;
   }
   if (filter.specialities.length > 0) {
@@ -264,6 +308,11 @@ export function matchesKpiDoctorFilter(doctor: KpiDoctorFilterable, filter: KpiD
       norm(choice) === KPI_DOCTOR_NO_SPECIALITY ? speciality === "" : norm(choice) === speciality,
     );
     if (!hit) return false;
+  }
+  if (filter.bricks.length > 0) {
+    // A doctor whose brick was never read is in NO brick — never silently in "not validated".
+    const brick = kpiDoctorBrickValue(doctor);
+    if (brick === undefined || !filter.bricks.some((choice) => norm(choice) === norm(brick))) return false;
   }
   if (filter.grades.length > 0 && !filter.grades.includes(kpiDoctorGradeGroup(doctor.grade))) return false;
   if (filter.statuses.length > 0) {
@@ -331,6 +380,8 @@ export type KpiDoctorFacetOption = { value: string; label: string; count: number
 
 export type KpiDoctorFacets = {
   specialities: KpiDoctorFacetOption[];
+  /** Empty when no doctor's brick was read, so the bar offers no Brick filter at all. */
+  bricks: KpiDoctorFacetOption[];
   grades: KpiDoctorFacetOption[];
   statuses: KpiDoctorFacetOption[];
   seen: KpiDoctorFacetOption[];
@@ -343,6 +394,7 @@ export type KpiDoctorFacets = {
  */
 export function buildKpiDoctorFacets(doctors: readonly KpiDoctorFilterable[]): KpiDoctorFacets {
   const specialities = new Map<string, KpiDoctorFacetOption>();
+  const bricks = new Map<string, KpiDoctorFacetOption>();
   const grades = new Map<string, number>();
   const statuses = new Map<string, number>();
   let covered = 0;
@@ -358,6 +410,12 @@ export function buildKpiDoctorFacets(doctors: readonly KpiDoctorFilterable[]): K
     };
     slot.count += 1;
     specialities.set(value, slot);
+    const brick = kpiDoctorBrickValue(doctor);
+    if (brick !== undefined) {
+      const brickSlot = bricks.get(brick) ?? { value: brick, label: kpiDoctorBrickLabel(doctor) ?? brick, count: 0 };
+      brickSlot.count += 1;
+      bricks.set(brick, brickSlot);
+    }
     const grade = kpiDoctorGradeGroup(doctor.grade);
     grades.set(grade, (grades.get(grade) ?? 0) + 1);
     const status = doctor.frequency?.status;
@@ -372,6 +430,11 @@ export function buildKpiDoctorFacets(doctors: readonly KpiDoctorFilterable[]): K
       if (left.value === KPI_DOCTOR_NO_SPECIALITY) return 1;
       if (right.value === KPI_DOCTOR_NO_SPECIALITY) return -1;
       return left.label.localeCompare(right.label);
+    }),
+    // Brick names A to Z; the validated-no-brick and the not-validated doctors park last, in that order.
+    bricks: [...bricks.values()].sort((left, right) => {
+      const rank = (value: string) => (value === KPI_DOCTOR_NOT_VALIDATED ? 2 : value === KPI_DOCTOR_BRICK_NONE ? 1 : 0);
+      return rank(left.value) - rank(right.value) || left.label.localeCompare(right.label);
     }),
     grades: [...grades]
       .map(([value, count]) => ({ value, label: value, count }))

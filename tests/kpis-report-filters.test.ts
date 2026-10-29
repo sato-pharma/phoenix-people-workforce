@@ -3,9 +3,14 @@ import { readFileSync } from "node:fs";
 
 import {
   buildKpiDoctorFacets,
+  countActiveKpiDoctorFilter,
   EMPTY_KPI_DOCTOR_FILTER,
   filterKpiDoctors,
   hasActiveKpiDoctorFilter,
+  KPI_DOCTOR_BRICK_NONE,
+  KPI_DOCTOR_NOT_VALIDATED,
+  kpiDoctorBrickLabel,
+  kpiDoctorBrickValue,
   kpiDoctorFilterToParams,
   matchesKpiDoctorFilter,
   parseKpiDoctorFilter,
@@ -164,6 +169,7 @@ export function runKpiReportFilterUrlTests() {
     doctor: doctorFilter({
       query: "hala",
       specialities: ["Cardiology", "Internal Medicine, Diabetes"],
+      bricks: ["Heliopolis", "Nasr City, 7th District", KPI_DOCTOR_NOT_VALIDATED],
       grades: ["Grade A"],
       statuses: ["below", "not-visited"],
       seen: ["not-covered"],
@@ -185,6 +191,8 @@ export function runKpiReportFilterUrlTests() {
   assert.equal(kpiFiltersToParams(full).r_coverage, "50..90");
   assert.equal(kpiFiltersToParams(full).r_am, "1.5..");
   assert.equal(kpiFiltersToParams(full).r_calls, "..300");
+  // A pipe between bricks, never a comma: a brick's own name may carry one.
+  assert.equal(kpiFiltersToParams(full).dbrick, "Heliopolis|Nasr City, 7th District|(not-validated)");
 
   // Unreadable values are DROPPED, never rendered as an empty board.
   const hostile = parseKpiFilters({
@@ -214,12 +222,14 @@ export function runKpiReportFilterUrlTests() {
     const params = new URLSearchParams(buildKpisQuery({ ...base, tab }));
     assert.equal(params.get("dq"), "hala", `${tab} keeps the doctor search`);
     assert.equal(params.get("dstat"), "below,not-visited", `${tab} keeps the verdict filter`);
+    assert.equal(params.get("dbrick"), "Heliopolis|Nasr City, 7th District|(not-validated)", `${tab} keeps the brick filter`);
     assert.equal(params.get("r_coverage"), "50..90", `${tab} keeps the rep ranges`);
   }
   for (const tab of ["summary", "call-rate", "am-pm", "pharmacies", "weekly"]) {
     const params = new URLSearchParams(buildKpisQuery({ ...base, tab }));
     assert.equal(params.get("dq"), null, `${tab} has no doctor list, so no doctor search`);
     assert.equal(params.get("dsort"), null, `${tab} drops the doctor sort`);
+    assert.equal(params.get("dbrick"), null, `${tab} drops the brick filter`);
     assert.equal(params.get("r_coverage"), "50..90", `${tab} still keeps the rep ranges`);
   }
   // A one-rep board opens his list with no `rep` in the address; his filters must still ride.
@@ -282,7 +292,50 @@ export function runKpiDoctorFilterTests() {
   assert.deepEqual(facets.seen.map((option) => option.count), [3, 2]);
   assert.deepEqual(facets.timing.map((option) => option.value), ["late", "not-due"]);
   assert.deepEqual(facets.statuses.map((option) => option.value), ["not-visited", "below", "above", "not-due", "exact"]);
+  assert.deepEqual(facets.bricks, [], "no brick was read for this list, so the bar offers no Brick filter");
   assert.deepEqual(parseKpiDoctorFilter(kpiDoctorFilterToParams(doctorFilter({ query: "x", sort: "visits", direction: "desc" }))), doctorFilter({ query: "x", sort: "visits", direction: "desc" }));
+
+  // The Brick filter (owner, 2026-10-29: "filter by brick, got the doctors in it, know who is covered and
+  // who is not covered. Same in frequency"). The brick is the one his validated live photo sits in.
+  const bricked: KpiDoctorFilterable[] = [
+    doctor({ name: "Dr Hala", brick: "Heliopolis", placeValidated: true, visits: 3, frequency: { status: "exact" } }),
+    doctor({ name: "Dr Omar", brick: "Heliopolis", placeValidated: true, visits: 0, lastVisitDate: null, frequency: { status: "not-visited" } }),
+    doctor({ name: "Dr Sara", brick: "Nasr City", placeValidated: true, visits: 1, frequency: { status: "below" } }),
+    doctor({ name: "Dr Nour", brick: null, placeValidated: true, visits: 0, lastVisitDate: null, frequency: { status: "not-visited" } }),
+    doctor({ name: "Dr Adel", brick: null, placeValidated: false, visits: 0, lastVisitDate: null, frequency: { status: "not-visited" } }),
+    // The read never landed for him: he is in NO brick, and never "not validated".
+    doctor({ name: "Dr Mona", visits: 0, lastVisitDate: null, frequency: { status: "not-visited" } }),
+  ];
+  const inBrick = (filter: KpiDoctorFilter) => filterKpiDoctors(bricked, filter).map((entry) => entry.name);
+  assert.deepEqual(inBrick(doctorFilter({ bricks: ["Heliopolis"] })), ["Dr Hala", "Dr Omar"], "the doctors in the brick");
+  assert.deepEqual(inBrick(doctorFilter({ bricks: [" heliopolis "] })), ["Dr Hala", "Dr Omar"], "a brick matches whatever its case and spacing");
+  assert.deepEqual(inBrick(doctorFilter({ bricks: ["Heliopolis"], seen: ["not-covered"] })), ["Dr Omar"], "who in the brick is not covered");
+  assert.deepEqual(inBrick(doctorFilter({ bricks: ["Heliopolis"], seen: ["covered"] })), ["Dr Hala"], "who in the brick is covered");
+  assert.deepEqual(inBrick(doctorFilter({ bricks: ["Heliopolis", "Nasr City"], statuses: ["below"] })), ["Dr Sara"], "bricks OR-ed, AND-ed with the Frequency verdict");
+  assert.deepEqual(inBrick(doctorFilter({ bricks: [KPI_DOCTOR_BRICK_NONE] })), ["Dr Nour"], "validated with no brick on record is its own choice");
+  assert.deepEqual(inBrick(doctorFilter({ bricks: [KPI_DOCTOR_NOT_VALIDATED] })), ["Dr Adel"], "a doctor whose brick was never read is not called not validated");
+  assert.deepEqual(inBrick(doctorFilter({ query: "helio" })), ["Dr Hala", "Dr Omar"], "the search reads the brick");
+  assert.equal(countActiveKpiDoctorFilter(doctorFilter({ bricks: ["Heliopolis", KPI_DOCTOR_BRICK_NONE] })), 2);
+  assert.equal(hasActiveKpiDoctorFilter(doctorFilter({ bricks: ["Heliopolis"] })), true);
+
+  assert.equal(kpiDoctorBrickValue(doctor()), undefined, "never read, no brick value");
+  assert.equal(kpiDoctorBrickLabel(doctor()), undefined, "never read, nothing printed");
+  assert.equal(kpiDoctorBrickLabel(doctor({ brick: "  Heliopolis ", placeValidated: true })), "Heliopolis");
+  assert.equal(kpiDoctorBrickLabel(doctor({ brick: "   ", placeValidated: true })), "Validated · no brick on record");
+  assert.equal(kpiDoctorBrickLabel(doctor({ brick: "Heliopolis", placeValidated: false })), "Not validated yet", "not validated outranks a stray brick");
+
+  // The options: bricks A to Z, then the validated-no-brick, then the not validated; the unread doctor counts in none.
+  const brickFacets = buildKpiDoctorFacets(bricked).bricks;
+  assert.deepEqual(
+    brickFacets.map((option) => [option.value, option.label, option.count]),
+    [
+      ["Heliopolis", "Heliopolis", 2],
+      ["Nasr City", "Nasr City", 1],
+      [KPI_DOCTOR_BRICK_NONE, "Validated · no brick on record", 1],
+      [KPI_DOCTOR_NOT_VALIDATED, "Not validated yet", 1],
+    ],
+  );
+  assert.equal(brickFacets.reduce((sum, option) => sum + option.count, 0), bricked.length - 1);
 }
 
 // ── 4 + 5. The view keeps its arithmetic on the whole list ────────────────────────────────────────
@@ -317,6 +370,26 @@ export function runKpiReportFilterWiringTests() {
   assert.ok(!/@\/lib\/crm\/kpis-board"/.test(doctorBar), "the doctor bar must not pull in the board module");
   assert.ok(!/\bsupabase\b/i.test(doctorBar));
   assert.match(doctorBar, /cn\(phxFieldClassName, "[^"]*\btext-base\b/, "fields stay at 16px");
+
+  // The Brick filter leads the doctor bar, and the coverage header cuts the whole list by brick, each
+  // brick a link into the list narrowed to it.
+  assert.match(doctorBar, /const GROUPS[^=]*= \[\s*\{ key: "bricks", title: "Brick"/, "the Brick filter is the first group");
+  assert.match(view, /<CoverageBreakdown rows=\{brickCoverageRows\(context, all\)\}/, "the By brick table counts the whole list");
+  assert.match(view, /doctor: \{ \.\.\.board\.filters\.doctor, bricks: \[value\] \}/, "each brick links into its own doctors");
+  assert.match(view, /kpiDoctorBrickLabel\(doctor\)\]/, "each doctor row prints his brick");
+
+  // The board stamps the brick ONLY when the read landed: a failed read must not call every doctor
+  // "not validated", which is a statement about the rep's work.
+  const board = code("src/lib/crm/kpis-board.ts");
+  assert.match(
+    board,
+    /doctors: doctorBricks\s*\?\s*coverageDoctors\.map\(\(doctor\) => \(\{[\s\S]*?placeValidated: doctorBricks\.has\(doctor\.contactCrmId\),[\s\S]*?\}\)\)\s*:\s*coverageDoctors,/,
+    "the brick is stamped only on a read that landed",
+  );
+  const bricks = code("src/lib/crm/kpis-doctor-bricks.ts");
+  assert.match(bricks, /catch \(error\) \{[^}]*return null;/, "a failed brick read answers null, never an empty map");
+  assert.ok(!/\.or\(/.test(bricks), "the brick read takes two plain .in() reads, never an or() string");
+
   for (const file of ["src/lib/crm/kpis-doctor-filters.ts", "src/lib/crm/kpis-filters.ts"]) {
     const imports = [...code(file).matchAll(/^import[\s\S]*?from\s+"([^"]+)";/gm)].map((match) => match[1]);
     assert.ok(
