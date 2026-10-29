@@ -7,6 +7,7 @@ import {
   perDoubleVisitorRows,
   visitLogPerDoubleVisitor,
 } from "../src/lib/double-visit-analytics/chain-visitors.ts";
+import { visitCountSplitTotal } from "../src/lib/crm/visit-count-buckets.ts";
 import { filterLogRows, ALL } from "../src/lib/double-visit-analytics/report-filters.ts";
 import {
   buildManagerMrPairs,
@@ -187,7 +188,8 @@ function runCalendarTests() {
   assert.equal(second[0].status, "performed");
   assert.equal(second[0].employeeHrId, "H-1");
   assert.ok(second[0].activityKind?.startsWith("chain"), "as a chain visit");
-  assert.match(second[0].title, /2 visits/, "both chain visits, counted as the first manager's are");
+  // The count is the tile's AM · PM · PH line since 2026-10-29; the title names who came along.
+  assert.equal(second[0].visitCounts ? visitCountSplitTotal(second[0].visitCounts) : 0, 2, "both chain visits, counted as the first manager's are");
   assert.match(second[0].title, /Rep Probation/, "with the rep named");
   assert.match(second[0].title, /District Lead/, "and the other manager named beside her");
 
@@ -198,7 +200,7 @@ function runCalendarTests() {
   const rep = doubleVisitPrivateCalendarItemsFromRows(rows(), selected("R-1"));
   const repChain = rep.find((item) => item.startDate === "2026-10-06");
   assert.equal(repChain?.status, "received");
-  assert.match(repChain?.title ?? "", /2 visits/, "the rep received the two chain visits ONCE each, not four");
+  assert.equal(repChain?.visitCounts ? visitCountSplitTotal(repChain.visitCounts) : 0, 2, "the rep received the two chain visits ONCE each, not four");
   assert.ok(repChain?.activityKind?.startsWith("chain"), "and reads them as a chain visit");
 }
 
