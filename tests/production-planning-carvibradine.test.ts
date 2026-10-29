@@ -32,9 +32,9 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  *  3. **A shared material's stock belongs to the factory that holds it.** Seven excipients are the
  *     same rows Royanoxicam lists. Aerosil counted at Egyphar must never read as held at Hochster,
  *     or Carvibradine's run would be planned against powder sitting in another company's store.
- *  4. **The box size is NOT guessed.** Neither paper states it and he could not say on 2026-10-29.
- *     The migration refuses itself until the real number is written in, and the last block of this
- *     file fails — "box size pending" — until it is.
+ *  4. **The box is 30 tablets, read from Sato's own SmPC — never guessed.** Neither Hochster paper
+ *     states it; SmPC section 6.5 reads "3 … blister of 10 film coated tablets". A null box, or the
+ *     old raise-exception guard left behind, fails the last block of this file.
  */
 
 const MIGRATION = "supabase/migrations/20261029030057_production_planning_carvibradine.sql";
@@ -130,7 +130,7 @@ function compositionRows(sql: string): { code: string; basis: LoadedComposition[
   }));
 }
 
-/** `units_per_box` as the migration writes it — `null` while the box size is still unknown. */
+/** `units_per_box` as the migration writes it — `null` would mean the box size went missing. */
 function unitsPerBoxIn(sql: string): number | null {
   const match = /'mg',\s*30600000,\s*180,\s*180,\s*180,\s*true,\s*(null|\d+),\s*0,/.exec(sql);
   assert.ok(match, "30,600,000 mg a batch, a 180 mg tablet, a whole batch at a time, and no free samples");
@@ -426,20 +426,18 @@ export function runProductionPlanningCarvibradineTests() {
   });
   assert.equal(rowOf(atEgyphar, "AEROSIL_200").heldAtFactory, "5", "and it still counts for Royanoxicam, where it sits");
 
-  // ── 🔴 The box size — the one figure neither paper states ────────────────────────────────────
+  // ── 🔴 The box size — the one figure neither Hochster paper states ───────────────────────────
   //
-  // He could not say on 2026-10-29: the person who knows was asleep. `units_per_box` cannot be
-  // edited from the Settings tab, so a guess would sit on the screen as a measured figure. This
-  // stays red until the real number is in the migration AND the guard that refuses it is gone.
+  // Read from Sato's own SmPC, section 6.5: "Carton box containing 3 (transparent PVC/ALU) blister
+  // of 10 film coated tablets" (owner, 2026-10-29). `units_per_box` cannot be edited from the
+  // Settings tab, so this pins the documented 30 — and that the guard which held the migration
+  // back while the number was unknown is gone.
   const unitsPerBox = unitsPerBoxIn(sql);
   if (unitsPerBox === null) {
-    assert.fail(
-      "Carvibradine box size pending: neither Hochster paper states how many tablets go in one box. " +
-        "Write the real number into units_per_box in the migration, delete its raise-exception guard, then apply it.",
-    );
+    assert.fail("Carvibradine box size missing: SmPC 6.5 says 3 strips of 10 — 30 tablets a box.");
   }
-  assert.equal(/raise exception/.test(sql), false, "the guard that refused the migration is deleted with the number in");
-  assert.ok(unitsPerBox >= 1 && unitsPerBox <= 1000, "inside the column's own CHECK");
+  assert.equal(/raise exception/.test(sql), false, "the guard that held the migration back is deleted with the number in");
+  assert.equal(unitsPerBox, 30, "3 strips of 10 film-coated tablets a box (SmPC 6.5)");
 
   const boxes = Math.ceil(TABLETS_A_BATCH / unitsPerBox);
   const boxed = computePlan(planningData(sql, unitsPerBox), {

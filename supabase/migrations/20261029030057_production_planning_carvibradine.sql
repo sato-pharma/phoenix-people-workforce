@@ -69,17 +69,6 @@
 
 begin;
 
--- 🔴 BOX SIZE PENDING. Neither paper says how many tablets go in one box, and the owner could not
--- say on 2026-10-29 either — the person who knows was asleep. `units_per_box` is not editable from
--- the Settings tab, so a guessed figure would sit on the screen as a measured one until a second
--- migration replaced it. This block refuses the whole migration until the real number is written
--- into `units_per_box` below and this block is deleted.
-do $$
-begin
-  raise exception 'Carvibradine: the number of tablets in one box is not known yet (owner, 2026-10-29). Write it into units_per_box and delete this block before applying.';
-end
-$$;
-
 -- ── 1. Hochster, the fourth toll manufacturer ───────────────────────────────────────────────────
 insert into public.prodplan_locations (code, name_ar, name_en, is_factory, sort_order)
 values ('HOCHSTER', 'مخزن المصنع — هوكستر', 'At the factory (Hochster)', true, 50)
@@ -88,6 +77,10 @@ on conflict (code) do nothing;
 -- ── 2. Carvibradine 6.25/5 mg ───────────────────────────────────────────────────────────────────
 -- `default_sample_units` is 0: no free-sample count has been named for this product, so the
 -- Samples field starts empty rather than at the column's 10,000 default.
+-- `units_per_box` is 30: neither Hochster paper states it, so it is read from Sato's own SmPC,
+-- section 6.5 — "Carton box containing 3 (transparent PVC/ALU) blister of 10 film coated tablets"
+-- (owner, 2026-10-29, sending the Carvibradine regulatory file). The current leaflet agrees on
+-- strips of 10. It has no Settings edit, so a different carton needs a migration of its own.
 insert into public.prodplan_products (
   code, name_ar, name_en, manufacturer_name, measure_unit,
   run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box,
@@ -99,9 +92,9 @@ values (
   'Carvibradine 6.25/5 mg',
   'Hochster Pharmaceutical Industries',
   'mg',
-  30600000, 180, 180, 180, true, null,
+  30600000, 180, 180, 180, true, 30,
   0,
-  'Film-coated tablet — carvedilol 6.25 mg and ivabradine 5 mg (as hydrochloride) — toll-manufactured by Hochster Pharmaceutical Industries for Sato Pharma. One batch is a FIXED 30.6 kg = 170,000 tablets of 180 mg (175 mg core, 5 mg coat). Shelf life 2 years. Hochster product code FT11113600, section Solid 2; composition certificate application 15352. A tablet IS the dose and IS the saleable unit. Sato supplies the two actives, the leaflet, the box and the aluminium foil; Hochster the rest. Seeded 2026-10-29 from Hochster''s bill of materials and the composition certificate.'
+  'Film-coated tablet — carvedilol 6.25 mg and ivabradine 5 mg (as hydrochloride) — toll-manufactured by Hochster Pharmaceutical Industries for Sato Pharma. One batch is a FIXED 30.6 kg = 170,000 tablets of 180 mg (175 mg core, 5 mg coat). Shelf life 2 years. Hochster product code FT11113600, section Solid 2; composition certificate application 15352. A tablet IS the dose and IS the saleable unit; one box is 3 strips of 10 = 30 tablets (SmPC 6.5). Sato supplies the two actives, the leaflet, the box and the aluminium foil; Hochster the rest. Seeded 2026-10-29 from Hochster''s bill of materials and the composition certificate.'
 )
 on conflict (code) do nothing;
 
