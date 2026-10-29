@@ -102,6 +102,16 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
 
     const picker = stripComments(readFileSync(new URL("../src/components/phoenix-crm/visit-customer-picker.tsx", import.meta.url), "utf8"));
     assert.doesNotMatch(picker, /UNPLANNED_REASON_MIN/, "the out-of-plan question never holds Continue back for a short reason");
+    // Optional is NOT removed (owner, 2026-10-29: "I told you I wanted it optional. You removed it.") —
+    // the question is still asked on both screens, marked optional, and the form opens it whenever it is blank.
+    assert.match(picker, /label="Why you went \(optional\)"/, "the out-of-plan step still asks why he went");
+    const form = stripComments(readFileSync(new URL("../src/components/phoenix-crm/visit-log-form.tsx", import.meta.url), "utf8"));
+    assert.match(form, /label="Why you went \(optional\)"/, "the visit form still asks why he went");
+    assert.match(
+      form,
+      /const \[reasonOpen, setReasonOpen\] = useState\(initialVisitType === "out_of_plan" && !initialReason\?\.trim\(\)\);/,
+      "a blank reason leaves the question open on the form — never folded away behind a button",
+    );
   }
 
   // ── An off-plan visit can never move plan-kept % ─────────────────────────────────────────────
