@@ -43,7 +43,9 @@ import { fieldVisitActivityKind } from "../src/lib/private-calendar/field-visits
 // vendor tags a pharmacy visit with a period like any other — 1,827 pharmacy visits carried 'PM'
 // and 426 'AM' between 2026-08-01 and 2026-09-20 — so a count that buckets on `ampm` alone files
 // them among the doctors. Plus the Private Calendar's colour key: one colour per kind of day, a
-// visit coloured by who went (single, double, chain) crossed with regular or campaign.
+// visit coloured by who went (single, double, chain). Regular or campaign is no kind of its own any
+// more (owner, 2026-10-29: Phoenix words, never iReports360's) — it stays only as the "is this a
+// customer visit at all" gate and the chain pairing's key.
 export function runVisitCountGoldenRuleTests() {
   // ── the bucket ──────────────────────────────────────────────────────────────────────────────
   assert.equal(visitCountBucket({ ampm: "PM", speciality: "Pharmacy" }), "Pharmacies", "a pharmacy tagged PM is a pharmacy, never a PM doctor");
@@ -86,7 +88,7 @@ export function runVisitCountGoldenRuleTests() {
     assert.doesNotMatch(formatVisitCountSplit(split), /\//, "never a slash between the figures");
   }
 
-  // ── regular or campaign ────────────────────────────────────────────────────────────────────
+  // ── regular or campaign: read as "is this a visit at all", never printed ─────────────────────
   assert.equal(visitCategoryOfType(0), "regular");
   assert.equal(visitCategoryOfType(-30), "regular", "the unlabelled field visit counts in its normal place, as regular");
   assert.equal(visitCategoryOfType(-8), "campaign");
@@ -95,7 +97,7 @@ export function runVisitCountGoldenRuleTests() {
 
   // ── a rep's own CRM rows: which colour, and which rows the Double Visit feed owns ───────────
   assert.equal(fieldVisitActivityKind({ double_crm_id: null, double_hr_id: null, source: "ireports360", visit_type: 0 }), "single_regular");
-  assert.equal(fieldVisitActivityKind({ double_crm_id: 0, double_hr_id: null, source: "ireports360", visit_type: -8 }), "single_campaign", "the vendor's 0 partner is no partner");
+  assert.equal(fieldVisitActivityKind({ double_crm_id: 0, double_hr_id: null, source: "ireports360", visit_type: -8 }), "single_regular", "the vendor's 0 partner is no partner, and a campaign call joins the day's single visit entry");
   assert.equal(
     fieldVisitActivityKind({ double_crm_id: 5123, double_hr_id: null, source: "ireports360", visit_type: 0 }),
     null,
@@ -168,8 +170,8 @@ export function runVisitCountGoldenRuleTests() {
   }
 
   // ── the colour key ─────────────────────────────────────────────────────────────────────────
-  assert.equal(privateCalendarActivityKinds.length, 14, "attendance, vacation, excuse, holiday, the approved plan, six visit kinds, other CRM activity, an admin-verified correction and an outstation trip");
-  assert.equal(new Set(Object.values(privateCalendarActivityKindLabels)).size, 14, "every kind has a name of its own");
+  assert.equal(privateCalendarActivityKinds.length, 11, "attendance, vacation, excuse, holiday, the approved plan, three visit kinds (single, double, chain), other CRM activity, an admin-verified correction and an outstation trip");
+  assert.equal(new Set(Object.values(privateCalendarActivityKindLabels)).size, 11, "every kind has a name of its own");
   assert.equal(privateCalendarItemKind({ source: "double_visit" }), "double_regular", "an item from before the kinds existed still gets a colour");
 
   const ui = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8");
@@ -177,10 +179,10 @@ export function runVisitCountGoldenRuleTests() {
     const tonesStart = ui.indexOf("const kindTones: Record<PrivateCalendarActivityKind");
     const tonesBody = ui.slice(tonesStart, ui.indexOf("\n};\n", tonesStart));
     const swatches = [...tonesBody.matchAll(/swatch: "([^"]+)"/g)].map((match) => match[1]);
-    assert.equal(swatches.length, 14, "every kind has a swatch");
-    assert.equal(new Set(swatches).size, 14, `every kind wears its own colour, got ${swatches.join(", ")}`);
+    assert.equal(swatches.length, 11, "every kind has a swatch");
+    assert.equal(new Set(swatches).size, 11, `every kind wears its own colour, got ${swatches.join(", ")}`);
     const chips = [...tonesBody.matchAll(/chip: "([^"]+)"/g)].map((match) => match[1]);
-    assert.equal(new Set(chips).size, 14, "every kind's card is distinct");
+    assert.equal(new Set(chips).size, 11, "every kind's card is distinct");
     for (const kind of privateCalendarActivityKinds) {
       assert.match(tonesBody, new RegExp(`\\n  ${kind}: \\{`), `${kind} must have its tones`);
     }

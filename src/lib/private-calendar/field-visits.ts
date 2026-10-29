@@ -89,9 +89,8 @@ export function fieldVisitActivityKind(
   const partnered = hasRealPartner(row);
   if (partnered && type !== null && DOUBLE_VISIT_FEED_TYPES.has(type)) return null;
   if (type !== null && CRM_LEAVE_VISIT_TYPE_CODES.has(type)) return "vacation";
-  const category = visitCategoryOfType(type);
-  if (!category) return "other_crm";
-  return privateCalendarVisitKind(partnered ? "double" : "single", category);
+  if (!visitCategoryOfType(type)) return "other_crm";
+  return privateCalendarVisitKind(partnered ? "double" : "single");
 }
 
 type FieldVisitGroup = {

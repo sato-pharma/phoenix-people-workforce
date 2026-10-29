@@ -1,4 +1,4 @@
-import type { ManagerDayPlan, PlanRowOutcome, PlanVsActualRow } from "@/lib/phoenix-crm/manager-day-plan";
+import { halfOfVisit, type ManagerDayPlan, type PlanRowOutcome, type PlanVsActualRow } from "@/lib/phoenix-crm/manager-day-plan";
 import { managerVisitCustomerType, managerVisitHalfLabel, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
 
 /**
@@ -106,4 +106,28 @@ export function planActualRowWords(row: PlanVsActualRow): PlanActualRowWords {
     withNobody: visit.withPeople.length === 0 && visit.kind !== "single" ? "No one else named." : null,
     withPeople,
   };
+}
+
+/** The words a visit's own plan flag reads in Phoenix CRM (owner, 2026-10-29: "planned / unplanned"). */
+export const VISIT_PLANNED_LABEL = "Planned";
+export const VISIT_UNPLANNED_LABEL = "Unplanned";
+
+/**
+ * A person's visits with no manager plan beside them — a rep's day, a visit a manager rode — as rows that each answer
+ * from the visit's OWN flag (`is_unplanned`): Planned or Unplanned. Owner, 2026-10-29, on a double visit whose tile said
+ * "7 planned · 1 unplanned" while its table said "No sent plan covers this day" and called none of them planned: the
+ * calendar's tile and its table read the same flag, so they can never disagree. AM before PM, each half as it happened.
+ */
+export function visitsOnlyRows(visits: readonly ManagerDayVisit[]): PlanVsActualRow[] {
+  return visits
+    .map((visit, index) => ({ index, row: {
+      actual: visit,
+      half: halfOfVisit(visit),
+      id: `visit:${visit.id}`,
+      outcome: (visit.planned ? "done" : "unplanned") as PlanRowOutcome,
+      outcomeLabel: visit.planned ? VISIT_PLANNED_LABEL : VISIT_UNPLANNED_LABEL,
+      plan: null,
+    } satisfies PlanVsActualRow }))
+    .sort((left, right) => left.row.half.localeCompare(right.row.half) || left.index - right.index)
+    .map(({ row }) => row);
 }
