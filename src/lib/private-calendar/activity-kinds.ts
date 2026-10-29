@@ -45,6 +45,7 @@ export const privateCalendarActivityKinds = [
   "plan",
   ...privateCalendarVisitKinds,
   "other_crm",
+  "correction",
 ] as const satisfies readonly PrivateCalendarActivityKind[];
 
 export const privateCalendarActivityKindLabels: Record<PrivateCalendarActivityKind, string> = {
@@ -60,6 +61,7 @@ export const privateCalendarActivityKindLabels: Record<PrivateCalendarActivityKi
   chain_regular: "Chain · Regular",
   chain_campaign: "Chain · Campaign",
   other_crm: "Other CRM activity",
+  correction: "Admin-verified correction",
 };
 
 export function isPrivateCalendarVisitKind(kind: PrivateCalendarActivityKind): kind is PrivateCalendarVisitKind {

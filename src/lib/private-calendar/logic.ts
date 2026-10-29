@@ -16,14 +16,15 @@ import {
   type PrivateCalendarVisitSummary,
 } from "@/lib/private-calendar/activity-kinds";
 
-export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "field_visit" | "holiday" | "plan" | "vacation";
+export type PrivateCalendarSource = "attendance" | "correction" | "double_visit" | "excuse" | "field_visit" | "holiday" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "plan"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
+  correction: "Admin-verified correction",
   double_visit: "Double Visit",
   excuse: "Excuse",
   field_visit: "Field Visit",
@@ -670,6 +671,7 @@ export function suppressFieldVisitAttendanceProblems(items: PrivateCalendarItem[
 export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): PrivateCalendarWorkspace["summary"] {
   const summary = {
     attendance: 0,
+    correction: 0,
     double_visit: 0,
     excuse: 0,
     field_visit: 0,
@@ -687,6 +689,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
 function sourceCounts() {
   return {
     attendance: 0,
+    correction: 0,
     double_visit: 0,
     excuse: 0,
     field_visit: 0,
@@ -694,6 +697,80 @@ function sourceCounts() {
     plan: 0,
     vacation: 0,
   } satisfies Record<PrivateCalendarSource, number>;
+}
+
+/** What an accepted review request needs to be shown on its day — a narrow shape, so this stays free of the dispute store. */
+export type PrivateCalendarAcceptedCorrection = {
+  adminDecisionNote: string | null;
+  claimSourceText: string;
+  claimText: string;
+  disputeDate: string;
+  employeeHrId: string;
+  employeeName: string | null;
+  id: string;
+  itemSource: PrivateCalendarSource | null;
+  status: string;
+};
+
+/**
+ * THE ACCEPTED WHOLE-DAY REVIEW REQUEST IS AN ENTRY ON ITS DAY (2026-10-29). A request filed against an empty day carries
+ * no item to annotate, so before this its acceptance added nothing to the calendar and left the red "No Activity
+ * Recorded" block standing — the employee saw no change and filed the same day again. Every accepted whole-day request
+ * of one person on one date becomes ONE "correction" entry listing each verified claim; an item-scoped request keeps
+ * annotating its own item (applyAcceptedDisputeOverlays) and adds nothing here.
+ *
+ * Display only: the deductions read (getCompanyNoActivityDays) does not read review requests and is untouched.
+ */
+export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCorrection[]): PrivateCalendarItem[] {
+  const byDay = new Map<string, PrivateCalendarAcceptedCorrection[]>();
+  for (const dispute of disputes) {
+    if (dispute.status !== "accepted" || dispute.itemSource != null) continue;
+    const key = `${privateCalendarHrIdKey(dispute.employeeHrId)}|${dispute.disputeDate}`;
+    byDay.set(key, [...(byDay.get(key) ?? []), dispute]);
+  }
+  return Array.from(byDay.entries()).map(([key, accepted]) => {
+    const first = accepted[0]!;
+    const claims = accepted.map((dispute) => dispute.claimText);
+    return {
+      activityKind: "correction",
+      approvalImpact: null,
+      chipLines: ["Verified correction", ...claims],
+      description: null,
+      detailLines: accepted.map((dispute) =>
+        `${dispute.claimText} — verified via ${dispute.claimSourceText}.${dispute.adminDecisionNote ? ` Admin note: ${dispute.adminDecisionNote}` : ""}`),
+      employeeDepartmentName: null,
+      employeeHrId: first.employeeHrId,
+      employeeJobTitle: null,
+      employeeLineName: null,
+      employeeName: first.employeeName,
+      endDate: first.disputeDate,
+      exceptionFlags: [],
+      id: `private-calendar-correction-${key}`,
+      managerName: null,
+      severity: "success",
+      source: "correction",
+      sourceLabel: privateCalendarSourceLabels.correction,
+      sourceRecordId: accepted.map((dispute) => dispute.id).join(","),
+      sourceSystem: "Phoenix review requests",
+      sourceTable: "private_calendar_data_disputes",
+      startDate: first.disputeDate,
+      status: "Accepted",
+      time: null,
+      title: `Verified: ${claims.join(" · ")}`,
+    } satisfies PrivateCalendarItem;
+  });
+}
+
+/**
+ * A day an admin verified is no longer "nothing recorded": its No Activity Recorded block and its plan-versus-actual
+ * note give way to the correction entry. Every other finding on the day (a late punch, attendance during leave) stands.
+ */
+export function withoutCorrectedDayFindings(exceptions: PrivateCalendarException[], corrections: PrivateCalendarItem[]) {
+  if (corrections.length === 0) return exceptions;
+  const corrected = new Set(corrections.map((item) => `${privateCalendarHrIdKey(item.employeeHrId)}|${item.startDate}`));
+  return exceptions.filter((exception) =>
+    !((exception.code === "no_activity_recorded" || exception.code === "planned_but_nothing_recorded")
+      && corrected.has(`${privateCalendarHrIdKey(exception.employeeHrId)}|${exception.date}`)));
 }
 
 export function buildPrivateCalendarTeamSummary(input: {

@@ -22,6 +22,7 @@ import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import {
   buildPrivateCalendarHierarchyIndex,
   canReadPrivateCalendarEmployee,
+  buildAcceptedCorrectionItems,
   buildPrivateCalendarTeamSummary,
   configuredPrivateCalendarGlobalHrIds,
   derivePrivateCalendarExceptions,
@@ -39,6 +40,7 @@ import {
   resolvePrivateCalendarVisibleEmployees,
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
+  withoutCorrectedDayFindings,
   type PrivateCalendarEmployeeOption,
   type PrivateCalendarException,
   type PrivateCalendarItem,
@@ -507,6 +509,8 @@ export async function getPrivateCalendarWorkspace(input: {
   });
   const sourceReadiness: Record<PrivateCalendarSource, boolean> = {
     attendance: attendance.ready,
+    // Review requests are read best-effort (none on failure), never a source the day depends on.
+    correction: true,
     double_visit: doubleVisits.ready,
     excuse: excuses.ready,
     // One readiness flag, because both loaders answer the same question: is this employee's own
@@ -519,7 +523,9 @@ export async function getPrivateCalendarWorkspace(input: {
 
   const employeeDisputes = disputesByEmployee.flat();
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
-  const exceptionsWithStatuses = appendDisputeStatusExceptions(exceptions, employeeDisputes);
+  // An accepted whole-day request is an entry of its own, and the day it verifies stops reading "No Activity Recorded".
+  const correctionItems = decorateItemsWithEmployeeMetadata(buildAcceptedCorrectionItems(employeeDisputes), employees);
+  const exceptionsWithStatuses = appendDisputeStatusExceptions(withoutCorrectedDayFindings(exceptions, correctionItems), employeeDisputes);
 
   // The reply thread under each request. One batched read for the whole month, and best-effort: a
   // thread that fails to load must leave the calendar itself intact, so it falls back to none — the
@@ -542,7 +548,8 @@ export async function getPrivateCalendarWorkspace(input: {
     }))
     .sort((left, right) => `${left.date}-${left.createdAt}`.localeCompare(`${right.date}-${right.createdAt}`));
 
-  const displayItems = itemsWithCorrections;
+  const displayItems = [...itemsWithCorrections, ...correctionItems]
+    .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
   return {
     access: {

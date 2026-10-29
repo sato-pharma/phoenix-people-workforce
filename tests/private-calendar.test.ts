@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
+  buildAcceptedCorrectionItems,
   buildPrivateCalendarHierarchyIndex,
   canReadPrivateCalendarEmployee,
   buildPrivateCalendarTeamSummary,
@@ -15,6 +16,7 @@ import {
   readAllPrivateCalendarRows,
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
+  withoutCorrectedDayFindings,
 } from "../src/lib/private-calendar/logic.ts";
 import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
@@ -265,6 +267,53 @@ export async function runPrivateCalendarTests() {
     "the description must spell out exactly which sources were checked and came up empty",
   );
 
+  // AN ACCEPTED WHOLE-DAY REVIEW REQUEST SHOWS ON ITS DAY (2026-10-29). A Medical Representative filed "Training" against
+  // an empty 11 October; it was accepted three times over and her calendar did not change — no entry, and the red No
+  // Activity Recorded block still standing — because only an item-scoped request had anything to annotate.
+  {
+    const dispute = (id: string, claimText: string, status: string, itemSource: "attendance" | null = null) => ({
+      adminDecisionNote: null,
+      claimSourceText: "Manager Confirmation",
+      claimText,
+      disputeDate: "2026-10-11",
+      employeeHrId: "pd-0026",
+      employeeName: "Rep Twenty-Six",
+      id,
+      itemSource,
+      status,
+    });
+    const corrections = buildAcceptedCorrectionItems([
+      dispute("d-1", "Training", "accepted"),
+      dispute("d-2", "Training in Cairo", "accepted"),
+      dispute("d-3", "Field day", "pending_review"),
+      dispute("d-4", "Late punch fixed", "accepted", "attendance"),
+    ]);
+    assert.equal(corrections.length, 1, "two accepted whole-day requests on one day are ONE entry; a pending or item-scoped one adds none");
+    assert.equal(corrections[0]?.source, "correction");
+    assert.equal(corrections[0]?.title, "Verified: Training · Training in Cairo");
+    assert.equal(corrections[0]?.detailLines.length, 2, "each verified claim is listed with where it was verified");
+
+    const repDay = derivePrivateCalendarExceptions({
+      employees: [{ departmentName: null, fullName: "Rep Twenty-Six", hrId: "PD-0026", jobTitle: "Medical Representative", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
+      end: "2026-10-11",
+      isExpectedWorkday: () => true,
+      items: [],
+      start: "2026-10-11",
+      today: "2026-10-29",
+    });
+    assert.equal(repDay.filter((e) => e.code === "no_activity_recorded").length, 1, "the empty day reads No Activity Recorded before the correction");
+    assert.equal(
+      withoutCorrectedDayFindings(repDay, corrections).filter((e) => e.code === "no_activity_recorded").length,
+      0,
+      "an admin-verified day no longer reads No Activity Recorded, whatever case its HR id is stored in",
+    );
+    assert.equal(
+      withoutCorrectedDayFindings(repDay, buildAcceptedCorrectionItems([dispute("d-3", "Field day", "pending_review")])).length,
+      repDay.length,
+      "a pending request clears nothing",
+    );
+  }
+
   // A rep's OWN solo CRM visit proves field work exactly as a double visit does.
   // Only the double-visit feed used to be wired in, so 86% of field work was
   // invisible: measured on July 2026 production data, 1,700 rep-days carrying
@@ -482,6 +531,7 @@ export async function runPrivateCalendarTests() {
 
   assert.deepEqual(summarizePrivateCalendarItems([attendance, vacation, excuse]), {
     attendance: 1,
+    correction: 0,
     double_visit: 0,
     excuse: 1,
     field_visit: 0,

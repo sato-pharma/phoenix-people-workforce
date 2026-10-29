@@ -168,8 +168,8 @@ export function runVisitCountGoldenRuleTests() {
   }
 
   // ── the colour key ─────────────────────────────────────────────────────────────────────────
-  assert.equal(privateCalendarActivityKinds.length, 12, "attendance, vacation, excuse, holiday, the approved plan, six visit kinds and other CRM activity");
-  assert.equal(new Set(Object.values(privateCalendarActivityKindLabels)).size, 12, "every kind has a name of its own");
+  assert.equal(privateCalendarActivityKinds.length, 13, "attendance, vacation, excuse, holiday, the approved plan, six visit kinds, other CRM activity and an admin-verified correction");
+  assert.equal(new Set(Object.values(privateCalendarActivityKindLabels)).size, 13, "every kind has a name of its own");
   assert.equal(privateCalendarItemKind({ source: "double_visit" }), "double_regular", "an item from before the kinds existed still gets a colour");
 
   const ui = readFileSync("src/components/employee-portal/private-calendar.tsx", "utf8");
@@ -177,10 +177,10 @@ export function runVisitCountGoldenRuleTests() {
     const tonesStart = ui.indexOf("const kindTones: Record<PrivateCalendarActivityKind");
     const tonesBody = ui.slice(tonesStart, ui.indexOf("\n};\n", tonesStart));
     const swatches = [...tonesBody.matchAll(/swatch: "([^"]+)"/g)].map((match) => match[1]);
-    assert.equal(swatches.length, 12, "every kind has a swatch");
-    assert.equal(new Set(swatches).size, 12, `every kind wears its own colour, got ${swatches.join(", ")}`);
+    assert.equal(swatches.length, 13, "every kind has a swatch");
+    assert.equal(new Set(swatches).size, 13, `every kind wears its own colour, got ${swatches.join(", ")}`);
     const chips = [...tonesBody.matchAll(/chip: "([^"]+)"/g)].map((match) => match[1]);
-    assert.equal(new Set(chips).size, 12, "every kind's card is distinct");
+    assert.equal(new Set(chips).size, 13, "every kind's card is distinct");
     for (const kind of privateCalendarActivityKinds) {
       assert.match(tonesBody, new RegExp(`\\n  ${kind}: \\{`), `${kind} must have its tones`);
     }
