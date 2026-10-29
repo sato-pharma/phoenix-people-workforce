@@ -170,6 +170,7 @@ function wireMaterials(): WireMaterial[] {
     return {
       // This fixture has ONE product, so nothing is shared and the warning is genuinely empty here.
       alsoUsedByProductIds: [],
+      supplier: composition?.supplier ?? null,
       basePerDisplay: (material.basePerDisplay / QTY_SCALE).toString(),
       baseUnit: material.baseUnit,
       code: material.code,

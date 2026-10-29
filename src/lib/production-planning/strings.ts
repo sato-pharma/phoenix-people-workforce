@@ -206,6 +206,11 @@ export const PP = {
   excludedFactory: "المصنع يوردها — غير محسوبة في الشراء",
   excludedUnsettled: "لم يُتفق على من يوردها — غير محسوبة في الشراء",
   excludedNoComposition: "لا توجد تركيبة مُدخلة لهذه المادة",
+  // Royanoxicam's foil: Sato's, with the grams per box still to come (owner, 2026-10-29).
+  excludedSatoNoAmount: "ساتو يوردها — الكمية لكل علبة لم تُدخل بعد",
+  heldFactoryBrings: "يوردها المصنع — لا رصيد لساتو منها",
+  // The Stock and Cost tabs list only what Sato buys; this line says how many the factory brings.
+  factoryHiddenNote: "مواد يوردها المصنع ولا تظهر هنا:",
 
   // ── The stock tab ─────────────────────────────────────────────────────────────────────────────
   stockTitle: "المخزون",
@@ -533,6 +538,9 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   excludedFactory: "The factory supplies it — not counted in the buy list",
   excludedUnsettled: "Who supplies it is not settled — not counted in the buy list",
   excludedNoComposition: "No composition is entered for this material",
+  excludedSatoNoAmount: "Sato supplies it — amount per box not entered yet",
+  heldFactoryBrings: "The factory brings it — Sato holds none",
+  factoryHiddenNote: "Materials the factory brings, not listed here:",
 
   // ── The stock tab ─────────────────────────────────────────────────────────────────────────────
   stockTitle: "Stock",
