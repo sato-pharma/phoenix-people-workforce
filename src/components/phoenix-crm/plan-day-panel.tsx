@@ -786,7 +786,7 @@ function ActivityEditor({
       </p>
       <div
         aria-label={`Other activities on ${dayName}`}
-        className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-7 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1"
+        className="grid grid-cols-2 gap-1.5 lg:grid-cols-5"
         role="group"
       >
         {PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => {

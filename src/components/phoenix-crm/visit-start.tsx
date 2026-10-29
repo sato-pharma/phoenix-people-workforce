@@ -69,6 +69,7 @@ const ACTIVITY_ICONS: Record<PhoenixCrmDayActivity, LucideIcon> = {
   sales_day: ShoppingBag,
   training: GraduationCap,
   admin_work: ClipboardList,
+  interviews: UserSearch,
   travel: Car,
   rtd: MessagesSquare,
   group_meeting: UsersRound,
@@ -271,7 +272,7 @@ export function VisitStart({
             </div>
           </CrmBlock>
           <CrmBlock className="border-t border-slate-100" title="Or record the day as">
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
               {PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => (
                 <StartTarget
                   compact

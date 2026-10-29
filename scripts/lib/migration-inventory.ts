@@ -1914,6 +1914,22 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // a PostgREST read answering 200). No backfill, no row changed. Pinned by
   // tests/phoenix-crm-visit-any-companions.test.ts.
   "20261027185332_phoenix_crm_visit_any_companions.sql",
+
+  // INTERVIEWS, A DAY KIND BESIDE ADMIN WORK — applied 29 Oct 2026 on STAGING then PRODUCTION (about 23:10 Cairo)
+  // through scripts/apply-sql-file.mjs (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing
+  // route of AGENTS.md §8, on the owner's word in chat ("Use the repo's SQL script"): the Supabase MCP's
+  // apply_migration answered {"status":"declined"} three times on staging, the last right after the owner chose to
+  // allow the prompt. The route writes no ledger row on either project, hence this entry.
+  //
+  // Read live on BOTH projects after the apply and identical on each, each md5-equal to its dollar-quoted body in
+  // this file (LF), all four prosecdef true: md5(pg_proc.prosrc) of phoenix_crm_save_day_activity
+  // f87d74c06342162f3a3045c03e081631, phoenix_crm_save_plan_activities 85196f4e3383491a0544e6a12ccdf6e3,
+  // phoenix_crm_save_manager_plan_slot 12517968b9e92d3dd440aa6caab49bee, phoenix_crm_rep_entry_days_calc
+  // 2db9c21d0d79b49e8520946f69c3ae42. The three checks and crm_visits_unified's definition name 'interviews'.
+  // Production's crm_visits_unified for 1–29 Oct read identical before and after (ireports360 5,927 rows, phoenix
+  // 7,757 — the one row more after it is a Sales day recorded at 23:06, outside the hash it was compared on).
+  // No row changed. Pinned by tests/phoenix-crm-day-activities.test.ts.
+  "20261029195520_phoenix_crm_interviews_day_activity.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

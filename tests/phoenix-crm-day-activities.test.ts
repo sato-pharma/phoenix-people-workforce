@@ -38,8 +38,8 @@ function sql(path: string = MIGRATION): string {
   return stripSqlComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"));
 }
 
-/** The newest migration to restate the activity-type check: RTD and Group meeting joined it on 2026-10-21. */
-const TYPE_CHECK_MIGRATION = "supabase/migrations/20261021120000_phoenix_crm_day_activities_rtd_and_group_meeting.sql";
+/** The newest migration to restate the activity-type check: Interviews joined it on 2026-10-29. */
+const TYPE_CHECK_MIGRATION = "supabase/migrations/20261029195520_phoenix_crm_interviews_day_activity.sql";
 
 export function runPhoenixCrmDayActivitiesTests(): void {
   // ── The vocabulary is Phoenix's own, and holds no leave ─────────────────────────────────────────
@@ -47,7 +47,7 @@ export function runPhoenixCrmDayActivitiesTests(): void {
     const keys = PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => entry.key);
     // The owner's order on the visit's first screen (2026-09-29): his four, then the other three — and
     // "Sales day" is new.
-    assert.deepEqual(keys, ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel", "rtd", "group_meeting"]);
+    assert.deepEqual(keys, ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "interviews", "travel", "rtd", "group_meeting"]);
 
     for (const banned of ["leave", "annual", "vacation", "sick", "casual", "absent", "holiday"]) {
       assert.equal(keys.includes(banned as never), false, `${banned} is HR's, not the CRM's — one leave record, not two`);
@@ -77,6 +77,28 @@ export function runPhoenixCrmDayActivitiesTests(): void {
     for (const list of lists) assert.ok(list[1].includes("'rtd'") && list[1].includes("'group_meeting'"), "every restated check admits both");
     assert.equal((planMigration.match(/(?:x\.activity_type|v_activity) not in \([^)]*'rtd', 'group_meeting'/g) ?? []).length, 2, "both plan save functions accept them");
     assert.equal(/crm_visits_unified/.test(dayMigration + planMigration), false, "a record only: no worked-day code is given to either");
+  }
+
+  // ── Interviews: right after Admin work, and a worked day exactly as Admin work is ─────────────────
+  //
+  // Owner, 2026-10-29: "IN PHX CRM ADD AN OPTION UNDER ADMIN WORK FOR INTERVIEWS" — its own tile, right after
+  // Admin work, on the recorded day, the rep's weekly plan and a manager's Admin half-day. Every database door
+  // that names the kinds has to admit it, and the entry-day and old-CRM doors count it as they count Admin work.
+  {
+    const keys = PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => entry.key);
+    assert.equal(keys.indexOf("interviews"), keys.indexOf("admin_work") + 1, "Interviews sits right after Admin work");
+    assert.equal(dayActivityLabel("interviews"), "Interviews");
+    assert.equal(parseDayActivityDraft({ activityType: "interviews" }).ok, true);
+
+    const migration = sql(TYPE_CHECK_MIGRATION);
+    const checks = [...migration.matchAll(/check \(activity_type in \(([^)]+)\)\)/g)];
+    assert.equal(checks.length, 2, "the recorded day and the rep plan restate their checks");
+    for (const check of checks) assert.ok(check[1].includes("'interviews'"), "each check admits Interviews");
+    assert.ok(/kind = 'admin' and activity_type in \([^)]*'interviews', 'office'\)/.test(migration), "a manager's Admin half-day admits it");
+    assert.equal((migration.match(/not in \([^)]*'group_meeting', 'interviews'/g) ?? []).length, 3, "the three save functions accept it");
+    assert.ok(/'rtd', 'interviews'\)\s*and \(p_day is null/.test(migration), "the entry-day calc counts it as a worked day");
+    assert.ok(/when 'interviews' then -20/.test(migration), "the old-CRM door serves it as Admin Work (-20)");
+    assert.ok(/when 'interviews' then 'Admin Work'/.test(migration), "under Admin Work's own description");
   }
 
   // ── An unknown kind is REFUSED, not coerced ─────────────────────────────────────────────────────
