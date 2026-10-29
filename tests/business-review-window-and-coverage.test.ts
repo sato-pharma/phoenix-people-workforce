@@ -8,6 +8,7 @@ import {
   gradedRowsOf,
 } from "../src/lib/business-review/canonical.ts";
 import {
+  concentrationPeriods,
   describePeriods,
   figureWindowLabel,
   figureWindowPeriods,
@@ -30,6 +31,7 @@ import type {
 } from "../src/lib/business-review/sources/visits.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
 import { SALES_HISTORY_FLOOR } from "../src/lib/sales/vs-target.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Business Review — the window filter and the coverage gate.
@@ -974,6 +976,62 @@ export async function runBusinessReviewWindowAndCoverageTests() {
     assert.ok(
       route.includes("months: figureWindowPeriods(coverage)"),
       "the pack route must hand the model the FIGURE window's months, never meta.months",
+    );
+  }
+
+  // ─────────── A COMPLETE WINDOW READS ITS CUSTOMERS (2026-10-29) ───────────
+  //
+  // 🔴 `figureWindow` is NULL when nothing was held out — the ordinary case — and the customer-grain
+  // loader read `figureWindow?.periods ?? []`, so every complete window read NO months: the brick,
+  // customer and channel pages of every pack and portal page came back empty. A rep's Jul–Sep pack
+  // printed 0 · 0 · 0 on every channel beside EGP 222,448 of sales on its first page.
+  {
+    const requested = resolveReviewWindow("2026-07", "2026-09", [...AVAILABLE, "2026-09"]).window;
+    const rows = requested.periods.map((period) => salesRow({ period, hasTarget: true, targetValue: 900_000 }));
+    const complete = buildCoverage({
+      window: requested, rows, uploaded: UPLOADED(requested),
+      marketing: NO_MARKETING, outstation: NO_OUTSTATION, visits: NO_VISITS,
+      unplaced: NO_UNPLACED, adjustment: null,
+    });
+    assert.equal(complete.figureWindow, null, "a complete window carries NO figure window — the shape that read nothing");
+    assert.deepEqual(
+      concentrationPeriods(complete),
+      ["2026-07", "2026-08", "2026-09"],
+      "a complete window reads its customers for EVERY month — never none",
+    );
+
+    const heldOut = buildCoverage({
+      window: requested, rows, uploaded: new Set(["2026-07", "2026-08"]),
+      marketing: NO_MARKETING, outstation: NO_OUTSTATION, visits: NO_VISITS,
+      unplaced: NO_UNPLACED, adjustment: null,
+      figureWindow: { label: "Jul - Aug 2026", periods: ["2026-07", "2026-08"] },
+    });
+    assert.deepEqual(
+      concentrationPeriods(heldOut),
+      ["2026-07", "2026-08"],
+      "a month whose files have not landed stays out of the bricks, customers and channels",
+    );
+
+    const nothingLanded = buildCoverage({
+      window: requested, rows, uploaded: new Set<string>(),
+      marketing: NO_MARKETING, outstation: NO_OUTSTATION, visits: NO_VISITS,
+      unplaced: NO_UNPLACED, adjustment: null,
+    });
+    assert.equal(nothingLanded.figureWindow, null);
+    assert.deepEqual(
+      concentrationPeriods(nothingLanded),
+      [],
+      "a window where no month's files have landed still reads none — every month is held out",
+    );
+
+    const service = stripComments(SRC("src/lib/business-review/service.ts"));
+    assert.ok(
+      flat(service).includes("const periods = concentrationPeriods(input.coverage);"),
+      "the customer-grain loader takes its months from concentrationPeriods",
+    );
+    assert.ok(
+      !service.includes("figureWindow?.periods ?? []"),
+      "and never from the figure window alone, which is null for a complete window",
     );
   }
 }

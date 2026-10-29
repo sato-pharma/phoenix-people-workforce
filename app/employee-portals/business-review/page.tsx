@@ -69,6 +69,7 @@ import {
   REVIEW_SOURCE_NOTICE,
 } from "@/lib/business-review/service";
 import { figureWindowLabel, hasFigures } from "@/lib/business-review/coverage";
+import { reviewRepName } from "@/lib/business-review/rep-name";
 import type { AreaSummary, DmSummary } from "@/lib/business-review/types";
 
 export const runtime = "nodejs";
@@ -203,9 +204,9 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       repConcentration = null;
     }
     // His own name, taken from the review's people rows (the session's AccessContext carries none),
-    // so his page and the pack he exports read as HIS and he feels seen (owner, 2026-09-30).
-    const repName =
-      repDs.people.find((p) => p.hrId.toUpperCase() === scope.hrId)?.name ?? scope.viewerName;
+    // so his page and the pack he exports read as HIS and he feels seen (owner, 2026-09-30). A rep
+    // those rows do not hold is asked of `employees` — never headed with her HR id (`reviewRepName`).
+    const repName = await reviewRepName({ fallback: scope.viewerName, hrId: scope.hrId, people: repDs.people });
     return shell(
       <RepBusinessReview
         areas={mine.areas.map(withAreaBand)}

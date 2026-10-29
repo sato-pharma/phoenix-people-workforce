@@ -133,6 +133,22 @@ export function runBusinessReviewPackModelTests() {
     const withoutRead = buildSalesReviewPack(input({ selection: ["brick-spread", "channel-split"] }));
     assert.equal(withoutRead.sections.length, 0, "ticked but never loaded is not the same as loaded and empty");
 
+    // LOADED BUT EMPTY IS ALSO NO PAGE (2026-10-29). A rep's pack printed "Sales by channel" with 0.0%
+    // on every channel beside EGP 222,448 of sales — the read had come back empty, and the bricks and
+    // the customers already dropped out on it while the channels printed three zeros as a finding.
+    const loadedEmpty = buildSalesReviewPack(
+      input({
+        concentration: buildConcentration([]),
+        selection: ["brick-spread", "channel-split", "customer-concentration"],
+      }),
+    );
+    assert.equal(
+      loadedEmpty.sections.find((s) => s.metric === "channel-split"),
+      undefined,
+      "no sales read for the window means no channel page — never three channels at 0%",
+    );
+    assert.equal(loadedEmpty.sections.length, 0, "and no brick or customer page either");
+
     const rows: ReviewSalesDetail[] = [
       { areaCode: "CA1", brickId: "B1", brickName: "Tanta", channel: "distributor", clientCode: "C1", clientName: "One", period: "2026-07", value: 800 },
       { areaCode: "CA1", brickId: "B2", brickName: "Mahalla", channel: "wholesaler", clientCode: "C2", clientName: "Two", period: "2026-07", value: 200 },

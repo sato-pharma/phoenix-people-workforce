@@ -447,25 +447,25 @@ function spread(
   };
 }
 
-function channels(facts: ConcentrationFacts): PackSection {
-  const share = (value: number) =>
-    facts.totalValue > 0 ? `${((value / facts.totalValue) * 100).toFixed(1)}%` : "—";
-  const pctOf = (value: number) => (facts.totalValue > 0 ? (value / facts.totalValue) * 100 : null);
+// 🔴 NULL WHEN THE WINDOW CARRIES NO CUSTOMER-GRAIN SALES — a page of "0 · 0 · 0" under "How it
+// reached the market" reads as a channel that sold nothing, beside a summary that says it sold.
+// That is the page a rep's Jul–Sep pack printed on 2026-10-29 (EGP 222,448 of sales on page 1).
+function channels(facts: ConcentrationFacts): PackSection | null {
+  if (!(facts.totalValue > 0)) return null;
+  const share = (value: number) => `${((value / facts.totalValue) * 100).toFixed(1)}%`;
+  const pctOf = (value: number) => (value / facts.totalValue) * 100;
   return {
-    chart:
-      facts.totalValue > 0
-        ? {
-            capNote: null,
-            items: [
-              { label: "Through distributors", note: null, value: pctOf(facts.channels.distributor) },
-              { label: "Through stores", note: null, value: pctOf(facts.channels.wholesaler) },
-              { label: "Direct orders", note: null, value: pctOf(facts.channels.direct) },
-            ],
-            kind: "bars",
-            reference: null,
-            unit: "share",
-          }
-        : null,
+    chart: {
+      capNote: null,
+      items: [
+        { label: "Through distributors", note: null, value: pctOf(facts.channels.distributor) },
+        { label: "Through stores", note: null, value: pctOf(facts.channels.wholesaler) },
+        { label: "Direct orders", note: null, value: pctOf(facts.channels.direct) },
+      ],
+      kind: "bars",
+      reference: null,
+      unit: "share",
+    },
     align: ["left", "right", "right"],
     columns: ["Channel", "Sales", "Share"],
     metric: "channel-split",

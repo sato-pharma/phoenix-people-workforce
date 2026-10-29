@@ -14,7 +14,10 @@ import assert from "node:assert/strict";
 import { resolvePersonDisplayName, tidyAllCapitalsName } from "@/lib/employees/display-name";
 import type { EmployeeNameLookupClient } from "@/lib/employees/names-by-hr-id";
 import { personNameLookup } from "@/lib/employees/person-name-lookup";
+import { reviewRepName } from "@/lib/business-review/rep-name";
 import { reviewDisplayName } from "@/lib/business-review/sources/roles";
+import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 import { fakeSupabaseClient } from "./fixtures/fake-supabase-table";
 
@@ -66,4 +69,41 @@ export async function runBusinessReviewPersonNamesTests() {
   assert.equal(tidyAllCapitalsName("AHMED ABD-EL RAHMAN"), "Ahmed Abd-El Rahman");
   assert.equal(tidyAllCapitalsName("محمد علي"), "محمد علي", "an Arabic name has no case and is left alone");
   assert.equal(resolvePersonDisplayName("SAHAR EL GALLAD", null, "PD-0028"), "Sahar El Gallad");
+
+  // ── 4. A rep's own review and pack are headed with her name, never her HR id (2026-10-29) ──────────
+  //
+  // The session carries no name, so the scope's viewerName is the HR id; a rep the review's people rows
+  // did not hold exported a pack whose cover read "ai-0029 · Pedia Line".
+  {
+    const people = [{ hrId: "X-1", name: "Dalia Fikry" }];
+    assert.equal(
+      await reviewRepName(
+        { fallback: "x-2", hrId: "X-2", people },
+        client([{ hr_id: "X-2", full_name: "Nour Hany Wagdy", nickname: "Nour Hany" }]),
+      ),
+      "Nour Hany",
+      "a rep with no row among the review's people is asked of employees — nickname first",
+    );
+    assert.equal(
+      await reviewRepName(
+        { fallback: "x-1", hrId: "X-1", people },
+        client([{ hr_id: "X-1", full_name: "Someone Else", nickname: null }]),
+      ),
+      "Dalia Fikry",
+      "the review's own people row still answers first",
+    );
+    const broken = fakeSupabaseClient({ employees: [] }, { failOn: { employees: "connection reset by peer" } });
+    assert.equal(
+      await reviewRepName({ fallback: "x-3", hrId: "X-3", people: [] }, broken as unknown as EmployeeNameLookupClient),
+      "x-3",
+      "a failed read costs the name, never the page",
+    );
+    for (const file of ["app/api/business-review/pack/route.ts", "app/employee-portals/business-review/page.tsx"]) {
+      assert.match(
+        stripComments(readFileSync(file, "utf8")),
+        /await reviewRepName\(\{/,
+        `${file} heads the rep's review with reviewRepName, never the scope's HR-id fallback`,
+      );
+    }
+  }
 }
