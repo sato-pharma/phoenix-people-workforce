@@ -123,6 +123,18 @@ export const PLAN_REQUEST_MODES: readonly PlanRequestMode[] = ["total_boxes", "g
 /** Suppliers a committed plan line may carry: the unsettled ones have to be decided first. */
 export const SETTLED_SUPPLIERS: readonly MaterialSupplier[] = ["sato", "factory"] as const;
 
+/**
+ * Whether a material belongs on the Cost and Stock tabs — the materials SATO buys and holds.
+ *
+ * Owner, 2026-10-29, on Royanoxicam: "we only supply the active material, Laura Noxicam boxes,
+ * pamphlet, and aluminium foil only. We don't supply inactive materials." The formula stays complete
+ * (the factory's lines are still on the Formula and Planner screens); only the money and the store
+ * leave them out. Unsettled and unknown stay listed: nobody has said they are not his.
+ */
+export function isBoughtBySato(supplier: MaterialSupplier | null): boolean {
+  return supplier !== "factory";
+}
+
 export function isSettledSupplier(supplier: MaterialSupplier): supplier is "sato" | "factory" {
   return supplier === "sato" || supplier === "factory";
 }

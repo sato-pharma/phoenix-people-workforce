@@ -92,7 +92,7 @@ import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { costCoverage } from "@/lib/production-planning/costing";
 import { fromBaseUnits, toBaseUnits } from "@/lib/production-planning/display-units";
 import { createRequestSequence, planForSelection } from "@/lib/production-planning/request-sequence";
-import { COMPOSITION_BASES, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
+import { COMPOSITION_BASES, isBoughtBySato, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
 import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
@@ -513,6 +513,8 @@ function supplierChip(row: WirePlanRow, t: Record<ProductionPlanningStringKey, s
 function excludedNote(row: WirePlanRow, t: Record<ProductionPlanningStringKey, string>): string | null {
   if (row.excludedReason === "factory_supplies") return t.excludedFactory;
   if (row.excludedReason === "supplier_unsettled") return t.excludedUnsettled;
+  // Royanoxicam's foil: Sato's on his word, with no amount yet ("leave empty for now").
+  if (row.excludedReason === "no_composition" && row.supplier === "sato") return t.excludedSatoNoAmount;
   if (row.excludedReason === "no_composition") return t.excludedNoComposition;
   return null;
 }
@@ -1183,20 +1185,28 @@ function PlannerResult({
                   ) : null}
                 </td>
                 <td className={TD}>
-                  <p>
-                    {t.atFactory} <Qty unit={row.displayUnit} value={row.heldAtFactory} />
-                  </p>
-                  <p className="mt-0.5">
-                    {t.atOwnStore} <Qty unit={row.displayUnit} value={row.heldElsewhere} />
-                  </p>
-                  <p className="mt-0.5 font-bold text-slate-900">
-                    {t.totalHeld} <Qty unit={row.displayUnit} value={row.heldTotal} />
-                  </p>
-                  {row.coverRuns ? (
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      {t.coverRuns} <Num>{formatNumberLatin(row.coverRuns)}</Num> {t.unitRuns}
-                    </p>
-                  ) : null}
+                  {row.supplier === "factory" ? (
+                    // Sato holds none of what the factory brings, so three zeros would read as a
+                    // shortage of his own.
+                    <p className="break-words text-[11px] text-slate-500">{t.heldFactoryBrings}</p>
+                  ) : (
+                    <>
+                      <p>
+                        {t.atFactory} <Qty unit={row.displayUnit} value={row.heldAtFactory} />
+                      </p>
+                      <p className="mt-0.5">
+                        {t.atOwnStore} <Qty unit={row.displayUnit} value={row.heldElsewhere} />
+                      </p>
+                      <p className="mt-0.5 font-bold text-slate-900">
+                        {t.totalHeld} <Qty unit={row.displayUnit} value={row.heldTotal} />
+                      </p>
+                      {row.coverRuns ? (
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          {t.coverRuns} <Num>{formatNumberLatin(row.coverRuns)}</Num> {t.unitRuns}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                 </td>
                 <td className={TD}>
                   <PlannerAction
@@ -1228,8 +1238,12 @@ function PlannerResult({
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="font-bold">{t.totalHeld}</dt>
-                  <dd>
-                    <Qty unit={row.displayUnit} value={row.heldTotal} />
+                  <dd className="break-words">
+                    {row.supplier === "factory" ? (
+                      t.heldFactoryBrings
+                    ) : (
+                      <Qty unit={row.displayUnit} value={row.heldTotal} />
+                    )}
                   </dd>
                 </div>
               </dl>
@@ -1370,8 +1384,33 @@ function PlannerAction({
 type SaveFn = (path: string, body: Record<string, unknown>) => Promise<void>;
 
 /** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
+/**
+ * The workspace as the Stock and Cost tabs see it — only the materials SATO buys and holds.
+ *
+ * Owner, 2026-10-29, on Royanoxicam: "we only supply the active material, Laura Noxicam boxes,
+ * pamphlet, and aluminium foil only. We don't supply inactive materials." He chose to keep the
+ * formula complete, so the Formula and Planner screens still list the factory's lines; only the
+ * money and the store leave them out. The count comes back so each tab can say how many it hid.
+ */
+function satoBoughtView(workspace: WireWorkspace | null): { data: WireWorkspace | null; factoryHidden: number } {
+  if (!workspace) return { data: null, factoryHidden: 0 };
+  const materials = workspace.materials.filter((material) => isBoughtBySato(material.supplier));
+  return { data: { ...workspace, materials }, factoryHidden: workspace.materials.length - materials.length };
+}
+
+/** The one visible line saying the list is short on purpose, never a silent omission. */
+function FactoryHiddenNote({ count }: { count: number }) {
+  const t = useProductionPlanningStrings().t;
+  if (count === 0) return null;
+  return (
+    <p className="mb-2 break-words text-[12px] text-slate-500">
+      {t.factoryHiddenNote} <Num>{count}</Num>
+    </p>
+  );
+}
+
 export function StockTab({
-  data,
+  data: workspace,
   canWrite,
   busy,
   onSave,
@@ -1384,6 +1423,7 @@ export function StockTab({
 
   const S = useProductionPlanningStrings();
   const t = S.t;
+  const { data, factoryHidden } = satoBoughtView(workspace);
   const [materialId, setMaterialId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [qty, setQty] = useState("");
@@ -1526,6 +1566,7 @@ export function StockTab({
       {data.expiry.length > 0 ? <ExpiryBanner rows={data.expiry} /> : null}
 
       <section className="min-w-0">
+        <FactoryHiddenNote count={factoryHidden} />
         {/* 34/22/22/22, UNCHANGED — the fourth column now carries the EXPIRY DATE instead of the
             report date, and the report date moved under each quantity. Merged, never added: a fifth
             column takes this table below its natural width in the admin shell's 669px box, which is
@@ -1690,7 +1731,7 @@ function ExpiryBanner({ rows }: { rows: WireExpiryVerdict[] }) {
 
 /** Exported for scripts/measure-production-planning-fit.mjs - see the note at the top of this file. */
 export function CostTab({
-  data,
+  data: workspace,
   canWrite,
   busy,
   onSave,
@@ -1705,6 +1746,7 @@ export function CostTab({
 
   const S = useProductionPlanningStrings();
   const t = S.t;
+  const { data, factoryHidden } = satoBoughtView(workspace);
   const [materialId, setMaterialId] = useState("");
   const [currency, setCurrency] = useState<"USD" | "EGP">("EGP");
   const [price, setPrice] = useState("");
@@ -1829,6 +1871,7 @@ export function CostTab({
       ) : null}
 
       <section className="min-w-0">
+        <FactoryHiddenNote count={factoryHidden} />
         <table className={TABLE}>
           <colgroup>
             <col className="w-[34%]" />
@@ -2280,7 +2323,9 @@ export function SettingsTab({
     setLineError(null);
     setLineQty(line ? fromBaseUnits(line.qtyPerBasis, material) : "");
     setLineBasis(line?.basis ?? "per_dose");
-    setLineSupplier(line?.supplier ?? "factory");
+    // A material with no line opens on who the product link says brings it — Royanoxicam's foil
+    // opens on Sato, not on the factory default.
+    setLineSupplier(line?.supplier ?? material.supplier ?? "factory");
     setLineOverage(line?.overagePct ?? "");
     setLineFrom("");
   };

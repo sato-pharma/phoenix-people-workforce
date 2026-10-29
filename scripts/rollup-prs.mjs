@@ -51,11 +51,11 @@
 //                                                     # since it was carried? exit 3 when one has
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { gh, git } from './lib/rollup-exec.mjs';
 import { GITHUB_OWNER, REPO, readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMemberHeads, rollupMembers } from './rollup-duplicate-guard.mjs';
@@ -199,34 +199,9 @@ const waitMinutes = Number.isFinite(waitArg) && waitArg >= 0
   ? waitArg
   : Number(process.env.PHX_ROLLUP_WAIT_MINUTES ?? 25);
 
-function gh(argv, { allowFail = false } = {}) {
-  try {
-    return execFileSync('gh', argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
-  } catch (err) {
-    if (allowFail) return '';
-    const detail = String(err?.stderr || err?.message || err).split('\n')[0];
-    console.error(`[rollup] could not reach GitHub: ${detail}`);
-    process.exit(1);
-  }
-}
-
-function git(argv, { cwd = process.cwd(), allowFail = false, env, input, raw = false } = {}) {
-  try {
-    const out = execFileSync('git', argv, {
-      cwd,
-      encoding: 'utf8',
-      env: env ? { ...process.env, ...env } : process.env,
-      input,
-      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-      timeout: 120000,
-    });
-    // A patch must keep its trailing newline or `git apply` refuses it, so `raw` skips the trim.
-    return raw ? out : out.trim();
-  } catch (err) {
-    if (allowFail) return null;
-    throw err;
-  }
-}
+// `gh()` and `git()` live in `lib/rollup-exec.mjs` with the 64 MiB output ceiling they share. Node's
+// default is 1 MiB, the suite registry passed it on 29 Oct 2026, and every `git show` of it then came
+// back `null` — so `--settle` silently stopped closing a carried PR that touched it (PR 6643).
 
 // ---------------------------------------------------------------------------- read the open PRs
 

@@ -114,7 +114,7 @@ export { T as PRODPLAN_TABLES };
 const PRODUCT_COLUMNS =
   "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, measure_unit, factory_location_id, default_sample_units, is_active, notes";
 /** Which materials belong to which product. Before Guamusin every material belonged to the only one. */
-const PRODUCT_MATERIAL_COLUMNS = "product_id, material_id, sort_order, is_active";
+const PRODUCT_MATERIAL_COLUMNS = "product_id, material_id, sort_order, is_active, supplier";
 const MATERIAL_COLUMNS =
   "id, code, name_ar, name_en, unit_kind, base_unit, display_unit, base_per_display::text, is_imported, lead_time_days, min_order_qty::text, purchase_increment::text, reorder_cover_runs::text, is_active, sort_order, notes";
 const COMPOSITION_COLUMNS =
@@ -302,6 +302,17 @@ export type ProductionPlanningData = {
   readonly materials: LoadedMaterial[];
   /** Which materials belong to which product, from `prodplan_product_materials`. */
   readonly materialIdsByProductId: Map<string, Set<string>>;
+  /**
+   * Who brings a product's material when NO formula line is in force for it, from
+   * `prodplan_product_materials.supplier` — product id → material id → supplier. Read it through
+   * `effectiveSupplier`, never directly: a line in force always wins.
+   *
+   * 🔴 It exists for Royanoxicam's aluminium foil (owner, 2026-10-29: Sato supplies "the active
+   * material, Laura Noxicam boxes, pamphlet, and aluminium foil only"). The foil has no line on his
+   * own word ("leave empty for now"), so without this the screen could not tell it was Sato's and
+   * filed it with the factory's materials. Optional so a hand-built fixture need not carry it.
+   */
+  readonly linkSupplierByProductId?: Map<string, Map<string, MaterialSupplier>>;
   readonly compositionsByProductId: Map<string, LoadedComposition[]>;
   readonly stock: LoadedStock[];
   readonly prices: LoadedPrice[];
@@ -412,11 +423,18 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
   }));
 
   const materialIdsByProductId = new Map<string, Set<string>>();
+  const linkSupplierByProductId = new Map<string, Map<string, MaterialSupplier>>();
   for (const row of productMaterialsRes.data ?? []) {
     const productId = String(row.product_id);
     const ids = materialIdsByProductId.get(productId) ?? new Set<string>();
     ids.add(String(row.material_id));
     materialIdsByProductId.set(productId, ids);
+    const linkSupplier = MATERIAL_SUPPLIERS.find((candidate) => candidate === row.supplier);
+    if (linkSupplier) {
+      const byMaterial = linkSupplierByProductId.get(productId) ?? new Map<string, MaterialSupplier>();
+      byMaterial.set(String(row.material_id), linkSupplier);
+      linkSupplierByProductId.set(productId, byMaterial);
+    }
   }
 
   const materials: LoadedMaterial[] = (materialsRes.data ?? []).map((row) => ({
@@ -564,6 +582,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     locations,
     materials,
     materialIdsByProductId,
+    linkSupplierByProductId,
     compositionsByProductId,
     stock,
     prices,
@@ -624,6 +643,24 @@ export function materialsForProduct(data: ProductionPlanningData, productId: str
   const ids = data.materialIdsByProductId.get(productId);
   if (!ids || ids.size === 0) return data.materials;
   return data.materials.filter((material) => ids.has(material.id));
+}
+
+/**
+ * Who brings this material for this product: the formula line in force, else the product link's own
+ * `supplier`, else nobody has said (null).
+ *
+ * 🔴 The line always wins. The link answers only for a material with no line — Royanoxicam's foil
+ * (Sato's, amount not entered yet) and its purified water and ethyl alcohol (the factory's, Q.S.).
+ */
+export function effectiveSupplier(
+  data: ProductionPlanningData,
+  productId: string | null,
+  materialId: string,
+  composition: { readonly supplier: MaterialSupplier } | null | undefined,
+): MaterialSupplier | null {
+  if (composition) return composition.supplier;
+  if (!productId) return null;
+  return data.linkSupplierByProductId?.get(productId)?.get(materialId) ?? null;
 }
 
 /**
@@ -928,7 +965,7 @@ export function computePlan(data: ProductionPlanningData, body: PlanRequestInput
       purchaseIncrement: material.purchaseIncrement,
       basis: composition?.basis ?? null,
       qtyPerBasis: composition?.qtyPerBasis ?? null,
-      supplier: composition?.supplier ?? null,
+      supplier: effectiveSupplier(data, product.id, material.id, composition),
       overagePctScaled: overage.pctScaled,
       overageSource: overage.source,
       heldByLocationId: stockByMaterialId.get(material.id) ?? new Map(),
@@ -1300,6 +1337,7 @@ export async function getProductionPlanningWorkspace(
         alsoUsedByProductIds: otherProductsUsingMaterial(data, productId, material.id).map(
           (product) => product.id,
         ),
+        supplier: effectiveSupplier(data, productId, material.id, composition),
         composition: composition
           ? {
               basis: composition.basis,
@@ -2096,7 +2134,9 @@ export async function savePlan(access: AccessContext, body: Record<string, unkno
   // that quietly disagrees with the current formula or the current stock.
   if (commit) {
     const lineRows = result.rows
-      .filter((row) => row.supplier === "sato" || row.supplier === "factory")
+      // A material with no line in force has no basis to snapshot — the link's supplier now names
+      // who brings Royanoxicam's foil, so the supplier alone no longer means a line exists.
+      .filter((row) => (row.supplier === "sato" || row.supplier === "factory") && row.basis !== null)
       .map((row) => {
         const material = materialsForProduct(data, result.productId).find(
           (candidate) => candidate.id === row.materialId,
@@ -2298,7 +2338,7 @@ function computePlanInternal(data: ProductionPlanningData, productId: string) {
         purchaseIncrement: material.purchaseIncrement,
         basis: composition?.basis ?? null,
         qtyPerBasis: composition?.qtyPerBasis ?? null,
-        supplier: composition?.supplier ?? null,
+        supplier: effectiveSupplier(data, productId, material.id, composition),
         overagePctScaled: overage.pctScaled,
         overageSource: overage.source,
         heldByLocationId: stockByMaterialId.get(material.id) ?? new Map(),

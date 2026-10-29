@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { dosesPerRun, type RunGeometry, yieldForRuns } from "../src/lib/production-planning/geometry.ts";
-import { parsePct, parseQty, QTY_SCALE } from "../src/lib/production-planning/rules.ts";
+import { type MaterialSupplier, parsePct, parseQty, QTY_SCALE } from "../src/lib/production-planning/rules.ts";
 import {
   computePlan,
   type LoadedComposition,
@@ -39,6 +39,7 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATION = "supabase/migrations/20261029030057_production_planning_carvibradine.sql";
 const ROYANOXICAM_MIGRATION = "supabase/migrations/20261020200000_production_planning_royanoxicam.sql";
+const LINK_SUPPLIERS = "supabase/migrations/20261029031000_production_planning_carvibradine_link_suppliers.sql";
 
 const HOCHSTER = "loc-hochster";
 const EGYPHAR = "loc-egyphar";
@@ -118,6 +119,22 @@ function linkedMaterialCodes(sql: string): { code: string; sortOrder: number }[]
     code: match[1]!,
     sortOrder: Number(match[2]!),
   }));
+}
+
+/**
+ * Who brings each of Carvibradine's line-less materials, read out of the link-supplier migration's
+ * two updates — keyed the way the plan keys a material, `mat-<code>`.
+ */
+function linkSuppliersOf(sql: string): Map<string, MaterialSupplier> {
+  const links = new Map<string, MaterialSupplier>();
+  const pattern =
+    /set supplier = '(sato|factory)'[\s\S]*?p\.code = '([A-Z_]+)'\s*and m\.code (?:= '([A-Z0-9_]+)'|in \(([^)]*)\))/g;
+  for (const match of sql.matchAll(pattern)) {
+    assert.equal(match[2], "CARVIBRADINE", "🔴 the supplier is on the PRODUCT link — only Carvibradine's rows are set");
+    const codes = match[3] ? [match[3]] : [...match[4]!.matchAll(/'([A-Z0-9_]+)'/g)].map((code) => code[1]!);
+    for (const code of codes) links.set(`mat-${code}`, match[1] as MaterialSupplier);
+  }
+  return links;
 }
 
 function compositionRows(sql: string): { code: string; basis: LoadedComposition["basis"]; qty: string; supplier: LoadedComposition["supplier"] }[] {
@@ -211,6 +228,7 @@ function planningData(sql: string, unitsPerBox: number, stock: ProductionPlannin
     fx: { rateDate: "2026-10-29", source: "manual", usdToEgpMicro: BigInt(48) * QTY_SCALE },
     learning: new Map(),
     level: "full",
+    linkSupplierByProductId: new Map([["prod-carvibradine", linkSuppliersOf(sqlOf(LINK_SUPPLIERS))]]),
     locations: [
       { code: "EGYPHAR", id: EGYPHAR, isFactory: true, nameAr: "إيجيفار", nameEn: "Egyphar" },
       { code: "SATO_STORE", id: SATO_STORE, isFactory: false, nameAr: "مخزن ساتو", nameEn: "Sato store" },
@@ -390,10 +408,27 @@ export function runProductionPlanningCarvibradineTests() {
   assert.equal(rowOf(plan, "LACTOSE_MONO").excludedReason, "factory_supplies");
   assert.equal(rowOf(plan, "AEROSIL_200").excludedReason, "factory_supplies", "a shared row is still Hochster's here");
 
-  // 🔴 The foil is a ROW WITH NO COMPOSITION, never a row with a zero.
-  assert.equal(rowOf(plan, "BLISTER_ALU_CARVIBRADINE").excludedReason, "no_composition");
-  assert.equal(rowOf(plan, "BLISTER_ALU_CARVIBRADINE").contributesToBuyList, false);
-  assert.equal(rowOf(plan, "ABSOLUTE_ETHANOL").excludedReason, "no_composition");
+  // ── The four materials with no line: who brings them is on the product link ─────────────────
+  // Every material on the list either has a line or has its supplier named on the link — none is
+  // left reading "nobody has said".
+  const links = linkSuppliersOf(sqlOf(LINK_SUPPLIERS));
+  assert.deepEqual(
+    [...links.keys()].map((id) => id.replace(/^mat-/, "")).sort(),
+    linked.map((row) => row.code).filter((code) => !seeded.some((line) => line.code === code)).sort(),
+    "the link names a supplier for exactly the materials that have no formula line",
+  );
+
+  // 🔴 The foil is Sato's and still a ROW WITH NO COMPOSITION, never a row with a zero.
+  const foil = rowOf(plan, "BLISTER_ALU_CARVIBRADINE");
+  assert.equal(foil.supplier, "sato", "his sentence names the aluminium foil — the link says so");
+  assert.equal(foil.excludedReason, "no_composition", "and its weight per box has not been entered");
+  assert.equal(foil.contributesToBuyList, false, "so nothing is bought for it until he gives the amount");
+
+  // The three Q.S solvents are Hochster's, never a gap in the formula.
+  for (const code of ["ABSOLUTE_ETHANOL", "ETHYL_ALCOHOL", "PURIFIED_WATER"]) {
+    assert.equal(rowOf(plan, code).supplier, "factory", `Hochster brings ${code}`);
+    assert.equal(rowOf(plan, code).excludedReason, "factory_supplies", `${code} reads as the factory's, not as formula not entered`);
+  }
 
   // ── A shared material's stock belongs to the factory that holds it ───────────────────────────
   const aerosilAtEgyphar = planningData(sql, 1, [
