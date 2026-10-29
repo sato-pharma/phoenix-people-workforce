@@ -45,6 +45,7 @@ export const privateCalendarActivityKinds = [
   "plan",
   ...privateCalendarVisitKinds,
   "other_crm",
+  "outstation",
   "correction",
 ] as const satisfies readonly PrivateCalendarActivityKind[];
 
@@ -61,6 +62,7 @@ export const privateCalendarActivityKindLabels: Record<PrivateCalendarActivityKi
   chain_regular: "Chain · Regular",
   chain_campaign: "Chain · Campaign",
   other_crm: "Other CRM activity",
+  outstation: "Outstation trip",
   correction: "Admin-verified correction",
 };
 

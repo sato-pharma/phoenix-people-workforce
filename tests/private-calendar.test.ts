@@ -264,7 +264,7 @@ export async function runPrivateCalendarTests() {
   );
   assert.equal(
     noItemsExceptions[0]?.description,
-    "Employee Two: no CRM field or double visit, no fingerprint attendance, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.",
+    "Employee Two: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.",
     "the description must spell out exactly which sources were checked and came up empty",
   );
 
@@ -293,6 +293,21 @@ export async function runPrivateCalendarTests() {
     assert.equal(corrections[0]?.source, "correction");
     assert.equal(corrections[0]?.title, "Verified: Training · Training in Cairo");
     assert.equal(corrections[0]?.detailLines.length, 2, "each verified claim is listed with where it was verified");
+
+    // The same claim filed twice for one day — Shahd's "Training" via CRM Double Visit and via Manager Confirmation,
+    // because the first acceptance showed nothing — is one claim with two proofs, never "Training · Training".
+    const repeated = buildAcceptedCorrectionItems([
+      { ...dispute("d-5", "Training", "accepted"), claimSourceText: "CRM / iReports360 (Double Visit)" },
+      dispute("d-6", " training ", "accepted"),
+      dispute("d-7", "Training in Cairo", "accepted"),
+    ]);
+    assert.equal(repeated[0]?.title, "Verified: Training · Training in Cairo", "an identical claim is named once");
+    assert.deepEqual(repeated[0]?.chipLines, ["Verified correction", "Training", "Training in Cairo"]);
+    assert.deepEqual(
+      repeated[0]?.detailLines,
+      ["Training — verified via CRM / iReports360 (Double Visit) and Manager Confirmation.", "Training in Cairo — verified via Manager Confirmation."],
+      "its proofs are joined on one line",
+    );
 
     const repDay = derivePrivateCalendarExceptions({
       employees: [{ departmentName: null, fullName: "Rep Twenty-Six", hrId: "PD-0026", jobTitle: "Medical Representative", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
@@ -551,6 +566,7 @@ export async function runPrivateCalendarTests() {
     excuse: 1,
     field_visit: 0,
     holiday: 0,
+    outstation: 0,
     plan: 0,
     total: 3,
     vacation: 1,

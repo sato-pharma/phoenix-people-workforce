@@ -16,11 +16,11 @@ import {
   type PrivateCalendarVisitSummary,
 } from "@/lib/private-calendar/activity-kinds";
 
-export type PrivateCalendarSource = "attendance" | "correction" | "double_visit" | "excuse" | "field_visit" | "holiday" | "plan" | "vacation";
+export type PrivateCalendarSource = "attendance" | "correction" | "double_visit" | "excuse" | "field_visit" | "holiday" | "outstation" | "plan" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit", "outstation", "plan", "correction"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
@@ -29,6 +29,7 @@ export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> 
   excuse: "Excuse",
   field_visit: "Field Visit",
   holiday: "National vacation",
+  outstation: "Outstation trip",
   plan: "Approved plan",
   vacation: "Vacation",
 };
@@ -686,6 +687,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
     excuse: 0,
     field_visit: 0,
     holiday: 0,
+    outstation: 0,
     plan: 0,
     total: items.length,
     vacation: 0,
@@ -704,6 +706,7 @@ function sourceCounts() {
     excuse: 0,
     field_visit: 0,
     holiday: 0,
+    outstation: 0,
     plan: 0,
     vacation: 0,
   } satisfies Record<PrivateCalendarSource, number>;
@@ -740,14 +743,24 @@ export function buildAcceptedCorrectionItems(disputes: PrivateCalendarAcceptedCo
   }
   return Array.from(byDay.entries()).map(([key, accepted]) => {
     const first = accepted[0]!;
-    const claims = accepted.map((dispute) => dispute.claimText);
+    // The same claim filed twice for one day (Shahd's "Training" twice, 2026-10-29) is ONE claim with two proofs:
+    // listed once, its sources joined, never "Training · Training".
+    const byClaim = new Map<string, { claim: string; sources: string[]; notes: string[] }>();
+    for (const dispute of accepted) {
+      const claimKey = dispute.claimText.trim().replace(/\s+/g, " ").toLowerCase();
+      const entry = byClaim.get(claimKey) ?? { claim: dispute.claimText.trim(), notes: [], sources: [] };
+      if (!entry.sources.includes(dispute.claimSourceText)) entry.sources.push(dispute.claimSourceText);
+      if (dispute.adminDecisionNote && !entry.notes.includes(dispute.adminDecisionNote)) entry.notes.push(dispute.adminDecisionNote);
+      byClaim.set(claimKey, entry);
+    }
+    const claims = Array.from(byClaim.values()).map((entry) => entry.claim);
     return {
       activityKind: "correction",
       approvalImpact: null,
       chipLines: ["Verified correction", ...claims],
       description: null,
-      detailLines: accepted.map((dispute) =>
-        `${dispute.claimText} — verified via ${dispute.claimSourceText}.${dispute.adminDecisionNote ? ` Admin note: ${dispute.adminDecisionNote}` : ""}`),
+      detailLines: Array.from(byClaim.values()).map((entry) =>
+        `${entry.claim} — verified via ${entry.sources.join(" and ")}.${entry.notes.length > 0 ? ` Admin note: ${entry.notes.join(" · ")}` : ""}`),
       employeeDepartmentName: null,
       employeeHrId: first.employeeHrId,
       employeeJobTitle: null,
@@ -910,6 +923,11 @@ export function derivePrivateCalendarExceptions(input: {
       const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
       const fieldVisits = dayItems.filter((item) => item.source === "field_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
+      // An outstation trip in Phoenix Expenses is a captured record of company business away from
+      // base — the same proof the deductions engine already accepts (outstation/trip-work-evidence.ts,
+      // owner 2026-10-12: any trip not rejected, cancelled or withdrawn). Owner, 2026-10-29: "if their
+      // is an expense it must automatic appeared in his private calendar".
+      const trips = dayItems.filter((item) => item.source === "outstation");
       // 🔴 AN APPROVED WEEKLY PLAN COVERS NOTHING — ANY ACTIVITY TITLE. Owner, 2026-10-12: *"NEVER
       // COUNT WEEKLY PLAN AS COVERAGE WHAT IF HE PLANNED BUT DIDNT GO WORK?"* and *"Do not ever touch
       // a weekly plan. All what you do that you see the weekly plan and the daily reports and compare
@@ -941,7 +959,8 @@ export function derivePrivateCalendarExceptions(input: {
         excuses.length > 0 ||
         holidays.length > 0 ||
         doubleVisits.length > 0 ||
-        fieldVisits.length > 0;
+        fieldVisits.length > 0 ||
+        trips.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -992,7 +1011,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no outstation trip, no approved vacation and no approved excuse recorded for this workday. An approved weekly plan is not a record of work and never clears this day.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],
