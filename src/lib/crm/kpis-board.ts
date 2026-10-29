@@ -86,6 +86,7 @@ import {
 } from "@/lib/crm/kpis-filters";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { buildKpiManagerRows, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
+import { loadKpiDoctorBricks } from "@/lib/crm/kpis-doctor-bricks";
 import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
@@ -381,6 +382,14 @@ export type KpiCoverageDoctor = {
    * says so rather than letting next Tuesday's doctor read like last Tuesday's.
    */
   due: boolean;
+  /**
+   * The brick of his validated live photo, and whether he is validated at all — stamped by
+   * `getKpisBoard` from `loadKpiDoctorBricks` for the one open rep (owner, 2026-10-29). Both stay
+   * undefined when that read failed, and then the list prints no brick rather than a wrong one
+   * (see `KpiDoctorFilterable`).
+   */
+  brick?: string | null;
+  placeValidated?: boolean;
 };
 
 /**
@@ -1461,17 +1470,29 @@ export async function getKpisBoard(input: {
   // scored his row, so the two lists always add up to the Covered and Not reached numbers beside them.
   const coverageRep = input.coverageDoctors ? selectKpiCoverageRep(reps, input.coverageDoctors.rep) : null;
   const coverageRepKey = coverageRep?.coverageRepKey ?? null;
-  const coverageDetail =
+  // Read from whichever rules scored THIS rep's row — a board can hold both at once, and a rep still
+  // on the vendor's rules must get the plan-basis list that adds up to his row.
+  const coverageDoctors: ReadonlyArray<Omit<KpiCoverageDoctor, "due">> | null =
     coverageRep && coverageRepKey
+      ? phoenix && coverageRep.phoenix
+        ? phoenix.coverageDoctorsFor(coverageRep.agentHrId)
+        : legacyKpiCoverageDoctors(docList.doctors, coverageRepKey)
+      : null;
+  // Each doctor's brick, from his validated live photo, for the Brick filter and the By brick table.
+  // A failed read stamps nothing, so no doctor is called "not validated" on a read that never landed.
+  const doctorBricks = coverageDoctors ? await loadKpiDoctorBricks(coverageDoctors.map((doctor) => doctor.contactCrmId)) : null;
+  const coverageDetail =
+    coverageRep && coverageRepKey && coverageDoctors
       ? buildKpiCoverageDetail({
           repKey: coverageRepKey,
           repName: coverageRep.repName,
-          // Read from whichever rules scored THIS rep's row — a board can hold both at once, and a
-          // rep still on the vendor's rules must get the plan-basis list that adds up to his row.
-          doctors:
-            phoenix && coverageRep.phoenix
-              ? phoenix.coverageDoctorsFor(coverageRep.agentHrId)
-              : legacyKpiCoverageDoctors(docList.doctors, coverageRepKey),
+          doctors: doctorBricks
+            ? coverageDoctors.map((doctor) => ({
+                ...doctor,
+                brick: doctorBricks.get(doctor.contactCrmId) ?? null,
+                placeValidated: doctorBricks.has(doctor.contactCrmId),
+              }))
+            : coverageDoctors,
           todayIso: input.todayIso,
         })
       : null;

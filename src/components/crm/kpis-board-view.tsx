@@ -83,7 +83,11 @@ import {
   EMPTY_KPI_DOCTOR_FILTER,
   filterKpiDoctors,
   hasActiveKpiDoctorFilter,
+  KPI_DOCTOR_BRICK_NONE,
+  KPI_DOCTOR_NOT_VALIDATED,
   KPI_DOCTOR_SORT_LABEL,
+  kpiDoctorBrickLabel,
+  kpiDoctorBrickValue,
 } from "@/lib/crm/kpis-doctor-filters";
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { KPI_MANAGER_LEVEL_LABEL, type KpiManagerMeasure, type KpiManagerRow } from "@/lib/crm/kpis-manager-rows";
@@ -1424,9 +1428,15 @@ function summaryReportLinks(context: ViewContext, row: KpiRepRow): React.ReactNo
   );
 }
 
-/** The doctor's name with his speciality and grade under it. Never his id — a missing name says so. */
+/**
+ * The doctor's name with his speciality, grade and brick under it. Never his id — a missing name says
+ * so. The brick prints only when it was read (see `KpiDoctorFilterable`), so a failed read never shows
+ * a doctor as "not validated".
+ */
 function CoverageDoctorName({ doctor }: { doctor: KpiCoverageDoctor }) {
-  const meta = [doctor.speciality, doctor.grade ? `Grade ${doctor.grade}` : null].filter(Boolean).join(" · ");
+  const meta = [doctor.speciality, doctor.grade ? `Grade ${doctor.grade}` : null, kpiDoctorBrickLabel(doctor)]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <span className="block min-w-0">
       {doctor.name ? (
@@ -2095,7 +2105,7 @@ function gradeGroupOf(grade: string | null): string {
   return letter === "A" || letter === "B" || letter === "C" ? `Grade ${letter}` : "No grade";
 }
 
-type CoverageGroupRow = { label: string; planned: number; covered: number };
+type CoverageGroupRow = { label: string; planned: number; covered: number; href?: string };
 
 /** Planned and covered doctors per group, biggest group first. A tie keeps the groups' alphabetical order. */
 function coverageGroups(doctors: readonly KpiCoverageDoctor[], keyOf: (doctor: KpiCoverageDoctor) => string): CoverageGroupRow[] {
@@ -2151,7 +2161,7 @@ function CoverageBreakdown({ rows, title }: { rows: readonly CoverageGroupRow[];
             return (
               <tr key={row.label}>
                 <td className={TD} dir="auto">
-                  {row.label}
+                  <BreakdownLabel row={row} />
                 </td>
                 <td className={NUM}>{row.planned}</td>
                 <td className={NUM}>{row.covered}</td>
@@ -2171,7 +2181,7 @@ function CoverageBreakdown({ rows, title }: { rows: readonly CoverageGroupRow[];
             <li className="px-3 py-2.5" key={row.label}>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="min-w-0 text-sm font-semibold text-slate-900" dir="auto">
-                  {row.label}
+                  <BreakdownLabel row={row} />
                 </span>
                 <span className={`text-sm font-black tabular-nums ${toneOf(coverageBandOfPct(pct)).text}`}>{pct}%</span>
               </div>
@@ -2187,6 +2197,44 @@ function CoverageBreakdown({ rows, title }: { rows: readonly CoverageGroupRow[];
   );
 }
 
+/** A group's name, as a link into the list narrowed to that group when it has one. */
+function BreakdownLabel({ row }: { row: CoverageGroupRow }) {
+  if (!row.href) return <>{row.label}</>;
+  return (
+    <Link className="underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500" href={row.href}>
+      {row.label}
+    </Link>
+  );
+}
+
+/**
+ * The open rep's doctors per brick of their validated live photo (owner, 2026-10-29: "filter by brick,
+ * got the doctors in it, know who is covered and who is not covered"). Each brick links into the two
+ * lists narrowed to it. Bricks are biggest first; the validated doctors with no brick on record and the
+ * ones not validated yet park last. Empty when the bricks were not read, so the table is not printed.
+ */
+function brickCoverageRows(context: ViewContext, doctors: readonly KpiCoverageDoctor[]): CoverageGroupRow[] {
+  const { board } = context;
+  const rows = new Map<string, CoverageGroupRow & { value: string }>();
+  for (const doctor of doctors) {
+    const value = kpiDoctorBrickValue(doctor);
+    if (value === undefined) continue;
+    const row = rows.get(value) ?? {
+      value,
+      label: kpiDoctorBrickLabel(doctor) ?? value,
+      planned: 0,
+      covered: 0,
+      href: hrefWith(context, { filters: { ...board.filters, doctor: { ...board.filters.doctor, bricks: [value] } } }),
+    };
+    row.planned += 1;
+    if (doctor.visits > 0) row.covered += 1;
+    rows.set(value, row);
+  }
+  const rank = (value: string) => (value === KPI_DOCTOR_NOT_VALIDATED ? 2 : value === KPI_DOCTOR_BRICK_NONE ? 1 : 0);
+  return [...rows.values()]
+    .sort((left, right) => rank(left.value) - rank(right.value) || right.planned - left.planned || left.label.localeCompare(right.label));
+}
+
 /** The coverage percentage's band — the same cut-offs the rep rows use, applied to a group's own percentage. */
 function coverageBandOfPct(pct: number): KpiBand {
   return kpiBandOf(pct);
@@ -2194,7 +2242,7 @@ function coverageBandOfPct(pct: number): KpiBand {
 
 /**
  * THE COVERAGE REPORT'S HEADER FOR ONE REP — the four counts the two lists below add up to, the
- * distance to the 95% floor, and the same doctors cut by grade and by speciality.
+ * distance to the 95% floor, and the same doctors cut by brick, by grade and by speciality.
  *
  * Everything here is arithmetic over the two lists the server already built for this rep, so nothing
  * on it can disagree with the Covered and Not reached numbers on his row.
@@ -2246,6 +2294,7 @@ function CoverageSummary({ context, detail }: { context: ViewContext; detail: Kp
           : `${needed} more doctor${needed === 1 ? "" : "s"} to cover to clear the ${floor}% floor (${Math.ceil((planned * floor) / 100)} of ${planned}).`}{" "}
         {board.isCurrentMonth ? "The period is still running, so doctors planned for later days are counted as not covered yet." : ""}
       </p>
+      <CoverageBreakdown rows={brickCoverageRows(context, all)} title="By brick · from the validated live photo" />
       <div className="grid gap-3 lg:grid-cols-2">
         <CoverageBreakdown rows={coverageGroups(all, (doctor) => gradeGroupOf(doctor.grade)).sort((l, r) => l.label.localeCompare(r.label))} title="By grade" />
         <CoverageBreakdown
