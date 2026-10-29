@@ -459,3 +459,46 @@ export function resolveBrickForPoint(
     regionName: chosen.regionName,
   };
 }
+
+/** How a captured point is filed: the radius a brick is trusted inside, and the own-area reach past it. */
+export type BrickFilingRule = {
+  readonly areaCodes: readonly string[];
+  readonly trustKm: number;
+  readonly reachKm: number;
+};
+
+/**
+ * The brick a captured point is FILED in, and the brick whose distance the row records.
+ *
+ * 🔴 OWNER, 2026-10-29: A PHOTO WITH NO BRICK DOT WITHIN THE TRUST RADIUS TAKES THE NEAREST BRICK OF
+ * THE CAPTURING REP'S OWN AREA, UP TO `reachKm` AWAY. Production held 204 validated places as
+ * "Validated · no brick on record" — median 5.0 km, at most 17.46 km from the nearest dot — and Google
+ * named the right town for every one. A brick has one geocoded dot and no polygon, and in a rural
+ * district the dot can sit kilometres from the town it names (جرجا's sat 15 km from the Girga
+ * clinics), so a strict 3 km left real doctors with no brick at all. Asked, he chose "Rep's own area".
+ *
+ *   1. A brick within `trustKm` wins exactly as before (`resolveBrickForPoint`, the seat's own area
+ *      breaking a near tie) — whatever area it is in.
+ *   2. Otherwise the nearest brick of the seat's OWN area is taken when it is within `reachKm`. Only
+ *      the own area reaches: a neighbouring district's dot never does, so this cannot file a capture
+ *      in somebody else's territory.
+ *   3. Otherwise nothing is filed, and `measured` keeps the nearest brick anywhere so `brick_lookup`
+ *      can say `none_nearby` with the real distance — nothing is invented.
+ *
+ * Pure, so the live resolver and a re-file of old rows apply the one rule.
+ */
+export function fileBrickForPoint(
+  lat: number | null | undefined,
+  lon: number | null | undefined,
+  centroids: readonly BrickCentroid[],
+  rule: BrickFilingRule,
+): { filed: ResolvedBrickPoint | null; measured: ResolvedBrickPoint | null } {
+  const nearest = resolveBrickForPoint(lat, lon, centroids, { areaCodes: rule.areaCodes, withinKm: rule.trustKm });
+  if (!nearest) return { filed: null, measured: null };
+  if (nearest.distanceKm <= rule.trustKm) return { filed: nearest, measured: nearest };
+  const ownAreas = new Set(rule.areaCodes);
+  const ownBricks = centroids.filter((candidate) => candidate.areaCode !== null && ownAreas.has(candidate.areaCode));
+  const own = ownBricks.length > 0 ? resolveBrickForPoint(lat, lon, ownBricks) : null;
+  if (own && own.distanceKm <= rule.reachKm) return { filed: own, measured: own };
+  return { filed: null, measured: nearest };
+}
