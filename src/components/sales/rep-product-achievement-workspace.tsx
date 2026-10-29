@@ -572,7 +572,7 @@ function DesktopRepRows({
     <>
       <tr className={cn("border-b border-slate-100 transition hover:bg-orange-50/40", expanded && "bg-slate-50/60")}>
         <td className={cn("border-l-[3px] px-3 py-2.5", band ? BAND_RULE[band] : "border-l-slate-200")}>
-          <button className="flex w-full min-w-0 items-start gap-2 text-left" onClick={onToggle} type="button">
+          <button aria-expanded={expanded} className="flex w-full min-w-0 items-start gap-2 text-left" onClick={onToggle} type="button">
             <Chevron className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <span className="min-w-0">
               <span className="flex flex-wrap items-center gap-1.5">
@@ -697,6 +697,7 @@ function MobileRepCard({
       </div>
       {record.products.length ? (
         <button
+          aria-expanded={expanded}
           className="mt-3 inline-flex items-center gap-1 text-xs font-black uppercase tracking-[0.12em] text-orange-700"
           onClick={onToggle}
           type="button"

@@ -17,6 +17,7 @@ import {
 
 import type { HeldBackIntakeRow, InboundIntakeAnalytics } from "@/lib/recruitment/inbound/intake-analytics";
 import type { DeadLetteredInboundRow } from "@/lib/recruitment/inbound/intake-queue";
+import { humanizeCode } from "@/lib/format/code-label";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { adminControlDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import {
@@ -35,9 +36,7 @@ function channelLabel(channel: string): string {
 }
 
 function outcomeLabel(outcome: string): string {
-  return outcome
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return humanizeCode(outcome) || "—";
 }
 
 function inboxLabel(channel: string, mailboxLabel: string | null): string {
@@ -236,7 +235,7 @@ export function IntakeHealthView({
                   {/* The share of the largest outcome, so the eye finds the big ones without reading. */}
                   <div aria-hidden="true" className="mt-1.5 h-1 w-full bg-slate-100">
                     <div
-                      className="h-1 bg-[linear-gradient(90deg,#F97316_0%,#FB923C_100%)]"
+                      className="h-1 bg-orange-500"
                       style={{ width: `${largestOutcome > 0 ? Math.max(2, Math.round((o.count / largestOutcome) * 100)) : 0}%` }}
                     />
                   </div>

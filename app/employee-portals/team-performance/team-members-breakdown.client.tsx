@@ -593,7 +593,7 @@ export function TeamLeaderboardTable({
                     </span>
                   </td>
                   <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
-                    <p className={`max-w-[220px] break-words font-medium leading-tight sm:max-w-none ${member.isRegionWithoutManager ? "italic text-slate-500" : "text-slate-900"}`}>{formatEmployeeDisplayName(member.name)}</p>
+                    <p className={`break-words font-medium leading-tight ${member.isRegionWithoutManager ? "italic text-slate-500" : "text-slate-900"}`}>{formatEmployeeDisplayName(member.name)}</p>
                     {showProductCount ? <p className="text-phx-2xs text-slate-400">{member.products.length} products</p> : null}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">

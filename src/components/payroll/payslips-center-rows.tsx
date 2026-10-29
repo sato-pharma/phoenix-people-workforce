@@ -1,9 +1,11 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import Link from "next/link";
 import { FileDown } from "lucide-react";
 
 import {
+  PortalDesktopTable,
   PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
@@ -59,7 +61,7 @@ export function PayslipsCenterRows({
           actions={
             <>
               <Link
-                className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-line px-4 text-sm font-semibold text-phx-ink"
+                className="inline-flex h-9 items-center justify-center border border-phx-line px-4 text-sm font-semibold text-phx-ink"
                 href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
                 target="_blank"
               >
@@ -67,7 +69,7 @@ export function PayslipsCenterRows({
               </Link>
               {canExportPayslipImage ? (
                 <Link
-                  className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412]"
+                  className="inline-flex h-9 items-center justify-center border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412]"
                   href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
                 >
                   <FileDown className="mr-2 h-4 w-4" />
@@ -77,13 +79,11 @@ export function PayslipsCenterRows({
             </>
           }
           meta={
-            <span>
-              {row.jobTitle} · {row.hrId || row.employeeCode || "-"}
-            </span>
+            <span>{row.jobTitle}</span>
           }
           status={
             <Badge variant={row.status === "approved" || row.status === "locked" ? "success" : "neutral"}>
-              {row.status}
+              {humanizeCode(row.status)}
             </Badge>
           }
           title={formatEmployeeDisplayName(row.fullName)}
@@ -101,11 +101,23 @@ export function PayslipsCenterRows({
         </PortalRecordCard>
       )}
       renderTable={() => (
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[980px] text-left text-sm">
+        <PortalDesktopTable
+          cols={
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[12%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[20%]" />
+            </colgroup>
+          }
+        >
             <thead>
               <tr className="border-b border-phx-line bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
-                {["Employee", "HR ID", "Period", "Line", "Gross", "Additions", "Deductions", "Net", "Status", "Action"].map((column) => (
+                {["Employee", "Period / Line", "Gross", "Additions", "Deductions", "Net", "Status", "Action"].map((column) => (
                   <th className="px-3 py-3" key={column}>{column}</th>
                 ))}
               </tr>
@@ -113,26 +125,27 @@ export function PayslipsCenterRows({
             <tbody className="divide-y divide-phx-line">
               {rows.map((row) => (
                 <tr className="transition hover:bg-[#FCFDFE]" key={`${row.batchId}-${row.recordId}`}>
-                  <td className="px-3 py-3">
+                  <td className="break-words px-3 py-3">
                     <p className="font-semibold text-phx-ink">{formatEmployeeDisplayName(row.fullName)}</p>
                     <p className="mt-1 text-xs text-phx-ink-soft">{row.jobTitle}</p>
                   </td>
-                  <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">{row.hrId || row.employeeCode || "-"}</td>
-                  <td className="px-3 py-3 font-semibold text-phx-ink">{periodLabel(row.month, row.year)}</td>
-                  <td className="px-3 py-3 text-phx-ink-soft">{row.line}</td>
-                  <td className="px-3 py-3 font-semibold text-phx-ink">{formatMoney(row.grossSalary)}</td>
-                  <td className="px-3 py-3 text-emerald-700">{formatMoney(row.totalAdditions)}</td>
-                  <td className="px-3 py-3 text-rose-700">{formatMoney(row.totalDeductions)}</td>
-                  <td className="px-3 py-3 font-black text-phx-ink">{formatMoney(row.netSalary)}</td>
-                  <td className="px-3 py-3">
+                  <td className="break-words px-3 py-3">
+                    <p className="font-semibold text-phx-ink">{periodLabel(row.month, row.year)}</p>
+                    <p className="mt-1 text-xs text-phx-ink-soft">{row.line}</p>
+                  </td>
+                  <td className="break-words px-3 py-3 font-semibold text-phx-ink">{formatMoney(row.grossSalary)}</td>
+                  <td className="break-words px-3 py-3 text-emerald-700">{formatMoney(row.totalAdditions)}</td>
+                  <td className="break-words px-3 py-3 text-rose-700">{formatMoney(row.totalDeductions)}</td>
+                  <td className="break-words px-3 py-3 font-black text-phx-ink">{formatMoney(row.netSalary)}</td>
+                  <td className="break-words px-3 py-3">
                     <Badge variant={row.status === "approved" || row.status === "locked" ? "success" : "neutral"}>
-                      {row.status}
+                      {humanizeCode(row.status)}
                     </Badge>
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="break-words px-3 py-3">
                     <div className="flex flex-wrap gap-2">
                       <Link
-                        className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-line px-4 text-sm font-semibold text-phx-ink transition hover:bg-phx-paper"
+                        className="inline-flex h-9 items-center justify-center border border-phx-line px-4 text-sm font-semibold text-phx-ink transition hover:bg-phx-paper"
                         href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
                         target="_blank"
                       >
@@ -140,7 +153,7 @@ export function PayslipsCenterRows({
                       </Link>
                       {canExportPayslipImage ? (
                         <Link
-                          className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
+                          className="inline-flex h-9 items-center justify-center border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
                           href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
                         >
                           <FileDown className="mr-2 h-4 w-4" />
@@ -152,8 +165,7 @@ export function PayslipsCenterRows({
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+        </PortalDesktopTable>
       )}
     />
   );

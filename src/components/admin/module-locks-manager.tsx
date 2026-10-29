@@ -373,33 +373,39 @@ export function ModuleLocksManager({
         ) : (
           <>
             {/* Desktop: the full table. */}
-            <div className="mt-3 hidden overflow-x-auto lg:block">
-              <table className="min-w-full text-sm">
+            <div className="mt-3 hidden lg:block">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[28%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-slate-100 text-left text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
-                    <th className="whitespace-nowrap pb-2 pr-4">Person</th>
-                    <th className="whitespace-nowrap pb-2 pr-4">Module</th>
-                    <th className="whitespace-nowrap pb-2 pr-4">Locked</th>
-                    <th className="whitespace-nowrap pb-2 pr-4">Until</th>
-                    <th className="whitespace-nowrap pb-2 pr-4">By</th>
-                    <th className="whitespace-nowrap pb-2 pr-4">Note</th>
+                    <th className="pb-2 pr-4">Person</th>
+                    <th className="pb-2 pr-4">Module</th>
+                    <th className="pb-2 pr-4">Locked · until</th>
+                    <th className="pb-2 pr-4">By · note</th>
                     <th className="pb-2" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {active.map((lock) => (
                     <tr className="align-top" key={lock.id}>
-                      <td className="whitespace-nowrap py-3 pr-4">
-                        <p className="font-medium text-slate-900">{personLabel(lock)}</p>
-                        <p className="text-phx-xs text-slate-400">{lock.loginId}</p>
-                      </td>
-                      <td className="whitespace-nowrap py-3 pr-4 font-semibold text-amber-700">
+                      <td className="break-words py-3 pr-4 font-medium text-slate-900">{personLabel(lock)}</td>
+                      <td className="break-words py-3 pr-4 font-semibold text-amber-700">
                         {moduleLabel(lock.moduleKey)}
                       </td>
-                      <td className="whitespace-nowrap py-3 pr-4 text-slate-600">{cairoDateTime(lock.lockedAt)}</td>
-                      <td className="whitespace-nowrap py-3 pr-4 text-slate-600">{lockedUntilLabel(lock)}</td>
-                      <td className="whitespace-nowrap py-3 pr-4 text-slate-600">{lock.lockedByName ?? "—"}</td>
-                      <td className="py-3 pr-4 text-slate-600">{lock.note ?? "—"}</td>
+                      <td className="break-words py-3 pr-4 text-slate-600">
+                        <p>{cairoDateTime(lock.lockedAt)}</p>
+                        <p className="text-phx-xs text-slate-500">{lockedUntilLabel(lock)}</p>
+                      </td>
+                      <td className="break-words py-3 pr-4 text-slate-600">
+                        <p>{lock.lockedByName ?? "—"}</p>
+                        {lock.note ? <p className="text-phx-xs text-slate-500">{lock.note}</p> : null}
+                      </td>
                       <td className="py-3">
                         <Button
                           className="gap-1.5"
@@ -430,14 +436,13 @@ export function ModuleLocksManager({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900">{personLabel(lock)}</p>
-                      <p className="text-phx-xs text-slate-400">{lock.loginId}</p>
                     </div>
                     <span className="whitespace-nowrap rounded bg-amber-50 px-2 py-0.5 text-phx-xs font-bold text-amber-700">
                       {moduleLabel(lock.moduleKey)}
                     </span>
                   </div>
                   <p className="mt-2 text-phx-xs text-slate-500">
-                    {`Locked ${cairoDateTime(lock.lockedAt)} · ${lockedUntilLabel(lock)}`}
+                    {`Locked ${cairoDateTime(lock.lockedAt)} · ${lockedUntilLabel(lock)}${lock.lockedByName ? ` · by ${lock.lockedByName}` : ""}`}
                   </p>
                   {lock.note ? <p className="mt-1 text-phx-xs text-slate-600">{lock.note}</p> : null}
                   <Button
@@ -467,7 +472,7 @@ export function ModuleLocksManager({
           <h3 className="text-sm font-black uppercase tracking-wider text-slate-500">Released recently</h3>
           <div className="mt-3 space-y-1.5">
             {history.slice(0, 15).map((lock) => (
-              <p className="whitespace-nowrap text-phx-xs text-slate-500" key={lock.id}>
+              <p className="break-words text-phx-xs text-slate-500" key={lock.id}>
                 {`${moduleLabel(lock.moduleKey)} · ${personLabel(lock)} · locked ${cairoDateTime(lock.lockedAt)}${
                   lock.releasedAt ? ` · released ${cairoDateTime(lock.releasedAt)}` : " · expired on its own"
                 }${lock.releasedByName ? ` by ${lock.releasedByName}` : ""}`}

@@ -203,6 +203,10 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
     // No render test exists in this module, and no source pin caught it, which is why this is here.
     const problems: string[] = [];
     for (const file of readdirSync(new URL("../src/components/phoenix-crm/", import.meta.url)).filter((name) => name.endsWith(".tsx"))) {
+      // The seated customers' desktop half is a block inside the venue row's own first cell (tables-said-once-fit,
+      // 2026-10-28: a table inside a cell was a second row), so it has no <CrmTable> beside its phone cards by design.
+      // tests/phoenix-crm-shared-place-groups.test.ts pins that shape.
+      if (file === "shared-place-customers.tsx") continue;
       // 🔴 COMPACT, NOT `stripComments` — this loop slices a fixed-SIZE window, and `stripComments`
       // BLANKS a comment to spaces rather than deleting it, to keep line numbers honest. So a long
       // comment written between the phone half and the desktop half fills the whole window with

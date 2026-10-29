@@ -23,6 +23,7 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -426,38 +427,55 @@ function RankingHalfTable({
       <div className={cn("px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em]", tone === "top" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
         {label}
       </div>
-      <table className="w-full text-left text-xs">
+      <CrmTable className="text-xs" columns={metric === "achievement" ? ["8%", "34%", "18%", "20%", "20%"] : ["8%", "46%", "24%", "22%"]}>
         <thead className="bg-phx-paper text-phx-3xs uppercase tracking-[0.08em] text-phx-ink-soft">
           <tr>
             <th className="px-2 py-1.5 font-semibold">#</th>
             <th className="px-2 py-1.5 font-semibold">Name</th>
-            <th className="px-2 py-1.5 font-semibold">Area</th>
             <th className="px-2 py-1.5 font-semibold">{valueLabel}</th>
-            <th className="px-2 py-1.5 font-semibold">Sales</th>
+            {metric === "achievement" ? <th className="px-2 py-1.5 font-semibold">Sales</th> : null}
             <th className="px-2 py-1.5 font-semibold">Target</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
           {tableRows.map((row, index) => {
             const isTopPerformer = index === 0 && tone === "top";
+            const area = valueAsText(row.area).trim();
             return (
               <tr className={cn("transition-all duration-160 ease-out hover:bg-phx-paper/80", isTopPerformer && "bg-emerald-50/30")} key={`${valueAsText(row.name)}-${label}-${index}`}>
-                <td className={cn("px-2 py-1.5 font-black text-phx-2xs", isTopPerformer ? "text-emerald-600" : "text-phx-ink-soft")}>{index + 1}</td>
-                <td className="max-w-[180px] px-2 py-1.5">
-                  <div className="flex items-center gap-1.5">
-                    {isTopPerformer && <span className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />}
-                    <p className={cn("truncate text-xs font-semibold", isTopPerformer ? "text-slate-900 font-bold" : "text-phx-ink")}>{valueAsText(row.name)}</p>
-                  </div>
+                <td className={cn("px-2 py-1.5 align-top font-black text-phx-2xs", isTopPerformer ? "text-emerald-600" : "text-phx-ink-soft")}>{index + 1}</td>
+                <td className="break-words px-2 py-1.5 align-top">
+                  <p className={cn("break-words text-xs font-semibold", isTopPerformer ? "text-slate-900 font-bold" : "text-phx-ink")}>{valueAsText(row.name)}</p>
+                  {area && area !== "-" ? <p className="mt-0.5 break-words text-phx-2xs font-semibold text-phx-ink-soft">{area}</p> : null}
                 </td>
-                <td className="max-w-[120px] truncate px-2 py-1.5 text-phx-2xs font-semibold text-phx-ink-soft">{valueAsText(row.area) || "-"}</td>
-                <td className={cn("px-2 py-1.5 text-xs font-black", tone === "top" ? "text-emerald-600" : "text-rose-600")}>{renderValue(row)}</td>
-                <td className="px-2 py-1.5 text-xs text-phx-ink-soft">{shortCurrency(row.sales)}</td>
-                <td className="px-2 py-1.5 text-xs text-phx-ink-soft">{shortCurrency(row.target)}</td>
+                <td className={cn("break-words px-2 py-1.5 align-top text-xs font-black", tone === "top" ? "text-emerald-600" : "text-rose-600")}>{renderValue(row)}</td>
+                {metric === "achievement" ? <td className="break-words px-2 py-1.5 align-top text-xs text-phx-ink-soft">{shortCurrency(row.sales)}</td> : null}
+                <td className="break-words px-2 py-1.5 align-top text-xs text-phx-ink-soft">{shortCurrency(row.target)}</td>
               </tr>
             );
           })}
         </tbody>
-      </table>
+      </CrmTable>
+      <CrmCardsOnPhone>
+        {tableRows.map((row, index) => {
+          const area = valueAsText(row.area).trim();
+          return (
+            <CrmCard
+              key={`${valueAsText(row.name)}-${label}-${index}-card`}
+              meta={area && area !== "-" ? area : undefined}
+              title={`${index + 1}. ${valueAsText(row.name)}`}
+            >
+              <CrmFacts
+                facts={[
+                  { label: valueLabel, value: renderValue(row) },
+                  ...(metric === "achievement" ? [{ label: "Sales", value: shortCurrency(row.sales) }] : []),
+                  { label: "Target", value: shortCurrency(row.target) },
+                ]}
+              />
+            </CrmCard>
+          );
+        })}
+      </CrmCardsOnPhone>
     </div>
   );
 }
@@ -506,7 +524,7 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
           </div>
         </div>
         <div className="max-h-48 overflow-y-auto rounded-xl border border-phx-line bg-white">
-          <table className="w-full text-left text-xs">
+          <CrmTable className="text-xs" columns={["40%", "20%", "20%", "20%"]}>
             <thead className="bg-phx-paper text-phx-3xs uppercase tracking-[0.08em] text-phx-ink-soft sticky top-0">
               <tr>
                 <SortableTh label="Name" sortKey="name" {...leaderThProps(table)} />
@@ -524,14 +542,31 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
                 </tr>
               ) : table.rows.map((row, index) => (
                 <tr className="transition-all duration-160 ease-out hover:bg-phx-paper/80" key={`${valueAsText(row.name)}-${index}`}>
-                  <td className="max-w-[180px] truncate px-2 py-1.5 text-xs font-semibold text-phx-ink">{valueAsText(row.name)}</td>
-                  <td className="px-2 py-1.5 text-xs font-black text-phx-accent">{shortCurrency(row.sales)}</td>
-                  <td className="px-2 py-1.5 text-xs text-phx-ink-soft">{shortCurrency(row.target)}</td>
-                  <td className="px-2 py-1.5 text-xs font-black">{formatPercent(valueAsNumber(row.achievementRate))}</td>
+                  <td className="break-words px-2 py-1.5 align-top text-xs font-semibold text-phx-ink">{valueAsText(row.name)}</td>
+                  <td className="break-words px-2 py-1.5 align-top text-xs font-black text-phx-accent">{shortCurrency(row.sales)}</td>
+                  <td className="break-words px-2 py-1.5 align-top text-xs text-phx-ink-soft">{shortCurrency(row.target)}</td>
+                  <td className="break-words px-2 py-1.5 align-top text-xs font-black">{formatPercent(valueAsNumber(row.achievementRate))}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </CrmTable>
+          <CrmCardsOnPhone>
+            {table.rows.length === 0 ? (
+              <p className="px-2 py-4 text-center text-xs text-phx-ink-faint">
+                {table.isFiltered ? "No names match your search." : "No rows."}
+              </p>
+            ) : table.rows.map((row, index) => (
+              <CrmCard key={`${valueAsText(row.name)}-${index}-card`} title={valueAsText(row.name)}>
+                <CrmFacts
+                  facts={[
+                    { label: "Sales", value: shortCurrency(row.sales) },
+                    { label: "Target", value: shortCurrency(row.target) },
+                    { label: "Ach. %", value: formatPercent(valueAsNumber(row.achievementRate)) },
+                  ]}
+                />
+              </CrmCard>
+            ))}
+          </CrmCardsOnPhone>
         </div>
       </div>
     </Card>
@@ -808,16 +843,17 @@ function PerformanceTable({
   columns,
   rows,
 }: {
-  columns: Array<{ key: string; label: string; render?: (row: AnyRow) => React.ReactNode }>;
+  columns: Array<{ key: string; label: string; render?: (row: AnyRow) => React.ReactNode; width: string }>;
   rows: AnyRow[];
 }) {
+  const [first, ...rest] = columns;
   return (
     <div className="overflow-hidden rounded-[24px] border border-phx-line">
-      <table className="w-full text-left text-xs">
+      <CrmTable className="text-xs" columns={columns.map((column) => column.width)}>
         <thead className="bg-phx-paper text-phx-3xs uppercase tracking-[0.08em] text-phx-ink-soft">
           <tr>
             {columns.map((column) => (
-              <th className="px-2 py-1.5 font-semibold" key={column.key}>
+              <th className="break-words px-2 py-1.5 font-semibold" key={column.key}>
                 {column.label}
               </th>
             ))}
@@ -834,7 +870,7 @@ function PerformanceTable({
             rows.map((row, index) => (
               <tr className="transition hover:bg-phx-paper/80" key={`${row.name ?? row.manager ?? row.product ?? row.period ?? index}-${index}`}>
                 {columns.map((column) => (
-                  <td className="px-2 py-1.5 align-middle" key={column.key}>
+                  <td className="break-words px-2 py-1.5 align-top" key={column.key}>
                     {column.render ? column.render(row) : valueAsText(row[column.key])}
                   </td>
                 ))}
@@ -842,7 +878,26 @@ function PerformanceTable({
             ))
           )}
         </tbody>
-      </table>
+      </CrmTable>
+      <CrmCardsOnPhone>
+        {rows.length === 0 ? (
+          <p className="px-2 py-4 text-center text-xs text-phx-ink-soft">No approved sales data yet.</p>
+        ) : (
+          rows.map((row, index) => (
+            <CrmCard
+              key={`${row.name ?? row.manager ?? row.product ?? row.period ?? index}-${index}-card`}
+              title={first.render ? first.render(row) : valueAsText(row[first.key])}
+            >
+              <CrmFacts
+                facts={rest.map((column) => ({
+                  label: column.label,
+                  value: column.render ? column.render(row) : valueAsText(row[column.key]),
+                }))}
+              />
+            </CrmCard>
+          ))
+        )}
+      </CrmCardsOnPhone>
     </div>
   );
 }
@@ -1323,12 +1378,13 @@ function SalesDashboardContent({
           <div className="p-4 sm:p-5">
             <PerformanceTable
               columns={[
-                { key: "period", label: "Month", render: (row) => compactPeriod(valueAsText(row.period)) },
-                { key: "sales", label: "Sales", render: (row) => formatCurrency(valueAsNumber(row.sales)) },
-                { key: "target", label: "Target", render: (row) => formatCurrency(valueAsNumber(row.target)) },
+                { key: "period", label: "Month", width: "18%", render: (row) => compactPeriod(valueAsText(row.period)) },
+                { key: "sales", label: "Sales", width: "22%", render: (row) => formatCurrency(valueAsNumber(row.sales)) },
+                { key: "target", label: "Target", width: "22%", render: (row) => formatCurrency(valueAsNumber(row.target)) },
                 {
                   key: "achievementRate",
                   label: "Achievement",
+                  width: "26%",
                   render: (row) => (
                     <div className="space-y-1">
                       <AchievementBadge rate={valueAsNumber(row.achievementRate)} />
@@ -1336,7 +1392,7 @@ function SalesDashboardContent({
                     </div>
                   ),
                 },
-                { key: "linkedEmployees", label: "Linked", render: (row) => formatNumber(valueAsNumber(row.linkedEmployees)) },
+                { key: "linkedEmployees", label: "Linked", width: "12%", render: (row) => formatNumber(valueAsNumber(row.linkedEmployees)) },
               ]}
               rows={trendRows}
             />

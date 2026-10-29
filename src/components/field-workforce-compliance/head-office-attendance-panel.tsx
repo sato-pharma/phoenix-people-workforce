@@ -123,10 +123,8 @@ function EmployeeAttendanceRow({ employee }: { employee: HeadOfficeAttendanceCal
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
         <div>
           <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
-          <p className="mt-1 font-mono text-xs font-bold text-slate-500">
-            {employee.hrId}
-            {employee.jobTitle ? ` · ${employee.jobTitle}` : ""}
-            {employee.departmentName ? ` · ${employee.departmentName}` : employee.lineName ? ` · ${employee.lineName}` : ""}
+          <p className="mt-1 text-xs font-bold text-slate-500">
+            {[employee.jobTitle, employee.departmentName || employee.lineName].filter(Boolean).join(" · ")}
           </p>
         </div>
         <div className="flex items-center gap-3 text-phx-xs font-bold">

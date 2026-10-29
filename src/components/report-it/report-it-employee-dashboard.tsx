@@ -556,7 +556,6 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
                       {new Date(row.created_at).toLocaleDateString()}
                       {" · "}
                       {row.submitted_by_name ?? "—"}
-                      {row.submitted_by_hr_id ? ` (${row.submitted_by_hr_id})` : ""}
                     </>
                   }
                   status={<SeriousChip serious={row.is_serious} />}
@@ -617,27 +616,24 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
                         <td className="px-3 py-2 font-mono text-xs font-bold text-orange-600">
                           {row.report_number}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
+                        <td className="break-words px-3 py-2 text-xs text-slate-500">
                           {new Date(row.created_at).toLocaleDateString()}
                         </td>
                         <td className="px-3 py-2">
                           <span className="text-sm font-bold text-slate-900">{row.submitted_by_name ?? "—"}</span>
-                          {row.submitted_by_hr_id && (
-                            <span className="ml-1 text-xs text-slate-500">({row.submitted_by_hr_id})</span>
-                          )}
                         </td>
                         <td className="px-3 py-2 text-xs text-slate-700">
                           {row.patient_initials ?? "—"}
                           {row.patient_sex && <span className="ml-1 text-slate-500">({row.patient_sex})</span>}
                         </td>
-                        <td className="max-w-[180px] px-3 py-2 text-xs text-slate-700">
-                          <span className="line-clamp-2">{row.reactions_summary.join(", ") || "—"}</span>
+                        <td className="break-words px-3 py-2 text-xs text-slate-700">
+                          <span>{row.reactions_summary.join(", ") || "—"}</span>
                         </td>
                         <td className="px-3 py-2">
                           <SeriousChip serious={row.is_serious} />
                         </td>
-                        <td className="max-w-[140px] px-3 py-2 text-xs text-slate-700">
-                          <span className="line-clamp-1">{row.outcome_summary ?? "—"}</span>
+                        <td className="break-words px-3 py-2 text-xs text-slate-700">
+                          <span>{row.outcome_summary ?? "—"}</span>
                         </td>
                       </tr>
                     ))}

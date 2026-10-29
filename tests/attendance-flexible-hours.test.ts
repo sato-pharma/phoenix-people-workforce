@@ -90,6 +90,7 @@ export function runAttendanceFlexibleHoursTests() {
   const r1 = evaluate(at(9, 15), at(17, 5));
   assert.equal(r1.status, "Complete");
   assert.equal(r1.deductionDays, 0);
+  assert.equal(r1.reason, null, "a Complete day says nothing more than its status");
 
   // 2. 9:30 → 17:20 : exactly at the flex ceiling, exactly 7h50m → None.
   const r2 = evaluate(at(9, 30), at(17, 20));
@@ -104,6 +105,7 @@ export function runAttendanceFlexibleHoursTests() {
   assert.equal(r3.hoursCompleted, true);
   assert.equal(r3.halved, true);
   assert.equal(r3.deductionDays, 0.25, "half-day (0.5) halved because hours completed → 0.25");
+  assert.equal(r3.reason, "Hours completed — late penalty halved.", "the minutes are the Late cell's to say");
 
   // 4. 10:00 → 17:00 : 30 min late AND ~50 min short → the larger penalty = full day.
   const r4 = evaluate(at(10, 0), at(17, 0));
@@ -115,13 +117,13 @@ export function runAttendanceFlexibleHoursTests() {
 
   // Owner rule (2026-09-17): the reason names only the penalty that applies. The old
   // comparative wording is never shown to anyone, whichever side wins — the rule itself stays.
-  assert.equal(r4.reason, "Late 30 min and short 50 min — short-hours penalty applies.");
+  assert.equal(r4.reason, "Late and short — short-hours penalty applies.", "the minutes are the Late and Short cells' to say, never the reason's");
   // 10:30 → 18:10 : 60 min late (1.0) and 10 min short (0.25) → the lateness penalty applies.
   const lateWins = evaluate(at(10, 30), at(18, 10));
   assert.equal(lateWins.status, "Late");
   assert.equal(lateWins.deductionDays, 1, "only the larger penalty applies, never both");
-  assert.equal(lateWins.reason, "Late 60 min and short 10 min — lateness penalty applies.");
-  for (const reason of [r4.reason, lateWins.reason]) {
+  assert.equal(lateWins.reason, "Late and short — lateness penalty applies.");
+  for (const reason of [r4.reason ?? "", lateWins.reason ?? ""]) {
     assert.ok(!/worse/i.test(reason), `a late-and-short reason must never say "worse": ${reason}`);
   }
   assertNoComparativeWordingInAttendanceSource();

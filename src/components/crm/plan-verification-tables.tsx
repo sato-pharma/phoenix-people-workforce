@@ -243,7 +243,6 @@ export function PlanListTable({
             <PortalRecordFields
               fields={[
                 { label: "Planned calls", value: String(plan.entries) },
-                { label: "CRM plan", value: String(plan.crmPlanId) },
               ]}
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -289,7 +288,7 @@ export function PlanListTable({
                 const showing = selectedPlanId === plan.crmPlanId;
                 return (
                   <tr
-                    className={`whitespace-nowrap hover:bg-slate-50 ${showing ? "bg-orange-50" : "bg-white"}`}
+                    className={`hover:bg-slate-50 ${showing ? "bg-orange-50" : "bg-white"}`}
                     key={plan.crmPlanId}
                   >
                     {/* The accent bar is on the cell, not the row: a border on a <tr> does not paint in
@@ -316,7 +315,7 @@ export function PlanListTable({
                     <td className="px-3 py-2 text-slate-600">{plan.entries}</td>
                     <td className={`px-3 py-2 font-black ${planStatusClass(plan.status)}`}>{planStatusLabel(plan.status)}</td>
                     <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {/* The same button the mobile card has always carried. Desktop had none, so the
                             only way in was to guess that the rep's name was pressable. */}
                         <button
@@ -436,7 +435,6 @@ export function PlanMissingRepsTable({
             }
             title={rep.name}
           >
-            <PortalRecordFields fields={[{ label: "CRM account", value: String(rep.agentCrmId) }]} />
           </PortalRecordCard>
         )}
         renderTable={() => (
@@ -465,7 +463,7 @@ export function PlanMissingRepsTable({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {table.rows.map((rep) => (
-                <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={rep.agentCrmId}>
+                <tr className="bg-white hover:bg-slate-50" key={rep.agentCrmId}>
                   <td className="border-l-4 border-rose-400 px-3 py-2 font-semibold text-slate-900">{rep.name}</td>
                   {/* The list size is here as evidence the account is a working one. A rep carrying 0
                       doctors has nothing to plan against, so his silence means something different
@@ -694,7 +692,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
             <tbody className="divide-y divide-slate-100">
               {table.rows.map((row, index) => (
                 <tr
-                  className="whitespace-nowrap bg-white hover:bg-slate-50"
+                  className="bg-white hover:bg-slate-50"
                   key={`${row.contactCrmId ?? "none"}:${row.planDate ?? "nodate"}:${index}`}
                 >
                   {kind === "weekly" ? (

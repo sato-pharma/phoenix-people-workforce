@@ -15,6 +15,7 @@
 // hour apart on an engine with pre-2023 zone data, and in a "use client" component the one-digit
 // difference is hydration error #418 (see that module's header).
 
+import { codeOrWords, humanizeCode } from "@/lib/format/code-label";
 import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 
 export type OutstationEvidenceKind = "car" | "arrival";
@@ -91,7 +92,7 @@ export function tidyOutstationAddress(value: string | null | undefined) {
 
 /** A stored code written as words: "manager_review" → "Manager review", "car" → "Car". */
 export function humanizeOutstationCode(value: string | null | undefined) {
-  const words = tidy(String(value ?? "").replace(/_/g, " "));
+  const words = tidy(codeOrWords(String(value ?? "")));
   return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : null;
 }
 
@@ -99,7 +100,7 @@ function sourceLabel(source: string | null) {
   if (!source) return null;
   if (source === "live_camera") return "taken live in the app";
   if (source === "upload") return "uploaded";
-  return source.replace(/_/g, " ");
+  return humanizeCode(source).toLowerCase();
 }
 
 function coordinate(value: string | undefined, limit: number) {

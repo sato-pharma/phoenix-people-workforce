@@ -70,7 +70,8 @@ export type ReconcileInput = {
 };
 
 export type ReconcileDecision =
-  | { action: "skip"; reason: string }
+  // `reason` is null when it would only restate the outcome the day is already shown under (said once).
+  | { action: "skip"; reason: string | null }
   | { action: "flag"; reason: string; flagType: "office_no_show" | "field_punch_anomaly" }
   | { action: "judge" };
 
@@ -153,12 +154,12 @@ export function isAttendanceDeductionCancelled(facts: DeductionCancelFacts): boo
 
 export function reconcileDay(input: ReconcileInput): ReconcileDecision {
   // Universal cancels — apply to both tiers, before any tier logic.
-  if (!input.isWorkingDay) return { action: "skip", reason: "Weekly off — not a working day." };
-  if (input.isHoliday) return { action: "skip", reason: "Official holiday." };
-  if (input.hasApprovedLeave) return { action: "skip", reason: "Approved leave." };
-  if (input.hasApprovedExcuse) return { action: "skip", reason: "Approved excuse." };
-  if (input.hasCrmLeave) return { action: "skip", reason: "CRM-recorded leave." };
-  if (input.hasCrmFieldVisit) return { action: "skip", reason: "Real CRM field visit recorded — legitimate field day." };
+  if (!input.isWorkingDay) return { action: "skip", reason: null };
+  if (input.isHoliday) return { action: "skip", reason: null };
+  if (input.hasApprovedLeave) return { action: "skip", reason: null };
+  if (input.hasApprovedExcuse) return { action: "skip", reason: null };
+  if (input.hasCrmLeave) return { action: "skip", reason: null };
+  if (input.hasCrmFieldVisit) return { action: "skip", reason: null };
   if (input.deviceOutage) return { action: "skip", reason: "Fingerprint device was not syncing this day — cannot judge attendance." };
 
   if (input.tier === "office_days_only") {
@@ -170,7 +171,7 @@ export function reconcileDay(input: ReconcileInput): ReconcileDecision {
     if (input.planSaysOffice === false) {
       return input.hasPunch
         ? { action: "flag", reason: "Field day in the plan but a punch was recorded.", flagType: "field_punch_anomaly" }
-        : { action: "skip", reason: "Field day per plan." };
+        : { action: "skip", reason: null };
     }
     return { action: "skip", reason: "No plan-designated office day." };
   }

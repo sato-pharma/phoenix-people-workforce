@@ -152,9 +152,8 @@ function PendingCard({
             {task.subject.displayName}
           </h3>
           <p className="mt-0.5 break-words text-xs font-medium text-slate-500">
-            {task.subject.hrId}
-            {task.subject.jobTitle ? ` · ${task.subject.jobTitle}` : ""}
-            {` · added ${formatOpenedAt(task.openedAt)}`}
+            {task.subject.jobTitle ? `${task.subject.jobTitle} · ` : ""}
+            {`added ${formatOpenedAt(task.openedAt)}`}
             {task.source === "employee_import" ? " · from an employee import" : ""}
           </p>
         </div>
@@ -385,8 +384,7 @@ export function CrmAccountSetupPanel({
               <li className="px-4 py-3" key={task.subject.hrId}>
                 <p className="break-words text-sm font-bold text-slate-900">{task.subject.displayName}</p>
                 <p className="break-words text-xs text-slate-500">
-                  {task.subject.hrId}
-                  {task.subject.areaName ? ` · ${task.subject.areaName}` : ""}
+                  {[task.subject.jobTitle, task.subject.areaName, task.subject.lineName].filter(Boolean).join(" · ")}
                 </p>
                 <p className="mt-1 break-words text-sm text-slate-700">
                   {task.status === "completed" ? "CRM account recorded" : "No CRM account needed"}
@@ -436,7 +434,9 @@ export function CrmAccountSetupPanel({
                   <tr className="odd:bg-white even:bg-orange-50/30" key={task.subject.hrId}>
                     <td className="break-words px-3 py-2.5 align-top text-sm font-medium text-slate-900">
                       {task.subject.displayName}
-                      <span className="block text-xs font-normal text-slate-500">{task.subject.hrId}</span>
+                      {task.subject.jobTitle ? (
+                        <span className="block text-xs font-normal text-slate-500">{task.subject.jobTitle}</span>
+                      ) : null}
                     </td>
                     <td className="break-words px-3 py-2.5 align-top text-sm text-slate-700">
                       {task.subject.areaName ?? NOT_RECORDED}

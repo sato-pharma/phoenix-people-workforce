@@ -43,7 +43,7 @@ const STATUS_LABEL: Record<SourceCoverage["status"], string> = {
 
 export function CoverageStatusChip({ status }: { status: SourceCoverage["status"] }) {
   return (
-    <span className={cn("whitespace-nowrap rounded px-1.5 py-0.5 text-phx-2xs font-bold", STATUS_STYLE[status])}>
+    <span className={cn("rounded px-1.5 py-0.5 text-phx-2xs font-bold", STATUS_STYLE[status])}>
       {STATUS_LABEL[status]}
     </span>
   );

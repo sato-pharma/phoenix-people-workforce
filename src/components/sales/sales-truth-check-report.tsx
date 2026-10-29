@@ -27,15 +27,12 @@ function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Codes are never shown alone. A sentinel bucket is explained in words instead. */
+/** Names, never codes. A sentinel bucket is explained in words instead. */
 function areaLabel(finding: SalesTruthFinding): { name: string; sub: string } {
   if (finding.areaCode === UNATTRIBUTED_AREA) {
     return { name: "Not filed to any area", sub: "Sales carrying no area at all" };
   }
-  const sub = [finding.regionName, finding.areaCode === finding.areaName ? "" : finding.areaCode]
-    .filter(Boolean)
-    .join(" · ");
-  return { name: finding.areaName, sub };
+  return { name: finding.areaName, sub: finding.regionName || "" };
 }
 
 function lineLabel(finding: SalesTruthFinding): string {
@@ -81,7 +78,7 @@ function FindingRow({ finding }: { finding: SalesTruthFinding }) {
         <span className="font-medium text-slate-900">{lineLabel(finding)}</span>
       </td>
       <td className={TD}>
-        {/* Region and code MERGED under the name rather than given columns of their own — the
+        {/* The region MERGED under the area's name rather than given a column of its own — the
             owner's own way of making a board fit without shrinking type. */}
         <span className="font-medium text-slate-900">{area.name}</span>
         {area.sub ? <span className="mt-0.5 block text-xs text-slate-500">{area.sub}</span> : null}
@@ -104,7 +101,7 @@ function FindingRow({ finding }: { finding: SalesTruthFinding }) {
 function FindingCard({ finding }: { finding: SalesTruthFinding }) {
   const area = areaLabel(finding);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="text-sm font-semibold text-slate-900 break-words">{area.name}</span>
         <span className="text-xs font-medium text-slate-500">{lineLabel(finding)}</span>

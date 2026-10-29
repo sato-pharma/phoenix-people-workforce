@@ -32,6 +32,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type {
   MarketingApproverHistoryOutcome,
@@ -78,20 +79,6 @@ const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
   returned: "from-white via-amber-50/40 to-white",
 };
 
-/** Left-edge accent for the desktop detail row, keyed to the same tone as the badge. Written as
- *  whole static class strings — Tailwind never sees a class name assembled from a variable at
- *  runtime, so an interpolated colour class is purged from the bundle and paints nothing. */
-const OUTCOME_DETAIL_BORDER: Record<MarketingApproverHistoryOutcome, string> = {
-  approved: "border-l-emerald-500",
-  archived: "border-l-slate-400",
-  awaiting_next_stage: "border-l-orange-500",
-  cancelled: "border-l-rose-500",
-  closed: "border-l-slate-400",
-  in_flight: "border-l-orange-500",
-  rejected: "border-l-rose-500",
-  returned: "border-l-amber-500",
-};
-
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Shared decision detail (identical on the mobile card and the desktop expansion) --------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
@@ -101,7 +88,7 @@ const OUTCOME_DETAIL_BORDER: Record<MarketingApproverHistoryOutcome, string> = {
  * approval trail, and the four dates/values. Rendered in one place so a past approval reads
  * identically whether it is opened on a phone card or expanded from the desktop table.
  */
-function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
+function HistoryDecisionDetail({ inTable = false, row }: { inTable?: boolean; row: MarketingApproverHistoryRow }) {
   const decidedAt = formatDateTime(row.decidedAt);
   const myDecidedAt = formatDateTime(row.myDecision?.at ?? null);
 
@@ -110,6 +97,20 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
       {/* ------ The response itself: who ended it, when, and in their own words -----------------
           This is the answer the tab is opened for. It sits ABOVE the full chain because the last
           word is what anyone is looking for, and the chain below is the supporting record. */}
+      {/* In the desktop table the row already says the outcome, the final step and approver, and the date;
+          the panel keeps only what the row cannot: the decision's own words. */}
+      {inTable && !row.waitingFor && row.finalStepName ? (
+        <div className="px-4 py-3">
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Decision comment</p>
+          {row.finalDecisionNote ? (
+            <p className="mt-1.5 border-l-2 border-slate-200 py-1 pl-2.5 text-phx-sm font-medium leading-snug text-slate-700">
+              &ldquo;{row.finalDecisionNote}&rdquo;
+            </p>
+          ) : (
+            <p className="mt-1 text-phx-xs font-medium italic text-slate-400">No comment left with the decision</p>
+          )}
+        </div>
+      ) : inTable && row.waitingFor ? null : (
       <div className="px-4 py-3">
         <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
           {row.waitingFor ? "Where it is now" : "Final response"}
@@ -146,6 +147,7 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
           </p>
         )}
       </div>
+      )}
 
       {/* ------ What THIS viewer did, when they were part of it ----------------------------------- */}
       {row.myDecision ? (
@@ -173,11 +175,13 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
 
       <ApprovalHistory requestCode={row.requestCode} rungs={row.approvalHistory} title="Full approval trail" />
 
-      <div className="grid gap-3 px-4 py-3 sm:grid-cols-4">
-        <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
-          <span className="text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</span>
-        </div>
+      <div className={`grid gap-3 px-4 py-3 ${inTable ? "sm:grid-cols-2" : "sm:grid-cols-4"}`}>
+        {inTable ? null : (
+          <div className="flex flex-col">
+            <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
+            <span className="text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</span>
+          </div>
+        )}
         <div className="flex flex-col">
           <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Pay Date</span>
           <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
@@ -189,10 +193,12 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
           <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Submitted</span>
           <span className="text-phx-md font-bold text-slate-700">{formatDate(row.submittedAt)}</span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{row.waitingFor ? "You approved" : "Decided"}</span>
-          <span className="text-phx-md font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
-        </div>
+        {inTable ? null : (
+          <div className="flex flex-col">
+            <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{row.waitingFor ? "You approved" : "Decided"}</span>
+            <span className="text-phx-md font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 bg-slate-50/50 px-4 py-3">
@@ -264,8 +270,9 @@ function HistoryTableRow({
 }) {
   const Icon = OUTCOME_ICON[row.outcome];
   const Chevron = isOpen ? ChevronDown : ChevronRight;
-  // The final word, in one scannable line. Never wrapped or clipped — the table scrolls sideways
-  // inside its own box instead, so a long approver name widens the column rather than losing text.
+  const detailId = `history-detail-${row.id}`;
+  // The final word, in one scannable line. It wraps inside its column, so a long approver name
+  // takes a second line instead of widening the table.
   const finalResponse = row.waitingFor
     ? `Waiting for ${row.waitingFor.stepName}${row.waitingFor.approverName ? ` · ${row.waitingFor.approverName}` : ""}`
     : row.finalStepName
@@ -278,23 +285,23 @@ function HistoryTableRow({
         className="cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/30"
         onClick={onToggle}
       >
-        <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-500">{row.requestCode}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-500">{row.requestCode}</td>
         <td className="px-3 py-2.5">
           <span className="block break-words text-phx-md font-black text-slate-950">{row.requestTitle}</span>
           <span className="block break-words text-phx-xs font-medium text-slate-500">Customer: {row.customerName}</span>
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5">
+        <td className="min-w-0 break-words px-3 py-2.5">
           <Badge variant={OUTCOME_VARIANT[row.outcome]}>
             <Icon className="mr-1 h-3 w-3" />
             {row.outcomeLabel}
           </Badge>
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">{finalResponse}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">{formatDate(row.decidedAt)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-right">
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">{finalResponse}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">{formatDate(row.decidedAt)}</td>
+        <td className="min-w-0 break-words px-3 py-2.5 text-right">
           <button
-            aria-expanded={isOpen}
+            {...rowDetailToggleProps(detailId, isOpen)}
             className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             onClick={(event) => {
               event.stopPropagation();
@@ -308,11 +315,9 @@ function HistoryTableRow({
         </td>
       </tr>
       {isOpen ? (
-        <tr className={`border-b border-slate-100 border-l-[3px] ${OUTCOME_DETAIL_BORDER[row.outcome]} bg-slate-50/40`}>
-          <td colSpan={DESKTOP_COLUMNS} className="p-0">
-            <HistoryDecisionDetail row={row} />
-          </td>
-        </tr>
+        <TableRowDetail className="p-0" colSpan={DESKTOP_COLUMNS} id={detailId}>
+          <HistoryDecisionDetail inTable row={row} />
+        </TableRowDetail>
       ) : null}
     </>
   );
@@ -669,7 +674,7 @@ export function MarketingRequestHistory() {
                     {["Request", "Activity · Requester", "Outcome", "Final response", "Value", "Decided", ""].map(
                       (heading, index) => (
                         <th
-                          className="whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                          className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
                           key={`${heading}-${index}`}
                           scope="col"
                         >

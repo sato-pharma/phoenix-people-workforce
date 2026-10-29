@@ -1,5 +1,6 @@
 "use client";
 
+import { phxButtonApproveDenseClassName } from "@/components/ui/form-tokens";
 import { Fragment, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -939,7 +940,7 @@ function frozenOffset(columnKey: string): number {
 }
 
 const SHEET_TABLE_WIDTH =
-  SHEET_COLUMNS.reduce((sum, column) => sum + column.width, 0) + 100 /* Status */ + 240; /* Actions */
+  SHEET_COLUMNS.reduce((sum, column) => sum + column.width, 0) + 280 /* Status */ + 240; /* Actions */
 
 /**
  * One page-wide table showing the FULL canonical payroll-sheet columns (same
@@ -1006,7 +1007,6 @@ function PayrollSheetTable({
     );
   });
 
-  const COLUMN_COUNT = SHEET_COLUMNS.length + 2; // + Status + Actions
 
   return (
     <div className="border border-slate-200 bg-white">
@@ -1068,7 +1068,7 @@ function PayrollSheetTable({
                     {column.label}
                   </th>
                 ))}
-                <th className="px-2 py-2" style={{ width: 100 }}>Status</th>
+                <th className="px-2 py-2" style={{ width: 280 }}>Status</th>
                 <th className="px-2 py-2" style={{ width: 240 }}>Actions</th>
               </tr>
             </thead>
@@ -1095,25 +1095,13 @@ function PayrollSheetTable({
                           ) : null}
                         </td>
                       ))}
-                      <td className="px-2 py-2">
+                      <td className="whitespace-normal break-words px-2 py-2 align-top">
                         <span className={`px-1.5 py-0.5 text-xs font-semibold ${meta.className}`}>{meta.label}</span>
-                      </td>
-                      <td className="px-2 py-2">
-                        <EmployeeRowActions
-                          busy={busy}
-                          onConfirm={() => onConfirmEmployee(employee.hrId)}
-                          onReportIssue={(text) => onReportIssue(employee.hrId, text)}
-                          onHold={(reason) => onHoldEmployee(employee.hrId, reason)}
-                        />
-                      </td>
-                    </tr>
-                    {employee.status === "question" ? (
-                      <tr className="bg-amber-50/40">
-                        <td className="px-2 py-2" colSpan={COLUMN_COUNT}>
-                          {rec ? (
-                            <div className="flex flex-wrap items-center justify-between gap-3">
+                        {employee.status === "question" ? (
+                          rec ? (
+                            <div className="mt-1.5 space-y-1.5">
                               <p
-                                className={`border-l-4 pl-2 text-sm text-slate-700 ${
+                                className={`border-l-4 pl-2 text-xs text-slate-700 ${
                                   CONFIDENCE_ACCENT[rec.confidence]
                                 }`}
                               >
@@ -1125,7 +1113,7 @@ function PayrollSheetTable({
                                   type="button"
                                   disabled={busy}
                                   onClick={() => onAcceptRecommendation(rec.action as Record<string, unknown>)}
-                                  className="flex shrink-0 items-center gap-1 bg-gradient-to-r from-emerald-600 to-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-50"
+                                  className={cn(phxButtonApproveDenseClassName, "flex items-center gap-1 border px-3 py-1.5 text-xs font-semibold disabled:opacity-50")}
                                 >
                                   <Check aria-hidden className="h-3.5 w-3.5" />
                                   {rec.actionLabel}
@@ -1133,18 +1121,28 @@ function PayrollSheetTable({
                               ) : null}
                             </div>
                           ) : (
-                            employee.flags.map((flag) => (
-                              <p
-                                key={flag.rule}
-                                className={`border-l-4 pl-2 text-sm text-slate-700 ${SEVERITY_STYLES[flag.severity]}`}
-                              >
-                                {flag.question}
-                              </p>
-                            ))
-                          )}
-                        </td>
-                      </tr>
-                    ) : null}
+                            <div className="mt-1.5 space-y-1">
+                              {employee.flags.map((flag) => (
+                                <p
+                                  key={flag.rule}
+                                  className={`border-l-4 pl-2 text-xs text-slate-700 ${SEVERITY_STYLES[flag.severity]}`}
+                                >
+                                  {flag.question}
+                                </p>
+                              ))}
+                            </div>
+                          )
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2">
+                        <EmployeeRowActions
+                          busy={busy}
+                          onConfirm={() => onConfirmEmployee(employee.hrId)}
+                          onReportIssue={(text) => onReportIssue(employee.hrId, text)}
+                          onHold={(reason) => onHoldEmployee(employee.hrId, reason)}
+                        />
+                      </td>
+                    </tr>
                   </Fragment>
                 );
               })}

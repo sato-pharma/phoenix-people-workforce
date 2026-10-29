@@ -101,8 +101,6 @@ export async function loadPhoenixWorkEvidencePrivateCalendarItems(
         description:
           "Work logged in Phoenix CRM on a team that is still counted from iReports360, so the CRM read door does not carry it. Shown here so the day is not read as having no activity.",
         detailLines: [
-          `Kind: ${privateCalendarActivityKindLabels[kind]}`,
-          ...(day.visits > 0 ? [`Visits: ${day.visits}`] : []),
           ...(day.dayActivities.length > 0 ? [`Logged: ${day.dayActivities.join(" · ")}`] : []),
           ...(day.dayStarts > 0 ? ["Day started in Phoenix CRM"] : []),
         ],

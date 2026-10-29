@@ -57,7 +57,13 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
           }))}
         />
       </div>
-      <table className="w-full border-collapse text-xs">
+      <table className="w-full table-fixed border-collapse text-xs">
+        <colgroup>
+          <col className="w-[40%]" />
+          <col className="w-[24%]" />
+          <col className="w-[16%]" />
+          <col className="w-[20%]" />
+        </colgroup>
         <thead>
           <tr className="bg-slate-900 text-left">
             <SortableTh label="Region" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
@@ -72,11 +78,11 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
           ) : table.rows.map((row) => (
             <tr key={row.key} className="bg-white hover:bg-slate-50">
               <td className="px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-20 shrink-0 bg-slate-100">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="h-1.5 w-12 shrink-0 bg-slate-100">
                     <div className="h-full bg-orange-400" style={{ width: `${Math.max(2, (row.totalValue / maxVal) * 100)}%` }} />
                   </div>
-                  <span className="font-semibold text-slate-800">{row.label}</span>
+                  <span className="min-w-0 break-words font-semibold text-slate-800">{row.label}</span>
                 </div>
               </td>
               <td className="px-3 py-2 text-right font-bold text-slate-900">{egp(row.totalValue)}</td>
@@ -134,7 +140,14 @@ function ProductTable({ rows, period }: { rows: ProductRow[]; period: string | n
           }))}
         />
       </div>
-      <table className="w-full border-collapse text-xs">
+      <table className="w-full table-fixed border-collapse text-xs">
+        <colgroup>
+          <col className="w-[34%]" />
+          <col className="w-[18%]" />
+          <col className="w-[22%]" />
+          <col className="w-[12%]" />
+          <col className="w-[14%]" />
+        </colgroup>
         <thead>
           <tr className="bg-slate-900 text-left">
             <SortableTh label="Product" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
@@ -150,14 +163,14 @@ function ProductTable({ rows, period }: { rows: ProductRow[]; period: string | n
           ) : table.rows.map((row) => (
             <tr key={row.key} className="bg-white hover:bg-slate-50">
               <td className="px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-16 shrink-0 bg-slate-100">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="h-1.5 w-12 shrink-0 bg-slate-100">
                     <div className="h-full bg-orange-400" style={{ width: `${Math.max(2, (row.totalValue / maxVal) * 100)}%` }} />
                   </div>
-                  <span className="font-semibold text-slate-800">{row.label}</span>
+                  <span className="min-w-0 break-words font-semibold text-slate-800">{row.label}</span>
                 </div>
               </td>
-              <td className="px-3 py-2 text-slate-500">{row.line ?? "—"}</td>
+              <td className="break-words px-3 py-2 text-slate-500">{row.line ?? "—"}</td>
               <td className="px-3 py-2 text-right font-bold text-slate-900">{egp(row.totalValue)}</td>
               <td className="px-3 py-2 text-right text-slate-600">{row.totalQty.toLocaleString("en-US")}</td>
               <td className="px-3 py-2 text-right text-slate-500">

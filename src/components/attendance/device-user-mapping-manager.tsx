@@ -124,8 +124,8 @@ function statusBadge(row: AttendanceDeviceUserMappingRow) {
   return <Badge variant="warning">Unmapped</Badge>;
 }
 
-function employeeLabel(hrId: string, fullName: string) {
-  return `${hrId} - ${fullName}`;
+function employeeLabel(fullName: string) {
+  return fullName;
 }
 
 function MappingRow({
@@ -176,19 +176,17 @@ function MappingRow({
 
   return (
     <tr className={cn(portalStackingRowClassName, "border-b border-slate-100 py-2 last:border-0 md:py-0")}>
-      <PortalStackingCell className="text-sm font-semibold text-slate-700 md:whitespace-nowrap" label="Device">
+      <PortalStackingCell className="break-words text-sm font-semibold text-slate-700" label="Device">
         {row.deviceId}
+        <div className="text-sm font-black text-slate-900">User {row.deviceUserId}</div>
       </PortalStackingCell>
-      <PortalStackingCell className="text-sm font-black text-slate-900 md:whitespace-nowrap" label="Device User">
-        {row.deviceUserId}
-      </PortalStackingCell>
-      <PortalStackingCell className="text-sm text-slate-600 md:whitespace-nowrap" label="Latest Punch">
+      <PortalStackingCell className="break-words text-sm text-slate-600" label="Latest Punch">
         {formatDate(row.latestPunchAt)}
       </PortalStackingCell>
-      <PortalStackingCell className="md:whitespace-nowrap" label="Status">
+      <PortalStackingCell label="Status">
         {statusBadge(row)}
       </PortalStackingCell>
-      <PortalStackingCell className="md:min-w-[260px]" label="Employee HR_ID">
+      <PortalStackingCell className="min-w-0 break-words" label="Employee">
         <SearchableSelect
           className="h-9 w-full px-3 disabled:text-slate-400"
           disabled={!canUpdate || saving}
@@ -206,19 +204,17 @@ function MappingRow({
             if (!next) setIsActive(false);
           }}
         >
-          <option value="">Select employee HR_ID</option>
+          <option value="">Select employee</option>
           <option value={NON_EMPLOYEE_OPTION}>Not an employee (driver / guard / cleaner)</option>
           {employees.map((employee) => (
             <option key={employee.hrId} value={employee.hrId}>
-              {employeeLabel(employee.hrId, employee.fullName)}
+              {employeeLabel(employee.fullName)}
             </option>
           ))}
         </SearchableSelect>
-      </PortalStackingCell>
-      <PortalStackingCell className="text-sm text-slate-600 md:min-w-[180px]" label="Employee">
         {nonEmployee ? (
           <input
-            className={phxFieldClassName}
+            className={cn(phxFieldClassName, "mt-2")}
             disabled={!canUpdate || saving}
             maxLength={80}
             placeholder="Driver, guard, cleaner"
@@ -226,15 +222,13 @@ function MappingRow({
             value={nonEmployeeLabel}
             onChange={(event) => setNonEmployeeLabel(event.target.value)}
           />
-        ) : (
-          row.employeeName ?? "Not assigned"
-        )}
+        ) : null}
       </PortalStackingCell>
-      <PortalStackingCell className="md:whitespace-nowrap" label="Active">
+      <PortalStackingCell label="Active">
         <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
           <input
             checked={isActive}
-            className="h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 disabled:opacity-50"
+            className="h-4 w-4 border-slate-300 text-orange-600 focus:ring-orange-500 disabled:opacity-50"
             disabled={!canUpdate || saving || !employeeHrId}
             type="checkbox"
             onChange={(event) => setIsActive(event.target.checked)}
@@ -242,7 +236,7 @@ function MappingRow({
           Active
         </label>
       </PortalStackingCell>
-      <PortalStackingCell className="md:whitespace-nowrap md:text-right" label="Action">
+      <PortalStackingCell className="md:text-right" label="Action">
         <Button
           className={hasChanges ? "px-3 py-1.5 text-xs" : "border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100"}
           disabled={cannotSave}
@@ -591,22 +585,28 @@ export function DeviceUserMappingManager({
             <option value="inactive">Inactive</option>
           </SearchableSelect>
         )}
-        description="Assign employees by HR_ID and choose whether each mapping is active for ingestion."
+        description="Assign each device user to an employee and choose whether each mapping is active for ingestion."
         title="Device Users"
       >
-        <div className="overflow-x-auto">
-          {/* Eight columns at px-4 cannot fit a phone, so on mobile the rows stack and each cell
+        <div>
+          {/* Six columns at px-4 cannot fit a phone, so on mobile the rows stack and each cell
               carries its own label; the column headers are hidden because they would label
               nothing. See the Cell helper above for why this table stacks rather than becoming a
               separate card list like the read-only reports do. */}
-          <table className={portalStackingTableClassName}>
-            <thead className={cn(portalStackingHeadClassName, "bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500")}>
+          <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+            <colgroup>
+              <col className="w-[16%]" />
+              <col className="w-[14%]" />
+              <col className="w-[12%]" />
+              <col className="w-[33%]" />
+              <col className="w-[10%]" />
+              <col className="w-[15%]" />
+            </colgroup>
+            <thead className={cn(portalStackingHeadClassName, "bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500")}>
               <tr>
                 <th className="px-4 py-3">Device</th>
-                <th className="px-4 py-3">Device User</th>
                 <th className="px-4 py-3">Latest Punch</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Employee HR_ID</th>
                 <th className="px-4 py-3">Employee</th>
                 <th className="px-4 py-3">Active</th>
                 <th className="px-4 py-3 text-right">Action</th>
@@ -624,7 +624,7 @@ export function DeviceUserMappingManager({
               ))}
               {filteredMappings.length === 0 ? (
                 <tr className={portalStackingRowClassName}>
-                  <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={8}>
+                  <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={6}>
                     No device users match this filter.
                   </td>
                 </tr>
@@ -635,38 +635,42 @@ export function DeviceUserMappingManager({
       </AdminTableShell>
 
       <AdminTableShell
-        description="Recently seen device users that are not assigned to an employee HR_ID."
+        description="Recently seen device users that are not assigned to an employee."
         title="Recent Unmapped Device Users"
       >
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Device</th>
-                <th className="px-4 py-3">Device User</th>
-                <th className="px-4 py-3">Latest Punch</th>
-                <th className="px-4 py-3">Status</th>
+        <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+          <colgroup>
+            <col className="w-[30%]" />
+            <col className="w-[30%]" />
+            <col className="w-[40%]" />
+          </colgroup>
+          <thead className={cn(portalStackingHeadClassName, "bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500")}>
+            <tr>
+              <th className="px-4 py-3">Device</th>
+              <th className="px-4 py-3">Latest Punch</th>
+              <th className="px-4 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody className={portalStackingBodyClassName}>
+            {(data?.recentUnmapped ?? []).map((row) => (
+              <tr className={cn(portalStackingRowClassName, "border-b border-slate-100 last:border-0")} key={`recent-${row.deviceId}-${row.deviceUserId}`}>
+                <PortalStackingCell className="break-words text-sm font-semibold text-slate-700" label="Device">
+                  {row.deviceId}
+                  <div className="font-black text-slate-900">User {row.deviceUserId}</div>
+                </PortalStackingCell>
+                <PortalStackingCell className="break-words text-sm text-slate-600" label="Latest Punch">{formatDate(row.latestPunchAt)}</PortalStackingCell>
+                <PortalStackingCell label="Status">{statusBadge(row)}</PortalStackingCell>
               </tr>
-            </thead>
-            <tbody>
-              {(data?.recentUnmapped ?? []).map((row) => (
-                <tr className="border-b border-slate-100 last:border-0" key={`recent-${row.deviceId}-${row.deviceUserId}`}>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">{row.deviceId}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-slate-900">{row.deviceUserId}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{formatDate(row.latestPunchAt)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{statusBadge(row)}</td>
-                </tr>
-              ))}
-              {(data?.recentUnmapped ?? []).length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={4}>
-                    No recent unmapped device users.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+            ))}
+            {(data?.recentUnmapped ?? []).length === 0 ? (
+              <tr className={portalStackingRowClassName}>
+                <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={3}>
+                  No recent unmapped device users.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </AdminTableShell>
     </div>
   );

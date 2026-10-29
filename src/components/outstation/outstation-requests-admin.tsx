@@ -51,6 +51,7 @@ import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { humanizeCode } from "@/lib/format/code-label";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
   PortalRecordCard,
@@ -85,23 +86,23 @@ function formatCurrency(value: number) {
 // "Tuesday, 17 October 2026" form the owner asked for is for EMAILS, and would wrap inside
 // these dense grid cells, which the no-wrap rule forbids.
 function formatDate(value: string) {
-  return formatDateValue(value) || "N/A";
+  return formatDateValue(value) || "—";
 }
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return "N/A";
-  return formatDateTimeValue(value) || "N/A";
+  if (!value) return "—";
+  return formatDateTimeValue(value) || "—";
 }
 
 function formatKm(value: number | null | undefined) {
-  // Never "N/A" and never 0: a missing distance means the Google route lookup failed, and
+  // Never a filler word and never 0: a missing distance means the Google route lookup failed, and
   // that is a different fact from a measured zero-kilometre trip.
   if (value == null || !Number.isFinite(value)) return "Route lookup failed";
   return `${value.toFixed(2)} KM`;
 }
 
 function formatStatus(value: string) {
-  return value.replace(/_/g, " ");
+  return humanizeCode(value);
 }
 
 // Trip month key as "YYYY-MM" from an ISO-ish date string (used for the month filter).
@@ -155,10 +156,6 @@ function recommendationTone(value: string) {
 const panelClassName =
   "rounded-lg border border-phx-line bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
 const adminTableHeaderClassName = "px-4 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
-const stickyEmployeeHeaderClassName = `${adminTableHeaderClassName} sticky left-0 z-30 w-[260px] min-w-[260px] bg-phx-paper shadow-[10px_0_18px_rgba(15,23,42,0.06)]`;
-const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260px] z-30 w-[220px] min-w-[220px] bg-phx-paper shadow-[10px_0_18px_rgba(15,23,42,0.04)]`;
-const stickyEmployeeCellClassName = "sticky left-0 z-20 w-[260px] min-w-[260px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.05)]";
-const stickyTripCellClassName = "sticky left-[260px] z-20 w-[220px] min-w-[220px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.04)]";
 
 
 function OutstationAdminShell({ children }: { children: ReactNode }) {
@@ -317,7 +314,7 @@ function RequestDetailsModal({
               {formatEmployeeDisplayName(request.employeeName) || "Unassigned"}
             </h2>
             <p className="mt-0.5 font-mono text-xs text-slate-400">
-              {request.employeeHrId || "HR ID not mapped"} · OUTSTATION-{request.id} · {request.employeeRole}
+              OUTSTATION-{request.id} · {request.employeeRole}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -1207,7 +1204,7 @@ export function OutstationRequestsAdmin({
                     actions={
                       <>
                         <Button
-                          className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink"
+                          className="gap-1.5 border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink"
                           onClick={() => openDetails(request)}
                           type="button"
                         >
@@ -1215,7 +1212,7 @@ export function OutstationRequestsAdmin({
                           View
                         </Button>
                         <Button
-                          className="gap-1.5 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-phx-accent-hover"
+                          className="gap-1.5 border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-phx-accent-hover"
                           onClick={() => setManagerExpenseModal({ mode: "edit", request })}
                           type="button"
                         >
@@ -1237,7 +1234,7 @@ export function OutstationRequestsAdmin({
                       </>
                     }
                     key={request.id}
-                    meta={`${request.employeeHrId} - ${request.employeeRole}`}
+                    meta={request.employeeRole || undefined}
                     status={
                       <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
                         {formatStatus(request.status)}
@@ -1263,12 +1260,22 @@ export function OutstationRequestsAdmin({
               )}
             </div>
 
-            <div className="hidden max-h-[68vh] overflow-auto md:block">
-              <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
-                <thead className="sticky top-0 z-40 bg-phx-paper text-phx-xs uppercase tracking-[0.16em] text-phx-ink-soft">
+            <div className="hidden md:block">
+              <table className="w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+                <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
-                    <th className={stickyEmployeeHeaderClassName}>Employee</th>
-                    <th className={stickyTripHeaderClassName}>Trip</th>
+                    <th className={adminTableHeaderClassName}>Employee</th>
+                    <th className={adminTableHeaderClassName}>Trip</th>
                     <th className={adminTableHeaderClassName}>Distance</th>
                     <th className={adminTableHeaderClassName}>Eligibility</th>
                     <th className={adminTableHeaderClassName}>Status</th>
@@ -1280,30 +1287,29 @@ export function OutstationRequestsAdmin({
                 <tbody className="divide-y divide-phx-line bg-white">
                   {filtered.map((request) => {
                     const selected = request.id === selectedRequest?.id;
-                    const stickyCellBg = selected ? "bg-phx-accent-soft" : "bg-white";
                     return (
                       <tr
                         className={`cursor-pointer ${selected ? "bg-phx-accent-soft ring-1 ring-inset ring-phx-accent-line/60" : "transition-colors hover:bg-phx-accent-soft/65"}`}
                         key={request.id}
                         onClick={() => selectRequest(request)}
                       >
-                        <td className={`${stickyEmployeeCellClassName} ${stickyCellBg}`}>
+                        <td className="break-words px-4 py-3">
                           <div className="font-bold text-phx-ink">{formatEmployeeDisplayName(request.employeeName)}</div>
-                          <div className="text-xs text-phx-ink-soft">{`${request.employeeHrId} - ${request.employeeRole}`}</div>
+                          <div className="text-xs text-phx-ink-soft">{request.employeeRole}</div>
                         </td>
-                        <td className={`${stickyTripCellClassName} ${stickyCellBg} text-phx-ink-soft`}>
+                        <td className="break-words px-4 py-3 text-phx-ink-soft">
                           {formatDate(request.tripStartDate)} to {formatDate(request.tripEndDate)}
                         </td>
                         <td className="px-4 py-3 font-semibold text-phx-ink">
                           {formatKm(request.distanceFromResidenceKm)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusTone(request.eligibilityStatus)}`}>
+                          <span className={`inline-flex break-words px-3 py-1 text-xs font-bold ring-1 ${statusTone(request.eligibilityStatus)}`}>
                             {formatStatus(request.eligibilityStatus)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
+                          <span className={`inline-flex break-words px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
                             {formatStatus(request.status)}
                           </span>
                         </td>
@@ -1314,9 +1320,9 @@ export function OutstationRequestsAdmin({
                           {formatStatus(request.approvalRecommendation)}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <Button
-                              className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink hover:bg-phx-accent-soft"
+                              className="gap-1.5 border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink hover:bg-phx-accent-soft"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 openDetails(request);
@@ -1327,7 +1333,7 @@ export function OutstationRequestsAdmin({
                               View
                             </Button>
                             <Button
-                              className="gap-1.5 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-phx-accent-hover hover:bg-[#FFEDD5]"
+                              className="gap-1.5 border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-phx-accent-hover hover:bg-[#FFEDD5]"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 setManagerExpenseModal({ mode: "edit", request });

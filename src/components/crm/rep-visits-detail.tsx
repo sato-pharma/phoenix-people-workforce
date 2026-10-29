@@ -230,7 +230,7 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
   return (
     <div className="flex flex-wrap border-l border-t border-slate-200">
       {cells.map((cell) => (
-        <div className="min-w-[7.5rem] flex-1 border-b border-r border-slate-200 bg-white px-3 py-2.5" key={cell.label}>
+        <div className="min-w-0 basis-32 flex-1 border-b border-r border-slate-200 bg-white px-3 py-2.5" key={cell.label}>
           <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
           <p className={`text-lg font-black ${cell.tone}`}>{cell.value.toLocaleString("en-US")}</p>
         </div>
@@ -623,7 +623,7 @@ export function RepVisitsDetail({
                           Date
                         </th>
                         <th className={THEAD} scope="col">
-                          Day
+                          Type
                         </th>
                         <th className={THEAD} scope="col">
                           Reason

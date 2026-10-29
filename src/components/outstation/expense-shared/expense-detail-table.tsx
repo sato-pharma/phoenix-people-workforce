@@ -35,7 +35,8 @@ type ColumnKey =
 type Column = {
   key: ColumnKey;
   label: string;
-  width?: string; // omit → flexible (shares remaining space under table-fixed)
+  /** Percent of the table, admin view then portal view (the portal drops the Employee column). Each view sums to 100. */
+  widths: { admin: number; portal: number };
   align: "left" | "right" | "center";
   numeric?: boolean;
   adminOnly?: boolean;
@@ -43,15 +44,31 @@ type Column = {
 };
 
 const COLUMNS: Column[] = [
-  { key: "date", label: "Date", width: "92px", align: "left", sortValue: (r) => r.date ?? "" },
-  { key: "employee", label: "Employee", align: "left", adminOnly: true, sortValue: (r) => r.specialist ?? "" },
-  { key: "destination", label: "Destination", align: "left", sortValue: (r) => r.to || r.location || "" },
-  { key: "type", label: "Type", width: "124px", align: "left", sortValue: (r) => r.tripType ?? "" },
-  { key: "source", label: "Source", width: "112px", align: "left", sortValue: (r) => r.source },
-  { key: "status", label: "Status", width: "104px", align: "left", sortValue: (r) => r.status ?? "" },
-  { key: "km", label: "KM", width: "64px", align: "right", numeric: true, sortValue: (r) => r.km ?? 0 },
-  { key: "total", label: "Total", width: "124px", align: "right", numeric: true, sortValue: (r) => r.total ?? 0 },
+  { key: "date", label: "Date", widths: { admin: 9, portal: 10 }, align: "left", sortValue: (r) => r.date ?? "" },
+  { key: "employee", label: "Employee", widths: { admin: 18, portal: 0 }, align: "left", adminOnly: true, sortValue: (r) => r.specialist ?? "" },
+  { key: "destination", label: "Destination", widths: { admin: 20, portal: 28 }, align: "left", sortValue: (r) => r.to || r.location || "" },
+  { key: "type", label: "Type", widths: { admin: 13, portal: 16 }, align: "left", sortValue: (r) => r.tripType ?? "" },
+  { key: "source", label: "Source", widths: { admin: 9, portal: 11 }, align: "left", sortValue: (r) => r.source },
+  { key: "status", label: "Status", widths: { admin: 10, portal: 12 }, align: "left", sortValue: (r) => r.status ?? "" },
+  { key: "km", label: "KM", widths: { admin: 6, portal: 7 }, align: "right", numeric: true, sortValue: (r) => r.km ?? 0 },
+  { key: "total", label: "Total", widths: { admin: 15, portal: 16 }, align: "right", numeric: true, sortValue: (r) => r.total ?? 0 },
 ];
+
+// Literal class names, so Tailwind sees every width it has to generate.
+const COLUMN_WIDTH_CLASS: Record<number, string> = {
+  6: "w-[6%]",
+  7: "w-[7%]",
+  9: "w-[9%]",
+  10: "w-[10%]",
+  11: "w-[11%]",
+  12: "w-[12%]",
+  13: "w-[13%]",
+  15: "w-[15%]",
+  16: "w-[16%]",
+  18: "w-[18%]",
+  20: "w-[20%]",
+  28: "w-[28%]",
+};
 
 const SOURCE_BADGE: Record<string, string> = {
   live: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -66,7 +83,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 const badgeBase =
-  "inline-flex max-w-full items-center truncate rounded-full px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ring-1 ring-inset";
+  "inline-flex max-w-full items-center break-words px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ring-1 ring-inset";
 
 function alignClass(align: Column["align"]) {
   return align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
@@ -112,16 +129,16 @@ export function ExpenseDetailTable({
   function renderCell(key: ColumnKey, row: ExpenseCommandRow) {
     switch (key) {
       case "date":
-        return <span className="whitespace-nowrap text-slate-600">{formatShortDate(row.date)}</span>;
+        return <span className="break-words text-slate-600">{formatShortDate(row.date)}</span>;
       case "employee": {
         const sub = [row.region, row.line].filter(Boolean).join(" · ");
         return (
           <div className="min-w-0">
-            <div className="truncate font-semibold text-slate-800" title={row.specialist || undefined}>
+            <div className="break-words font-semibold text-slate-800">
               {row.specialist || "—"}
             </div>
             {sub ? (
-              <div className="truncate text-phx-xs text-slate-400" title={sub}>
+              <div className="break-words text-phx-xs text-slate-400">
                 {sub}
               </div>
             ) : null}
@@ -130,7 +147,7 @@ export function ExpenseDetailTable({
       }
       case "destination":
         return (
-          <span className="block truncate text-slate-700" title={row.to || row.location || undefined}>
+          <span className="block break-words text-slate-700">
             {row.to || row.location || "—"}
           </span>
         );
@@ -138,8 +155,8 @@ export function ExpenseDetailTable({
         const transport = row.transportationType;
         return (
           <div className="min-w-0">
-            <div className="truncate font-medium text-slate-700">{row.tripType || "—"}</div>
-            {transport ? <div className="truncate text-phx-xs text-slate-400">{transport}</div> : null}
+            <div className="break-words font-medium text-slate-700">{row.tripType || "—"}</div>
+            {transport ? <div className="break-words text-phx-xs text-slate-400">{transport}</div> : null}
           </div>
         );
       }
@@ -171,7 +188,7 @@ export function ExpenseDetailTable({
         sorted.length > RENDER_CAP ? ` Showing the first ${RENDER_CAP} of ${sorted.length.toLocaleString()}.` : ""
       } Full amount breakdown is in the charts above and the Excel export.`}
       action={
-        <span className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft">
+        <span className="inline-flex items-center border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft">
           {sorted.length.toLocaleString()} rows
         </span>
       }
@@ -196,7 +213,7 @@ export function ExpenseDetailTable({
           ))}
         </select>
         <button
-          className="shrink-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+          className="shrink-0 border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
           onClick={() => setSortDir((dir) => (dir === "asc" ? "desc" : "asc"))}
           type="button"
         >
@@ -224,7 +241,7 @@ export function ExpenseDetailTable({
               <PortalRecordFields
                 fields={[
                   { label: "Destination", value: row.to || row.location || "—" },
-                  { label: "Type", value: row.tripType || "—" },
+                  { label: "Type", value: [row.tripType, row.transportationType].filter(Boolean).join(" · ") || "—" },
                   { label: "Source", value: renderCell("source", row) },
                   { label: "Status", value: renderCell("status", row) },
                   { label: "KM", value: Math.round(row.km ?? 0).toLocaleString() },
@@ -239,7 +256,7 @@ export function ExpenseDetailTable({
             cols={
               <colgroup>
                 {columns.map((column) => (
-                  <col key={column.key} style={column.width ? { width: column.width } : undefined} />
+                  <col className={COLUMN_WIDTH_CLASS[column.widths[variant]]} key={column.key} />
                 ))}
               </colgroup>
             }
@@ -260,7 +277,7 @@ export function ExpenseDetailTable({
                         column.align === "right" ? "flex-row-reverse" : ""
                       } ${column.align === "center" ? "justify-center" : ""}`}
                     >
-                      <span className="truncate">{column.label}</span>
+                      <span className="break-words text-left">{column.label}</span>
                       {active ? (
                         sortDir === "asc" ? (
                           <ArrowUp className="h-3 w-3 shrink-0" />

@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { describeDirectOrderBasketUnits } from "@/lib/direct-orders/basket-label";
 import type { HeldDirectOrderRow } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { humanizeCode } from "@/lib/format/code-label";
 import { cn } from "@/lib/utils";
 import {
   phxButtonApproveDenseClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { adminPanelClassName, adminPanelHeaderClassName, adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type Props = { rows: HeldDirectOrderRow[] };
@@ -178,75 +180,23 @@ export function HeldDesk({ rows }: Props) {
       {error ? <p className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
       {ok ? <p className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">{ok}</p> : null}
 
-      {/* Desktop: the full table. */}
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
-              <th className="px-3 py-2">
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all held requests" />
-              </th>
-              <th className="px-3 py-2">Requester</th>
-              <th className="px-3 py-2">Venue</th>
-              <th className="px-3 py-2">Order</th>
-              <th className="px-3 py-2">Value</th>
-              <th className="px-3 py-2">Held since</th>
-              <th className="px-3 py-2">Expires in</th>
-              <th className="px-3 py-2">Last notice</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-b border-[#f1f4f6] align-top hover:bg-orange-50/40">
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(row.id)}
-                    onChange={() => toggle(row.id)}
-                    aria-label={`Select ${row.requesterName}'s request`}
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <p className="font-bold text-slate-900">{row.requesterName}</p>
-                  <p className="text-phx-xs text-slate-500">{row.requesterRole}</p>
-                </td>
-                <td className="px-3 py-2">
-                  <p className="font-semibold text-slate-800" dir="auto">{row.pharmacyName}</p>
-                  <p className="text-phx-xs text-slate-500">{row.phoenixPharmacyCode}</p>
-                </td>
-                <td className="px-3 py-2 text-slate-700">
-                  {/* Each product with its own units — a basket has no single quantity. */}
-                  {describeDirectOrderBasketUnits(row, row.items)}
-                </td>
-                <td className="px-3 py-2 font-bold text-slate-900">{money(row.salesValue)}</td>
-                <td className="px-3 py-2 text-slate-600">{cairoStamp(row.heldAt)}</td>
-                <td className="px-3 py-2">
-                  <span className={`px-1.5 py-0.5 text-phx-xs font-black ${urgency(row.daysRemaining)}`}>
-                    {row.daysRemaining} day{row.daysRemaining === 1 ? "" : "s"}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-slate-600">{row.lastNoticeAt ? cairoStamp(row.lastNoticeAt) : "never"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile: cards, never a squeezed table. */}
-      <div className="space-y-2 p-3 md:hidden">
-        {rows.map((row) => (
-          <label key={row.id} className="block border border-phx-line p-3">
+      <PortalResponsiveDataList
+        empty={null}
+        getKey={(row) => row.id}
+        items={rows}
+        renderCard={(row) => (
+          <label className="block p-3">
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-black text-slate-900">{row.requesterName}</p>
-                <p className="text-phx-xs text-slate-500">{row.requesterRole}</p>
+              <div className="min-w-0">
+                <p className="break-words text-sm font-black text-slate-900">{row.requesterName}</p>
+                <p className="break-words text-phx-xs text-slate-500">{row.requesterRole}</p>
               </div>
               <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)} aria-label={`Select ${row.requesterName}'s request`} />
             </div>
-            <p className="mt-2 text-sm font-semibold text-slate-800" dir="auto">
-              {row.pharmacyName} <span className="text-phx-xs font-normal text-slate-500">({row.phoenixPharmacyCode})</span>
+            <p className="mt-2 break-words text-sm font-semibold text-slate-800" dir="auto">
+              {row.pharmacyName}
             </p>
-            <p className="text-phx-sm text-slate-600">
+            <p className="break-words text-phx-sm text-slate-600">
               {describeDirectOrderBasketUnits(row, row.items)} · {money(row.salesValue)}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs text-slate-500">
@@ -257,8 +207,70 @@ export function HeldDesk({ rows }: Props) {
               <span>notice: {row.lastNoticeAt ? cairoStamp(row.lastNoticeAt) : "never"}</span>
             </div>
           </label>
-        ))}
-      </div>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[5%]" />
+                <col className="w-[17%]" />
+                <col className="w-[20%]" />
+                <col className="w-[20%]" />
+                <col className="w-[13%]" />
+                <col className="w-[12%]" />
+                <col className="w-[13%]" />
+              </colgroup>
+            }
+          >
+            <thead>
+              <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                <th className="px-3 py-2">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all held requests" />
+                </th>
+                <th className="px-3 py-2">Requester</th>
+                <th className="px-3 py-2">Venue</th>
+                <th className="px-3 py-2">Order</th>
+                <th className="px-3 py-2">Held since</th>
+                <th className="px-3 py-2">Expires in</th>
+                <th className="px-3 py-2">Last notice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b border-[#f1f4f6] align-top hover:bg-orange-50/40">
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(row.id)}
+                      onChange={() => toggle(row.id)}
+                      aria-label={`Select ${row.requesterName}'s request`}
+                    />
+                  </td>
+                  <td className="break-words px-3 py-2">
+                    <p className="font-bold text-slate-900">{row.requesterName}</p>
+                    <p className="text-phx-xs text-slate-500">{row.requesterRole}</p>
+                  </td>
+                  <td className="break-words px-3 py-2 font-semibold text-slate-800" dir="auto">
+                    {row.pharmacyName}
+                  </td>
+                  <td className="break-words px-3 py-2 text-slate-700">
+                    {/* Each product with its own units — a basket has no single quantity. */}
+                    <p>{describeDirectOrderBasketUnits(row, row.items)}</p>
+                    <p className="font-bold text-slate-900">{money(row.salesValue)}</p>
+                  </td>
+                  <td className="break-words px-3 py-2 text-slate-600">{cairoStamp(row.heldAt)}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-1.5 py-0.5 text-phx-xs font-black ${urgency(row.daysRemaining)}`}>
+                      {row.daysRemaining} day{row.daysRemaining === 1 ? "" : "s"}
+                    </span>
+                  </td>
+                  <td className="break-words px-3 py-2 text-slate-600">{row.lastNoticeAt ? cairoStamp(row.lastNoticeAt) : "never"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
 
       {/* ── WHY each pharmacy is held, and the three rulings ────────────────────────────────
           The desk used to show a name, a date and a countdown — nothing about the CODE, which is
@@ -280,8 +292,7 @@ export function HeldDesk({ rows }: Props) {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-black text-slate-900" dir="auto">
-                    {head.pharmacyName}{" "}
-                    <span className="text-phx-xs font-normal text-slate-500">({head.phoenixPharmacyCode})</span>
+                    {head.pharmacyName}
                   </p>
                   <p className="text-phx-xs text-slate-500">
                     {orderCount} held order{orderCount === 1 ? "" : "s"} ·{" "}
@@ -289,7 +300,7 @@ export function HeldDesk({ rows }: Props) {
                   </p>
                 </div>
                 <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${GROUND_TONE[head.holdGround] ?? "bg-slate-200 text-slate-600"}`}>
-                  {head.holdGround.replace(/_/g, " ")}
+                  {humanizeCode(head.holdGround)}
                 </span>
               </div>
 
@@ -322,7 +333,7 @@ export function HeldDesk({ rows }: Props) {
 
               {head.holdReleaseGround ? (
                 <p className={`mt-2 border border-slate-200 bg-slate-50 px-2 py-1.5 text-phx-xs text-slate-600 ${adminRecessedDepthClassName}`}>
-                  Already ruled <b>{head.holdReleaseGround.replace(/_/g, " ")}</b> on{" "}
+                  Already ruled <b>{humanizeCode(head.holdReleaseGround)}</b> on{" "}
                   {cairoStamp(head.holdReleaseDecidedAt)} — {head.holdReleaseReason}
                 </p>
               ) : null}

@@ -177,7 +177,7 @@ export function ClosingSummaryFits({ matrix }: { matrix: MonthlyClosingMatrix })
 
       {/* Desktop: the fitting table. Three columns at every depth, no horizontal scroller. */}
       <div className="hidden md:block px-4 pb-4 md:px-5">
-        <table className="w-full table-fixed border-separate border-spacing-0">
+        <table className="w-full table-fixed border-collapse">
           <colgroup>
             <col style={{ width: `${namePct}%` }} />
             <col style={{ width: `${valuePct}%` }} />
@@ -233,9 +233,6 @@ export function ClosingSummaryFits({ matrix }: { matrix: MonthlyClosingMatrix })
                                     <td className={bodyCell}>
                                       <span className="block pl-10 font-medium text-[#0B0B0B]">
                                         {area.areaName}
-                                      </span>
-                                      <span className="block pl-10 text-phx-2xs text-slate-500">
-                                        {area.areaCode}
                                       </span>
                                     </td>
                                     <td className={numCell}>{money(area.cell.value)}</td>

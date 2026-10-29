@@ -539,18 +539,18 @@ export function SourceOfSalesProductsTab({
                         <span className="block text-xs">{product.normalizedProductName}</span>
                         {/* Below `lg` the folded columns come back here, so a phone loses nothing. */}
                         <span className="mt-1 block text-xs lg:hidden">
-                          {[product.family, product.familyCode].filter(Boolean).join(" · ") || "-"}
+                          {[product.family, product.familyCode].filter(Boolean).join(" · ") || "—"}
                         </span>
                         <span className="block text-xs lg:hidden">
-                          {[product.source, product.line, product.normalizedLine].filter(Boolean).join(" · ") || "-"}
+                          {[product.source, product.line, product.normalizedLine].filter(Boolean).join(" · ") || "—"}
                         </span>
                         <span className="block text-xs lg:hidden">
                           {[product.sourceFile, product.sourceSheet, product.sourceRowNumber ? `row ${formatNumber(product.sourceRowNumber)}` : null]
                             .filter(Boolean)
-                            .join(" · ") || "-"}
+                            .join(" · ") || "—"}
                         </span>
                         <span className="block text-xs lg:hidden">
-                          {product.updatedAt ? `Updated ${new Date(product.updatedAt).toLocaleString()}` : "-"}
+                          {`Created ${product.createdAt ? new Date(product.createdAt).toLocaleString() : "—"} · Updated ${product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "—"}`}
                         </span>
                       </td>
                       <td className={tableCellClassName}>{formatCurrency(product.factoryPrice)}</td>
@@ -568,7 +568,7 @@ export function SourceOfSalesProductsTab({
                         <span className="block break-words text-xs text-phx-ink-faint">
                           {[product.sourceSheet, product.sourceRowNumber ? `row ${formatNumber(product.sourceRowNumber)}` : null]
                             .filter(Boolean)
-                            .join(" · ") || "-"}
+                            .join(" · ") || "—"}
                         </span>
                       </td>
                       <td className={tableCellClassName}>
@@ -577,9 +577,9 @@ export function SourceOfSalesProductsTab({
                         </Badge>
                       </td>
                       <td className={`${tableCellClassName} hidden lg:table-cell`}>
-                        <span className="block">{product.createdAt ? new Date(product.createdAt).toLocaleString() : "-"}</span>
+                        <span className="block">{product.createdAt ? new Date(product.createdAt).toLocaleString() : "—"}</span>
                         <span className="block text-xs text-phx-ink-faint">
-                          {product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "-"}
+                          {product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "—"}
                         </span>
                       </td>
                       <td className={tableCellClassName}>

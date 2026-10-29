@@ -80,7 +80,14 @@ export function runHiringDocumentsDeadlineTests() {
   // that need a guard. Tying the two together means a third copy (another responsive variant, say)
   // cannot ship unguarded.
   const deadlineInputs = occurrences(managerSource, /value=\{dueDate\}/g);
-  assert.ok(deadlineInputs >= 2, "expected the desktop table and the mobile card to each render a deadline input");
+  // The desktop table and the phone card draw the same `renderDocumentRow`, so there is exactly one
+  // deadline input to guard — a second copy would be a layout that forked the row again.
+  assert.equal(deadlineInputs, 1, "expected the desktop table and the phone card to share ONE deadline input");
+  assert.equal(
+    occurrences(managerSource, /renderDocumentRow\(employee, document\)/g),
+    2,
+    "both the desktop table and the phone card must draw the shared document row",
+  );
   assert.equal(
     occurrences(managerSource, /hiringDeadlineChanged\(previous, event\.target\.value\)/g),
     deadlineInputs,

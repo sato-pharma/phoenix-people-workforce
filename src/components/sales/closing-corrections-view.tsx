@@ -29,16 +29,19 @@ function SectionTable({
   columns,
   rows,
   emptyText,
+  widths,
 }: {
   columns: string[];
   rows: (string | number)[][];
   emptyText: string;
+  /** One percentage per column, adding up to 100. */
+  widths: number[];
 }) {
   if (rows.length === 0) {
     return <p className="px-4 py-3 text-sm text-slate-500 md:px-5">{emptyText}</p>;
   }
-  // The column list is a prop, so no colgroup can be written for it — table-fixed alone
-  // distributes the columns evenly and keeps the width structural.
+  // Each section passes its own percentage widths (adding up to 100) for the colgroup, so the
+  // table fits whatever holds it and the long "What it means" column takes the room.
   //
   // Even shares are enough on a laptop and NOT on a phone: measured at 375px, the seven-column
   // section gave each column 49px and clipped every header ("Distributor" wanted 112px). So below
@@ -60,7 +63,12 @@ function SectionTable({
           </div>
         ))}
       </div>
-      <table className="hidden w-full table-fixed border-separate border-spacing-0 md:table">
+      <table className="hidden w-full table-fixed border-collapse md:table">
+        <colgroup>
+          {widths.map((width, index) => (
+            <col key={index} style={{ width: `${width}%` }} />
+          ))}
+        </colgroup>
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50/70">
             {columns.map((column) => (
@@ -101,11 +109,11 @@ function withCrossReference(impact: string, alsoSeenIn: readonly string[]): stri
 }
 
 /**
- * The area cell as the page prints it: the name, then its code in brackets when there is one. A row
- * with no area code — a region's company Direct row — prints its name alone, never an empty "()".
+ * The area cell as the page prints it: the area's name, never its code. A region's company Direct
+ * row has no area code and prints its name the same way.
  */
-function areaLabel(areaName: string, areaCode: string): string {
-  return areaCode ? `${areaName} (${areaCode})` : areaName;
+function areaLabel(areaName: string, _areaCode: string): string {
+  return areaName;
 }
 
 export function ClosingCorrectionsView({ initialData, initialError }: Props) {
@@ -220,6 +228,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                   <SectionTable
                     columns={["Distributor", "Line", "Area", "Product", "Added", "Taken back", "What it means"]}
                     emptyText={`No two-month corrections touch ${data.period}.`}
+                    widths={[11, 7, 12, 13, 13, 13, 31]}
                     rows={data.reversalPairs.map((pair) => [
                       pair.distributorName,
                       pair.line,
@@ -251,6 +260,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                   <SectionTable
                     columns={["Line", "Area", "Product", "Net units", "Net EGP", "What it means"]}
                     emptyText={`No cell of ${data.period} nets negative beyond the noise floor.`}
+                    widths={[8, 16, 18, 10, 12, 36]}
                     rows={data.netNegatives.map((cell) => [
                       cell.line,
                       areaLabel(cell.areaName, cell.areaCode),
@@ -273,6 +283,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                   <SectionTable
                     columns={["Customer", "Distributor", "Line", "Area", "Product", "Returned", "What it means"]}
                     emptyText={`No late returns land in ${data.period}.`}
+                    widths={[14, 11, 6, 12, 13, 13, 31]}
                     rows={data.lateReturns.map((entry) => [
                       entry.clientName,
                       entry.distributorName,

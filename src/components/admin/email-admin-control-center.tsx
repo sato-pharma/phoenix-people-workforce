@@ -1,5 +1,6 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import { useMemo, useState } from "react";
 
 import type { EmailAdminControlCenter, EmailAdminDelivery } from "@/lib/notifications/email-admin";
@@ -29,7 +30,7 @@ function formatDate(value: string | null) {
 
 function moduleLabel(value: string | null) {
   if (!value) return "Unknown";
-  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return humanizeCode(value);
 }
 
 export function EmailAdminControlCenterView({ initialData }: Props) {
@@ -94,15 +95,22 @@ export function EmailAdminControlCenterView({ initialData }: Props) {
             ))}
           </SearchableSelect>
         </div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
+        <div className="mt-4">
+          <table className="hidden w-full table-fixed border-collapse text-left text-sm md:table">
+            <colgroup>
+              <col className="w-[16%]" />
+              <col className="w-[18%]" />
+              <col className="w-[22%]" />
+              <col className="w-[12%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-3 py-2">Module</th>
                 <th className="px-3 py-2">Recipient</th>
                 <th className="px-3 py-2">Subject</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Attempts</th>
                 <th className="px-3 py-2">Sent / Next Retry</th>
                 <th className="px-3 py-2">Error</th>
               </tr>
@@ -110,31 +118,44 @@ export function EmailAdminControlCenterView({ initialData }: Props) {
             <tbody className="divide-y divide-slate-100">
               {filteredDeliveries.map((delivery) => (
                 <tr className="align-top" key={delivery.id}>
-                  <td className="px-3 py-3">
+                  <td className="min-w-0 break-words px-3 py-3">
                     <p className="font-bold text-slate-900">{moduleLabel(delivery.module)}</p>
-                    <p className="text-xs text-slate-500">{delivery.eventType ?? "Unknown event"}</p>
+                    {delivery.eventType ? <p className="text-xs text-slate-500">{humanizeCode(delivery.eventType)}</p> : null}
                   </td>
-                  <td className="px-3 py-3 text-xs text-slate-600">{delivery.recipient ?? delivery.recipientHrId ?? "Unknown"}</td>
-                  <td className="max-w-xs px-3 py-3 text-xs text-slate-600">{delivery.subject ?? "—"}</td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{delivery.status}</span>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">{delivery.recipient ?? "—"}</td>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">{delivery.subject ?? "—"}</td>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className={`border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{humanizeCode(delivery.status)}</span>
+                    <p className="mt-1 text-xs text-slate-600">{delivery.attempts} {delivery.attempts === 1 ? "attempt" : "attempts"}</p>
                   </td>
-                  <td className="px-3 py-3 text-xs font-semibold text-slate-700">{delivery.attempts}</td>
-                  <td className="px-3 py-3 text-xs text-slate-600">
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">
                     {delivery.status === "sent" ? formatDate(delivery.sentAt) : formatDate(delivery.nextAttemptAt)}
                   </td>
-                  <td className="max-w-md px-3 py-3 text-xs text-slate-600">{delivery.lastError ?? "None"}</td>
+                  <td className="min-w-0 break-words px-3 py-3 text-xs text-slate-600">{delivery.lastError ?? "—"}</td>
                 </tr>
               ))}
-              {filteredDeliveries.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-6 text-center text-sm font-semibold text-slate-500" colSpan={7}>
-                    No email deliveries match this filter.
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
+          <div className="divide-y divide-slate-100 md:hidden">
+            {filteredDeliveries.map((delivery) => (
+              <div className="min-w-0 space-y-1 py-3" key={delivery.id}>
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm font-bold text-slate-900">{moduleLabel(delivery.module)}</p>
+                  <span className={`shrink-0 border px-2 py-1 text-xs font-bold ${badgeClass(delivery.status)}`}>{humanizeCode(delivery.status)}</span>
+                </div>
+                {delivery.eventType ? <p className="text-xs text-slate-500">{humanizeCode(delivery.eventType)}</p> : null}
+                {delivery.recipient ? <p className="break-words text-xs text-slate-600">{delivery.recipient}</p> : null}
+                {delivery.subject ? <p className="break-words text-xs text-slate-600">{delivery.subject}</p> : null}
+                <p className="text-xs text-slate-600">
+                  {delivery.attempts} {delivery.attempts === 1 ? "attempt" : "attempts"} · {delivery.status === "sent" ? formatDate(delivery.sentAt) : formatDate(delivery.nextAttemptAt)}
+                </p>
+                {delivery.lastError ? <p className="break-words text-xs text-slate-600">{delivery.lastError}</p> : null}
+              </div>
+            ))}
+          </div>
+          {filteredDeliveries.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm font-semibold text-slate-500">No email deliveries match this filter.</p>
+          ) : null}
         </div>
       </section>
     </div>

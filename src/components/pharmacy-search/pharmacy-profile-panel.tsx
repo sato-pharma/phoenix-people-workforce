@@ -9,6 +9,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { codeOrWords } from "@/lib/format/code-label";
 import {
   phoenixCodeFromProfileId,
   type NearbyDoctor,
@@ -23,8 +24,8 @@ const COORDINATE_SOURCE_LABEL: Record<NonNullable<PharmacyProfile["coordinates"]
   marketing_capture: "Captured on site by a rep",
 };
 
-const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500";
-const bodyCell = "whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-700";
+const headerCell = "break-words px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500";
+const bodyCell = "break-words px-3 py-2 text-sm font-semibold text-slate-700";
 
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return (
@@ -36,10 +37,10 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 
 function SectionTitle({ icon, subtitle, title }: { icon: React.ReactNode; subtitle: string; title: string }) {
   return (
-    <div className="flex flex-col gap-1 border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-4 py-3.5">
+    <div className="flex flex-col gap-1 border-b border-slate-200/80 px-4 py-3.5">
       <div className="flex items-center gap-2">
         <span className="text-orange-500">{icon}</span>
-        <h3 className="whitespace-nowrap text-sm font-black tracking-tight text-slate-900">{title}</h3>
+        <h3 className="text-sm font-black tracking-tight text-slate-900">{title}</h3>
       </div>
       <p className="text-xs font-semibold leading-5 text-slate-500">{subtitle}</p>
     </div>
@@ -98,7 +99,7 @@ function TerritoryStrip({ profile }: { profile: PharmacyProfile }) {
 
 function DoctorsSection({ doctors, radiusKm }: { doctors: NearbyDoctor[]; radiusKm: number }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+    <section className="overflow-hidden border border-slate-200/90 bg-white/95">
       <SectionTitle
         icon={<Stethoscope className="h-4 w-4" />}
         subtitle={`Doctors our reps checked into within ${radiusKm} km, nearest first. Straight-line distance, not driving.`}
@@ -117,7 +118,7 @@ function DoctorsSection({ doctors, radiusKm }: { doctors: NearbyDoctor[]; radius
           <PortalRecordCard
             accent="sky"
             meta={doctor.speciality ?? "Speciality not recorded"}
-            status={<span className="whitespace-nowrap text-xs font-black text-orange-600">{distanceLabel(doctor.distanceKm)}</span>}
+            status={<span className="text-xs font-black text-orange-600">{distanceLabel(doctor.distanceKm)}</span>}
             title={doctor.name}
           >
             <PortalRecordFields
@@ -153,10 +154,10 @@ function DoctorsSection({ doctors, radiusKm }: { doctors: NearbyDoctor[]; radius
               {doctors.map((doctor, index) => (
                 <tr className="border-b border-slate-100" key={`${doctor.name}-${index}`}>
                   <td className={`${bodyCell} font-black text-slate-900`}>{doctor.name}</td>
-                  <td className={bodyCell}>{doctor.speciality ?? "Not recorded"}</td>
+                  <td className={bodyCell}>{doctor.speciality ?? "—"}</td>
                   <td className={`${bodyCell} font-black text-orange-600`}>{distanceLabel(doctor.distanceKm)}</td>
                   <td className={bodyCell}>{doctor.visits}</td>
-                  <td className={bodyCell}>{doctor.lastSeenAddress ?? "Not recorded"}</td>
+                  <td className={bodyCell}>{doctor.lastSeenAddress ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -169,7 +170,7 @@ function DoctorsSection({ doctors, radiusKm }: { doctors: NearbyDoctor[]; radius
 
 function HospitalsSection({ hospitals }: { hospitals: NearbyHospital[] }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+    <section className="overflow-hidden border border-slate-200/90 bg-white/95">
       <SectionTitle
         icon={<Building2 className="h-4 w-4" />}
         subtitle="Hospitals our reps check into, hospitals we sell to in this brick, and any Google found around the point."
@@ -183,7 +184,7 @@ function HospitalsSection({ hospitals }: { hospitals: NearbyHospital[] }) {
           <PortalRecordCard
             accent={hospital.origin === "google" ? "amber" : "emerald"}
             meta={hospital.address ?? "No address recorded"}
-            status={<span className="whitespace-nowrap text-xs font-black text-orange-600">{distanceLabel(hospital.distanceKm)}</span>}
+            status={<span className="text-xs font-black text-orange-600">{distanceLabel(hospital.distanceKm)}</span>}
             title={hospital.name}
           >
             <PortalRecordFields
@@ -223,7 +224,7 @@ function HospitalsSection({ hospitals }: { hospitals: NearbyHospital[] }) {
                   <td className={`${bodyCell} font-black text-orange-600`}>{distanceLabel(hospital.distanceKm)}</td>
                   <td className={bodyCell}>{HOSPITAL_PROXIMITY_LABEL[hospital.proximity]}</td>
                   <td className={bodyCell}>{hospital.origin === "google" ? "Google" : "Phoenix database"}</td>
-                  <td className={bodyCell}>{hospital.address ?? "Not recorded"}</td>
+                  <td className={bodyCell}>{hospital.address ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -245,13 +246,13 @@ export function PharmacyProfilePanel({
 }) {
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+      <section className="overflow-hidden border border-slate-200/90 bg-white/95 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="whitespace-nowrap text-xl font-black tracking-tight text-slate-950">{profile.name}</h2>
+              <h2 className="text-xl font-black tracking-tight text-slate-950">{profile.name}</h2>
               {profile.origin === "google" ? (
-                <span className="whitespace-nowrap rounded-full border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-warn">
+                <span className="border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-warn">
                   From Google — not in the database
                 </span>
               ) : profile.origin === "phoenix" ? (
@@ -259,11 +260,11 @@ export function PharmacyProfilePanel({
                 // below is not wrong — it is simply silent about the thing that matters here: this
                 // record came from the direct-order desk rather than a distributor's customer file,
                 // so its codes are what somebody typed and it may have no sales history at all.
-                <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
+                <span className="border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
                   {phoenixCodeFromProfileId(profile.id) ?? "Registered in Phoenix"} — registered at the direct-order desk
                 </span>
               ) : (
-                <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
+                <span className="border border-phx-ok-line bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ok">
                   In the Phoenix database
                 </span>
               )}
@@ -280,7 +281,7 @@ export function PharmacyProfilePanel({
           <div className="flex shrink-0 flex-wrap gap-2">
             {profile.googleMapsUrl ? (
               <a
-                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded border border-phx-line bg-white px-3 py-2 text-xs font-black text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent"
+                className="inline-flex items-center gap-1.5 border border-phx-line bg-white px-3 py-2 text-xs font-black text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent"
                 href={profile.googleMapsUrl}
                 rel="noreferrer noopener"
                 target="_blank"
@@ -308,7 +309,7 @@ export function PharmacyProfilePanel({
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+      <section className="overflow-hidden border border-slate-200/90 bg-white/95">
         <SectionTitle
           icon={<Building2 className="h-4 w-4" />}
           subtitle="Every distributor that carries this pharmacy, with its own code for it."
@@ -322,7 +323,7 @@ export function PharmacyProfilePanel({
             <PortalRecordCard
               accent={entry.fromReferenceList ? "slate" : "orange"}
               meta={entry.fromReferenceList ? "From the imported reference list" : "From the sales files"}
-              title={entry.distributorName ?? entry.distributorCode}
+              title={entry.distributorName ?? codeOrWords(entry.distributorCode)}
             >
               <PortalRecordFields
                 fields={[
@@ -361,7 +362,7 @@ export function PharmacyProfilePanel({
               <tbody>
                 {profile.distributorCodes.map((entry) => (
                   <tr className="border-b border-slate-100" key={`${entry.distributorCode}-${entry.customerCode}`}>
-                    <td className={`${bodyCell} font-black text-slate-900`}>{entry.distributorName ?? entry.distributorCode}</td>
+                    <td className={`${bodyCell} font-black text-slate-900`}>{entry.distributorName ?? codeOrWords(entry.distributorCode)}</td>
                     <td className={`${bodyCell} font-mono`}>{entry.customerCode}</td>
                     <td className={bodyCell}>{entry.territory.brickName ?? entry.territory.brickId ?? "—"}</td>
                     <td className={bodyCell}>{entry.territory.areaName ?? "—"}</td>
@@ -380,7 +381,7 @@ export function PharmacyProfilePanel({
       <HospitalsSection hospitals={profile.hospitals} />
 
       {profile.sales.length > 0 ? (
-        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+        <section className="overflow-hidden border border-slate-200/90 bg-white/95">
           <SectionTitle
             icon={<Building2 className="h-4 w-4" />}
             subtitle="Units bought per period across every distributor code above, newest first."

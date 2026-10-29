@@ -10,7 +10,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
@@ -50,6 +50,8 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
+import { humanizeCode } from "@/lib/format/code-label";
 
 
 function formatEGP(value: number) {
@@ -129,63 +131,96 @@ const expenseNumericKeys = new Set<ExpenseReviewColumnKey>([
 const expenseDateKeys = new Set<ExpenseReviewColumnKey>(["date", "toDate"]);
 
 const expenseReviewColumns: Array<{
-  className?: string;
   key: ExpenseReviewColumnKey;
   label: string;
 }> = [
-  { className: "min-w-[130px]", key: "validation", label: "Validation" },
-  { className: "min-w-[90px]", key: "row", label: "Source Row" },
-  { className: "min-w-[130px]", key: "tripId", label: "Trip ID" },
-  { className: "min-w-[180px]", key: "specialist", label: "Employee" },
-  { className: "min-w-[120px]", key: "hrId", label: "HR ID" },
-  { className: "min-w-[140px]", key: "requestType", label: "Expense Type" },
-  { className: "min-w-[150px]", key: "tripType", label: "Travel Stay Type" },
-  { className: "min-w-[150px]", key: "date", label: "Start Date" },
-  { className: "min-w-[150px]", key: "toDate", label: "End Date" },
-  { className: "min-w-[240px]", key: "from", label: "From" },
-  { className: "min-w-[180px]", key: "to", label: "To" },
-  { className: "min-w-[280px]", key: "location", label: "Destination" },
-  { className: "min-w-[150px]", key: "transportationType", label: "Transported By" },
-  { className: "min-w-[100px]", key: "km", label: "KM" },
-  { className: "min-w-[130px]", key: "travelCost", label: "Travel Cost" },
-  { className: "min-w-[140px]", key: "meetingAmount", label: "Meeting Amount" },
-  { className: "min-w-[120px]", key: "allowance", label: "Allowance" },
-  { className: "min-w-[120px]", key: "total", label: "Total" },
-  { className: "min-w-[120px]", key: "amWorkload", label: "AM Workload" },
-  { className: "min-w-[120px]", key: "pmWorkload", label: "PM Workload" },
-  { className: "min-w-[300px]", key: "description", label: "Description" },
-  { className: "min-w-[160px]", key: "status", label: "Status" },
-  { className: "min-w-[160px]", key: "hr", label: "HR Status" },
-  { className: "min-w-[300px]", key: "hrNotes", label: "HR Notes" },
+  { key: "validation", label: "Validation" },
+  { key: "row", label: "Source Row" },
+  { key: "tripId", label: "Trip ID" },
+  { key: "specialist", label: "Employee" },
+  { key: "requestType", label: "Expense Type" },
+  { key: "tripType", label: "Travel Stay Type" },
+  { key: "date", label: "Start Date" },
+  { key: "toDate", label: "End Date" },
+  { key: "from", label: "From" },
+  { key: "to", label: "To" },
+  { key: "location", label: "Destination" },
+  { key: "transportationType", label: "Transported By" },
+  { key: "km", label: "KM" },
+  { key: "travelCost", label: "Travel Cost" },
+  { key: "meetingAmount", label: "Meeting Amount" },
+  { key: "allowance", label: "Allowance" },
+  { key: "total", label: "Total" },
+  { key: "amWorkload", label: "AM Workload" },
+  { key: "pmWorkload", label: "PM Workload" },
+  { key: "description", label: "Description" },
+  { key: "status", label: "Status" },
+  { key: "hr", label: "HR Status" },
+  { key: "hrNotes", label: "HR Notes" },
 ];
 
-// The Employee column is pinned to the left (identity anchor) and the HR-decision
-// controls are pinned to the right, so only these "detail" columns live in the
-// scrollable middle and can be shown/hidden.
-const expenseDetailColumns = expenseReviewColumns.filter((column) => column.key !== "specialist");
+function expenseColumnLabel(key: ExpenseReviewColumnKey) {
+  return expenseReviewColumns.find((column) => column.key === key)?.label ?? key;
+}
 
-// Default-hidden to minimise horizontal scrolling; every column stays one click
-// away in the Columns menu. Kept visible by default: Validation, HR ID, Expense
-// Type, Start/End Date, Destination, Total, Status.
-const expenseDefaultHiddenColumns = new Set<ExpenseReviewColumnKey>([
-  "row",
-  "tripId",
-  "tripType",
-  "from",
-  "to",
-  "transportationType",
-  "km",
-  "travelCost",
-  "meetingAmount",
-  "allowance",
-  "amWorkload",
-  "pmWorkload",
-  "description",
-  "hr",
-  "hrNotes",
-]);
+// The review table never scrolls sideways: related facts are MERGED into one cell, and the
+// table is `w-full table-fixed` with a percentage <colgroup>. The Employee cell (left) and the
+// HR-decision cell (right) are always there; these groups sit between them and are what the
+// Columns menu shows and hides. The HR ID is deliberately in none of them — a person is told
+// apart by name, never by id; a row with no HR id still says so in its Employee cell and in the
+// Validation line. `weight` is the group's share before the table is normalised to 100%.
+type ExpenseReviewGroupKey =
+  | "amounts"
+  | "dates"
+  | "description"
+  | "hrNotes"
+  | "ref"
+  | "route"
+  | "status"
+  | "transport"
+  | "type"
+  | "workload";
 
-const expenseColumnPrefsKey = "phoenix.outstation.expense-review.hidden-columns.v1";
+type ExpenseReviewGroup = {
+  key: ExpenseReviewGroupKey;
+  label: string;
+  members: ExpenseReviewColumnKey[];
+  weight: number;
+};
+
+const expenseReviewGroups: ExpenseReviewGroup[] = [
+  { key: "ref", label: "Check, source row & trip", members: ["validation", "row", "tripId"], weight: 8 },
+  { key: "type", label: "Expense & trip type", members: ["requestType", "tripType"], weight: 8 },
+  { key: "dates", label: "Start & end date", members: ["date", "toDate"], weight: 8 },
+  { key: "route", label: "From, to & destination", members: ["from", "to", "location"], weight: 14 },
+  { key: "transport", label: "Transport & KM", members: ["transportationType", "km"], weight: 7 },
+  { key: "amounts", label: "Amounts", members: ["travelCost", "meetingAmount", "allowance", "total"], weight: 11 },
+  { key: "workload", label: "Declared workload", members: ["amWorkload", "pmWorkload"], weight: 8 },
+  { key: "description", label: "Description", members: ["description"], weight: 12 },
+  { key: "status", label: "Status & HR status", members: ["status", "hr"], weight: 9 },
+  { key: "hrNotes", label: "HR notes", members: ["hrNotes"], weight: 12 },
+];
+
+const expenseEmployeeWeight = 12;
+const expenseDecisionWeight = 22;
+
+// Hidden by default: the long free-text columns and the transport detail. Every group stays one
+// click away in the Columns menu, and showing them all still fits — the colgroup re-divides 100%.
+const expenseDefaultHiddenGroups = new Set<ExpenseReviewGroupKey>(["description", "hrNotes", "transport"]);
+
+/**
+ * Whole-number percentages for the Employee column, the visible groups and the HR-decision column,
+ * always adding up to exactly 100 (the last column takes the rounding remainder).
+ */
+function expenseColumnPercentages(groups: ExpenseReviewGroup[]) {
+  const weights = [expenseEmployeeWeight, ...groups.map((group) => group.weight), expenseDecisionWeight];
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const percentages = weights.map((weight) => Math.floor((weight / total) * 100));
+  percentages[percentages.length - 1] += 100 - percentages.reduce((sum, value) => sum + value, 0);
+  return percentages;
+}
+
+const expenseColumnPrefsKey = "phoenix.outstation.expense-review.hidden-groups.v2";
 
 // Verified workload evidence (actual iReports360 double-visit mirror) for a trip,
 // used to check the sheet's declared AM/PM against reality, day by day.
@@ -283,7 +318,70 @@ function expenseColumnDisplayValue(record: ExpenseTripRecord, key: ExpenseReview
   if (expenseCurrencyKeys.has(key)) return formatEGP(Number(record[key] ?? 0));
   if (expenseNumericKeys.has(key)) return formatNumber(Number(record[key] ?? 0));
 
-  return String(record[key] ?? "") || "-";
+  return String(record[key] ?? "") || "—";
+}
+
+type ExpenseFact = { label: string; strong?: boolean; value: ReactNode };
+
+const expenseFactLabels: Partial<Record<ExpenseReviewColumnKey, string>> = {
+  allowance: "Allowance",
+  amWorkload: "AM",
+  date: "Start",
+  from: "From",
+  hr: "HR",
+  km: "KM",
+  location: "Destination",
+  meetingAmount: "Meeting",
+  pmWorkload: "PM",
+  requestType: "Expense",
+  row: "Row",
+  status: "Status",
+  to: "To",
+  total: "Total",
+  toDate: "End",
+  transportationType: "By",
+  travelCost: "Travel",
+  tripId: "Trip",
+  tripType: "Trip type",
+  validation: "Check",
+};
+
+/** The facts one merged cell says, in order. A text fact the record leaves empty is left out (not a filler). */
+function expenseGroupFacts(record: ExpenseTripRecord, group: ExpenseReviewGroup, issues: string[]): ExpenseFact[] {
+  const facts: ExpenseFact[] = [];
+  for (const key of group.members) {
+    const label = expenseFactLabels[key] ?? "";
+    if (key === "validation") {
+      facts.push({
+        label,
+        value: <Badge variant={issues.length > 0 ? "warning" : "success"}>{issues.length > 0 ? issues.join(", ") : "Ready"}</Badge>,
+      });
+      continue;
+    }
+    const isAmount = expenseCurrencyKeys.has(key) || expenseNumericKeys.has(key);
+    if (!isAmount && !String(record[key] ?? "").trim()) continue;
+    facts.push({ label, strong: key === "total", value: expenseColumnDisplayValue(record, key) });
+    if (key === "pmWorkload" && record.pharmacyWorkload !== null && record.pharmacyWorkload !== undefined) {
+      facts.push({ label: "Pharmacies", value: formatNumber(record.pharmacyWorkload) });
+    }
+  }
+  return facts;
+}
+
+function ExpenseFactLines({ facts }: { facts: ExpenseFact[] }) {
+  if (facts.length === 0) return <span className="text-text-secondary">—</span>;
+  return (
+    <div className="min-w-0 space-y-0.5 break-words text-text-secondary">
+      {facts.map((fact, index) => (
+        <p className={cn("min-w-0 break-words", fact.strong && "font-semibold text-text")} key={index}>
+          {fact.label ? (
+            <span className="mr-1 text-phx-3xs font-semibold uppercase tracking-wide text-text-secondary">{fact.label}</span>
+          ) : null}
+          {fact.value}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 function buildExpenseValidation(records: ExpenseTripRecord[], warnings: string[] = []): ExpenseAnalysisValidation {
@@ -530,7 +628,7 @@ export function ExpenseReport({
   const [importYear, setImportYear] = useState(String(new Date().getFullYear()));
   const [replaceReportId, setReplaceReportId] = useState<string | null>(null);
   const [sort, setSort] = useState("total-desc");
-  const [hiddenColumns, setHiddenColumns] = useState<Set<ExpenseReviewColumnKey>>(() => {
+  const [hiddenColumns, setHiddenColumns] = useState<Set<ExpenseReviewGroupKey>>(() => {
     // The review table only renders after a client-side data load, so reading the
     // saved preference here (rather than in an effect) is hydration-safe and keeps
     // the initial paint correct.
@@ -539,20 +637,15 @@ export function ExpenseReport({
         const raw = window.localStorage.getItem(expenseColumnPrefsKey);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) return new Set(parsed as ExpenseReviewColumnKey[]);
+          if (Array.isArray(parsed)) return new Set(parsed as ExpenseReviewGroupKey[]);
         }
       } catch {
         // Ignore unreadable/blocked localStorage — defaults still apply.
       }
     }
-    return new Set(expenseDefaultHiddenColumns);
+    return new Set(expenseDefaultHiddenGroups);
   });
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
-  const [tableScrollWidth, setTableScrollWidth] = useState(0);
-  const topScrollRef = useRef<HTMLDivElement | null>(null);
-  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
-  const reviewTableRef = useRef<HTMLTableElement | null>(null);
-  const scrollSyncing = useRef(false);
   const [expandedTrips, setExpandedTrips] = useState<Set<string>>(() => new Set());
   const [evidenceByTrip, setEvidenceByTrip] = useState<Record<string, TripEvidenceState>>({});
   const replaceReportInputRef = useRef<HTMLInputElement | null>(null);
@@ -601,7 +694,7 @@ export function ExpenseReport({
     });
   }
 
-  function toggleColumnVisibility(key: ExpenseReviewColumnKey) {
+  function toggleColumnVisibility(key: ExpenseReviewGroupKey) {
     setHiddenColumns((previous) => {
       const next = new Set(previous);
       if (next.has(key)) next.delete(key);
@@ -696,7 +789,7 @@ export function ExpenseReport({
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-phx-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Verified workload</span>
-          <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
+          <Badge variant={tone}>{humanizeCode(data.matchStatus)}</Badge>
           <span className="text-phx-xs text-text-secondary">{data.sourceLabel}</span>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
@@ -796,13 +889,13 @@ export function ExpenseReport({
             <tbody className="divide-y divide-slate-100">
               {data.dateBreakdown.map((day) => (
                 <tr className={day.total === 0 ? "bg-rose-50/60" : undefined} key={day.date}>
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
+                  <td className="break-words px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.am)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pm)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{pharmacyCellText(day)}</td>
                   <td className="px-3 py-2 text-right font-mono text-sky-700">{formatNumber(day.regular)}</td>
                   <td className="px-3 py-2 text-right font-mono text-violet-700">{formatNumber(day.campaign)}</td>
-                  <td className="whitespace-nowrap px-3 py-2">
+                  <td className="break-words px-3 py-2">
                     {day.total === 0 ? (
                       <span className="font-semibold text-rose-600">No activity</span>
                     ) : (
@@ -876,10 +969,11 @@ export function ExpenseReport({
     });
   }, [analysis?.records, columnFilters, search, sort, tripDateFrom, tripDateTo]);
 
-  const visibleDetailColumns = useMemo(
-    () => expenseDetailColumns.filter((column) => !hiddenColumns.has(column.key)),
+  const visibleGroups = useMemo(
+    () => expenseReviewGroups.filter((group) => !hiddenColumns.has(group.key)),
     [hiddenColumns],
   );
+  const columnPercentages = useMemo(() => expenseColumnPercentages(visibleGroups), [visibleGroups]);
 
   // Persist the reviewer's column choices (the initial value is read in useState above).
   useEffect(() => {
@@ -889,45 +983,6 @@ export function ExpenseReport({
       // Ignore quota/blocked storage.
     }
   }, [hiddenColumns]);
-
-  // Mirror the table's real scroll width onto the top proxy scrollbar so it stays
-  // grabbable, and re-measure whenever visible columns or row count change.
-  useEffect(() => {
-    const table = reviewTableRef.current;
-    if (!table) return;
-
-    const measure = () => setTableScrollWidth(table.scrollWidth);
-    measure();
-
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(table);
-    return () => observer.disconnect();
-  }, [visibleDetailColumns.length, records.length]);
-
-  function handleTopScroll() {
-    const top = topScrollRef.current;
-    const body = bodyScrollRef.current;
-    if (!top || !body || top.scrollLeft === body.scrollLeft) return;
-    if (scrollSyncing.current) {
-      scrollSyncing.current = false;
-      return;
-    }
-    scrollSyncing.current = true;
-    body.scrollLeft = top.scrollLeft;
-  }
-
-  function handleBodyScroll() {
-    const top = topScrollRef.current;
-    const body = bodyScrollRef.current;
-    if (!top || !body || top.scrollLeft === body.scrollLeft) return;
-    if (scrollSyncing.current) {
-      scrollSyncing.current = false;
-      return;
-    }
-    scrollSyncing.current = true;
-    top.scrollLeft = body.scrollLeft;
-  }
 
   const approvedRecords = (analysis?.records ?? []).filter((record) => approvalFor(record).hrApproved);
   const approvedTotal = approvedRecords.reduce((sum, record) => sum + approvalFor(record).approvedAmount, 0);
@@ -1403,12 +1458,12 @@ export function ExpenseReport({
                 <span>Review &amp; approve</span>
                 <Badge variant="neutral">{formatNumber(records.length)} rows</Badge>
                 <span className="hidden font-normal normal-case tracking-normal text-text-secondary sm:inline">
-                  Employee and HR Decision stay pinned.
+                  Employee and HR Decision are always shown.
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="hidden text-xs text-text-secondary sm:inline">
-                  {formatNumber(visibleDetailColumns.length)} of {formatNumber(expenseDetailColumns.length)} detail columns
+                  {formatNumber(visibleGroups.length)} of {formatNumber(expenseReviewGroups.length)} detail columns
                 </span>
                 <div className="relative">
                   <Button
@@ -1437,14 +1492,14 @@ export function ExpenseReport({
                             </button>
                             <button
                               className="text-phx-xs font-semibold text-text-secondary hover:underline"
-                              onClick={() => setHiddenColumns(new Set(expenseDefaultHiddenColumns))}
+                              onClick={() => setHiddenColumns(new Set(expenseDefaultHiddenGroups))}
                               type="button"
                             >
                               Reset
                             </button>
                           </div>
                         </div>
-                        {expenseDetailColumns.map((column) => (
+                        {expenseReviewGroups.map((column) => (
                           <label
                             className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-bg-muted"
                             key={column.key}
@@ -1472,11 +1527,9 @@ export function ExpenseReport({
               </div>
             ) : null}
 
-            <div className="overflow-hidden rounded-[28px] border border-phx-line bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
-              {/* Below `md` the review is a card list. This table is 1,240px+ with a sticky
-                  employee column and a sticky HR-decision column, so on a phone it was a sideways
-                  scroll whose *decision controls* — the whole point of the screen — sat off the
-                  right edge. The cards carry the same <HrDecisionControls>, so nothing is
+            <div className="border border-phx-line bg-white">
+              {/* Below `md` the review is a card list. The table is desktop-only (`w-full
+                  table-fixed`, merged cells, never a sideways scroll). The cards carry the same <HrDecisionControls>, so nothing is
                   read-only on mobile that is editable on desktop. */}
               <div className="divide-y divide-slate-100 md:hidden">
                 {records.length === 0 ? (
@@ -1495,7 +1548,7 @@ export function ExpenseReport({
                       <PortalRecordCard
                         accent={reasonMissing ? "rose" : issues.length > 0 ? "amber" : "orange"}
                         key={`card-${record.tripId}-${record.row}`}
-                        meta={record.hrId ? record.hrId : "HR ID not mapped"}
+                        meta={record.hrId ? undefined : "Not mapped to an employee"}
                         status={
                           <Badge variant={issues.length > 0 ? "warning" : "success"}>
                             {issues.length > 0 ? issues.join(", ") : "Ready"}
@@ -1504,12 +1557,17 @@ export function ExpenseReport({
                         title={record.specialist || "Unassigned"}
                       >
                         <PortalRecordFields
-                          fields={visibleDetailColumns
-                            .filter((column) => column.key !== "validation" && column.key !== "hrId")
-                            .map((column) => ({
-                              label: column.label,
-                              value: expenseColumnDisplayValue(record, column.key),
-                            }))}
+                          fields={[
+                            ...expenseReviewColumns
+                              .filter((column) => column.key !== "validation" && column.key !== "specialist")
+                              .map((column) => ({
+                                label: column.label,
+                                value: expenseColumnDisplayValue(record, column.key),
+                              })),
+                            ...(record.pharmacyWorkload === null || record.pharmacyWorkload === undefined
+                              ? []
+                              : [{ label: "Pharmacy Workload", value: formatNumber(record.pharmacyWorkload) }]),
+                          ]}
                         />
                         <div className="mt-3 border-t border-slate-100 pt-3">
                           <HrDecisionControls
@@ -1522,7 +1580,7 @@ export function ExpenseReport({
                           />
                         </div>
                         <button
-                          className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600"
+                          className="mt-3 inline-flex items-center gap-1 border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600"
                           onClick={() => toggleTripExpand(record)}
                           type="button"
                         >
@@ -1536,23 +1594,16 @@ export function ExpenseReport({
                 )}
               </div>
 
-              <div
-                aria-hidden="true"
-                className="hidden overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-phx-paper md:block [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
-                onScroll={handleTopScroll}
-                ref={topScrollRef}
-              >
-                <div style={{ height: 1, width: tableScrollWidth }} />
-              </div>
-              <div
-                className="hidden max-h-[70vh] overflow-auto md:block [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3"
-                onScroll={handleBodyScroll}
-                ref={bodyScrollRef}
-              >
-                <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm" ref={reviewTableRef}>
+              <div className="hidden md:block">
+                <table className="w-full table-fixed text-left text-sm">
+                  <colgroup>
+                    {columnPercentages.map((percent, index) => (
+                      <col key={index} style={{ width: `${percent}%` }} />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr className="text-xs uppercase tracking-[0.12em] text-phx-ink-soft">
-                      <th className="sticky left-0 top-0 z-30 min-w-[210px] border-b border-r border-phx-line bg-phx-paper px-3 py-3 align-top font-semibold shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]">
+                      <th className="border-b border-phx-line bg-phx-paper px-3 py-3 align-top font-semibold">
                         <TableHeaderMenu
                           filterValue={columnFilters.specialist ?? ""}
                           label="Employee"
@@ -1563,23 +1614,28 @@ export function ExpenseReport({
                           onSortDesc={() => setSort("specialist-desc")}
                         />
                       </th>
-                      {visibleDetailColumns.map((column) => (
-                        <th className={cn("sticky top-0 z-20 whitespace-nowrap border-b border-phx-line bg-phx-paper px-3 py-3 align-top font-semibold", column.className)} key={column.key}>
-                          <TableHeaderMenu
-                            filterValue={columnFilters[column.key] ?? ""}
-                            label={column.label}
-                            onFilterChange={(value) =>
-                              setColumnFilters((filters) => ({
-                                ...filters,
-                                [column.key]: value,
-                              }))
-                            }
-                            onSortAsc={() => setSort(`${column.key}-asc`)}
-                            onSortDesc={() => setSort(`${column.key}-desc`)}
-                          />
+                      {visibleGroups.map((group) => (
+                        <th className="border-b border-phx-line bg-phx-paper px-3 py-3 align-top font-semibold" key={group.key}>
+                          <div className="space-y-1">
+                            {group.members.map((key) => (
+                              <TableHeaderMenu
+                                filterValue={columnFilters[key] ?? ""}
+                                key={key}
+                                label={expenseColumnLabel(key)}
+                                onFilterChange={(value) =>
+                                  setColumnFilters((filters) => ({
+                                    ...filters,
+                                    [key]: value,
+                                  }))
+                                }
+                                onSortAsc={() => setSort(`${key}-asc`)}
+                                onSortDesc={() => setSort(`${key}-desc`)}
+                              />
+                            ))}
+                          </div>
                         </th>
                       ))}
-                      <th className="sticky right-0 top-0 z-30 min-w-[320px] border-b border-l border-phx-line bg-phx-paper px-3 py-3 text-left align-top font-semibold shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
+                      <th className="border-b border-phx-line bg-phx-paper px-3 py-3 text-left align-top font-semibold">
                         HR Decision
                         <span className="mt-1 block text-phx-2xs font-medium normal-case tracking-normal text-text-secondary">
                           Approve · adjust amount · add reason
@@ -1590,7 +1646,7 @@ export function ExpenseReport({
                   <tbody>
                     {records.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={visibleDetailColumns.length + 2}>
+                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={visibleGroups.length + 2}>
                           No expenses match the current filters.
                         </td>
                       </tr>
@@ -1606,97 +1662,40 @@ export function ExpenseReport({
                         <Fragment key={`${record.tripId}-${record.row}`}>
                         <tr className="group">
                           {/*
-                            `py-2` on every cell of a review row, not `py-3`. Measured live on
-                            2026-09-29 as Super Admin against 489 real trips at 1440px: 78px -> 70px
-                            a row, with the fieldset's gap below. Nothing is hidden and no control
-                            changes size — this is the row's own vertical padding, and it is the only
-                            lever left that does not touch the approval controls (see the rule in
-                            HrDecisionControls). The header `<th>`s keep `py-3`; a column heading is
-                            read once, a row is read 489 times.
+                            `py-2` on every cell of a review row, not `py-3`: the row's own vertical
+                            padding is the one lever that does not touch the approval controls (see
+                            the rule in HrDecisionControls). The header `<th>`s keep `py-3`; a column
+                            heading is read once, a row is read 489 times.
                           */}
-                          <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-2 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft">
-                            <p className="whitespace-nowrap font-semibold text-text">{record.specialist || "Unassigned"}</p>
-                            <p className="mt-0.5 whitespace-nowrap font-mono text-phx-xs text-text-secondary">
-                              {record.hrId ? record.hrId : "HR ID not mapped"}
-                            </p>
-                            {/*
-                              The declared-workload chips and the Verify control share ONE wrapping
-                              line. They used to be two stacked blocks, which made every review row
-                              about 102px tall — name, HR id, chips, button, each on its own line —
-                              and the owner asked for that height back on 2026-09-26. Nothing was
-                              removed to get it: the same four pieces of information are here, the
-                              last two side by side. `flex-wrap` is what keeps that honest on a
-                              narrow screen — the button drops onto its own line rather than pushing
-                              the column wider, so the fits-the-screen rule still holds and no cell
-                              is ever cut.
-                            */}
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              <span className="whitespace-nowrap rounded-md bg-sky-50 px-1.5 py-0.5 text-phx-2xs font-bold text-sky-700">
-                                AM {formatNumber(record.amWorkload)}
-                              </span>
-                              <span className="whitespace-nowrap rounded-md bg-violet-50 px-1.5 py-0.5 text-phx-2xs font-bold text-violet-700">
-                                PM {formatNumber(record.pmWorkload)}
-                              </span>
-                              {record.pharmacyWorkload === null || record.pharmacyWorkload === undefined ? null : (
-                                <span className="whitespace-nowrap rounded-md bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-bold text-emerald-700">
-                                  Pharmacies {formatNumber(record.pharmacyWorkload)}
-                                </span>
-                              )}
-                              <span className="text-phx-3xs font-semibold uppercase tracking-wide text-text-secondary">declared</span>
-                              <button
-                                className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
-                                onClick={() => toggleTripExpand(record)}
-                                type="button"
-                              >
-                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                {isExpanded ? "Hide" : "Verify"} workload
-                              </button>
-                            </div>
+                          <td className="min-w-0 break-words border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft">
+                            <p className="break-words font-semibold text-text">{record.specialist || "Unassigned"}</p>
+                            {record.hrId ? null : (
+                              <p className="mt-0.5 break-words text-phx-xs text-text-secondary">Not mapped to an employee</p>
+                            )}
+                            <button
+                              className="mt-1.5 inline-flex items-center gap-1 border border-slate-200 px-1.5 py-0.5 text-left text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
+                              onClick={() => toggleTripExpand(record)}
+                              type="button"
+                              {...rowDetailToggleProps(`trip-evidence-${record.tripId}-${record.row}`, isExpanded)}
+                            >
+                              {isExpanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+                              {isExpanded ? "Hide" : "Verify"} workload
+                            </button>
                           </td>
-                          {visibleDetailColumns.map((column) => {
-                            const rawValue = expenseColumnRawValue(record, column.key);
-                            const displayValue = expenseColumnDisplayValue(record, column.key);
-                            const isMoney = expenseCurrencyKeys.has(column.key);
-                            const isNumeric = expenseNumericKeys.has(column.key);
-
-                            if (column.key === "validation") {
-                              return (
-                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
-                                  <Badge variant={issues.length > 0 ? "warning" : "success"}>
-                                    {issues.length > 0 ? issues.join(", ") : "Ready"}
-                                  </Badge>
-                                </td>
-                              );
-                            }
-
-                            if (column.key === "hrId") {
-                              return (
-                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top font-mono text-xs text-text-secondary group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
-                                  {record.hrId ? record.hrId : (
-                                    <Badge variant="warning">Not mapped</Badge>
-                                  )}
-                                </td>
-                              );
-                            }
-
-                            return (
-                              <td
-                                className={cn(
-                                  "whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top text-text-secondary group-hover:bg-phx-accent-soft",
-                                  column.className,
-                                  (isMoney || isNumeric) && "text-right font-mono text-xs",
-                                  column.key === "total" && "font-semibold text-text",
-                                )}
-                                key={column.key}
-                                title={String(rawValue ?? "")}
-                              >
-                                {displayValue}
-                              </td>
-                            );
-                          })}
+                          {visibleGroups.map((group) => (
+                            <td
+                              className={cn(
+                                "min-w-0 break-words border-b border-slate-100 px-3 py-2 align-top text-xs group-hover:bg-phx-accent-soft",
+                                group.key === "amounts" && "font-mono",
+                              )}
+                              key={group.key}
+                            >
+                              <ExpenseFactLines facts={expenseGroupFacts(record, group, issues)} />
+                            </td>
+                          ))}
                           <td
                             className={cn(
-                              "sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-2 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft",
+                              "min-w-0 border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft",
                               reasonMissing && "bg-rose-50/80 group-hover:bg-rose-50",
                             )}
                           >
@@ -1711,13 +1710,11 @@ export function ExpenseReport({
                           </td>
                         </tr>
                         {isExpanded ? (
-                          <tr className="bg-slate-50/70">
-                            <td className="border-b border-slate-200 p-0" colSpan={visibleDetailColumns.length + 2}>
-                              <div className="sticky left-0 w-[min(920px,100%)] p-4">
-                                {renderTripEvidence(record)}
-                              </div>
-                            </td>
-                          </tr>
+                          <TableRowDetail className="p-0" colSpan={visibleGroups.length + 2} id={`trip-evidence-${record.tripId}-${record.row}`}>
+                            <div className="w-full p-4">
+                              {renderTripEvidence(record)}
+                            </div>
+                          </TableRowDetail>
                         ) : null}
                         </Fragment>
                         );

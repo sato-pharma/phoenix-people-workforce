@@ -259,16 +259,16 @@ export function ValidatedCustomerRegister() {
               >
                 <PortalRecordFields
                   fields={[
-                    { label: "Validated by", value: row.validatedByName || "Not recorded" },
-                    { label: "Manager", value: row.managerName || "Not recorded" },
-                    { label: "Area", value: row.areaName || "Not recorded" },
-                    { label: "Line", value: row.lineName || "Not recorded" },
-                    { label: "Captured", value: cairoDateTime(row.createdAt) },
+                    { label: "Validated by", value: row.validatedByName },
+                    { label: "Manager", value: row.managerName },
+                    { label: "Area", value: row.areaName },
+                    { label: "Line", value: row.lineName },
+                    { label: "Captured", value: row.createdAt ? cairoDateTime(row.createdAt) : null },
                     {
                       label: "Duplicates",
                       value: row.duplicateCount > 0 ? `${row.duplicateCount} same name` : "None",
                     },
-                  ]}
+                  ].filter((field): field is { label: string; value: string } => Boolean(field.value))}
                 />
               </PortalRecordCard>
             )}
@@ -289,46 +289,46 @@ export function ValidatedCustomerRegister() {
               >
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                    <th className="whitespace-nowrap px-4 py-3">Customer</th>
-                    <th className="whitespace-nowrap px-4 py-3">Validated by</th>
-                    <th className="whitespace-nowrap px-4 py-3">Manager</th>
-                    <th className="whitespace-nowrap px-4 py-3">Area</th>
-                    <th className="whitespace-nowrap px-4 py-3">Captured</th>
-                    <th className="whitespace-nowrap px-4 py-3">Duplicates</th>
-                    <th className="whitespace-nowrap px-4 py-3">Direct Order</th>
-                    <th className="whitespace-nowrap px-4 py-3" />
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Validated by</th>
+                    <th className="px-4 py-3">Manager</th>
+                    <th className="px-4 py-3">Area</th>
+                    <th className="px-4 py-3">Captured</th>
+                    <th className="px-4 py-3">Duplicates</th>
+                    <th className="px-4 py-3">Direct Order</th>
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((row) => (
                     <tr className="border-b border-slate-100 hover:bg-orange-50/40" key={row.id}>
-                      <td className="whitespace-nowrap px-4 py-3">
+                      <td className="break-words px-4 py-3">
                         <span className="font-black text-slate-900">{row.displayName || "Unnamed customer"}</span>
-                        <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs font-bold text-slate-600">
+                        <span className="ml-2 break-words rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs font-bold text-slate-600">
                           {row.customerCode || "-"}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-700">
-                        {row.validatedByName || "Not recorded"}
+                      <td className="break-words px-4 py-3 font-bold text-slate-700">
+                        {row.validatedByName || "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">
-                        {row.managerName || "Not recorded"}
+                      <td className="break-words px-4 py-3 font-semibold text-slate-600">
+                        {row.managerName || "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">
-                        {row.areaName || "Not recorded"}
+                      <td className="break-words px-4 py-3 font-semibold text-slate-600">
+                        {row.areaName || "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">
-                        {cairoDateTime(row.createdAt)}
+                      <td className="break-words px-4 py-3 font-semibold text-slate-600">
+                        {sharedCairoDateTime(row.createdAt)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3">
+                      <td className="px-4 py-3">
                         {row.duplicateCount > 0 ? (
                           <Badge variant="danger">{row.duplicateCount} same name</Badge>
                         ) : (
                           <span className="font-semibold text-slate-400">None</span>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3">{statusBadge(row)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <td className="px-4 py-3">{statusBadge(row)}</td>
+                      <td className="px-4 py-3 text-right">
                         <Link
                           className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700 transition hover:bg-orange-100"
                           href={`/admin/marketing-requests/validated-customers/${row.id}`}

@@ -541,26 +541,28 @@ export function SharedPlaceList({
           </div>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["27%", "27%", "18%", "28%"]}>
+      <CrmTable columns={["34%", "17%", "17%", "15%", "17%"]}>
         <thead>
           <tr>
+            <th className={crmThClassName}>The building and who is seated in it</th>
             <th className={crmThClassName}>The sign on the building</th>
             <th className={crmThClassName}>The timetable inside</th>
             <th className={crmThClassName}>Where it was captured</th>
             <th className={crmThClassName}>{mode === "team" ? "Your comment" : "Decision"}</th>
           </tr>
         </thead>
-        {groups.map(({ customers, total, venue: row }) => (
-          <tbody key={row.sharedPlaceId} className="border-t-4 border-slate-200 first-of-type:border-t-0">
-            <tr>
-              <td className={cn(crmTdClassName, "border-b-0 bg-white pb-1 pt-4")} colSpan={4}>
+        <tbody>
+          {groups.map(({ customers, total, venue: row }) => (
+            <tr key={row.sharedPlaceId}>
+              <td className={crmTdClassName}>
                 <div className="flex min-w-0 items-start gap-3">
                   {bulk ? <BulkPick picks={picks} row={row} /> : null}
                   <VenueHeader mode={mode} row={row} />
                 </div>
+                <div className="-mx-3 mt-3 border-t border-slate-100">
+                  <SeatedCustomers customers={customers} layout="table" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
+                </div>
               </td>
-            </tr>
-            <tr>
               <td className={crmTdClassName}>
                 <SignPhoto headed={false} row={row} />
               </td>
@@ -574,13 +576,8 @@ export function SharedPlaceList({
                 <LastColumn mode={mode} noteIndex={noteIndex} row={row} scope="table" />
               </td>
             </tr>
-            <tr>
-              <td className="border-b border-slate-200 bg-slate-50/60 p-0" colSpan={4}>
-                <SeatedCustomers customers={customers} layout="table" mode={mode} noTimetable={row.timetableExempt !== null} noteIndex={noteIndex} total={total} venueTimetablePath={row.schedulePhotoPath} />
-              </td>
-            </tr>
-          </tbody>
-        ))}
+          ))}
+        </tbody>
       </CrmTable>
     </>
   );

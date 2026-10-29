@@ -1,4 +1,5 @@
 import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { humanizeCode } from "@/lib/format/code-label";
 import { otherApprovalsInboxIsAlwaysEmptyFor } from "@/lib/action-center/inbox-reach";
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, ActionHubModule, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
@@ -53,9 +54,8 @@ function toTone(status: string): MyRequestStatusTone {
 }
 
 function humanize(status: string): string {
-  return String(status ?? "")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  // Title Case is this module's own spelling; humanizeCode names the acronyms (CEO, HR) it used to mangle.
+  return humanizeCode(String(status ?? "")).replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
 // Exported: reused by the Approvals Hub's company-wide "All Decisions" view
@@ -300,7 +300,7 @@ function mapResignationItem(
     employeeName: liveEmployeeName(employees, record.employeeHrId, record.employeeName),
     employeeHrId: record.employeeHrId,
     title: `Resignation · ${record.effectiveDate}`,
-    statusLabel: record.status.replace(/_/g, " "),
+    statusLabel: humanizeCode(record.status),
     submittedAt: record.createdAt,
     urgency: "high",
     detail: {
@@ -385,7 +385,7 @@ function mapContractRenewalItem(
     employeeName: liveEmployeeName(employees, w.employeeHrId, w.employeeName),
     employeeHrId: w.employeeHrId,
     title: `Contract Renewal · ${w.requestedRenewalDate}`,
-    statusLabel: w.status.replace(/_/g, " "),
+    statusLabel: humanizeCode(w.status),
     submittedAt: w.createdAt,
     urgency: "high",
     detail: {
@@ -1241,7 +1241,7 @@ async function buildLeaveDeepLinkItem(
     employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
     employeeHrId: String(row.employee_hr_id ?? ""),
     title: `${vacationTypeLabel(String(row.vacation_type ?? "annual"))} · ${Number(row.duration_days ?? 0)} day${Number(row.duration_days ?? 0) === 1 ? "" : "s"}`,
-    statusLabel: String(row.status ?? "").replace(/_/g, " "),
+    statusLabel: humanizeCode(String(row.status ?? "")),
     submittedAt: String(row.manager_decision_at ?? row.start_date ?? ""),
     urgency: "normal",
     readOnlyReason: DEEP_LINK_READ_ONLY,
@@ -1318,7 +1318,7 @@ async function buildPlanDeepLinkItem(
     employeeName: liveEmployeeName(employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
     employeeHrId: String(row.employee_hr_id ?? ""),
     title: `${kindLabel} plan · ${String(row.period_key ?? "")}`,
-    statusLabel: String(row.status ?? "").replace(/_/g, " "),
+    statusLabel: humanizeCode(String(row.status ?? "")),
     submittedAt: "",
     urgency: "normal",
     readOnlyReason: DEEP_LINK_READ_ONLY,

@@ -1089,7 +1089,7 @@ export async function runPrivateCalendarTests() {
 
   // HALF-DAY VACATION reads the house label ("PM only"), never the raw code cased ("Pm Only").
   assert.equal(halfDayVacation.time, "PM only", "a half-day vacation's time must read 'PM only'");
-  assert.ok(halfDayVacation.detailLines.includes("Day part: PM only"), "the detail line must use the same label");
+  assert.ok(!halfDayVacation.detailLines.some((line) => /^Day part:/.test(line)), "the day part is the time, said once, not a detail line");
 
   // AN APPROVED EXCUSE IS COVERED TIME — it painted the same amber as a late punch.
   assert.equal(excuse.severity, "info", "an approved excuse is not something to review");

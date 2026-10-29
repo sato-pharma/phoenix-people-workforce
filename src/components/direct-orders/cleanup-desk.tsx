@@ -11,6 +11,7 @@ import type {
   DirectOrderCleanupRequestSummary,
 } from "@/lib/direct-orders/service";
 import { stableEnGbFormatter, utcDate } from "@/lib/format/cairo-datetime";
+import { humanizeCode } from "@/lib/format/code-label";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
@@ -42,10 +43,10 @@ function OrderLine({ request }: { request: DirectOrderCleanupRequestSummary }) {
     <div className="min-w-0">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="font-bold text-slate-900">
-          {request.productName} ({request.productCode})
+          {request.productName}
         </span>
         <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase ${STATUS_TONE[request.status] ?? "bg-slate-200 text-slate-600"}`}>
-          {request.status.replace(/_/g, " ")}
+          {humanizeCode(request.status)}
         </span>
         {request.approvedStepCount > 0 ? (
           <span className="bg-emerald-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-emerald-800">
@@ -59,7 +60,7 @@ function OrderLine({ request }: { request: DirectOrderCleanupRequestSummary }) {
         {utcDate(request.collectionDate)}
       </div>
       <div className="text-phx-xs text-slate-500" dir="auto">
-        {request.requesterName} · {request.pharmacyName} ({request.pharmacyCode}) · submitted{" "}
+        {request.requesterName} · {request.pharmacyName} · submitted{" "}
         {cairoStamp(request.submittedAt)}
       </div>
     </div>
@@ -111,7 +112,7 @@ function LookAlikes({ groups }: { groups: DirectOrderCleanupLookAlike[] }) {
               {group.members.map((member) => (
                 <div key={member.pharmacyId} className={`border border-[#eef1f3] bg-white px-2 py-1.5 ${adminSoftDepthClassName}`}>
                   <p className="text-phx-sm font-bold text-slate-900" dir="auto">
-                    {member.pharmacyName} ({member.pharmacyCode})
+                    {member.pharmacyName}
                     <span
                       className={`ml-1 text-phx-2xs font-black uppercase ${
                         member.active ? "text-emerald-700" : "text-slate-500"
@@ -347,7 +348,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                           />
                           <span className="min-w-0">
                             <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                              {pharmacy.pharmacyName} ({pharmacy.pharmacyCode})
+                              {pharmacy.pharmacyName}
                               {pharmacy.pharmacyId === chosen ? (
                                 <span className="ml-1 text-phx-2xs font-black uppercase text-emerald-700">keeps everything</span>
                               ) : (
@@ -447,7 +448,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                     <input type="checkbox" checked={on} onChange={() => toggle(setOffRepairs)(repair.pharmacyId)} className="mt-1" />
                     <span className="min-w-0">
                       <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                        {repair.pharmacyName} ({repair.pharmacyCode})
+                        {repair.pharmacyName}
                       </span>
                       <span className="block text-phx-xs text-slate-600">
                         Move {repair.distributorName} / {repair.customerCode} into the distributor-code column
@@ -479,7 +480,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                     <input type="checkbox" checked={on} onChange={() => toggle(setOffReleases)(release.pharmacyId)} className="mt-1" />
                     <span className="min-w-0">
                       <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                        {release.pharmacyName} ({release.pharmacyCode}) — {countOf(release.requests.length, "held request")}
+                        {release.pharmacyName} — {countOf(release.requests.length, "held request")}
                       </span>
                       <span className="block text-phx-xs text-slate-600">
                         Once this venue is resolved, every one of its held requests enters the approval chain at

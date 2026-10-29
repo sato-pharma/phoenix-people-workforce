@@ -657,7 +657,6 @@ export function ClosingMatrixTable({
                 ...group.indices.map((idx) => (
                   <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 7 : 6} key={`ph-${gi}-${idx}`}>
                     <span className="block break-words text-phx-sm font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
-                    <span className="block text-phx-2xs font-normal" style={{ color: "#CBD5E1" }}>{matrix.columns[idx].productCode}</span>
                   </th>
                 )),
                 ...(group.isMulti ? [

@@ -210,8 +210,7 @@ export function MarketingManagerScorecard() {
                 <Td>
                   <p className="text-phx-sm font-bold text-slate-900">{row.managerName}</p>
                   <p className="text-phx-xs text-slate-500">
-                    {row.lineName ? `${row.lineName} line` : "Line not on record"}
-                    {row.regionName ? ` · ${row.regionName}` : ""}
+                    {[row.lineName ? `${row.lineName} line` : null, row.regionName].filter(Boolean).join(" · ") || "—"}
                   </p>
                 </Td>
                 <Td>
@@ -286,8 +285,7 @@ export function MarketingManagerScorecard() {
           <article className={`${adminPanelClassName} p-4`} key={row.managerHrId}>
             <p className="text-phx-md font-bold text-slate-900">{row.managerName}</p>
             <p className="text-phx-xs text-slate-500">
-              {row.lineName ? `${row.lineName} line` : "Line not on record"}
-              {row.regionName ? ` · ${row.regionName}` : ""}
+              {[row.lineName ? `${row.lineName} line` : null, row.regionName].filter(Boolean).join(" · ")}
             </p>
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
               <Field label="Requests" value={`${row.totalRequests} raised · ${row.approvedRequests} approved`} />

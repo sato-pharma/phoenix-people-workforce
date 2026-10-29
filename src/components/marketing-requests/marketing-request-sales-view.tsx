@@ -1,5 +1,6 @@
 "use client";
 
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import * as React from "react";
 import { AlertTriangle, ArrowLeftRight, CalendarRange, Download, ExternalLink, RefreshCcw, Target } from "lucide-react";
 
@@ -70,7 +71,7 @@ function AggregateTable({ title, rows, max }: { title: string; rows: MarketingRo
         ) : (
           rows.map((row) => (
             <div key={row.key} className="flex items-center gap-2 border-b border-phx-paper-2 px-4 py-2 last:border-b-0">
-              <span className="min-w-0 flex-1 truncate text-phx-sm font-semibold text-phx-ink-2" title={row.label}>{row.label}</span>
+              <span className="min-w-0 flex-1 break-words text-phx-sm font-semibold text-phx-ink-2">{row.label}</span>
               <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-md bg-phx-paper-2">
                 <div className="h-full rounded-md bg-phx-accent" style={{ width: `${max > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0}%` }} />
               </div>
@@ -208,14 +209,14 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                     {data.context.requesterName ?? "Unknown requester"}
                     {data.context.line ? ` · ${data.context.line}` : ""}
                     {data.context.requestTypeName ? ` · ${data.context.requestTypeName}` : ""}
-                    {" · "}{STATUS_LABELS[data.context.status] ?? data.context.status}
+                    {" · "}{STATUS_LABELS[data.context.status] ?? requestStatusLabel(data.context.status)}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 text-right">
                   <span className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-phx-paper px-2.5 py-1 text-phx-xs font-bold text-phx-ink-soft">
                     <CalendarRange className="h-3 w-3" /> ROI window {data.context.roiWindowLabel ?? "—"}
                   </span>
-                  <span className="text-phx-xs font-semibold text-phx-ink-faint">Sales data as of {data.salesDataAsOf ?? "n/a"}</span>
+                  <span className="text-phx-xs font-semibold text-phx-ink-faint">Sales data as of {data.salesDataAsOf ?? "—"}</span>
                 </div>
               </div>
 
@@ -361,11 +362,11 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                     <tbody>
                       {sortedRows.map((row, index) => (
                         <tr key={`${row.customerCode}-${row.productCode}-${row.invoicePeriod}-${index}`} className="border-t border-[#FEE7D2]">
-                          <td className="px-3 py-2 font-mono text-phx-sm font-bold text-phx-ink">{row.invoicePeriod}</td>
-                          <td className="px-3 py-2 font-medium text-phx-ink-soft">{row.distributorName}</td>
-                          <td className="px-3 py-2 font-semibold text-phx-ink-2">{row.productName}</td>
-                          <td className="px-3 py-2 font-mono text-phx-sm text-phx-ink-soft">{row.customerCode}</td>
-                          <td className="px-3 py-2 font-medium text-phx-ink-soft">{row.customerName ?? "—"}</td>
+                          <td className="break-words px-3 py-2 font-mono text-phx-sm font-bold text-phx-ink">{row.invoicePeriod}</td>
+                          <td className="break-words px-3 py-2 font-medium text-phx-ink-soft">{row.distributorName}</td>
+                          <td className="break-words px-3 py-2 font-semibold text-phx-ink-2">{row.productName}</td>
+                          <td className="break-words px-3 py-2 font-mono text-phx-sm text-phx-ink-soft">{row.customerCode}</td>
+                          <td className="break-words px-3 py-2 font-medium text-phx-ink-soft">{row.customerName ?? "—"}</td>
                           <td className="px-3 py-2 text-right font-semibold text-phx-ink-2">{units(row.qty)}</td>
                           <td className="px-3 py-2 text-right font-bold text-phx-ink">{money(row.value)}</td>
                         </tr>
@@ -389,7 +390,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                       <div className="min-w-0">
                         <span className="font-mono text-phx-sm font-bold text-phx-ink">{row.requestCode}</span>
                         <span className="ml-2 text-phx-sm font-semibold text-phx-ink-soft">{row.requesterName ?? ""}</span>
-                        <span className="ml-2 text-phx-xs font-medium text-phx-ink-faint">{STATUS_LABELS[row.status] ?? row.status} · {row.sharedPharmacyCodes.length} shared pharmacy{row.sharedPharmacyCodes.length === 1 ? "" : "s"}</span>
+                        <span className="ml-2 text-phx-xs font-medium text-phx-ink-faint">{STATUS_LABELS[row.status] ?? requestStatusLabel(row.status)} · {row.sharedPharmacyCodes.length} shared pharmacy{row.sharedPharmacyCodes.length === 1 ? "" : "s"}</span>
                       </div>
                       <a
                         href={`${viewSalesBasePath}/marketing-requests/${row.requestId}/view-sales`}

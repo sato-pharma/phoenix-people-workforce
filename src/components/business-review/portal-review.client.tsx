@@ -162,7 +162,7 @@ function achClass(a: number | null) {
   return "text-rose-600";
 }
 const Ach = ({ value }: { value: number | null }) => (
-  <span className={cn("whitespace-nowrap font-black tabular-nums", achClass(value))}>{pct(value)}</span>
+  <span className={cn("font-black tabular-nums", achClass(value))}>{pct(value)}</span>
 );
 
 const BAND_STYLE: Record<string, string> = {
@@ -197,7 +197,7 @@ const BAND_TEXT: Record<string, string> = {
 const Band = ({ band }: { band: string }) => (
   <span
     className={cn(
-      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
+      "inline-flex rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
       BAND_STYLE[band] ?? BAND_STYLE["not-eligible"],
     )}
   >
@@ -207,7 +207,7 @@ const Band = ({ band }: { band: string }) => (
 const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "rose" }) => (
   <span
     className={cn(
-      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
+      "inline-flex rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
       tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500",
     )}
   >
@@ -215,9 +215,9 @@ const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "r
   </span>
 );
 
-const TH = "whitespace-nowrap px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const TH = "break-words px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
 const THR = `${TH} text-right`;
-const TD = "whitespace-nowrap px-3 py-1.5 text-sm font-semibold leading-tight text-slate-800";
+const TD = "break-words px-3 py-1.5 text-sm font-semibold leading-tight text-slate-800";
 const TDR = `${TD} text-right tabular-nums`;
 const HEAD = "border-b border-slate-200 bg-slate-50/70";
 const ROW = "border-b border-slate-100 last:border-0";
@@ -238,7 +238,7 @@ function Fields({ items }: { items: { label: string; value: string }[] }) {
       {items.map((item) => (
         <div className={FIELD} key={item.label}>
           <dt className={FIELD_LABEL}>{item.label}</dt>
-          <dd className="mt-0.5 whitespace-nowrap text-xs font-bold text-slate-800">{item.value}</dd>
+          <dd className="mt-0.5 min-w-0 break-words text-xs font-bold text-slate-800">{item.value}</dd>
         </div>
       ))}
     </dl>
@@ -507,7 +507,7 @@ export function BusinessReviewPortal({
                 renderCard={(row) => (
                   <div className="px-4 py-3.5">
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.label}</h3>
+                      <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.label}</h3>
                       <Ach value={row.allProducts.ach} />
                     </div>
                     <Fields
@@ -589,7 +589,7 @@ export function BusinessReviewPortal({
                   <div className="px-4 py-3.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.dm}</h3>
+                        <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.dm}</h3>
                         <p className="mt-0.5 text-xs font-semibold text-slate-500">
                           {row.line ? `${row.line} · ` : ""}
                           {row.region}
@@ -618,16 +618,16 @@ export function BusinessReviewPortal({
                   <PortalDesktopTable
                     cols={
                       <colgroup>
-                        <col className="w-[18%]" />
-                        {showLines ? <col className="w-[9%]" /> : null}
-                        <col className="w-[12%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[12%]" />
-                        <col className="w-[12%]" />
+                        <col className="w-[16%]" />
+                        {showLines ? <col className="w-[8%]" /> : null}
+                        <col className="w-[11%]" />
                         <col className="w-[8%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[9%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[11%]" />
+                        <col className="w-[11%]" />
+                        <col className="w-[7%]" />
+                        <col className="w-[10%]" />
+                        <col className="w-[10%]" />
                       </colgroup>
                     }
                   >
@@ -693,7 +693,7 @@ export function BusinessReviewPortal({
                 <div className="px-4 py-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.area}</h3>
+                      <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.area}</h3>
                       <p className="mt-0.5 text-xs font-semibold text-slate-500">
                         {row.line ? `${row.line} · ` : ""}
                         {row.dm}
@@ -718,7 +718,7 @@ export function BusinessReviewPortal({
                     <dl className="mt-2 grid grid-cols-2 gap-2">
                       {keyProducts.map((product) => (
                         <div className="rounded border border-slate-100 bg-white px-2.5 py-2" key={product}>
-                          <dt className={cn(FIELD_LABEL, "whitespace-nowrap")}>{product}</dt>
+                          <dt className={cn(FIELD_LABEL, "break-words")}>{product}</dt>
                           <dd className="mt-0.5">
                             <Ach value={row.products?.[product]?.ach ?? null} />
                           </dd>
@@ -819,7 +819,7 @@ export function BusinessReviewPortal({
                 renderCard={(row) => (
                   <div className="px-4 py-3.5">
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.dm}</h3>
+                      <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.dm}</h3>
                       <Ach value={row.allProducts.ach} />
                     </div>
                     <p className="mt-1 text-xs font-semibold text-slate-500">
@@ -837,7 +837,7 @@ export function BusinessReviewPortal({
                         <col className="w-[14%]" />
                         <col className="w-[14%]" />
                         <col className="w-[14%]" />
-                        <col className="w-[10%]" />
+                        <col className="w-[12%]" />
                       </colgroup>
                     }
                   >
@@ -887,7 +887,7 @@ export function BusinessReviewPortal({
                 <div className="px-4 py-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.area}</h3>
+                      <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.area}</h3>
                       <p className="mt-0.5 text-xs font-semibold text-slate-500">{row.dm}</p>
                     </div>
                     <Ach value={row.allProducts.ach} />
@@ -909,7 +909,7 @@ export function BusinessReviewPortal({
                       <col className="w-[12%]" />
                       <col className="w-[12%]" />
                       <col className="w-[12%]" />
-                      <col className="w-[10%]" />
+                      <col className="w-[12%]" />
                     </colgroup>
                   }
                 >
@@ -960,7 +960,7 @@ export function BusinessReviewPortal({
                 <div className="px-4 py-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.area}</h3>
+                      <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.area}</h3>
                       <p className="mt-0.5 text-xs font-semibold text-slate-500">{row.dm}</p>
                     </div>
                     <Ach value={row.allProducts.ach} />
@@ -974,12 +974,12 @@ export function BusinessReviewPortal({
                 <PortalDesktopTable
                   cols={
                     <colgroup>
+                      <col className="w-[22%]" />
+                      {showLines ? <col className="w-[12%]" /> : null}
                       <col className="w-[20%]" />
-                      {showLines ? <col className="w-[10%]" /> : null}
-                      <col className="w-[18%]" />
                       <col className="w-[16%]" />
                       <col className="w-[14%]" />
-                      <col className="w-[14%]" />
+                      <col className="w-[16%]" />
                     </colgroup>
                   }
                 >
@@ -1025,14 +1025,14 @@ export function BusinessReviewPortal({
               items={visibleAreas}
               renderCard={(row) => (
                 <div className="px-4 py-3.5">
-                  <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.area}</h3>
+                  <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.area}</h3>
                   <dl className="mt-2 grid grid-cols-3 gap-2">
                     {months.map((month, index) => (
                       <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5" key={month}>
                         <dt className={FIELD_LABEL}>{periodColumnLabel(month, months)}</dt>
                         <dd
                           className={cn(
-                            "mt-0.5 whitespace-nowrap text-xs font-bold",
+                            "mt-0.5 break-words text-xs font-bold",
                             (row.trend[index] ?? 0) < 0 ? "text-rose-700" : "text-slate-800",
                           )}
                         >
@@ -1102,7 +1102,7 @@ export function BusinessReviewPortal({
                     <div className={cn(portalSubtlePanelClassName, "p-3.5")} key={dmKey(row)}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="whitespace-nowrap text-sm font-black text-slate-950">{row.dm}</p>
+                          <p className="min-w-0 break-words text-sm font-black text-slate-950">{row.dm}</p>
                           <p className="mt-0.5 text-xs font-semibold text-slate-500">
                             {row.line ? `${row.line} · ` : ""}
                             {groupByFamily ? "by family" : "by product"}
@@ -1113,7 +1113,7 @@ export function BusinessReviewPortal({
                       <dl className="mt-2.5 grid grid-cols-2 gap-2">
                         {mixCells.map((cell) => (
                           <div className={FIELD} key={cell.label}>
-                            <dt className={cn(FIELD_LABEL, "whitespace-nowrap")}>{cell.label}</dt>
+                            <dt className={cn(FIELD_LABEL, "break-words")}>{cell.label}</dt>
                             <dd className="mt-0.5">
                               <Ach value={cell.ach} />
                             </dd>
@@ -1148,7 +1148,7 @@ export function BusinessReviewPortal({
                   <div className="px-4 py-3.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{row.product}</h3>
+                        <h3 className="min-w-0 break-words text-sm font-black text-slate-950">{row.product}</h3>
                         <p className="mt-0.5 text-xs font-semibold text-slate-500">
                           {row.family}
                           {row.include ? "" : " · excluded from incentive"}
@@ -1170,7 +1170,7 @@ export function BusinessReviewPortal({
                         <col className="w-[14%]" />
                         <col className="w-[16%]" />
                         <col className="w-[14%]" />
-                        <col className="w-[14%]" />
+                        <col className="w-[16%]" />
                       </colgroup>
                     }
                   >

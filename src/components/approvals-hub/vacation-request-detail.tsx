@@ -9,6 +9,7 @@ import { VacationAdminControls } from "@/components/approvals-hub/vacation-admin
 import { VacationAttachmentLinks } from "@/components/approvals-hub/vacation-attachment-links";
 import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
 import { VacationEvidenceReviewActions } from "@/components/approvals-hub/vacation-evidence-review";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 
 type Props = {
   detail: VacationApprovalDetail;
@@ -53,7 +54,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
           </p>
         </div>
         <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
-          {String(r.status).replace(/_/g, " ")}
+          {requestStatusLabel(r.status)}
         </span>
       </div>
 
@@ -69,11 +70,8 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
             <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
           </header>
           <dl className="px-4 py-2">
-            <Row label="Employee" value={`${r.employeeName} (${r.employeeHrId})`} />
-            <Row label="Leave type" value={detail.typeLabel} />
             <Row label="From" value={r.startDate} />
             <Row label="To" value={r.endDate} />
-            <Row label="Duration" value={`${Number(r.durationDays)} day${r.durationDays === 1 ? "" : "s"}`} />
             <Row label="Payment" value={r.paymentStatus} />
             <Row label="Balance before" value={`${Number(r.balanceBeforeDays)} days`} />
             <Row label="Line" value={r.lineName} />
@@ -124,7 +122,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
             stageLabel={detail.stageLabel}
             ageDays={detail.slaAgeDays}
             slaModule="leave"
-            fallbackStatusLabel={`Status: ${String(r.status).replace(/_/g, " ")}`}
+            fallbackStatusLabel={`Status: ${requestStatusLabel(r.status)}`}
           />
           {!detail.readOnly ? (
             <DecisionActions

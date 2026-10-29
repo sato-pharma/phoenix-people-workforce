@@ -1,5 +1,6 @@
 "use client";
 
+import { employmentStatusLabel } from "@/lib/employees/employment-status-label";
 import {
   useCallback,
   useEffect,
@@ -1917,12 +1918,12 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       <tr key={row.hrId} className="bg-white align-top transition hover:bg-emerald-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="break-words font-bold text-slate-900">{row.displayName}</p>
-                          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
-                          <p className="text-phx-xs text-slate-400">{row.employmentStatus ?? "-"}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "—"}</p>
+                          <p className="text-phx-xs text-slate-400">{employmentStatusLabel(row.employmentStatus) || "—"}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
-                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{row.daysSinceHire == null ? "-" : vacationDaysLabel(row.daysSinceHire)} since hire</p>
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{row.daysSinceHire == null ? "—" : vacationDaysLabel(row.daysSinceHire)} since hire</p>
                           <p className="text-phx-xs text-slate-400">6-mo: {formatDate(row.sixMonthAnniversary)}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
@@ -1940,7 +1941,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           </p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "-"}</p>
+                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "—"}</p>
                         </td>
                         <td className="px-3 py-2.5">
                           {row.reviewFlags.length > 0 ? (
@@ -2262,7 +2263,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       <tr key={row.id} className="bg-white align-top transition hover:bg-orange-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="break-words font-bold text-slate-900">{row.employeeName}</p>
-                          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "—"}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="break-words text-phx-xs font-semibold text-slate-700">{formatDateTime(row.createdAt)}</p>
@@ -2316,7 +2317,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "-"}</p>
+                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "—"}</p>
                           {row.managerOfManagerName ? <p className="mt-0.5 break-words text-phx-2xs text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
                         </td>
                         <td className="px-3 py-2.5">
@@ -2337,7 +2338,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             </Link>
                           ) : (
                             <div className="text-phx-xs">
-                              <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>
+                              <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "—"}</p>
                               {row.managerDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.managerDecisionComment}</p> : null}
                               {row.hrDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.hrDecisionComment}</p> : null}
                             </div>

@@ -563,7 +563,7 @@ function tableProblems(sources: Map<string, ts.SourceFile>, roots: Map<string, t
     // empty-search row, one cell spanning the table.
     const span = spanOf(cols);
     for (const root of new Set([owner, bodyOwner])) {
-      for (const cell of [...allTags(root, "td"), ...allTags(root, "th"), ...allTags(root, "TableNoResults")]) {
+      for (const cell of [...allTags(root, "td"), ...allTags(root, "th"), ...allTags(root, "TableNoResults"), ...allTags(root, "TableRowDetail")]) {
         const attribute = attributeOf(cell, "colSpan");
         if (!attribute) continue;
         const value = attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined;

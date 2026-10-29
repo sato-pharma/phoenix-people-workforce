@@ -323,4 +323,13 @@ export function runKpisBoardTablesFitTests() {
       `Take the room from a column with slack or merge two columns. Never shrink the type, never add ` +
       `min-width or overflow-x-auto, never truncate a head (AGENTS.md §4).`,
   );
+
+  // The opened doctors panel is the row's own: TableRowDetail, never a hand-written second <tr><td colSpan>.
+  const view = readFileSync(VIEW_PATH, "utf8");
+  assert.equal(
+    (view.match(/<TableRowDetail\b/g) ?? []).length,
+    2,
+    `${VIEW}: the Coverage and Frequency tables open their doctors list with TableRowDetail.`,
+  );
+  assert.ok(!/<td[^>]*colSpan/.test(view), `${VIEW}: a hand-written <td colSpan> second row came back; use TableRowDetail.`);
 }

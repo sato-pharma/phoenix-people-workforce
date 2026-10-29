@@ -64,7 +64,7 @@ function VisitKindBadge({ kind }: { kind: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center whitespace-nowrap px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide",
+        "inline-flex items-center px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide",
         kind === "Regular" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
       )}
     >
@@ -276,11 +276,11 @@ function LogVisitCard({ row }: { row: DoubleVisitReportRow }) {
         </span>
       }
       status={<VisitKindBadge kind={row.visitKind} />}
-      title={row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}
+      title={row.doubleVisitorName ?? "—"}
     >
       <PortalRecordFields
         fields={[
-          { label: "Visited MR", value: row.visitedName ?? row.visitedHrId ?? "—" },
+          { label: "Visited MR", value: row.visitedName ?? "—" },
           ...(row.doubleVisitor2Name ? [{ label: "And With", value: row.doubleVisitor2Name }] : []),
           { label: "Area", value: row.areaName ?? "—" },
           { label: "Region", value: row.regionName ?? "—" },
@@ -366,10 +366,10 @@ export function DoubleVisitReportWorkspace({
     if (!viewerHrId) return null;
     const viewer = viewerHrId.toUpperCase();
     const match = data.rows.find((row) => row.doubleVisitorHrId?.toUpperCase() === viewer);
-    if (match) return match.doubleVisitorName ?? match.doubleVisitorHrId;
+    if (match) return match.doubleVisitorName ?? null;
     // The viewer may only ever have been a chain visit's SECOND manager — still his own visits.
     const second = data.rows.find((row) => row.doubleVisitor2HrId?.toUpperCase() === viewer);
-    return second ? second.doubleVisitor2Name ?? second.doubleVisitor2HrId ?? null : null;
+    return second ? second.doubleVisitor2Name ?? null : null;
   }, [data.rows, viewerHrId]);
   const [visitorFilter, setVisitorFilter] = useState(initialVisitorIsViewer && viewerVisitorLabel ? viewerVisitorLabel : ALL);
   const [flaggedOnly, setFlaggedOnly] = useState(false);
@@ -657,7 +657,7 @@ export function DoubleVisitReportWorkspace({
             items={logPageRows}
             renderCard={(row) => <LogVisitCard row={row} />}
             renderTable={() => (
-              <div className="max-h-[70vh] overflow-auto">
+              <div className="max-h-[70vh] overflow-y-auto">
                 <PortalDesktopTable
                   breakpoint="lg"
                   cols={
@@ -692,14 +692,14 @@ export function DoubleVisitReportWorkspace({
                   <tbody className="divide-y divide-orange-100">
                     {logPageRows.map((row, index) => (
                       <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
-                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.activityDate)}</td>
+                        <td className="px-3 py-2.5">{formatDate(row.activityDate)}</td>
                         <td className="px-3 py-2.5">
-                          {row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}
+                          {row.doubleVisitorName ?? "—"}
                           {row.doubleVisitor2Name ? <span className={PHOENIX_LINE}>and {row.doubleVisitor2Name}</span> : null}
                         </td>
                         <td className="px-3 py-2.5">{row.doubleVisitorRole ?? "—"}</td>
                         <td className="px-3 py-2.5">
-                          {row.visitedName ?? row.visitedHrId ?? "—"}
+                          {row.visitedName ?? "—"}
                           {phoenixWorkLine(row) ? <span className={PHOENIX_LINE}>{phoenixWorkLine(row)}</span> : null}
                         </td>
                         <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
@@ -730,7 +730,7 @@ export function DoubleVisitReportWorkspace({
             items={neverPageRows}
             renderCard={(row) => <NeverVisitedCard row={row} />}
             renderTable={() => (
-              <div className="max-h-[70vh] overflow-auto">
+              <div className="max-h-[70vh] overflow-y-auto">
                 <PortalDesktopTable
                   cols={
                     <colgroup>
@@ -759,7 +759,7 @@ export function DoubleVisitReportWorkspace({
                           </div>
                         </td>
                         <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.hireDate)}</td>
+                        <td className="px-3 py-2.5">{formatDate(row.hireDate)}</td>
                         <td className={cn("px-3 py-2.5 text-right font-bold tabular-nums", row.flagged && "text-rose-600")}>
                           {row.daysSinceHire ?? "—"}
                         </td>
@@ -782,7 +782,7 @@ export function DoubleVisitReportWorkspace({
             items={probPageRows}
             renderCard={(row) => <ProbationCard row={row} viewerHrId={viewerHrId} />}
             renderTable={() => (
-              <div className="max-h-[70vh] overflow-auto">
+              <div className="max-h-[70vh] overflow-y-auto">
                 <PortalDesktopTable
                   cols={
                     <colgroup>
@@ -807,8 +807,8 @@ export function DoubleVisitReportWorkspace({
                     {probPageRows.map((row, index) => (
                       <tr key={row.hrId} className={cn(index % 2 === 0 ? "bg-white" : "bg-orange-50/30", row.hrId === viewerHrId && "ring-1 ring-inset ring-orange-300")}>
                         <td className="px-3 py-2.5">{row.name}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.hireDate)}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.probationEndDate)}</td>
+                        <td className="px-3 py-2.5">{formatDate(row.hireDate)}</td>
+                        <td className="px-3 py-2.5">{formatDate(row.probationEndDate)}</td>
                         <td className="px-3 py-2.5 text-right font-bold tabular-nums">{row.daysRemaining}</td>
                         <td className="px-3 py-2.5 text-right">
                           <ProbationDvBadge row={row} />

@@ -2718,6 +2718,13 @@ import { runMilestoneCardTests } from "./milestone-card.test.ts";
 import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests } from "./milestone-enhancements.test.ts";
 import { runMilestoneGroupCardTests } from "./milestone-group-card.test.ts";
 import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
+import { runCodeLabelTests } from "./code-label.test.ts";
+import { runPrivateCalendarSaidOnceTests } from "./private-calendar-said-once.test.ts";
+import { runAttendanceDayReasonSaidOnceTests } from "./attendance-day-reason-said-once.test.ts";
+import { runApprovalsHistoryTitlesTests } from "./approvals-history-titles.test.ts";
+import { runTableRowDetailJoinedTests } from "./table-row-detail-joined.test.ts";
+import { runTableStructureRatchetTests } from "./table-structure-ratchet.test.ts";
+import { runNoRawCodeOnScreenRatchetTests } from "./no-raw-code-on-screen-ratchet.test.ts";
 import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
@@ -10684,6 +10691,34 @@ await runTest(
 await runTest(
   "fits-the-screen ratchet: the count of overflow-x-auto/scroll sites across app/ and src/components/ may fall and may never rise, so no new screen is given permission to scroll sideways (AGENTS.md §4: \"overflow-x-auto over a min-width IS the bug\")",
   runFitsTheScreenRatchetTests,
+);
+await runTest(
+  "code label: humanizeCode, codeOrWords and requestStatusLabel turn a stored code into words, an unnamed code in a domain humanizer falls back to them, and a label a domain already returned is unchanged (names, never codes)",
+  runCodeLabelTests,
+);
+await runTest(
+  "private calendar said once: no detail line restates the entry's title, time, status, description or chip, \"pending\" is said once and an excuse's two hours once (docs/tables-said-once-fit.md rule 1)",
+  runPrivateCalendarSaidOnceTests,
+);
+await runTest(
+  "attendance day reason said once: a skip or a complete day whose reason only restates the outcome has none, and a penalty reason never repeats the Late and Short minutes (docs/tables-said-once-fit.md rule 1)",
+  runAttendanceDayReasonSaidOnceTests,
+);
+await runTest(
+  "approvals history titles: a leave, excuse or plan row is titled by the type's own name and a Cairo date, with no module prefix, no code and no ISO date",
+  runApprovalsHistoryTitlesTests,
+);
+await runTest(
+  "table row detail joined: the border exception is exactly the two shells' tr[data-row-detail] > td, nothing else weakens a cell border, and the count of hand-written <tr><td colSpan> panel rows may fall and may never rise",
+  runTableRowDetailJoinedTests,
+);
+await runTest(
+  "table structure ratchet: the count of tables with no table-fixed, no colgroup, a min-width floor or no phone layout may fall and may never rise (AGENTS.md §4 fits-the-screen golden rule)",
+  runTableStructureRatchetTests,
+);
+await runTest(
+  "no raw code on screen ratchet: the count of replace(/_/g) on a shown value, the N/A filler, No HR ID and an hrId fallback in screens may fall and may never rise (names, never codes)",
+  runNoRawCodeOnScreenRatchetTests,
 );
 await runTest(
   "square-edge ratchet (portalled components): globals.css zeroes every radius inside .admin-shell and .employee-portal-shell, but both are DESCENDANT selectors — a component portalled to document.body escapes them, so the count of rounded-* there may fall and may never rise",

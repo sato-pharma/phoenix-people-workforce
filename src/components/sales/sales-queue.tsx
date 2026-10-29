@@ -21,6 +21,7 @@ import {
   AdminInsightChip,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -179,7 +180,7 @@ function ManagerTotalsTable({ rows }: { rows: ManagerTotalRow[] }) {
     searchAccessors: [(row) => row.manager],
     initialSort: { key: "salesValue", dir: "desc" },
   });
-  const th = { sort: table.sort, onSort: table.toggleSort, variant: "light" as const, className: "px-5 py-4 tracking-[0.14em]" };
+  const th = { sort: table.sort, onSort: table.toggleSort, variant: "light" as const, className: "break-words px-3 py-3 tracking-[0.14em]" };
   return (
     <div className="px-4 py-4 md:px-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -191,7 +192,7 @@ function ManagerTotalsTable({ rows }: { rows: ManagerTotalRow[] }) {
         </div>
       </div>
       <div className="overflow-hidden rounded-[16px] border border-phx-line">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <CrmTable columns={["24%", "9%", "15%", "18%", "15%", "19%"]}>
           <thead className="bg-phx-paper">
             <tr>
               <SortableTh label="District Manager" sortKey="manager" {...th} />
@@ -206,16 +207,36 @@ function ManagerTotalsTable({ rows }: { rows: ManagerTotalRow[] }) {
             {table.rows.length === 0 && <TableNoResults colSpan={6} filtered={table.isFiltered} label="managers" />}
             {table.rows.map((manager, index) => (
               <tr className="text-phx-ink-soft" key={`${manager.manager}:${index}`}>
-                <td className="px-4 py-2.5 font-semibold text-phx-ink">{manager.manager}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(manager.rows)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(manager.salesUnits)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(manager.salesValue)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{formatNumber(manager.targetUnits)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(manager.targetValue)}</td>
+                <td className="break-words px-3 py-2.5 align-top font-semibold text-phx-ink">{manager.manager}</td>
+                <td className="break-words px-3 py-2.5 text-right align-top tabular-nums">{formatNumber(manager.rows)}</td>
+                <td className="break-words px-3 py-2.5 text-right align-top tabular-nums">{formatNumber(manager.salesUnits)}</td>
+                <td className="break-words px-3 py-2.5 text-right align-top tabular-nums">{formatCurrency(manager.salesValue)}</td>
+                <td className="break-words px-3 py-2.5 text-right align-top tabular-nums">{formatNumber(manager.targetUnits)}</td>
+                <td className="break-words px-3 py-2.5 text-right align-top tabular-nums">{formatCurrency(manager.targetValue)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
+        <CrmCardsOnPhone>
+          {table.rows.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm text-slate-400">
+              {table.isFiltered ? "No managers match this filter." : "No managers."}
+            </p>
+          ) : null}
+          {table.rows.map((manager, index) => (
+            <CrmCard key={`${manager.manager}:${index}:card`} title={manager.manager}>
+              <CrmFacts
+                facts={[
+                  { label: "Rows", value: formatNumber(manager.rows) },
+                  { label: "Sales units", value: formatNumber(manager.salesUnits) },
+                  { label: "Sales value", value: formatCurrency(manager.salesValue) },
+                  { label: "Target units", value: formatNumber(manager.targetUnits) },
+                  { label: "Target value", value: formatCurrency(manager.targetValue) },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
       </div>
     </div>
   );
@@ -879,26 +900,39 @@ export function SalesQueue({ initialData, initialError }: Props) {
                           ))}
                         </div>
                         <div className="overflow-hidden rounded-md border border-amber-200 bg-white/80">
-                          <table className="w-full text-left text-xs">
+                          <CrmTable className="text-xs" columns={["12%", "22%", "22%", "44%"]}>
                             <thead className="bg-amber-100/60 text-amber-950">
                               <tr>
-                                <th className="px-2 py-1">Row</th>
-                                <th className="px-2 py-1">HR ID</th>
-                                <th className="px-2 py-1">Area</th>
-                                <th className="px-2 py-1">Reason</th>
+                                <th className="break-words px-2 py-1">Row</th>
+                                <th className="break-words px-2 py-1">HR ID</th>
+                                <th className="break-words px-2 py-1">Area</th>
+                                <th className="break-words px-2 py-1">Reason</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-amber-100">
                               {(batch.linkageSummary as LinkageSummary).sampleRows.map((row, index) => (
                                 <tr key={`${row.rowNumber}:${index}`}>
-                                  <td className="px-2 py-1 font-semibold">{row.rowNumber}</td>
-                                  <td className="px-2 py-1">{row.employeeHrId || "-"}</td>
-                                  <td className="px-2 py-1">{row.territory}</td>
-                                  <td className="px-2 py-1">{row.messages[0] ?? "No matching employee linkage was found."}</td>
+                                  <td className="break-words px-2 py-1 align-top font-semibold">{row.rowNumber}</td>
+                                  <td className="break-words px-2 py-1 align-top">{row.employeeHrId || "—"}</td>
+                                  <td className="break-words px-2 py-1 align-top">{row.territory}</td>
+                                  <td className="break-words px-2 py-1 align-top">{row.messages[0] ?? "No matching employee linkage was found."}</td>
                                 </tr>
                               ))}
                             </tbody>
-                          </table>
+                          </CrmTable>
+                          <CrmCardsOnPhone>
+                            {(batch.linkageSummary as LinkageSummary).sampleRows.map((row, index) => (
+                              <CrmCard key={`${row.rowNumber}:${index}:card`} title={`Row ${row.rowNumber}`}>
+                                <CrmFacts
+                                  facts={[
+                                    ...(row.employeeHrId ? [{ label: "HR ID", value: row.employeeHrId }] : []),
+                                    { label: "Area", value: row.territory },
+                                    { label: "Reason", value: row.messages[0] ?? "No matching employee linkage was found." },
+                                  ]}
+                                />
+                              </CrmCard>
+                            ))}
+                          </CrmCardsOnPhone>
                         </div>
                       </div>
                     </details>

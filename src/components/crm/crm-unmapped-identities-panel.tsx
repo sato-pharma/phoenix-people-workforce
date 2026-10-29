@@ -101,8 +101,7 @@ function EmployeePicker({
                 >
                   <span className="block font-bold text-slate-900">{option.fullName}</span>
                   <span className="block text-slate-500">
-                    {option.hrId}
-                    {option.jobTitle ? ` · ${option.jobTitle}` : ""} · {employmentSpan(option)}
+                    {option.jobTitle ? `${option.jobTitle} · ` : ""}{employmentSpan(option)}
                   </span>
                 </button>
               </li>
@@ -348,16 +347,16 @@ export function CrmUnmappedIdentitiesPanel({
               <tbody className="divide-y divide-orange-100">
                 {filtered.map((identity) => (
                   <tr key={identity.crmId} className="odd:bg-white even:bg-orange-50/30">
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{identity.crmId}</td>
+                    <td className="break-words px-3 py-2.5 font-semibold text-slate-700">{identity.crmId}</td>
                     <td className="px-3 py-2.5 font-medium text-slate-900">{identity.name}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{identity.roles.join(" + ")}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{identity.visitCount}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.firstSeen)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.lastSeen)}</td>
+                    <td className="break-words px-3 py-2.5 text-slate-600">{identity.roles.join(" + ")}</td>
+                    <td className="break-words px-3 py-2.5 font-semibold text-rose-500">{identity.visitCount}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(identity.firstSeen)}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(identity.lastSeen)}</td>
                     <td className="px-3 py-2.5">
                       <ResolutionCell employeeOptions={employeeOptions} identity={identity} onResolved={handleResolved} />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">
+                    <td className="break-words px-3 py-2.5">
                       <button
                         type="button"
                         onClick={() => viewInVisits(identity)}

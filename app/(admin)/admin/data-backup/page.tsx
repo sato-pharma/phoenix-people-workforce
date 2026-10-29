@@ -122,7 +122,12 @@ export default async function AdminDataBackupPage() {
       <div className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Tables Included in Full Backup</h2>
         <div className="border border-slate-200 bg-white">
-          <table className="w-full text-xs">
+          <table className="w-full table-fixed border-collapse text-xs">
+            <colgroup>
+              <col className="w-[20%]" />
+              <col className="w-[38%]" />
+              <col className="w-[42%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-900 text-left text-white">
                 <th className="px-3 py-2 font-semibold">Module</th>
@@ -135,15 +140,15 @@ export default async function AdminDataBackupPage() {
                 const meta = MODULE_META[t.module];
                 return (
                   <tr key={t.table} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                    <td className="px-3 py-1.5">
+                    <td className="min-w-0 break-words px-3 py-1.5">
                       <span
-                        className="inline-block h-2 w-2 rounded-full"
+                        className="inline-block h-2 w-2"
                         style={{ backgroundColor: `#${meta.tabColor}` }}
                       />
                       <span className="ml-1.5 text-slate-500">{meta.label}</span>
                     </td>
-                    <td className="px-3 py-1.5 font-medium text-slate-800">{t.name}</td>
-                    <td className="px-3 py-1.5 font-mono text-slate-500">{t.table}</td>
+                    <td className="min-w-0 break-words px-3 py-1.5 font-medium text-slate-800">{t.name}</td>
+                    <td className="min-w-0 break-all px-3 py-1.5 font-mono text-slate-500">{t.table}</td>
                   </tr>
                 );
               })}

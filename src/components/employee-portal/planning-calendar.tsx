@@ -896,6 +896,11 @@ function detailRowSections(rows: PlanningCalendarDetailRow[]): DetailRowSection[
   return sections;
 }
 
+// A row with nothing to say in a cell reads "—", not the "-" the rows are built with.
+function cellText(value: string) {
+  return value === "-" ? "—" : value;
+}
+
 function PlanningCalendarDetailsTable({
   hues,
   rows,
@@ -935,7 +940,7 @@ function PlanningCalendarDetailsTable({
                       <PortalRecordCard
                         accent={detailAccent(row.tone)}
                         key={`${row.id}-mobile`}
-                        meta={`${row.date} · ${row.employee}`}
+                        meta={row.employee}
                         status={
                           <span className={`inline-flex border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                             {row.status}
@@ -945,19 +950,17 @@ function PlanningCalendarDetailsTable({
                       >
                         <PortalRecordFields
                           fields={[
-                            { label: "Location", value: row.regionLocation },
-                            { label: "Area", value: row.area },
-                            { label: "Medical rep", value: row.medicalRep },
+                            ...(row.medicalRep !== "-" ? [{ label: "Medical rep", value: row.medicalRep }] : []),
                             { label: "Time", value: row.time },
                           ]}
                         />
                         {row.conflictWarning !== "-" ? (
-                          <p className="mt-2 rounded border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs font-semibold leading-5 text-sky-800">
+                          <p className="mt-2 border border-sky-100 bg-sky-50 px-2.5 py-2 text-xs font-semibold leading-5 text-sky-800">
                             {row.conflictWarning}
                           </p>
                         ) : null}
                         {row.notes !== "-" ? (
-                          <p className="mt-2 rounded border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+                          <p className="mt-2 border border-slate-100 bg-white px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
                             {row.notes}
                           </p>
                         ) : null}
@@ -976,21 +979,18 @@ function PlanningCalendarDetailsTable({
           className="text-xs"
           cols={
             <colgroup>
-              <col className="w-[8%]" />
-              <col className="w-[13%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[16%]" />
               <col className="w-[10%]" />
-              <col className="w-[9%]" />
-              <col className="w-[11%]" />
-              <col className="w-[12%]" />
-              <col className="w-[7%]" />
-              <col className="w-[13%]" />
-              <col className="w-[17%]" />
+              <col className="w-[14%]" />
+              <col className="w-[20%]" />
             </colgroup>
           }
         >
           <thead>
             <tr className="border-b-2 border-orange-500 bg-slate-950">
-              {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Chain Visit"].map((column) => (
+              {["Employee", "Activity", "Medical Rep", "Time", "Plan Status", "Chain Visit"].map((column) => (
                 <th
                   className="border-r border-slate-800 px-3 py-3 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
                   key={column}
@@ -1010,7 +1010,7 @@ function PlanningCalendarDetailsTable({
                   className={`px-3 py-2 text-phx-xs font-black uppercase tracking-[0.14em] ${
                     section.tone === "holiday" ? "text-emerald-800" : "text-white"
                   }`}
-                  colSpan={9}
+                  colSpan={6}
                 >
                   {section.label}
                   <span className={`ml-2 font-bold ${section.tone === "holiday" ? "text-emerald-700" : "text-slate-300"}`}>
@@ -1022,7 +1022,7 @@ function PlanningCalendarDetailsTable({
                 ...(area.label
                   ? [
                       <tr className="bg-slate-100" key={`${section.key}-${area.key}-header`}>
-                        <td className="px-3 py-1.5 pl-6 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600" colSpan={9}>
+                        <td className="px-3 py-1.5 pl-6 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600" colSpan={6}>
                           {area.label}
                         </td>
                       </tr>,
@@ -1030,24 +1030,21 @@ function PlanningCalendarDetailsTable({
                   : []),
                 ...area.rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-phx-xs font-semibold text-slate-500">{row.date}</td>
                   <td className="break-words border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${employeeHueFor(hues, row.employeeHrId).dot}`} />
+                      <span className={`inline-block h-2 w-2 shrink-0 ${employeeHueFor(hues, row.employeeHrId).dot}`} />
                       {row.employee}
                     </span>
                   </td>
                   <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold">{row.activity}</td>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionLocation}</td>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.area}</td>
-                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.medicalRep}</td>
+                  <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{cellText(row.medicalRep)}</td>
                   <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
                     <span className={`inline-block max-w-full break-words border px-2 py-0.5 text-phx-2xs font-black uppercase leading-snug tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                       {row.status}
                     </span>
                   </td>
-                  <td className="break-words px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-sky-800">{row.conflictWarning}</td>
+                  <td className="break-words px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-sky-800">{cellText(row.conflictWarning)}</td>
                 </tr>
                 )),
               ]),

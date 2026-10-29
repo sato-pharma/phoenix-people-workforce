@@ -74,7 +74,7 @@ function egp(value: number) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "N/A";
+  if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return stableEnGbFormatter({
@@ -407,7 +407,7 @@ export function MedicalRepExpensesWorkspace({
                 <FormField label="Attachment (optional)">
                   <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
                     <Upload className="h-4 w-4" />
-                    <span className="whitespace-nowrap">
+                    <span className="break-words">
                       {attachments.length > 0
                         ? `${countLabel(attachments.length, "file", "files")} selected`
                         : "Upload ticket"}
@@ -691,7 +691,7 @@ export function MedicalRepExpensesWorkspace({
                             <span aria-hidden="true" className="px-1 text-orange-500">→</span>
                             <span className="sr-only"> to </span>
                             <span className="font-semibold text-slate-900" dir="auto">
-                              {request.toLabel || "N/A"}
+                              {request.toLabel || "—"}
                             </span>
                           </p>
                         </td>
@@ -721,7 +721,7 @@ export function MedicalRepExpensesWorkspace({
                           {request.attachmentCount}
                         </td>
                         <td className="break-words px-3 py-3 font-medium text-slate-700" dir="auto">
-                          {request.notes || "-"}
+                          {request.notes || "—"}
                         </td>
                       </tr>
                     ))}
@@ -739,7 +739,7 @@ export function MedicalRepExpensesWorkspace({
                       <div className="min-w-0">
                         <p className="font-mono text-xs font-bold text-slate-500">MR-{request.id}</p>
                         <p className="mt-1 break-words font-black text-slate-950" dir="auto">
-                          {request.toLabel || "N/A"}
+                          {request.toLabel}
                         </p>
                       </div>
                       <Badge className="shrink-0" variant={statusVariant(request.status)}>

@@ -723,20 +723,20 @@ export function DirectOrderRequestDetail({
               submitter had put the customer CODE in the pharmacy-name box and the customer NAME in
               the doctor box, while the typed address named a different governorate than the brick.
               Every one of those was on screen already — just never next to what it contradicts. */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full border-collapse text-sm">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-sm"><colgroup><col style={{ width: "22%" }} /><col style={{ width: "30%" }} /><col style={{ width: "30%" }} /><col style={{ width: "18%" }} /></colgroup>
               <thead>
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                  <th className="whitespace-nowrap px-3 py-2">Field</th>
-                  <th className="whitespace-nowrap px-3 py-2">Submitter entered</th>
-                  <th className="whitespace-nowrap px-3 py-2">Photo or master database says</th>
-                  <th className="whitespace-nowrap px-3 py-2">Agreement</th>
+                  <th className="break-words px-3 py-2">Field</th>
+                  <th className="break-words px-3 py-2">Submitter entered</th>
+                  <th className="break-words px-3 py-2">Photo or master database says</th>
+                  <th className="break-words px-3 py-2">Agreement</th>
                 </tr>
               </thead>
               <tbody>
                 {comparisonRows.map((row) => (
                   <tr key={row.label} className="border-b border-[#eef1f3]">
-                    <td className="whitespace-nowrap px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider text-slate-400">
+                    <td className="break-words px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider text-slate-400">
                       {row.label}
                     </td>
                     <td className="px-3 py-1.5 font-semibold text-slate-900" dir="auto">
@@ -745,7 +745,7 @@ export function DirectOrderRequestDetail({
                     <td className="px-3 py-1.5 text-slate-700" dir="auto">
                       {row.master}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5">
+                    <td className="break-words px-3 py-1.5">
                       <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
                         {VERDICT_LABEL[row.verdict]}
                       </span>
@@ -888,7 +888,7 @@ export function DirectOrderRequestDetail({
                           <span className="ml-1 font-black text-rose-700">
                             {match.ownedByPharmacyCode === "unknown"
                               ? "· ownership could not be checked"
-                              : `· already held by ${match.ownedByPharmacyName ?? "another pharmacy"} (${match.ownedByPharmacyCode})`}
+                              : `· already held by ${match.ownedByPharmacyName ?? "another pharmacy"}`}
                           </span>
                         ) : null}
                       </li>
@@ -903,27 +903,27 @@ export function DirectOrderRequestDetail({
             </>
           ) : (
             <>
-              <div className="mt-1.5 hidden overflow-x-auto md:block">
-                <table className="w-full border-collapse text-sm">
+              <div className="mt-1.5 hidden md:block">
+                <table className="w-full table-fixed border-collapse text-sm"><colgroup><col style={{ width: "20%" }} /><col style={{ width: "14%" }} /><col style={{ width: "14%" }} /><col style={{ width: "17%" }} /><col style={{ width: "17%" }} /><col style={{ width: "18%" }} /></colgroup>
                   <thead>
                     <tr className="border-b border-[#eef1f3] text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                      <th className="whitespace-nowrap px-2 py-1">Distributor</th>
-                      <th className="whitespace-nowrap px-2 py-1">Distributor code</th>
-                      <th className="whitespace-nowrap px-2 py-1">Customer code</th>
-                      <th className="whitespace-nowrap px-2 py-1">Mapped brick</th>
-                      <th className="whitespace-nowrap px-2 py-1">Mapped area</th>
-                      <th className="whitespace-nowrap px-2 py-1">Mapped region</th>
+                      <th className="break-words px-2 py-1">Distributor</th>
+                      <th className="break-words px-2 py-1">Distributor code</th>
+                      <th className="break-words px-2 py-1">Customer code</th>
+                      <th className="break-words px-2 py-1">Mapped brick</th>
+                      <th className="break-words px-2 py-1">Mapped area</th>
+                      <th className="break-words px-2 py-1">Mapped region</th>
                     </tr>
                   </thead>
                   <tbody>
                     {distributors.map((row) => (
                       <tr key={`${row.distributorCode}-${row.customerCode}`} className="border-b border-[#eef1f3]">
-                        <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-900">{row.distributorName}</td>
-                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.distributorCode || "—"}</td>
-                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.customerCode}</td>
-                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedBrickName ?? "not mapped"}</td>
-                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedAreaName ?? "not mapped"}</td>
-                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedRegionName ?? "not mapped"}</td>
+                        <td className="break-words px-2 py-1.5 font-semibold text-slate-900">{row.distributorName}</td>
+                        <td className="break-words px-2 py-1.5 text-slate-700">{row.distributorCode || "—"}</td>
+                        <td className="break-words px-2 py-1.5 text-slate-700">{row.customerCode}</td>
+                        <td className="break-words px-2 py-1.5 text-slate-500">{row.mappedBrickName ?? "not mapped"}</td>
+                        <td className="break-words px-2 py-1.5 text-slate-500">{row.mappedAreaName ?? "not mapped"}</td>
+                        <td className="break-words px-2 py-1.5 text-slate-500">{row.mappedRegionName ?? "not mapped"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1029,29 +1029,29 @@ export function DirectOrderRequestDetail({
               this replaces made "does this pharmacy usually take this much?" — the actual question
               an approver is answering — something you had to reconstruct by eye across 30 rows.
               Each cell carries the units and which distributor supplied them. */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full border-collapse text-sm">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-sm"><colgroup><col style={{ width: "24%" }} />{salesMatrix.months.map((month) => (<col key={month} style={{ width: `${Math.floor(66 / Math.max(salesMatrix.months.length, 1))}%` }} />))}<col style={{ width: "10%" }} /></colgroup>
               <thead>
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                  <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Product</th>
+                  <th className="bg-slate-50 px-3 py-2">Product</th>
                   {salesMatrix.months.map((month) => (
-                    <th key={month} className="whitespace-nowrap px-3 py-2 text-right">
+                    <th key={month} className="break-words px-3 py-2 text-right">
                       {month}
                     </th>
                   ))}
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Total units</th>
+                  <th className="break-words px-3 py-2 text-right">Total units</th>
                 </tr>
               </thead>
               <tbody>
                 {salesMatrix.products.map((product) => (
                   <tr key={product.productCode} className="border-b border-[#eef1f3]">
-                    <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1.5 text-left font-semibold text-slate-900">
-                      {product.productName} <span className="font-normal text-slate-400">({product.productCode})</span>
+                    <th scope="row" className="break-words bg-white px-3 py-1.5 text-left font-semibold text-slate-900">
+                      {product.productName}
                     </th>
                     {product.cells.map((cell, index) => (
                       <td
                         key={salesMatrix.months[index]}
-                        className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900"
+                        className="break-words px-3 py-1.5 text-right tabular-nums text-slate-900"
                       >
                         {cell ? (
                           <>
@@ -1072,7 +1072,7 @@ export function DirectOrderRequestDetail({
                         )}
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-black tabular-nums text-slate-900">
+                    <td className="break-words px-3 py-1.5 text-right font-black tabular-nums text-slate-900">
                       {product.totalUnits.toLocaleString("en-US")}
                     </td>
                   </tr>
@@ -1082,19 +1082,19 @@ export function DirectOrderRequestDetail({
                   record, so the approver weighs THIS order against THAT total at a glance. */}
               <tfoot>
                 <tr className="bg-slate-50">
-                  <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                  <th scope="row" className="break-words bg-slate-50 px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                     Total units · {money(retailTotals.salesValue)} over {salesMatrix.months.length} month
                     {salesMatrix.months.length === 1 ? "" : "s"}
                   </th>
                   {salesMatrix.monthTotals.map((total, index) => (
                     <td
                       key={salesMatrix.months[index]}
-                      className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700"
+                      className="break-words px-3 py-2 text-right font-bold tabular-nums text-slate-700"
                     >
                       {total.toLocaleString("en-US")}
                     </td>
                   ))}
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                  <td className="break-words px-3 py-2 text-right font-black tabular-nums text-slate-900">
                     {salesMatrix.grandTotalUnits.toLocaleString("en-US")}
                   </td>
                 </tr>
@@ -1112,7 +1112,7 @@ export function DirectOrderRequestDetail({
               <article key={product.productCode} className="block border border-phx-line p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-sm font-black text-slate-900">
-                    {product.productName} <span className="font-semibold text-slate-400">({product.productCode})</span>
+                    {product.productName}
                   </p>
                   <p className="text-sm font-black tabular-nums text-slate-900">
                     {product.totalUnits.toLocaleString("en-US")} units
@@ -1173,25 +1173,25 @@ export function DirectOrderRequestDetail({
           </p>
         ) : (
           <>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[760px] border-collapse text-sm">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-sm"><colgroup><col style={{ width: "14%" }} /><col style={{ width: "36%" }} /><col style={{ width: "10%" }} /><col style={{ width: "10%" }} /><col style={{ width: "10%" }} /><col style={{ width: "20%" }} /></colgroup>
               <thead>
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                  <th className="whitespace-nowrap px-3 py-2">Month</th>
-                  <th className="whitespace-nowrap px-3 py-2">Product</th>
+                  <th className="break-words px-3 py-2">Month</th>
+                  <th className="break-words px-3 py-2">Product</th>
                   {/* No Distributor column: a direct order carries no distributor of its own. This
                       table used to invent one by fanning every order across the pharmacy's linked
                       pairs — which also counted each order once PER PAIR at full value. */}
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Orders</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Qty</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Bonus</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Value</th>
+                  <th className="break-words px-3 py-2 text-right">Orders</th>
+                  <th className="break-words px-3 py-2 text-right">Qty</th>
+                  <th className="break-words px-3 py-2 text-right">Bonus</th>
+                  <th className="break-words px-3 py-2 text-right">Value</th>
                 </tr>
               </thead>
               <tbody>
                 {pharmacyHistory.map((row) => (
                   <tr key={`${row.month}-${row.productCode}`} className="border-b border-[#eef1f3]">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">
+                    <td className="break-words px-3 py-1.5 font-semibold text-slate-900">
                       {row.month}
                       {row.monthIsProvisional ? (
                         <span className="ml-1.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
@@ -1199,17 +1199,17 @@ export function DirectOrderRequestDetail({
                         </span>
                       ) : null}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">
-                      {row.productName} <span className="text-slate-400">({row.productCode})</span>
+                    <td className="break-words px-3 py-1.5 text-slate-800">
+                      {row.productName}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{row.orders}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900">
+                    <td className="break-words px-3 py-1.5 text-right tabular-nums text-slate-700">{row.orders}</td>
+                    <td className="break-words px-3 py-1.5 text-right tabular-nums text-slate-900">
                       {row.qty.toLocaleString("en-US")}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">
+                    <td className="break-words px-3 py-1.5 text-right tabular-nums text-slate-700">
                       {row.bonus.toLocaleString("en-US")}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums text-slate-900">
+                    <td className="break-words px-3 py-1.5 text-right font-bold tabular-nums text-slate-900">
                       {money(row.salesValue)}
                     </td>
                   </tr>
@@ -1217,19 +1217,19 @@ export function DirectOrderRequestDetail({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50">
-                  <td colSpan={2} className="whitespace-nowrap px-3 py-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                  <td colSpan={2} className="break-words px-3 py-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
                     Total
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
+                  <td className="break-words px-3 py-2 text-right font-bold tabular-nums text-slate-700">
                     {directTotals.orders.toLocaleString("en-US")}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                  <td className="break-words px-3 py-2 text-right font-black tabular-nums text-slate-900">
                     {directTotals.qty.toLocaleString("en-US")}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
+                  <td className="break-words px-3 py-2 text-right font-bold tabular-nums text-slate-700">
                     {directTotals.bonus.toLocaleString("en-US")}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                  <td className="break-words px-3 py-2 text-right font-black tabular-nums text-slate-900">
                     {money(directTotals.salesValue)}
                   </td>
                 </tr>
@@ -1250,8 +1250,7 @@ export function DirectOrderRequestDetail({
                       not final
                     </span>
                   ) : null}
-                  <span className="font-bold"> · {row.productName}</span>{" "}
-                  <span className="font-semibold text-slate-400">({row.productCode})</span>
+                  <span className="font-bold"> · {row.productName}</span>
                 </p>
                 <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">
                   {row.orders.toLocaleString("en-US")} order{row.orders === 1 ? "" : "s"}

@@ -3,6 +3,12 @@
 import * as React from "react";
 import { CheckCircle2, HelpCircle, Info, Layers, ListTree, XCircle } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import {
   ROI_EXPLAIN_REASON_LABEL,
@@ -208,44 +214,76 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                 {data.ledger.length} row{data.ledger.length === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse text-left text-phx-sm">
-                <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
-                  <tr>
-                    <th className="px-3 py-2">SoS row</th>
-                    <th className="px-3 py-2">Period</th>
-                    <th className="px-3 py-2">Distributor</th>
-                    <th className="px-3 py-2">Client code</th>
-                    <th className="px-3 py-2">Product</th>
-                    <th className="px-3 py-2 text-right">Qty</th>
-                    <th className="px-3 py-2 text-right">Value counted</th>
-                    <th className="px-3 py-2">Match / confidence</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {data.ledger.length === 0 ? (
-                    <tr><td className="px-4 py-5 text-center text-phx-sm font-medium text-phx-ink-soft" colSpan={8}>No attributed sales rows.</td></tr>
-                  ) : (
-                    data.ledger.map((row) => (
+            <PortalResponsiveDataList
+              items={data.ledger}
+              empty={<p className="px-4 py-5 text-center text-phx-sm font-medium text-phx-ink-soft">No attributed sales rows.</p>}
+              getKey={(row) => row.ledgerKey}
+              renderCard={(row) => (
+                <PortalRecordCard
+                  accent="emerald"
+                  title={row.productName}
+                  meta={`${row.invoicePeriod} · ${row.distributorCode} · ${row.clientCode}`}
+                  status={<span className="text-phx-xs font-bold uppercase text-emerald-700">{row.confidence}</span>}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "SoS row", value: row.sosRowId ?? "—" },
+                      { label: "Qty", value: units(row.qty) },
+                      { label: "Value counted", value: money(row.valueCounted) },
+                      { label: "Match", value: row.matchReason },
+                    ]}
+                  />
+                </PortalRecordCard>
+              )}
+              renderTable={() => (
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[13%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[15%]" />
+                      <col className="w-[24%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[11%]" />
+                    </colgroup>
+                  }
+                  className="text-phx-sm"
+                >
+                  <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
+                    <tr>
+                      <th className="px-3 py-2">SoS row</th>
+                      <th className="px-3 py-2">Period / distributor</th>
+                      <th className="px-3 py-2">Client code</th>
+                      <th className="px-3 py-2">Product</th>
+                      <th className="px-3 py-2 text-right">Qty</th>
+                      <th className="px-3 py-2 text-right">Value counted</th>
+                      <th className="px-3 py-2">Match / confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {data.ledger.map((row) => (
                       <tr key={row.ledgerKey} className="border-t border-[#FEE7D2]">
-                        <td className="px-3 py-1.5 font-mono text-phx-ink-faint">{row.sosRowId ?? "—"}</td>
-                        <td className="px-3 py-1.5 font-mono font-bold text-phx-ink">{row.invoicePeriod}</td>
-                        <td className="px-3 py-1.5 font-medium text-phx-ink-soft">{row.distributorCode}</td>
-                        <td className="px-3 py-1.5 font-mono text-phx-ink-soft">{row.clientCode}</td>
-                        <td className="px-3 py-1.5 font-semibold text-phx-ink-2">{row.productName}</td>
+                        <td className="break-words px-3 py-1.5 font-mono text-phx-ink-faint">{row.sosRowId ?? "—"}</td>
+                        <td className="break-words px-3 py-1.5">
+                          <span className="block font-mono font-bold text-phx-ink">{row.invoicePeriod}</span>
+                          <span className="block font-medium text-phx-ink-soft">{row.distributorCode}</span>
+                        </td>
+                        <td className="break-words px-3 py-1.5 font-mono text-phx-ink-soft">{row.clientCode}</td>
+                        <td className="break-words px-3 py-1.5 font-semibold text-phx-ink-2">{row.productName}</td>
                         <td className="px-3 py-1.5 text-right font-semibold text-phx-ink-2">{units(row.qty)}</td>
                         <td className="px-3 py-1.5 text-right font-bold text-phx-ink">{money(row.valueCounted)}</td>
-                        <td className="px-3 py-1.5">
+                        <td className="break-words px-3 py-1.5">
                           <span className="inline-flex items-center rounded-[4px] border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-emerald-700" title={row.matchReason}>
                             {row.confidence}
                           </span>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              )}
+            />
           </div>
           <p className="text-phx-2xs font-medium text-phx-ink-faint">
             Ledger reflects the current exact attribution (distributor + pharmacy code + product + period) and reconciles to the actual sales above. Read-only — nothing here changes attribution.

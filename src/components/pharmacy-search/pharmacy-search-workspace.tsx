@@ -29,8 +29,8 @@ const DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 2;
 const RADIUS_OPTIONS = [1, 2, 5] as const;
 
-const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500";
-const bodyCell = "whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-700";
+const headerCell = "break-words px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500";
+const bodyCell = "break-words px-3 py-2 text-sm font-semibold text-slate-700";
 
 /**
  * A pharmacy registered inside Phoenix rather than loaded from a distributor file.
@@ -227,7 +227,7 @@ export function PharmacySearchWorkspace() {
   const saveAction =
     profile?.origin === "google" ? (
       <button
-        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded border border-orange-300 bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 border border-orange-300 bg-orange-500 px-3 py-2 text-xs font-black text-white transition hover:bg-orange-600 disabled:opacity-60"
         disabled={saving}
         onClick={() => void saveDiscovery()}
         type="button"
@@ -239,7 +239,7 @@ export function PharmacySearchWorkspace() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
+      <section className="border border-slate-200/90 bg-white/95 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -253,12 +253,12 @@ export function PharmacySearchWorkspace() {
             />
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="whitespace-nowrap text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+            <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
               Radius
             </span>
             {RADIUS_OPTIONS.map((option) => (
               <button
-                className={`whitespace-nowrap rounded border px-3 py-2 text-xs font-black transition ${
+                className={`border px-3 py-2 text-xs font-black transition ${
                   radiusKm === option
                     ? "border-orange-300 bg-orange-50 text-orange-700"
                     : "border-slate-200 bg-white text-slate-600 hover:border-orange-200"
@@ -300,9 +300,9 @@ export function PharmacySearchWorkspace() {
       ) : null}
 
       {visibleResults && visibleResults.hits.length > 0 ? (
-        <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)]">
-          <div className="border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-4 py-3.5">
-            <h2 className="whitespace-nowrap text-sm font-black tracking-tight text-slate-900">
+        <section className="overflow-hidden border border-slate-200/90 bg-white/95">
+          <div className="border-b border-slate-200/80 px-4 py-3.5">
+            <h2 className="text-sm font-black tracking-tight text-slate-900">
               {visibleResults.hits.length} match{visibleResults.hits.length === 1 ? "" : "es"} in the database
             </h2>
             <p className="mt-1 text-xs font-semibold text-slate-500">
@@ -319,7 +319,7 @@ export function PharmacySearchWorkspace() {
                   accent="orange"
                   meta={hit.address ?? "No address recorded"}
                   status={
-                    <span className="whitespace-nowrap text-xs font-black text-slate-500">
+                    <span className="text-xs font-black text-slate-500">
                       {distributorSummary(hit.distributorCount)}
                     </span>
                   }
@@ -410,8 +410,8 @@ export function PharmacySearchWorkspace() {
       ) : null}
 
       {showGooglePrompt ? (
-        <section className="rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/95 to-white p-5 shadow-[0_8px_20px_rgba(245,158,11,0.12)]">
-          <h2 className="whitespace-nowrap text-sm font-black tracking-tight text-amber-900">
+        <section className="border border-amber-200/90 p-5">
+          <h2 className="text-sm font-black tracking-tight text-amber-900">
             Not in the Phoenix database
           </h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-amber-900/80">
@@ -420,7 +420,7 @@ export function PharmacySearchWorkspace() {
             that point are listed too.
           </p>
           <button
-            className="mt-3 inline-flex items-center gap-1.5 whitespace-nowrap rounded border border-amber-300 bg-white px-3 py-2 text-xs font-black text-amber-900 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-60"
+            className="mt-3 inline-flex items-center gap-1.5 border border-amber-300 bg-white px-3 py-2 text-xs font-black text-amber-900 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-60"
             disabled={googleLoading}
             onClick={() => void runGoogleSearch()}
             type="button"
@@ -444,7 +444,7 @@ export function PharmacySearchWorkspace() {
                     onClick={() => void openGoogleProfile(candidate)}
                     type="button"
                   >
-                    <span className="whitespace-nowrap text-sm font-black text-slate-900">{candidate.primaryText}</span>
+                    <span className="text-sm font-black text-slate-900">{candidate.primaryText}</span>
                     <span className="text-xs font-semibold text-slate-500">
                       {candidate.secondaryText ?? candidate.description}
                     </span>

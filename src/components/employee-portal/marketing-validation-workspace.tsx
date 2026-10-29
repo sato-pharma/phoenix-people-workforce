@@ -30,6 +30,7 @@ import {
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { PortalRecordFields } from "@/components/employee-portal/portal-primitives";
+import { humanizeCode } from "@/lib/format/code-label";
 import { NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -762,7 +763,7 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
         code: row.distributorCode.distributorPharmacyCode,
         distributorName: row.distributorName ?? "Unknown distributor",
         id: row.distributorCode.id,
-        status: row.distributorCode.referenceStatus.replace(/_/g, " "),
+        status: humanizeCode(row.distributorCode.referenceStatus),
       }
       : null;
 
@@ -1704,8 +1705,8 @@ function ValidatedPharmaciesModal({
                           </span>
                         ) : null}
                       </td>
-                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "Not captured"}</td>
-                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "Not captured"}</td>
+                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "—"}</td>
+                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "—"}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex flex-wrap gap-1.5">
                           {pharmacy.vendorCodes.map((line) => (
@@ -4080,7 +4081,14 @@ export function MarketingValidationWorkspace() {
               {/* Desktop and tablet table view — `md` (768px) and up */}
               <div className="mt-4 hidden md:block">
                 <div className="overflow-hidden rounded-none border border-slate-200">
-                  <table className="w-full border-collapse text-left">
+                  <table className="w-full table-fixed border-collapse text-left">
+                    <colgroup>
+                      <col className="w-[28%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[20%]" />
+                    </colgroup>
                     <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
@@ -4096,7 +4104,7 @@ export function MarketingValidationWorkspace() {
                         const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                         return (
                           <tr className="border-t border-slate-100" key={group.key}>
-                            <td className="border-r border-slate-100 px-3 py-2.5">
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5">
                               <div className="min-w-0">
                                 <p className="font-bold text-slate-900">{group.customerName}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -4105,13 +4113,13 @@ export function MarketingValidationWorkspace() {
                                 </div>
                               </div>
                             </td>
-                            <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-amber-700">
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-semibold text-amber-700">
                               {pendingBlockLabel(group.rows)}
                             </td>
-                            <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
-                              {customer?.extractedAreaName || customer?.regionName || "Not captured"}
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                              {customer?.extractedAreaName || customer?.regionName || "—"}
                             </td>
-                            <td className="border-r border-slate-100 px-3 py-2.5 text-center">
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5 text-center">
                               <button
                                 className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
@@ -4126,7 +4134,7 @@ export function MarketingValidationWorkspace() {
                             <td className="px-3 py-2.5 text-center">
                               {pendingHasCapturableGap(group.rows) ? (
                                 <button
-                                  className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-none border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
+                                  className="inline-flex min-h-7 items-center justify-center gap-1.5 rounded-none border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                                   onClick={() => startCompletingCustomer(group)}
                                   type="button"
                                 >
@@ -4134,7 +4142,7 @@ export function MarketingValidationWorkspace() {
                                   Capture Evidence
                                 </button>
                               ) : (
-                                <span className="whitespace-nowrap text-phx-sm font-medium text-slate-400">Awaiting release</span>
+                                <span className="text-phx-sm font-medium text-slate-400">Awaiting release</span>
                               )}
                             </td>
                           </tr>
@@ -4199,11 +4207,11 @@ export function MarketingValidationWorkspace() {
                           <div className="mt-2 space-y-1 text-phx-sm">
                             <div className="flex justify-between gap-2">
                               <span className="shrink-0 font-medium text-slate-500">Area</span>
-                              <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
+                              <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "—"}</span>
                             </div>
                             <div className="flex justify-between gap-2">
                               <span className="shrink-0 font-medium text-slate-500">Governorate</span>
-                              <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedGovernorateName || "Not captured"}</span>
+                              <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedGovernorateName || "—"}</span>
                             </div>
                           </div>
                         </div>
@@ -4216,7 +4224,13 @@ export function MarketingValidationWorkspace() {
               {/* Desktop and tablet table view — `md` (768px) and up */}
               <div className="mt-4 hidden md:block">
                 <div className="overflow-hidden rounded-none border border-slate-200">
-                  <table className="w-full border-collapse text-left">
+                  <table className="w-full table-fixed border-collapse text-left">
+                    <colgroup>
+                      <col className="w-[40%]" />
+                      <col className="w-[25%]" />
+                      <col className="w-[25%]" />
+                      <col className="w-[10%]" />
+                    </colgroup>
                     <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
@@ -4231,7 +4245,7 @@ export function MarketingValidationWorkspace() {
                         const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                         return (
                           <tr className="border-t border-slate-100" key={group.key}>
-                            <td className="border-r border-slate-100 px-3 py-2.5">
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5">
                               <div className="min-w-0">
                                 <p className="font-bold text-slate-900">{group.customerName}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -4243,11 +4257,11 @@ export function MarketingValidationWorkspace() {
                                 </div>
                               </div>
                             </td>
-                            <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
-                              {customer?.extractedAreaName || customer?.regionName || "Not captured"}
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                              {customer?.extractedAreaName || customer?.regionName || "—"}
                             </td>
-                            <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
-                              {customer?.extractedGovernorateName || "Not captured"}
+                            <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                              {customer?.extractedGovernorateName || "—"}
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button

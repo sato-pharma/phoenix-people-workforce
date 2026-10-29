@@ -36,7 +36,6 @@ import {
   filterByLine,
   formatEgp,
   formatPayoutMonth,
-  formatPayrollCandidateSystemId,
   formatResignationDate,
   isDeclinedOfferResignation,
   isTerminatedResignation,
@@ -547,7 +546,7 @@ export function ResignationsWorkspace({
 
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
           <div className="min-w-[200px] flex-1">
-            <RgInput onChange={setQuery} placeholder="Filter by name, HR ID, reason…" value={query} />
+            <RgInput onChange={setQuery} placeholder="Filter by name, reason…" value={query} />
           </div>
           <div className="w-48">
             <RgSelect onChange={setLine} value={line}>
@@ -602,24 +601,13 @@ export function ResignationsWorkspace({
               cards={slice(candidateRows).map((candidate) => (
                 <PortalRecordCard
                   key={candidate.id}
-                  meta={
-                    <span className="font-mono">
-                      {candidate.hrId || "No HR ID"}
-                    </span>
-                  }
-                  status={
-                    <RgBadge
-                      title={`System resignation candidate ID ${formatPayrollCandidateSystemId(candidate.id)} · ${candidate.sourceFileName ?? "unknown source"} row ${candidate.sourceRow ?? "-"} · no manual HR ID needed`}
-                    >
-                      {formatPayrollCandidateSystemId(candidate.id)}
-                    </RgBadge>
-                  }
+                  meta={candidate.jobTitle ? <span>{candidate.jobTitle}</span> : undefined}
                   title={candidate.employeeName}
                 >
                   <PortalRecordFields
                     fields={[
-                      { label: "Line", value: candidate.lineName ?? "-" },
-                      { label: "Area", value: candidate.areaName ?? "-" },
+                      { label: "Line", value: candidate.lineName ?? "—" },
+                      { label: "Area", value: candidate.areaName ?? "—" },
                       {
                         label: "Last payout",
                         value: formatPayoutMonth(
@@ -627,10 +615,20 @@ export function ResignationsWorkspace({
                           candidate.lastPayoutYear,
                         ),
                       },
+                      { label: "Source", value: candidate.sourceFileName ?? "—" },
                     ]}
                   />
                 </PortalRecordCard>
               ))}
+              cols={
+                <colgroup>
+                  <col className="w-[28%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+              }
               head={
                 <>
                   <RgTh>Employee</RgTh>
@@ -644,20 +642,14 @@ export function ResignationsWorkspace({
               {slice(candidateRows).map((candidate) => (
                 <tr className="bg-white hover:bg-slate-50" key={candidate.id}>
                   <RgTd>
-                    <RgPerson hrId={candidate.hrId} name={candidate.employeeName} />
+                    <RgPerson jobTitle={candidate.jobTitle} name={candidate.employeeName} />
                   </RgTd>
-                  <RgTd className="text-slate-500">{candidate.lineName ?? "-"}</RgTd>
-                  <RgTd className="text-slate-500">{candidate.areaName ?? "-"}</RgTd>
+                  <RgTd className="text-slate-500">{candidate.lineName ?? "—"}</RgTd>
+                  <RgTd className="text-slate-500">{candidate.areaName ?? "—"}</RgTd>
                   <RgTd className="text-slate-500">
                     {formatPayoutMonth(candidate.lastPayoutMonth, candidate.lastPayoutYear)}
                   </RgTd>
-                  <RgTd>
-                    <RgBadge
-                      title={`System resignation candidate ID ${formatPayrollCandidateSystemId(candidate.id)} · ${candidate.sourceFileName ?? "unknown source"} row ${candidate.sourceRow ?? "-"} · no manual HR ID needed`}
-                    >
-                      {formatPayrollCandidateSystemId(candidate.id)}
-                    </RgBadge>
-                  </RgTd>
+                  <RgTd className="text-slate-500">{candidate.sourceFileName ?? "—"}</RgTd>
                 </tr>
               ))}
             </RgTable>
@@ -687,10 +679,7 @@ export function ResignationsWorkspace({
                   actions={recordControls(record, busy === record.id)}
                   key={record.id}
                   meta={
-                    <span>
-                      <span className="font-mono">{record.employeeHrId || "No HR ID"}</span>
-                      {record.lineName ? ` · ${record.lineName}` : ""}
-                    </span>
+                    <span>{[record.jobTitle, record.lineName].filter(Boolean).join(" · ")}</span>
                   }
                   status={
                     <RgBadge>
@@ -708,7 +697,7 @@ export function ResignationsWorkspace({
                             { label: "Base salary", value: formatEgp(record.settlement?.baseSalary) },
                             {
                               label: "Days paid",
-                              value: record.settlement ? record.settlement.daysWorked : "-",
+                              value: record.settlement ? record.settlement.daysWorked : "—",
                             },
                             { label: "Due this month", value: formatEgp(record.settlement?.total) },
                             {
@@ -729,6 +718,25 @@ export function ResignationsWorkspace({
                 </PortalRecordCard>
               );
             })}
+            cols={
+              settlementWithheld ? (
+                <colgroup>
+                  <col className="w-[40%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[40%]" />
+                </colgroup>
+              ) : (
+                <colgroup>
+                  <col className="w-[24%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+              )
+            }
             head={
               <>
                 <RgTh>Employee</RgTh>
@@ -773,7 +781,7 @@ export function ResignationsWorkspace({
                     }
                   >
                     <RgPerson
-                      hrId={record.employeeHrId}
+                      jobTitle={record.jobTitle}
                       meta={[
                         record.lineName,
                         record.hireDate ? `Hired ${formatResignationDate(record.hireDate)}` : null,
@@ -789,7 +797,7 @@ export function ResignationsWorkspace({
                         {formatEgp(record.settlement?.baseSalary)}
                       </RgTd>
                       <RgTd className="text-right text-slate-500">
-                        {record.settlement ? record.settlement.daysWorked : "-"}
+                        {record.settlement ? record.settlement.daysWorked : "—"}
                       </RgTd>
                       <RgTd className="text-right font-bold text-slate-900">
                         {formatEgp(record.settlement?.total)}

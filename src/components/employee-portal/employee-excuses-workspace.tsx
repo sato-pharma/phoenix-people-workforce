@@ -973,8 +973,17 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
               ) : null}
 
               {/* Desktop table (md+) */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-phx-sm">
+              <div className="hidden md:block">
+                <table className="w-full table-fixed border-collapse text-left text-phx-sm" data-portal-desktop-table>
+                  <colgroup>
+                    <col className="w-[14%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[8%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[23%]" />
+                  </colgroup>
                   <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Date</th>
@@ -989,20 +998,20 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   <tbody className="divide-y divide-slate-100">
                     {filteredRequests.map((request) => (
                       <tr key={request.id} className="bg-white transition hover:bg-orange-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700 whitespace-nowrap">
+                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-semibold text-slate-700">
                           {formatDate(request.excuseDate)}
                           <span className="mt-0.5 block font-mono text-phx-2xs font-bold text-slate-400">{request.requestCode}</span>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-800">{typeLabel(request.excuseType)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-semibold text-slate-800">{typeLabel(request.excuseType)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{request.durationHours}h</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{request.managerName ?? "-"}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-semibold text-slate-700">{request.managerName ?? "—"}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={statusBadgeVariant(request.status)}>
                             {statusLabel(request.status)}
                           </Badge>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-600 whitespace-nowrap">{formatDateTime(request.createdAt)}</td>
-                        <td className="px-3 py-2.5 text-phx-xs">
+                        <td className="border-r border-slate-100 px-3 py-2.5 break-words font-medium text-slate-600">{formatDateTime(request.createdAt)}</td>
+                        <td className="break-words px-3 py-2.5 text-phx-xs">
                           {request.managerDecisionAt ? (
                             <div>
                               <p className="font-medium text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
@@ -1020,7 +1029,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                               ) : null}
                             </div>
                           ) : (
-                            <span className="text-slate-400">-</span>
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                       </tr>

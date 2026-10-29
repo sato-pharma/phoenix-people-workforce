@@ -219,61 +219,80 @@ function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab:
     return <p className="text-sm font-semibold text-phx-ink-soft">No rows in this group.</p>;
   }
 
+  const lastHeading = tab === "matched" ? "Matched employee" : "Reason";
+  const lastCell = (row: CoachingImportClassifiedRow) =>
+    tab === "matched"
+      ? (row.resolvedName ?? "—")
+      : tab === "duplicate"
+        ? row.duplicateReason
+        : tab === "archived"
+          ? row.unmatchedReason
+          : row.issues.join("; ");
+  const dateCell = (row: CoachingImportClassifiedRow) => (
+    <>
+      {row.coachingDate ?? <span className="text-rose-600">{row.coachingDateRaw || "missing"}</span>}
+      {row.dateCorrected ? (
+        <span className="ml-1.5 inline-flex items-center bg-phx-accent-soft px-1.5 py-0.5 text-phx-2xs font-bold text-phx-accent-press" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
+          adjusted
+        </span>
+      ) : null}
+    </>
+  );
+  const scoreCell = (row: CoachingImportClassifiedRow) => {
+    const sum = scoreSum(row.scores);
+    return Object.keys(row.scores).length === 20 ? sum : <span className="text-rose-600">{sum} (incomplete)</span>;
+  };
+
   return (
-    <div className="overflow-x-auto rounded-[12px] border border-phx-line">
-      <table className="min-w-[920px] w-full border-collapse text-left">
+    <>
+      <table className="hidden w-full table-fixed border-collapse text-left md:table">
+        <colgroup>
+          <col className="w-[7%]" />
+          <col className="w-[22%]" />
+          <col className="w-[16%]" />
+          <col className="w-[17%]" />
+          <col className="w-[12%]" />
+          <col className="w-[26%]" />
+        </colgroup>
         <thead className="bg-phx-ink text-phx-xs font-black uppercase tracking-[0.12em] text-white">
           <tr>
-            <th className="px-4 py-3">Row</th>
-            <th className="px-4 py-3">Rep</th>
-            <th className="px-4 py-3">Territory</th>
-            <th className="px-4 py-3">HR-ID</th>
-            <th className="px-4 py-3">Coaching date</th>
-            <th className="px-4 py-3">Overall (/100)</th>
-            {tab === "matched" ? <th className="px-4 py-3">Matched employee</th> : null}
-            {tab !== "matched" ? <th className="px-4 py-3">Reason</th> : null}
+            <th className="px-3 py-3">Row</th>
+            <th className="px-3 py-3">Rep</th>
+            <th className="px-3 py-3">Territory</th>
+            <th className="px-3 py-3">Coaching date</th>
+            <th className="px-3 py-3">Overall (/100)</th>
+            <th className="px-3 py-3">{lastHeading}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
-            const sum = scoreSum(row.scores);
-            return (
-              <tr className="border-t border-[#FCE7D2] bg-white text-sm hover:bg-[#FFFBF7]" key={row.rowNumber}>
-                <td className="px-4 py-3 font-bold text-phx-ink-soft">{row.rowNumber}</td>
-                <td className="px-4 py-3 font-bold text-phx-ink">{row.repName ?? row.sourceName}</td>
-                <td className="px-4 py-3 text-phx-ink-2">{row.territory ?? "—"}</td>
-                <td className="px-4 py-3 text-phx-ink-2">{row.claimedHrId ?? "—"}</td>
-                <td className="px-4 py-3 text-phx-ink-2">
-                  {row.coachingDate ?? <span className="text-rose-600">{row.coachingDateRaw || "missing"}</span>}
-                  {row.dateCorrected ? (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-phx-2xs font-bold text-phx-accent-press" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
-                      adjusted
-                    </span>
-                  ) : null}
-                </td>
-                <td className="px-4 py-3 font-black text-phx-ink">
-                  {Object.keys(row.scores).length === 20 ? sum : <span className="text-rose-600">{sum} (incomplete)</span>}
-                </td>
-                {tab === "matched" ? (
-                  <td className="px-4 py-3 text-phx-ink-2">
-                    {row.resolvedName ?? "—"} <span className="text-phx-ink-faint">({row.resolvedHrId})</span>
-                  </td>
-                ) : null}
-                {tab !== "matched" ? (
-                  <td className="px-4 py-3 text-[#94532B]">
-                    {tab === "duplicate"
-                      ? row.duplicateReason
-                      : tab === "archived"
-                        ? row.unmatchedReason
-                        : row.issues.join("; ")}
-                  </td>
-                ) : null}
-              </tr>
-            );
-          })}
+          {rows.map((row) => (
+            <tr className="border-t border-[#FCE7D2] bg-white text-sm hover:bg-[#FFFBF7]" key={row.rowNumber}>
+              <td className="px-3 py-3 font-bold text-phx-ink-soft">{row.rowNumber}</td>
+              <td className="break-words px-3 py-3 font-bold text-phx-ink">{row.repName ?? row.sourceName}</td>
+              <td className="break-words px-3 py-3 text-phx-ink-2">{row.territory ?? "—"}</td>
+              <td className="break-words px-3 py-3 text-phx-ink-2">{dateCell(row)}</td>
+              <td className="px-3 py-3 font-black text-phx-ink">{scoreCell(row)}</td>
+              <td className={cn("break-words px-3 py-3", tab === "matched" ? "text-phx-ink-2" : "text-[#94532B]")}>{lastCell(row) || "—"}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
-    </div>
+      <div className="space-y-2 md:hidden">
+        {rows.map((row) => (
+          <div className="min-w-0 break-words border border-phx-line bg-white p-3 text-sm" key={row.rowNumber}>
+            <p className="font-black text-phx-ink">
+              {row.repName ?? row.sourceName} <span className="font-bold text-phx-ink-soft">· row {row.rowNumber}</span>
+            </p>
+            <p className="text-phx-ink-2">Territory: {row.territory ?? "—"}</p>
+            <p className="text-phx-ink-2">Coaching date: {dateCell(row)}</p>
+            <p className="font-black text-phx-ink">Overall: {scoreCell(row)}</p>
+            <p className={tab === "matched" ? "text-phx-ink-2" : "text-[#94532B]"}>
+              {lastHeading}: {lastCell(row) || "—"}
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

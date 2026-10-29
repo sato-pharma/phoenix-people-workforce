@@ -13,6 +13,7 @@ import {
   PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
+  PortalDesktopTable,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
@@ -605,7 +606,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                     <SearchableSelect className={fieldClassName} value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })}>
                       <option value="">Select employee</option>
                       {targetOptions.employees.map((employee) => (
-                        <option key={employee.hrId} value={employee.hrId}>{employee.hrId} - {employee.fullName}</option>
+                        <option key={employee.hrId} value={employee.hrId}>{employee.fullName}</option>
                       ))}
                     </SearchableSelect>
                   </label>
@@ -976,58 +977,64 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <div className="hidden overflow-x-auto md:block">
-          <table className="min-w-full text-left">
-            <thead className="bg-slate-950 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-200">
-              <tr>
-                <th className="px-4 py-3">Policy</th>
-                <th className="px-4 py-3">Target</th>
-                <th className="px-4 py-3">Schedule</th>
-                <th className="px-4 py-3">Grace</th>
-                <th className="px-4 py-3">Rules</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.policies ?? []).map((policy) => (
-                <tr className="border-b border-slate-100 bg-white transition hover:bg-orange-50/40 last:border-0" key={policy.id}>
-                  <td className="px-4 py-3">
-                    <p className="font-black text-slate-950">{policy.policyName}</p>
-                    <p className="text-xs text-slate-500">{policy.effectiveFrom}{policy.effectiveTo ? ` to ${policy.effectiveTo}` : ""}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-1">
-                      {targetBadge(policy)}
-                      <p className="text-sm font-semibold text-slate-700">{targetLabel(policy)}</p>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <div className="inline-flex flex-col rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                      <span className="text-sm font-black text-slate-800">{policy.scheduledStart} - {policy.scheduledEnd}</span>
-                      <span className="text-xs font-semibold text-slate-500">{formatAttendanceWorkingWeekdays(policy.workingWeekdays)}</span>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">{policy.graceMinutes} min daily</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">
-                    {policy.rules.length === 0 ? (
-                      <span className="font-semibold text-slate-400">No rules</span>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {policy.rules.slice(0, 2).map((rule) => (
-                          <div className="rounded-lg bg-slate-50 px-3 py-2 font-semibold" key={rule.id}>{ruleSummary(rule)}</div>
-                        ))}
-                        {policy.rules.length > 2 ? <p className="text-xs font-black uppercase tracking-[0.12em] text-orange-700">+{policy.rules.length - 2} more</p> : null}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{policy.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>}</td>
-                  <td className="px-4 py-3 text-right">{policyActions(policy)}</td>
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[14%]" />
+                </colgroup>
+              }
+            >
+              <thead className="bg-slate-950 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-200">
+                <tr>
+                  <th className="px-3 py-3">Policy</th>
+                  <th className="px-3 py-3">Target</th>
+                  <th className="px-3 py-3">Schedule</th>
+                  <th className="px-3 py-3">Rules</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3 text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-            </div>
+              </thead>
+              <tbody>
+                {(data?.policies ?? []).map((policy) => (
+                  <tr className="border-b border-slate-100 bg-white transition hover:bg-orange-50/40 last:border-0" key={policy.id}>
+                    <td className="break-words px-3 py-3">
+                      <p className="font-black text-slate-950">{policy.policyName}</p>
+                      <p className="text-xs text-slate-500">{policy.effectiveFrom}{policy.effectiveTo ? ` to ${policy.effectiveTo}` : ""}</p>
+                    </td>
+                    <td className="break-words px-3 py-3">
+                      <div className="space-y-1">
+                        {targetBadge(policy)}
+                        <p className="text-sm font-semibold text-slate-700">{targetLabel(policy)}</p>
+                      </div>
+                    </td>
+                    <td className="break-words px-3 py-3">
+                      <span className="block text-sm font-black text-slate-800">{policy.scheduledStart} - {policy.scheduledEnd}</span>
+                      <span className="block text-xs font-semibold text-slate-500">{formatAttendanceWorkingWeekdays(policy.workingWeekdays)}</span>
+                      <span className="block text-xs font-semibold text-slate-500">{policy.graceMinutes} min grace daily</span>
+                    </td>
+                    <td className="break-words px-3 py-3 text-sm text-slate-700">
+                      {policy.rules.length === 0 ? (
+                        <span className="font-semibold text-slate-400">No rules</span>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {policy.rules.slice(0, 2).map((rule) => (
+                            <div className="bg-slate-50 px-3 py-2 font-semibold" key={rule.id}>{ruleSummary(rule)}</div>
+                          ))}
+                          {policy.rules.length > 2 ? <p className="text-xs font-black uppercase tracking-[0.12em] text-orange-700">+{policy.rules.length - 2} more</p> : null}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">{policy.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>}</td>
+                    <td className="px-3 py-3 text-right">{policyActions(policy)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
           )}
         />
       </AdminTableShell>

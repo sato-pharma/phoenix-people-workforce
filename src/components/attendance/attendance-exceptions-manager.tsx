@@ -9,6 +9,13 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AttendanceException, AttendanceExceptionStatus } from "@/lib/attendance/exceptions";
@@ -202,7 +209,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
                 <option value="">— select —</option>
                 {employees.map((emp) => (
                   <option key={emp.hrId} value={emp.hrId}>
-                    {emp.fullName} ({emp.hrId})
+                    {emp.fullName}
                   </option>
                 ))}
               </SearchableSelect>
@@ -286,8 +293,16 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
         </AdminCallout>
       ) : (
         <AdminTableShell title="Exceptions" description="Review and manage attendance exception requests.">
-          <table className="w-full text-sm">
-            <thead>
+          <table className={`${portalStackingTableClassName} md:w-full md:table-fixed text-sm`}>
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[12%]" />
+              <col className="w-[24%]" />
+              <col className="w-[12%]" />
+              <col className="w-[10%]" />
+              {canReview ? <col className="w-[24%]" /> : null}
+            </colgroup>
+            <thead className={portalStackingHeadClassName}>
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Employee</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Date</th>
@@ -297,33 +312,32 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
                 {canReview && <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Actions</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className={`${portalStackingBodyClassName} divide-y divide-border`}>
               {filtered.map((exc) => (
-                <tr key={exc.id} className="hover:bg-muted/40">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{exc.employeeName ?? exc.employeeHrId}</div>
-                    <div className="text-xs text-muted-foreground">{exc.employeeHrId}</div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
+                <tr key={exc.id} className={`${portalStackingRowClassName} hover:bg-muted/40`}>
+                  <PortalStackingCell className="break-words" label="Employee">
+                    <div className="font-medium">{exc.employeeName ?? "—"}</div>
+                  </PortalStackingCell>
+                  <PortalStackingCell className="font-mono text-xs" label="Date">
                     <span className="flex items-center gap-1.5">
                       <CalendarCheck className="h-3.5 w-3.5 text-muted-foreground" />
                       {formatDate(exc.exceptionDate)}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 max-w-xs">
+                  </PortalStackingCell>
+                  <PortalStackingCell className="break-words" label="Reason">
                     <div>{exc.reason}</div>
                     {exc.notes && <div className="text-xs text-muted-foreground">{exc.notes}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{exc.requestedBy}</td>
-                  <td className="px-4 py-3">{statusBadge(exc.status)}</td>
+                  </PortalStackingCell>
+                  <PortalStackingCell className="break-words text-xs text-muted-foreground" label="Requested By">{exc.requestedBy}</PortalStackingCell>
+                  <PortalStackingCell label="Status">{statusBadge(exc.status)}</PortalStackingCell>
                   {canReview && (
-                    <td className="px-4 py-3">
+                    <PortalStackingCell className="min-w-0" label="Actions">
                       {exc.status === "pending" ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <input
                             type="text"
                             placeholder="Notes (optional)"
-                            className={cn(phxFieldClassName, "w-28")}
+                            className={cn(phxFieldClassName, "w-full")}
                             value={reviewNotes[exc.id] ?? ""}
                             onChange={(e) => setReviewNotes((prev) => ({ ...prev, [exc.id]: e.target.value }))}
                           />
@@ -348,10 +362,10 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          {exc.reviewedBy ? `${exc.status} by ${exc.reviewedBy}` : "—"}
+                          {exc.reviewedBy ? `Reviewed by ${exc.reviewedBy}` : "—"}
                         </span>
                       )}
-                    </td>
+                    </PortalStackingCell>
                   )}
                 </tr>
               ))}

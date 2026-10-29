@@ -7,6 +7,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { ImportPreviewModal, type PreviewResult } from "@/components/sales/import-preview-modal";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SalesDistributorOption } from "@/lib/sales/monthly-distributor-import";
@@ -830,7 +831,7 @@ function MappingCombobox({
         >
           {filtered.map((o) => (
             <button
-              className="flex w-max min-w-full items-center gap-3 whitespace-nowrap px-3 py-1.5 text-left hover:bg-phx-accent-soft"
+              className="flex w-full min-w-0 items-start gap-3 px-3 py-1.5 text-left hover:bg-phx-accent-soft"
               key={o.code}
               onMouseDown={() => {
                 if (disabled) return;
@@ -840,7 +841,7 @@ function MappingCombobox({
               type="button"
             >
               <span className="shrink-0 font-mono text-xs font-bold text-phx-ink">{o.code}</span>
-              <span className="whitespace-nowrap text-xs text-phx-ink-2">{o.name}</span>
+              <span className="min-w-0 break-words text-xs text-phx-ink-2">{o.name}</span>
             </button>
           ))}
         </div>
@@ -877,6 +878,21 @@ function UnknownTable({
   const label = kind === "product" ? "products" : kind === "territory" ? "areas" : "customers";
   const rawLabel = kind === "product" ? "item" : kind === "territory" ? "area" : "customer code";
   const codeLabel = kind === "product" ? "Product" : "Brick";
+  const mapCell = (row: DistinctUnknown) => (
+    <div className="flex items-center gap-2">
+      <MappingCombobox
+        onChange={(code) => onChange(row.raw, code)}
+        options={options}
+        placeholder={kind === "product" ? "e.g. TE001" : "e.g. B100-11"}
+        value={codes[row.raw] ?? ""}
+      />
+      {codes[row.raw] ? (
+        <span className="shrink-0 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-black text-phx-ok">✓</span>
+      ) : (
+        <span className="shrink-0 rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-black text-phx-danger">○</span>
+      )}
+    </div>
+  );
   return (
     <div className="rounded-2xl border border-phx-line">
       <div className="flex items-center justify-between gap-3 border-b border-phx-line px-4 py-2.5">
@@ -893,8 +909,21 @@ function UnknownTable({
           </Button>
         ) : null}
       </div>
-      <div className="max-h-72 overflow-auto">
-        <table className="w-full text-sm">
+      <div className="max-h-72 overflow-y-auto">
+        <CrmCardsOnPhone>
+          {rows.map((row) => (
+            <CrmCard
+              key={row.raw}
+              meta={row.rawName && row.rawName !== row.raw ? row.raw : undefined}
+              title={row.rawName || row.raw}
+            >
+              {row.suggestionLabel ? <p className="mb-2 break-words text-xs text-phx-accent">suggest: {row.suggestionLabel}</p> : null}
+              <CrmFacts facts={[{ label: "Rows", value: row.count }]} />
+              <div className="mt-2">{mapCell(row)}</div>
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+        <CrmTable className="text-sm" columns={["40%", "12%", "48%"]}>
           <thead className="sticky top-0 bg-[#020617] text-left text-phx-xs font-black uppercase tracking-[0.12em] text-white">
             <tr>
               <th className="px-4 py-2">Raw {rawLabel}</th>
@@ -905,31 +934,17 @@ function UnknownTable({
           <tbody>
             {rows.map((row) => (
               <tr className="border-b border-[#FFE8D6]" key={row.raw}>
-                <td className="px-4 py-2">
+                <td className="break-words px-4 py-2 align-top">
                   <span className="block font-semibold text-phx-ink">{row.rawName || row.raw}</span>
                   {row.rawName && row.rawName !== row.raw ? <span className="block text-xs text-phx-ink-soft">{row.raw}</span> : null}
                   {row.suggestionLabel ? <span className="block text-xs text-phx-accent">suggest: {row.suggestionLabel}</span> : null}
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums text-phx-ink-soft">{row.count}</td>
-                <td className="px-4 py-2">
-                  <div className="flex items-center gap-2">
-                    <MappingCombobox
-                      onChange={(code) => onChange(row.raw, code)}
-                      options={options}
-                      placeholder={kind === "product" ? "e.g. TE001" : "e.g. B100-11"}
-                      value={codes[row.raw] ?? ""}
-                    />
-                    {codes[row.raw] ? (
-                      <span className="shrink-0 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-black text-phx-ok">✓</span>
-                    ) : (
-                      <span className="shrink-0 rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-black text-phx-danger">○</span>
-                    )}
-                  </div>
-                </td>
+                <td className="px-4 py-2 text-right align-top tabular-nums text-phx-ink-soft">{row.count}</td>
+                <td className="px-4 py-2 align-top">{mapCell(row)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
       </div>
     </div>
   );

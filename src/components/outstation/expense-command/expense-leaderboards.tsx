@@ -15,9 +15,9 @@ const BODY_CELL = "border border-[#FCE7D2] px-3 py-2";
 /** The share bar is the one column that reads as well in a card as in a row, so both halves use it. */
 function ShareBar({ share }: { share: number }) {
   return (
-    <span className="relative block h-2 w-full overflow-hidden rounded-full bg-slate-100">
+    <span className="relative block h-2 w-full overflow-hidden bg-slate-100">
       <span
-        className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-orange-400 to-orange-600"
+        className="absolute inset-y-0 left-0 bg-orange-500"
         style={{ width: `${Math.max(4, share * 100)}%` }}
       />
     </span>

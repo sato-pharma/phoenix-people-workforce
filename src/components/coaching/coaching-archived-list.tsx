@@ -58,7 +58,6 @@ export function CoachingArchivedList({ rows }: { rows: CoachingArchivedEvaluatio
                   <p className="break-words font-black text-phx-ink">{row.rep_name ?? row.source_name}</p>
                   {row.rep_code ? <p className="break-words text-xs text-phx-ink-faint">Grade {row.rep_code}</p> : null}
                   <p className="break-words text-xs text-phx-ink-2">{row.territory ?? "—"}</p>
-                  <p className="break-words text-xs text-phx-ink-faint">{row.claimed_hr_id ?? "—"}</p>
                 </td>
                 <td className="break-words px-4 py-3 text-phx-ink-2">
                   {row.coaching_date ?? "—"}

@@ -1,5 +1,7 @@
 "use client";
 
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
+import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { useCallback, useEffect, useState } from "react";
 
 type UnpaidVacationCandidate = {
@@ -101,6 +103,82 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
     return candidate.balanceDaysToConsume >= candidate.unpaidDays ? "balance" : "partial_balance";
   }
 
+  const decisionPanel = (row: UnpaidVacationCandidate) => {
+    const busy = busyId === row.requestId;
+    const current = row.existingSettlement?.method ?? null;
+    return (
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => decide(row, "salary")}
+          className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-50 ${
+            current === "salary"
+              ? "bg-slate-900 text-white"
+              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+          }`}
+        >
+          Deduct from salary
+        </button>
+        <button
+          type="button"
+          disabled={busy || row.balanceDaysAvailable === 0}
+          onClick={() => decide(row, balanceMethod(row))}
+          className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
+            current === "balance" || current === "partial_balance"
+              ? "bg-emerald-600 text-white"
+              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+          }`}
+        >
+          Deduct from vacation balance
+        </button>
+        {row.balanceDaysAvailable === 0 ? (
+          <p className="px-2 text-phx-xs text-slate-500">
+            No vacation balance available for this employee.
+          </p>
+        ) : row.remainingSalaryDays > 0 ? (
+          <p className="px-2 text-phx-xs text-amber-700">
+            Partial: {row.balanceDaysToConsume} day(s) from balance +{" "}
+            {egp(row.remainingSalaryDeductionAmount)} ({row.remainingSalaryDays} day(s)) from salary.
+          </p>
+        ) : null}
+
+        {row.balanceDaysAvailable < row.unpaidDays && (
+          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => decide(row, "defer_to_balance")}
+              className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
+                current === "defer_to_balance"
+                  ? "bg-emerald-600 text-white"
+                  : "border border-slate-300 text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              Defer to future balance
+            </button>
+            <p className="px-2 text-phx-xs text-amber-700">
+              {row.balanceDaysToConsume > 0 ? `${row.balanceDaysToConsume} day(s) now, ` : ""}
+              {row.unpaidDays - row.balanceDaysToConsume} day(s) will be deferred to future balance.
+            </p>
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => decide(row, "reject")}
+          className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-50 ${
+            current === null
+              ? "border border-slate-300 text-slate-700 hover:bg-slate-100"
+              : "border border-rose-300 text-rose-700 hover:bg-rose-50"
+          }`}
+        >
+          Reject — no action this period
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
@@ -123,112 +201,63 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
       ) : rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-slate-500">No unpaid-vacation candidates for this period.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2">Employee</th>
-                <th className="px-4 py-2">Type / Period</th>
-                <th className="px-4 py-2">Unpaid days</th>
-                <th className="px-4 py-2">Salary deduction</th>
-                <th className="px-4 py-2">Decision</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((row) => {
-                const busy = busyId === row.requestId;
-                const current = row.existingSettlement?.method ?? null;
-                return (
+        <PortalResponsiveDataList
+          empty={null}
+          getKey={(row) => row.requestId}
+          items={rows}
+          renderCard={(row) => (
+            <div className="space-y-1.5 px-4 py-3 text-sm">
+              <p className="break-words font-medium text-slate-800">{row.employeeName ?? "—"}</p>
+              <p className="break-words text-xs text-slate-600">
+                {vacationTypeLabel(row.vacationType)} · {row.startDate} → {row.endDate}
+              </p>
+              <p className="text-xs text-slate-700">
+                {row.unpaidDays} unpaid day(s) · salary deduction{" "}
+                <span className="font-medium text-slate-900">{egp(row.salaryDeductionAmount)}</span>
+              </p>
+              {decisionPanel(row)}
+            </div>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[38%]" />
+                </colgroup>
+              }
+            >
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-2">Employee</th>
+                  <th className="px-4 py-2">Type / Period</th>
+                  <th className="px-4 py-2">Unpaid days</th>
+                  <th className="px-4 py-2">Salary deduction</th>
+                  <th className="px-4 py-2">Decision</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => (
                   <tr key={row.requestId}>
-                    <td className="px-4 py-2 text-slate-700">
-                      {row.employeeName ?? row.employeeHrId}{" "}
-                      <span className="text-slate-400">({row.employeeHrId})</span>
-                    </td>
-                    <td className="px-4 py-2 text-slate-600">
-                      {row.vacationType} <br />
+                    <td className="break-words px-4 py-2 text-slate-700">{row.employeeName ?? "—"}</td>
+                    <td className="break-words px-4 py-2 text-slate-600">
+                      {vacationTypeLabel(row.vacationType)} <br />
                       <span className="text-xs text-slate-400">
                         {row.startDate} → {row.endDate}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-slate-700">{row.unpaidDays}</td>
-                    <td className="px-4 py-2 font-medium text-slate-900">{egp(row.salaryDeductionAmount)}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => decide(row, "salary")}
-                          className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-50 ${
-                            current === "salary"
-                              ? "bg-slate-900 text-white"
-                              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          Deduct from salary — {egp(row.salaryDeductionAmount)}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy || row.balanceDaysAvailable === 0}
-                          onClick={() => decide(row, balanceMethod(row))}
-                          className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
-                            current === "balance" || current === "partial_balance"
-                              ? "bg-emerald-600 text-white"
-                              : "border border-slate-300 text-slate-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          Deduct from vacation balance
-                        </button>
-                        {row.balanceDaysAvailable === 0 ? (
-                          <p className="px-2 text-phx-xs text-slate-500">
-                            No vacation balance available for this employee.
-                          </p>
-                        ) : row.remainingSalaryDays > 0 ? (
-                          <p className="px-2 text-phx-xs text-amber-700">
-                            Partial: {row.balanceDaysToConsume} day(s) from balance +{" "}
-                            {egp(row.remainingSalaryDeductionAmount)} ({row.remainingSalaryDays} day(s)) from salary.
-                          </p>
-                        ) : null}
-
-                        {row.balanceDaysAvailable < row.unpaidDays && (
-                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => decide(row, "defer_to_balance")}
-                              className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-40 ${
-                                current === "defer_to_balance"
-                                  ? "bg-emerald-600 text-white"
-                                  : "border border-slate-300 text-slate-700 hover:bg-slate-100"
-                              }`}
-                            >
-                              Defer to future balance
-                            </button>
-                            <p className="px-2 text-phx-xs text-amber-700">
-                              {row.balanceDaysToConsume > 0 ? `${row.balanceDaysToConsume} day(s) now, ` : ""}
-                              {row.unpaidDays - row.balanceDaysToConsume} day(s) will be deferred to future balance.
-                            </p>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => decide(row, "reject")}
-                          className={`px-2 py-1 text-left text-xs font-semibold disabled:opacity-50 ${
-                            current === null
-                              ? "border border-slate-300 text-slate-700 hover:bg-slate-100"
-                              : "border border-rose-300 text-rose-700 hover:bg-rose-50"
-                          }`}
-                        >
-                          Reject — no action this period
-                        </button>
-                      </div>
-                    </td>
+                    <td className="break-words px-4 py-2 font-medium text-slate-900">{egp(row.salaryDeductionAmount)}</td>
+                    <td className="px-4 py-2">{decisionPanel(row)}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       )}
     </div>
   );

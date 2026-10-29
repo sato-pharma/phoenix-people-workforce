@@ -5,6 +5,13 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { CalendarSearch } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import {
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -340,9 +347,15 @@ export function EmployeeDayReport({
           ) : allSummary.length === 0 ? (
             <p className="px-4 py-6 text-sm text-slate-500">No confirmed fingerprint deductions in this range.</p>
           ) : (
-            <div className="overflow-x-auto p-4 pt-2">
-              <table className="w-full min-w-[520px] text-left text-sm">
-                <thead>
+            <div className="p-4 pt-2">
+              <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+                <colgroup>
+                  <col className="w-[40%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+                <thead className={portalStackingHeadClassName}>
                   <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-3 py-2">Employee</th>
                     <th className="px-3 py-2">Days confirmed</th>
@@ -350,25 +363,24 @@ export function EmployeeDayReport({
                     <th className="px-3 py-2">Total value (EGP)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className={`${portalStackingBodyClassName} divide-y divide-slate-100`}>
                   {allSummary.map((row) => (
-                    <tr key={row.employeeHrId}>
-                      <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                    <tr className={portalStackingRowClassName} key={row.employeeHrId}>
+                      <PortalStackingCell className="break-words font-semibold text-slate-900" label="Employee">
                         {row.employeeName}
-                        <div className="text-phx-xs font-medium text-slate-400">{row.employeeHrId}</div>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{row.count}</td>
-                      <td className="px-3 py-2 font-bold text-slate-900">{row.days.toFixed(2)}</td>
-                      <td className="px-3 py-2 font-bold text-slate-900">{row.amount.toFixed(2)}</td>
+                      </PortalStackingCell>
+                      <PortalStackingCell className="text-slate-700" label="Days confirmed">{row.count}</PortalStackingCell>
+                      <PortalStackingCell className="font-bold text-slate-900" label="Total days">{row.days.toFixed(2)}</PortalStackingCell>
+                      <PortalStackingCell className="font-bold text-slate-900" label="Total value (EGP)">{row.amount.toFixed(2)}</PortalStackingCell>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-300 font-black text-slate-900">
-                    <td className="px-3 py-2">Total</td>
-                    <td className="px-3 py-2">{allSummary.reduce((sum, row) => sum + row.count, 0)}</td>
-                    <td className="px-3 py-2">{allSummary.reduce((sum, row) => sum + row.days, 0).toFixed(2)}</td>
-                    <td className="px-3 py-2">{allSummary.reduce((sum, row) => sum + row.amount, 0).toFixed(2)}</td>
+                <tfoot className={portalStackingBodyClassName}>
+                  <tr className={`${portalStackingRowClassName} border-t-2 border-slate-300 font-black text-slate-900`}>
+                    <PortalStackingCell label="Employee">Total</PortalStackingCell>
+                    <PortalStackingCell label="Days confirmed">{allSummary.reduce((sum, row) => sum + row.count, 0)}</PortalStackingCell>
+                    <PortalStackingCell label="Total days">{allSummary.reduce((sum, row) => sum + row.days, 0).toFixed(2)}</PortalStackingCell>
+                    <PortalStackingCell label="Total value (EGP)">{allSummary.reduce((sum, row) => sum + row.amount, 0).toFixed(2)}</PortalStackingCell>
                   </tr>
                 </tfoot>
               </table>
@@ -393,49 +405,57 @@ export function EmployeeDayReport({
           ) : null}
             {tab === "detail" ? (
               <AdminTableShell
-                description={`${initialReport.employeeName} (${initialReport.employeeHrId}) · ${initialReport.jobTitle} · ${initialReport.dateFromIso} to ${initialReport.dateToIso} · ${totals?.deductionDays ?? 0} day(s) flagged · ${(totals?.deductionValue ?? 0).toFixed(2)} EGP flagged`}
+                description={`${initialReport.employeeName} · ${initialReport.jobTitle} · ${initialReport.dateFromIso} to ${initialReport.dateToIso} · ${totals?.deductionDays ?? 0} day(s) flagged · ${(totals?.deductionValue ?? 0).toFixed(2)} EGP flagged`}
                 title="Day-by-Day Detail"
               >
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1280px] text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">Outcome</th>
-                        <th className="px-3 py-2">Check-in</th>
-                        <th className="px-3 py-2">Check-out</th>
-                        <th className="px-3 py-2">Worked</th>
-                        <th className="px-3 py-2">Late</th>
-                        <th className="px-3 py-2">Short</th>
-                        <th className="px-3 py-2">Days</th>
-                        <th className="px-3 py-2">Value (EGP)</th>
-                        <th className="px-3 py-2 text-center">Approve</th>
-                        <th className="px-3 py-2">Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {initialReport.days.map((day) => {
-                        const decision = decisions[day.dateIso];
-                        const approved = decision?.decisionStatus === "Approved for Payroll";
-                        const rejected = decision?.decisionStatus === "Do Not Take Action";
-                        const defaultDays = decision?.appliedDeductionValue ?? (day.deductionDays > 0 ? day.deductionDays : 0);
-                        return (
-                          <tr className="align-top" key={day.dateIso}>
-                            <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                              {day.dateIso}
-                              <div className="text-phx-xs font-medium text-slate-400">{day.weekday}</div>
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2">
-                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-phx-xs font-bold ${OUTCOME_TONE[day.outcome]}`}>
-                                {OUTCOME_LABEL[day.outcome]}
-                              </span>
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.firstPunchMinutes)}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatClock(day.lastPunchMinutes)}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDuration(day.workedMinutes)}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.lateMinutes > 0 ? `${day.lateMinutes} min` : "—"}</td>
-                            <td className="whitespace-nowrap px-3 py-2 text-slate-700">{day.shortMinutes > 0 ? `${day.shortMinutes} min` : "—"}</td>
-                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
+                <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+                  <colgroup>
+                    <col className="w-[11%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
+                  <thead className={portalStackingHeadClassName}>
+                    <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Outcome</th>
+                      <th className="px-3 py-2">Punches</th>
+                      <th className="px-3 py-2">Worked</th>
+                      <th className="px-3 py-2">Deduction</th>
+                      <th className="px-3 py-2 text-center">Approve</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`${portalStackingBodyClassName} divide-y divide-slate-100`}>
+                    {initialReport.days.map((day) => {
+                      const decision = decisions[day.dateIso];
+                      const approved = decision?.decisionStatus === "Approved for Payroll";
+                      const rejected = decision?.decisionStatus === "Do Not Take Action";
+                      const defaultDays = decision?.appliedDeductionValue ?? (day.deductionDays > 0 ? day.deductionDays : 0);
+                      const value = liveValue(day.dateIso, defaultDays, editedDays[day.dateIso], initialReport.baseSalary, decision?.appliedAmount ?? day.deductionValue);
+                      return (
+                        <tr className={`${portalStackingRowClassName} align-top`} key={day.dateIso}>
+                          <PortalStackingCell className="break-words font-semibold text-slate-900" label="Date">
+                            {day.dateIso}
+                            <div className="text-phx-xs font-medium text-slate-400">{day.weekday}</div>
+                          </PortalStackingCell>
+                          <PortalStackingCell className="min-w-0 break-words" label="Outcome">
+                            <span className={`inline-flex border px-2 py-0.5 text-phx-xs font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                              {OUTCOME_LABEL[day.outcome]}
+                            </span>
+                            {day.reason ? <div className="mt-1 text-xs font-medium text-slate-500">{day.reason}</div> : null}
+                          </PortalStackingCell>
+                          <PortalStackingCell className="break-words text-slate-700" label="Punches">
+                            {formatClock(day.firstPunchMinutes)} – {formatClock(day.lastPunchMinutes)}
+                          </PortalStackingCell>
+                          <PortalStackingCell className="break-words text-slate-700" label="Worked">
+                            {formatDuration(day.workedMinutes)}
+                            {day.lateMinutes > 0 ? <div className="text-xs text-slate-500">Late {day.lateMinutes} min</div> : null}
+                            {day.shortMinutes > 0 ? <div className="text-xs text-slate-500">Short {day.shortMinutes} min</div> : null}
+                          </PortalStackingCell>
+                          <PortalStackingCell className="font-bold text-slate-900" label="Deduction">
+                            <div className="flex flex-wrap items-center gap-2">
                               <Input
                                 key={`${day.dateIso}:${defaultDays}`}
                                 type="number"
@@ -445,85 +465,84 @@ export function EmployeeDayReport({
                                 disabled={busyDate === day.dateIso}
                                 onChange={(event) => setEditedDays((prev) => ({ ...prev, [day.dateIso]: event.target.value }))}
                                 className="h-8 w-20"
+                                aria-label="Deduction days"
                               />
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
-                              {(() => {
-                                const value = liveValue(day.dateIso, defaultDays, editedDays[day.dateIso], initialReport.baseSalary, decision?.appliedAmount ?? day.deductionValue);
-                                return value > 0 ? value.toFixed(2) : "—";
-                              })()}
-                            </td>
-                            <td className="px-3 py-2 text-center align-top">
-                              <input
-                                type="checkbox"
-                                checked={approved}
-                                disabled={busyDate === day.dateIso}
-                                onChange={(event) => {
-                                  const editedValue = editedDays[day.dateIso];
-                                  const days = editedValue?.trim() ? Number(editedValue) : defaultDays;
-                                  void decide(day.dateIso, event.target.checked ? "Approved for Payroll" : "Do Not Take Action", days);
-                                }}
-                                className="h-5 w-5 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                              />
-                              {rejected ? <div className="text-phx-2xs font-semibold text-rose-600">Rejected</div> : null}
-                            </td>
-                            <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              <span>{value > 0 ? `${value.toFixed(2)} EGP` : "—"}</span>
+                            </div>
+                          </PortalStackingCell>
+                          <PortalStackingCell className="text-center align-top" label="Approve">
+                            <input
+                              type="checkbox"
+                              checked={approved}
+                              disabled={busyDate === day.dateIso}
+                              onChange={(event) => {
+                                const editedValue = editedDays[day.dateIso];
+                                const days = editedValue?.trim() ? Number(editedValue) : defaultDays;
+                                void decide(day.dateIso, event.target.checked ? "Approved for Payroll" : "Do Not Take Action", days);
+                              }}
+                              className="h-5 w-5 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                            {rejected ? <div className="text-phx-2xs font-semibold text-rose-600">Rejected</div> : null}
+                          </PortalStackingCell>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </AdminTableShell>
             ) : (
               <AdminTableShell
-                description={`${initialReport.employeeName} (${initialReport.employeeHrId}) · confirmed for payroll · ${confirmedTotals.days.toFixed(2)} day(s) · ${confirmedTotals.value.toFixed(2)} EGP total`}
+                description={`${initialReport.employeeName} · confirmed for payroll · ${confirmedTotals.days.toFixed(2)} day(s) · ${confirmedTotals.value.toFixed(2)} EGP total`}
                 title="FP Deductions Summary"
               >
                 {confirmed.length === 0 ? (
                   <p className="px-4 py-6 text-sm text-slate-500">No days confirmed yet for this employee in this range.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2">Outcome</th>
-                          <th className="px-3 py-2">Days</th>
-                          <th className="px-3 py-2">Value (EGP)</th>
-                          <th className="px-3 py-2">Reason</th>
+                  <table className={`${portalStackingTableClassName} md:w-full md:table-fixed`}>
+                    <colgroup>
+                      <col className="w-[14%]" />
+                      <col className="w-[34%]" />
+                      <col className="w-[26%]" />
+                      <col className="w-[26%]" />
+                    </colgroup>
+                    <thead className={portalStackingHeadClassName}>
+                      <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Outcome</th>
+                        <th className="px-3 py-2">Days</th>
+                        <th className="px-3 py-2">Value (EGP)</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`${portalStackingBodyClassName} divide-y divide-slate-100`}>
+                      {confirmed.map(({ day, decision }) => (
+                        <tr className={portalStackingRowClassName} key={day.dateIso}>
+                          <PortalStackingCell className="break-words font-semibold text-slate-900" label="Date">
+                            {day.dateIso}
+                            <div className="text-phx-xs font-medium text-slate-400">{day.weekday}</div>
+                          </PortalStackingCell>
+                          <PortalStackingCell className="min-w-0 break-words" label="Outcome">
+                            <span className={`inline-flex border px-2 py-0.5 text-phx-xs font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                              {OUTCOME_LABEL[day.outcome]}
+                            </span>
+                            {day.reason ? <div className="mt-1 text-xs font-medium text-slate-500">{day.reason}</div> : null}
+                          </PortalStackingCell>
+                          <PortalStackingCell className="font-bold text-slate-900" label="Days">
+                            {decision?.appliedDeductionValue ?? "—"}
+                          </PortalStackingCell>
+                          <PortalStackingCell className="font-bold text-slate-900" label="Value (EGP)">
+                            {(decision?.appliedAmount ?? 0).toFixed(2)}
+                          </PortalStackingCell>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {confirmed.map(({ day, decision }) => (
-                          <tr key={day.dateIso}>
-                            <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                              {day.dateIso}
-                              <div className="text-phx-xs font-medium text-slate-400">{day.weekday}</div>
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2">
-                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-phx-xs font-bold ${OUTCOME_TONE[day.outcome]}`}>
-                                {OUTCOME_LABEL[day.outcome]}
-                              </span>
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{decision?.appliedDeductionValue ?? "—"}</td>
-                            <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{(decision?.appliedAmount ?? 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-slate-300 font-black text-slate-900">
-                          <td className="px-3 py-2" colSpan={2}>
-                            Total
-                          </td>
-                          <td className="px-3 py-2">{confirmedTotals.days.toFixed(2)}</td>
-                          <td className="px-3 py-2">{confirmedTotals.value.toFixed(2)}</td>
-                          <td className="px-3 py-2" />
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                    <tfoot className={portalStackingBodyClassName}>
+                      <tr className={`${portalStackingRowClassName} border-t-2 border-slate-300 font-black text-slate-900`}>
+                        <PortalStackingCell label="Total">All confirmed days</PortalStackingCell>
+                        <PortalStackingCell label="Days">{confirmedTotals.days.toFixed(2)}</PortalStackingCell>
+                        <PortalStackingCell label="Value (EGP)">{confirmedTotals.value.toFixed(2)}</PortalStackingCell>
+                      </tr>
+                    </tfoot>
+                  </table>
                 )}
               </AdminTableShell>
             )}

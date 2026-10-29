@@ -588,7 +588,6 @@ function RepComparisonCard({ row }: { row: CoachingTrainingManagerComparisonRow 
   return (
     <PortalRecordCard
       accent={row.status === "coached" ? "emerald" : "orange"}
-      meta={<span className="font-mono text-phx-xs font-bold text-slate-400">{row.hrId}</span>}
       status={
         <span className={cn("inline-flex whitespace-nowrap border px-2 py-0.5 text-phx-xs font-black", coverageStatusClassName(row.status))}>
           {coverageStatusLabel(row.status)}
@@ -655,7 +654,6 @@ function RepDetailCard({ coachingReportBase, row }: { coachingReportBase: string
           View Latest Report
         </Link>
       }
-      meta={<span className="font-mono text-phx-xs font-bold text-slate-400">{row.hrId}</span>}
       status={
         <span title={zoneLabel(row.latestZone)}>
           <Band band={band} />
@@ -744,7 +742,7 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
           items={filteredAreaBreakdown}
           renderCard={(row) => <AreaCoverageCard row={row} />}
           renderTable={() => (
-            <div className="max-h-[440px] overflow-auto">
+            <div className="max-h-[440px] overflow-y-auto">
               <PortalDesktopTable
                 cols={
                   <colgroup>
@@ -768,7 +766,7 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
                 <tbody>
                   {filteredAreaBreakdown.map((row) => (
                     <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.areaId ?? "none"}-${row.label}`}>
-                      <td className="whitespace-nowrap px-3 py-3 font-black text-phx-ink">{row.areaName || "Not assigned"}</td>
+                      <td className="break-words px-3 py-3 font-black text-phx-ink">{row.areaName || "Not assigned"}</td>
                       <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.totalReps)}</td>
                       <td className="px-2 py-3 text-center font-black tabular-nums text-emerald-700">{formatNumber(row.coachedCount)}</td>
                       <td className="px-2 py-3 text-center font-black tabular-nums text-orange-700">{formatNumber(row.uncoachedCount)}</td>
@@ -788,7 +786,7 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
             <FilterInput
               ariaLabel="Filter comparison by rep"
               onChange={(value) => updateRepTableFilter("rep", value)}
-              placeholder="Name or HR ID"
+              placeholder="Name"
               value={repTableFilters.rep}
             />
           </div>
@@ -826,7 +824,7 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
           items={filteredComparisonRows}
           renderCard={(row) => <RepComparisonCard row={row} />}
           renderTable={() => (
-            <div className="max-h-[440px] overflow-auto">
+            <div className="max-h-[440px] overflow-y-auto">
               <PortalDesktopTable
                 cols={
                   <colgroup>
@@ -851,19 +849,18 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
                   {filteredComparisonRows.map((row) => (
                     <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.hrId}>
                       <td className="px-3 py-3">
-                        <p className="whitespace-nowrap font-black text-phx-ink">{row.medicalRepName}</p>
-                        <p className="whitespace-nowrap font-mono text-phx-xs font-bold text-phx-ink-faint">{row.hrId}</p>
+                        <p className="break-words font-black text-phx-ink">{row.medicalRepName}</p>
                       </td>
                       <td className="px-2 py-3 text-center">
-                        <span className={cn("inline-flex whitespace-nowrap border px-2 py-0.5 text-phx-xs font-black", coverageStatusClassName(row.status))}>
+                        <span className={cn("inline-flex  border px-2 py-0.5 text-phx-xs font-black", coverageStatusClassName(row.status))}>
                           {coverageStatusLabel(row.status)}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-3 text-phx-md font-semibold text-phx-ink-2">{formatDate(row.hireDate)}</td>
-                      <td className="whitespace-nowrap px-2 py-3 font-semibold text-phx-ink">{row.areaName || "Not assigned"}</td>
+                      <td className="break-words px-2 py-3 text-phx-md font-semibold text-phx-ink-2">{formatDate(row.hireDate)}</td>
+                      <td className="break-words px-2 py-3 font-semibold text-phx-ink">{row.areaName || "Not assigned"}</td>
                       <td className="px-2 py-3">
-                        <p className="whitespace-nowrap font-semibold text-phx-ink">{row.lineName || "Not assigned"}</p>
-                        <p className="whitespace-nowrap text-phx-xs font-bold text-phx-ink-faint">{row.teamName || "No team"}</p>
+                        <p className="break-words font-semibold text-phx-ink">{row.lineName || "Not assigned"}</p>
+                        <p className="break-words text-phx-xs font-bold text-phx-ink-faint">{row.teamName || "No team"}</p>
                       </td>
                     </tr>
                   ))}
@@ -1145,7 +1142,7 @@ export function CoachingAnalyticsDashboard({
                         {scoreItemRows.map((row) => (
                           <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.scoreItemKey}>
                             <td className="px-3 py-3 font-bold text-phx-ink">{row.scoreItemLabel}</td>
-                            <td className="whitespace-nowrap px-3 py-3 text-phx-md font-semibold text-phx-ink-soft">{row.parameterLabel}</td>
+                            <td className="break-words px-3 py-3 text-phx-md font-semibold text-phx-ink-soft">{row.parameterLabel}</td>
                             <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.reportCount)}</td>
                             <td className="px-2 py-3 text-center font-black tabular-nums text-phx-ink">{formatPercent(row.averagePercent)}</td>
                             <td className="px-3 py-3 text-center"><Band band={scoreBand(row.averagePercent)} /></td>
@@ -1207,12 +1204,11 @@ export function CoachingAnalyticsDashboard({
                             className="block outline-none transition hover:text-phx-accent focus-visible:ring-2 focus-visible:ring-phx-accent/30"
                             href={`${coachingReportBase}/${row.latestReportId}`}
                           >
-                            <p className="whitespace-nowrap font-black text-phx-ink">{row.medicalRep}</p>
-                            <p className="whitespace-nowrap font-mono text-phx-xs font-bold text-phx-ink-faint">{row.hrId}</p>
+                            <p className="break-words font-black text-phx-ink">{row.medicalRep}</p>
                           </Link>
                         </td>
-                        <td className="whitespace-nowrap px-2 py-3 text-phx-md font-semibold text-phx-ink-2">{row.areaName || "Not assigned"}</td>
-                        <td className="whitespace-nowrap px-2 py-3 text-phx-md font-semibold text-phx-ink-2">{row.lineName || "Not assigned"}</td>
+                        <td className="break-words px-2 py-3 text-phx-md font-semibold text-phx-ink-2">{row.areaName || "Not assigned"}</td>
+                        <td className="break-words px-2 py-3 text-phx-md font-semibold text-phx-ink-2">{row.lineName || "Not assigned"}</td>
                         <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.coachingCount)}</td>
                         <td className="px-2 py-3 text-center tabular-nums text-phx-ink-soft">{formatPercent(row.firstScore)}</td>
                         <td className="px-2 py-3 text-center font-black tabular-nums text-phx-ink">{formatPercent(row.averageScore)}</td>
@@ -1220,7 +1216,7 @@ export function CoachingAnalyticsDashboard({
                         <td className="px-2 py-3 text-center">
                           <span
                             className={cn(
-                              "whitespace-nowrap font-black tabular-nums",
+                              "font-black tabular-nums",
                               row.improvementScore > 0 ? "text-emerald-700" : row.improvementScore < 0 ? "text-rose-700" : "text-slate-400",
                             )}
                           >
@@ -1228,7 +1224,7 @@ export function CoachingAnalyticsDashboard({
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center" title={zoneLabel(row.latestZone)}><Band band={zoneBand(row.latestZone)} /></td>
-                        <td className="whitespace-nowrap px-2 py-3 text-center text-phx-md text-phx-ink-2">{formatDate(row.lastCoachingDate)}</td>
+                        <td className="break-words px-2 py-3 text-center text-phx-md text-phx-ink-2">{formatDate(row.lastCoachingDate)}</td>
                       </tr>
                     ))}
                   </tbody>

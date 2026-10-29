@@ -649,6 +649,11 @@ export function ContactHRSupportPage({
                             {request.description}
                           </p>
                         ) : null}
+                        {request.attachments.length > 0 ? (
+                          <p className="mt-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+                            {request.attachments.length} attachment{request.attachments.length === 1 ? "" : "s"}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="break-words px-3 py-2.5 text-slate-600">
                         {request.category}
@@ -715,7 +720,7 @@ function SupportStatusChip({ status }: { status: string }) {
           ? "border-sky-200 bg-sky-50 text-sky-700"
           : "border-slate-200 bg-slate-100 text-slate-600";
   return (
-    <span className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${tone}`}>
+    <span className={`inline-flex max-w-full break-words border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${tone}`}>
       {status}
     </span>
   );

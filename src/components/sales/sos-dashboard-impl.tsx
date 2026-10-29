@@ -37,6 +37,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-container";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { SortableTh, TableNoResults, TableSearchInput, useSortableTable, visibleMax } from "@/components/ui/sortable-table";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/sales/format";
@@ -63,6 +64,11 @@ type Filters = {
 };
 
 const EMPTY_FILTERS: Filters = { periods: [], lines: [], distributors: [], regions: [], areas: [], products: [] };
+
+/** A month-over-month or year-over-year change, signed; "—" when there is no baseline. */
+function signedPct(value: number | null | undefined): string {
+  return value == null ? "—" : `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+}
 
 function compactEGP(value: number): string {
   const abs = Math.abs(value);
@@ -1047,16 +1053,16 @@ export function SosDashboard({
               description="Products ranked by distributor value, with ABC class and month-over-month delta"
               action={<TableSearchInput value={productTable.query} onChange={productTable.setQuery} onClear={productTable.clearQuery} placeholder="Search products…" className="w-full sm:w-56" />}
             >
-              <div className="max-h-[460px] overflow-auto">
-                <table className="w-full text-sm">
+              <div className="max-h-[460px] overflow-y-auto">
+                <CrmTable columns={["22%", "12%", "7%", "18%", "14%", "14%", "13%"]}>
                   <thead className="sticky top-0 z-10 bg-[#020617] text-white">
                     <tr>
                       <SortableTh label="Product" sortKey="label" sort={productTable.sort} onSort={productTable.toggleSort} />
                       <SortableTh label="Line" sortKey="line" sort={productTable.sort} onSort={productTable.toggleSort} />
-                      <th className="px-3 py-2.5 text-center text-xs font-black uppercase tracking-wide">ABC</th>
+                      <th className="break-words px-2 py-2.5 text-center text-xs font-black uppercase tracking-wide">ABC</th>
                       <SortableTh label="Value" sortKey="value" sort={productTable.sort} onSort={productTable.toggleSort} align="right" />
-                      <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
-                      <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">YoY Δ</th>
+                      <th className="break-words px-2 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
+                      <th className="break-words px-2 py-2.5 text-right text-xs font-black uppercase tracking-wide">YoY Δ</th>
                       <SortableTh label="Units" sortKey="units" sort={productTable.sort} onSort={productTable.toggleSort} align="right" />
                     </tr>
                   </thead>
@@ -1076,9 +1082,9 @@ export function SosDashboard({
                             className={`cursor-pointer transition hover:bg-orange-50/40 ${selected ? "bg-orange-100" : ""}`}
                             title={`Click to filter to ${row.label}`}
                           >
-                            <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
-                            <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.line ?? "—"}</td>
-                            <td className="px-3 py-2.5 text-center">
+                            <td className="break-words px-3 py-2.5 align-top font-bold text-slate-900">{row.label}</td>
+                            <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.line ?? "—"}</td>
+                            <td className="px-2 py-2.5 text-center align-top">
                               {abc ? (
                                 <span className={`inline-flex h-5 w-5 items-center justify-center rounded-[4px] text-phx-2xs font-black ${abc === "A" ? "bg-orange-100 text-orange-700" : abc === "B" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
                                   {abc}
@@ -1087,23 +1093,47 @@ export function SosDashboard({
                                 <span className="text-slate-300">—</span>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-right">
+                            <td className="break-words px-2 py-2.5 text-right align-top">
                               <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
                               <Bar2 value={row.value} max={productMax} color="#8B5CF6" />
                             </td>
-                            <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            <td className={`break-words px-2 py-2.5 text-right align-top text-xs font-black tabular-nums ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                               {momPct == null ? "—" : `${momPct > 0 ? "+" : ""}${(momPct * 100).toFixed(1)}%`}
                             </td>
-                            <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${yoyPct == null ? "text-slate-300" : yoyPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            <td className={`break-words px-2 py-2.5 text-right align-top text-xs font-black tabular-nums ${yoyPct == null ? "text-slate-300" : yoyPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                               {yoyPct == null ? "—" : `${yoyPct > 0 ? "+" : ""}${(yoyPct * 100).toFixed(1)}%`}
                             </td>
-                            <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
+                            <td className="break-words px-2 py-2.5 text-right align-top text-slate-600">{formatNumber(row.units)}</td>
                           </tr>
                         );
                       })
                     )}
                   </tbody>
-                </table>
+                </CrmTable>
+                <CrmCardsOnPhone>
+                  {productTable.rows.length === 0 ? (
+                    <p className="px-3 py-6 text-center text-sm text-slate-400">{productTable.isFiltered ? "No products match this filter." : "No products."}</p>
+                  ) : (
+                    productTable.rows.map((row) => {
+                      const abc = abcByCode.get(row.code.toUpperCase());
+                      const selected = filters.products.includes(row.code);
+                      return (
+                        <div className="cursor-pointer" key={`${row.code}-card`} onClick={() => handleRowClick("products", row.code)} title={`Click to filter to ${row.label}`}>
+                          <CrmCard className={selected ? "bg-orange-100" : undefined} meta={[row.line, abc ? `Class ${abc}` : null].filter(Boolean).join(" · ") || undefined} title={row.label}>
+                            <CrmFacts
+                              facts={[
+                                { label: "Value", value: compactEGP(row.value) },
+                                { label: "Units", value: formatNumber(row.units) },
+                                { label: "MoM Δ", value: signedPct(productMomByCode.get(row.code.toUpperCase())) },
+                                { label: "YoY Δ", value: signedPct(productYoyByCode.get(row.code.toUpperCase())) },
+                              ]}
+                            />
+                          </CrmCard>
+                        </div>
+                      );
+                    })
+                  )}
+                </CrmCardsOnPhone>
               </div>
             </AdminTableShell>
 
@@ -1112,8 +1142,8 @@ export function SosDashboard({
               description={`Top customers by value${data ? ` — top 10 = ${formatPercent(data.customerTop10Share, { digits: 1 })} of customer value` : ""}`}
               action={<TableSearchInput value={customerTable.query} onChange={customerTable.setQuery} onClear={customerTable.clearQuery} placeholder="Search customers…" className="w-full sm:w-56" />}
             >
-              <div className="max-h-[460px] overflow-auto">
-                <table className="w-full text-sm">
+              <div className="max-h-[460px] overflow-y-auto">
+                <CrmTable columns={["30%", "26%", "22%", "22%"]}>
                   <thead className="sticky top-0 z-10 bg-[#020617] text-white">
                     <tr>
                       <SortableTh label="Customer" sortKey="name" sort={customerTable.sort} onSort={customerTable.toggleSort} />
@@ -1128,15 +1158,26 @@ export function SosDashboard({
                     ) : (
                       customerTable.rows.map((row) => (
                         <tr key={`${row.distributor}-${row.code}`} className="transition hover:bg-orange-50/40">
-                          <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.name}</td>
-                          <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.distributor}</td>
-                          <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">{row.region}</td>
-                          <td className="px-3 py-2.5 text-right font-black text-slate-900">{compactEGP(row.value)}</td>
+                          <td className="break-words px-3 py-2.5 align-top font-bold text-slate-900">{row.name}</td>
+                          <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.distributor}</td>
+                          <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.region}</td>
+                          <td className="break-words px-3 py-2.5 text-right align-top font-black text-slate-900">{compactEGP(row.value)}</td>
                         </tr>
                       ))
                     )}
                   </tbody>
-                </table>
+                </CrmTable>
+                <CrmCardsOnPhone>
+                  {customerTable.rows.length === 0 ? (
+                    <p className="px-3 py-6 text-center text-sm text-slate-400">{customerTable.isFiltered ? "No customers match this filter." : "No customers."}</p>
+                  ) : (
+                    customerTable.rows.map((row) => (
+                      <CrmCard key={`${row.distributor}-${row.code}-card`} meta={[row.distributor, row.region].filter(Boolean).join(" · ") || undefined} title={row.name}>
+                        <CrmFacts facts={[{ label: "Value", value: compactEGP(row.value) }]} />
+                      </CrmCard>
+                    ))
+                  )}
+                </CrmCardsOnPhone>
               </div>
             </AdminTableShell>
           </div>
@@ -1178,32 +1219,45 @@ export function SosDashboard({
                 title="Areas — Full Sales Comparison"
                 description={`All ${byArea.length} areas ranked by value, highest to lowest`}
               >
-                <table className="w-full text-sm">
+                <CrmTable columns={["5%", "21%", "17%", "17%", "16%", "12%", "12%"]}>
                   <thead>
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-white">#</th>
-                      <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-white">Area</th>
-                      <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wide text-white">Region</th>
-                      <th className="px-4 py-3 text-xs font-black uppercase tracking-wide text-white" />
-                      <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Value</th>
-                      <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Units</th>
-                      <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Share</th>
+                      <th className="break-words px-3 py-3 text-left text-xs font-black uppercase tracking-wide text-white">#</th>
+                      <th className="break-words px-3 py-3 text-left text-xs font-black uppercase tracking-wide text-white">Area</th>
+                      <th className="break-words px-3 py-3 text-left text-xs font-black uppercase tracking-wide text-white">Region</th>
+                      <th className="px-3 py-3 text-xs font-black uppercase tracking-wide text-white" />
+                      <th className="break-words px-3 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Value</th>
+                      <th className="break-words px-3 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Units</th>
+                      <th className="break-words px-3 py-3 text-right text-xs font-black uppercase tracking-wide text-white">Share</th>
                     </tr>
                   </thead>
                   <tbody>
                     {byArea.map((row, index) => (
                       <tr key={row.code} className="border-t border-orange-100 hover:bg-orange-50/40">
-                        <td className="px-4 py-2.5 text-xs font-bold text-slate-400">{index + 1}</td>
-                        <td className="px-4 py-2.5 text-xs font-bold text-slate-800 whitespace-nowrap">{row.label}</td>
-                        <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">{row.line ?? "—"}</td>
-                        <td className="w-36 px-4 py-2.5"><Bar2 value={row.value} max={areaMax} color="#8B5CF6" /></td>
-                        <td className="px-4 py-2.5 text-right text-xs font-black text-slate-900 whitespace-nowrap">{compactEGP(row.value)}</td>
-                        <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-600 whitespace-nowrap">{formatNumber(row.units)}</td>
-                        <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-500 whitespace-nowrap">{formatPercent(row.share, { digits: 1 })}</td>
+                        <td className="px-3 py-2.5 align-top text-xs font-bold text-slate-400">{index + 1}</td>
+                        <td className="break-words px-3 py-2.5 align-top text-xs font-bold text-slate-800">{row.label}</td>
+                        <td className="break-words px-3 py-2.5 align-top text-xs text-slate-500">{row.line ?? "—"}</td>
+                        <td className="px-3 py-2.5 align-top"><Bar2 value={row.value} max={areaMax} color="#8B5CF6" /></td>
+                        <td className="break-words px-3 py-2.5 text-right align-top text-xs font-black text-slate-900">{compactEGP(row.value)}</td>
+                        <td className="break-words px-3 py-2.5 text-right align-top text-xs font-bold text-slate-600">{formatNumber(row.units)}</td>
+                        <td className="break-words px-3 py-2.5 text-right align-top text-xs font-bold text-slate-500">{formatPercent(row.share, { digits: 1 })}</td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </CrmTable>
+                <CrmCardsOnPhone>
+                  {byArea.map((row, index) => (
+                    <CrmCard key={`${row.code}-card`} meta={row.line ?? undefined} title={`${index + 1}. ${row.label}`}>
+                      <CrmFacts
+                        facts={[
+                          { label: "Value", value: compactEGP(row.value) },
+                          { label: "Units", value: formatNumber(row.units) },
+                          { label: "Share", value: formatPercent(row.share, { digits: 1 }) },
+                        ]}
+                      />
+                    </CrmCard>
+                  ))}
+                </CrmCardsOnPhone>
               </AdminTableShell>
             </div>
           ) : null}

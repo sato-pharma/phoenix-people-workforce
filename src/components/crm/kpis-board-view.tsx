@@ -2,6 +2,8 @@ import { Download } from "lucide-react";
 import Link from "next/link";
 import { Fragment } from "react";
 
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
+
 import {
   pageHeaderDescriptionClassName,
   pageHeaderKickerClassName,
@@ -1327,13 +1329,18 @@ function coverageAnchor(surface: "desktop" | "mobile", repKey: string): string {
  * A LINK, like every other control on this board, so opening a list re-runs the server-side scope
  * gate. The fragment brings the rep's own row back into view once the page has re-rendered.
  */
+/** The id the opened doctors panel carries, so its toggle can name it in `aria-controls`. */
+function coverageDetailId(repKey: string): string {
+  return `kpi-doctors-${repKey}`;
+}
+
 function coverageDoctorsToggle(context: ViewContext, row: KpiRepRow, surface: "desktop" | "mobile"): React.ReactNode {
   const key = row.coverageRepKey;
   if (!key || !row.hasMeasurablePlan || context.board.reps.length === 1) return null;
   const open = context.openRep === key;
   return (
     <Link
-      aria-expanded={open}
+      {...rowDetailToggleProps(coverageDetailId(key), open)}
       className={
         open
           ? "inline-flex items-center gap-1.5 border border-orange-300 bg-orange-50 px-2 py-1 text-phx-2xs font-bold text-orange-900 transition-colors hover:border-orange-400"
@@ -1793,11 +1800,9 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
               />
             </tr>
             {detail && row.coverageRepKey === detail.repKey ? (
-              <tr>
-                <td className="bg-slate-50/60 px-4 py-4 sm:px-5" colSpan={6}>
+              <TableRowDetail className="px-4 py-4 sm:px-5" colSpan={6} id={coverageDetailId(detail.repKey)}>
                   <CoverageDoctors context={context} detail={detail} surface="desktop" />
-                </td>
-              </tr>
+                </TableRowDetail>
             ) : null}
           </Fragment>
         ))}
@@ -1923,11 +1928,9 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
             />
           </tr>
           {detail && row.coverageRepKey === detail.repKey ? (
-            <tr>
-              <td className="bg-slate-50/60 px-4 py-4 sm:px-5" colSpan={5}>
+            <TableRowDetail className="px-4 py-4 sm:px-5" colSpan={5} id={coverageDetailId(detail.repKey)}>
                 <FrequencyDoctors context={context} detail={detail} surface="desktop" />
-              </td>
-            </tr>
+              </TableRowDetail>
           ) : null}
           </Fragment>
         ))}

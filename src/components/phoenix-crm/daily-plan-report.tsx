@@ -204,23 +204,29 @@ function listHeading(listType: PhoenixCrmDoctorListType, count: number): string 
 function CustomerCard({ customer }: { customer: DailyPlanCustomer }) {
   const facts = dailyPlanCustomerFacts(customer);
   const place = placeLine(customer);
+  const where = dailyPlanWhereText(customer);
   return (
     <CrmCard meta={customerMeta(customer)} status={<VisitPill customer={customer} />} title={<span dir="auto">{customer.name}</span>}>
       <CrmFacts
         facts={[
-          {
-            label: "Where",
-            value: (
-              <>
-                <span className="block">{dailyPlanWhereText(customer) ?? "No place yet"}</span>
-                {place ? (
-                  <span className="block font-semibold text-slate-500" dir="auto">
-                    {place}
-                  </span>
-                ) : null}
-              </>
-            ),
-          },
+          // An empty place shows nothing - no "Where" line at all, never "No place yet".
+          ...(where || place
+            ? [
+                {
+                  label: "Where",
+                  value: (
+                    <>
+                      {where ? <span className="block">{where}</span> : null}
+                      {place ? (
+                        <span className="block font-semibold text-slate-500" dir="auto">
+                          {place}
+                        </span>
+                      ) : null}
+                    </>
+                  ),
+                },
+              ]
+            : []),
           { label: "Hours that day", value: customer.hoursText },
           // The rep's own typed phone (owner, 2026-09-30); a customer without one simply has no row.
           ...(customer.phone ? [{ label: "Phone", value: <CustomerPhoneLink phone={customer.phone} /> }] : []),
@@ -238,6 +244,7 @@ function CustomerCard({ customer }: { customer: DailyPlanCustomer }) {
 function CustomerRow({ customer }: { customer: DailyPlanCustomer }) {
   const facts = dailyPlanCustomerFacts(customer);
   const place = placeLine(customer);
+  const where = dailyPlanWhereText(customer);
   return (
     <tr>
       <td className={crmTdClassName}>
@@ -253,7 +260,7 @@ function CustomerRow({ customer }: { customer: DailyPlanCustomer }) {
         {facts.length > 0 ? <p className="mt-0.5 text-xs text-amber-800">{facts.join(" · ")}</p> : null}
       </td>
       <td className={crmTdClassName}>
-        <p className={dailyPlanWhereText(customer) ? "text-slate-800" : "text-slate-400"}>{dailyPlanWhereText(customer) ?? "No place yet"}</p>
+        {where ? <p className="text-slate-800">{where}</p> : null}
         {place ? (
           <p className="mt-0.5 text-xs text-slate-500" dir="auto">
             {place}

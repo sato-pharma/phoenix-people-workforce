@@ -510,10 +510,17 @@ export function runPayrollEngineHardeningTests() {
     /Payroll candidate/,
     "Resignation report UI must render payroll missing employee candidates inside the workflow queue.",
   );
+  // Names, never codes: a payroll candidate has no HR id yet, and the system candidate id that used to
+  // stand in for it is a code nobody reads. The row shows the name, job title and the payroll file it came from.
+  assert.doesNotMatch(
+    resignationsReportSource,
+    /System resignation candidate ID|formatPayrollCandidateSystemId/,
+    "Payroll missing employee candidates must not print the system candidate code.",
+  );
   assert.match(
     resignationsReportSource,
-    /System resignation candidate ID/,
-    "Payroll missing employee candidates must show the auto-generated system resignation candidate ID.",
+    /candidate\.sourceFileName/,
+    "Payroll missing employee candidates must say which payroll file they came from.",
   );
   assert.doesNotMatch(
     resignationsReportSource,

@@ -23,11 +23,8 @@ function formatDate(value: string) {
 /** The hinge → resolved-MR chain, rendered identically in the mobile card and the desktop row so
  * the two can never tell a different story about who actually got the credit.
  *
- * Both names NOWRAP only from `md` up, where this renders inside PortalDesktopTable — that table
- * is `hidden overflow-x-auto md:block` with a 960px min-width, so a long name scrolls inside the
- * table rather than moving the page. BELOW md the same markup sits in a mobile card whose
- * container (`border border-slate-200 bg-white`) has no `overflow-hidden`, so an overflowing
- * name extends the PAGE. Measured at 375px in DM Sans against the real shell width (`main` is
+ * Both names wrap at every width (the table is table-fixed and never scrolls; a mobile card has no
+ * `overflow-hidden`, so an overflowing name would extend the PAGE). Measured at 375px in DM Sans against the real shell width (`main` is
  * `px-3`, so 351px of content): the hinge-manager span pushed `documentElement.scrollWidth` past
  * 375 at a 55-character name, and the longest `employees.full_name` company-wide is 52 — three
  * characters of margin. The parent is already `flex flex-wrap`, so wrapping needs nothing else.
@@ -36,9 +33,9 @@ function ResolvedChain({ chain }: { chain: DoubleVisitRecoveredChain }) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-1.5 text-phx-xs font-medium text-slate-600">
-        <span className="break-words text-slate-400 md:whitespace-nowrap">{chain.hingeManagerName ?? "hinge manager"}</span>
+        <span className="break-words text-slate-400">{chain.hingeManagerName ?? "hinge manager"}</span>
         <ArrowRight className="h-3 w-3 text-emerald-500" />
-        <span className="inline-flex items-center gap-1 break-words bg-emerald-50 px-2 py-0.5 text-phx-xs font-bold text-emerald-700 md:whitespace-nowrap">
+        <span className="inline-flex items-center gap-1 break-words bg-emerald-50 px-2 py-0.5 text-phx-xs font-bold text-emerald-700">
           {chain.resolvedMrName ?? chain.resolvedMrHrId ?? "MR"}
         </span>
       </div>
@@ -111,7 +108,7 @@ export function CrmRecoveredChainsPanel({ chains }: { chains: DoubleVisitRecover
           renderCard={(chain) => (
             <PortalRecordCard
               accent="emerald"
-              meta={`${formatDate(chain.activityDate)} · ${chain.higherManagerHrId ?? "no HR ID"}`}
+              meta={formatDate(chain.activityDate)}
               status={<span className="text-sm font-black tabular-nums text-slate-900">{chain.visitCount}</span>}
               title={chain.higherManagerName ?? "—"}
             >
@@ -152,10 +149,9 @@ export function CrmRecoveredChainsPanel({ chains }: { chains: DoubleVisitRecover
               <tbody className="divide-y divide-orange-100">
                 {chains.map((chain, index) => (
                   <tr key={chain.id} className={index % 2 === 0 ? "bg-white" : "bg-emerald-50/30"}>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(chain.activityDate)}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(chain.activityDate)}</td>
                     <td className="px-3 py-2.5">
-                      <p className="font-medium text-slate-900">{chain.higherManagerName ?? "—"}</p>
-                      <p className="text-phx-xs text-slate-400">{chain.higherManagerHrId ?? "no HR ID"}</p>
+                      <p className="break-words font-medium text-slate-900">{chain.higherManagerName ?? "—"}</p>
                     </td>
                     <td className="px-3 py-2.5">
                       <ResolvedChain chain={chain} />

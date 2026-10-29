@@ -335,7 +335,7 @@ export function PharmacyRegistryManager({
       <div className="flex flex-wrap items-center gap-3">
         <input
           className={cn(phxFieldClassName, "w-72")}
-          placeholder="Search by venue, Phoenix code, distributor or customer code…"
+          placeholder="Search by venue, doctor, distributor or customer code…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -477,18 +477,9 @@ export function PharmacyRegistryManager({
         </section>
       ) : null}
 
-      {/* Desktop: the full table. Mobile gets the cards below.
-
-          NO `min-w-[…]` FLOOR, and no `overflow-x-auto` of its own. The owner's fits-the-screen
-          golden rule names that exact pair as the bug rather than the fix, and this board was
-          living it: measured against the real shell with production's longest strings, the old
-          seven-column table wanted 1393px and scrolled sideways by 674px at 768px, 726px at
-          1024px — the worst width, because that is where the 292px sidebar appears — and still
-          486px at 1280px. Merging the columns is what fixes it; dropping the wrapper's own class
-          is cosmetic, because `.admin-shell :has(> table)` in app/globals.css re-applies
-          `overflow-x: auto` to any element directly holding a table whatever this file says. That
-          rule is a safety net for the 13 tables with no wrapper at all, and it only ever produces
-          a scrollbar when the table does not fit. This one now always does. */}
+      {/* Desktop: the full table. Mobile gets the cards below. Fixed layout with merged columns
+          (geography into Venue, order count into Status) so it fits at every width and wraps
+          instead of scrolling sideways. */}
       <div className="hidden border border-slate-200 md:block">
         <table className="w-full table-fixed border-collapse text-sm">
           {/* `table-fixed` + a colgroup is the shape the golden rule asks for: the table is exactly
@@ -526,15 +517,10 @@ export function PharmacyRegistryManager({
             ) : null}
             {shown.map((row) => (
               <tr key={row.id} className="border-b border-slate-100 align-top">
-                {/* `whitespace-nowrap` is gone from every cell in this row on purpose: under
-                    `table-fixed` a cell that cannot wrap does not widen the table, it spills out
-                    of it — and `.admin-shell` sets `overflow-x: clip`, so it would be silently
-                    CUT rather than scrolled. Wrapping is the golden rule's permitted answer, and
-                    `break-words` covers the one thing wrapping cannot: an unbroken token such as
-                    a Phoenix code or a customer code. */}
+                {/* Cells wrap (`break-words` covers an unbroken customer code) — under a fixed table
+                    layout a cell that cannot wrap would be silently cut. */}
                 <td className="break-words px-3 py-2">
                   <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
-                  <div className="text-phx-xs text-slate-400">{row.phoenixPharmacyCode}</div>
                   {/* Geography, merged in — the same brick · area · region line the mobile card
                       below already shows, so the two surfaces now read identically. */}
                   <div className="mt-0.5 text-phx-xs text-slate-500">
@@ -623,7 +609,6 @@ export function PharmacyRegistryManager({
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
-                <div className="text-phx-xs text-slate-400">{row.phoenixPharmacyCode}</div>
               </div>
               {/* `rejected` MUST be tested before the else. This was a two-way if/else, so a
                   rejected pharmacy fell through and rendered as a green "Confirmed" — a pharmacy

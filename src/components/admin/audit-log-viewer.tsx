@@ -11,6 +11,7 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 import { CSV_BOM, csvLine } from "@/lib/export/spreadsheet-safe";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import { humanizeCode } from "@/lib/format/code-label";
 
 
 // Every audit entity type there is, and the reason it is not a list typed out here.
@@ -232,13 +233,20 @@ export function AuditLogViewer({
       </div>
 
       <div className="overflow-hidden rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[15%]" />
+              <col className="w-[20%]" />
+              <col className="w-[22%]" />
+              <col className="w-[33%]" />
+              <col className="w-[10%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-phx-line bg-phx-paper">
-                {["Created At", "Actor", "Role", "Entity Type", "Entity ID", "Summary", "IP"].map((h) => (
+                {["When", "Actor", "Entity", "Summary", "IP"].map((h) => (
                   <th
-                    className="px-5 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
+                    className="px-3 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
                     key={h}
                   >
                     {h}
@@ -249,48 +257,67 @@ export function AuditLogViewer({
             <tbody className="divide-y divide-phx-paper-2">
               {isLoading ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={7}>
+                  <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={5}>
                     <Loader2 className="mx-auto h-5 w-5 animate-spin text-phx-accent" />
                   </td>
                 </tr>
               ) : data.logs.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={7}>
+                  <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={5}>
                     No audit log entries found.
                   </td>
                 </tr>
               ) : (
                 data.logs.map((log) => (
-                  <tr className="transition-colors hover:bg-orange-50/35" key={log.id}>
-                    <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-phx-ink-soft">
+                  <tr className="align-top transition-colors hover:bg-orange-50/35" key={log.id}>
+                    <td className="min-w-0 break-words px-3 py-4 font-mono text-xs font-semibold text-phx-ink-soft">
                       {formatDate(log.createdAt)}
                     </td>
-                    <td className="px-5 py-4 text-sm font-bold text-phx-ink">
-                      {log.actorLoginId}
-                      {log.actorHrId && log.actorHrId !== log.actorLoginId && (
-                        <span className="ml-1 text-xs font-medium text-phx-ink-soft">({log.actorHrId})</span>
-                      )}
+                    <td className="min-w-0 break-words px-3 py-4 text-sm">
+                      <p className="font-bold text-phx-ink">{log.actorLoginId}</p>
+                      {log.actorRole ? <p className="mt-0.5 text-xs text-phx-ink-soft">{log.actorRole}</p> : null}
                     </td>
-                    <td className="px-5 py-4 text-sm text-phx-ink-soft">{log.actorRole ?? "-"}</td>
-                    <td className="px-5 py-4">
+                    <td className="min-w-0 break-words px-3 py-4">
                       {log.entityType ? (
-                        <span className="inline-flex items-center rounded-full bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-bold text-phx-warn ring-1 ring-phx-warn-line">
-                          {log.entityType}
+                        <span className="inline-flex items-center bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-bold text-phx-warn ring-1 ring-phx-warn-line">
+                          {humanizeCode(log.entityType)}
                         </span>
-                      ) : (
-                        <span className="text-phx-ink-soft">-</span>
-                      )}
+                      ) : null}
+                      {log.entityId ? <p className="mt-1 break-all font-mono text-xs font-semibold text-phx-ink-soft">{log.entityId}</p> : null}
+                      {!log.entityType && !log.entityId ? <span className="text-phx-ink-soft">—</span> : null}
                     </td>
-                    <td className="px-5 py-4 font-mono text-xs font-semibold text-phx-ink-soft">{log.entityId ?? "-"}</td>
-                    <td className="max-w-lg px-5 py-4 text-sm font-medium text-phx-ink">
-                      <span className="line-clamp-2">{log.summary ?? "-"}</span>
-                    </td>
-                    <td className="px-5 py-4 font-mono text-xs text-phx-ink-soft">{log.requestIp ?? "-"}</td>
+                    <td className="min-w-0 break-words px-3 py-4 text-sm font-medium text-phx-ink">{log.summary ?? "—"}</td>
+                    <td className="min-w-0 break-words px-3 py-4 font-mono text-xs text-phx-ink-soft">{log.requestIp ?? "—"}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+        </div>
+        <div className="divide-y divide-phx-paper-2 md:hidden">
+          {isLoading ? (
+            <div className="px-5 py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-phx-accent" /></div>
+          ) : data.logs.length === 0 ? (
+            <p className="px-5 py-8 text-center text-sm text-phx-ink-soft">No audit log entries found.</p>
+          ) : (
+            data.logs.map((log) => (
+              <div className="min-w-0 space-y-1 px-4 py-3" key={log.id}>
+                <p className="font-mono text-xs font-semibold text-phx-ink-soft">{formatDate(log.createdAt)}</p>
+                <p className="break-words text-sm font-bold text-phx-ink">
+                  {log.actorLoginId}
+                  {log.actorRole ? <span className="ml-1 text-xs font-medium text-phx-ink-soft">· {log.actorRole}</span> : null}
+                </p>
+                {log.entityType || log.entityId ? (
+                  <p className="break-words text-xs font-semibold text-phx-ink-soft">
+                    {log.entityType ? humanizeCode(log.entityType) : null}
+                    {log.entityId ? <span className="ml-1 break-all font-mono">{log.entityId}</span> : null}
+                  </p>
+                ) : null}
+                {log.summary ? <p className="break-words text-sm text-phx-ink">{log.summary}</p> : null}
+                {log.requestIp ? <p className="font-mono text-xs text-phx-ink-soft">{log.requestIp}</p> : null}
+              </div>
+            ))
+          )}
         </div>
 
         {data.pageCount > 1 && (

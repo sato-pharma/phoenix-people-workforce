@@ -1,4 +1,5 @@
 import { systemDeployment } from "@/config/system-settings";
+import { codeOrWords } from "@/lib/format/code-label";
 import { MARKETING_REQUEST_LINK_BASE } from "@/lib/marketing-requests/notification-link";
 import type { CellValue, TableColumn } from "@/lib/sales/sales-workbook-kit";
 
@@ -117,7 +118,7 @@ function yesNo(value: boolean | null | undefined): string | null {
 /** snake_case enum → sentence case, e.g. "pending_validation" → "Pending validation". */
 export function humanize(value: string | null | undefined): string | null {
   if (!value) return null;
-  const spaced = value.replace(/_/g, " ").trim();
+  const spaced = codeOrWords(value).trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 

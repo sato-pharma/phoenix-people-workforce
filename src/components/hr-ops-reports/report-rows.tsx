@@ -8,6 +8,7 @@
 // in a grid cell beside the report list and a viewport breakpoint would read the wrong width.
 // Square edges throughout, and every field wears the house form tokens.
 
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { useState } from "react";
 
 import { FormError, FormField } from "@/components/ui/form-kit";
@@ -373,7 +374,7 @@ function RowAction({ line, props, open, onToggle }: { line: HrOpsLineView; props
   if (!review && !decide) return null;
   const label = review ? (line.review ? "Change answer" : "Answer") : line.decision ? "Change decision" : "Decide";
   return (
-    <button type="button" className={cn(phxButtonGhostClassName, "px-3 py-1.5 text-xs")} aria-expanded={open} onClick={onToggle}>
+    <button type="button" className={cn(phxButtonGhostClassName, "px-3 py-1.5 text-xs")} {...rowDetailToggleProps(`hr-ops-detail-${line.id}`, open)} onClick={onToggle}>
       {open ? "Close" : label}
     </button>
   );
@@ -477,11 +478,9 @@ function RowPair({ line, open, props, onToggle, onClose }: { line: HrOpsLineView
         </td>
       </tr>
       {open ? (
-        <tr className="border-b border-slate-200 bg-slate-50">
-          <td className="px-3 py-3" colSpan={5}>
-            <Editor line={line} props={props} onClose={onClose} />
-          </td>
-        </tr>
+        <TableRowDetail colSpan={5} id={`hr-ops-detail-${line.id}`}>
+          <Editor line={line} props={props} onClose={onClose} />
+        </TableRowDetail>
       ) : null}
     </>
   );

@@ -230,8 +230,8 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
                 <input className={cn(phxFieldClassName, "font-mono")} onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
                 {obs && obs.status !== "empty" ? (
                   obs.status === "found"
-                    ? <span className="truncate text-phx-2xs font-semibold text-emerald-700" title={obs.foundAlias ?? ""}>✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
-                    : <span className="truncate text-phx-2xs font-bold text-amber-700">✗ none of these aliases is in the file</span>
+                    ? <span className="break-words text-phx-2xs font-semibold text-emerald-700">✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
+                    : <span className="break-words text-phx-2xs font-bold text-amber-700">✗ none of these aliases is in the file</span>
                 ) : null}
               </label>
               );

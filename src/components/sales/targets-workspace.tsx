@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { CountUpNumber } from "@/components/ui/count-up";
 import {
   ACTUAL_COLOR,
@@ -181,7 +182,7 @@ function groupSource(rows: BreakdownLine[]): BrickGroup[] {
 /**
  * The drill-down body — brick → distributor → customer for one area × product.
  *
- * ONE implementation, rendered both by the desktop grid's `<td colSpan>` and by the phone
+ * ONE implementation, rendered both by the desktop grid's joined `TableRowDetail` panel and by the phone
  * card below it. Two copies would let the same expander show two different numbers, which is the
  * failure this module exists to prevent.
  *
@@ -235,7 +236,7 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
       ) : null}
       <div>
         <p className={`mb-2 ${LABEL_CLASS}`}>
-          Source of {formatEgpFull(detail.totalValue)} · {fmtUnits(detail.totalUnits)} units — brick → distributor → customer
+          {fmtUnits(detail.totalUnits)} units — brick → distributor → customer
         </p>
         <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
           {groups.map((brick) => (
@@ -823,13 +824,13 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                     const { canDrill, detail, editValue, key, liveAch, unitValue } = viewRow(row);
                     return (
                       <Fragment key={key}>
-                        <tr className={cn(TABLE_ROW_CLASS, detail ? "bg-orange-50" : undefined)}>
+                        <tr className={TABLE_ROW_CLASS}>
                           <td className="px-2 py-3 align-top">
                             {canDrill ? (
                               <button
                                 type="button"
                                 aria-label={detail ? "Hide source" : "Show source"}
-                                aria-expanded={Boolean(detail)}
+                                {...rowDetailToggleProps(`source-${key}`, Boolean(detail))}
                                 className={cn(
                                   "flex h-6 w-6 items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
                                   detail
@@ -901,11 +902,9 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                           </td>
                         </tr>
                         {detail ? (
-                          <tr className="border-b border-slate-200 bg-slate-50">
-                            <td className="px-4 py-4" colSpan={6}>
-                              <SourceBreakdown detail={detail} selectedPeriod={props.selectedPeriod} />
-                            </td>
-                          </tr>
+                          <TableRowDetail className="px-4 pb-4 pt-2" colSpan={6} id={`source-${key}`}>
+                            <SourceBreakdown detail={detail} selectedPeriod={props.selectedPeriod} />
+                          </TableRowDetail>
                         ) : null}
                       </Fragment>
                     );

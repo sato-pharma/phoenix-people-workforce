@@ -144,8 +144,10 @@ export function runDirectOrderRepCountersTests() {
     "utf8",
   );
   // Desktop tables, mobile cards — never a table on a phone.
-  assert.match(ui, /hidden overflow-x-auto md:block/, "the full table must be desktop-only");
-  assert.match(ui, /md:hidden/, "mobile must get cards, never the table");
+  assert.match(ui, /<PortalDesktopTable/, "the full table must be desktop-only (PortalDesktopTable shows from md up)");
+  assert.match(ui, /<PortalResponsiveDataList/, "mobile must get cards, never the table");
+  assert.match(ui, /<colgroup>/, "the table is table-fixed with a colgroup, so it fits the screen");
+  assert.doesNotMatch(ui, /overflow-x-auto|min-w-\[|whitespace-nowrap/, "no sideways scroll, no nowrap cell");
   // No truncation, no wrapping.
   assert.doesNotMatch(ui, /truncate|text-ellipsis|line-clamp/, "the owner's rule: never truncate with an ellipsis");
   // An empty result must explain itself rather than render as a row of zeros.

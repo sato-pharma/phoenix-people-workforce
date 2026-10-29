@@ -10,6 +10,13 @@ import {
 } from "@/lib/direct-orders/report-filters";
 import { showsAwaitingFinanceMonth } from "@/lib/direct-orders/types";
 import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-orders/types";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { phxFieldClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 import { adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -48,70 +55,128 @@ const money = (n: number | null | undefined) =>
 const units = (n: number | null | undefined) =>
   n == null || !Number.isFinite(n) ? "—" : Math.round(n).toLocaleString("en-US");
 
+type Fact = { label: string; value: React.ReactNode };
+
+/**
+ * One on-screen column. The report carries every field ("do not minus even one field"), but a
+ * 36-column grid cannot fit a screen, so related facts share a cell — the requester with their
+ * role and line, the venue with its address and doctor, the money with what was paid. Each fact is
+ * said once. The same `facts` feed the phone card, so the table and the cards cannot disagree.
+ * Raw codes and ids (HR id, product, venue, brick, area and region codes, linked request ids,
+ * distributor customer codes) are not printed here; the spreadsheet export still carries them.
+ */
 type Col = {
   key: keyof DirectOrderReportRow;
   label: string;
-  numeric?: boolean;
-  render?: (row: DirectOrderReportRow) => React.ReactNode;
+  width: string;
+  facts: (row: DirectOrderReportRow) => Fact[];
 };
 
-// Every field — "do not minus even one field".
+const has = (value: unknown): boolean => value != null && String(value).trim() !== "";
+
 const COLUMNS: Col[] = [
-  { key: "status", label: "Status", render: (r) => (
-      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} variant="ring" />
-    ) },
-  { key: "requesterName", label: "Requester" },
-  { key: "requesterHrId", label: "HR_ID" },
-  { key: "requesterRole", label: "Role" },
-  { key: "line", label: "Line" },
-  { key: "productCode", label: "Prod code" },
-  { key: "productName", label: "Product" },
-  // A basket prints its units per product ("72 + 24"), never a sum — the same text the xlsx and the
-  // live sheet carry in these two columns.
-  { key: "qty", label: "Qty", numeric: true, render: (r) => r.basketUnits?.qty ?? units(r.qty) },
-  { key: "bonus", label: "Bonus", numeric: true, render: (r) => r.basketUnits?.bonus ?? units(r.bonus) },
   {
-    key: "pharmacyPriceSnapshot",
-    label: "Pharmacy price",
-    numeric: true,
-    render: (r) => (r.pharmacyPriceSnapshot == null ? "—" : money(r.pharmacyPriceSnapshot)),
+    key: "status",
+    label: "Status",
+    width: "w-[14%]",
+    facts: (r) => [
+      { label: "", value: <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} variant="ring" /> },
+      ...(has(r.activeStepLabel) ? [{ label: "Awaiting", value: r.activeStepLabel }] : []),
+    ],
   },
-  { key: "salesValue", label: "Sales value", numeric: true, render: (r) => money(r.salesValue) },
-  { key: "dealType", label: "Deal", render: (r) => (r.dealType === "discount" ? "Discount" : "Bonus") },
-  { key: "discountPct", label: "Disc %", numeric: true, render: (r) => (r.discountPct == null ? "—" : `${r.discountPct}%`) },
-  { key: "publicPriceSnapshot", label: "Public price", numeric: true, render: (r) => (r.publicPriceSnapshot == null ? "—" : money(r.publicPriceSnapshot)) },
-  { key: "bonusOverrideReason", label: "Bonus override" },
-  { key: "pharmacyCode", label: "Venue code" },
-  { key: "pharmacyName", label: "Venue" },
-  { key: "pharmacyAddress", label: "Address" },
-  { key: "brickName", label: "Brick" },
-  { key: "brickId", label: "Brick code" },
-  { key: "areaName", label: "Area" },
-  { key: "areaCode", label: "Area code" },
-  { key: "regionName", label: "Region" },
-  { key: "regionCode", label: "Region code" },
-  { key: "doctorName", label: "Doctor" },
-  { key: "distributorCodesText", label: "Distributor codes" },
-  { key: "collectionDate", label: "Collection date" },
-  // An APPROVED order with no sales month is money that has been signed off but is not in
-  // Source of Sales — a state someone has to act on, not an absent value. Rendering it as the
-  // same "—" every other empty cell uses is what let it stay invisible. Non-approved rows are
-  // not expected to carry a month, so those keep the neutral dash.
   {
-    key: "salesMonth",
-    label: "Sales month",
-    render: (r) => (r.salesMonth ? r.salesMonth : r.status === "approved" ? "Not booked" : "—"),
+    key: "requesterName",
+    label: "Requester",
+    width: "w-[12%]",
+    facts: (r) => [
+      { label: "", value: r.requesterName },
+      ...(has(r.requesterRole) ? [{ label: "", value: r.requesterRole }] : []),
+      ...(has(r.line) ? [{ label: "Line", value: r.line }] : []),
+    ],
   },
-  { key: "paymentDate", label: "Payment date" },
-  { key: "paidAmount", label: "Paid", numeric: true, render: (r) => money(r.paidAmount) },
-  { key: "remainingAmount", label: "Remaining", numeric: true, render: (r) => money(r.remainingAmount) },
-  { key: "marketingRequestId", label: "Marketing req" },
-  { key: "reversalOfRequestId", label: "Reversal of" },
-  { key: "reversedByRequestId", label: "Reversed by" },
-  { key: "activeStepLabel", label: "Awaiting" },
-  { key: "createdAt", label: "Created" },
-  { key: "decidedAt", label: "Decided" },
+  {
+    key: "pharmacyName",
+    label: "Venue",
+    width: "w-[16%]",
+    facts: (r) => [
+      { label: "", value: r.pharmacyName },
+      ...(has(r.pharmacyAddress) ? [{ label: "Address", value: r.pharmacyAddress }] : []),
+      ...(has(r.doctorName) ? [{ label: "Doctor", value: r.doctorName }] : []),
+    ],
+  },
+  {
+    key: "areaName",
+    label: "Place",
+    width: "w-[11%]",
+    facts: (r) => [
+      { label: "Brick", value: has(r.brickName) ? r.brickName : "—" },
+      { label: "Area", value: has(r.areaName) ? r.areaName : "—" },
+      { label: "Region", value: has(r.regionName) ? r.regionName : "—" },
+    ],
+  },
+  {
+    key: "productName",
+    label: "Product",
+    width: "w-[14%]",
+    facts: (r) => [
+      { label: "", value: r.productName },
+      { label: "Deal", value: r.dealType === "discount" ? `Discount ${r.discountPct == null ? "—" : `${r.discountPct}%`}` : "Bonus" },
+      ...(has(r.bonusOverrideReason) ? [{ label: "Bonus override", value: r.bonusOverrideReason }] : []),
+    ],
+  },
+  {
+    key: "qty",
+    label: "Units and price",
+    width: "w-[12%]",
+    // A basket prints its units per product ("72 + 24"), never a sum — the same text the xlsx and the
+    // live sheet carry in these two columns.
+    facts: (r) => [
+      { label: "Qty", value: r.basketUnits?.qty ?? units(r.qty) },
+      { label: "Bonus", value: r.basketUnits?.bonus ?? units(r.bonus) },
+      { label: "Pharmacy price", value: r.pharmacyPriceSnapshot == null ? "—" : money(r.pharmacyPriceSnapshot) },
+      { label: "Public price", value: r.publicPriceSnapshot == null ? "—" : money(r.publicPriceSnapshot) },
+    ],
+  },
+  {
+    key: "salesValue",
+    label: "Value",
+    width: "w-[9%]",
+    facts: (r) => [
+      { label: "Sales value", value: money(r.salesValue) },
+      { label: "Paid", value: money(r.paidAmount) },
+      { label: "Remaining", value: money(r.remainingAmount) },
+    ],
+  },
+  {
+    key: "createdAt",
+    label: "Dates",
+    width: "w-[12%]",
+    facts: (r) => [
+      { label: "Created", value: cairoDateTime(r.createdAt) },
+      ...(has(r.decidedAt) ? [{ label: "Decided", value: cairoDateTime(r.decidedAt) }] : []),
+      ...(has(r.collectionDate) ? [{ label: "Collection", value: r.collectionDate }] : []),
+      ...(has(r.paymentDate) ? [{ label: "Payment", value: r.paymentDate }] : []),
+      // An APPROVED order with no sales month is money that has been signed off but is not in
+      // Source of Sales — a state someone has to act on, not an absent value. Rendering it as the
+      // same "—" every other empty cell uses is what let it stay invisible. Non-approved rows are
+      // not expected to carry a month, so those keep the neutral dash.
+      { label: "Sales month", value: r.salesMonth ? r.salesMonth : r.status === "approved" ? "Not booked" : "—" },
+    ],
+  },
 ];
+
+function FactLines({ facts }: { facts: Fact[] }) {
+  return (
+    <>
+      {facts.map((fact, index) => (
+        <p className={index === 0 && !fact.label ? "font-semibold text-slate-900" : "text-phx-sm"} key={index}>
+          {fact.label ? <span className="text-slate-400">{fact.label} </span> : null}
+          {fact.value}
+        </p>
+      ))}
+    </>
+  );
+}
 
 function KpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
@@ -315,58 +380,83 @@ export function DirectOrderReportWorkspace({
 
       {error ? <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="min-w-full border-collapse text-left text-sm">
-          <thead className={`${adminPanelHeaderClassName} text-white`}>
-            <tr>
-              <th className="whitespace-nowrap px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider">
-                Open
-              </th>
-              {COLUMNS.map((col) => (
-                <th
-                  key={String(col.key)}
-                  onClick={() => toggleSort(col.key)}
-                  className={`cursor-pointer whitespace-nowrap px-3 py-2 text-phx-xs font-black uppercase tracking-wider ${
-                    col.numeric ? "text-right" : "text-left"
-                  }`}
-                >
-                  {col.label}
-                  {sortKey === col.key ? <span className="ml-1">{sortDir === "asc" ? "▲" : "▼"}</span> : null}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((row, index) => (
-              <tr key={row.id} className={index % 2 ? "bg-slate-50" : "bg-white"}>
-                <td className="whitespace-nowrap px-3 py-1.5 text-left">
-                  <Link
-                    className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                    href={`${detailBasePath}/${row.id}`}
-                  >
-                    {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}
-                  </Link>
-                </td>
+      <PortalResponsiveDataList
+        empty={<p className="border border-slate-200 px-3 py-8 text-center text-slate-400">No direct orders match your filters.</p>}
+        getKey={(row) => row.id}
+        items={filtered}
+        renderCard={(row) => (
+          <PortalRecordCard
+            actions={
+              <Link
+                className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                href={`${detailBasePath}/${row.id}`}
+              >
+                {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}
+              </Link>
+            }
+            meta={[row.requesterName, row.requesterRole].filter(has).join(" · ")}
+            status={<DirectOrderStatusPill status={row.status} salesMonth={row.salesMonth} variant="ring" />}
+            title={row.pharmacyName}
+          >
+            <PortalRecordFields
+              fields={COLUMNS.flatMap((col) =>
+                col.facts(row)
+                  // The unlabelled lines are the card's title, meta and status; only the product's
+                  // own name has no other home on the card.
+                  .filter((fact) => fact.label || col.key === "productName")
+                  .map((fact) => ({ label: fact.label || "Product", value: fact.value })),
+              )}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable
+            cols={
+              <colgroup>
                 {COLUMNS.map((col) => (
-                  <td
+                  <col className={col.width} key={String(col.key)} />
+                ))}
+              </colgroup>
+            }
+          >
+            <thead className={`${adminPanelHeaderClassName} text-white`}>
+              <tr>
+                {COLUMNS.map((col) => (
+                  <th
                     key={String(col.key)}
-                    className={`whitespace-nowrap px-3 py-1.5 ${col.numeric ? "text-right tabular-nums" : "text-left"} text-slate-700`}
+                    onClick={() => toggleSort(col.key)}
+                    className="cursor-pointer px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider"
                   >
-                    {col.render ? col.render(row) : String(row[col.key] ?? "—") || "—"}
-                  </td>
+                    {col.label}
+                    {sortKey === col.key ? <span className="ml-1">{sortDir === "asc" ? "▲" : "▼"}</span> : null}
+                  </th>
                 ))}
               </tr>
-            ))}
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={COLUMNS.length + 1} className="px-3 py-8 text-center text-slate-400">
-                  No direct orders match your filters.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filtered.map((row, index) => (
+                <tr key={row.id} className={cn("align-top", index % 2 ? "bg-slate-50" : "bg-white")}>
+                  {COLUMNS.map((col) => (
+                    <td className="break-words px-3 py-1.5 text-left text-slate-700" key={String(col.key)}>
+                      <FactLines facts={col.facts(row)} />
+                      {col.key === "status" ? (
+                        <p>
+                          <Link
+                            className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                            href={`${detailBasePath}/${row.id}`}
+                          >
+                            {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}
+                          </Link>
+                        </p>
+                      ) : null}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }

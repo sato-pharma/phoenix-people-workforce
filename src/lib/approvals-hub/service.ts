@@ -4,6 +4,7 @@ import {
   resolveNavigationMode,
   type AccessContext,
 } from "@/lib/auth/permissions";
+import { excuseHistoryTitle, leaveHistoryTitle, planHistoryTitle } from "@/lib/approvals-hub/history-title";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
@@ -1108,7 +1109,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
       module: "leave",
       employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
-      title: `Leave · ${String(row.vacation_type ?? "").replace(/_/g, " ")} · ${row.start_date ?? ""}`,
+      title: leaveHistoryTitle(row.vacation_type as string | null, row.start_date as string | null),
       decision,
       decidedAt: String(decidedAt ?? ""),
       href: vacationApprovalHref(access, id),
@@ -1129,7 +1130,7 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
       module: "leave",
       employeeName: liveEmployeeName(directory.employees, String(req.employee_hr_id ?? ""), String(req.employee_name ?? "Unknown")),
       employeeHrId: String(req.employee_hr_id ?? ""),
-      title: `Leave · ${String(req.vacation_type ?? "").replace(/_/g, " ")} · ${String(req.start_date ?? "")}`,
+      title: leaveHistoryTitle(req.vacation_type, req.start_date),
       decision,
       decidedAt: String(row.decided_at ?? ""),
       href: vacationApprovalHref(access, reqId),
@@ -1170,7 +1171,7 @@ export async function getAllExcuseDecisionsCompanyWide(access: AccessContext): P
       module: "excuse",
       employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
-      title: `Excuse · ${String(row.excuse_type ?? "")} · ${row.excuse_date ?? ""}`,
+      title: excuseHistoryTitle(row.excuse_type as string | null, row.excuse_date as string | null),
       decision,
       decidedAt: String(row.manager_decision_at ?? ""),
       href: excuseApprovalHref(access, id),
@@ -2418,7 +2419,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
     fetchAllApprovalRows<Record<string, unknown>>(() =>
       db
         .from("employee_plan_headers")
-        .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,plan_kind,period_key,period_start_date,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
         .or("manager_decision_at.not.is.null,ceo_decision_at.not.is.null")
         .order("manager_decision_at", { ascending: false })
         .order("id", { ascending: false }),
@@ -2448,7 +2449,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
       module: "weekly_plan",
       employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
-      title: `${kindLabel} plan · ${row.period_key ?? ""}`,
+      title: planHistoryTitle({ periodKey: row.period_key as string | null, periodStartDate: row.period_start_date as string | null, planKind: row.plan_kind as string | null }),
       decision,
       decidedAt: String(decidedAt ?? ""),
       href: planApprovalHref(access, id),

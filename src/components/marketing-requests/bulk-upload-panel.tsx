@@ -1,5 +1,6 @@
 "use client";
 
+import { humanizeCode } from "@/lib/format/code-label";
 import { useCallback, useRef, useState, type ChangeEvent } from "react";
 import {
   AlertCircle,
@@ -96,14 +97,14 @@ function PreviewRowCard({ row }: { row: PreviewRow }) {
 
         <span className="flex items-center gap-2 flex-1 min-w-0">
           <span className="text-xs text-slate-400 w-10 shrink-0">Row {row.rowIndex}</span>
-          <span className="font-medium text-sm text-slate-900 truncate">{row.requesterHrId ?? "—"}</span>
+          <span className="font-medium text-sm text-slate-900 break-words">{row.requesterHrId ?? "—"}</span>
           <span className="text-xs text-slate-500">{row.requestDate ?? "—"}</span>
-          <span className="text-xs text-slate-500 truncate hidden sm:block">{row.customerCode ?? "—"}</span>
+          <span className="text-xs text-slate-500 break-words hidden sm:block">{row.customerCode ?? "—"}</span>
         </span>
 
         <span className="flex items-center gap-2 shrink-0">
           <Badge variant="neutral" className="text-xs">
-            {row.mappedRequestTypeCode.replace(/_/g, " ")}
+            {humanizeCode(row.mappedRequestTypeCode)}
           </Badge>
           <span className="text-xs font-medium text-slate-700">EGP {fmtMoney(row.estimatedCost)}</span>
           {row.canImport ? (
@@ -122,8 +123,7 @@ function PreviewRowCard({ row }: { row: PreviewRow }) {
               <ul className="space-y-0.5">
                 {row.resolvedProducts.map((p, i) => (
                   <li key={i} className="flex items-center gap-2 text-xs text-slate-700">
-                    <span className="font-mono bg-slate-100 px-1 rounded">{p.productCode}</span>
-                    <span className="truncate">{p.productName}</span>
+                    <span className="min-w-0 break-words">{p.productName}</span>
                     <span className="text-slate-400">× {p.qty}</span>
                   </li>
                 ))}

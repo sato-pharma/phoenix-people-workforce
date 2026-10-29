@@ -536,8 +536,18 @@ export function CoachingReportsCenter({
           </div>
         ) : (
           <>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full border-collapse text-left">
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[11%]" />
+                <col className="w-[16%]" />
+                <col className="w-[14%]" />
+                <col className="w-[15%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead className="bg-phx-paper">
                 <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   <th className="px-4 py-3">Report #</th>
@@ -545,10 +555,8 @@ export function CoachingReportsCenter({
                   <th className="px-4 py-3">Coach</th>
                   <th className="px-4 py-3">Org</th>
                   <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Score</th>
-                  <th className="px-4 py-3">Zone</th>
+                  <th className="px-4 py-3">Score and zone</th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Ack</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
@@ -559,27 +567,26 @@ export function CoachingReportsCenter({
                       <span className="font-black text-phx-ink">{report.reportNumber}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</div>
-                      <div className="font-mono text-phx-xs text-phx-ink-faint">{report.medicalRepHrId}</div>
+                      <div className="break-words font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</div>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-phx-ink">{formatEmployeeDisplayName(report.coachName)}</td>
+                    <td className="break-words px-4 py-3 font-semibold text-phx-ink">{formatEmployeeDisplayName(report.coachName)}</td>
                     <td className="px-4 py-3 text-xs text-phx-ink-2">
                       <div>{report.lineName || "—"}</div>
                       {report.areaName ? <div className="text-phx-ink-faint">{report.areaName}</div> : null}
                       {report.teamName ? <div className="text-phx-ink-faint">{report.teamName}</div> : null}
                     </td>
                     <td className="px-4 py-3 text-phx-ink-2">{formatDate(report.coachingDate)}</td>
-                    <td className="px-4 py-3 font-black text-phx-ink">{formatPercent(report.finalScorePercent)}</td>
                     <td className="px-4 py-3">
+                      <div className="font-black text-phx-ink">{formatPercent(report.finalScorePercent)}</div>
                       <Badge className={zoneClassName(report.performanceZone)}>{zoneLabel(report.performanceZone)}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className={report.acknowledged ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}>
-                        {report.acknowledged ? "Ack" : "Pend"}
-                      </Badge>
+                      <div className="mt-1">
+                        <Badge className={report.acknowledged ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"}>
+                          {report.acknowledged ? "Acknowledged" : "Pending"}
+                        </Badge>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <Link
@@ -603,7 +610,6 @@ export function CoachingReportsCenter({
                   <div className="min-w-0">
                     <p className="font-black text-phx-ink">{report.reportNumber}</p>
                     <p className="mt-1 break-words font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</p>
-                    <p className="font-mono text-phx-xs text-phx-ink-faint">{report.medicalRepHrId}</p>
                   </div>
                   <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>
                 </div>

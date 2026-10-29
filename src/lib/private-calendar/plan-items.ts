@@ -155,8 +155,7 @@ export function mapPlanRowToPrivateCalendarItem(
   const title = cleanText(item.activity_title) || activityType;
   const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(item.activity_type);
   const place = nullableText(item.area) ?? nullableText(item.location_text);
-  const detailLines = [`Activity: ${activityType}`];
-  if (place) detailLines.push(`Where: ${place}`);
+  const detailLines: string[] = [];
   if (nullableText(item.objective)) detailLines.push(`Objective: ${cleanText(item.objective)}`);
   if (nullableText(item.double_visit_medical_rep_name)) {
     detailLines.push(`With: ${cleanText(item.double_visit_medical_rep_name)}`);
@@ -167,7 +166,7 @@ export function mapPlanRowToPrivateCalendarItem(
   // overwrites that field with the employee's CURRENT manager from the directory
   // (decorateItemsWithEmployeeMetadata), so who actually signed this week off would otherwise be lost
   // on the one item where it is the whole point.
-  if (nullableText(header.manager_name)) detailLines.push(`Approved by: ${cleanText(header.manager_name)}`);
+  if (nullableText(header.manager_name)) detailLines.push(`Signed off by: ${cleanText(header.manager_name)}`);
   return {
     // The plan is an intention, never a visit, so it carries no visit colour of its own.
     activityKind: "plan",
@@ -175,8 +174,8 @@ export function mapPlanRowToPrivateCalendarItem(
     // the day is still judged on what was recorded. The two lines differ only in what the reader
     // should expect to find beside the plan.
     approvalImpact: recordedNowhereElse
-      ? "Approved by the manager, and the only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
-      : "Approved by the manager. The day still needs its own record: a punch, a logged visit or an approved request.",
+      ? "The only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
+      : "The day still needs its own record: a punch, a logged visit or an approved request.",
     chipLines: [activityType === title ? activityType : `${activityType} · ${title}`, ...(place ? [place] : [])],
     description: nullableText(item.notes),
     detailLines,
@@ -217,16 +216,15 @@ export function mapManagerHalfDayToPrivateCalendarItem(
   const activityType = halfDay.legacyType;
   const title = managerHalfDayText(halfDay, names.rep, names.senior ?? null);
   const recordedNowhereElse = plannedActivityIsRecordedNowhereElse(activityType);
-  const detailLines = [`Activity: ${activityType}`, `Half day: ${halfDay.half}`];
-  if ((halfDay.kind === "single_visit" || halfDay.kind === "with_senior" || halfDay.kind === "with_area") && halfDay.areaName) detailLines.push(`Where: ${halfDay.areaName}`);
+  const detailLines: string[] = [];
   if (halfDay.kind !== "admin" && halfDay.customerCount !== null) detailLines.push(`Customers planned: ${halfDay.customerCount}`);
   detailLines.push(weekOfLabel(halfDay.weekStart) || `Week: ${halfDay.weekStart}`);
-  if (names.approver) detailLines.push(`Approved by: ${names.approver}`);
+  if (names.approver) detailLines.push(`Signed off by: ${names.approver}`);
   return {
     activityKind: "plan",
     approvalImpact: recordedNowhereElse
-      ? "Approved by the manager, and the only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
-      : "Approved by the manager. The day still needs its own record: a punch, a logged visit or an approved request.",
+      ? "The only thing this kind of day produces — so compare it against what was actually recorded; it does not stand in for attendance."
+      : "The day still needs its own record: a punch, a logged visit or an approved request.",
     chipLines: [activityType === title ? activityType : `${activityType} · ${title}`],
     description: halfDay.note,
     detailLines,

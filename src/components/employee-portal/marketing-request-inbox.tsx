@@ -990,7 +990,7 @@ function ChainWatchList({
                 {["Request", "Customer", "Raised by", "Value", "Now with", "Position", "In system", ""].map(
                   (heading, index) => (
                     <th
-                      className="whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                      className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
                       key={`${heading}-${index}`}
                       scope="col"
                     >
@@ -1003,27 +1003,27 @@ function ChainWatchList({
             <tbody>
               {visible.map((row) => (
                 <tr className="border-b border-slate-100 transition hover:bg-orange-50/30" key={`watch-row-${row.id}`}>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-500">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-500">
                     {row.requestCode}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-md font-black text-slate-950">
                     {row.customerName}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">
                     {row.requesterName}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-md font-black text-slate-950">
                     {egp(row.estimatedCost)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-bold text-slate-700">
                     {holder(row)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-medium text-slate-500">
+                  <td className="min-w-0 break-words px-3 py-2.5 text-phx-sm font-medium text-slate-500">
                     {position(row)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
+                  <td className="min-w-0 break-words px-3 py-2.5">
                     <span
-                      className={`rounded-sm px-2.5 py-1 text-phx-xs font-black ${
+                      className={`inline-block px-2.5 py-1 text-phx-xs font-black ${
                         row.ageDays >= 7
                           ? "bg-rose-50 text-rose-800"
                           : row.ageDays >= 3

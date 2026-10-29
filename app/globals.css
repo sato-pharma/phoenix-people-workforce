@@ -1169,6 +1169,16 @@ a[aria-current="page"] .nav-badge-alarm-glass {
   border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
+/* RULE 2 — THE ONE EXCEPTION: A ROW'S JOINED PANEL (owner, 2026-10-28: "Fold in, joined panel").
+   A panel a row opens on a click (`TableRowDetail`, `<tr data-row-detail>`) is part of that
+   row, so the hairline between the two is not drawn. `hidden` is the only border style that wins
+   over the row above's solid bottom edge in a collapsed table (`none` loses to it). The panel's
+   sides and bottom keep the orange hairline, so it still sits inside the grid. Nothing else may
+   weaken a cell border — pinned by tests/table-row-detail-joined.test.ts. */
+.admin-shell tr[data-row-detail] > td {
+  border-top-style: hidden !important;
+}
+
 /* RULE 3 — DEPTH ON EVERY CARD. The premium godmode polish golden rule (owner,
    2026-09-08) says depth is the default for "anything current in system or will be
    built". #3510 delivered that for the shared admin design tokens, so a page built out
@@ -1383,6 +1393,32 @@ a[aria-current="page"] .nav-badge-alarm-glass {
 .employee-portal-shell th,
 .employee-portal-shell td {
   border: 1px solid rgba(249, 115, 22, 0.22) !important;
+}
+
+/* RULE 2 — THE ONE EXCEPTION: A ROW'S JOINED PANEL (owner, 2026-10-28: "Fold in, joined panel").
+   A panel a row opens on a click (`TableRowDetail`, `<tr data-row-detail>`) is part of that
+   row, so the hairline between the two is not drawn. `hidden` is the only border style that wins
+   over the row above's solid bottom edge in a collapsed table (`none` loses to it). The panel's
+   sides and bottom keep the orange hairline, so it still sits inside the grid. Nothing else may
+   weaken a cell border — pinned by tests/table-row-detail-joined.test.ts. */
+.employee-portal-shell tr[data-row-detail] > td {
+  border-top-style: hidden !important;
+}
+
+/* The portal's tables read like the admin shell's: figures line up, and the row under the cursor
+   (with its joined panel) is tinted together. */
+.employee-portal-shell :where(table) {
+  font-variant-numeric: tabular-nums;
+}
+
+.employee-portal-shell tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.employee-portal-shell tbody tr:hover,
+.employee-portal-shell tbody tr:hover + tr[data-row-detail],
+.employee-portal-shell tbody tr:has(+ tr[data-row-detail]:hover) {
+  background-color: color-mix(in oklab, var(--phx-accent) 5%, transparent);
 }
 
 /* RULE 3 — NO FORM CONTROL UNDER 16px ON A PHONE.
@@ -1735,7 +1771,10 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
   transition: background-color 120ms ease;
 }
 
-.admin-shell tbody tr:hover {
+/* A row and the panel it opened are one row, so they tint together. */
+.admin-shell tbody tr:hover,
+.admin-shell tbody tr:hover + tr[data-row-detail],
+.admin-shell tbody tr:has(+ tr[data-row-detail]:hover) {
   background-color: color-mix(in oklab, var(--phx-accent) 5%, transparent);
 }
 

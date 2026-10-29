@@ -106,7 +106,7 @@ function payDateLabel(row: Pick<SalesMarketingRequestRow, "payDate" | "payMonth"
     const label = utcDate(`${row.payMonth.slice(0, 7)}-01`);
     if (label !== "—") return label.split(" ").slice(1).join(" ");
   }
-  return "-";
+  return "—";
 }
 
 function chartFormatter(value: unknown, name: unknown) {
@@ -457,19 +457,34 @@ function RoiComparisonTable({
             breakpoint="lg"
             className="text-phx-md"
             cols={
-              <colgroup>
-                <col className="w-[16%]" />
-                {kind === "product" ? <col className="w-[10%]" /> : null}
-                <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
-                <col className="w-[9%]" />
-                <col className="w-[9%]" />
-                <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[12%]" />
-              </colgroup>
+              kind === "product" ? (
+                <colgroup>
+                  <col className="w-[15%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[11%]" />
+                </colgroup>
+              ) : (
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[11%]" />
+                </colgroup>
+              )
             }
           >
             <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
@@ -491,7 +506,7 @@ function RoiComparisonTable({
               {rows.map((row) => (
                 <tr className="border-t border-slate-100" key={`${title}-${row.value}`}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
-                  {kind === "product" ? <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td> : null}
+                  {kind === "product" ? <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "—"}</td> : null}
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.customerCount)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.pharmacyCount)}</td>
@@ -518,7 +533,6 @@ function RequestRowCard({ row }: { row: SalesMarketingRequestRow }) {
       meta={
         <span className="inline-flex flex-wrap items-center gap-1.5 font-mono text-phx-2xs text-slate-400">
           <span>{row.requestCode}</span>
-          {row.customerCode ? <span>{row.customerCode}</span> : null}
         </span>
       }
       status={<RoiStatusBadge status={row.actualRoiStatus} />}
@@ -526,7 +540,7 @@ function RequestRowCard({ row }: { row: SalesMarketingRequestRow }) {
     >
       <PortalRecordFields
         fields={[
-          { label: "Line", value: row.line ?? "-" },
+          { label: "Line", value: row.line ?? "—" },
           { label: "Pay date", value: payDateLabel(row) },
           { label: "Cost", value: money(row.estimatedCost) },
           { label: "Required", value: money(row.requiredRoiValue) },
@@ -562,7 +576,7 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
             className="text-phx-md"
             cols={
               <colgroup>
-                <col className="w-[22%]" />
+                <col className="w-[20%]" />
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
                 <col className="w-[7%]" />
@@ -573,7 +587,7 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
-                <col className="w-[8%]" />
+                <col className="w-[7%]" />
               </colgroup>
             }
           >
@@ -600,10 +614,9 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
                     <p className="break-words font-bold text-slate-900">{row.customerName}</p>
                     <p className="break-words font-mono text-phx-2xs font-semibold text-slate-400">
                       {row.requestCode}
-                      {row.customerCode ? ` · ${row.customerCode}` : ""}
                     </p>
                   </td>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "—"}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{payDateLabel(row)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.estimatedCost)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-700">{money(row.requiredRoiValue)}</td>
@@ -636,7 +649,7 @@ function CustomerImpactRowCard({ row }: { row: SalesMarketingCustomerImpactRow }
       accent={row.actualRoiCoverage >= 1 ? "emerald" : "rose"}
       meta={
         <span className="inline-flex flex-wrap items-center gap-1.5">
-          <span>{row.distributorName ?? row.distributorCode ?? "Unassigned distributor"}</span>
+          <span>{row.distributorName ?? "Unassigned distributor"}</span>
           <span>{row.regionName ?? "Unmapped pharmacy"}</span>
         </span>
       }
@@ -676,8 +689,8 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
             className="text-phx-md"
             cols={
               <colgroup>
-                <col className="w-[16%]" />
-                <col className="w-[12%]" />
+                <col className="w-[15%]" />
+                <col className="w-[11%]" />
                 <col className="w-[10%]" />
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
@@ -709,7 +722,7 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
               {rows.map((row) => (
                 <tr className="border-t border-slate-100" key={row.value}>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{row.label}</td>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.distributorName ?? row.distributorCode ?? "-"}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.distributorName ?? "—"}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.regionName ?? "Unmapped pharmacy"}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{number(row.requestCount)}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 text-right font-semibold text-slate-600">{money(row.marketingCost)}</td>

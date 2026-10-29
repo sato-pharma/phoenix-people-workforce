@@ -65,8 +65,11 @@ export type FlexibleHoursResult = {
   hoursCompleted: boolean;
   /** True when a late penalty was halved because the hours were completed. */
   halved: boolean;
-  /** Plain-language explanation for the digest line. */
-  reason: string;
+  /**
+   * Plain-language explanation for the digest line; null when it would only restate the status or the
+   * Late and Short minutes the row already shows.
+   */
+  reason: string | null;
 };
 
 /**
@@ -229,7 +232,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       deductionDays: 0,
       hoursCompleted,
       halved: false,
-      reason: "On time and full hours.",
+      reason: null,
     };
   }
 
@@ -246,7 +249,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       deductionDays: lateDeduction / 2,
       hoursCompleted,
       halved: true,
-      reason: `Late ${lateMinutes} min but completed the required hours — penalty halved.`,
+      reason: "Hours completed — late penalty halved.",
     };
   }
 
@@ -262,7 +265,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
         deductionDays: shortDeduction,
         hoursCompleted,
         halved: false,
-        reason: `Late ${lateMinutes} min and short ${shortMinutes} min — short-hours penalty applies.`,
+        reason: "Late and short — short-hours penalty applies.",
       };
     }
     return {
@@ -273,7 +276,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       deductionDays: lateDeduction,
       hoursCompleted,
       halved: false,
-      reason: `Late ${lateMinutes} min and short ${shortMinutes} min — lateness penalty applies.`,
+      reason: "Late and short — lateness penalty applies.",
     };
   }
 
@@ -286,6 +289,6 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
     deductionDays: shortDeduction,
     hoursCompleted,
     halved: false,
-    reason: `Short ${shortMinutes} min of the required presence.`,
+    reason: "Short of the required presence.",
   };
 }

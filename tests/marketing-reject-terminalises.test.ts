@@ -248,7 +248,7 @@ export async function runMarketingRejectTerminalisesTests() {
   );
   assert.match(
     caseFileView,
-    /\{neverReached\(rung\) \? "not reached" : rung\.status\.replace\(\/_\/g, " "\)\}/,
+    /\{neverReached\(rung\) \? "not reached" : requestStatusLabel\(rung\.status\)\}/,
     "the rung badge must render 'not reached' rather than the bare status word",
   );
 }

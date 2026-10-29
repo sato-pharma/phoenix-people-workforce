@@ -176,5 +176,6 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     "the view must print the area through areaLabel, never `${areaName} (${areaCode})` directly",
   );
   assert.equal((VIEW_SOURCE.match(/areaLabel\(\w+\.areaName, \w+\.areaCode\)/g) ?? []).length, 3);
-  assert.ok(VIEW_SOURCE.includes("return areaCode ? `${areaName} (${areaCode})` : areaName;"));
+  // Names, never codes: the area prints as its name alone (docs/tables-said-once-fit.md rule 4).
+  assert.ok(VIEW_SOURCE.includes("function areaLabel(areaName: string, _areaCode: string): string {\n  return areaName;"));
 }

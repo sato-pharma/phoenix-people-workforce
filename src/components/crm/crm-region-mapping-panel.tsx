@@ -449,7 +449,7 @@ export function CrmRegionMappingPanel({
               <tbody className="divide-y divide-orange-100">
                 {filtered.map((region) => (
                   <tr key={region.crmRegionId} className="odd:bg-white even:bg-orange-50/30">
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{regionIdLabel(region)}</td>
+                    <td className="break-words px-3 py-2.5 font-semibold text-slate-700">{regionIdLabel(region)}</td>
                     <td className="px-3 py-2.5 font-medium text-slate-900">{region.crmRegionName}</td>
                     <td className="px-3 py-2.5 font-semibold text-rose-500">
                       {region.visitCount}
@@ -459,15 +459,15 @@ export function CrmRegionMappingPanel({
                         </span>
                       ) : null}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.firstSeen)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.lastSeen)}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(region.firstSeen)}</td>
+                    <td className="break-words px-3 py-2.5">{formatDate(region.lastSeen)}</td>
                     <td className="border-l border-slate-100 px-3 py-2.5">
                       <SuggestionCell region={region} />
                     </td>
                     <td className="px-3 py-2.5">
                       <ResolutionCell region={region} onResolved={handleResolved} />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5">
+                    <td className="break-words px-3 py-2.5">
                       {isPlanOnly(region) ? (
                         <span className="text-xs text-slate-400">No visits to open</span>
                       ) : (

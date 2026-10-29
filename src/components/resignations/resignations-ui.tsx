@@ -288,17 +288,21 @@ export function RgField({ children, label }: { children: ReactNode; label: strin
 export function RgTable({
   cards,
   children,
+  cols,
   head,
 }: {
   cards: ReactNode;
   children: ReactNode;
+  /** A `<colgroup>` whose percentage widths add up to 100 — the table is `table-fixed`, never wider than the screen. */
+  cols: ReactNode;
   head: ReactNode;
 }) {
   return (
     <>
       <div className="divide-y divide-slate-100 md:hidden">{cards}</div>
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full border-collapse text-xs">
+      <div className="hidden md:block">
+        <table className="w-full table-fixed border-collapse text-xs">
+          {cols}
           <thead>
             <tr className="bg-slate-900 text-left">{head}</tr>
           </thead>
@@ -312,7 +316,7 @@ export function RgTable({
 export function RgTh({ align = "left", children }: { align?: "left" | "right"; children: ReactNode }) {
   return (
     <th
-      className={`whitespace-nowrap px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-200 ${
+      className={`break-words px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-200 ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >
@@ -322,34 +326,35 @@ export function RgTh({ align = "left", children }: { align?: "left" | "right"; c
 }
 
 export function RgTd({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <td className={`whitespace-nowrap px-3 py-2 align-middle ${className}`}>{children}</td>;
+  return <td className={`min-w-0 break-words px-3 py-2 align-middle ${className}`}>{children}</td>;
 }
 
 /**
- * Employee identity block: name on top, then a single muted meta line carrying the HR ID and
- * whatever else belongs to the person rather than to the workflow (line, hire date). Keeping those
- * out of their own columns is what lets the money columns fit without the table sprawling.
+ * Employee identity block: the name on top, then a single muted meta line carrying the job title and
+ * whatever else belongs to the person rather than to the workflow (line, hire date) — never the HR id.
+ * Keeping those out of their own columns is what lets the money columns fit without the table sprawling.
  */
-export function RgPerson({ hrId, meta = [], name }: {
-  hrId: string;
+export function RgPerson({ jobTitle, meta = [], name }: {
+  jobTitle?: string | null;
   /** Extra facts joined with a middot. Falsy entries are dropped. */
   meta?: Array<string | null | undefined>;
   name: string;
 }) {
-  const parts = [hrId || "No HR ID", ...meta.filter((item): item is string => Boolean(item && item !== "-"))];
+  const parts = [jobTitle, ...meta].filter((item): item is string => Boolean(item && item !== "-"));
 
   return (
-    <span className="block whitespace-nowrap leading-tight">
+    <span className="block break-words leading-tight">
       <span className="block text-phx-md font-bold text-slate-900">{name}</span>
-      <span className="mt-0.5 block text-phx-2xs font-medium text-slate-400">
-        <span className="font-mono text-slate-500">{parts[0]}</span>
-        {parts.slice(1).map((part) => (
-          <span key={part}>
-            <span className="mx-1.5 text-slate-300">·</span>
-            {part}
-          </span>
-        ))}
-      </span>
+      {parts.length > 0 ? (
+        <span className="mt-0.5 block text-phx-2xs font-medium text-slate-400">
+          {parts.map((part, index) => (
+            <span key={part}>
+              {index > 0 ? <span className="mx-1.5 text-slate-300">·</span> : null}
+              {part}
+            </span>
+          ))}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -362,14 +367,14 @@ export function RgSplit({ covered, firstPart, secondPart }: {
 }) {
   if (covered) {
     return (
-      <span className="inline-flex whitespace-nowrap border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-emerald-700">
+      <span className="inline-flex border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-emerald-700">
         Part 1 covers it
       </span>
     );
   }
 
   return (
-    <span className="block whitespace-nowrap leading-tight">
+    <span className="block break-words leading-tight">
       <span className="block text-phx-xs font-bold text-slate-900">Part 1 {firstPart}</span>
       <span className="mt-0.5 block text-phx-2xs font-bold text-orange-700">Part 2 {secondPart}</span>
     </span>

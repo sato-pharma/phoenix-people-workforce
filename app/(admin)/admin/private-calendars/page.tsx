@@ -1,3 +1,4 @@
+import { humanizeCode } from "@/lib/format/code-label";
 import { redirect } from "next/navigation";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
@@ -325,10 +326,9 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
                     >
                       <td className="px-5 py-3 align-top">
                         <div className="break-words font-semibold text-phx-ink">{emp.displayName}</div>
-                        <div className="font-mono text-phx-xs text-phx-ink-faint">{emp.hrId}</div>
                         {!working && (
                           <div className="mt-1 inline-block border border-phx-line bg-phx-paper px-1.5 py-0.5 text-phx-xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
-                            {emp.employmentStatus ? emp.employmentStatus.replace(/_/g, " ") : "Not active"}
+                            {emp.employmentStatus ? humanizeCode(emp.employmentStatus) : "Not active"}
                           </div>
                         )}
                         {/* The merged phone view of the three columns hidden below sm. */}

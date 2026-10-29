@@ -9,6 +9,12 @@ import {
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 
 type ProductOption = {
@@ -93,6 +99,48 @@ export function DirectOrderCapsManager({
   }
 
   const inputClass = cn(phxFieldClassName, "w-24");
+  const removeButton = (r: DirectOrderCapRow) => (
+    <button type="button" className="text-rose-600 hover:text-rose-700" disabled={busy}
+      onClick={() => run(() => postCaps({ action: "delete", productCode: r.productCode }), "Override removed.")}>Remove</button>
+  );
+  const priceInput = (p: ProductOption, field: "publicPrice" | "pharmacyPrice") =>
+    canEdit ? (
+      <input
+        className={`${inputClass} text-right`}
+        value={draftFor(p)[field]}
+        onChange={(e) => editRow(p, { [field]: e.target.value })}
+        placeholder="not set"
+        inputMode="decimal"
+      />
+    ) : p[field] == null ? (
+      <span className="text-rose-500">not set</span>
+    ) : (
+      `${(p[field] as number).toLocaleString("en-US")} EGP`
+    );
+  const savePricesButton = (p: ProductOption) => {
+    const draft = draftFor(p);
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        className="bg-slate-800 px-3 py-1 text-xs font-bold text-white hover:bg-slate-900 disabled:opacity-50"
+        onClick={() =>
+          run(
+            () =>
+              postCaps({
+                action: "productPrices",
+                productCode: p.productCode,
+                publicPrice: draft.publicPrice.trim() === "" ? null : Number(draft.publicPrice),
+                pharmacyPrice: draft.pharmacyPrice.trim() === "" ? null : Number(draft.pharmacyPrice),
+              }),
+            `Prices saved for ${p.productName}.`,
+          )
+        }
+      >
+        Save
+      </button>
+    );
+  };
   const productName = (code: string) => products.find((p) => p.productCode === code)?.productName ?? code;
   const filter = productFilter.trim().toLowerCase();
   const visibleProducts = filter
@@ -139,33 +187,63 @@ export function DirectOrderCapsManager({
       {/* Per-product overrides */}
       <section className={`border border-slate-200 bg-white p-4 ${adminSoftDepthClassName}`}>
         <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-500">Per-product cap overrides</h3>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase text-slate-500">
-              <th className="px-2 py-1">Product</th>
-              <th className="px-2 py-1">Bonus cap %</th>
-              <th className="px-2 py-1">Discount cap %</th>
-              {canEdit ? <th className="px-2 py-1"></th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {overrides.length === 0 ? (
-              <tr><td className="px-2 py-3 text-slate-400" colSpan={4}>No per-product overrides — every product uses the global caps.</td></tr>
-            ) : overrides.map((r) => (
-              <tr key={r.productCode} className="border-b border-slate-100">
-                <td className="px-2 py-1.5">{productName(r.productCode)} <span className="text-slate-400">({r.productCode})</span></td>
-                <td className="px-2 py-1.5">{r.bonusCapPct ?? "—"}</td>
-                <td className="px-2 py-1.5">{r.discountCapPct ?? "—"}</td>
-                {canEdit ? (
-                  <td className="px-2 py-1.5">
-                    <button type="button" className="text-rose-600 hover:text-rose-700" disabled={busy}
-                      onClick={() => run(() => postCaps({ action: "delete", productCode: r.productCode }), "Override removed.")}>Remove</button>
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <PortalResponsiveDataList
+          empty={<p className="px-2 py-3 text-sm text-slate-400">No per-product overrides — every product uses the global caps.</p>}
+          getKey={(r) => r.productCode}
+          items={overrides}
+          renderCard={(r) => (
+            <PortalRecordCard
+              actions={canEdit ? removeButton(r) : undefined}
+              title={productName(r.productCode)}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Bonus cap %", value: r.bonusCapPct ?? "—" },
+                  { label: "Discount cap %", value: r.discountCapPct ?? "—" },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                canEdit ? (
+                  <colgroup>
+                    <col className="w-[50%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
+                ) : (
+                  <colgroup>
+                    <col className="w-[60%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                  </colgroup>
+                )
+              }
+            >
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase text-slate-500">
+                  <th className="px-2 py-1">Product</th>
+                  <th className="px-2 py-1">Bonus cap %</th>
+                  <th className="px-2 py-1">Discount cap %</th>
+                  {canEdit ? <th className="px-2 py-1"></th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {overrides.map((r) => (
+                  <tr key={r.productCode} className="border-b border-slate-100">
+                    <td className="break-words px-2 py-1.5">{productName(r.productCode)}</td>
+                    <td className="px-2 py-1.5">{r.bonusCapPct ?? "—"}</td>
+                    <td className="px-2 py-1.5">{r.discountCapPct ?? "—"}</td>
+                    {canEdit ? <td className="px-2 py-1.5">{removeButton(r)}</td> : null}
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
         {canEdit ? (
           <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
             <label className="text-sm">
@@ -204,96 +282,65 @@ export function DirectOrderCapsManager({
               className={cn(phxFieldClassName, "w-56")}
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
-              placeholder="Name or code…"
+              placeholder="Product name…"
             />
           </label>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase text-slate-500">
-                <th className="whitespace-nowrap px-2 py-1">Product</th>
-                <th className="whitespace-nowrap px-2 py-1 text-right">Public price (discount)</th>
-                <th className="whitespace-nowrap px-2 py-1 text-right">Pharmacy price (bonus)</th>
-                {canEdit ? <th className="px-2 py-1" /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleProducts.length === 0 ? (
-                <tr>
-                  <td className="px-2 py-3 text-slate-400" colSpan={4}>
-                    No product matches “{productFilter}”.
-                  </td>
+        <PortalResponsiveDataList
+          empty={<p className="px-2 py-3 text-sm text-slate-400">No product matches “{productFilter}”.</p>}
+          getKey={(p) => p.productCode}
+          items={visibleProducts}
+          renderCard={(p) => (
+            <PortalRecordCard actions={canEdit ? savePricesButton(p) : undefined} title={p.productName}>
+              <PortalRecordFields
+                fields={[
+                  { label: "Public price (discount)", value: priceInput(p, "publicPrice") },
+                  { label: "Pharmacy price (bonus)", value: priceInput(p, "pharmacyPrice") },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                canEdit ? (
+                  <colgroup>
+                    <col className="w-[34%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
+                ) : (
+                  <colgroup>
+                    <col className="w-[44%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[28%]" />
+                  </colgroup>
+                )
+              }
+            >
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase text-slate-500">
+                  <th className="px-2 py-1">Product</th>
+                  <th className="px-2 py-1 text-right">Public price (discount)</th>
+                  <th className="px-2 py-1 text-right">Pharmacy price (bonus)</th>
+                  {canEdit ? <th className="px-2 py-1" /> : null}
                 </tr>
-              ) : (
-                visibleProducts.map((p) => {
-                  const draft = draftFor(p);
-                  return (
-                    <tr key={p.productCode} className="border-b border-slate-100">
-                      <td className="whitespace-nowrap px-2 py-1.5">
-                        {p.productName} <span className="text-slate-400">({p.productCode})</span>
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-right">
-                        {canEdit ? (
-                          <input
-                            className={`${inputClass} text-right`}
-                            value={draft.publicPrice}
-                            onChange={(e) => editRow(p, { publicPrice: e.target.value })}
-                            placeholder="not set"
-                            inputMode="decimal"
-                          />
-                        ) : p.publicPrice == null ? (
-                          <span className="text-rose-500">not set</span>
-                        ) : (
-                          `${p.publicPrice.toLocaleString("en-US")} EGP`
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-right">
-                        {canEdit ? (
-                          <input
-                            className={`${inputClass} text-right`}
-                            value={draft.pharmacyPrice}
-                            onChange={(e) => editRow(p, { pharmacyPrice: e.target.value })}
-                            placeholder="not set"
-                            inputMode="decimal"
-                          />
-                        ) : p.pharmacyPrice == null ? (
-                          <span className="text-rose-500">not set</span>
-                        ) : (
-                          `${p.pharmacyPrice.toLocaleString("en-US")} EGP`
-                        )}
-                      </td>
-                      {canEdit ? (
-                        <td className="whitespace-nowrap px-2 py-1.5 text-right">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className="bg-slate-800 px-3 py-1 text-xs font-bold text-white hover:bg-slate-900 disabled:opacity-50"
-                            onClick={() =>
-                              run(
-                                () =>
-                                  postCaps({
-                                    action: "productPrices",
-                                    productCode: p.productCode,
-                                    publicPrice: draft.publicPrice.trim() === "" ? null : Number(draft.publicPrice),
-                                    pharmacyPrice: draft.pharmacyPrice.trim() === "" ? null : Number(draft.pharmacyPrice),
-                                  }),
-                                `Prices saved for ${p.productName}.`,
-                              )
-                            }
-                          >
-                            Save
-                          </button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {visibleProducts.map((p) => (
+                  <tr key={p.productCode} className="border-b border-slate-100">
+                    <td className="break-words px-2 py-1.5">{p.productName}</td>
+                    <td className="px-2 py-1.5 text-right">{priceInput(p, "publicPrice")}</td>
+                    <td className="px-2 py-1.5 text-right">{priceInput(p, "pharmacyPrice")}</td>
+                    {canEdit ? <td className="px-2 py-1.5 text-right">{savePricesButton(p)}</td> : null}
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
         {canEdit ? (
           <p className="mt-3 border-t border-slate-100 pt-3 text-phx-xs text-slate-500">
             Every active product already has a row — adding a price means typing into a row that reads

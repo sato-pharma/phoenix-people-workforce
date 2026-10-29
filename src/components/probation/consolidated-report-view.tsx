@@ -1,4 +1,5 @@
 import type { ConsolidatedReport } from "@/lib/probation/intelligence/consolidated-report";
+import { humanizeCode } from "@/lib/format/code-label";
 
 // Presentational (server) view of the live consolidated probation report. No interactivity —
 // it renders whatever the report data service composed. Human names, not codes.
@@ -111,8 +112,15 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
 
       {/* Score breakdown */}
       <Section title="Weighted score breakdown">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div>
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[24%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+              <col className="w-[24%]" />
+              <col className="w-[20%]" />
+            </colgroup>
             <thead>
               <tr className="text-left text-xs uppercase text-slate-400">
                 <th className="py-1 pr-3">Component</th>
@@ -169,7 +177,7 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
           <ul className="flex flex-col gap-1 text-sm">
             {report.slaBreaches.map((b) => (
               <li key={b.dvDayId} className="flex items-center gap-2">
-                <Badge tone={b.state === "overdue" ? "red" : "amber"}>{b.state}</Badge>
+                <Badge tone={b.state === "overdue" ? "red" : "amber"}>{humanizeCode(b.state)}</Badge>
                 <span className="text-slate-700">DV day {b.dvDate}</span>
                 {b.hoursOverdue > 0 && <span className="text-xs text-slate-400">{b.hoursOverdue}h overdue</span>}
               </li>
@@ -193,9 +201,9 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
                   {d.feedback ? (
                     <Badge tone="green">Feedback {d.feedback.score ?? "—"}/10 · {d.feedback.recommendation ?? "—"} (v{d.feedback.version})</Badge>
                   ) : d.sla ? (
-                    <Badge tone={d.sla.state === "overdue" ? "red" : d.sla.state === "pending" ? "grey" : "amber"}>Feedback {d.sla.state}</Badge>
+                    <Badge tone={d.sla.state === "overdue" ? "red" : d.sla.state === "pending" ? "grey" : "amber"}>Feedback {humanizeCode(d.sla.state).toLowerCase()}</Badge>
                   ) : (
-                    <Badge tone="grey">{d.dvStatus}</Badge>
+                    <Badge tone="grey">{humanizeCode(d.dvStatus)}</Badge>
                   )}
                 </div>
               </div>
@@ -248,7 +256,7 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-800">{a.title}</span>
                   <Badge tone={a.status === "done" ? "green" : a.status === "cancelled" ? "grey" : a.status === "in_progress" ? "amber" : "grey"}>
-                    {a.status.replace(/_/g, " ")}
+                    {humanizeCode(a.status)}
                   </Badge>
                 </div>
                 {a.description && <p className="mt-0.5 text-xs text-slate-600">{a.description}</p>}

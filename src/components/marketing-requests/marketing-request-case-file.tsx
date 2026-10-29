@@ -15,6 +15,8 @@ import {
   isMarketingAdminOverrideNote,
   MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES,
 } from "@/lib/marketing-requests/admin-override-note";
+import { humanizeCode } from "@/lib/format/code-label";
+import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
 import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-report-columns";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marketing-case-file-go-deeper";
@@ -339,7 +341,7 @@ function Chain({
                   neverReached(rung) ? "bg-slate-100 text-slate-400" : rungClasses(rung)
                 }`}
               >
-                {neverReached(rung) ? "not reached" : rung.status.replace(/_/g, " ")}
+                {neverReached(rung) ? "not reached" : requestStatusLabel(rung.status)}
               </span>
             </div>
             {rung.decisionAt || rung.decisionNote ? (
@@ -433,7 +435,13 @@ function Products({ products }: { products: MarketingCaseFileProducts }) {
           </div>
         ))}
       </div>
-      <table className="mt-2 hidden w-full border-collapse text-sm md:table">
+      <table className="mt-2 hidden w-full table-fixed border-collapse text-sm md:table">
+        <colgroup>
+          <col className="w-[40%]" />
+          <col className="w-[20%]" />
+          <col className="w-[18%]" />
+          <col className="w-[22%]" />
+        </colgroup>
         <thead>
           <tr className="bg-slate-950 text-white">
             <th className="px-3 py-2 text-left font-medium">Product</th>
@@ -445,8 +453,8 @@ function Products({ products }: { products: MarketingCaseFileProducts }) {
         <tbody>
           {products.rows.map((row) => (
             <tr className="border-b border-orange-100" key={row.productId}>
-              <td className="px-3 py-2 text-slate-950">{row.name}</td>
-              <td className="px-3 py-2 text-slate-600">{row.line ?? "—"}</td>
+              <td className="break-words px-3 py-2 text-slate-950">{row.name}</td>
+              <td className="break-words px-3 py-2 text-slate-600">{row.line ?? "—"}</td>
               <td className="px-3 py-2 text-right text-slate-600">{row.forecastQuantity}</td>
               <td className="px-3 py-2 text-right text-slate-950">{egp(row.expectedValue)}</td>
             </tr>
@@ -733,10 +741,7 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-phx-lg font-medium text-slate-950">{header.requester.name}</p>
-              <p className="text-xs text-slate-500">
-                {header.requester.hrId}
-                {header.requester.role ? ` · ${header.requester.role}` : ""}
-              </p>
+              {header.requester.role ? <p className="text-xs text-slate-500">{header.requester.role}</p> : null}
             </div>
             <div className="shrink-0 text-right">
               <span className="inline-block bg-slate-100 px-2.5 py-1 text-phx-xs font-medium uppercase tracking-wide text-slate-700">
@@ -817,7 +822,7 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
                       >
                         <span className="font-mono text-slate-700">{prior.requestCode}</span>
                         <span className="text-slate-500">
-                          {prior.status.replace(/_/g, " ")}
+                          {requestStatusLabel(prior.status)}
                           {prior.payDate ? ` · ${plainDate(prior.payDate) ?? ""}` : ""}
                         </span>
                         <span className="font-medium text-slate-950">{egp(prior.estimatedCost)}</span>
@@ -907,7 +912,7 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
           <div className="mt-6 border-t border-slate-200 pt-3">
             <p className="text-phx-xs leading-5 text-slate-400">
               {/* Announced, never silent: a reader seeing a redacted file must be able to tell why. */}
-              You can see this request as: {viewer.admittedAs.map((a) => a.replace(/_/g, " ")).join(", ")}
+              You can see this request as: {viewer.admittedAs.map((a) => humanizeCode(a)).join(", ")}
               {" · "}
               Generated {cairoDateTime(caseFile.generatedAt) ?? ""} (Africa/Cairo)
             </p>

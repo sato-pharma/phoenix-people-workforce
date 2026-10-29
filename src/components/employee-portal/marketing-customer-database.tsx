@@ -26,6 +26,7 @@ import type {
   MarketingValidationStatus,
   MarketingVenueMergeCandidate,
 } from "@/lib/marketing-requests/types";
+import { humanizeCode } from "@/lib/format/code-label";
 import { linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
@@ -54,15 +55,21 @@ function statusVariant(status: MarketingValidationStatus): "success" | "warning"
 }
 
 function TextCell({ value }: { value: string | null | undefined }) {
-  return <span className="text-slate-700">{value || "Not captured"}</span>;
+  return <span className="text-slate-700">{value || "—"}</span>;
 }
 
 function CodeCell({ value }: { value: number | string | null | undefined }) {
   return (
-    <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
+    <span className="bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-700">
       {value || "-"}
     </span>
   );
+}
+
+/** "Area, Governorate" with whichever part is missing left out. */
+function placeLine(...parts: Array<string | null | undefined>): string | null {
+  const text = parts.filter((part) => part && part.trim()).join(", ");
+  return text || null;
 }
 
 function PhotoCell({ value }: { value: string | null }) {
@@ -89,7 +96,7 @@ function PhotoCell({ value }: { value: string | null }) {
  */
 function vendorNameLabel(row: MarketingCustomerDatabaseRow): string {
   if (row.distributorName) return row.distributorName;
-  return venueCanAttributeSales(row.venueType) ? "Not captured" : "No distributor account";
+  return venueCanAttributeSales(row.venueType) ? "—" : "No distributor account";
 }
 
 function VendorCodeCell({
@@ -100,7 +107,7 @@ function VendorCodeCell({
   value: number | string | null | undefined;
 }) {
   if (!value && !venueCanAttributeSales(row.venueType)) {
-    return <span className="whitespace-nowrap text-xs font-bold text-slate-500">No distributor account</span>;
+    return <span className="text-xs font-bold text-slate-500">No distributor account</span>;
   }
   return <CodeCell value={value} />;
 }
@@ -117,12 +124,12 @@ function VendorCodeCell({
 function LicenseVerdictCell({ value }: { value: boolean | null }) {
   const label = pharmacyLicenseVerdictLabel(value);
   if (value === true) {
-    return <span className="whitespace-nowrap text-xs font-black text-emerald-700">{label}</span>;
+    return <span className="text-xs font-black text-emerald-700">{label}</span>;
   }
   if (value === false) {
-    return <span className="whitespace-nowrap text-xs font-black text-rose-700">{label}</span>;
+    return <span className="text-xs font-black text-rose-700">{label}</span>;
   }
-  return <span className="whitespace-nowrap text-xs font-bold text-slate-400">{label}</span>;
+  return <span className="text-xs font-bold text-slate-400">{label}</span>;
 }
 
 function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
@@ -141,7 +148,7 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           )}
         </span>
       }
-      status={<Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>}
+      status={<Badge variant={statusVariant(row.validationStatus)}>{humanizeCode(row.validationStatus)}</Badge>}
       title={row.customerName || row.pharmacyName || "Customer row"}
     >
       {/* In the card BODY, not the `status` slot. Measured both at 375px: the status slot does NOT
@@ -157,13 +164,16 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
       ) : null}
       <PortalRecordFields
         fields={[
-          { label: "Customer area", value: row.customerArea || "Not captured" },
-          { label: "Governorate", value: row.customerGovernorate || "Not captured" },
-          { label: "Pharmacy", value: row.pharmacyName || "Not captured" },
+          ...(row.customerArea ? [{ label: "Customer area", value: row.customerArea }] : []),
+          ...(row.customerGovernorate ? [{ label: "Governorate", value: row.customerGovernorate }] : []),
+          ...(row.pharmacyName ? [{ label: "Pharmacy", value: row.pharmacyName }] : []),
+          ...(venueCanAttributeSales(row.venueType) ? [{ label: "Venue type", value: venueTypeLabel(row.venueType) }] : []),
+          ...(row.pharmacyArea ? [{ label: "Venue area", value: row.pharmacyArea }] : []),
+          ...(row.pharmacyGovernorate ? [{ label: "Venue governorate", value: row.pharmacyGovernorate }] : []),
           { label: "Vendor", value: vendorNameLabel(row) },
           {
             label: "Vendor code",
-            value: row.vendorPharmacyCode || (venueCanAttributeSales(row.venueType) ? "-" : "None"),
+            value: row.vendorPharmacyCode || (venueCanAttributeSales(row.venueType) ? "—" : "None"),
           },
           // Directly under the vendor code on purpose: the licence is the identity proof a venue
           // falls back on precisely BECAUSE it has no distributor code, so the two read as one fact.
@@ -171,7 +181,8 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
             label: "Licence vs sign",
             value: <LicenseVerdictCell value={row.licenseNameMatchesSign} />,
           },
-          { label: "Phone", value: row.customerPhone || "Not captured" },
+          ...(row.customerPhone ? [{ label: "Phone", value: row.customerPhone }] : []),
+          ...(row.customerValidationPhoto ? [{ label: "Validation photo", value: <PhotoCell value={row.customerValidationPhoto} /> }] : []),
         ]}
       />
       {row.customerAddress || row.pharmacyAddress ? (
@@ -536,67 +547,48 @@ export function MarketingCustomerDatabase() {
               breakpoint="lg"
               cols={
                 <colgroup>
-                  <col className="w-[5%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[5%]" />
-                  <col className="w-[5%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[5%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[5%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[5%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[4%]" />
-                  <col className="w-[6%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[10%]" />
                 </colgroup>
               }
             >
             <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th className="px-4 py-3">Customer Type</th>
-                <th className="px-4 py-3">Customer ID</th>
-                <th className="px-4 py-3">Customer Name</th>
-                <th className="px-4 py-3">Customer Area</th>
-                <th className="px-4 py-3">Customer Governorate</th>
-                <th className="px-4 py-3">Customer Phone</th>
-                <th className="px-4 py-3">Customer Address</th>
-                <th className="px-4 py-3">Customer Validation Photo</th>
-                <th className="px-4 py-3">Venue ID</th>
-                <th className="px-4 py-3">Venue Name</th>
-                <th className="px-4 py-3">Venue Area</th>
-                <th className="px-4 py-3">Venue Governorate</th>
-                <th className="px-4 py-3">Venue Address</th>
-                <th className="px-4 py-3">Venue Type</th>
-                <th className="px-4 py-3">Licence vs Sign</th>
-                <th className="px-4 py-3">Vendor ID</th>
-                <th className="px-4 py-3">Vendor</th>
-                <th className="px-4 py-3">Vendor Venue Code</th>
-                <th className="px-4 py-3">Vendor Code Row ID</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-3 py-3">Customer</th>
+                <th className="px-3 py-3">Customer Area &amp; Phone</th>
+                <th className="px-3 py-3">Customer Address &amp; Photo</th>
+                <th className="px-3 py-3">Venue</th>
+                <th className="px-3 py-3">Venue Place</th>
+                <th className="px-3 py-3">Licence vs Sign</th>
+                <th className="px-3 py-3">Vendor</th>
+                <th className="px-3 py-3">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {pagedRows.map((row: MarketingCustomerDatabaseRow) => (
                 <tr className="align-top" key={row.rowId}>
-                  <td className="px-4 py-3 font-bold capitalize text-slate-700">{row.customerType}</td>
-                  <td className="px-4 py-3"><CodeCell value={row.customerCode} /></td>
-                  <td className="px-4 py-3 font-black text-slate-950">{row.customerName}</td>
-                  <td className="px-4 py-3"><TextCell value={row.customerArea} /></td>
-                  <td className="px-4 py-3"><TextCell value={row.customerGovernorate} /></td>
-                  <td className="px-4 py-3"><TextCell value={row.customerPhone} /></td>
-                  <td className="max-w-[280px] px-4 py-3 leading-5"><TextCell value={row.customerAddress} /></td>
-                  <td className="px-4 py-3"><PhotoCell value={row.customerValidationPhoto} /></td>
-                  <td className="px-4 py-3"><CodeCell value={row.pharmacyCode} /></td>
-                  <td className="px-4 py-3 font-black text-slate-950">
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className="block font-black text-slate-950">{row.customerName}</span>
+                    <span className="mt-1 block text-xs font-bold capitalize text-slate-700">{row.customerType}</span>
+                    <span className="mt-1 block"><CodeCell value={row.customerCode} /></span>
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className="block"><TextCell value={placeLine(row.customerArea, row.customerGovernorate)} /></span>
+                    <span className="mt-1 block"><TextCell value={row.customerPhone} /></span>
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-3 leading-5">
+                    <span className="block"><TextCell value={row.customerAddress} /></span>
+                    <span className="mt-1 block"><PhotoCell value={row.customerValidationPhoto} /></span>
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-3 font-black text-slate-950">
                     {row.pharmacyName}
+                    <span className="mt-1 block text-xs font-bold text-slate-700">{venueTypeLabel(row.venueType)}</span>
                     {row.licenseOnly ? (
                       <span className="mt-1 block text-xs font-black text-amber-800">Licence only — not usable yet</span>
                     ) : null}
@@ -611,19 +603,18 @@ export function MarketingCustomerDatabase() {
                       url={row.licenseUrl}
                     />
                   </td>
-                  <td className="px-4 py-3"><TextCell value={row.pharmacyArea} /></td>
-                  <td className="px-4 py-3"><TextCell value={row.pharmacyGovernorate} /></td>
-                  <td className="max-w-[280px] px-4 py-3 leading-5"><TextCell value={row.pharmacyAddress} /></td>
-                  <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-700">{venueTypeLabel(row.venueType)}</td>
-                  <td className="px-4 py-3"><LicenseVerdictCell value={row.licenseNameMatchesSign} /></td>
-                  <td className="px-4 py-3"><VendorCodeCell row={row} value={row.distributorCode || row.distributorId} /></td>
-                  <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-800">{vendorNameLabel(row)}</td>
-                  <td className="px-4 py-3"><VendorCodeCell row={row} value={row.vendorPharmacyCode} /></td>
-                  <td className="px-4 py-3"><VendorCodeCell row={row} value={row.pharmacyDistributorCodeId} /></td>
-                  <td className="px-4 py-3">
+                  <td className="min-w-0 break-words px-3 py-3 leading-5">
+                    <span className="block"><TextCell value={placeLine(row.pharmacyArea, row.pharmacyGovernorate)} /></span>
+                    <span className="mt-1 block"><TextCell value={row.pharmacyAddress} /></span>
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-3"><LicenseVerdictCell value={row.licenseNameMatchesSign} /></td>
+                  <td className="min-w-0 break-words px-3 py-3">
+                    <span className="block font-bold text-slate-800">{vendorNameLabel(row)}</span>
+                    <span className="mt-1 block"><VendorCodeCell row={row} value={row.vendorPharmacyCode} /></span>
+                  </td>
+                  <td className="min-w-0 break-words px-3 py-3">
                     <span className="inline-flex flex-col items-start gap-1">
-                      <Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>
-                      {/* Stacked, not inline: this column already sits at the far right of a wide table. */}
+                      <Badge variant={statusVariant(row.validationStatus)}>{humanizeCode(row.validationStatus)}</Badge>
                       <LinkFieldEvidenceBadge link={row} />
                     </span>
                   </td>

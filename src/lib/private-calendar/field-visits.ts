@@ -281,12 +281,8 @@ export async function loadFieldVisitPrivateCalendarItems(
           : group.kind === "vacation"
             ? "An annual vacation day the employee logged in CRM, from the live iReports360 visit mirror."
             : "CRM activity other than a customer visit, from the live iReports360 visit mirror.",
-        detailLines: [
-          `Kind: ${headline}`,
-          ...(isVisit ? [`Visits: ${formatVisitCountSplit(group.split)}`] : [`Logged: ${countedList(group.activities)}`]),
-          ...(partners ? [`With: ${partners}`] : []),
-          ...customerList.map((line, index) => `Customer ${index + 1}: ${line}`),
-        ],
+        // Said once: the kind is the title, the counts are the time, the partners and customers are the chip.
+        detailLines: [],
         employeeDepartmentName: null,
         employeeHrId: group.hrId,
         employeeJobTitle: null,

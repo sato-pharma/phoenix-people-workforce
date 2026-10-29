@@ -15,6 +15,7 @@ import {
 } from "@/lib/employees/vacancy-display";
 import { buildSeatHireHref } from "@/lib/employees/vacancy-hire-link";
 import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { humanizeCode } from "@/lib/format/code-label";
 
 export const dynamic = "force-dynamic";
 
@@ -69,11 +70,7 @@ function statusStyle(status: string) {
 }
 
 function titleCaseWords(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  return humanizeCode(value);
 }
 
 /* ---------- stat card border map ---------- */
@@ -150,14 +147,14 @@ export default async function EmployeePortalVacanciesPage({
   const managerOptions = Array.from(
     new Set(
       data.vacancies
-        .map((vacancy) => vacancy.managerName ?? vacancy.managerHrId)
+        .map((vacancy) => vacancy.managerName)
         .filter((value): value is string => Boolean(value)),
     ),
   ).sort((left, right) => left.localeCompare(right));
 
   const filteredVacancies = data.vacancies.filter((vacancy) => {
     const matchesArea = !areaFilter || vacancy.areaName === areaFilter;
-    const managerValue = vacancy.managerName ?? vacancy.managerHrId ?? "";
+    const managerValue = vacancy.managerName ?? "";
     const matchesManager = !managerFilter || managerValue === managerFilter;
     return matchesArea && matchesManager;
   });
@@ -430,7 +427,7 @@ export default async function EmployeePortalVacanciesPage({
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-3 text-slate-600 sm:px-4">
-                          <p>{vacancy.areaName ?? "Unknown Area"}</p>
+                          <p>{vacancy.areaName ?? "—"}</p>
                           {vacancy.regionName ? (
                             <p className="mt-0.5 text-phx-xs text-slate-400">
                               {vacancy.regionName}
@@ -438,9 +435,7 @@ export default async function EmployeePortalVacanciesPage({
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-3 break-words text-slate-600 sm:px-4">
-                          {vacancy.managerName ??
-                            vacancy.managerHrId ??
-                            "Unassigned"}
+                          {vacancy.managerName ?? "Unassigned"}
                         </td>
                         {/* The hire action rides in the STATUS cell. This table is
                             table-fixed with a colgroup summing to 100% and deliberately no
@@ -523,9 +518,7 @@ export default async function EmployeePortalVacanciesPage({
 
                     <div className="mt-2 flex items-center justify-between text-phx-xs text-slate-400">
                       <span>
-                        {vacancy.managerName ??
-                          vacancy.managerHrId ??
-                          "Unassigned"}
+                        {vacancy.managerName ?? "Unassigned"}
                       </span>
                       <span>{formatVacancyDate(vacancy.createdAt)}</span>
                     </div>

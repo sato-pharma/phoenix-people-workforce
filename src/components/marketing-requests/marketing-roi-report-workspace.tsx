@@ -3,6 +3,12 @@
 import * as React from "react";
 import { ChevronDown, ChevronRight, ClipboardList, ExternalLink, TrendingUp, Users } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import {
@@ -76,53 +82,100 @@ function RoiReportTable({
     return <div className="px-4 py-8 text-center text-phx-md font-medium text-phx-ink-soft">No marketing requests found for this selection.</div>;
   }
 
+  const detailsButton = (row: RoiBusinessRow) => (
+    <button
+      type="button"
+      onClick={() => onSelectRow(row)}
+      className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
+    >
+      View details
+    </button>
+  );
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse text-left text-phx-sm">
-        <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
-          <tr>
-            <th className="px-3 py-2.5">Request</th>
-            <th className="px-3 py-2.5">{secondaryColumnLabel}</th>
-            <th className="px-3 py-2.5">Pay date</th>
-            <th className="px-3 py-2.5 text-right">Cost</th>
-            <th className="px-3 py-2.5 text-right">Required ROI</th>
-            <th className="px-3 py-2.5 text-right">Forecast ROI</th>
-            <th className="px-3 py-2.5 text-right">Actual sales</th>
-            <th className="px-3 py-2.5 text-right">Actual coverage</th>
-            <th className="px-3 py-2.5">Status</th>
-            <th className="px-3 py-2.5">Main problem</th>
-            <th className="px-3 py-2.5">Next action</th>
-            <th className="px-2 py-2.5 text-right">Details</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white">
-          {rows.map((row) => (
-            <tr key={row.requestId} className={cn("border-t border-[#FEE7D2]", selectedRequestId === row.requestId && "bg-phx-accent-soft")}>
-              <td className="px-3 py-2.5 font-mono font-bold text-phx-ink">{row.requestCode}</td>
-              <td className="px-3 py-2.5 font-semibold text-phx-ink-2">{secondaryColumnValue(row)}</td>
-              <td className="px-3 py-2.5 font-medium text-phx-ink-soft">{row.payDate ?? "—"}</td>
-              <td className="px-3 py-2.5 text-right font-medium text-phx-ink-soft">{money(row.estimatedCost)}</td>
-              <td className="px-3 py-2.5 text-right font-semibold text-phx-ink-2">{money(row.requiredRoiValue)}</td>
-              <td className="px-3 py-2.5 text-right font-medium text-phx-ink-soft">{money(row.expectedRoiValue)}</td>
-              <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{money(row.actualSalesValue)}</td>
-              <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}</td>
-              <td className="px-3 py-2.5"><StatusBadge status={row.simpleStatus} /></td>
-              <td className="px-3 py-2.5 text-phx-xs font-semibold text-phx-ink-soft">{ROI_MAIN_PROBLEM_LABEL[row.mainProblem]}</td>
-              <td className="px-3 py-2.5 text-phx-xs font-semibold text-phx-ink-soft">{ROI_NEXT_ACTION_LABEL[row.nextAction]}</td>
-              <td className="px-2 py-2.5 text-right">
-                <button
-                  type="button"
-                  onClick={() => onSelectRow(row)}
-                  className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.10)]"
-                >
-                  View details
-                </button>
-              </td>
+    <PortalResponsiveDataList
+      items={rows}
+      empty={null}
+      getKey={(row) => row.requestId}
+      renderCard={(row) => (
+        <PortalRecordCard
+          accent={selectedRequestId === row.requestId ? "orange" : "slate"}
+          title={<span className="font-mono">{row.requestCode}</span>}
+          meta={`${secondaryColumnLabel}: ${secondaryColumnValue(row)}`}
+          status={<StatusBadge status={row.simpleStatus} />}
+          actions={detailsButton(row)}
+        >
+          <PortalRecordFields
+            fields={[
+              { label: "Pay date", value: row.payDate ?? "—" },
+              { label: "Cost", value: money(row.estimatedCost) },
+              { label: "Required ROI", value: money(row.requiredRoiValue) },
+              { label: "Forecast ROI", value: money(row.expectedRoiValue) },
+              { label: "Actual sales", value: money(row.actualSalesValue) },
+              { label: "Actual coverage", value: row.hasSalesData ? percent(row.actualCoverageRatio) : "—" },
+              { label: "Main problem", value: ROI_MAIN_PROBLEM_LABEL[row.mainProblem] },
+              { label: "Next action", value: ROI_NEXT_ACTION_LABEL[row.nextAction] },
+            ]}
+          />
+        </PortalRecordCard>
+      )}
+      renderTable={() => (
+        <PortalDesktopTable
+          cols={
+            <colgroup>
+              <col className="w-[15%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+              <col className="w-[16%]" />
+              <col className="w-[8%]" />
+            </colgroup>
+          }
+          className="text-phx-sm"
+        >
+          <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
+            <tr>
+              <th className="px-3 py-2.5">Request / {secondaryColumnLabel}</th>
+              <th className="px-3 py-2.5">Pay date</th>
+              <th className="px-3 py-2.5 text-right">Cost</th>
+              <th className="px-3 py-2.5 text-right">Required ROI</th>
+              <th className="px-3 py-2.5 text-right">Forecast ROI</th>
+              <th className="px-3 py-2.5 text-right">Actual sales</th>
+              <th className="px-3 py-2.5 text-right">Actual coverage</th>
+              <th className="px-3 py-2.5">Status</th>
+              <th className="px-3 py-2.5">Main problem / next action</th>
+              <th className="px-2 py-2.5 text-right">Details</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="bg-white">
+            {rows.map((row) => (
+              <tr key={row.requestId} className={cn("border-t border-[#FEE7D2]", selectedRequestId === row.requestId && "bg-phx-accent-soft")}>
+                <td className="break-words px-3 py-2.5">
+                  <span className="block font-mono font-bold text-phx-ink">{row.requestCode}</span>
+                  <span className="block font-semibold text-phx-ink-2">{secondaryColumnValue(row)}</span>
+                </td>
+                <td className="break-words px-3 py-2.5 font-medium text-phx-ink-soft">{row.payDate ?? "—"}</td>
+                <td className="px-3 py-2.5 text-right font-medium text-phx-ink-soft">{money(row.estimatedCost)}</td>
+                <td className="px-3 py-2.5 text-right font-semibold text-phx-ink-2">{money(row.requiredRoiValue)}</td>
+                <td className="px-3 py-2.5 text-right font-medium text-phx-ink-soft">{money(row.expectedRoiValue)}</td>
+                <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{money(row.actualSalesValue)}</td>
+                <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}</td>
+                <td className="px-3 py-2.5"><StatusBadge status={row.simpleStatus} /></td>
+                <td className="break-words px-3 py-2.5 text-phx-xs font-semibold text-phx-ink-soft">
+                  <span className="block">{ROI_MAIN_PROBLEM_LABEL[row.mainProblem]}</span>
+                  <span className="block">{ROI_NEXT_ACTION_LABEL[row.nextAction]}</span>
+                </td>
+                <td className="px-2 py-2.5 text-right">{detailsButton(row)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </PortalDesktopTable>
+      )}
+    />
   );
 }
 
@@ -237,37 +290,69 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                 <span className="inline-flex items-center gap-1.5"><ChevronRight className="h-3.5 w-3.5 [details[open]_&]:hidden" /><ChevronDown className="hidden h-3.5 w-3.5 [details[open]_&]:inline" /> Explain ROI ledger (advanced)</span>
                 <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-soft">{explain.ledger.length} row{explain.ledger.length === 1 ? "" : "s"}</span>
               </summary>
-              <div className="overflow-x-auto border-t border-phx-line">
-                <table className="w-full min-w-[820px] border-collapse text-left text-phx-sm">
-                  <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
-                    <tr>
-                      <th className="px-3 py-2">SoS row</th>
-                      <th className="px-3 py-2">Period</th>
-                      <th className="px-3 py-2">Client code</th>
-                      <th className="px-3 py-2">Product</th>
-                      <th className="px-3 py-2 text-right">Qty</th>
-                      <th className="px-3 py-2 text-right">Value</th>
-                      <th className="px-3 py-2">Confidence</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                    {explain.ledger.length === 0 ? (
-                      <tr><td className="px-4 py-4 text-center text-phx-sm font-medium text-phx-ink-soft" colSpan={7}>No attributed sales rows.</td></tr>
-                    ) : (
-                      explain.ledger.map((ledgerRow) => (
-                        <tr key={ledgerRow.ledgerKey} className="border-t border-[#FEE7D2]">
-                          <td className="px-3 py-1.5 font-mono text-phx-ink-faint">{ledgerRow.sosRowId ?? "—"}</td>
-                          <td className="px-3 py-1.5 font-mono font-bold text-phx-ink">{ledgerRow.invoicePeriod}</td>
-                          <td className="px-3 py-1.5 font-mono text-phx-ink-soft">{ledgerRow.clientCode}</td>
-                          <td className="px-3 py-1.5 font-semibold text-phx-ink-2">{ledgerRow.productName}</td>
-                          <td className="px-3 py-1.5 text-right font-semibold text-phx-ink-2">{units(ledgerRow.qty)}</td>
-                          <td className="px-3 py-1.5 text-right font-bold text-phx-ink">{money(ledgerRow.valueCounted)}</td>
-                          <td className="px-3 py-1.5 font-bold uppercase text-emerald-700">{ledgerRow.confidence}</td>
+              <div className="border-t border-phx-line">
+                <PortalResponsiveDataList
+                  items={explain.ledger}
+                  empty={<p className="px-4 py-4 text-center text-phx-sm font-medium text-phx-ink-soft">No attributed sales rows.</p>}
+                  getKey={(ledgerRow) => ledgerRow.ledgerKey}
+                  renderCard={(ledgerRow) => (
+                    <PortalRecordCard
+                      accent="emerald"
+                      title={ledgerRow.productName}
+                      meta={`${ledgerRow.invoicePeriod} · ${ledgerRow.clientCode}`}
+                      status={<span className="text-phx-xs font-bold uppercase text-emerald-700">{ledgerRow.confidence}</span>}
+                    >
+                      <PortalRecordFields
+                        fields={[
+                          { label: "SoS row", value: ledgerRow.sosRowId ?? "—" },
+                          { label: "Qty", value: units(ledgerRow.qty) },
+                          { label: "Value", value: money(ledgerRow.valueCounted) },
+                        ]}
+                      />
+                    </PortalRecordCard>
+                  )}
+                  renderTable={() => (
+                    <PortalDesktopTable
+                      cols={
+                        <colgroup>
+                          <col className="w-[14%]" />
+                          <col className="w-[11%]" />
+                          <col className="w-[15%]" />
+                          <col className="w-[28%]" />
+                          <col className="w-[10%]" />
+                          <col className="w-[11%]" />
+                          <col className="w-[11%]" />
+                        </colgroup>
+                      }
+                      className="text-phx-sm"
+                    >
+                      <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
+                        <tr>
+                          <th className="px-3 py-2">SoS row</th>
+                          <th className="px-3 py-2">Period</th>
+                          <th className="px-3 py-2">Client code</th>
+                          <th className="px-3 py-2">Product</th>
+                          <th className="px-3 py-2 text-right">Qty</th>
+                          <th className="px-3 py-2 text-right">Value</th>
+                          <th className="px-3 py-2">Confidence</th>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="bg-white">
+                        {explain.ledger.map((ledgerRow) => (
+                          <tr key={ledgerRow.ledgerKey} className="border-t border-[#FEE7D2]">
+                            <td className="break-words px-3 py-1.5 font-mono text-phx-ink-faint">{ledgerRow.sosRowId ?? "—"}</td>
+                            <td className="break-words px-3 py-1.5 font-mono font-bold text-phx-ink">{ledgerRow.invoicePeriod}</td>
+                            <td className="break-words px-3 py-1.5 font-mono text-phx-ink-soft">{ledgerRow.clientCode}</td>
+                            <td className="break-words px-3 py-1.5 font-semibold text-phx-ink-2">{ledgerRow.productName}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-phx-ink-2">{units(ledgerRow.qty)}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-phx-ink">{money(ledgerRow.valueCounted)}</td>
+                            <td className="break-words px-3 py-1.5 font-bold uppercase text-emerald-700">{ledgerRow.confidence}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </PortalDesktopTable>
+                  )}
+                />
               </div>
             </details>
           </>
@@ -299,38 +384,72 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
       {rows.length === 0 ? (
         <div className="px-4 py-6 text-center text-phx-sm font-medium text-phx-ink-faint">No data.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-phx-sm">
-            <thead className="bg-phx-paper text-phx-2xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
-              <tr>
-                <th className="px-3 py-2">{entityLabel}</th>
-                <th className="px-3 py-2 text-right">Reqs</th>
-                <th className="px-3 py-2 text-right">Cost</th>
-                <th className="px-3 py-2 text-right">Actual</th>
-                <th className="px-3 py-2 text-right">Coverage</th>
-                <th className="px-3 py-2 text-right">Efficiency</th>
-                {showForecast ? <th className="px-3 py-2 text-right">Forecast acc.</th> : null}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-phx-paper-2">
-              {rows.map((row) => (
-                <tr key={row.key}>
-                  <td className="px-3 py-2 font-bold text-phx-ink">{row.label}</td>
-                  <td className="px-3 py-2 text-right text-phx-ink-2">{row.requestCount}</td>
-                  <td className="px-3 py-2 text-right text-phx-ink-2">{money(row.totalCost)}</td>
-                  <td className="px-3 py-2 text-right font-bold text-phx-ink">{money(row.totalActual)}</td>
-                  <td className="px-3 py-2 text-right text-phx-ink-2">{percent(row.coverageRatio)}</td>
-                  <td className="px-3 py-2 text-right font-bold text-phx-ink">{row.efficiencyRatio.toFixed(2)}×</td>
-                  {showForecast ? (
-                    <td className="px-3 py-2 text-right text-phx-ink-2">
-                      {row.forecastAccuracyRatio === null ? "—" : percent(row.forecastAccuracyRatio)}
-                    </td>
-                  ) : null}
+        <PortalResponsiveDataList
+          items={rows}
+          empty={null}
+          getKey={(row) => row.key}
+          renderCard={(row) => (
+            <PortalRecordCard accent="slate" title={row.label}>
+              <PortalRecordFields
+                fields={[
+                  { label: "Reqs", value: row.requestCount },
+                  { label: "Cost", value: money(row.totalCost) },
+                  { label: "Actual", value: money(row.totalActual) },
+                  { label: "Coverage", value: percent(row.coverageRatio) },
+                  { label: "Efficiency", value: `${row.efficiencyRatio.toFixed(2)}×` },
+                  ...(showForecast
+                    ? [{ label: "Forecast acc.", value: row.forecastAccuracyRatio === null ? "—" : percent(row.forecastAccuracyRatio) }]
+                    : []),
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className={showForecast ? "w-[28%]" : "w-[32%]"} />
+                  <col className="w-[10%]" />
+                  <col className={showForecast ? "w-[14%]" : "w-[16%]"} />
+                  <col className={showForecast ? "w-[14%]" : "w-[16%]"} />
+                  <col className={showForecast ? "w-[12%]" : "w-[13%]"} />
+                  <col className={showForecast ? "w-[12%]" : "w-[13%]"} />
+                  {showForecast ? <col className="w-[10%]" /> : null}
+                </colgroup>
+              }
+              className="text-phx-sm"
+            >
+              <thead className="bg-phx-paper text-phx-2xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+                <tr>
+                  <th className="px-3 py-2">{entityLabel}</th>
+                  <th className="px-3 py-2 text-right">Reqs</th>
+                  <th className="px-3 py-2 text-right">Cost</th>
+                  <th className="px-3 py-2 text-right">Actual</th>
+                  <th className="px-3 py-2 text-right">Coverage</th>
+                  <th className="px-3 py-2 text-right">Efficiency</th>
+                  {showForecast ? <th className="px-3 py-2 text-right">Forecast acc.</th> : null}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-phx-paper-2">
+                {rows.map((row) => (
+                  <tr key={row.key}>
+                    <td className="break-words px-3 py-2 font-bold text-phx-ink">{row.label}</td>
+                    <td className="px-3 py-2 text-right text-phx-ink-2">{row.requestCount}</td>
+                    <td className="px-3 py-2 text-right text-phx-ink-2">{money(row.totalCost)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-phx-ink">{money(row.totalActual)}</td>
+                    <td className="px-3 py-2 text-right text-phx-ink-2">{percent(row.coverageRatio)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-phx-ink">{row.efficiencyRatio.toFixed(2)}×</td>
+                    {showForecast ? (
+                      <td className="px-3 py-2 text-right text-phx-ink-2">
+                        {row.forecastAccuracyRatio === null ? "—" : percent(row.forecastAccuracyRatio)}
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       )}
     </section>
   );

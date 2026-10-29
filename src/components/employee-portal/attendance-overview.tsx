@@ -10,6 +10,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 
@@ -261,7 +262,10 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                     const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
                     return (
                       <Fragment key={row.rawDate}>
-                        <tr className="bg-white transition hover:bg-orange-50/30">
+                        <tr
+                          className="bg-white transition hover:bg-orange-50/30"
+                          {...rowDetailToggleProps(`dispute-${row.rawDate}`, Boolean(dispute && !dispute.submitted))}
+                        >
                           <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{row.date}</td>
                           <td className="px-3 py-2.5 tabular-nums text-slate-700">
                             {row.firstPunch ? (
@@ -309,8 +313,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                           </td>
                         </tr>
                         {dispute && !dispute.submitted && (
-                          <tr>
-                            <td className="bg-orange-50/50 px-3 py-3" colSpan={colSpanTotal}>
+                          <TableRowDetail className="py-3" colSpan={colSpanTotal} id={`dispute-${row.rawDate}`}>
                               <div className="flex flex-col gap-2 lg:flex-row lg:items-start">
                                 <textarea
                                   className={`${disputeTextareaClass} lg:flex-1`}
@@ -339,8 +342,7 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                                 </div>
                               </div>
                               {dispute.error && <p className="mt-1 text-phx-sm font-semibold text-rose-700">{dispute.error}</p>}
-                            </td>
-                          </tr>
+                          </TableRowDetail>
                         )}
                       </Fragment>
                     );

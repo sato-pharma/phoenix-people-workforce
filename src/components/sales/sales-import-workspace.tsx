@@ -31,6 +31,7 @@ import {
   AdminInsightChip,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -45,6 +46,7 @@ import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-pro
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput, useSortableTable } from "@/components/ui/sortable-table";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import { humanizeCode } from "@/lib/format/code-label";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type {
   DistributorSalesAreaSummary,
@@ -463,7 +465,7 @@ function SummaryTable({
           cards — the admin shell's own rule, desktop tables and mobile cards. The sort that lives
           in the header on a laptop moves to a control above the cards, so a phone loses neither
           the data nor the ordering. Measured at 375px: the table wanted 760px in a 273px column
-          and the `overflow-x-auto` around it WAS the sideways scroll. */}
+          and the scroll wrapper around it WAS the sideways scroll. */}
       <div className="border border-phx-line md:hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
           <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">Sort by</span>
@@ -530,6 +532,11 @@ function SummaryTable({
       <div className="hidden overflow-hidden border border-phx-line md:block">
         <div>
           <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              {columns.map((column) => (
+                <col key={column} style={{ width: `${100 / columns.length}%` }} />
+              ))}
+            </colgroup>
             <thead className="bg-phx-paper">
               <tr>
                 {columns.map((column, i) => (
@@ -559,7 +566,7 @@ function SummaryTable({
                       {entry.display.map((cell, cellIndex) => (
                         <td
                           className={cn(
-                            "px-4 py-2.5 align-top",
+                            "break-words px-4 py-2.5 align-top",
                             cellIndex === 0 ? "font-semibold text-phx-ink" : "",
                           )}
                           key={`${cell}:${cellIndex}`}
@@ -602,13 +609,7 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
       title="Rows To Fix"
     >
       <div className="p-4 md:p-5">
-        <table className="w-full table-fixed text-left text-sm">
-          <colgroup>
-            <col className="w-[12%]" />
-            <col className="w-[20%]" />
-            <col className="w-[30%]" />
-            <col className="w-[38%]" />
-          </colgroup>
+        <CrmTable columns={["12%", "20%", "30%", "38%"]}>
           <thead className="bg-phx-paper">
             <tr>
               <th className={tableHeaderClassName}>Row</th>
@@ -622,12 +623,24 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
               <tr className="text-phx-ink-soft" key={`${issue.rowNumber}:${issue.field}:${index}`}>
                 <td className="px-4 py-3 align-top font-semibold tabular-nums text-phx-ink">{issue.rowNumber}</td>
                 <td className="break-words px-4 py-3 align-top">{issue.field}</td>
-                <td className="break-words px-4 py-3 align-top">{issue.value ?? "-"}</td>
+                <td className="break-words px-4 py-3 align-top">{issue.value ?? "—"}</td>
                 <td className="break-words px-4 py-3 align-top">{issue.message}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </CrmTable>
+        <CrmCardsOnPhone>
+          {failedIssues.slice(0, 100).map((issue, index) => (
+            <CrmCard key={`${issue.rowNumber}:${issue.field}:${index}:card`} title={`Row ${issue.rowNumber} · ${issue.field}`}>
+              <CrmFacts
+                facts={[
+                  ...(issue.value ? [{ label: "Value", value: issue.value }] : []),
+                  { label: "Error", value: issue.message },
+                ]}
+              />
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
       </div>
     </AdminTableShell>
   );
@@ -719,7 +732,7 @@ function UploadedSheetsTable({
                 <option value="all">All distributors</option>
                 {distributorOptions.map((option) => (
                   <option key={option.code} value={option.code}>
-                    {option.name} / {option.code}
+                    {option.name}
                   </option>
                 ))}
               </SearchableSelect>
@@ -767,7 +780,7 @@ function UploadedSheetsTable({
             </AdminCallout>
           ) : (
             <div>
-              {/* Ten columns over a min-w-[980px]. Qty and B. Qty MERGE into one Quantity
+              {/* Ten columns do not fit a laptop. Qty and B. Qty MERGE into one Quantity
                   cell, and the four detail columns fold into the File cell below lg, so
                   nothing is dropped at either width. */}
               <div className="overflow-hidden rounded-[16px] border border-phx-line">
@@ -805,7 +818,7 @@ function UploadedSheetsTable({
                             <p className="break-words font-semibold text-phx-ink">{batch.fileName}</p>
                             <p className="mt-1 break-words text-xs text-phx-ink-soft">{batch.uploadedBy}</p>
                             <p className="mt-1 break-words text-xs text-phx-ink-soft lg:hidden">
-                              {batch.distributorName} / {batch.distributorCode} · {batch.period ?? "-"}
+                              {batch.distributorName} · {batch.period ?? "—"}
                             </p>
                             <p className="mt-0.5 text-xs tabular-nums text-phx-ink-soft lg:hidden">
                               {formatNumber(batch.rowCount)} rows · {numberWithDecimals(batch.totalQty)} qty
@@ -813,11 +826,11 @@ function UploadedSheetsTable({
                             </p>
                             <p className="mt-0.5 text-xs text-phx-ink-soft lg:hidden">{new Date(batch.createdAt).toLocaleString()}</p>
                           </td>
-                          <td className="hidden break-words px-4 py-3 align-top lg:table-cell">{batch.distributorName} / {batch.distributorCode}</td>
-                          <td className="hidden px-4 py-3 align-top lg:table-cell">{batch.period ?? "-"}</td>
+                          <td className="hidden break-words px-4 py-3 align-top lg:table-cell">{batch.distributorName}</td>
+                          <td className="hidden px-4 py-3 align-top lg:table-cell">{batch.period ?? "—"}</td>
                           <td className="px-4 py-3 align-top">
                             <Badge variant={batch.status === "validated" ? "success" : "danger"}>
-                              {batch.status}
+                              {humanizeCode(batch.status)}
                             </Badge>
                           </td>
                           <td className="hidden px-4 py-3 align-top tabular-nums lg:table-cell">{formatNumber(batch.rowCount)}</td>

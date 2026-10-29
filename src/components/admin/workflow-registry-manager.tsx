@@ -200,7 +200,7 @@ function FlowBox({
   };
 
   return (
-    <div className={`min-w-[160px] rounded-lg border px-3 py-2 text-center text-sm font-black shadow-sm ${classes[tone]}`}>
+    <div className={`rounded-lg border px-3 py-2 text-center text-sm font-black shadow-sm ${classes[tone]}`}>
       {label}
     </div>
   );
@@ -225,11 +225,11 @@ function WorkflowMap({
     <div className="grid gap-3">
       {actions.map((action) => (
         <div
-          className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
           key={action.key}
         >
-          <div className="flex min-w-max items-center gap-3">
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-2">
               {action.from.map((sourceStatus) => (
                 <FlowBox
                   key={`${action.key}-${sourceStatus}`}
@@ -543,12 +543,12 @@ export function WorkflowRegistryManager({
         description="Each tab is one workflow. Pick a tab, then edit boxes and arrows."
         title="Workflow tabs"
       >
-        <div className="flex gap-2 overflow-x-auto p-3">
+        <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3">
           {modules.map((module) => {
             const active = selectedModule?.moduleKey === module.moduleKey;
             return (
               <button
-                className={`min-w-[180px] rounded-lg border px-3 py-2 text-left transition ${
+                className={`min-w-0 rounded-lg border px-3 py-2 text-left transition ${
                   active
                     ? "border-orange-300 bg-orange-50 text-orange-950"
                     : "border-slate-200 bg-white text-slate-700 hover:border-orange-200 hover:bg-slate-50"
@@ -558,12 +558,11 @@ export function WorkflowRegistryManager({
                 type="button"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-black">{module.moduleName}</span>
+                  <span className="min-w-0 break-words text-sm font-black">{module.moduleName}</span>
                   <Badge variant={module.isActive ? "success" : "neutral"}>
                     {module.isActive ? "Live" : "Off"}
                   </Badge>
                 </div>
-                <p className="mt-1 truncate font-mono text-phx-xs text-slate-500">{module.moduleKey}</p>
               </button>
             );
           })}

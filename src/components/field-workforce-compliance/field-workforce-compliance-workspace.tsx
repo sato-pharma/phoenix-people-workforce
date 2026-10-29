@@ -21,6 +21,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import {
+  PortalDesktopTable,
   PortalEmptyState,
   PortalRecordCard,
   PortalRecordFields,
@@ -725,7 +726,7 @@ function EmployeePicker({
           onChange={(event) => onSelectEmployee(event.target.value)}
         >
           {employees.map((employee) => (
-            <option key={employee.hrId} value={employee.hrId}>{employee.employeeName} / {employee.hrId}</option>
+            <option key={employee.hrId} value={employee.hrId}>{employee.employeeName}</option>
           ))}
         </SearchableSelect>
         <div className="grid grid-cols-2 gap-2">
@@ -789,7 +790,7 @@ function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployee
         <div>
           <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">Employee Monthly Compliance</p>
           <h3 className="mt-1 text-lg font-black text-slate-950">{employee.employeeName}</h3>
-          <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
+          <p className="mt-1 text-xs font-bold text-slate-500">Hire date {employee.hiringDateIso ?? "—"}</p>
           <p className="mt-2 text-xs font-semibold text-slate-500">
             {[employee.managerName, employee.lineName, employee.areaName, employee.teamName, employee.roleName, employee.employmentStatus].filter(Boolean).join(" / ") || "Employee hierarchy unavailable"}
           </p>
@@ -843,7 +844,7 @@ function SingleEmployeeTimeline({ employee }: { employee: FieldWorkforceEmployee
     <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
         <p className="text-sm font-black text-slate-950">{employee.employeeName}</p>
-        <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
+        <p className="mt-1 text-xs font-bold text-slate-500">Hire date {employee.hiringDateIso ?? "—"}</p>
       </div>
       {/* Full month fits the width — no horizontal scroll. */}
       <div className="p-3">
@@ -1197,9 +1198,7 @@ function ReviewQueue({
           renderCard={(candidate) => (
             <PortalRecordCard
               meta={
-                <span>
-                  <span className="font-mono">{candidate.hrId}</span> · {displayDate(candidate.dateIso)}
-                </span>
+                <span>{displayDate(candidate.dateIso)}</span>
               }
               status={severityBadge(candidate.severity)}
               title={candidate.employeeName}
@@ -1263,7 +1262,6 @@ function ReviewQueue({
               <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={candidate.id}>
                 <td className="break-words px-4 py-3">
                   <p className="break-words font-black text-slate-950">{candidate.employeeName}</p>
-                  <p className="mt-1 break-words font-mono text-xs font-semibold text-slate-500">{candidate.hrId}</p>
                 </td>
                 <td className="break-words px-4 py-3">{displayDate(candidate.dateIso)}</td>
                 <td className="break-words px-4 py-3">
@@ -1365,7 +1363,7 @@ function MonthlySummaryTable({
         </div>
       </div>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
-        {/* Sixteen columns at a 1180px minimum. The card leads with the compliance percentage
+        {/* Seven merged columns, fixed to the screen. The card leads with the compliance percentage
             because that is what this table is read for; the day counts follow. */}
         <PortalResponsiveDataList
           empty={
@@ -1389,10 +1387,9 @@ function MonthlySummaryTable({
               }
               meta={
                 <span>
-                  <span className="font-mono">{employee.hrId}</span> ·{" "}
                   {[employee.managerName, employee.lineName, employee.areaName]
                     .filter(Boolean)
-                    .join(" / ") || "-"}
+                    .join(" / ") || "—"}
                 </span>
               }
               status={
@@ -1437,61 +1434,71 @@ function MonthlySummaryTable({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <div className="hidden md:block">
-        <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Hiring Date</th>
-              <th className="px-4 py-3">Eligible</th>
-              <th className="px-4 py-3">Worked</th>
-              <th className="px-4 py-3">Compliance</th>
-              <th className="px-4 py-3">N</th>
-              <th className="px-4 py-3">AV</th>
-              <th className="px-4 py-3">CP</th>
-              <th className="px-4 py-3">Visits</th>
-              <th className="px-4 py-3">Holidays</th>
-              <th className="px-4 py-3">Pre-hire</th>
-              <th className="px-4 py-3">Unknown</th>
-              <th className="px-4 py-3">Avg First Logged</th>
-              <th className="px-4 py-3">Late Log Days</th>
-              <th className="px-4 py-3">Customer Pattern</th>
-              <th className="px-4 py-3">Hierarchy</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {visibleRows.map((employee) => (
-              <tr className="text-slate-700 hover:bg-slate-50/70" key={employee.hrId}>
-                <td className="px-4 py-3">
-                  <p className="font-black text-slate-950">{employee.employeeName}</p>
-                  <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{employee.hrId}</p>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">{employee.hiringDateIso ?? "-"}</td>
-                <td className="px-4 py-3">{formatNumber(employee.eligibleWorkingDays)}</td>
-                <td className="px-4 py-3">{formatNumber(employee.workedDays)}</td>
-                <td className="px-4 py-3 font-black text-slate-950">{complianceLabel(employee, formatPercentValue)}</td>
-                <td className="px-4 py-3 font-bold text-rose-700">{formatNumber(employee.noActivityCandidates)}</td>
-                <td className="px-4 py-3 text-sky-700">{formatNumber(employee.vacationSignalDays)}</td>
-                <td className="px-4 py-3 text-violet-700">{formatNumber(employee.campaignDays)}</td>
-                <td className="px-4 py-3 text-emerald-700">{formatNumber(employee.totalVisits)}</td>
-                <td className="px-4 py-3 text-orange-700">{formatNumber(employee.holidayWarnings)}</td>
-                <td className="px-4 py-3 text-rose-700">{formatNumber(employee.preHireIgnoredValues)}</td>
-                <td className="px-4 py-3 text-red-700">{formatNumber(employee.unknownValues)}</td>
-                <td className="whitespace-nowrap px-4 py-3">{employee.loggingTimingSummary?.avgFirstLoggedTime ?? "-"}</td>
-                <td className={cn("px-4 py-3", employee.loggingTimingSummary?.lateStartDayCount ? "font-bold text-violet-700" : "")}>
-                  {employee.loggingTimingSummary ? formatNumber(employee.loggingTimingSummary.lateStartDayCount) : "-"}
-                </td>
-                <td className={cn("px-4 py-3", employee.customerAuthenticity?.flagged ? "font-bold text-violet-700" : "")}>
-                  {employee.customerAuthenticity?.flagged
-                    ? employee.customerAuthenticity.flaggedRules.map(customerAuthenticityRuleLabel).join("; ")
-                    : "-"}
-                </td>
-                <td className="px-4 py-3">{[employee.managerName, employee.lineName, employee.areaName].filter(Boolean).join(" / ") || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-            </div>
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[18%]" />
+                </colgroup>
+              }
+            >
+              <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">Employee</th>
+                  <th className="px-3 py-3">Days</th>
+                  <th className="px-3 py-3">Compliance</th>
+                  <th className="px-3 py-3">Activity</th>
+                  <th className="px-3 py-3">Warnings</th>
+                  <th className="px-3 py-3">Logging</th>
+                  <th className="px-3 py-3">Customer Pattern</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {visibleRows.map((employee) => (
+                  <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={employee.hrId}>
+                    <td className="break-words px-3 py-3">
+                      <p className="font-black text-slate-950">{employee.employeeName}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {[employee.managerName, employee.lineName, employee.areaName].filter(Boolean).join(" / ") || "—"}
+                      </p>
+                    </td>
+                    <td className="break-words px-3 py-3">
+                      <p>Hired {employee.hiringDateIso ?? "—"}</p>
+                      <p className="text-xs text-slate-500">Eligible {formatNumber(employee.eligibleWorkingDays)}</p>
+                      <p className="text-xs text-slate-500">Worked {formatNumber(employee.workedDays)}</p>
+                    </td>
+                    <td className="break-words px-3 py-3 font-black text-slate-950">{complianceLabel(employee, formatPercentValue)}</td>
+                    <td className="break-words px-3 py-3">
+                      <p className="font-bold text-rose-700">No activity {formatNumber(employee.noActivityCandidates)}</p>
+                      <p className="text-sky-700">Vacation signal {formatNumber(employee.vacationSignalDays)}</p>
+                      <p className="text-violet-700">Campaign {formatNumber(employee.campaignDays)}</p>
+                      <p className="text-emerald-700">Visits {formatNumber(employee.totalVisits)}</p>
+                    </td>
+                    <td className="break-words px-3 py-3">
+                      <p className="text-orange-700">Holidays {formatNumber(employee.holidayWarnings)}</p>
+                      <p className="text-rose-700">Pre-hire {formatNumber(employee.preHireIgnoredValues)}</p>
+                      <p className="text-red-700">Unknown {formatNumber(employee.unknownValues)}</p>
+                    </td>
+                    <td className={cn("break-words px-3 py-3", employee.loggingTimingSummary?.lateStartDayCount ? "text-violet-700" : "")}>
+                      <p>First logged {employee.loggingTimingSummary?.avgFirstLoggedTime ?? "—"}</p>
+                      <p className={employee.loggingTimingSummary?.lateStartDayCount ? "font-bold" : ""}>
+                        Late days {employee.loggingTimingSummary ? formatNumber(employee.loggingTimingSummary.lateStartDayCount) : "—"}
+                      </p>
+                    </td>
+                    <td className={cn("break-words px-3 py-3", employee.customerAuthenticity?.flagged ? "font-bold text-violet-700" : "")}>
+                      {employee.customerAuthenticity?.flagged
+                        ? employee.customerAuthenticity.flaggedRules.map(customerAuthenticityRuleLabel).join("; ")
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
           )}
         />
       </div>

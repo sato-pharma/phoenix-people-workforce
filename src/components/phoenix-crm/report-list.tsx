@@ -30,6 +30,7 @@ import {
   crmThClassName,
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { cn } from "@/lib/utils";
 
 type Presence = "all" | "with" | "without";
@@ -79,7 +80,7 @@ export type DayLine = { date: string; lines: string[]; muted?: boolean };
 export function DayList({ days, today }: { days: ReadonlyArray<DayLine>; today: string }) {
   if (days.length === 0) return <p className="text-sm font-semibold text-slate-500">No day to show.</p>;
   return (
-    <ul className="divide-y divide-slate-100 border border-slate-200 bg-white">
+    <ul className="divide-y divide-slate-100 border border-slate-200">
       {days.map((day) => (
         <li className="grid min-w-0 gap-1 px-3 py-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-3" key={day.date}>
           <p className="break-words text-xs font-black leading-6 text-slate-600">
@@ -244,13 +245,11 @@ export function ReportList<T>({
                 const open = openKeys.has(key);
                 return (
                   <Fragment key={key}>
-                    <tr>{renderCells(item, open, () => toggle(key))}</tr>
+                    <tr {...(renderOpen ? rowDetailToggleProps(`${idPrefix}-${key}-days`, open) : {})}>{renderCells(item, open, () => toggle(key))}</tr>
                     {open && renderOpen ? (
-                      <tr>
-                        <td className="border-b border-slate-100 bg-slate-50 px-3 py-3" colSpan={columns.length}>
-                          {renderOpen(item)}
-                        </td>
-                      </tr>
+                      <TableRowDetail colSpan={columns.length} id={`${idPrefix}-${key}-days`}>
+                        {renderOpen(item)}
+                      </TableRowDetail>
                     ) : null}
                   </Fragment>
                 );

@@ -752,8 +752,8 @@ export function InterviewCalendarView({
                         "group relative h-[46px] border-r border-slate-200 p-1 align-top last:border-r-0",
                         cover
                           ? cover.platform === "zoom"
-                            ? "bg-sky-50 shadow-[inset_3px_0_0_#0284c7]"
-                            : "bg-orange-50 shadow-[inset_3px_0_0_#ea580c]"
+                            ? "bg-sky-50"
+                            : "bg-orange-50"
                           : day === todayKey && "bg-orange-50/40",
                       )}
                       key={day}

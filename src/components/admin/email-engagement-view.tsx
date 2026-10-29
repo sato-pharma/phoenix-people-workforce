@@ -27,9 +27,9 @@ function formatCairo(iso: string | null): string {
 // A lifecycle stage cell: green tick when reached, muted dash otherwise.
 function Stage({ on, label }: { on: boolean; label: string }) {
   return on ? (
-    <span className="inline-flex items-center rounded-full bg-phx-ok-bg px-2 py-0.5 text-xs font-medium text-phx-ok">✓ {label}</span>
+    <span className="inline-flex items-center bg-phx-ok-bg px-2 py-0.5 text-xs font-medium text-phx-ok">✓ {label}</span>
   ) : (
-    <span className="inline-flex items-center rounded-full bg-phx-paper px-2 py-0.5 text-xs text-phx-ink-soft">— {label}</span>
+    <span className="inline-flex items-center bg-phx-paper px-2 py-0.5 text-xs text-phx-ink-soft">— {label}</span>
   );
 }
 
@@ -70,15 +70,22 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
         <button className="h-9 rounded-md bg-slate-900 px-4 text-sm font-medium text-white" type="submit">Apply</button>
       </form>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[900px] text-left text-sm">
+      <div className="border border-slate-200 bg-white">
+        <table className="hidden w-full table-fixed border-collapse text-left text-sm md:table">
+          <colgroup>
+            <col className="w-[24%]" />
+            <col className="w-[26%]" />
+            <col className="w-[8%]" />
+            <col className="w-[24%]" />
+            <col className="w-[18%]" />
+          </colgroup>
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Person</th>
-              <th className="px-4 py-3">Email subject</th>
-              <th className="px-4 py-3">Via</th>
-              <th className="px-4 py-3">Situation</th>
-              <th className="px-4 py-3">Last activity</th>
+              <th className="px-3 py-3">Person</th>
+              <th className="px-3 py-3">Email subject</th>
+              <th className="px-3 py-3">Via</th>
+              <th className="px-3 py-3">Situation</th>
+              <th className="px-3 py-3">Last activity</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -89,19 +96,19 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
                 const notSent = row.sendStatus !== "sent";
                 return (
                   <tr key={row.id} className="align-top">
-                    <td className="px-4 py-3">
+                    <td className="min-w-0 break-words px-3 py-3">
                       <div className="font-medium text-slate-900">{row.recipientName ?? row.recipientEmail}</div>
                       {row.recipientName ? <div className="text-xs text-slate-500">{row.recipientEmail}</div> : null}
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{row.subject ?? "—"}</td>
-                    <td className="px-4 py-3 capitalize text-slate-600">{row.provider}</td>
-                    <td className="px-4 py-3">
+                    <td className="min-w-0 break-words px-3 py-3 text-slate-700">{row.subject ?? "—"}</td>
+                    <td className="min-w-0 break-words px-3 py-3 capitalize text-slate-600">{row.provider}</td>
+                    <td className="min-w-0 break-words px-3 py-3">
                       {notSent ? (
                         <div>
-                          <span className="inline-flex items-center rounded-full bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">
+                          <span className="inline-flex items-center bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">
                             {row.sendStatus === "failed" ? "Failed" : row.sendStatus === "pending" ? "Pending (retrying)" : row.sendStatus}
                           </span>
-                          {row.failedReason ? <div className="mt-1 max-w-[280px] truncate text-xs text-slate-500" title={row.failedReason}>{row.failedReason}</div> : null}
+                          {row.failedReason ? <div className="mt-1 break-words text-xs text-slate-500">{row.failedReason}</div> : null}
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-1">
@@ -109,17 +116,50 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
                           <Stage on={row.delivered} label="Delivered" />
                           <Stage on={row.opened} label="Opened" />
                           <Stage on={row.clicked} label="Clicked" />
-                          {row.bounced ? <span className="inline-flex items-center rounded-full bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">Bounced</span> : null}
+                          {row.bounced ? <span className="inline-flex items-center bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">Bounced</span> : null}
                         </div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(row.lastActivityAt ?? row.sentAt)}</td>
+                    <td className="min-w-0 break-words px-3 py-3 text-slate-600">{formatCairo(row.lastActivityAt ?? row.sentAt)}</td>
                   </tr>
                 );
               })
             )}
           </tbody>
         </table>
+        <div className="divide-y divide-slate-100 md:hidden">
+          {data.rows.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-slate-500">No emails in this window.</p>
+          ) : (
+            data.rows.map((row) => {
+              const notSent = row.sendStatus !== "sent";
+              return (
+                <div key={row.id} className="min-w-0 space-y-1.5 px-4 py-3">
+                  <p className="break-words text-sm font-medium text-slate-900">{row.recipientName ?? row.recipientEmail}</p>
+                  {row.recipientName ? <p className="break-words text-xs text-slate-500">{row.recipientEmail}</p> : null}
+                  <p className="break-words text-sm text-slate-700">{row.subject ?? "—"}</p>
+                  <p className="text-xs capitalize text-slate-600">{row.provider} · {formatCairo(row.lastActivityAt ?? row.sentAt)}</p>
+                  {notSent ? (
+                    <div>
+                      <span className="inline-flex items-center bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">
+                        {row.sendStatus === "failed" ? "Failed" : row.sendStatus === "pending" ? "Pending (retrying)" : row.sendStatus}
+                      </span>
+                      {row.failedReason ? <div className="mt-1 break-words text-xs text-slate-500">{row.failedReason}</div> : null}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      <Stage on label="Sent" />
+                      <Stage on={row.delivered} label="Delivered" />
+                      <Stage on={row.opened} label="Opened" />
+                      <Stage on={row.clicked} label="Clicked" />
+                      {row.bounced ? <span className="inline-flex items-center bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">Bounced</span> : null}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <p className="text-xs text-slate-400">

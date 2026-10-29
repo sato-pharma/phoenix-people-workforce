@@ -15,6 +15,7 @@ import { useMemo, useRef, useState, useCallback } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
+import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoenix-crm/ui";
 import { Card } from "@/components/ui/card";
 import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { ProductAddForm, CustomerBrickAddForm, TerritoryAddForm } from "@/components/sales/source-of-sales-mapping-tab";
@@ -205,6 +206,7 @@ export function MonthlySalesWizard({
   }
 
   const mapNowGroups = useMemo(() => mapNowGroupsFromIssues(preview?.issues ?? []), [preview]);
+  const failureIssues = useMemo(() => (preview?.issues ?? []).filter((issue) => issue.severity === "failure").slice(0, 50), [preview]);
 
   // Step 2 — persist the previewed upload, then record confirmation against the run with the batch id.
   // Uses previewFileRef (captured at preview time) rather than re-reading fileRef.current.files[0],
@@ -385,7 +387,7 @@ export function MonthlySalesWizard({
                       <span className={cn("flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black", active ? "border-white text-white" : "border-phx-line text-slate-500")}>
                         {index + 1}
                       </span>
-                      <span className="flex-1 truncate">{step.distributorName}</span>
+                      <span className="min-w-0 flex-1 break-words">{step.distributorName}</span>
                       <span className={cn("rounded-full border px-2 py-0.5 text-phx-2xs font-black uppercase", active ? "border-white/40 text-white" : statusTone(step.stepStatus))}>
                         {step.stepStatus}
                       </span>
@@ -426,7 +428,7 @@ export function MonthlySalesWizard({
                 ) : null}
                 {activeStep.batch ? (
                   <div className="grid grid-cols-3 gap-3 rounded-xl border border-phx-line bg-slate-50 p-4">
-                    <div><p className="text-xs font-black uppercase text-slate-500">File</p><p className="truncate text-sm font-bold text-slate-800">{activeStep.batch.fileName}</p></div>
+                    <div><p className="text-xs font-black uppercase text-slate-500">File</p><p className="break-words text-sm font-bold text-slate-800">{activeStep.batch.fileName}</p></div>
                     <div><p className="text-xs font-black uppercase text-slate-500">Units</p><p className="text-sm font-bold text-slate-800">{formatNumber(activeStep.batch.totalQty)}</p></div>
                     <div><p className="text-xs font-black uppercase text-slate-500">Value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(activeStep.batch.totalValue)}</p></div>
                   </div>
@@ -490,12 +492,29 @@ export function MonthlySalesWizard({
                       </div>
                     ) : null}
                     {preview.byBrickProduct && preview.byBrickProduct.length > 0 ? (
-                      <div className="max-h-96 overflow-auto rounded-xl border border-phx-line">
-                        <table className="w-full text-sm">
+                      <div className="max-h-96 overflow-y-auto border border-phx-line">
+                        <CrmCardsOnPhone>
+                          {preview.byBrickProduct.map((row, i) => (
+                            <CrmCard
+                              key={`${row.brickId}-${row.productCode}-${i}`}
+                              meta={row.productName}
+                              title={row.brickName || (row.brickId ? "—" : "NATIONAL")}
+                            >
+                              <CrmFacts
+                                facts={[
+                                  { label: "Region", value: row.regionName || "—" },
+                                  { label: "Area", value: row.areaName || "—" },
+                                  { label: "Units", value: formatNumber(row.qty) },
+                                  { label: "Value", value: formatCurrency(row.value) },
+                                ]}
+                              />
+                            </CrmCard>
+                          ))}
+                        </CrmCardsOnPhone>
+                        <CrmTable columns={["22%", "22%", "26%", "12%", "18%"]}>
                           <thead className="sticky top-0 bg-[#0B0B0B] text-white">
                             <tr>
-                              <th className="px-3 py-2 text-left font-black">Region</th>
-                              <th className="px-3 py-2 text-left font-black">Area</th>
+                              <th className="px-3 py-2 text-left font-black">Region and area</th>
                               <th className="px-3 py-2 text-left font-black">Brick</th>
                               <th className="px-3 py-2 text-left font-black">Product</th>
                               <th className="px-3 py-2 text-right font-black">Units</th>
@@ -505,31 +524,45 @@ export function MonthlySalesWizard({
                           <tbody>
                             {preview.byBrickProduct.map((row, i) => (
                               <tr key={`${row.brickId}-${row.productCode}-${i}`} className="border-t border-[#F1E4D8]">
-                                <td className="px-3 py-2 text-slate-500">{row.regionName || row.regionCode || "—"}</td>
-                                <td className="px-3 py-2 text-slate-500">{row.areaName || row.areaCode || "—"}</td>
-                                <td className="px-3 py-2 font-bold text-slate-800">{row.brickName || row.brickId || "NATIONAL"}</td>
-                                <td className="px-3 py-2 text-slate-700">{row.productName}</td>
-                                <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.qty)}</td>
-                                <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(row.value)}</td>
+                                <td className="break-words px-3 py-2 align-top text-slate-500">
+                                  <span className="block">{row.regionName || "—"}</span>
+                                  <span className="block">{row.areaName || "—"}</span>
+                                </td>
+                                <td className="break-words px-3 py-2 align-top font-bold text-slate-800">{row.brickName || (row.brickId ? "—" : "NATIONAL")}</td>
+                                <td className="break-words px-3 py-2 align-top text-slate-700">{row.productName}</td>
+                                <td className="break-words px-3 py-2 text-right align-top tabular-nums">{formatNumber(row.qty)}</td>
+                                <td className="break-words px-3 py-2 text-right align-top tabular-nums">{formatCurrency(row.value)}</td>
                               </tr>
                             ))}
                           </tbody>
-                        </table>
+                        </CrmTable>
                       </div>
                     ) : preview.byRegion.length > 0 ? (
-                      <div className="overflow-hidden rounded-xl border border-phx-line">
-                        <table className="w-full text-sm">
+                      <div className="overflow-hidden border border-phx-line">
+                        <CrmCardsOnPhone>
+                          {preview.byRegion.map((row) => (
+                            <CrmCard key={`${row.regionCode}-${row.regionName}`} title={row.regionName || "—"}>
+                              <CrmFacts
+                                facts={[
+                                  { label: "Units", value: formatNumber(row.totalQty) },
+                                  { label: "Value", value: formatCurrency(row.totalValue) },
+                                ]}
+                              />
+                            </CrmCard>
+                          ))}
+                        </CrmCardsOnPhone>
+                        <CrmTable columns={["50%", "20%", "30%"]}>
                           <thead className="bg-[#0B0B0B] text-white"><tr><th className="px-3 py-2 text-left font-black">Region</th><th className="px-3 py-2 text-right font-black">Units</th><th className="px-3 py-2 text-right font-black">Value</th></tr></thead>
                           <tbody>
                             {preview.byRegion.map((row) => (
                               <tr key={`${row.regionCode}-${row.regionName}`} className="border-t border-[#F1E4D8]">
-                                <td className="px-3 py-2 font-bold text-slate-800">{row.regionName || row.regionCode || "—"}</td>
-                                <td className="px-3 py-2 text-right">{formatNumber(row.totalQty)}</td>
-                                <td className="px-3 py-2 text-right">{formatCurrency(row.totalValue)}</td>
+                                <td className="break-words px-3 py-2 align-top font-bold text-slate-800">{row.regionName || "—"}</td>
+                                <td className="break-words px-3 py-2 text-right align-top">{formatNumber(row.totalQty)}</td>
+                                <td className="break-words px-3 py-2 text-right align-top">{formatCurrency(row.totalValue)}</td>
                               </tr>
                             ))}
                           </tbody>
-                        </table>
+                        </CrmTable>
                       </div>
                     ) : null}
                     {preview.issues.length > 0 ? (
@@ -559,7 +592,7 @@ export function MonthlySalesWizard({
                           {mapNowGroups.map((group) => (
                             <li key={group.key} className="flex items-center justify-between gap-3 rounded-lg border border-[#F1E4D8] bg-slate-50 px-3 py-2">
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-bold text-slate-800">{group.message}</p>
+                                <p className="break-words text-sm font-bold text-slate-800">{group.message}</p>
                                 <p className="text-xs text-slate-500">{group.count} row{group.count === 1 ? "" : "s"}</p>
                               </div>
                               <Button className="shrink-0 gap-1 rounded-xl font-black" onClick={() => setMapNowGroup(group)} size="sm" variant="secondary">
@@ -571,20 +604,32 @@ export function MonthlySalesWizard({
                       </div>
                     ) : null}
                     {preview.issues.length > 0 ? (
-                      <div className="max-h-72 overflow-auto rounded-xl border border-phx-line">
-                        <table className="w-full text-sm">
+                      <div className="max-h-72 overflow-y-auto border border-phx-line">
+                        <CrmCardsOnPhone>
+                          {failureIssues.map((issue, i) => (
+                            <CrmCard key={`${issue.rowNumber}-${issue.field}-${i}`} meta={issue.message} title={`Row ${issue.rowNumber}`}>
+                              <CrmFacts
+                                facts={[
+                                  { label: "Field", value: issue.field },
+                                  { label: "Value", value: issue.value ?? "—" },
+                                ]}
+                              />
+                            </CrmCard>
+                          ))}
+                        </CrmCardsOnPhone>
+                        <CrmTable columns={["10%", "20%", "25%", "45%"]}>
                           <thead className="sticky top-0 bg-[#0B0B0B] text-white"><tr><th className="px-3 py-2 text-left font-black">Row</th><th className="px-3 py-2 text-left font-black">Field</th><th className="px-3 py-2 text-left font-black">Value</th><th className="px-3 py-2 text-left font-black">Error</th></tr></thead>
                           <tbody>
-                            {preview.issues.filter((issue) => issue.severity === "failure").slice(0, 50).map((issue, i) => (
+                            {failureIssues.map((issue, i) => (
                               <tr key={`${issue.rowNumber}-${issue.field}-${i}`} className="border-t border-[#F1E4D8]">
-                                <td className="px-3 py-2 font-bold text-slate-800">{issue.rowNumber}</td>
-                                <td className="px-3 py-2 text-slate-600">{issue.field}</td>
-                                <td className="px-3 py-2 text-slate-600">{issue.value ?? "—"}</td>
-                                <td className="px-3 py-2 text-slate-600">{issue.message}</td>
+                                <td className="break-words px-3 py-2 align-top font-bold text-slate-800">{issue.rowNumber}</td>
+                                <td className="break-words px-3 py-2 align-top text-slate-600">{issue.field}</td>
+                                <td className="break-words px-3 py-2 align-top text-slate-600">{issue.value ?? "—"}</td>
+                                <td className="break-words px-3 py-2 align-top text-slate-600">{issue.message}</td>
                               </tr>
                             ))}
                           </tbody>
-                        </table>
+                        </CrmTable>
                       </div>
                     ) : null}
                   </div>

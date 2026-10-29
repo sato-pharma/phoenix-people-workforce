@@ -308,4 +308,10 @@ export function runPhoenixCrmMyMapTests(): void {
   assert.equal(both.plannedWithoutPin, 0, "so no planned stop is wrongly called unvalidated");
   assert.deepEqual(both.withoutPin, { AM: 1, PM: 0, Pharmacy: 0 }, "a validated test customer with no place is counted, never silently missing");
   assert.equal(build(realWorld.places, realWorld.customers, realWorld.visits).pins.length, 3, "a real viewer's map is the real world alone");
+  // ── Tables say every fact once: an unnamed brick is a dash in the table and left out of the card ──
+  {
+    const list = stripComments(read("src/components/phoenix-crm/my-map/my-map-list.tsx"));
+    assert.doesNotMatch(list, /Brick not named|"Not named"/, "no filler words where the brick is unknown");
+    assert.match(list, /row\.pin\.brick \?\? "—"/, "the table cell shows a dash");
+  }
 }

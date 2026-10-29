@@ -26,6 +26,7 @@ import {
   crmTdClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import {
   VISIT_REPORT_CATEGORIES,
@@ -35,11 +36,25 @@ import {
 
 const PAGE = 50;
 
+/** What the row's own cells already print, so its opened panel never says it a second time. */
+const SHOWN_BY_THE_ROW: ReadonlySet<string> = new Set([
+  "visitDate",
+  "savedAt",
+  "repName",
+  "customerName",
+  "listType",
+  "visitType",
+  "plannedOrNot",
+  "placeLabel",
+  "distanceFromPlace",
+  "locationFlag",
+]);
+
 function Detail({ fields, row }: { fields: ReadonlyArray<VisitReportField>; row: VisitReportRow }) {
   return (
     <div className="grid gap-4">
       {VISIT_REPORT_CATEGORIES.map((category) => {
-        const inCategory = fields.filter((field) => field.category === category.id);
+        const inCategory = fields.filter((field) => field.category === category.id && !SHOWN_BY_THE_ROW.has(field.key));
         if (inCategory.length === 0) return null;
         return (
           <section className="min-w-0" key={category.id}>
@@ -202,18 +217,16 @@ export function VisitReportTable({
                       </span>
                     </td>
                     <td className={crmTdClassName}>
-                      <CrmButton aria-expanded={isOpen} onClick={() => toggle(row.visitId)} size="sm">
+                      <CrmButton {...rowDetailToggleProps(`visit-detail-${row.visitId}`, isOpen)} onClick={() => toggle(row.visitId)} size="sm">
                         {isOpen ? <ChevronUp aria-hidden className="h-4 w-4" /> : <ChevronDown aria-hidden className="h-4 w-4" />}
                         <span className="sr-only">{isOpen ? "Hide details" : "Show details"}</span>
                       </CrmButton>
                     </td>
                   </tr>
                   {isOpen ? (
-                    <tr>
-                      <td className="border-b border-slate-200 bg-white px-4 py-4" colSpan={7}>
-                        <Detail fields={fields} row={row} />
-                      </td>
-                    </tr>
+                    <TableRowDetail colSpan={7} id={`visit-detail-${row.visitId}`}>
+                      <Detail fields={fields} row={row} />
+                    </TableRowDetail>
                   ) : null}
                 </Fragment>
               );

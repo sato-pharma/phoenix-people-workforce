@@ -2499,7 +2499,14 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
             ) : (
-              <table className="w-full border-collapse text-left text-phx-md">
+              <table className="w-full table-fixed border-collapse text-left text-phx-md">
+                <colgroup>
+                  <col className="w-[34%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[16%]" />
+                </colgroup>
                 <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
                     <th className="border-b border-r border-slate-100 px-3 py-2">
@@ -2522,7 +2529,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {productLineMetrics.map((product) => (
                     <tr key={product.key}>
-                      <td className="border-r border-slate-100 px-3 py-2 font-bold text-slate-950">
+                      <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2 font-bold text-slate-950">
                         {product.productName}
                       </td>
                       <td className="border-r border-slate-100 px-3 py-2 text-right font-medium text-slate-600">
@@ -2748,21 +2755,24 @@ function MarketingRequestDraftWorkspaceInner() {
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-phx-sm">
+              <div className="hidden md:block">
+                <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+                  <colgroup>
+                    <col className="w-[18%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[17%]" />
+                  </colgroup>
                   <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <th className="border-b border-r border-slate-100 px-3 py-2">
-                        Transfer Date
+                        Customer &amp; Contact
                       </th>
                       <th className="border-b border-r border-slate-100 px-3 py-2">
-                        Line
-                      </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
-                        Contact
-                      </th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2">
-                        Customer
+                        Transfer Date &amp; Line
                       </th>
                       <th className="border-b border-r border-slate-100 px-3 py-2">
                         Notes
@@ -2784,43 +2794,37 @@ function MarketingRequestDraftWorkspaceInner() {
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {filteredApproved.map((row) => (
                       <tr key={row.id} className="align-top">
-                        <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
+                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2" dir="auto">
+                          <p className="font-bold text-slate-900">{row.customerName}</p>
+                          <p className="mt-0.5 font-medium text-slate-600">{row.contactForMoneyTransfer}</p>
+                        </td>
+                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
                           {transferDateLabel(row.moneyTransferDate)}
+                          <span className="mt-0.5 block">{row.line ?? "—"}</span>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-600">
-                          {row.line ?? "-"}
-                        </td>
-                        <td className="border-r border-slate-100 px-3 py-2">
-                          <p className="font-bold text-slate-900" dir="auto">
-                            {row.contactForMoneyTransfer}
-                          </p>
-                        </td>
-                        <td className="border-r border-slate-100 px-3 py-2 font-bold text-slate-900" dir="auto">
-                          {row.customerName}
-                        </td>
-                        <td className="border-r border-slate-100 px-3 py-2 text-slate-500">
+                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2 text-slate-500">
                           <p className="text-phx-xs font-medium break-words" dir="auto">
-                            {row.notes || "-"}
+                            {row.notes || "—"}
                           </p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2 text-right font-bold text-slate-900">
+                        <td className="border-r border-slate-100 min-w-0 break-words px-3 py-2 text-right font-bold text-slate-900">
                           {egp(row.sumOfAmount)}
                         </td>
                         {/* The invoice this approval obliges, and whether it is late. The status
                             is derived from the deadline at read time, never read raw — see
                             src/lib/marketing-requests/invoice-obligation.ts. */}
-                        <td className="border-r border-slate-100 px-3 py-2">
+                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2">
                           {row.invoiceDaysOverdue > 0 ? (
-                            <span className="inline-block whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold text-rose-700">
+                            <span className="inline-block border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold text-rose-700">
                               {row.invoiceDueLabel}
                             </span>
                           ) : (
-                            <span className="whitespace-nowrap font-medium text-slate-600">
+                            <span className="font-medium text-slate-600">
                               {row.invoiceDueLabel}
                             </span>
                           )}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2">
+                        <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2">
                           <EvidenceUpload
                             accept="image/jpeg,image/png,image/webp"
                             fileName={row.financeProofFileName}
@@ -2844,7 +2848,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             row={row}
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="min-w-0 break-words px-3 py-2">
                           <EvidenceUpload
                             accept="image/jpeg,image/png,image/webp,application/pdf"
                             fileName={row.invoiceFileName}
@@ -2868,7 +2872,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       <tr>
                         <td
                           className="px-3 py-6 text-center text-phx-sm font-medium text-slate-400"
-                          colSpan={9}
+                          colSpan={7}
                         >
                           {approvedSearch
                             ? "No matching approved requests."

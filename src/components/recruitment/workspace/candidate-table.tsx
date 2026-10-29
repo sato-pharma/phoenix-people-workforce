@@ -37,6 +37,7 @@ import { ChevronDown } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { adminPanelDepthClassName, adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import { phxCheckInputClassName } from "@/components/ui/form-tokens";
 import { AnswerChip, type AnswerOption } from "@/components/recruitment/workspace/answer-chip";
 import { CandidateRow, RowFlags } from "@/components/recruitment/workspace/candidate-row";
@@ -259,8 +260,7 @@ export function CandidateTable({
                     {!ticks ? <span aria-hidden className={cn("absolute inset-y-0 left-0 w-[3px]", statusEdgeClassName[row.status])} /> : null}
                     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <button
-                        aria-controls="ws-opened-cv"
-                        aria-expanded={opened}
+                        {...rowDetailToggleProps(detail ? `ws-row-detail-${row.id}` : "ws-opened-cv", opened)}
                         className="group inline-flex max-w-full items-center gap-1 text-left text-[15px] font-black leading-5 tracking-tight text-slate-950 transition hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                         onClick={() => onToggle(row.id)}
                         type="button"
@@ -317,12 +317,10 @@ export function CandidateTable({
                   </td>
                 </tr>
                 {detail ? (
-                  <tr className="border-t border-orange-200 bg-orange-50/40">
-                    {/* The colgroup declares the wide count in both layouts, so this spans the row in either. */}
-                    <td className="p-3" colSpan={wideColumns.length}>
-                      {detail}
-                    </td>
-                  </tr>
+                  /* The colgroup declares the wide count in both layouts, so this spans the row in either. */
+                  <TableRowDetail className="p-3" colSpan={wideColumns.length} id={`ws-row-detail-${row.id}`}>
+                    {detail}
+                  </TableRowDetail>
                 ) : null}
               </Fragment>
             );

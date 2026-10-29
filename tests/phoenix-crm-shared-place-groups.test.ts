@@ -447,7 +447,8 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
   assert.match(customersSource, /disabled=\{reason === "" \|\| saving\}/, "and cannot be armed before a reason is chosen");
   assert.doesNotMatch(customersSource, /note\.trim\(\)\.length === 0/, "never gated on the free-text note — it is optional");
   assert.match(customersSource, /mode === "team" \? null : <Decision customer=\{customer\} noTimetable=\{noTimetable\} scope=\{scope\} \/>/, "🔴 a manager's board renders no decision control");
-  assert.ok(customersSource.indexOf("<CrmCardsOnPhone") < customersSource.indexOf("<CrmTable"), "phone cards first, then the table");
+  assert.ok(customersSource.includes("<CrmCardsOnPhone") && !customersSource.includes("<CrmTable") && !/colSpan/.test(customersSource), "phone cards, then plain blocks inside the building's own cell — never a table nested in a table");
+  assert.ok(!/colSpan/.test(list) && (list.match(/<tbody/g) ?? []).length === 1, "🔴 one row per building: the header and its seated customers sit in the first cell, no second row");
   assert.doesNotMatch(customersSource, /\brounded-(?!none\b)|\boverflow-x-auto\b|\btruncate\b|\bmin-w-\[|line-clamp|text-ellipsis/, "square, no sideways scroll, no ellipsis");
   assert.doesNotMatch(customersSource.toLowerCase(), /\b(doctor|doctors|account|accounts)\b/, "AM and PM customers — never the old words");
   for (const forbidden of ["waiting for approval", "pending approval", "awaiting a decision", "sent to the administrator"]) {

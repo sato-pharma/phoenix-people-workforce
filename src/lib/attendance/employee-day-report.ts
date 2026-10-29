@@ -185,7 +185,8 @@ export type EmployeeDayReportRow = {
   dateIso: string;
   weekday: string;
   outcome: EmployeeDayOutcome;
-  reason: string;
+  /** Null when the reason would only restate the outcome. */
+  reason: string | null;
   firstPunchMinutes: number | null;
   lastPunchMinutes: number | null;
   visiblePunchCount: number;
@@ -355,7 +356,7 @@ export async function getEmployeeDayByDayReport(input: {
     // explaining: a half-day Office plan, or an approved monthly plan the weekly plan overrode.
     const planDay = dayPolicy.policy.judgment_mode === "office_days_only" ? officeDates.get(dateIso) : undefined;
     const planNote = planOfficeDayNote(planDay);
-    const withPlanNote = (reason: string) => (planNote ? `${reason} ${planNote}` : reason);
+    const withPlanNote = (reason: string | null) => (planNote ? [reason, planNote].filter(Boolean).join(" ") : reason);
 
     if (decision.action === "skip") {
       // Same precedence reconcileDay itself uses (see digest-reconcile.ts), re-derived from
@@ -374,7 +375,7 @@ export async function getEmployeeDayByDayReport(input: {
       // just the generic gating text — otherwise "CRM field visit" reads as an opaque boolean and
       // an admin reviewing the day has no way to see the actual meeting/visit that covered it.
       const crmDetail = outcome === "crm_field_visit" || outcome === "crm_leave" ? crmDetailDates.get(dateIso) : null;
-      const reason = crmDetail ? `${decision.reason} — ${crmDetail}` : decision.reason;
+      const reason = crmDetail ? [decision.reason, crmDetail].filter(Boolean).join(" — ") : decision.reason;
       days.push(dayRow(
         dateIso,
         outcome,
@@ -461,7 +462,7 @@ export async function getEmployeeDayByDayReport(input: {
 function dayRow(
   dateIso: string,
   outcome: EmployeeDayOutcome,
-  reason: string,
+  reason: string | null,
   firstPunchMinutes: number | null,
   lastPunchMinutes: number | null,
   visiblePunchCount: number,

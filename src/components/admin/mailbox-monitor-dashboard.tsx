@@ -29,6 +29,7 @@ import type {
   MailboxMonitorStatus,
 } from "@/lib/mailbox-monitor/types";
 import { cn } from "@/lib/utils";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 const STATUS_STYLE: Record<MailboxMonitorStatus, { label: string; className: string }> = {
@@ -564,14 +565,19 @@ export function MailboxMonitorDashboard({
         ) : (
           <>
             {/* Desktop: table */}
-            <div className="hidden overflow-x-auto sm:block">
-              <table className="w-full text-left text-sm">
+            <div className="hidden sm:block">
+              <table className="w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[28%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[21%]" />
+                  <col className="w-[40%]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400">
                     <th className="px-6 py-3 font-semibold">Mailbox</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Last read OK</th>
-                    <th className="px-4 py-3 font-semibold">Last checked</th>
+                    <th className="px-4 py-3 font-semibold">Last read · checked</th>
                     <th className="px-6 py-3 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
@@ -581,20 +587,22 @@ export function MailboxMonitorDashboard({
                       <tr
                         className={cn(
                           "hover:bg-slate-50/70",
-                          // The open panel is part of this row, so the rule between them comes off.
                           replacing?.id === monitor.id ? "" : "border-b border-slate-100 last:border-0",
                         )}
+                        {...rowDetailToggleProps(`replace-password-${monitor.id}`, replacing?.id === monitor.id)}
                       >
                         <td className="px-6 py-3">
-                          <div className="whitespace-nowrap font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
-                          <div className="whitespace-nowrap text-xs text-slate-500">{monitor.emailAddress}</div>
+                          <div className="break-words font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
+                          <div className="break-all text-xs text-slate-500">{monitor.emailAddress}</div>
                           {monitor.status === "failing" || monitor.status === "revoked" ? (
-                            <div className="whitespace-nowrap text-xs text-rose-600">{monitor.lastError || "Last connection failed."}</div>
+                            <div className="break-words text-xs text-rose-600">{monitor.lastError || "Last connection failed."}</div>
                           ) : null}
                         </td>
                         <td className="px-4 py-3"><StatusPill status={monitor.status} /></td>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(monitor.lastOkAt)}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(monitor.lastCheckedAt)}</td>
+                        <td className="break-words px-4 py-3 text-slate-600">
+                          <div>{formatCairo(monitor.lastOkAt)}</div>
+                          <div className="text-xs text-slate-500">{formatCairo(monitor.lastCheckedAt)}</div>
+                        </td>
                         <td className="px-6 py-3">
                           {/* Wraps rather than scrolls: four actions do not fit one line at every
                               width, and a sideways scrollbar is the thing the rule forbids. */}
@@ -616,17 +624,15 @@ export function MailboxMonitorDashboard({
                         </td>
                       </tr>
                       {replacing?.id === monitor.id ? (
-                        <tr className="border-b border-slate-100 last:border-0">
-                          <td className="px-6 pb-4" colSpan={5}>
-                            <ReplacePasswordPanel
-                              busy={busyId === monitor.id}
-                              value={replacing?.password ?? ""}
-                              onCancel={() => toggleReplace(monitor)}
-                              onChange={setReplacementPassword}
-                              onSave={() => handleReplacePassword(monitor)}
-                            />
-                          </td>
-                        </tr>
+                        <TableRowDetail colSpan={4} id={`replace-password-${monitor.id}`}>
+                          <ReplacePasswordPanel
+                            busy={busyId === monitor.id}
+                            value={replacing?.password ?? ""}
+                            onCancel={() => toggleReplace(monitor)}
+                            onChange={setReplacementPassword}
+                            onSave={() => handleReplacePassword(monitor)}
+                          />
+                        </TableRowDetail>
                       ) : null}
                     </Fragment>
                   ))}
@@ -640,12 +646,13 @@ export function MailboxMonitorDashboard({
                 <div key={monitor.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
-                      <div className="truncate text-xs text-slate-500">{monitor.emailAddress}</div>
+                      <div className="break-words font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
+                      <div className="break-all text-xs text-slate-500">{monitor.emailAddress}</div>
                     </div>
                     <StatusPill status={monitor.status} />
                   </div>
                   <div className="mt-2 text-xs text-slate-500">Last read OK: {formatCairo(monitor.lastOkAt)}</div>
+                  <div className="text-xs text-slate-500">Last checked: {formatCairo(monitor.lastCheckedAt)}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" onClick={() => handleOpen(monitor)}>
                       <Eye className="h-3.5 w-3.5" />Open
@@ -709,7 +716,7 @@ export function MailboxMonitorDashboard({
                         onClick={() => loadMessages(reader.monitor, reader.folders, folder.path)}
                       >
                         <Inbox className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate" dir="auto">{folder.name}</span>
+                        <span className="min-w-0 break-words" dir="auto">{folder.name}</span>
                       </button>
                     </li>
                   ))}
@@ -737,14 +744,14 @@ export function MailboxMonitorDashboard({
                         onClick={() => handleOpenMessage(summary)}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className={cn("truncate text-sm", summary.seen ? "text-slate-600" : "font-semibold text-slate-900")} dir="auto">
+                          <span className={cn("min-w-0 break-words text-sm", summary.seen ? "text-slate-600" : "font-semibold text-slate-900")} dir="auto">
                             {summary.fromName || summary.fromAddress || "Unknown sender"}
                           </span>
                           <span className="shrink-0 text-phx-xs text-slate-400">{formatCairo(summary.date)}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           {summary.hasAttachments ? <Paperclip className="h-3 w-3 shrink-0 text-slate-400" /> : null}
-                          <span className="truncate text-sm text-slate-500" dir="auto">{summary.subject || "(no subject)"}</span>
+                          <span className="min-w-0 break-words text-sm text-slate-500" dir="auto">{summary.subject || "(no subject)"}</span>
                         </div>
                       </button>
                     </li>
