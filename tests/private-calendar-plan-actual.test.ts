@@ -256,6 +256,8 @@ export function runPrivateCalendarPlanActualTests(): void {
   assert.match(table, /<table className="w-full table-fixed/, "the table is fixed to its box");
   assert.match(table, /<colgroup>/, "and gives its columns their widths");
   assert.match(table, /@container/, "it switches to cards on its OWN width, so it never scrolls sideways in a narrow panel");
+  assert.match(table, /<PlanActualCards className="md:hidden" rows=\{rows\} \/>\s*<div className="hidden min-w-0 md:block">/, "a phone gets cards, as every portal table: the table is desktop-only");
+  assert.match(table, /<PlanActualCards className="@min-\[560px\]:hidden" rows=\{rows\} \/>/, "and a wide screen with a narrow panel gets the same cards");
   assert.doesNotMatch(table, /overflow-x-auto|min-w-\[/, "never a horizontal scroll");
   assert.doesNotMatch(table, /\brounded/, "square edges");
   assert.doesNotMatch(table, /\bshadow/, "no hand-rolled shadow: a card takes the portal's own depth token, as every card on the page does");

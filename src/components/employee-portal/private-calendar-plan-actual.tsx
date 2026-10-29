@@ -2,8 +2,8 @@
 // with a ✓ or ✗ (owner, 2026-10-29: "put in a table, put each point beside the point"). The rows come from
 // buildDayPlanActual (lib/private-calendar/plan-actual.ts); this file only draws them.
 //
-// A table while its own box is wide enough for three columns, a stack of plain cards below that — never a horizontal
-// scroll. Square edges, plain ink: the ✓ is green text, the ✗ red text, and "Not on the plan" slate, never a fill.
+// Cards on a phone, as every portal table (the md breakpoint); on a wider screen a table while its own box is wide
+// enough for three columns and the same cards below that — never a horizontal scroll. Square edges, plain ink: the ✓ is green text, the ✗ red text, and "Not on the plan" slate, never a fill.
 
 import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { DAY_PLAN_ACTUAL_NOT_ON_PLAN, type DayPlanActualRow } from "@/lib/private-calendar/plan-actual";
@@ -53,52 +53,61 @@ function ActualCell({ row }: { row: DayPlanActualRow }) {
   );
 }
 
+function PlanActualCards({ className, rows }: { className: string; rows: readonly DayPlanActualRow[] }) {
+  return (
+    <div className={`grid min-w-0 gap-2 ${className}`}>
+      {rows.map((row) => (
+        <article className={`grid min-w-0 gap-2 border border-slate-200 bg-white px-3 py-3 ${adminSoftDepthClassName}`} key={row.key}>
+          <HalfText half={row.half} />
+          <div className="grid min-w-0 gap-1">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Plan</p>
+            <PlanCell row={row} />
+          </div>
+          <div className="grid min-w-0 gap-1 border-t border-slate-100 pt-2">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Actual</p>
+            <ActualCell row={row} />
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function DayPlanActualTable({ rows }: { rows: readonly DayPlanActualRow[] }) {
   if (rows.length === 0) return null;
   return (
     <section className="@container grid min-w-0 gap-2" data-testid="private-calendar-plan-actual">
       <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Plan | Actual</p>
 
-      <div className="hidden min-w-0 @min-[560px]:block">
-        <table className="w-full table-fixed border-collapse text-left text-sm">
-          <colgroup>
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "42%" }} />
-            <col style={{ width: "42%" }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th className={TH_CLASS}>Half</th>
-              <th className={TH_CLASS}>Plan</th>
-              <th className={TH_CLASS}>Actual</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr className={cn("align-top", index % 2 === 0 ? "bg-white" : "bg-slate-50/60")} key={row.key}>
-                <td className="border-b border-slate-100 px-3 py-3 align-top"><HalfText half={row.half} /></td>
-                <td className="border-b border-slate-100 px-3 py-3 align-top"><PlanCell row={row} /></td>
-                <td className="border-b border-slate-100 px-3 py-3 align-top"><ActualCell row={row} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PlanActualCards className="md:hidden" rows={rows} />
 
-      <div className="grid min-w-0 gap-2 @min-[560px]:hidden">
-        {rows.map((row) => (
-          <article className={`grid min-w-0 gap-2 border border-slate-200 bg-white px-3 py-3 ${adminSoftDepthClassName}`} key={row.key}>
-            <HalfText half={row.half} />
-            <div className="grid min-w-0 gap-1">
-              <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Plan</p>
-              <PlanCell row={row} />
-            </div>
-            <div className="grid min-w-0 gap-1 border-t border-slate-100 pt-2">
-              <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Actual</p>
-              <ActualCell row={row} />
-            </div>
-          </article>
-        ))}
+      <div className="hidden min-w-0 md:block">
+        <div className="hidden min-w-0 @min-[560px]:block">
+          <table className="w-full table-fixed border-collapse text-left text-sm">
+            <colgroup>
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "42%" }} />
+              <col style={{ width: "42%" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className={TH_CLASS}>Half</th>
+                <th className={TH_CLASS}>Plan</th>
+                <th className={TH_CLASS}>Actual</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr className={cn("align-top", index % 2 === 0 ? "bg-white" : "bg-slate-50/60")} key={row.key}>
+                  <td className="border-b border-slate-100 px-3 py-3 align-top"><HalfText half={row.half} /></td>
+                  <td className="border-b border-slate-100 px-3 py-3 align-top"><PlanCell row={row} /></td>
+                  <td className="border-b border-slate-100 px-3 py-3 align-top"><ActualCell row={row} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <PlanActualCards className="@min-[560px]:hidden" rows={rows} />
       </div>
     </section>
   );
