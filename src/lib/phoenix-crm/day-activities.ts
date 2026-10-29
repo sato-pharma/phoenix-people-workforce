@@ -27,7 +27,8 @@
 /**
  * In the order the rep sees them (owner, 2026-09-29): his four first — "meeting, conference, health
  * day, sales day" — then the three that were already here, which he chose to keep. RTD and Group meeting come last (owner,
- * 2026-10-21), for the weekly plan and the recorded day alike.
+ * 2026-10-21), for the weekly plan and the recorded day alike. Interviews sits right after Admin work (owner,
+ * 2026-10-29) and is a worked day exactly as Admin work is.
  */
 export const PHOENIX_CRM_DAY_ACTIVITIES = [
   { key: "meeting", label: "Meeting" },
@@ -36,6 +37,7 @@ export const PHOENIX_CRM_DAY_ACTIVITIES = [
   { key: "sales_day", label: "Sales day" },
   { key: "training", label: "Training" },
   { key: "admin_work", label: "Admin work" },
+  { key: "interviews", label: "Interviews" },
   { key: "travel", label: "Travelling" },
   { key: "rtd", label: "RTD" },
   { key: "group_meeting", label: "Group meeting" },

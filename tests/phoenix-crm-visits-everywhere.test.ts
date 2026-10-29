@@ -694,7 +694,7 @@ function serve(input: {
 }): Served[] {
   const seats = startedSeats(input.starts, input.seats);
   const onSeat = (seatId: string, day: string) => seats.some((row) => row.seatId === seatId && within(day, row.startsOn, row.stopsOn));
-  const kinds = ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel", "group_meeting", "rtd"];
+  const kinds = ["meeting", "conference", "health_day", "sales_day", "training", "admin_work", "travel", "group_meeting", "rtd", "interviews"];
   const countedVisits = input.phoenix.filter((row) => !row.isTest && onSeat(row.seatId, row.day));
   const countedActivities = input.activities.filter((row) => !row.isTest && kinds.includes(row.type) && onSeat(row.seatId, row.day));
   const entryDays = [
@@ -792,7 +792,7 @@ function runNoDoubleCountTests(code: string): void {
     "select lower(btrim(p.rep_hr_id)) as hr_key, p.visit_date as entry_day from public.phoenix_crm_countable_visits p join public.phoenix_crm_started_team_seats() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on) where not p.is_test and nullif(btrim(p.rep_hr_id), '') is not null",
     "join public.phoenix_crm_started_team_seats() team on team.seat_id = a.seat_id",
     "a.activity_date >= least(team.starts_on, coalesce(run.day_activities_from, team.starts_on))",
-    "and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel', 'group_meeting', 'rtd')",
+    "and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel', 'group_meeting', 'rtd', 'interviews')",
     "where upper(btrim(emp.hr_id)) = upper(e.hr_key)",
   ]) {
     assert.ok(entryDays.includes(clause), `the entry days hold: ${clause}`);
@@ -1098,6 +1098,8 @@ const ACTIVITY_CODES: ReadonlyArray<{ kind: string; code: number; description: s
   { kind: "travel", code: -12, description: "Traveling" },
   { kind: "group_meeting", code: -2, description: "Group Meeting" },
   { kind: "rtd", code: -22, description: "RTD" },
+  // Interviews (owner, 2026-10-29) is served as the kind it sits beside, Admin work, its comment saying which.
+  { kind: "interviews", code: -20, description: "Admin Work" },
 ];
 
 function runRowShapeTests(code: string): void {
@@ -1273,7 +1275,7 @@ function runRowShapeTests(code: string): void {
   // DAY ACTIVITIES — recorded, real, each under the code the readers already treat as a WORKED day.
   const activity = flat(activityBranch);
   assert.ok(activity.includes("from public.phoenix_crm_day_activities a"), "the recorded day activities — never a planned one");
-  assert.ok(activity.endsWith("and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel', 'group_meeting', 'rtd');"), "real only, of a kind the view names");
+  assert.ok(activity.endsWith("and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel', 'group_meeting', 'rtd', 'interviews');"), "real only, of a kind the view names");
   assert.ok(activity.includes("where not a.is_test and a.activity_date >= least("), "real only — never a test account's day");
   assert.ok(
     activity.includes(`case a.activity_type ${ACTIVITY_CODES.map((entry) => `when '${entry.kind}' then ${entry.code}`).join(" ")} end`),
@@ -1283,9 +1285,12 @@ function runRowShapeTests(code: string): void {
     activity.includes(`case a.activity_type ${ACTIVITY_CODES.map((entry) => `when '${entry.kind}' then '${entry.description}'`).join(" ")} end`),
     "and its description",
   );
-  assert.ok(activity.includes("case when a.activity_type = 'sales_day' then btrim('Sales day ' || coalesce(a.note, '')) else a.note end"), "a sales day's comment begins \"Sales day\", as iReports360 carried one");
+  assert.ok(
+    activity.includes("case a.activity_type when 'sales_day' then btrim('Sales day ' || coalesce(a.note, '')) when 'interviews' then btrim('Interviews ' || coalesce(a.note, '')) else a.note end"),
+    "a sales day's comment begins \"Sales day\", as iReports360 carried one, and an Interviews day's begins \"Interviews\"",
+  );
   for (const entry of ACTIVITY_CODES) {
-    const comment = entry.kind === "sales_day" ? "Sales day" : null;
+    const comment = entry.kind === "sales_day" ? "Sales day" : entry.kind === "interviews" ? "Interviews" : null;
     assert.equal(crmVisitTypeMeaningStrict(entry.code), "CP", `${entry.kind} (${entry.code}) is a WORKED day to compliance and the deductions`);
     assert.equal(isFieldWorkVisit(entry.code, comment, entry.description), false, `${entry.kind} is never a call`);
     assert.notEqual(classifyVisit(entry.code, comment, entry.description).bucket, "regular", `${entry.kind} is never a regular visit`);

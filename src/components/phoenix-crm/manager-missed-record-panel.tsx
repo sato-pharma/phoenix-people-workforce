@@ -354,7 +354,7 @@ function ActivityForm({
     <div className="grid min-w-0 gap-4">
       <CrmField label="What the day was">
         <CrmChoice<PhoenixCrmDayActivity>
-          columns={3}
+          columns={2}
           label="What the day was"
           onChange={(next) => setActivity(next)}
           options={PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => ({ label: entry.label, value: entry.key }))}

@@ -1682,15 +1682,12 @@ function AdminPart({
   view: ManagerPlanBoardView;
 }) {
   const options: Array<CrmChoiceOption<string>> = view.activities.map((entry) => ({ value: entry.key, label: entry.label, disabled: !canEdit }));
-  // Office makes eight (everyone but a district manager): two full rows of four, nothing to span.
-  const withOffice = options.length > 7;
   return (
     <div className="grid min-w-0 gap-4">
-      {/* Seven activities: the seven-way grid's two-then-four rows with the last spanning the gap, but never
-          seven across — inside the half-day panel a seven-wide row squeezes "Admin work" to one word a line. */}
+      {/* Ten activities, eleven with Office (everyone but a district manager): rows of four, never wider —
+          inside the half-day panel a wider row squeezes "Admin work" to one word a line. */}
       <CrmChoice
-        className={withOffice ? undefined : "lg:grid-cols-4 lg:[&>*:last-child]:col-span-2"}
-        columns={withOffice ? 4 : 7}
+        columns={4}
         label="Activity"
         onChange={(activityType) => onDraft({ ...draft, activityType })}
         options={options}
