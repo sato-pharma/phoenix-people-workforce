@@ -1813,6 +1813,7 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runVsTargetPageAreaMergePeriodTests } from "./vs-target-page-area-merge-period.test.ts";
+import { runVsTargetPageLoadSpeedTests } from "./vs-target-page-load-speed.test.ts";
 import { runTargetsPageAreaMergePeriodTests } from "./targets-page-area-merge-period.test.ts";
 import { runMakeItHappenTests } from "./make-it-happen.test.ts";
 import { runBrickDrilldownFollowsTheAreaMergeTests } from "./brick-drilldown-follows-the-area-merge.test.ts";
@@ -6416,6 +6417,7 @@ await runTest("outstation manager workload rollup (a DM's ride-alongs are alread
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
 await runTest("Sales vs Target and the portal Targets manager branch name a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez'), and the product roll-up falls back to 'Unnamed product' rather than a raw code", runVsTargetPageAreaMergePeriodTests);
+await runTest("Sales vs Target loads faster without changing a figure: the Direct/Indirect split is cut to the five fields it reads, cached on the achievement token and price tag, and started on the publication keys before the range lands (a wrong landing-month guess reads the right month); the employee-name map is a one-minute single-flight memo with a copy per caller", runVsTargetPageLoadSpeedTests);
 await runTest("the admin sales Targets authoring page names a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez')", runTargetsPageAreaMergePeriodTests);
 await runTest("make it happen (units only, value and % derived; history from July 2026; growth may continue but never above the best month, a plateau stays flat, a decline is never inflated, under three closed months the average caps it; an unreachable target is said honestly; eight roles only, a PM plans their own products)", runMakeItHappenTests);
 await runTest("brick drill-down follows the Fayoum/Beni Suef area merge (per line)", runBrickDrilldownFollowsTheAreaMergeTests);

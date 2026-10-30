@@ -754,14 +754,25 @@ export function pickLandingPeriod(
     if (withSales == null || row.period > withSales) withSales = row.period;
   }
   if (withSales) return withSales;
+  return newestPublishedPeriod(publishedKeys) ?? fallback;
+}
 
-  let newestPublished: string | null = null;
+/**
+ * The newest period any line has published, or null when none has.
+ *
+ * pickLandingPeriod's own fallback — and, because a company or line viewer always has sales in the
+ * newest published month, the month it lands on almost every time. The dashboard reads it before the
+ * range arrives to start the channel split's read early (vs-target-page.ts); when the landing month
+ * turns out different, that read is simply not used.
+ */
+export function newestPublishedPeriod(publishedKeys: ReadonlySet<string>): string | null {
+  let newest: string | null = null;
   for (const key of publishedKeys) {
     const period = key.slice(key.indexOf("|") + 1);
     if (!period) continue;
-    if (newestPublished == null || period > newestPublished) newestPublished = period;
+    if (newest == null || period > newest) newest = period;
   }
-  return newestPublished ?? fallback;
+  return newest;
 }
 
 /**
