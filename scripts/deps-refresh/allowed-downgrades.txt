@@ -10,3 +10,8 @@
 #
 # Blank lines and `#` comments are ignored. An entry only matters in the pull request that makes the rollback;
 # delete it in the next one.
+
+# PR 6690 (2026-10-31): not a rollback. The base held two copies — 3.3.1, pinned by @next/eslint-plugin-next,
+# and 3.3.3, reached only through shadcn and @shadcn/registry. Removing shadcn removed the 3.3.3 copy; the 3.3.1
+# one was already there and nothing that used 3.3.3 is left.
+fast-glob 3.3.3 -> 3.3.1

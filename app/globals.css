@@ -1,7 +1,7 @@
 @import "../src/styles/tokens.css";
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "../src/styles/shadcn-tailwind.css";
 @config "../tailwind.config.ts";
 
 @custom-variant dark (&:where(.dark, .dark *));
