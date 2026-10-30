@@ -11,8 +11,10 @@
 // table under whole-company summary cards.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { unstable_cache } from "next/cache";
 import type { AccessContext } from "@/lib/auth/permissions";
-import { loadMonthlyAttribution } from "@/lib/sales/monthly-attribution";
+import { SALES_ACHIEVEMENT_STAMPED_CACHE_TAG } from "@/lib/dashboard/invalidation";
+import { loadMonthlyAttribution, type MonthlyAttributionRow } from "@/lib/sales/monthly-attribution";
 import {
   SALES_LINES,
   loadAllCanonicalAreaNames,
@@ -31,9 +33,11 @@ import {
   growthOf,
   isRowPublished,
   isValidVsTargetPeriod,
+  loadAchievementCacheStamp,
   loadPublishedPeriodKeys,
   loadTargetBearingPairs,
   loadVsTargetRange,
+  newestPublishedPeriod,
   pickLandingPeriod,
   priorPeriodOf,
   rankByAchievement,
@@ -46,6 +50,7 @@ import {
   rollupByRep,
   rollupByTeam,
   salesVsTargetPeriods,
+  shareTokenKeyedRead,
   shiftPeriod,
   splitPeriodAtPublication,
   totalRows,
@@ -222,12 +227,13 @@ export async function buildVsTargetDashboard(
   // the guards keep that from surfacing as an unhandled rejection. Each is still awaited, and still
   // throws, where it is used.
   const boundLoad = resolveVsTargetBound(ctx);
+  const publishedKeysLoad = loadPublishedPeriodKeys(windowStart, current);
   const windowLoads = Promise.all([
     loadVsTargetRange(windowStart, current),
     loadAllCanonicalAreaNames(),
     loadProductNameMap(),
     loadTargetBearingPairs().catch(() => new Set<string>()),
-    loadPublishedPeriodKeys(windowStart, current),
+    publishedKeysLoad,
   ]);
   windowLoads.catch(() => {});
   // Employee names feed ONLY the rep and district-manager roll-ups, which run only where
@@ -245,12 +251,22 @@ export async function buildVsTargetDashboard(
     resolved.kind === "company" || resolved.kind === "line" ? loadSalesSeatTree() : new Map<string, SalesSeat>(),
   );
   seatTreeLoad.catch(() => {});
-  // The channel split's attribution pass, when the month is already named in the request: it is
-  // the month the dashboard will show, so the pass starts now rather than after the range lands. Its
-  // result is read only if that month turns out to be published, exactly as before.
-  const explicitAttributionLoad = explicitPeriod
-    ? loadMonthlyAttribution(explicitPeriod).catch(() => [])
-    : null;
+  // The channel split's attribution pass, started EARLY for the month the dashboard will most likely
+  // show (2026-10-31, "whole page load"). With no month in the request it used to wait for the range,
+  // because the landing month is picked from what the range holds — so its 0.6–1.2 s ran AFTER every
+  // other read, on every load. Now it starts the moment the publication keys land, for the named
+  // month or else the newest published one, which is where pickLandingPeriod lands a company, line
+  // or Regional Manager viewer. If the landing month turns out different, this result is dropped and
+  // that month is read instead. Its result is read only if the month is published, exactly as before.
+  const earlyChannelSplit = (
+    explicitPeriod
+      ? Promise.resolve(explicitPeriod)
+      : publishedKeysLoad.then((keys) => newestPublishedPeriod(keys) ?? current)
+  ).then(async (guessed) => ({
+    period: guessed,
+    cells: await loadChannelSplitCells(guessed).catch((): ChannelSplitCell[] => []),
+  }));
+  earlyChannelSplit.catch(() => {});
 
   const bound = await boundLoad;
   const levels = visibleLevelsForBound(bound);
@@ -345,12 +361,15 @@ export async function buildVsTargetDashboard(
   const priorTotals = priorRows ? totalRows(priorRows) : null;
 
   // The channel split is not carried by the achievement function (it aggregates the channel
-  // away), so it comes from the attribution engine that function is itself built on. Loaded
-  // after the period is resolved, since the period depends on what the range actually held —
-  // unless the request named the period, in which case the pass started above for that same month.
-  const attribution = salesLoaded
-    ? await (explicitAttributionLoad ?? loadMonthlyAttribution(period).catch(() => []))
-    : [];
+  // away), so it comes from the attribution engine that function is itself built on. The pass
+  // started above for the month this dashboard was expected to land on; a different landing month
+  // reads its own.
+  const early = salesLoaded ? await earlyChannelSplit : null;
+  const channelCells: ChannelSplitCell[] = !early
+    ? []
+    : early.period === period
+      ? early.cells
+      : await loadChannelSplitCells(period).catch((): ChannelSplitCell[] => []);
 
   const trendPeriods = periods.filter((entry) => entry >= windowStart && entry <= period);
   const allUncovered = buildUncovered(rows, names, targetBearing);
@@ -397,7 +416,7 @@ export async function buildVsTargetDashboard(
     leaders,
     trend: buildTrend(scopedAll, trendPeriods),
     trendIsMeaningful: loadedPeriodCount > 1,
-    channels: buildChannelSplit(attribution, bound),
+    channels: buildChannelSplit(channelCells, bound),
     uncovered: allUncovered.filter((entry) => entry.expectsTarget),
     byDesignUntargetedValue: allUncovered
       .filter((entry) => !entry.expectsTarget)
@@ -421,20 +440,93 @@ export async function buildVsTargetDashboard(
  * Returns null when the attribution read failed — the caller then hides the panel
  * instead of drawing a chart that says the company sold nothing through one channel.
  */
-function buildChannelSplit(
-  attribution: Awaited<ReturnType<typeof loadMonthlyAttribution>>,
+export function buildChannelSplit(
+  cells: readonly ChannelSplitCell[],
   bound: VsTargetBound,
 ): { direct: number; indirect: number } | null {
-  if (attribution.length === 0) return null;
+  if (cells.length === 0) return null;
   let direct = 0;
   let indirect = 0;
-  for (const row of attribution) {
-    if (!row.mapped) continue;
-    if (!inBound(row, bound)) continue;
-    if (row.channel === "direct") direct += row.salesValue;
-    else if (row.channel === "indirect") indirect += row.salesValue;
+  for (const cell of cells) {
+    if (!inBound(cell, bound)) continue;
+    if (cell.channel === "direct") direct += cell.salesValue;
+    else indirect += cell.salesValue;
   }
   return direct === 0 && indirect === 0 ? null : { direct, indirect };
+}
+
+/**
+ * One attribution row, cut down to the five fields buildChannelSplit reads.
+ *
+ * Only MAPPED direct and indirect rows are kept — the only rows buildChannelSplit ever added — so a
+ * month's split totals exactly what it totalled from the full rows. Kept row for row (never summed
+ * here), so the additions happen in the same order and the totals match to the last decimal.
+ */
+export type ChannelSplitCell = {
+  lineCode: string | null;
+  areaCode: string | null;
+  repHrId: string | null;
+  channel: "direct" | "indirect";
+  salesValue: number;
+};
+
+/** The full attribution rows -> the cells the channel split reads. Pure. */
+export function channelSplitCellsOf(rows: readonly MonthlyAttributionRow[]): ChannelSplitCell[] {
+  const cells: ChannelSplitCell[] = [];
+  for (const row of rows) {
+    if (!row.mapped) continue;
+    if (row.channel !== "direct" && row.channel !== "indirect") continue;
+    cells.push({
+      lineCode: row.lineCode,
+      areaCode: row.areaCode,
+      repHrId: row.repHrId,
+      channel: row.channel,
+      salesValue: row.salesValue,
+    });
+  }
+  return cells;
+}
+
+const CHANNEL_SPLIT_CACHE_PREFIX = "sales-vs-target-channel-split-month";
+const CHANNEL_SPLIT_CACHE_TTL_SECONDS = 3600;
+
+/**
+ * The unstable_cache key for ONE month's channel split, keyed on the SAME freshness token as the
+ * month's achievement rows (loadAchievementCacheStamp). The token is the whole invalidation story:
+ * drop it and the split would outlive a change to the attribution it was read from.
+ *
+ * The array order IS the cache key — do not reorder casually.
+ */
+export function channelSplitCacheKeyParts(period: string, token: string): string[] {
+  return [CHANNEL_SPLIT_CACHE_PREFIX, period, token];
+}
+
+/** In-flight split reads, keyed by the full cache key — see shareTokenKeyedRead. */
+const channelSplitReadsInFlight = new Map<string, Promise<ChannelSplitCell[]>>();
+
+/**
+ * One month's channel split, cached across requests on the achievement freshness token.
+ *
+ * Measured 2026-10-31: the live attribution pass (phx_monthly_attribution) took 0.64–1.2 s on EVERY
+ * Sales vs Target load, for 939 rows the split reads five fields of. Cached, it sits on the same
+ * token and the same price tag as the achievement months beside it, so the Direct/Indirect panel
+ * moves when the totals beside it move — never before, never after. A null token (the stamp read
+ * failed) reads live, as the achievement range does. A failed read is never cached: unstable_cache
+ * does not store a rejection.
+ */
+export async function loadChannelSplitCells(period: string): Promise<ChannelSplitCell[]> {
+  const token = await loadAchievementCacheStamp();
+  if (!token) return channelSplitCellsOf(await loadMonthlyAttribution(period));
+  const keyParts = channelSplitCacheKeyParts(period, token);
+  const cells = await shareTokenKeyedRead(channelSplitReadsInFlight, keyParts, () =>
+    unstable_cache(async () => channelSplitCellsOf(await loadMonthlyAttribution(period)), keyParts, {
+      revalidate: CHANNEL_SPLIT_CACHE_TTL_SECONDS,
+      // Tagged so a Product Master price edit expires it at once: the token does not see a price.
+      tags: [SALES_ACHIEVEMENT_STAMPED_CACHE_TAG],
+    })(),
+  );
+  // Each caller its own copy: callers sharing one in-flight read never share the cells.
+  return cells.map((cell) => ({ ...cell }));
 }
 
 /** The bound applied to attribution rows, which carry the same keys as achievement rows. */

@@ -8,6 +8,7 @@ import {
   loadProductPriceMapForPeriod,
 } from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { memoInFlight, type SingleFlightEntry } from "@/lib/crm/ttl-single-flight";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SOURCE OF TRUTH — sales targets live in `au.monthly_targets`, and nowhere else.
@@ -752,8 +753,32 @@ export async function loadAreaNameMap(): Promise<Map<string, string>> {
   return map;
 }
 
-/** hr_id -> employee display name (full name, else nickname), for rep/DM display. */
+/**
+ * How long one read of the employee names serves every caller in this process.
+ *
+ * Names only — display text for rep and manager rows, never an access, pay or scope decision — so a
+ * rename showing up to a minute late is harmless. Measured 2026-10-31 on Sales vs Target: the full
+ * `employees` read is usually 0.2–0.9 s but spiked to 4.5 s and 7.0 s, and those two spikes were the
+ * two slowest page loads of the whole run. Every Sales vs Target render, the team-performance portal
+ * and the dashboards each paid it again.
+ */
+export const EMPLOYEE_NAME_MAP_TTL_MS = 60_000;
+
+const employeeNameMapMemo = new Map<string, SingleFlightEntry<Map<string, string>>>();
+
+/**
+ * hr_id -> employee display name (full name, else nickname), for rep/DM display.
+ *
+ * Served from a one-minute in-process memo through memoInFlight (crm/ttl-single-flight.ts): callers
+ * arriving while a read runs share it, and a failed read is never remembered. Each caller gets its
+ * own copy, so no caller can edit what the next one reads.
+ */
 export async function loadEmployeeNameMap(): Promise<Map<string, string>> {
+  const shared = await memoInFlight(employeeNameMapMemo, "all", EMPLOYEE_NAME_MAP_TTL_MS, 1, loadEmployeeNameMapLive);
+  return new Map(shared);
+}
+
+async function loadEmployeeNameMapLive(): Promise<Map<string, string>> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.from("employees").select("hr_id,full_name,nickname");
   if (error) throw error;
