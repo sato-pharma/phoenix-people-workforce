@@ -80,6 +80,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { gitLayout } from '../../scripts/lib/git-layout.mjs';
+import { commitsAhead, pushTargetDir, scanBranchCommits, SECRET_SCAN_TIMEOUT_MS } from './lib/secret-scan.mjs';
 import { REPO as PHOENIX_REPO } from '../../scripts/required-check-names.mjs';
 
 function deny(reason) {
@@ -1692,6 +1693,11 @@ try {
   // every push on a machine missing a tool is a guard that gets switched off within the hour — and
   // the daily scan still covers main. `scoop install gitleaks` is the fix, and the warning says so.
   //
+  // 🔴 IT SCANS THE FOLDER THE PUSH RUNS IN, SKIPS A BRANCH WITH NOTHING NEW, AND GIVES UP AFTER 20s.
+  // On 23 Oct 2026 every push for 1.5 hours spent 30–95s here, three crossed the dispatcher's 90s
+  // budget, and each of those took EVERY guard's answer down with it. The account, and the run that
+  // can never outlast its caller, are in `lib/secret-scan.mjs`. A timed-out scan warns and allows.
+  //
   // `PHX_SECRETS_OK=1 <cmd>` pushes anyway — for a finding you have read and judged to be a fixture
   // or a test vector, which is the only honest reason to override a secret scanner.
   const SECRETS_STAND_DOWN =
@@ -1707,7 +1713,11 @@ try {
     process.env.PHX_SECRETS_OK !== '1'
   ) {
     let scanRoot = '';
-    for (const candidate of [input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
+    const pushMatch = GIT_PUSH.exec(pushText);
+    const cdTarget = pushMatch
+      ? pushTargetDir(pushText.slice(0, pushMatch.index + pushMatch[0].length), String(input?.cwd || process.cwd()))
+      : null;
+    for (const candidate of [cdTarget, input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
       if (!candidate) continue;
       try {
         if (statSync(String(candidate)).isDirectory()) {
@@ -1719,33 +1729,24 @@ try {
       }
     }
 
-    if (scanRoot && existsSync(join(scanRoot, '.gitleaks.toml'))) {
-      // `.gitleaks.toml` at the root is what identifies THIS repo; the hook is global and must
-      // not scan someone else's checkout.
-      let output = '';
-      let found = false;
-      let missing = false;
-      try {
-        execFileSync('gitleaks', ['git', '.', '--log-opts=origin/main..HEAD', '--redact', '--no-banner'], {
-          cwd: scanRoot,
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: 120000,
-          shell: process.platform === 'win32',
-        });
-      } catch (err) {
-        const e = /** @type {{status?: number, code?: string, stderr?: string, stdout?: string}} */ (err);
-        // gitleaks exits 1 when it finds something and 126/127/ENOENT when it is not installed.
-        if (e && (e.code === 'ENOENT' || e.status === 127 || e.status === 126)) {
-          missing = true;
-        } else if (e && e.status === 1) {
-          found = true;
-          output = String(e.stderr || e.stdout || '').trim();
-        }
-        // any other exit (a timeout, a config error) falls through as neither: allow.
-      }
+    // `.gitleaks.toml` at the root is what identifies THIS repo; the hook is global and must not
+    // scan someone else's checkout. A branch with no commits past origin/main has nothing to scan.
+    if (scanRoot && existsSync(join(scanRoot, '.gitleaks.toml')) && commitsAhead(scanRoot) !== 0) {
+      const scan = scanBranchCommits(scanRoot);
+      const output = scan.output;
+      const found = scan.status === 'found';
+      const missing = scan.status === 'missing';
 
-      if (missing) {
+      if (scan.status === 'timed-out') {
+        process.stdout.write(
+          `C12 — the secret scan did not finish within ${SECRET_SCAN_TIMEOUT_MS / 1000}s, so this push ` +
+            'was NOT scanned for secrets and goes ahead unscanned. The daily scheduled scan over main ' +
+            'still runs; to scan this branch by hand: `gitleaks git . --log-opts=origin/main..HEAD ' +
+            '--redact` in ' +
+            scanRoot +
+            '\n',
+        );
+      } else if (missing) {
         process.stdout.write(
           'gitleaks is not installed, so this push was NOT scanned for secrets. The per-PR ' +
             'secret-scan was moved onto this machine on 2026-09-29; install it with ' +
