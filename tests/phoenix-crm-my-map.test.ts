@@ -152,6 +152,19 @@ export function runPhoenixCrmMyMapTests(): void {
   }
   assert.ok(groupPins(scattered, 6).length < scattered.length, "at a country's zoom the pins are grouped");
   assert.equal(groupPins(scattered, MY_MAP_GROUP_BELOW_ZOOM).length, scattered.length, "at street zoom each pin stands alone");
+  // A group wears its pins' own colour, so it never mixes two (owner, 2026-10-31: "validated doctors near each
+  // other are colored the same color as the reps list").
+  const coloured = scattered.map((pin, index) => ({ ...pin, fill: ["#d97706", "#3730a3", "#0f766e"][index % 3] }));
+  for (const zoom of [5, 8, 12]) {
+    const groups = groupPins(coloured, zoom, (pin) => pin.fill);
+    for (const group of groups) {
+      assert.equal(new Set(group.members.map((member) => member.fill)).size, 1, `zoom ${zoom}: a group is one colour, its list's`);
+    }
+    const ids = groups.flatMap((group) => group.members.map((member) => member.id));
+    assert.equal(new Set(ids).size, coloured.length, `zoom ${zoom}: kept apart by colour, every pin is still in exactly one group`);
+    assert.equal(ids.length, coloured.length, `zoom ${zoom}: and none twice`);
+  }
+  assert.ok(groupPins(coloured, 6, (pin) => pin.fill).length < coloured.length, "kept apart by colour, a country's zoom still groups");
   assert.equal(evenSample(scattered, 50).length, 50, "the landing card draws a sample of at most its share");
   const labels = brickLabels(
     [

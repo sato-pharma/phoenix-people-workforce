@@ -12,6 +12,10 @@
  * numbered square per screen cell (`groupPins`, where every pin is in exactly one group). A tap on a group zooms
  * in on it.
  *
+ * 🔴 A GROUP WEARS ITS PINS' OWN COLOUR (owner, 2026-10-31: "validated doctors near each other are colored the
+ * same color as the reps list"). Pins of different colours are never grouped together, so an AM tile is amber, a
+ * PM tile indigo and a pharmacy tile teal — or, coloured by visits, the tier its places share.
+ *
  * 🔴 "WHERE AM I" IS DRAWN, NEVER SENT. The browser's own reading of where the phone is becomes one square on this
  * map and nothing else: it is not posted, not stored, and no distance to any pin is ever worked out from it.
  *
@@ -42,7 +46,6 @@ import { groupPins, insideBounds, type GeoBounds } from "@/lib/phoenix-crm/my-ma
 const SQUARE = "M -9 -9 L 9 -9 L 9 9 L -9 9 z";
 const PICKED_STROKE = "#ea580c";
 const NEW_STROKE = "#0f172a";
-const GROUP_FILL = "#1e293b";
 const ME_FILL = "#2563eb";
 
 /** One pin as the screen wants it drawn. */
@@ -267,7 +270,7 @@ export function MyMapCanvas({
     };
     const area = padded(view.bounds);
     const onScreen = pins.filter((pin) => insideBounds(pin, area));
-    for (const group of groupPins(onScreen, view.zoom)) {
+    for (const group of groupPins(onScreen, view.zoom, (pin) => pin.fill)) {
       if (group.members.length === 1) {
         const pin = group.members[0];
         const picked = pin.id === pickedId;
@@ -286,10 +289,11 @@ export function MyMapCanvas({
         continue;
       }
       const count = group.members.length;
-      const key = claim(["group", group.lat.toFixed(5), group.lon.toFixed(5), count].join("|"));
+      const fill = group.members[0].fill;
+      const key = claim(["group", fill, group.lat.toFixed(5), group.lon.toFixed(5), count].join("|"));
       if (keep(key)) continue;
       const handle = new ctors.Marker({
-        icon: squareIcon({ fill: GROUP_FILL, scale: groupScale(count), stroke: "#ffffff", strokeWeight: 2 }),
+        icon: squareIcon({ fill, scale: groupScale(count), stroke: "#ffffff", strokeWeight: 2 }),
         label: { color: "#ffffff", fontSize: "11px", fontWeight: "900", text: countText(count) },
         map: live.map,
         position: { lat: group.lat, lng: group.lon },

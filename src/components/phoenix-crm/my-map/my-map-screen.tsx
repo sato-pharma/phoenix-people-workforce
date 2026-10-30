@@ -129,7 +129,8 @@ function Legend({ colourBy, planShown }: { colourBy: ColourBy; planShown: boolea
         ];
   items.push({ key: "new", swatch: <Swatch colour="#ffffff" ring="#0f172a" />, text: "Validated this week" });
   if (planShown) items.push({ key: "plan", swatch: <Swatch colour="#64748b" mark="✓" />, text: "In today's plan" });
-  items.push({ key: "group", swatch: <Swatch colour="#1e293b" mark="3" />, text: "Several places together — tap to zoom in" });
+  const groupColour = colourBy === "list" ? MY_MAP_LAYER_COLOUR.PM : MY_MAP_TIER_COLOUR[2];
+  items.push({ key: "group", swatch: <Swatch colour={groupColour} mark="3" />, text: "Several places of one colour together — tap to zoom in" });
   return (
     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-slate-100 pt-3" aria-label="What the colours mean">
       {items.map((item) => (
