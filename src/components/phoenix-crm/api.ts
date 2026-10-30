@@ -81,6 +81,14 @@ export function crmPatch<T>(path: string, payload: unknown, key: string): Promis
   );
 }
 
+/**
+ * A multipart POST — a save that carries a file (an interview's CV on an Interviews day). No
+ * content-type header: the browser writes the multipart boundary itself.
+ */
+export function crmSendForm<T>(path: string, form: FormData, key: string): Promise<T> {
+  return request<T>(path, { body: form, method: "POST" }, key, "Phoenix could not save this. Try again.");
+}
+
 /** A DELETE, answered like a save: the value under `key`, or a refusal with the server's sentence. */
 export function crmDelete<T>(url: string, key: string): Promise<T> {
   return request<T>(url, { method: "DELETE" }, key, "Phoenix could not delete this. Try again.");

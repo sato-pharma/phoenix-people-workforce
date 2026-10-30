@@ -36,6 +36,7 @@ export type { AddedVenueTimetable } from "@/lib/phoenix-crm/server/venue-timetab
 export type { PlaceMoveResult, PlaceMoveTarget, SeatedInVenueResult } from "@/lib/phoenix-crm/server/place-move";
 export type { PlannedActivityDraft, PlannedActivityRow } from "@/lib/phoenix-crm/server/plan-activities";
 export type { DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
+export type { DayInterview } from "@/lib/phoenix-crm/server/interview-cvs";
 export type {
   ForecastAccuracyRow,
   ForecastAccuracyView,

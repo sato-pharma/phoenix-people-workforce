@@ -50,6 +50,7 @@ import {
   setCandidateRating,
   updateCandidateStatus,
 } from "@/lib/recruitment/candidates";
+import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
@@ -59,6 +60,7 @@ import {
   findCandidateIdByContentFingerprint,
   getFileForDownload,
   listCandidateFiles,
+  listCandidateFilesByCandidate,
   uploadCandidateFile,
   type FileDownload,
 } from "@/lib/recruitment/files";
@@ -1410,6 +1412,57 @@ export async function listInterviewsForCalendarFeed(hrId: string, from: Date, to
       startsAt: row.starts_at,
       updatedAt: row.updated_at,
       zoomJoinUrl: row.zoom_join_url ?? session?.zoom_join_url ?? null,
+    };
+  });
+}
+
+/** One interview a person conducts, as Phoenix CRM's Interviews day lists it (owner, 2026-10-29). */
+export type ConductedInterview = {
+  bookingId: string;
+  candidateName: string;
+  /** The instant, as stored. */
+  startsAt: string;
+  durationMinutes: number;
+  /**
+   * The calendar's OWN CV door for this interview, or null when no readable CV is kept: the newest
+   * renderable CV on the candidate's record, or the CV kept on an outside person's booking. Only a link —
+   * the door itself decides who opens it (`assertCandidateOnCalendar` / `mayReadBooking`, the Talent
+   * Acquisition fence), so listing an interview here never widens who reads a CV.
+   */
+  cvUrl: string | null;
+};
+
+/**
+ * The interviews one person CONDUCTS between two instants — the lead or anywhere on the panel; one they
+ * only requested is not their interview. A SYSTEM read keyed on the hr id, like the .ics feed above: the
+ * caller (Phoenix CRM) has already decided whose day it is, and it hands out only CV links that are
+ * guarded again on their own. Earliest first.
+ */
+export async function listInterviewsConductedBy(hrId: string, from: Date, to: Date): Promise<ConductedInterview[]> {
+  const me = canonicalHrIdKey(hrId);
+  if (!me) return [];
+  const rows = (await bookingsBetween(from, to)).filter(
+    (row) => canonicalHrIdKey(row.interviewer_hr_id) === me || isOnPanel(me, row.panelist_hr_ids),
+  );
+  if (rows.length === 0) return [];
+  const candidateIds = rows.flatMap((row) => (row.candidate_id ? [String(row.candidate_id)] : []));
+  const [candidates, files] = await Promise.all([loadCandidates(candidateIds), listCandidateFilesByCandidate(candidateIds)]);
+  return rows.map((row) => {
+    const candidateId = row.candidate_id ? String(row.candidate_id) : null;
+    const cv = candidateId ? primaryCvFile(files.get(candidateId) ?? []) : null;
+    const cvUrl = candidateId
+      ? cv
+        ? `/api/recruitment/interview-calendar/candidates/${encodeURIComponent(candidateId)}/files/${encodeURIComponent(cv.id)}`
+        : null
+      : row.external_cv_file_id
+        ? `/api/recruitment/interview-calendar/bookings/${encodeURIComponent(row.id)}/cv`
+        : null;
+    return {
+      bookingId: row.id,
+      candidateName: ((candidateId ? candidates.get(candidateId)?.full_name : null) || row.external_name || "A candidate").trim(),
+      cvUrl,
+      durationMinutes: Number(row.duration_minutes),
+      startsAt: row.starts_at,
     };
   });
 }

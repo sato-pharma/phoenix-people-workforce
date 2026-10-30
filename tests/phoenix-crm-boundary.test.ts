@@ -361,6 +361,12 @@ const ROUTE_GATES: RouteGate[] = [
   get("today"),
   get("day-activities"),
   post("day-activities", "create"),
+  // The interviews on an Interviews day (owner, 2026-10-29): the read, an add (multipart, with the CV)
+  // and a remove are the day's own; opening an added CV hands back a candidate's file, so it audits.
+  get("day-interviews"),
+  post("day-interviews", "create"),
+  post("day-interviews/remove", "create"),
+  exportGet("day-interviews/cv"),
   // "Show your manager you started working" (owner, 2026-10-03): the read is any reader of the
   // territory — a manager looking at whether his rep started, and on which day — while the press is
   // narrowed in the service to the territory's OWN rep, the same boundary the day activity keeps.
@@ -1021,6 +1027,9 @@ const LATER_MIGRATIONS = [
   // two brand-new helpers, and the newest save_visit, admin edit and admin entry — it is the latest to replace
   // them, so it appends at the end.
   "supabase/migrations/20261027185332_phoenix_crm_visit_any_companions.sql",
+  // The interviews on an Interviews day (owner, 2026-10-29): one new table locked by the same four statements
+  // and a private bucket for the CVs added by hand — no function, it replaces nothing, so it appends at the end.
+  "supabase/migrations/20261029235000_phoenix_crm_day_interviews.sql",
 ];
 
 /**
@@ -1300,13 +1309,17 @@ function runMigrationTests() {
     // Super Admin — so it has a bucket of its own and one file that opens it.
     // The touch trail archive (2026-10-27) holds touches older than 30 days — the Super Admin's alone,
     // like the trail itself — in a bucket of its own, opened by the one job that writes it.
+    // An Interviews day's CVs (2026-10-29) are a candidate's own papers — a fourth kind, a bucket of its
+    // own, and one file that opens it.
     const bucketFor = file.endsWith("/voice-notes.ts")
       ? "PHOENIX_CRM_VOICE_BUCKET"
       : file.endsWith("/visit-recordings.ts")
         ? "PHOENIX_CRM_RECORDING_BUCKET"
         : file.endsWith("/touch-trail-archive.ts")
           ? "TOUCH_TRAIL_ARCHIVE_BUCKET"
-          : "PHOENIX_CRM_PHOTO_BUCKET";
+          : file.endsWith("/interview-cvs.ts")
+            ? "PHOENIX_CRM_INTERVIEW_CV_BUCKET"
+            : "PHOENIX_CRM_PHOTO_BUCKET";
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
       assert.equal(match[1].trim(), bucketFor, `${file} opens a bucket other than the one it owns`);
     }
@@ -1318,6 +1331,10 @@ function runMigrationTests() {
   assert.match(
     readFileSync("src/lib/phoenix-crm/server/visit-recordings.ts", "utf8"),
     /export const PHOENIX_CRM_RECORDING_BUCKET = "phoenix-crm-recordings";/,
+  );
+  assert.match(
+    readFileSync("src/lib/phoenix-crm/server/interview-cvs.ts", "utf8"),
+    /export const PHOENIX_CRM_INTERVIEW_CV_BUCKET = "phoenix-crm-interview-cvs";/,
   );
 
   // The voice note's own rule, and the reason it is asserted rather than written down: a recording

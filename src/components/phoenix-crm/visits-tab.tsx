@@ -26,6 +26,7 @@ import { AddPharmacyScreen } from "@/components/phoenix-crm/add-pharmacy";
 import { crmUrl, type CrmResource, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
 import { CallPrepPanel, callPrepUrl, useCallPrep } from "@/components/phoenix-crm/call-prep-panel";
 import { CommitmentsPanel, commitmentsUrl, useCommitments } from "@/components/phoenix-crm/commitments-panel";
+import { DayInterviewsList } from "@/components/phoenix-crm/day-interviews";
 import { DayStartBlock } from "@/components/phoenix-crm/day-start-button";
 import { canStartDay } from "@/lib/phoenix-crm/day-start-rules";
 import { cairoClock, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
@@ -593,6 +594,12 @@ function DayActivityBlock({ onChanged, view }: { onChanged: () => void; view: Vi
       ) : null}
       {/* A day the rep missed recording, entered for him by the Super Admin (owner, 2026-10-01). */}
       {current.enteredByAdmin ? <p className="mt-1 text-xs font-semibold text-slate-500">{MISSED_RECORD_MARK}</p> : null}
+      {/* An Interviews day carries its interviews, each with its time and CV (owner, 2026-10-29). */}
+      {current.activityType === "interviews" ? (
+        <div className="mt-3">
+          <DayInterviewsList date={view.date} seatId={view.territory.seatId} test={view.isTest} />
+        </div>
+      ) : null}
     </>
   ) : null;
 

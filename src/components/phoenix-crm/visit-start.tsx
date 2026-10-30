@@ -19,7 +19,7 @@
  *     day screen's own block uses too — there is no second way to write a day.
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   CalendarCheck,
   Car,
@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 
 import { crmPost, useCrmAction } from "@/components/phoenix-crm/api";
+import { DayInterviewsEntry } from "@/components/phoenix-crm/day-interviews";
 import { countText } from "@/components/phoenix-crm/format";
 import { OffPlanAllowanceCard } from "@/components/phoenix-crm/offplan-allowance";
 import { CrmBackBar, CrmBlock, CrmButton, CrmCheck, CrmField, CrmNote, CrmPanel, CrmSaveError, crmTextareaClassName } from "@/components/phoenix-crm/ui";
@@ -141,6 +142,10 @@ function ActivityEntry({
   const entry = PHOENIX_CRM_DAY_ACTIVITIES.find((option) => option.key === activity);
   const label = entry ? startLabel(entry.key, entry.label) : activity;
   const busy = action.busy !== null;
+  // An Interviews day carries its interviews (owner, 2026-10-29): Save waits for the first one.
+  const [interviewCount, setInterviewCount] = useState<number | null>(null);
+  const onInterviewCount = useCallback((count: number | null) => setInterviewCount(count), []);
+  const waitingForInterviews = activity === "interviews" && (interviewCount === null || interviewCount === 0);
 
   async function save() {
     await action.run(
@@ -156,6 +161,7 @@ function ActivityEntry({
         {current && current.activityType !== activity ? (
           <CrmNote tone="info">Today is recorded as {current.activityLabel}. Saving records it as {label} instead.</CrmNote>
         ) : null}
+        {activity === "interviews" ? <DayInterviewsEntry disabled={busy} onCount={onInterviewCount} seatId={seatId} test={test} /> : null}
         <CrmCheck checked={halfDay} disabled={busy} onChange={setHalfDay}>
           Half day — the other half was field work
         </CrmCheck>
@@ -174,7 +180,7 @@ function ActivityEntry({
         <p className="text-xs font-semibold text-slate-500">Recorded so your manager can see the day. It changes none of your figures.</p>
         {action.error ? <CrmSaveError message={action.error} onRetry={action.retry} /> : null}
         <div className="grid gap-2 sm:flex sm:flex-wrap">
-          <CrmButton busy={busy} onClick={() => void save()} variant="primary">
+          <CrmButton busy={busy} disabled={waitingForInterviews} onClick={() => void save()} variant="primary">
             Save {label}
           </CrmButton>
           <CrmButton disabled={busy} onClick={onCancel}>
