@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+import { installGracefulRestart, shouldInstall } from "./scripts/dev-server-graceful-restart.mjs";
 
 const isProduction = process.env.NODE_ENV === "production";
 const builderPreviewOrigin = "https://builder.io";
@@ -236,6 +237,12 @@ const securityHeaders = [
 // overridden via Next.js config. Client-side upload limits must stay below this.
 // For uploads > 4 MB, use the signed-URL pattern (see src/lib/uploads/ and the
 // sales-imports Supabase bucket).
+// DEV ONLY: the memory restart waits until no request is in flight, instead of Next's own exit that
+// cut every streaming page mid-render (React error 419). Why, and its two limits:
+// scripts/dev-server-graceful-restart.mjs. True only inside the dev server's own process, and only
+// when scripts/dev-server.mjs asked for it; `next build` and `next start` never install it. Kept out of
+// the policy block above, which tests/csp-headers.test.ts lifts and runs without this file's imports.
+const devGracefulRestart = !isProduction && shouldInstall() && installGracefulRestart() !== null;
 const nextConfig: NextConfig = {
   // `next dev` (16+) auto-writes a generic "This is NOT the Next.js you know..." block into
   // AGENTS.md every time it starts (node_modules/next/dist/server/lib/generate-agent-files.js),
@@ -475,6 +482,9 @@ const nextConfig: NextConfig = {
           preloadEntriesOnStart: false,
           webpackMemoryOptimizations: true,
         }),
+    // Next's own memory restart exits mid-request; the graceful one above replaces it in the dev
+    // server's process only. Absent everywhere else, so Next keeps its default (on).
+    ...(devGracefulRestart ? { devMemoryThresholdRestart: false } : {}),
   },
   // DEV-ONLY, OFF UNLESS PHOENIX_DEV_LEAN_SERVER_MAPS=1 (2026-10-29). `next dev` gives every compiler,
   // the server ones included, full `eval-source-map`, and reverts a changed `devtool`, so the only

@@ -289,6 +289,14 @@ const childEnv = { ...lean.env };
 if (heap.nodeOptions) childEnv.NODE_OPTIONS = heap.nodeOptions;
 else delete childEnv.NODE_OPTIONS;
 
+// THE MEMORY RESTART WAITS FOR IN-FLIGHT REQUESTS (2026-10-31). Next's own restart at 80% of the cap
+// exits in the middle of whatever else is streaming, which is React error 419 on the page being
+// read. next.config.ts swaps it for scripts/dev-server-graceful-restart.mjs when this is "1".
+// PHOENIX_DEV_GRACEFUL_RESTART=0 gives Next's own restart back.
+const gracefulRestart = process.env.PHOENIX_DEV_GRACEFUL_RESTART !== "0";
+if (gracefulRestart) childEnv.PHOENIX_DEV_GRACEFUL_RESTART = "1";
+else delete childEnv.PHOENIX_DEV_GRACEFUL_RESTART;
+
 const args = ["dev", `--${bundler}`, ...passthrough.filter((arg) => arg !== bundlerFlag)];
 
 // LOOPBACK ONLY (owner-approved audit fix, 2026-10-26). A bare `next dev` listens on every interface,
@@ -327,6 +335,7 @@ console.log(
   `[dev-server] ${process.platform} -> ${bundler}` +
     (bundlerFlag ? ` (${bundlerFlag} flag)` : override ? " (PHOENIX_DEV_BUNDLER override)" : "") +
     `  | ${heap.note}` +
+    (gracefulRestart ? "  | memory restart waits for in-flight requests" : "  | Next's own memory restart") +
     (lean.note ? `  | ${lean.note}` : "") +
     `  | ${bindNote}` +
     `  | next ${args.join(" ")}` +
