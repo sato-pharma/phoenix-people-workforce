@@ -125,6 +125,8 @@ const EXPORT_LIKE_PATH = /(^|\/|-)(export|download|template)(\/|$)|events-csv$|p
  */
 export const SEAT_VIEW_REFUSED_READS: readonly RegExp[] = [
   /^\/api\/recruitment\/hiring-manager\/candidates\/[^/]+\/files\//,
+  // A candidate's CV opened from a Phoenix CRM Interviews day — it writes an audit row naming who opened it.
+  /^\/api\/phoenix-crm\/day-interviews\/cv(\/|$)/,
   /^\/api\/hiring-pack\/[^/]+\/print(\/|$)/,
   /^\/api\/recruitment\/cv-lookup(\/|$)/,
   /^\/api\/reports\/organogram\/contact-numbers(\/|$)/,

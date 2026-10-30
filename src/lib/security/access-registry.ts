@@ -908,6 +908,14 @@ export const accessRegistry = [
   // it — and the rep's own to write, exactly like his list and his plan.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-activities", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The interviews on an Interviews day (owner, 2026-10-29: "if interviews attach the cvs and scheduled time").
+  // The read is any reader of the territory for a recorded day, and the person recording it for today's
+  // entry; adding and removing one is the day's own writer's (`territoryForDayWrite`, narrowed in the
+  // service). Opening an added CV is audited like an export: a candidate's CV leaves the screen.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/day-interviews", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-interviews", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/day-interviews/remove", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/day-interviews/cv", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // "Show your manager you started working" (owner, 2026-10-03): the rep's own press, before his first
   // AM visit. The service narrows the POST to the territory's own rep (`territoryForRepWrite`), the
   // same boundary the day activity keeps — a manager enters a rep's visit, never his start of day.

@@ -1,5 +1,6 @@
 "use client";
 
+import { DayInterviewsList } from "@/components/phoenix-crm/day-interviews";
 import { cairoClock, dayLabelLong } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
 import { ManagerPlanActual } from "@/components/phoenix-crm/manager-plan-actual-table";
@@ -120,6 +121,11 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                 ) : null}
                 {dayActivity.enteredByAdmin ? ` · ${MISSED_RECORD_MARK}` : ""}
               </p>
+            ) : null}
+            {dayActivity?.activityType === "interviews" ? (
+              <div className="mt-3">
+                <DayInterviewsList date={view.date} seatId={territory.seatId} test={view.isTest} />
+              </div>
             ) : null}
             {dayActivity && view.adminDeletes && dayActivity.id ? (
               <div className="mt-2">

@@ -1979,6 +1979,7 @@ import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDayActivitiesTests } from "./phoenix-crm-day-activities.test.ts";
+import { runPhoenixCrmDayInterviewsTests } from "./phoenix-crm-day-interviews.test.ts";
 import { runPhoenixCrmMissedRecordsTests } from "./phoenix-crm-missed-records.test.ts";
 import { runPhoenixCrmAdminDeleteTests } from "./phoenix-crm-admin-delete.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
@@ -7283,6 +7284,11 @@ await runTest(
 await runTest(
   "Phoenix CRM records a day that was not a call (E1 — owner, 2026-09-26: a meeting, training, a conference, admin work, travelling or a health day, so a rep at a training day stops looking like a rep who did nothing; a RECORD ONLY that no report, no coverage and no call rate reads; LEAVE IS NOT HERE because HR's vacation module is the only leave record; an unknown kind is refused rather than coerced; one row a day, replaced not piled up; and the date is the server's Cairo today, never the body's)",
   runPhoenixCrmDayActivitiesTests,
+);
+
+await runTest(
+  "Phoenix CRM: an Interviews day carries its interviews (owner, 2026-10-29: \"if interviews attach the cvs and scheduled time\", then \"Both\") — the hiring-calendar bookings for that person and day are shown with their CV and time and copied onto the day when it is saved; a missing one is added with the name, the time and the CV, all required; a day with none is refused BEFORE anything is written; recording the day as anything else, or clearing it, drops its interviews and their CV files; a CV opens through a ten-minute link for a reader of the territory, audited like an export",
+  runPhoenixCrmDayInterviewsTests,
 );
 
 await runTest(

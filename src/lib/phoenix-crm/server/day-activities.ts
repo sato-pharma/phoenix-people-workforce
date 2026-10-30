@@ -3,6 +3,7 @@ import { dayActivityLabel, parseDayActivityDraft, type PhoenixCrmDayActivity } f
 import { isActivityEnteredForRep } from "@/lib/phoenix-crm/missed-records";
 import { readTestFlag, territoryForDayWrite, territoryForRead, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { dropDayInterviews, interviewsForDaySave, snapshotBookedInterviews } from "@/lib/phoenix-crm/server/interview-cvs";
 import { validationError } from "@/lib/http/api-errors";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -165,11 +166,16 @@ export async function saveDayActivity(
         seat_id: seat.seatId,
       },
     });
+    await dropDayInterviews(seat.seatId, isTest, viewer.visitDay);
     return { cleared: true, activity: null };
   }
 
   const parsed = parseDayActivityDraft(raw);
   if (!parsed.ok) throw validationError(parsed.error);
+
+  // An Interviews day lists its interviews (owner, 2026-10-29): the ones booked in the hiring calendar
+  // and the ones added by hand. Read BEFORE the save, so a day with none is refused and nothing is written.
+  const booked = parsed.value.activityType === "interviews" ? await interviewsForDaySave(seat, isTest, viewer.visitDay) : null;
 
   const result = (await callPhoenixCrm("phoenix_crm_save_day_activity", {
     p: {
@@ -184,6 +190,9 @@ export async function saveDayActivity(
       seat_id: seat.seatId,
     },
   })) as Row;
+
+  if (booked) await snapshotBookedInterviews(seat, isTest, viewer.visitDay, booked, viewer.hrId);
+  else await dropDayInterviews(seat.seatId, isTest, viewer.visitDay);
 
   return { cleared: false, activity: mapDayActivityRow(result) };
 }

@@ -1949,6 +1949,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // tests/phoenix-crm-imported-history.test.ts.
   "20261029212200_phoenix_crm_imports_ireports360_history.sql",
   "20261029212300_the_contact_refresh_skips_imported_customers.sql",
+  // THE INTERVIEWS ON AN INTERVIEWS DAY, WITH THEIR CVs — applied 29 Oct 2026 on STAGING (about 23:20 Cairo) then
+  // PRODUCTION (about 23:55 Cairo, once PR 6675's validate and checks were green on 916ac891b) through
+  // scripts/apply-sql-file.mjs (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of
+  // AGENTS.md §8: the Supabase MCP's apply_migration answered {"status":"declined"} three times on staging. The
+  // route writes no ledger row on either project, hence this entry.
+  //
+  // Read live on BOTH projects after the apply and identical on each: public.phoenix_crm_day_interviews with
+  // relrowsecurity true, its two service-role policies (the table's and the bucket's) present, anon unable to
+  // select, and the bucket phoenix-crm-interview-cvs private. Production held 0 rows after it. Additive only: a new
+  // table, a new private bucket and two policies; no existing row changed. Pinned by
+  // tests/phoenix-crm-day-interviews.test.ts.
+  "20261029235000_phoenix_crm_day_interviews.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

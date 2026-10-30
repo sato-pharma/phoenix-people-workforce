@@ -358,6 +358,9 @@ export type AuditEntityType =
   // A Visit report saved view saved or deleted (2026-10-16): the owner's own named choice of fields, nothing
   // else. Recorded because the access registry declares the route audited. No migration.
   | "phoenix_crm_visit_report_saved_view"
+  // Who opened the CV of an interview recorded on a Phoenix CRM Interviews day (2026-10-29): a candidate's
+  // CV leaving the building, so the route is declared an export audit in the access registry. No migration.
+  | "phoenix_crm_day_interview_cv"
   // Who downloaded the location-integrity board, and how much of it (2026-10-13). ITS OWN TYPE and
   // not folded into the reports pack above, because what leaves the building here is different in
   // kind: the evidence a named rep's capture was questioned, which Phoenix CRM never shows that rep.

@@ -328,6 +328,7 @@ export function runSeatViewTests(): void {
       "/api/recruitment/interview-calendar/my-calendar-feed",
       "/api/hiring-pack/x/print",
       "/api/recruitment/hiring-manager/candidates/x/files/y",
+      "/api/phoenix-crm/day-interviews/cv",
     ]) {
       assert.equal(seatViewMayRun("GET", path), false, `GET ${path} is refused during a view`);
     }
