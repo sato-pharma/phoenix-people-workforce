@@ -1961,6 +1961,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // table, a new private bucket and two policies; no existing row changed. Pinned by
   // tests/phoenix-crm-day-interviews.test.ts.
   "20261029235000_phoenix_crm_day_interviews.sql",
+  // THE TOUCH TRAIL ARCHIVE BUCKET — applied to PRODUCTION on 27 Oct 2026 (the bucket's created_at reads 18:09:15
+  // UTC, 21:09 Cairo) by a route that wrote no ledger row: production's ledger carries neither the version nor the
+  // name. STAGING's ledger holds it, so this entry masks nothing there. The 30 Oct drift run 41023158255 was the
+  // first to see it past the 48h grace window.
+  //
+  // Read live on production (ozucdzovmcqvepbozvqf) on 30 Oct 2026, every value equal to this file: bucket
+  // phoenix-crm-touch-trail-archive public false, file_size_limit 52428800, allowed_mime_types {application/gzip};
+  // policy phoenix_crm_touch_trail_archive_service_role on storage.objects, cmd ALL, roles {service_role}, using and
+  // with check (bucket_id = 'phoenix-crm-touch-trail-archive'). 0 objects in the bucket at the read. The file
+  // defines no function, so there is no prosrc digest; the readback above is the evidence.
+  "20261027175121_phoenix_crm_touch_trail_archive.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

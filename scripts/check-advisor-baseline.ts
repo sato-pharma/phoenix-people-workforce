@@ -43,8 +43,22 @@ type Baseline = {
 export type AdvisorCount = { category: string; current_count: number };
 export type Finding = { severity: "error" | "warning"; code: string; message: string };
 
-/** Sentinel from the RPC: pg_stat_database.stats_reset is NULL, so the age is unknown. */
+/** Sentinel from the RPC: no reset stamp at all (database nor checkpointer), so the age is unknown. */
 const STATS_AGE_UNKNOWN = -1;
+
+/**
+ * 🔴 How old the index counters must be before an `unused_index` count over its baseline is an
+ * ERROR. Younger than this, it is a WARNING (`advisor_counters_too_young`).
+ *
+ * A Postgres CRASH restart throws every idx_scan back to 0, so the morning after one, every index
+ * that has not been touched since reads as unused. Production crashed on 2026-10-29 at 14:04 Cairo;
+ * the 30 Oct drift run read 815 against the accepted 755 on counters 18 hours old, and failed — and
+ * 801 of the 807 "unused" indexes read that evening were older than 23 Oct, so nothing new had
+ * joined. 96 hours, not 72: a crash on a Thursday afternoon is followed by the Friday-Saturday
+ * weekend, and at 72 hours the counters have seen one working morning. Only `unused_index` is
+ * softened — every other category is a catalog count that a restart does not touch.
+ */
+export const UNUSED_INDEX_MIN_COUNTER_HOURS = 96;
 
 /**
  * Pure comparison, separated from I/O so it can be tested without a database.
@@ -56,6 +70,9 @@ const STATS_AGE_UNKNOWN = -1;
 export function evaluateAdvisorCounts(baseline: Baseline, live: AdvisorCount[]): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
+  const statsAge = live.find((r) => r.category === "stats_age_hours")?.current_count;
+  const countersTooYoung =
+    typeof statsAge === "number" && statsAge >= 0 && statsAge < UNUSED_INDEX_MIN_COUNTER_HOURS;
 
   for (const row of live) {
     if (row.category === "stats_age_hours") continue; // context, not a category — see below
@@ -74,7 +91,18 @@ export function evaluateAdvisorCounts(baseline: Baseline, live: AdvisorCount[]):
       continue;
     }
 
-    if (row.current_count > entry.accepted) {
+    if (row.current_count > entry.accepted && row.category === "unused_index" && countersTooYoung) {
+      findings.push({
+        severity: "warning",
+        code: "advisor_counters_too_young",
+        message:
+          `\`unused_index\` is ${row.current_count}, above its accepted baseline of ${entry.accepted} ` +
+          `(+${row.current_count - entry.accepted}), but the index counters are only ${statsAge}h old ` +
+          `(under ${UNUSED_INDEX_MIN_COUNTER_HOURS}h): a stats reset or a crash restart zeroed them, so ` +
+          "every index not touched since reads as unused. Not judged until the counters are old " +
+          "enough; it becomes an error then if it is still over.",
+      });
+    } else if (row.current_count > entry.accepted) {
       findings.push({
         severity: "error",
         code: "advisor_baseline_exceeded",
@@ -175,12 +203,15 @@ async function main() {
 
   // 🔴 `unused_index` is meaningless without this. A stats reset makes every index look unused,
   // and reading that as a drop list is the trap the baseline document already warns about.
-  // NULL stats_reset (our -1) does NOT mean "just reset": since PG15 the stats file survives a
-  // clean shutdown, so it means no reset has ever been recorded.
+  // The RPC measures the age from the LATER of pg_stat_database.stats_reset and
+  // pg_stat_checkpointer.stats_reset (20261030211500). The second matters: a CRASH restart throws
+  // every counter away WITHOUT stamping pg_stat_database.stats_reset (it stays NULL), but crash
+  // recovery does stamp the checkpointer's. Reading only the first, the 2026-10-29 crash read as
+  // "no reset recorded" and this line told the reader the counters were long-accumulated.
   if (statsAge === STATS_AGE_UNKNOWN) {
     console.log(
-      "[advisor-baseline] index stats: no reset recorded (stats_reset is NULL). Counters have " +
-        "accumulated since the stats file was created — NOT proof of a recent reset.",
+      "[advisor-baseline] index stats: no reset recorded on the database or the checkpointer. " +
+        "Counters have accumulated since the stats file was created.",
     );
   } else if (typeof statsAge === "number") {
     console.log(
