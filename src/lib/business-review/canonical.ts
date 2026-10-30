@@ -1376,6 +1376,21 @@ export function buildCoverage(input: {
   const salesPeriods = [...new Set(rows.map((r) => r.period))].filter((p) => uploaded.has(p)).sort();
   const targetPeriods = [...new Set(rows.filter((r) => r.hasTarget).map((r) => r.period))].sort();
 
+  // Spend and activity stop at the same month as the sales (owner ruling 2026-09-26), so they are
+  // graded over the figure window, never the requested one. Grading them over the requested window
+  // printed "CRM visits is missing for Nov 2026" beside a note saying November was already held out
+  // of every figure — a gap in a month no figure answers. Sales keep the requested window, because
+  // naming the months that have not landed is their note's job; targets keep it too.
+  const activityWindow: ReviewWindow = input.figureWindow
+    ? {
+        ...window,
+        from: input.figureWindow.periods[0] ?? window.from,
+        to: input.figureWindow.periods[input.figureWindow.periods.length - 1] ?? window.to,
+        label: input.figureWindow.label,
+        periods: input.figureWindow.periods,
+      }
+    : window;
+
   const sources: SourceCoverage[] = [
     buildSourceCoverage({
       source: "sales",
@@ -1405,7 +1420,7 @@ export function buildCoverage(input: {
       label: "Marketing requests",
       origin: MARKETING_ORIGIN,
       rule: MARKETING_RULE,
-      window,
+      window: activityWindow,
       periodsWithData: input.marketing.periodsWithData,
       rows: input.marketing.totalRows,
       unattributedRows: input.unplaced.marketingRequests,
@@ -1419,7 +1434,7 @@ export function buildCoverage(input: {
       label: "Outstation expenses",
       origin: OUTSTATION_ORIGIN,
       rule: OUTSTATION_RULE,
-      window,
+      window: activityWindow,
       periodsWithData: input.outstation.periodsWithData,
       rows: input.outstation.totalRows,
       unattributedRows: input.unplaced.outstationRows,
@@ -1433,7 +1448,7 @@ export function buildCoverage(input: {
       label: "CRM visits",
       origin: VISITS_ORIGIN,
       rule: VISITS_RULE,
-      window,
+      window: activityWindow,
       periodsWithData: input.visits.periodsWithData,
       rows: input.visits.totalRows,
       unattributedRows: input.visits.unattributableRows,
@@ -1449,7 +1464,7 @@ export function buildCoverage(input: {
       label: "Customers reached",
       origin: CUSTOMERS_ORIGIN,
       rule: CUSTOMERS_RULE,
-      window,
+      window: activityWindow,
       periodsWithData: input.visits.periodsWithData,
       rows: input.visits.totalRows,
     }),
