@@ -49,7 +49,25 @@ if (argv.length === 0) {
 }
 mkdirSync(opts.out, { recursive: true });
 
-const browser = await chromium.launch({ headless: true });
+// Playwright pins one browser build per version, and the weekly dependency refresh moves the
+// version — 1.64.1 wants chromium_headless_shell-1248 while this laptop held 1243, so every run
+// died "Executable doesn't exist" (2026-10-31). Fall back to the browsers Windows already has
+// (Edge, then Chrome) instead of a ~150 MB download after every bump.
+const launchBrowser = async () => {
+  const tried = [];
+  for (const channel of [undefined, "msedge", "chrome"]) {
+    try {
+      const launched = await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
+      if (channel) console.log(`browser: Playwright's own Chromium is missing, using installed ${channel}`);
+      return launched;
+    } catch (error) {
+      tried.push(`${channel ?? "bundled chromium"}: ${String(error.message).split("\n")[0]}`);
+    }
+  }
+  console.error(`no browser could start:\n  ${tried.join("\n  ")}\nfix: npx playwright install chromium`);
+  process.exit(1);
+};
+const browser = await launchBrowser();
 const context = await browser.newContext({
   viewport: { width: opts.width, height: opts.width < 768 ? 812 : 900 },
   isMobile: opts.width < 768,
