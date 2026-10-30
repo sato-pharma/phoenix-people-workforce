@@ -683,6 +683,68 @@ export async function runBusinessReviewWindowAndCoverageTests() {
     assert.equal(gradedRowsOf(rows, new Set<string>()).length, 0, "and nothing survives an empty ledger");
   }
 
+  // ------- 13. spend and activity are graded over the FIGURE window, not the requested one
+  //
+  // The banner the owner pasted on 2026-10-30, Jul – Nov 2026 with Oct and Nov not landed, said
+  // "CRM visits is missing for Nov 2026" two lines under a note saying November was already held
+  // out of every figure. Spend and activity stop at the same month as the sales (owner ruling
+  // 2026-09-26), so a gap in a held-out month is a gap no figure answers and must not be flagged.
+  {
+    // Built by hand: windowOf clamps to the fixture data, which ends in August.
+    const window: ReviewWindow = {
+      from: "2026-07", to: "2026-11", label: "Jul – Nov 2026",
+      periods: ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11"],
+    };
+    const landed = ["2026-07", "2026-08", "2026-09"];
+    const rows = window.periods.map((period) => salesRow({ period, hasTarget: true, targetValue: 1_000_000 }));
+    const coverage = buildCoverage({
+      window, rows,
+      uploaded: new Set(landed),
+      // Marketing really is missing July — a month the figures DO answer, so it stays flagged.
+      marketing: { facts: [], periodsWithData: ["2026-08", "2026-09", "2026-10"], totalRows: 40 },
+      outstation: { facts: [], periodsWithData: ["2026-07", "2026-08", "2026-09", "2026-10"], totalRows: 90 },
+      visits: { ...NO_VISITS, periodsWithData: ["2026-07", "2026-08", "2026-09", "2026-10"], totalRows: 30_000 },
+      unplaced: NO_UNPLACED, adjustment: null,
+      figureWindow: { label: "Jul – Sep 2026", periods: landed },
+    });
+
+    const of = (id: string) => coverage.sources.find((s) => s.source === id);
+    assert.equal(of("visits")?.status, "complete", "November's missing visits sit in a held-out month");
+    assert.equal(of("visits")?.note, null, "so the banner carries no visits line at all");
+    assert.equal(of("customers")?.status, "complete");
+    assert.equal(of("outstation")?.status, "complete");
+    assert.ok(!coverage.partialSources.includes("visits"));
+    assert.deepEqual(of("visits")?.periodsWithoutData, [], "the Coverage tab names no held-out month either");
+
+    const marketing = of("marketing");
+    assert.equal(marketing?.status, "partial", "a real gap inside the figure window is still named");
+    assert.deepEqual(marketing?.periodsWithoutData, ["2026-07"]);
+    assert.equal(
+      marketing?.note,
+      "Nothing is recorded for Jul 2026. That month adds nothing to the totals below and is not a zero.",
+      "one month reads in the singular, and the banner's own label is not repeated inside the note",
+    );
+
+    // Sales still name the months that have not landed — that is their note's job.
+    assert.deepEqual(of("sales")?.periodsWithoutData, ["2026-10", "2026-11"]);
+    assert.match(of("sales")?.note ?? "", /have not arrived yet/);
+
+    // A source with nothing inside the figure window is empty there, so its tile prints "no data"
+    // rather than a figure built from months the page does not answer.
+    const onlyHeldOut = buildCoverage({
+      window, rows, uploaded: new Set(landed),
+      marketing: { facts: [], periodsWithData: ["2026-10"], totalRows: 4 },
+      outstation: NO_OUTSTATION, visits: NO_VISITS, unplaced: NO_UNPLACED, adjustment: null,
+      figureWindow: { label: "Jul – Sep 2026", periods: landed },
+    });
+    assert.equal(hasFigures(onlyHeldOut, "marketing"), false);
+    assert.equal(
+      onlyHeldOut.sources.find((s) => s.source === "visits")?.note,
+      "Nothing is recorded for Jul 2026, Aug 2026 and Sep 2026. This is not a zero — the source holds no rows at all for this window.",
+      "the empty note names the figure window and never lowercases the label into 'crm visits'",
+    );
+  }
+
   // -------------------------------------------- 6. the review opens on July 2026
   // Owner's decision, 2026-08-23. The review must not open on a month it cannot grade.
   //

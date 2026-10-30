@@ -144,17 +144,21 @@ export function buildSourceCoverage(input: {
   const without = input.window.periods.filter((p) => !input.periodsWithData.includes(p));
   const status: CoverageStatus = withData.length === 0 ? "empty" : without.length === 0 ? "complete" : "partial";
 
+  // The banner prints "{label}: {note}", so the generated sentences never repeat the label. Repeating
+  // it read "CRM visits is missing" and "No crm visits data" — wrong number, wrong case.
   let note: string | null = null;
   if (status === "empty") {
     note =
       input.emptyNote ??
-      `No ${input.label.toLowerCase()} data exists for ${describePeriods(input.window.periods)}. ` +
+      `Nothing is recorded for ${describePeriods(input.window.periods)}. ` +
         `This is not a zero — the source holds no rows at all for this window.`;
   } else if (status === "partial") {
     note =
       input.partialNote ??
-      `${input.label} is missing for ${describePeriods(without)}. ` +
-        `Those months contribute nothing to the totals below and are not zeros.`;
+      `Nothing is recorded for ${describePeriods(without)}. ` +
+        (without.length === 1
+          ? `That month adds nothing to the totals below and is not a zero.`
+          : `Those months add nothing to the totals below and are not zeros.`);
   }
 
   return {
