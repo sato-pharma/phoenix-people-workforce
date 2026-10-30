@@ -203,6 +203,8 @@ async function runRosterAndCadence(todayIso: string, result: SilentSweepResult):
         .from("phoenix_crm_visits")
         .select("id, seat_id, rep_hr_id, customer_id, visit_date, captured_at, is_test, manager_hr_id, senior_hr_id, product_manager_hr_id, lat, lon, accuracy_meters")
         .eq("is_test", false)
+        // A visit copied from iReports360 history (20261029212200) is the old system's; nothing here judges it.
+        .is("imported_from_ireports360_at", null)
         .gte("visit_date", fromIso)
         .lte("visit_date", todayIso)
         // A total order, so a page seam can neither drop a visit nor repeat one.

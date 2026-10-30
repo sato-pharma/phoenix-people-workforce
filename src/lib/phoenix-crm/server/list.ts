@@ -866,6 +866,9 @@ export async function loadTerritoryCustomers(
     fetchAllRowsKeyset<Row>(
       () => {
         let query = supabase.from("phoenix_crm_customers").select(CUSTOMER_COLUMNS).eq("seat_id", seatId).eq("is_test", isTest);
+        // A "Campaign visit N" holder only files the old system's campaign visits (20261029212200): it is no
+        // customer, so it is on neither the list nor the Archive.
+        query = query.eq("campaign_visit_holder", false);
         // On the list: validated, or carried over and waiting to be. A dropped customer is left out, and
         // one waiting outside the list only when the caller asks for him.
         if (options.onListOnly) query = query.in("status", options.includeOutside ? ["active", "pending", "outside"] : ["active", "pending"]);

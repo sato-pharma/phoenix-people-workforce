@@ -270,7 +270,9 @@ async function capacityLists(seats: ReadonlyArray<OrgSeat>, includeTest: boolean
             .from("phoenix_crm_customers")
             .select("id, seat_id")
             .in("seat_id", batch)
-            .eq("is_test", includeTest),
+            .eq("is_test", includeTest)
+            // Customers the iReports360 history import made (20261029212200) do not open a territory.
+            .is("imported_from_ireports360_at", null),
         { cursorColumn: "id", cursorOf: (row) => textOrNull(row.id) },
       ),
     );

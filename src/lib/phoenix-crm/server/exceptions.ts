@@ -214,6 +214,8 @@ async function loadVisitTallies(
           .select("id, seat_id, visit_date, list_type")
           .eq("is_test", isTest)
           .eq("customer_validated", true)
+          // A visit copied from iReports360 history (20261029212200) is the old system's; nothing here judges it.
+          .is("imported_from_ireports360_at", null)
           .gte("visit_date", from)
           .lte("visit_date", to)
           .in("seat_id", part),
