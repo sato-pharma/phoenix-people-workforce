@@ -2624,6 +2624,7 @@ import { runCrmVacationBackfillMarkerTests } from "./crm-vacation-backfill-marke
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runDevServerLeanTests } from "./dev-server-lean.test.ts";
+import { runDevServerGracefulRestartTests } from "./dev-server-graceful-restart.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runRailwayIacPreapplyTests } from "./railway-iac-preapply.test.ts";
@@ -10193,6 +10194,11 @@ await runTest(
 await runTest(
   "`dev:lean` runs the dev server the way it was measured to fit on a 16 GB laptop: --lean turns off the server compilers' source maps, keeps webpack's cache in memory only and caps the heap at 2,560 MB, Next never sees the flag, a value the caller set wins, the browser bundle keeps its maps, `next build` is never touched, and the installed Next still names the plugin the switch removes",
   runDevServerLeanTests,
+);
+
+await runTest(
+  "the dev server's memory restart waits until no request is in flight: Next's own exit, which cut every streaming page mid-render (React error 419), is switched off in the dev server's process only, a restart that comes due while a real request streams waits for it, delivers its whole body and then exits with Next's restart code 77, past 92% of the cap or after 90 s it restarts anyway, the launcher turns it on and PHOENIX_DEV_GRACEFUL_RESTART=0 turns it off, and the installed Next still honours the switch and respawns on 77",
+  runDevServerGracefulRestartTests,
 );
 
 await runTest(

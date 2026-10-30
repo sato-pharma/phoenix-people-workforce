@@ -116,10 +116,14 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 - **Git Bash rewrites `/admin` into `C:/Program Files/Git/admin`** before node sees it — the first
   run failed `net::ERR_FILE_NOT_FOUND at c:/Program%20Files/Git/admin`. `export
   MSYS_NO_PATHCONV=1`; the driver also undoes the rewrite on `go`.
-- **Next restarts its own server mid-session**: `⚠ Server is approaching the used memory
-  threshold, restarting...` after three or four page compiles under the 4 GB cap. Requests in
-  flight die `ERR_CONNECTION_RESET`/`REFUSED`; the driver waits for `/api/healthz` and retries
-  (4 attempts). Console errors printed during that window are the restart, not the page.
+- **The dev server restarts itself mid-session, once nothing is in flight**: after three or four
+  page compiles under the 4 GB cap the log says `[dev-server] heap … — restarting once the N
+  request(s) in flight finish`, then `restarting now`. Since 2026-10-31 the restart waits for open
+  requests (`scripts/dev-server-graceful-restart.mjs`), so a streaming page is no longer cut into
+  React error 419. It still restarts at once past 92% of the cap or after 90 s of waiting, and
+  `PHOENIX_DEV_GRACEFUL_RESTART=0` brings back Next's own mid-request exit. The next request can
+  meet `ERR_CONNECTION_REFUSED` while the server respawns; the driver waits for `/api/healthz` and
+  retries (4 attempts). Console errors printed in that window are the restart, not the page.
 - **A lower heap cap makes it worse, not lighter**: `PHOENIX_DEV_HEAP_MB=3072` restarted ten times
   in twenty minutes, served `ChunkLoadError` pages between restarts, then died with exit 134 (V8
   out of memory). Keep the default 4,096 MB; when free RAM is too low for that, prove a single

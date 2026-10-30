@@ -190,11 +190,16 @@ function testTheInstalledNext() {
   assert.ok(utils.getMemoryRestartStats(true, true, at(0.81)), "Next restarts the dev server once 80% of the heap limit is in use");
   assert.equal(utils.getMemoryRestartStats(true, true, at(0.79)), undefined, "…and not before");
 
-  const nextConfig = readFileSync(resolve("next.config.ts"), "utf8");
+  // The one place it may be off is where scripts/dev-server-graceful-restart.mjs has replaced it with
+  // the restart that waits for in-flight requests (tests/dev-server-graceful-restart.test.ts).
+  const nextConfig = readFileSync(resolve("next.config.ts"), "utf8").replace(
+    "...(devGracefulRestart ? { devMemoryThresholdRestart: false } : {})",
+    "",
+  );
   assert.doesNotMatch(
     nextConfig,
     /devMemoryThresholdRestart\s*:\s*false/,
-    "turning off Next's memory restart would make the cap end the server with an out-of-memory crash instead",
+    "turning off Next's memory restart without the graceful one in its place would make the cap end the server with an out-of-memory crash instead",
   );
 }
 
