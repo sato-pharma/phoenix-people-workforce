@@ -29,10 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [optional means still asked, never hidden](optional-means-still-asked-never-hidden.md) - "make it optional" changes the validation and label only; the question stays open on screen
-- [the dev server runs in the phoenix dev lean Codespace](the-dev-server-runs-in-the-phoenix-dev-lean-codespace.md) - 2-core, staging, $0 budget; ssh needs -i ~/.ssh/codespaces.auto
-- [gh pr search by SHA finds PRs built on it](gh-pr-search-by-sha-finds-prs-built-on-it.md) - not the branch's own PR; use is-ancestor, then own PR by name + headRefOid, then byte-compare
-- [an orphaned app worktree has no retire route but git](an-orphaned-app-worktree-has-no-retire-route-but-git.md) - new-session.mjs and the app's discard tool both refuse it; save the patch, unlink node_modules, then git worktree remove --force
 
 
 

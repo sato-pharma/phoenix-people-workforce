@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 582c1791-304f-48de-a31d-b6f360f331b9
-  modified: 2026-10-29T19:06:06.989Z
+  modified: 2026-10-29T21:22:58.077Z
 ---
 
 Since 2026-10-29 (~03:46 Cairo) the owner's GitHub account has ONE Codespace, display name **phoenix dev lean**
@@ -39,6 +39,14 @@ HTTP 200 "Command Center"; server resident 2.7 GB; lowest free 3.9 GB of 7.9; la
   only if `HEAD:pnpm-lock.yaml` changed → start with `--lean`. That is also what the merge would ship. Never push
   `local/*`. Result: /admin full, the branch's own table widths rendered, sidebar navigation, hot reload ~3 s.
 - The `gh` token gained the `codespace` scope the same night (device-code approval by him).
+- **Learned testing PR 6670 (2026-10-29 ~23:20 Cairo):**
+  - When `origin/main` already holds the branch (it merged), check out main directly; there is nothing to merge.
+  - To act as a rep, add `&hrId=B-7` to the dev-auth URL.
+  - There is no Chromium in it, so a PDF export answers 500. That is the Codespace, not the code.
+  - The CRM pages are at `/employee-portals/field-crm/{visits,plan,list}`. A Super Admin is redirected to `/admin/field-crm`.
+  - The port forward can drop (exit 1). Run it again in the background.
+  - In a Supabase SQL read, write the table as `public.<table>`.
+  - A branch with a new migration needs it applied on staging first, or its routes answer a missing-table error.
 
 **Why:** the laptop cannot hold a dev server alongside his sessions; this keeps page checks off his RAM at no cost.
 **How to apply:** a page look or role sweep goes here, never a local dev server, unless free RAM reads at least
