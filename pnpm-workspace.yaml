@@ -58,6 +58,10 @@ overrides:
   # in app/globals.css), so this override is now DEV-ONLY — `pnpm why brace-expansion --prod`
   # returns just the 1.1.18/2.1.4 exceljs paths above, never a 5.x. Kept because the dev
   # toolchain still resolves it and the floor costs nothing.
+  # 2026-10-31: shadcn LEFT the graph entirely. Its stylesheet is now src/styles/shadcn-tailwind.css,
+  # and the package was the website's only route to deepmerge 4.3.1 (GHSA-gcqx-w48m-w2h4, no patched
+  # release). The floors below that name a shadcn path may now match nothing; they are kept, because
+  # an unmatched override costs nothing and would catch the package coming back.
   "brace-expansion@5": ^5.0.12
   # Added 2026-08-17 for GHSA-ggr8-5vv4-36mx (high): stack exhaustion merging recursive object
   # graphs. Advisory covers `<8.0.0`; the graph had resolved 7.1.5. Reached via
