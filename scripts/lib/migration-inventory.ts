@@ -1972,6 +1972,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // with check (bucket_id = 'phoenix-crm-touch-trail-archive'). 0 objects in the bucket at the read. The file
   // defines no function, so there is no prosrc digest; the readback above is the evidence.
   "20261027175121_phoenix_crm_touch_trail_archive.sql",
+  // THE 46 REDUNDANT INDEXES — applied 30 Oct 2026 on STAGING then PRODUCTION (about 23:45 Cairo) through
+  // scripts/apply-sql-file.mjs (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of
+  // AGENTS.md §8: the Supabase MCP's apply_migration answered {"status":"declined"} twice on staging. The route
+  // writes no ledger row on either project, hence this entry.
+  //
+  // Read live after the apply: production's run noticed "dropped: 46, skipped: 0"; 0 of the 46 names remain as an
+  // index on EITHER project; all 46 covering indexes are valid on production, and the four deliberate exclusions
+  // (the two iReports360 agent indexes, the two salary_structure indexes) are still there and valid.
+  // phx_ci_advisor_counts() on production read unused_index 726 (772 before), under the 755 baseline. The file
+  // defines no function, so there is no prosrc digest; the readback above is the evidence.
+  "20261030215000_drop_redundant_unused_indexes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
