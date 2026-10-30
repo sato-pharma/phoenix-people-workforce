@@ -463,6 +463,22 @@ baseline as a WARNING (`advisor_counters_too_young`) while the counters are unde
 an error once they are older. The 22 Oct reading of 876 fits the same pattern: production restarted
 three times that day.
 
+**46 redundant indexes dropped on 2026-10-30 (`20261030215000`) — the 755 stays.** The manual drift
+run on 30 Oct read **772** on counters 34 hours old, a warning that would turn into an error on
+3 Nov. This is still not a drop list of "unused" indexes. Each of the 46 is an exact duplicate,
+or a leading-column prefix, of another index on the same table that stays: same access method,
+operator classes, collations, sort directions and partial predicate, no expression and no INCLUDE
+columns. The index that stays is unique, a primary key, backs a constraint, has been scanned, or is
+strictly wider. So every lookup still has its index; the only change is one less write per insert.
+Each drop runs only if its named cover exists and is valid. Production read **726** right after
+(46 dropped, 0 skipped, counters 35 hours old), applied through `scripts/apply-sql-file.mjs`.
+**Deliberately kept although they match:**
+- `ireports360_visits_agent_crm_id_idx` and `perf_ireports360_visits_agent_hr_id_visit_date_crm`:
+  the owner declined dropping them on 2026-10-28 (`.claude/rules/crm-unified-doors.md`).
+- `idx_salary_structure_effective` and `idx_salary_structure_hr_id`: kept by
+  `tests/phase21-security-hardening.test.ts`.
+- Six whose sort direction differs from their cover.
+
 **Lowered 842 to 755 on 2026-10-28, on the owner's word.** The daily drift check read 876 (22 Oct),
 842, 794 (23 Oct), 755 (24 Oct), 720 (25 Oct), 751 (26 Oct), 713 (27 Oct) and 699 (27 Oct, 21:00
 UTC): the October modules' indexes are being exercised. He was offered 699, today's reading, and
