@@ -150,7 +150,14 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (274 as of 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (275 as of 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 274 to 275 on 2026-10-30 — the iReports360 history source map.** Production read
+**275**. The 1 that joined is, by oid, the newest: `public.phoenix_crm_imported_visit_sources`
+(531421), the map from each imported visit to its iReports360 row, created by the 29 Oct history
+import (`20261029212200`, PR 6676) with row security on, no policy and no browser grant, so only the
+service role reaches it. Re-proved live the same day: **0** of all 275 grant `anon`, `authenticated`
+or `PUBLIC` anything.
 
 **Raised 272 to 274 on 2026-10-27 — the two 26 Oct photo-point pre-images.** Production read
 **274**. The 2 that joined are, by oid, the newest two: `phoenix_crm_photo_point_backup_20261026_places`
@@ -442,6 +449,19 @@ one's grants outside a migration.
   a security gap.
 
 ### DEFERRED - `unused_index` (755 accepted as of 2026-10-28; 842 on 2026-10-23, 722 on 2026-10-09, 615 on 2026-09-29, 326 before that)
+
+**Not raised on 2026-10-30 — a crash restart, not new indexes.** The 30 Oct drift run read **815**
+(807 by 23:08 Cairo) on counters **18 hours old**: production's Postgres crashed and restarted on
+2026-10-29 at 14:04 Cairo (`public.database_restarts`), and crash recovery throws every `idx_scan`
+back to 0. **801 of the 807** "unused" indexes were older than 23 Oct; 1 was new
+(`phoenix_crm_day_interviews`). The 755 stays. Two fixes came with it. `phx_ci_advisor_counts()` now
+measures the counter age from the later of `pg_stat_database.stats_reset` and
+`pg_stat_checkpointer.stats_reset` (`20261030211500`), because a crash leaves the first NULL but
+stamps the second (2026-10-29 11:04:25 UTC); it used to answer -1 and the check printed "NOT proof of
+a recent reset". And `scripts/check-advisor-baseline.ts` reports an `unused_index` count over the
+baseline as a WARNING (`advisor_counters_too_young`) while the counters are under 96 hours old, and
+an error once they are older. The 22 Oct reading of 876 fits the same pattern: production restarted
+three times that day.
 
 **Lowered 842 to 755 on 2026-10-28, on the owner's word.** The daily drift check read 876 (22 Oct),
 842, 794 (23 Oct), 755 (24 Oct), 720 (25 Oct), 751 (26 Oct), 713 (27 Oct) and 699 (27 Oct, 21:00

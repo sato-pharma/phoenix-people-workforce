@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { evaluateAdvisorCounts, type AdvisorCount } from "../scripts/check-advisor-baseline.ts";
+import {
+  evaluateAdvisorCounts,
+  UNUSED_INDEX_MIN_COUNTER_HOURS,
+  type AdvisorCount,
+} from "../scripts/check-advisor-baseline.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The baseline document must not be allowed to rot again.
@@ -89,7 +93,10 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // 274, RAISED from 272 on 2026-10-27 — the two 26 Oct photo-point pre-images (oids 480362,
   // 480377), moved with the brick-move pre-image out of public into dated schemas by
   // 20261027235603; they leave the count when that schema retires. 0 browser grants, read live.
-  { category: "rls_enabled_no_policy", current_count: 274 },
+  // 275, RAISED from 274 on 2026-10-30 — public.phoenix_crm_imported_visit_sources (oid 531421), the
+  // source map of the 29 Oct iReports360 history import, server-only by design. 0 of all 275 grant
+  // anon, authenticated or PUBLIC anything, read live.
+  { category: "rls_enabled_no_policy", current_count: 275 },
   { category: "function_search_path_mutable", current_count: 0 },
   // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
   { category: "extension_in_public", current_count: 0 },
@@ -127,13 +134,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 275 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 276 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /275/);
+  assert.match(exceeded!.message, /276/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
   // 🔴 pg_trgm left `public` on 2026-10-23, so the floor is zero: an extension installed back into
   // `public` is growth, and fails.
@@ -255,6 +262,45 @@ export function runAdvisorBaselineGuardTests() {
     .find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(unpinnedV, "a SINGLE new unpinned function must fail the check");
   assert.match(unpinnedV!.message, /function_search_path_mutable/);
+
+  // ── a crash restart zeroes the index counters ───────────────────────────
+  // 🔴 Production crashed on 2026-10-29 at 14:04 Cairo; the next morning's drift check read
+  // unused_index 815 against 755 on counters 18 hours old and failed, though 801 of 807 were old
+  // indexes. Counters younger than UNUSED_INDEX_MIN_COUNTER_HOURS make it a WARNING, never an error.
+  const afterCrash = (age: number) =>
+    PRODUCTION_TODAY.map((r) =>
+      r.category === "unused_index"
+        ? { ...r, current_count: 815 }
+        : r.category === "stats_age_hours"
+          ? { ...r, current_count: age }
+          : r,
+    );
+  const young = evaluateAdvisorCounts(REAL_BASELINE, afterCrash(18));
+  assert.ok(
+    !young.some((f) => f.severity === "error"),
+    "unused_index over its baseline on 18h-old counters must NOT fail the check — a crash zeroed them",
+  );
+  const tooYoung = young.find((f) => f.code === "advisor_counters_too_young");
+  assert.ok(tooYoung, "the young-counter case must still be REPORTED, as a warning");
+  assert.equal(tooYoung!.severity, "warning");
+  assert.match(tooYoung!.message, /18h/);
+  // Old enough, or no reset stamp at all: the growth is judged, and fails.
+  for (const age of [UNUSED_INDEX_MIN_COUNTER_HOURS, 2948, -1]) {
+    assert.ok(
+      evaluateAdvisorCounts(REAL_BASELINE, afterCrash(age))
+        .some((f) => f.code === "advisor_baseline_exceeded" && f.severity === "error"),
+      `unused_index over its baseline on counters aged ${age} must fail the check`,
+    );
+  }
+  // Young counters soften ONLY unused_index — a catalog count does not reset with the counters.
+  const youngAndGrew = afterCrash(18).map((r) =>
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 276 } : r,
+  );
+  assert.ok(
+    evaluateAdvisorCounts(REAL_BASELINE, youngAndGrew)
+      .some((f) => f.code === "advisor_baseline_exceeded" && /rls_enabled_no_policy/.test(f.message)),
+    "young counters must not soften rls_enabled_no_policy growth",
+  );
 
   // ── negative controls ────────────────────────────────────────────────────
   // Without these, a comparator that had stopped comparing would pass everything above.
