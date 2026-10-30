@@ -79,14 +79,24 @@ export type MapGroup<T> = { lat: number; lon: number; members: T[] };
  * The pins grouped for this zoom. From `MY_MAP_GROUP_BELOW_ZOOM` on, each pin is a group of one. Below it, the
  * pins are bucketed by the screen cell their own projected position falls in, and a group sits at the mean of
  * its members — never at a cell's corner, which would put a tile where no customer is.
+ *
+ * 🔴 A GROUP NEVER MIXES TWO COLOURS (owner, 2026-10-31: "validated doctors near each other are colored the same
+ * color as the reps list"). With `apart`, pins it tells apart — the colour each is drawn in — are bucketed
+ * separately even in one cell, so a tile can wear its members' own colour and the lists stay three counts,
+ * never one sum.
  */
-export function groupPins<T extends GeoPoint>(points: ReadonlyArray<T>, zoom: number, cellPx = MY_MAP_GROUP_CELL_PX): MapGroup<T>[] {
+export function groupPins<T extends GeoPoint>(
+  points: ReadonlyArray<T>,
+  zoom: number,
+  apart?: (point: T) => string,
+  cellPx = MY_MAP_GROUP_CELL_PX,
+): MapGroup<T>[] {
   if (zoom >= MY_MAP_GROUP_BELOW_ZOOM) return points.map((point) => ({ lat: point.lat, lon: point.lon, members: [point] }));
   const whole = Math.max(0, Math.floor(zoom));
   const cells = new Map<string, T[]>();
   for (const point of points) {
     const { x, y } = project(point.lon, point.lat, whole);
-    const key = `${Math.floor(x / cellPx)}:${Math.floor(y / cellPx)}`;
+    const key = `${apart ? `${apart(point)}|` : ""}${Math.floor(x / cellPx)}:${Math.floor(y / cellPx)}`;
     const members = cells.get(key);
     if (members) members.push(point);
     else cells.set(key, [point]);
