@@ -18,7 +18,11 @@ click on save / send / approve / delete does it for real. `go`, `shot`, `text`, 
 ## Prerequisites
 
 Nothing to install: `node_modules` (junctioned into every `_wt-*` worktree) already holds
-`playwright`, and its Chromium is in `%LOCALAPPDATA%\ms-playwright\chromium-1243`.
+`playwright`. Each Playwright version pins its own browser build, and the weekly dependency
+refresh moves the version (1.64.1 wants `chromium_headless_shell-1248`; the laptop held `1243`),
+so when that build is missing the driver starts the installed **Microsoft Edge**, then Chrome,
+and prints `browser: Playwright's own Chromium is missing, using installed msedge`. Nothing to
+download.
 Work in your own worktree — `node scripts/new-session.mjs <task>` — and never run `pnpm` inside
 one (it purges the `node_modules` junction).
 
@@ -141,6 +145,7 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 | Symptom | Fix |
 | --- | --- |
 | `net::ERR_FILE_NOT_FOUND at c:/Program%20Files/Git/…` | `export MSYS_NO_PATHCONV=1` |
+| `no browser could start` (Playwright's build, Edge and Chrome all failed) | `npx playwright install chromium` from the primary, never from a worktree |
 | `ERR_CONNECTION_RESET` / `REFUSED` on every step | the server died or is restarting; `curl` healthz, restart it in the background |
 | screenshot is a grey skeleton | add `waitfor "<text on the loaded page>"` before `shot` |
 | `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `--hrId` |
