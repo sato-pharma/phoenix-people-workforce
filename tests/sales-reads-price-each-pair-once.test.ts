@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THIRTEEN SALES AND CLOSING READS RESOLVE EACH PRODUCT'S PERIOD PRICE ONCE, NOT ONCE PER ROW.
+// FOURTEEN SALES AND CLOSING READS RESOLVE EACH PRODUCT'S PERIOD PRICE ONCE, NOT ONCE PER ROW.
 //
 // `public.phx_factory_price(code, period)` is SECURITY DEFINER and carries `SET search_path`.
 // Postgres inlines a SQL function with NEITHER of those, so every mention of it in a row-level
@@ -46,6 +46,7 @@ const DIRECT_ARMS: Record<string, string> = {
   phx_exec_distributor_product: "when f.is_direct then f.direct_value",
   phx_exec_sos_trend: "when g.is_direct then",
   phx_closing_corrections: "when f.is_direct then",
+  f_sales_brick_detail: "when pr.is_direct then pr.direct_value",
 };
 
 const FUNCTIONS = [
@@ -62,22 +63,33 @@ const FUNCTIONS = [
   "phx_closing_channel_breakdown",
   "phx_sales_channels_by_rep",
   "phx_refresh_sos_channel_rollup",
+  // The brick drill-down behind Sales vs Target (public.phx_sales_brick_detail wraps it). Its period
+  // is fixed for the whole call, so its lookup is keyed on product_code alone. Measured on
+  // production 2026-10-31 for 2026-09: 5,132 ms priced per row, 499 ms hoisted, same 1,068 rows.
+  "au.f_sales_brick_detail",
 ];
+
+/** "au.f_x" -> ["au", "f_x"]; a bare name lives in public. */
+function qualify(qualifiedName: string): [string, string] {
+  const dot = qualifiedName.indexOf(".");
+  return dot < 0 ? ["public", qualifiedName] : [qualifiedName.slice(0, dot), qualifiedName.slice(dot + 1)];
+}
 
 type Definition = { file: string; header: string; body: string; tail: string };
 
-function lastDefinition(functionName: string): Definition {
-  const opener = new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${functionName}\\(`, "i");
+function lastDefinition(qualifiedName: string): Definition {
+  const [schema, functionName] = qualify(qualifiedName);
+  const opener = new RegExp(`create\\s+or\\s+replace\\s+function\\s+${schema}\\.${functionName}\\(`, "i");
   const files = readdirSync(MIGRATIONS)
     .filter((name) => name.endsWith(".sql"))
     .sort()
     .filter((name) => opener.test(readFileSync(join(MIGRATIONS, name), "utf8")));
-  assert.ok(files.length > 0, `no migration defines public.${functionName}`);
+  assert.ok(files.length > 0, `no migration defines ${schema}.${functionName}`);
   const file = files[files.length - 1];
   const sql = readFileSync(join(MIGRATIONS, file), "utf8").replace(/\r\n/g, "\n");
   const start = sql.search(opener);
   const parts = sql.slice(start).split("$function$");
-  assert.ok(parts.length >= 3, `${file}: the body of public.${functionName} must sit between $function$ markers`);
+  assert.ok(parts.length >= 3, `${file}: the body of ${schema}.${functionName} must sit between $function$ markers`);
   return { file, header: parts[0], body: parts[1], tail: parts.slice(2).join("$function$") };
 }
 
@@ -118,11 +130,12 @@ function periodPriceCtes(body: string): string[] {
  * Every assertion, over one body. Exported shape so the break tests at the bottom can run it
  * against a deliberately broken body and watch the right assertion fire BY NAME.
  */
-function assertHoistedShape(name: string, definition: Definition): void {
+function assertHoistedShape(qualifiedName: string, definition: Definition): void {
+  const [schema, name] = qualify(qualifiedName);
   const body = flat(definition.body);
   const header = flat(definition.header);
   const tail = flat(definition.tail);
-  const where = `${definition.file} (public.${name})`;
+  const where = `${definition.file} (${schema}.${name})`;
 
   // ── 1. THE LOOKUP IS A CTE, AND THE RESOLVER IS CALLED ONLY INSIDE IT, ONCE PER CTE.
   const ctes = periodPriceCtes(body);
@@ -211,13 +224,14 @@ function assertHoistedShape(name: string, definition: Definition): void {
 
   // ── 7. SECURITY AND GRANTS SURVIVE THE REWRITE.
   assert.ok(header.includes("security definer"), `RED ${where} must stay SECURITY DEFINER`);
-  assert.ok(header.includes("set search_path to 'public'"), `RED ${where} must keep its pinned search_path`);
+  const searchPath = schema === "public" ? "set search_path to 'public'" : `set search_path to '${schema}', 'public'`;
+  assert.ok(header.includes(searchPath), `RED ${where} must keep its pinned search_path`);
   assert.ok(
-    new RegExp(`revoke execute on function public\\.${name}\\(`).test(tail),
+    new RegExp(`revoke execute on function ${schema}\\.${name}\\(`).test(tail),
     `RED ${where} must revoke execute from public, anon and authenticated`,
   );
   assert.ok(
-    new RegExp(`grant execute on function public\\.${name}\\([^)]*\\) to [a-z_, ]*service_role`).test(tail),
+    new RegExp(`grant execute on function ${schema}\\.${name}\\([^)]*\\) to [a-z_, ]*service_role`).test(tail),
     `RED ${where} must grant execute to service_role`,
   );
 }
@@ -324,5 +338,32 @@ export function runSalesReadsPriceEachPairOnceTests() {
   // (g) the service_role grant lost
   broke((d) => ({ ...d, tail: d.tail.replace(/grant execute on function[^;]*;/g, "") }), /must grant execute to service_role/);
 
-  console.log(`sales reads price each pair once: ${FUNCTIONS.length} functions, 12 break tests passed`);
+  // (h) the brick drill-down — the one au-schema read — priced per row again, exactly as it was
+  //     before 2026-10-31
+  const brick = lastDefinition("au.f_sales_brick_detail");
+  assert.throws(
+    () =>
+      assertHoistedShape("au.f_sales_brick_detail", {
+        ...brick,
+        body: brick.body.replace(
+          "coalesce(pp.period_price, 0) as factory_price",
+          "coalesce(public.phx_factory_price(fa.product_code, p_period), 0) as factory_price",
+        ),
+      }),
+    /OUTSIDE the period_price CTE/,
+    "the au brick drill-down per-row break test did not fire",
+  );
+
+  // (i) its own two-schema search_path lost — the schema-aware check must not fall back to 'public'
+  assert.throws(
+    () =>
+      assertHoistedShape("au.f_sales_brick_detail", {
+        ...brick,
+        header: brick.header.replace("SET search_path TO 'au', 'public'", "SET search_path TO 'public'"),
+      }),
+    /must keep its pinned search_path/,
+    "the au brick drill-down search_path break test did not fire",
+  );
+
+  console.log(`sales reads price each pair once: ${FUNCTIONS.length} functions, 14 break tests passed`);
 }
