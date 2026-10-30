@@ -152,6 +152,14 @@ repo. So they cannot call this repo's dispatcher. Since 2026-10-08 a **byte-iden
   stops enforcing because of this file.
 - **Timeouts:** an in-process hook cannot be stopped mid-way. The dispatcher entry's own timeout
   (90 s) bounds the whole call, and is at least the slowest hook's.
+- 🔴 **A `timeout` in `dispatch.json` is NOT enforced for an in-process hook — only `worker` and
+  `process` runs start a timer.** So an in-process hook that spawns a child synchronously must cap
+  that child itself, well under 90 s, and spawn it with no `shell` (through `cmd.exe` a timeout kills
+  the shell and orphans the child). When the 90 s runs out, Claude Code kills the dispatcher whole and
+  EVERY guard's answer for that call is lost, not just the slow one's. Measured 23 Oct 2026, 08:40–10:13
+  Cairo: bash-guard C12's gitleaks ran 30–95 s on every push under a 120 s cap, and three pushes went
+  through with no guard at all. Fixed in `.claude/hooks/lib/secret-scan.mjs` (20 s cap, no shell, scans
+  the `cd` target, skips a branch with nothing past `origin/main`).
 
 ## What the dispatcher costs — profiled 2026-10-08, and why nothing was changed
 

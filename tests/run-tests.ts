@@ -2630,6 +2630,7 @@ import { runPushTypecheckGuardTests } from "./push-typecheck-guard.test.ts";
 import { runRemoteCheckPollGuardTests } from "./remote-check-poll-guard.test.ts";
 import { runBackgroundCatGuardTests } from "./background-cat-guard.test.ts";
 import { runCloudMirrorPushGuardTests } from "./cloud-mirror-push-guard.test.ts";
+import { runSecretScanPushGuardTests } from "./secret-scan-push-guard.test.ts";
 import { runPythonReplGuardTests } from "./python-repl-guard.test.ts";
 import { runBashGrepGuardTests } from "./bash-grep-guard.test.ts";
 import { runBatchNudgeTests } from "./batch-nudge.test.ts";
@@ -10270,6 +10271,11 @@ await runTest(
 await runTest(
   "bash-guard C20 refuses a push that touches .claude/ while the cloud mirror it would ship has drifted from the laptop's live memory — the mirror IS the Phoenix memory a cloud clone wakes up with, so it is only ever as fresh as its last merged refresh (2026-10-02: it told a cloud session an analytics.sos_fact price gap was OPEN 86 minutes after the fix shipped) — naming the drifted files rather than counting them, carrying `node scripts/sync-cloud-context.mjs` as the fix and PHX_MIRROR_OK=1 as the stand-down; it reads the mirror in HEAD, never origin/main or the SessionStart cache, so a refresh committed on the branch clears the refusal, and a push touching no .claude file, a --dry-run, both stand-down dialects and a machine with no memory directory at all (a cloud runner) every one passes",
   runCloudMirrorPushGuardTests,
+);
+
+await runTest(
+  "bash-guard C12's pre-push secret scan scans the folder the push runs in — a `cd <worktree> && git push` scans that worktree, not the session's cwd (23 Oct 2026: every such push scanned the primary's empty range for 30–95s and checked nothing) — skips a branch with no commits past origin/main, and caps gitleaks at 20s with no shell, so a timeout returns promptly and kills the scanner instead of orphaning it; three such scans crossed the dispatcher's 90s budget and took every guard's answer down with them. Clean, found, timed-out and missing each report as such, PHX_SECRETS_OK=1 still skips it",
+  runSecretScanPushGuardTests,
 );
 
 await runTest(
