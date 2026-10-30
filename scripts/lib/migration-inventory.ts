@@ -1930,6 +1930,25 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 7,757 — the one row more after it is a Sales day recorded at 23:06, outside the hash it was compared on).
   // No row changed. Pinned by tests/phoenix-crm-day-activities.test.ts.
   "20261029195520_phoenix_crm_interviews_day_activity.sql",
+
+  // THE IREPORTS360 HISTORY IMPORT'S SCHEMA, AND THE CONTACT REFRESH THAT SKIPS ITS CUSTOMERS — both applied
+  // 29 Oct 2026 on STAGING, then on PRODUCTION at about 00:00 Cairo on 30 Oct, through scripts/apply-sql-file.mjs
+  // (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of AGENTS.md §8. The route
+  // writes no ledger row on either project, hence these two entries.
+  //
+  // Read live on BOTH projects after the apply and identical on each, each md5-equal to its dollar-quoted body in
+  // these files (LF): md5(pg_proc.prosrc) of phoenix_crm_import_ireports360_history e80f79bd027e8d2e6e51fbf88005e4a9
+  // (prosecdef true; EXECUTE held by service_role only, read with has_function_privilege),
+  // phoenix_crm_seats_with_activity b567ed2210d11cbb58cead5e20f74e5a, phx_crm_contact_visit_history
+  // 9a734e3ef6d43ea7e82cc7ef83adc040, phoenix_crm_customers_clear_import_mark 89ee85e868bc47fba88a3df1c4a2994d,
+  // crm_contact_master_refresh 1df2710a169d6cbea1a19ef2d0f693eb. phoenix_crm_countable_visits carries
+  // imported_from_ireports360_at, phoenix_crm_imported_visit_sources has row level security on, and both
+  // triggers on phoenix_crm_customers are enabled. The file's `revoke all on function` was reworded to
+  // `revoke execute` after the apply, for scripts/check-migrations.mjs — on a function the two are one grant.
+  // No row changed: 0 marked visits and 0 source-map rows on production right after. Pinned by
+  // tests/phoenix-crm-imported-history.test.ts.
+  "20261029212200_phoenix_crm_imports_ireports360_history.sql",
+  "20261029212300_the_contact_refresh_skips_imported_customers.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -292,6 +292,13 @@ const REFUSALS: Record<string, Refusal> = {
     status: 409,
     message: "A district manager logged a single visit on both records on the same day, so the pair is left for a person to decide.",
   },
+  // The iReports360 history import (owner, 2026-10-29). Only its one-off script reaches these — the
+  // function is service-role only — so the reader is whoever runs it.
+  import_needs_a_seat: { status: 400, message: "The history is copied one seat at a time. Name the seat and run it again." },
+  import_unresolved_customer: {
+    status: 409,
+    message: "Some old visits on this seat found no customer, so nothing was written for it. Run the dry run and look at that seat.",
+  },
 };
 
 function messageOf(error: unknown): string {

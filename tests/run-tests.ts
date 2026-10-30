@@ -1964,6 +1964,7 @@ import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharm
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmAddPathNameRowTests } from "./phoenix-crm-add-path-name-row.test.ts";
+import { runPhoenixCrmImportedHistoryTests } from "./phoenix-crm-imported-history.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmAdminDayPageTests } from "./phoenix-crm-admin-day-page.test.ts";
 import { runPhoenixCrmManagerMissedRecordsTests } from "./phoenix-crm-manager-missed-records.test.ts";
@@ -7184,6 +7185,11 @@ await runTest(
 await runTest(
   "the add path writes a Phoenix-born doctor's crm_contacts name row in the same transaction as his customer row (one trigger on phoenix_crm_customers, replaced in place; the refresh pass's own filter in its WHEN clause, so a test row and an `outside` customer still write nothing; the key, the source, first_seen_on and the blank-only conflict arm byte-identical to the refresh's name-row pass, so the next refresh changes nothing about him; a vendor name never renamed; the refresh itself untouched)",
   runPhoenixCrmAddPathNameRowTests,
+);
+
+await runTest(
+  "imported iReports360 history is history: every reader that judges, alarms or pays skips a copied visit by its mark (work evidence, the first-visit gate, the third-visit rule, the roster sweep, ranks, exceptions, the visit-lifecycle detector), a customer the import made opens no territory and is not on the list the rep built, a Campaign visit holder is on neither the List, the Archive nor the identity candidates, the digest, the List line, the countable view, the name-row trigger and the contact refresh each hold the condition in their newest definer, and the history screens keep it",
+  runPhoenixCrmImportedHistoryTests,
 );
 
 await runTest(

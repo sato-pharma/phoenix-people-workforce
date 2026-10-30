@@ -95,6 +95,8 @@ async function phoenixCrmCandidates(): Promise<IdentityCandidate[]> {
       .from("phoenix_crm_customers")
       .select("id, name, speciality, list_type, reference_contact_crm_id")
       .eq("is_test", false)
+      // A "Campaign visit N" holder (20261029212200) files old campaign visits and names no doctor.
+      .eq("campaign_visit_holder", false)
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`customer-identity: reading phoenix_crm_customers failed — ${error.message}`);

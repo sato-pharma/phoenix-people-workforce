@@ -1456,6 +1456,9 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
           .select("id,rep_hr_id,visit_date,created_at")
           .eq("is_test", false)
           .not("rep_hr_id", "is", null)
+          // A visit copied from iReports360 history (20261029212200) is saved TODAY for a day months back:
+          // ~69,000 of them would bury every real touch. The old system's, and nothing here judges it.
+          .is("imported_from_ireports360_at", null)
           .gt("created_at", after)
           .lte("created_at", until)
           .order("created_at", { ascending: true })
@@ -1522,6 +1525,8 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
           .select("id,rep_hr_id,visit_date,created_at")
           .eq("is_test", false)
           .not("rep_hr_id", "is", null)
+          // A copied iReports360 visit (20261029212200) is the old system's; nothing here judges it.
+          .is("imported_from_ireports360_at", null)
           .gte("visit_date", fromDate)
           .lte("visit_date", toDate)
           .order("id", { ascending: true })

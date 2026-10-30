@@ -43,6 +43,10 @@
  *     look at, which is neither a silent charge nor a silent pardon: it downgrades the day to a review
  *     rather than cancelling it. {@link phoenixWorkEvidenceProvesWorkedDay} is the one place that
  *     decision lives.
+ *   - A visit COPIED from iReports360 history (`imported_from_ireports360_at` set) is NOT evidence here.
+ *     Those days are the old system's, and the iReports360 door already answers for them; a copied row
+ *     would credit a partner the door never named. See
+ *     supabase/migrations/20261029212200_phoenix_crm_imports_ireports360_history.sql.
  *
  * ## Keys
  *
@@ -247,6 +251,7 @@ export async function loadPhoenixWorkEvidenceDays(input: {
       .from(PHOENIX_CRM_VISITS_TABLE)
       .select("visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id")
       .eq("is_test", false)
+      .is("imported_from_ireports360_at", null)
       .gte("visit_date", start)
       .lte("visit_date", end),
     supabase

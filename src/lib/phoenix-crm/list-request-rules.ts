@@ -232,5 +232,7 @@ export function listMovesFor(customer: ListCustomerFacts, waiting: ReadonlySet<P
 export function archiveReasonLabel(reason: string | null): string | null {
   if (reason === "not_added") return "Dropped instead of added to your list";
   if (reason === "not_admitted") return "Adding this customer to your list was not approved";
+  // A doctor the rep visited in iReports360 that Phoenix did not have (20261029212200).
+  if (reason === "imported_history") return "Visited in the old system, not on your Phoenix list";
   return null;
 }

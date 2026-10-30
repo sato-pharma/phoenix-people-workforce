@@ -28,7 +28,9 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 //     kept the vendor's speciality on Dr Tharwat Milad after Phoenix had changed it.
 //   · THE WHEN CLAUSE IS THE REFRESH PASS'S OWN FILTER. Not a test row, and `status = 'outside'`
 //     writes no name row here either — a customer met out of list is on nobody's list yet, and the
-//     refresh has always excluded him.
+//     refresh has always excluded him. Since 20261029212200 a "Campaign visit N" holder (the row the
+//     iReports360 history import files campaign visits under, which names no doctor) is excluded too;
+//     the refresh drops it from its snapshot by its import mark, so the two still agree.
 //   · A REFERENCE CUSTOMER IS EXCLUDED. His `crm_contacts` row already exists by construction
 //     (`phoenix_crm_seat_reference` took the id FROM the contact master), and
 //     `phoenix_crm_ensure_reference_customers` runs on every list read — so including him would buy
@@ -38,6 +40,10 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ADD_PATH_MIGRATION = "supabase/migrations/20261015135844_the_add_path_writes_the_doctors_name_row.sql";
+/** Re-creates the trigger with one more WHEN condition: a campaign-visit holder names nobody. */
+const HOLDER_MIGRATION = "supabase/migrations/20261029212200_phoenix_crm_imports_ireports360_history.sql";
+/** Every file that creates the trigger, oldest first. The last is the live one, and the one read below. */
+const TRIGGER_MIGRATIONS = [ADD_PATH_MIGRATION, HOLDER_MIGRATION];
 
 /**
  * The refresh migration to compare against is the NEWEST migration that re-creates the function, found
@@ -100,14 +106,14 @@ function newestTriggerFunctionMigration(): string {
 
 export function runPhoenixCrmAddPathNameRowTests() {
   const read = (relativePath: string) => readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
-  const trigger = stripSqlComments(read(ADD_PATH_MIGRATION));
+  const trigger = stripSqlComments(read(TRIGGER_MIGRATIONS[TRIGGER_MIGRATIONS.length - 1]!));
   const functionFile = newestTriggerFunctionMigration();
   const addPath = stripSqlComments(read(functionFile));
   const refreshFile = newestRefreshMigration();
   const refresh = stripSqlComments(read(refreshFile));
 
   // ── 1. The trigger exists, and it fires on the add ───────────────────────
-  // The trigger is defined once, in ADD_PATH_MIGRATION; a later file that re-created it would have to be
+  // The trigger is defined in TRIGGER_MIGRATIONS and nowhere else; a later file that re-created it would have to be
   // read here instead, so that is refused rather than silently ignored.
   const triggerDefiners = readdirSync(new URL("../supabase/migrations/", import.meta.url))
     .filter((name) => name.endsWith(".sql"))
@@ -118,7 +124,7 @@ export function runPhoenixCrmAddPathNameRowTests() {
     );
   assert.deepEqual(
     triggerDefiners.map((name) => `supabase/migrations/${name}`),
-    [ADD_PATH_MIGRATION],
+    TRIGGER_MIGRATIONS,
     "the trigger is created in exactly one migration — re-creating it elsewhere needs this test to read that file",
   );
   assert.match(
@@ -156,7 +162,8 @@ export function runPhoenixCrmAddPathNameRowTests() {
   const whenClause = when[1].replace(/\s+/g, " ").trim();
   assert.equal(
     whenClause,
-    "new.reference_contact_crm_id is null and not new.is_test and new.status in ('active', 'pending', 'dropped')",
+    "new.reference_contact_crm_id is null and not new.is_test and new.status in ('active', 'pending', 'dropped') " +
+      "and not new.campaign_visit_holder",
     "the WHEN clause is the refresh name-row pass's own filter (not a test row, status active/pending/dropped) " +
       "plus the reference exclusion. `outside` is absent deliberately: a customer met out of list is on " +
       "nobody's list yet. A reference customer is absent because his name row already exists, and " +

@@ -70,6 +70,9 @@ async function loadSeatLists(seatIds: ReadonlyArray<string>): Promise<Map<string
           .select("id, seat_id, status")
           // 🔴 Real rows only — see the header. All 13 'active' customers on production were test rows.
           .eq("is_test", false)
+          // A customer the iReports360 history import made (an Archive doctor or a campaign holder,
+          // 20261029212200) is not part of the list the rep built; a restored one is (the mark clears).
+          .is("imported_from_ireports360_at", null)
           .in("seat_id", part),
       { cursorColumn: "id", cursorOf: (row) => (typeof row.id === "string" ? row.id : null) },
     );

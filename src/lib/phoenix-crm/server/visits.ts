@@ -1245,6 +1245,8 @@ async function isFirstVisitSubmittedBy(actorHrId: string, visitId: string, isTes
     .eq("entered_by_hr_id", actor)
     .eq("is_test", isTest)
     .neq("id", visitId)
+    // A visit copied from iReports360 history (20261029212200) was never submitted here.
+    .is("imported_from_ireports360_at", null)
     // The pharmacy visit his doctor's visit filed beside it (owner, 2026-10-03) is part of THIS
     // submission, written in the same transaction — counting it would make no visit ever a first.
     .is("linked_from_visit_id", null)
@@ -1457,6 +1459,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
           .eq("customer_id", visit.customerId)
           .eq("is_test", isTest)
           .is("linked_from_visit_id", null)
+          // A visit copied from iReports360 history (20261029212200) is the old system's, never one of
+          // his two here — counting it would refuse a visit he has every right to make.
+          .is("imported_from_ireports360_at", null)
           // The visit being saved never counts against itself, so a retried save is never refused.
           .neq("id", visitId)
       : Promise.resolve(null),
