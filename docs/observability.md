@@ -1290,15 +1290,29 @@ the verifier, which alone sets FIXED — VERIFIED and reopens a fix that recurs.
 
 ## Synthetic journeys
 
-`src/lib/synthetic-journeys/` is a Playwright smoke suite (`pnpm run synthetic:test`) that walks key
-routes and records pass/fail to `synthetic_journey_runs`. It is **not yet scheduled** — to use it as
-active monitoring it needs (a) a scheduled runner (a GitHub Actions cron is now the obvious host,
-since Cloud Scheduler is dead) and (b) safe test credentials. Environment classification treats
-`phoenix-hr.satopharma.com` as production.
+`tests/synthetic/journeys/` is a read-only Playwright smoke suite (`pnpm run synthetic:test`) that
+signs in to production as a Super Admin and walks the key screens. `synthetic-journeys.yml` runs it
+on GitHub's infrastructure, outside Railway, six times a day: cron-job.org's
+`phoenix-run-synthetic-journeys` dispatches it every 3 hours at :17, 05:00-20:00 Cairo (the job
+table above). Every run, pass or fail, is saved to `synthetic_journey_runs` /
+`synthetic_journey_results` and shown on the Super Admin page `/admin/synthetic-journeys`.
+Environment classification treats `phoenix-hr.satopharma.com` as production.
 
-Given that the alert layer is dead, scheduling this suite is the cheapest route back to an
-automated "is production actually working?" signal — it runs on GitHub's infrastructure, outside
-Railway, which satisfies the outside-the-platform requirement.
+**The job stays green on a failed journey, on purpose** — a red suite on `main` HEAD would withhold
+the deploy carrying the fix (`tests/synthetic-journeys-never-withholds.test.ts`). So the failure is
+carried three ways: the dashboard row, an `::error::` annotation, and — since 2026-10-31, on the
+owner's word — **a Telegram message to the owner** (`scripts/synthetic-telegram-alert.mjs`, secrets
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALERT_CHAT_ID`). It fires once per failed run of `main` against
+production — on a failed journey, or on a run that died before checking anything — names each failed
+journey once in Cairo time, and goes out before the dashboard save so it never waits on the
+database. A branch dispatch never pages him. Before it existed, every run failed from 28 Oct 05:18 to
+31 Oct 2026 (23 in a row, two Employee 360 journeys still asking for a heading level the 27 Oct
+personnel-record layout had changed) and nobody knew for three and a half days. Pinned by
+`tests/synthetic-telegram-alert.test.ts`.
+
+The "Outstation Expenses export" journey is **always skipped, deliberately**: the export writes a
+record, so it runs only with `SYNTHETIC_ALLOW_MUTATION=true`, which the workflow never sets. That is
+why a fully passing run reads `warning` (amber) on the dashboard rather than `healthy`.
 
 ## Railway runtime signals
 

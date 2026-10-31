@@ -186,8 +186,9 @@ jobs:
       #
       # 🔴 THE SIGNAL IS NOT LOST, which is the only reason this is safe. Every run — pass or fail —
       # is written to public.synthetic_journey_runs by the `always()` step below and read by the
-      # admin Synthetic Journeys page, and a failure still prints an ::error:: annotation into the
-      # run summary from the step after it. What changes is ONLY the job's conclusion, and the job's
+      # admin Synthetic Journeys page, a failure still prints an ::error:: annotation into the run
+      # summary from the step after it, and on `main` against production it pages the owner's
+      # Telegram from the step after that. What changes is ONLY the job's conclusion, and the job's
       # conclusion is the single thing Railway reads. Do not "tidy" this back into a hard failure.
       - name: Run synthetic journeys
         id: journeys
@@ -211,6 +212,34 @@ jobs:
           echo "::error::PRODUCTION SMOKE TEST FAILED — the synthetic journeys did not pass against ${SYNTHETIC_BASE_URL:-https://phoenix-hr.satopharma.com}. This job is deliberately green so it cannot withhold a production deploy (see the comment above this step); the failure is real. Open the admin Synthetic Journeys page, and the Playwright report attached to this run."
         env:
           SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
+
+      # 🔴 THE OWNER'S TELEGRAM — THE ONLY HALF OF THE ALARM THAT REACHES A PERSON (owner, 2026-10-31:
+      # "alert my Telegram when the production smoke test fails"). The annotation above and the
+      # dashboard row are read only by someone who goes looking: every run failed from 28 Oct 05:18 to
+      # 31 Oct 2026, 23 in a row, and nobody knew for three and a half days.
+      #
+      # Fires on a failed journey AND on a run that died before the journeys (`failure()` — a missing
+      # credential or a failed install leaves production unchecked, which must not be silent either).
+      # main only, so a branch dispatch testing a journey change never pages him; production only, so a
+      # manual run against another environment never reads as production down. At most once per run,
+      # so at most six a day while production stays broken (05:00-20:00 Cairo).
+      #
+      # Placed BEFORE the save so the alert never waits on, or depends on, the production database —
+      # which is down exactly when production is. continue-on-error + its own timeout for the same
+      # reason as every leg here: a Telegram outage must not turn this job red and withhold a deploy.
+      # The script is Node built-ins only, because on a run that died in setup there is no
+      # node_modules and possibly no setup-node. Pinned by tests/synthetic-telegram-alert.test.ts.
+      - name: Tell the owner on Telegram that the production smoke test failed
+        id: telegram
+        if: ${{ always() && github.ref == 'refs/heads/main' && (inputs.base_url || 'https://phoenix-hr.satopharma.com') == 'https://phoenix-hr.satopharma.com' && (steps.journeys.outcome == 'failure' || failure()) }}
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/synthetic-telegram-alert.mjs
 
       # SAVE THE RESULT. Without this step the suite ran, passed, and told nobody: the admin
       # Synthetic Journeys page reads public.synthetic_journey_runs, and between 2026-07-03 and
