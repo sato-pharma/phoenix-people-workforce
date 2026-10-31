@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { FileText, Loader2, Paperclip } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { cairoDateTime12h } from "@/lib/format/cairo-datetime";
 import type { VacationRequestAttachment } from "@/lib/vacation/types";
 
 /*
@@ -24,17 +25,13 @@ const MAX_ATTACHMENT_LABEL = "20MB";
 // A request with a dozen files made one table row thousands of pixels tall, so the list shows this many and expands on demand.
 const COLLAPSED_ATTACHMENT_COUNT = 3;
 
+// Built from digits, never asked of the browser. This list is drawn on the server and again in the
+// reader's browser, so the two texts must be byte-identical: `Intl.DateTimeFormat("en", { hour12:
+// true })` put a plain space before PM on the server and U+202F on every Apple device, and the
+// vacation approval page threw React #418 for a Regional Manager's iPhone and a Super Admin's Mac
+// on sick notes (System Audit, 28 and 31 Oct 2026) — the Vacation Report's bug, a second time.
 function formatUploadedAt(value: string | null | undefined) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("en", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: true,
-    minute: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(new Date(value));
+  return cairoDateTime12h(value);
 }
 
 function fileLabel(attachment: VacationRequestAttachment) {

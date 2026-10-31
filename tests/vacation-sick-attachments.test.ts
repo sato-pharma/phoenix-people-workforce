@@ -22,6 +22,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { cairoDateTime12h } from "../src/lib/format/cairo-datetime.ts";
 import { buildAdditionalVacationEvidenceObjectPath } from "../src/lib/vacation/service.ts";
 
 function src(path: string) {
@@ -186,10 +187,18 @@ export function runVacationSickAttachmentsTests() {
     /formatUploadedAt\(attachment\.uploadedAt\)/,
     "the review list prints each file's OWN upload date; a single date for the request is the defect this feature exists to remove",
   );
+  // Cairo local through the shared digits-only formatter, not a browser Intl call: the Intl call
+  // drew PM with a different space on Apple devices and threw React #418 on the approval page
+  // (31 Oct 2026; tests/react-418-hydration-safe-text.test.ts §4 (d)).
   assert.match(
     history,
-    /timeZone:\s*"Africa\/Cairo"/,
+    /function formatUploadedAt\([^)]*\)\s*\{\s*return cairoDateTime12h\(value\);/,
     "every time on screen is Cairo local (AGENTS.md §4), never raw UTC",
+  );
+  assert.equal(
+    cairoDateTime12h("2026-10-26T14:29:14Z"),
+    "Oct 26, 2026, 05:29 PM",
+    "a sick note uploaded at 14:29 UTC on 26 Oct reads 05:29 PM, Cairo summer time — never the raw UTC hour",
   );
   assert.match(
     history,

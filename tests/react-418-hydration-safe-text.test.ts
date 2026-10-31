@@ -485,4 +485,93 @@ export function runReact418HydrationSafeTextTests() {
   assert.match(vacationReport, /function formatDateTime\([^)]*\)\s*\{\s*return cairoDateTime12h\(value\);/, "the Vacation Report formats its instants through cairoDateTime12h");
   assert.doesNotMatch(vacationReport, /hour12\s*:\s*true/, "the Vacation Report must not ask the browser for a 12-hour time — that is the AM/PM space an iPhone draws differently");
 
+  // (d) The same bug, a second time: the evidence list on a vacation approval (System Audit, 28 and
+  // 31 Oct 2026 — a Super Admin's Mac and a Regional Manager's iPhone, both on sick notes). It is
+  // drawn on the server and again in the browser, and it asked the browser for "Oct 26, 2026, 05:29
+  // PM" with `Intl.DateTimeFormat("en", { hour12: true })`. The sweep in 3f only looks for an en-GB
+  // month, so it never saw this file; (e) below is the sweep that would have.
+  const attachmentHistory = codeOnly(read("src/components/vacation/vacation-attachment-history.tsx"));
+  assert.match(attachmentHistory, /function formatUploadedAt\([^)]*\)\s*\{\s*return cairoDateTime12h\(value\);/, "🔴 the vacation evidence list formats each upload time through cairoDateTime12h");
+  assert.doesNotMatch(attachmentHistory, /Intl\.DateTimeFormat|toLocale(?:Date|Time)?String|hour12/, "🔴 the vacation evidence list must not ask the browser for a time — an Apple device spaces PM differently from the server");
+
+  // (e) No NEW client component may ask the browser for a 12-hour time. `hour12: true`, an h11/h12
+  // hourCycle, or an "en"/"en-US" call with an hour (whose default is 12-hour) all print the AM/PM
+  // space that Safari's engine draws as U+202F and Node's as a plain space. A call that only runs
+  // after the page has loaded (an effect, a handler, a ticking clock) is harmless, and the files
+  // below were frozen on 31 Oct 2026 without that being checked one by one — so the list is a
+  // ratchet: it may only shrink. A new file, or one more call in a listed file, is refused; route it
+  // through cairoDateTime12h or a mount effect. A fixed call means lowering its number here.
+  const KNOWN_CLIENT_12H_CALLS: Record<string, number> = {
+    "src/components/admin/access-control-manager.tsx": 1,
+    "src/components/admin/ceo-hero-clock.tsx": 1,
+    "src/components/admin/email-notification-center.tsx": 1,
+    "src/components/admin/notification-confidence-workspace.tsx": 1,
+    "src/components/admin/workflow-registry-manager.tsx": 1,
+    "src/components/coaching/employee-coaching-review-impl.tsx": 1,
+    "src/components/employee-portal/employee-excuses-workspace.tsx": 1,
+    "src/components/employee-portal/employee-portal-layout.tsx": 1,
+    "src/components/employee-portal/marketing-control-workspace.tsx": 1,
+    "src/components/employee-portal/my-visits-workspace.tsx": 2,
+    "src/components/employee-portal/private-calendar.tsx": 1,
+    "src/components/field-workforce-compliance/field-workforce-compliance-workspace.tsx": 1,
+    "src/components/field-workforce-compliance/field-workforce-route-map.tsx": 1,
+    "src/components/layout/in-app-notifications-bell.tsx": 1,
+    "src/components/layout/internal-messages-menu.tsx": 1,
+    "src/components/phoenix-signature-card/PhoenixIdentityNotices.tsx": 1,
+    "src/components/sales/portal/portal-sos-dashboard-impl.tsx": 1,
+  };
+  const twelveHourCalls = new Map<string, number>();
+  const callArguments = (source: string, from: number): string | null => {
+    const open = source.indexOf("(", from);
+    if (open === -1 || open - from > 2) return null;
+    let depth = 0;
+    for (let i = open; i < source.length; i += 1) {
+      if (source[i] === "(") depth += 1;
+      else if (source[i] === ")") {
+        depth -= 1;
+        if (depth === 0) return source.slice(open, i + 1);
+      }
+    }
+    return null;
+  };
+  const sweepTwelveHour = (dir: string) => {
+    for (const entry of fs.readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        sweepTwelveHour(rel);
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(entry.name)) continue;
+      const source = codeOnly(fs.readFileSync(path.join(REPO_ROOT, rel), "utf8"));
+      if (!/^\s*["']use client["']/m.test(source.slice(0, 2000))) continue;
+      const callPattern = /new Intl\.DateTimeFormat|\.toLocale(?:Date|Time)?String/g;
+      for (let m; (m = callPattern.exec(source)); ) {
+        const args = callArguments(source, m.index + m[0].length);
+        if (!args) continue;
+        const englishDefault = /^\(\s*["']en(?:-US)?["']/.test(args);
+        const twelveHour =
+          /hour12\s*:\s*true/.test(args) ||
+          /hourCycle\s*:\s*["']h1[12]["']/.test(args) ||
+          (englishDefault && /\b(?:hour|timeStyle)\s*:/.test(args) && !/hour12\s*:\s*false/.test(args) && !/hourCycle\s*:\s*["']h2[34]["']/.test(args));
+        if (twelveHour) twelveHourCalls.set(rel, (twelveHourCalls.get(rel) ?? 0) + 1);
+      }
+    }
+  };
+  sweepTwelveHour("src");
+  sweepTwelveHour("app");
+  const ratchetBreaks: string[] = [];
+  for (const [file, count] of twelveHourCalls) {
+    const known = KNOWN_CLIENT_12H_CALLS[file] ?? 0;
+    if (count > known) ratchetBreaks.push(`${file}: ${count} call(s), ${known} allowed — NEW, and a #418 on every Apple device if it draws during the first render`);
+  }
+  for (const [file, known] of Object.entries(KNOWN_CLIENT_12H_CALLS)) {
+    const count = twelveHourCalls.get(file) ?? 0;
+    if (count < known) ratchetBreaks.push(`${file}: ${count} call(s) now, ${known} listed — lower its number in KNOWN_CLIENT_12H_CALLS so it cannot creep back`);
+  }
+  assert.deepEqual(
+    ratchetBreaks,
+    [],
+    `🔴 client components asking the browser for a 12-hour time — the AM/PM space Safari draws as U+202F and the server as a plain space, React #418:\n  ${ratchetBreaks.join("\n  ")}`,
+  );
 }
