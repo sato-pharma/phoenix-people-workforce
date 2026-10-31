@@ -154,6 +154,19 @@ export function runCrmContactListChangesTests() {
     );
   }
 
+  // The doctor's address comes from Phoenix CRM first — the validated place — on the list and in the
+  // add-a-doctor search, and the iReports360 contact master's only when Phoenix has none (owner, 2026-10-31).
+  assert.match(
+    functionBody(service, "searchContactListDoctors"),
+    /address: places\.points\.get\(Number\(row\.contact_crm_id\)\)\?\.address \?\? text\(row\.address\)/,
+    "the search shows Phoenix CRM's address first",
+  );
+  assert.match(
+    service,
+    /address: places\.points\.get\(contactCrmId\)\?\.address \?\? detail\?\.address \?\? null/,
+    "the rep's list shows Phoenix CRM's address first",
+  );
+
   const requestBody = functionBody(service, "requestContactListChange");
   assert.match(requestBody, /requireActiveSelf\(access, directory\)/, "the rep is the session");
   assert.match(requestBody, /rep_hr_id: rep\.hrId, requested_by: rep\.hrId/, "a rep asks only for his own list");

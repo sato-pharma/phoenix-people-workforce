@@ -379,7 +379,10 @@ export async function loadDoubleVisitAuditData(input: {
     });
   }
 
-  // GPS check-ins for every agent that recorded a scoped row, indexed by (agent, contact, day).
+  // GPS check-ins for every agent that recorded a scoped row, indexed by (agent, contact, day). A
+  // started team's Phoenix CRM visits count as that day's check-ins too (owner, 2026-10-31: "any data
+  // anywhere depending on data from ireports must shift to pulling its data from phoenix crm"); this
+  // workbook is behind `double_visit_analytics` export, which no rep holds (phoenix-team-starts.ts).
   const agentCrmIds = Array.from(
     new Set(
       scopedRows
@@ -394,6 +397,7 @@ export async function loadDoubleVisitAuditData(input: {
       dateFrom,
       dateTo,
       columns: "agent_crm_id, contact_crm_id, check_date",
+      includePhoenixVisits: true,
     });
     for (const checkIn of checkIns) {
       const time = checkInTime(checkIn.check_date);

@@ -32,6 +32,7 @@ import {
 import { addDaysIso } from "@/lib/crm/dates";
 import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { loadPhoenixContactPlaces } from "@/lib/crm/validated-place-points";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
@@ -1261,7 +1262,48 @@ async function loadBrickMappingByContactId(contactIds?: readonly number[]): Prom
   return map;
 }
 
+/** Builds crm_contact_id -> {brickId, areaId, regionId} from the brick each contact's VALIDATED
+ * Phoenix CRM place was filed in (owner, 2026-10-31: "any data anywhere depending on data from
+ * ireports must shift to pulling its data from phoenix crm"). The same place the Reps List and every
+ * Phoenix screen put the doctor in, so the report can never file him somewhere his rep's list does
+ * not. A brick the sales master no longer runs (`active` false) is skipped, so the iReports360
+ * mappings below still answer for it. Always page-scoped — never part of the export's preload, which
+ * reads its own rows' contacts here like the paginated view. Degrades to an empty map on any error. */
+async function loadBrickMappingByPhoenixPlace(contactIds: readonly number[]): Promise<Map<number, BrickMapping>> {
+  const map = new Map<number, BrickMapping>();
+  try {
+    if (contactIds.length === 0) return map;
+    const places = await loadPhoenixContactPlaces(contactIds);
+    if (places.brickIds.size === 0) return map;
+    const supabase = getSupabaseAdmin();
+    const brickIds = [...new Set(places.brickIds.values())];
+    const brickById = new Map<string, { area_code: string | null; brick_id: string; region_code: string | null }>();
+    for (let i = 0; i < brickIds.length; i += 200) {
+      const { data: bricks, error: bricksError } = await supabase
+        .from("source_of_sales_bricks")
+        .select("brick_id, area_code, region_code, active")
+        .in("brick_id", brickIds.slice(i, i + 200));
+      if (bricksError) return map;
+      for (const b of (bricks ?? []) as Array<{ active: boolean | null; area_code: string | null; brick_id: string; region_code: string | null }>) {
+        if (b.active === false) continue;
+        brickById.set(b.brick_id, b);
+      }
+    }
+    for (const [contactId, brickId] of places.brickIds) {
+      const brick = brickById.get(brickId);
+      if (!brick) continue;
+      map.set(contactId, { areaId: brick.area_code ?? null, brickId, regionId: brick.region_code ?? null });
+    }
+  } catch {
+    return map;
+  }
+  return map;
+}
+
 /** Sets each visit row's phx_brick_id/phx_area_id/phx_region_id.
+ *
+ * PHOENIX CRM FIRST (owner, 2026-10-31): the contact's validated Phoenix place answers before either
+ * iReports360 mapping below; they speak only where Phoenix has no validated place for him.
  *
  * Prefers the CUSTOMER-level mapping (by crm_contact_id) and falls back to the REGION-level one,
  * which is what both the customer-mapping migration and customer-brick.ts always promised
@@ -1277,11 +1319,13 @@ function attachBrickMapping(
   rows: CrmMasterRow[],
   mapByRegionId: Map<number, BrickMapping>,
   mapByContactId: Map<number, BrickMapping> = new Map(),
+  mapByPlace: Map<number, BrickMapping> = new Map(),
 ): void {
   for (const row of rows) {
     const contactId = typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0 ? row.contact_crm_id : null;
     const regionId = typeof row.crm_region_id === "number" ? row.crm_region_id : null;
     const mapping =
+      (contactId != null ? mapByPlace.get(contactId) : undefined) ??
       (contactId != null ? mapByContactId.get(contactId) : undefined) ??
       (regionId != null ? mapByRegionId.get(regionId) : undefined);
     row.phx_brick_id = mapping?.brickId ?? null;
@@ -1988,7 +2032,7 @@ async function attachDerived(
   // after another. With no preload handed in (the paginated view), the brick mappings are read for this
   // page's own contacts and regions only. One Promise.all, so no load runs unwatched; every overlay is
   // still APPLIED below in exactly the order it always was.
-  const [checkinCorrelationAvailable, agentMeta, byRegion, byContact, tripleFlags, identityMaps] = await Promise.all([
+  const [checkinCorrelationAvailable, agentMeta, byRegion, byContact, tripleFlags, identityMaps, byPlace] = await Promise.all([
     attachCheckinOverlays(),
     resources?.agentMeta ?? loadAgentMetaByHrId(),
     isVisitDataset(dataset) ? (resources?.brickMapping ?? loadBrickMappingByRegionId(brickLookupRegionIds(rows))) : null,
@@ -1999,6 +2043,8 @@ async function attachDerived(
       ? (resources?.triples ?? computeTriplesInRange(range).then((triples) => triples.byVisitId))
       : null,
     resources?.identityMaps !== undefined ? resources.identityMaps : loadIdentityMapsForLabels(rows),
+    // Phoenix CRM's validated place, asked first — always this call's own contacts, never preloaded.
+    isVisitDataset(dataset) ? loadBrickMappingByPhoenixPlace(brickLookupContactIds(rows)) : null,
   ]);
   // Flag the double visits that are actually part of a triple (third person stacked that day).
   if (dataset === "double_visits" && tripleFlags) attachTripleFlag(rows, tripleFlags);
@@ -2009,7 +2055,7 @@ async function attachDerived(
   // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
   // isVisitDataset already scopes to (both maps are null for every other dataset).
-  if (byRegion && byContact) attachBrickMapping(rows, byRegion, byContact);
+  if (byRegion && byContact) attachBrickMapping(rows, byRegion, byContact, byPlace ?? undefined);
   // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
   if (isVisitDataset(dataset)) attachRecognitionScore(rows);
   // The Phoenix field set last: it reads only the row's own columns, so it depends on nothing above

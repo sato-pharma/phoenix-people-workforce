@@ -18,8 +18,10 @@ import {
   type CrmRegionTerritoryIndex,
   type RepVisitRow,
   type RepVisitsSummary,
+  type RepVisitTerritory,
   type VisitForRepDrilldown,
 } from "@/lib/crm/rep-visits";
+import { loadContactPlacements } from "@/lib/crm/reps-list";
 import { CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE, CRM_REGION_BRICK_RESOLUTIONS_TABLE } from "@/lib/crm/tables";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -360,14 +362,48 @@ export async function loadRepVisits(
   // This is the wire that was missing. Both halves shipped on 2026-08-28 and nothing ever called
   // them, so the residue stayed unread on the screen for five days while reading as a finished
   // feature — the module was tested, documented and reachable by no route at all.
-  const assisted = await assistCampaignFragments(collectCampaignFragments(visits));
+  //
+  // Beside it, each doctor's brick from Phoenix CRM (owner, 2026-10-31: "donot show no crm region from
+  // the address get the brick area and region"): the Reps List's own four steps, so this drill-down
+  // files a doctor under the brick his rep's list does. A Phoenix visit carries no CRM region, so
+  // without this every one of them read "no region". A failed read answers an empty map and every
+  // row falls back to its CRM region, as before.
+  const [assisted, contactTerritory] = await Promise.all([
+    assistCampaignFragments(collectCampaignFragments(visits)),
+    loadContactTerritory(visits),
+  ]);
 
   return buildRepVisits(visits, scopedCheckins, {
     assisted,
     contactDirectory,
+    contactTerritory,
     holidays: input.holidays,
     partnerNameByHrId: input.partnerNameByHrId,
     territoryIndex,
     viewer: input.viewer,
   });
+}
+
+/** Each visited contact's Phoenix CRM brick, as the drill-down's territory — mapped contacts only. */
+async function loadContactTerritory(visits: readonly VisitForRepDrilldown[]): Promise<Map<number, RepVisitTerritory>> {
+  const placements = await loadContactPlacements(
+    visits
+      .filter((visit) => visit.contact_crm_id != null && visit.contact_crm_id > 0)
+      .map((visit) => ({ contactCrmId: visit.contact_crm_id as number, region: visit.crm_region_name })),
+  );
+  const out = new Map<number, RepVisitTerritory>();
+  for (const [contactId, placement] of placements) {
+    if (!placement.brickId || !placement.meta) continue;
+    out.set(contactId, {
+      status: "mapped",
+      brickId: placement.brickId,
+      brickName: placement.meta.name,
+      areaCode: placement.meta.areaCode,
+      areaName: placement.meta.areaName,
+      // The sales master's brick carries its region's name, not its code; nothing here reads the code.
+      regionCode: null,
+      regionName: placement.meta.regionName ?? null,
+    });
+  }
+  return out;
 }

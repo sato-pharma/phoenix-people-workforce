@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   EARLY_BIRD_LIMIT,
   buildNsmCrmCompliance,
+  rosterCountedFromPhoenix,
 } from "../src/lib/employee-portal/nsm-crm-compliance.ts";
+import { normalizeHrIdForAccess } from "../src/lib/hr-id.ts";
 
 // The NSM / RM "CRM First Visit" board and its Early Birds ranking. This rule shipped with no test
 // at all and has already been repaired twice in production (#1192 canonical visit time, #1207 GPS
@@ -395,5 +397,23 @@ export function runNsmCrmComplianceTests() {
     assert.deepEqual(data.earlyBirds, []);
     assert.equal(data.reps.missing.length, 1, "before the sync lands everyone is listed as outstanding, but `synced: false` is what the UI reads");
     assert.equal(data.dsms.missing.length, 1);
+  }
+
+  // A ROSTER WHOLLY ON STARTED PHOENIX CRM TEAMS IS CHECKED NOW (owner, 2026-10-31). A per-team start
+  // never sets the global cutover, so the board waited all day on the iReports360 pull for a team that
+  // records its visits in Phoenix itself. Only a WHOLE roster counts — one rep still on the vendor keeps it.
+  {
+    const window = { hrIdKey: normalizeHrIdForAccess("B-158"), agentCrmId: null, from: "2026-10-03", until: null };
+    const started = { hrId: "B-158", name: "Started Rep" };
+    const vendor = { hrId: "B-999", name: "Vendor Rep" };
+    assert.equal(rosterCountedFromPhoenix([window], [started], "2026-10-31"), true, "a started rep's day is Phoenix's to answer");
+    assert.equal(rosterCountedFromPhoenix([window], [started, vendor], "2026-10-31"), false, "a mixed roster keeps the vendor ledger");
+    assert.equal(rosterCountedFromPhoenix([window], [started], "2026-10-02"), false, "the day before his team's start is the vendor's");
+    assert.equal(rosterCountedFromPhoenix([window], [], "2026-10-31"), false, "an empty roster is never counted from Phoenix");
+    assert.equal(
+      rosterCountedFromPhoenix([{ ...window, until: "2026-10-20" }], [started], "2026-10-31"),
+      false,
+      "a start that has ended no longer covers the day",
+    );
   }
 }

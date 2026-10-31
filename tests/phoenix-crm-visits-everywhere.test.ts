@@ -1665,6 +1665,7 @@ const PHOENIX_CHECKIN_READERS = [
   "src/lib/crm/master.ts",
   "src/lib/crm/rep-day.ts",
   "src/lib/crm/sfe-field-analytics.ts",
+  "src/lib/double-visit-analytics/audit-export.ts",
   "src/lib/employee-portal/nsm-crm-compliance.ts",
   "src/lib/field-activity/report.ts",
   "src/lib/probation/intelligence/sfe-evidence.ts",
