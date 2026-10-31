@@ -21,3 +21,18 @@ Marketing's links were API-only, so nothing on any screen could say that a secon
 - Pinned by `tests/marketing-share-links-panel.test.ts` and `tests/live-feed-rotation-paused.test.ts`.
 
 A new live sheet ships its banner in the same PR that adds its feed.
+
+## Night pacing of the two sheet timers (31 Oct 2026)
+
+The Direct Orders and Marketing Request sheets fetch their feed on a 1-minute Apps Script timer, and Phoenix also POSTs to each sheet's `doPost` the moment an order or request changes (`pingDirectOrderSheet`, `pingMarketingRequestSheet`). So the timer is only a safety net for a push that did not arrive.
+
+Measured on production on the night of 30–31 Oct 2026, 23:00–07:00 Cairo: Phoenix made 81,560 requests to its database in 9 hours, about 9,000 an hour. The two sheet timers were about 2,100 an hour of that (23%). Direct Orders fetched at second :24–26 of every minute, at about 18 requests per fetch. Marketing fetched at :35–36, at about 17 per fetch. The Direct Orders link had 2,099 reads and the Marketing link 2,085 reads since the Friday rotation (30 Oct, 03:23 and 03:43 Cairo). Nobody reads either sheet at that hour.
+
+- Between 23:00 and 08:00 Cairo, a **timer** tick fetches only when an hour has passed since the last fetch (`nightTimerTickSkips_`). Every fetch stamps script property `phoenixLastFeedFetchMs`, so a push at 02:10 counts as that hour's look.
+- Only a time-driven trigger passes an event with `triggerUid`. A push, a token rotation (also a push), "Refresh now", `installTrigger`, `rebuildEverything` and a run from the editor pass nothing, so they always fetch.
+- The rotation is the case that must never be paced. Phoenix revokes the old token only after it sees the sheet read with the new one (`tokenHasBeenUsed`).
+- The trigger stays a 1-minute trigger with the same function name. The pacing lives inside the function, so the merge alone ships it (`apps-script-push.yml` writes HEAD, and the timer runs HEAD). No sheet needs `installTrigger` re-run.
+- The daytime timer is unchanged. A failing feed still paints its STALE banner overnight, within the hour. The skip is not a failure and paints nothing; `tests/live-sheet-stale-banner.test.ts` allows exactly one such silent return per file, directly under the pacing check.
+- Expected saving: about 2,000 requests an hour for nine hours, roughly 18,000 a day.
+- The CV Lifecycle sheet is left alone. Its timer runs every 5 minutes, and it was not a measured night load.
+- Pinned by `tests/live-sheet-night-pacing.test.ts`. That suite drives both real `.gs` files through a fake clock: 540 night ticks fetch 9 times, an hour of day ticks fetches 60 times, and the 22:59 / 23:00 / 07:59 / 08:00 edges are checked. It also checks that a push, a rotation, Refresh now and `installTrigger` each fetch at 03:00, 30 seconds after the last fetch.

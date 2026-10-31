@@ -51,7 +51,8 @@
  *   IMPORTDATA refreshes on Google's own schedule — roughly hourly, not configurable — and can
  *   only ever produce one flat table. This runs on a 1-minute trigger, builds eight tabs, and renders
  *   hyperlinks. Phoenix also PUSHES to doPost() the moment a request changes, so in practice the
- *   sheet is current within seconds.
+ *   sheet is current within seconds. Overnight (23:00–08:00 Cairo) the timer fetches once an hour
+ *   instead — see NIGHT PACING below — while a push still lands at once.
  *
  * SETUP (once)
  *   1. Extensions -> Apps Script
@@ -325,6 +326,49 @@ var ROW_PX = 21;
 
 var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover", AUDIT_TAB];
 
+// ── Night pacing ────────────────────────────────────────────────────────────────
+//
+// Phoenix pushes to doPost the moment a request changes, so the 1-minute timer is only the safety
+// net for a push that never arrived. At night nobody reads this sheet and almost nothing changes,
+// yet the timer went on fetching the whole feed sixty times an hour. Measured on the night of
+// 30–31 October 2026, this sheet and its Direct Orders twin were about 2,100 of the ~9,000 requests
+// an hour Phoenix sent its database between 23:00 and 08:00 Cairo — the largest share nobody needed.
+//
+// So between NIGHT_START_HOUR and NIGHT_END_HOUR (Cairo) a TIMER tick fetches only when an hour has
+// passed since the last fetch. Everything else fetches at once, at any hour: a push, a token
+// rotation (also a push), "Refresh now", installTrigger, rebuildEverything, and a run from the
+// editor. The daytime timer is untouched. A failing feed still shows its STALE banner overnight —
+// within the hour.
+var NIGHT_START_HOUR = 23;
+var NIGHT_END_HOUR = 8;
+var NIGHT_FETCH_EVERY_MS = 60 * 60 * 1000;
+var LAST_FETCH_KEY = "phoenixLastFeedFetchMs";
+
+/**
+ * True only for a time-driven tick, overnight, within an hour of the last fetch.
+ *
+ * Only a time-driven trigger hands the function an event carrying `triggerUid`. doPost, the menu
+ * and the editor call it with nothing, and those must always fetch — a push is how a change reaches
+ * the sheet at night, and the rotation proves the new token by the read it causes.
+ */
+function nightTimerTickSkips_(e) {
+  if (!e || !e.triggerUid) return false;
+  var hour = Number(Utilities.formatDate(new Date(), TZ, "H"));
+  if (hour < NIGHT_START_HOUR && hour >= NIGHT_END_HOUR) return false;
+  // An unset or unreadable stamp reads as "never fetched", so the doubt resolves toward fetching.
+  var last = Number(PropertiesService.getScriptProperties().getProperty(LAST_FETCH_KEY) || 0);
+  return Date.now() - last < NIGHT_FETCH_EVERY_MS;
+}
+
+/** Stamp every fetch, whatever started it, so a push at 02:10 also counts as that hour's look. */
+function noteFeedFetch_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty(LAST_FETCH_KEY, String(Date.now()));
+  } catch (err) {
+    console.error("Could not record the fetch time (the next night tick will simply fetch): " + err);
+  }
+}
+
 // ── Entry points ────────────────────────────────────────────────────────────────
 
 /** Run once, by hand, to install the 1-minute trigger. Safe to re-run. */
@@ -473,7 +517,7 @@ function markFeedStale(reason) {
     var message = STALE_MARKER + " — these figures stopped updating "
       + (frozenAt ? "on " + frozenAt : "at some point before this script was updated")
       + " (Cairo). Last attempt " + now + " failed: " + reason
-      + ". Still retrying every minute; this line clears itself the moment the feed answers.";
+      + ". Still retrying every minute (hourly overnight); this line clears itself the moment the feed answers.";
     var targets = stampedSubtitles(ss);
     for (var i = 0; i < targets.length; i++) {
       targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(STALE_BG);
@@ -519,7 +563,8 @@ function markFeedFresh(ss, stamp) {
 
 // ── The refresh ─────────────────────────────────────────────────────────────────
 
-function refreshMarketingRequests() {
+/** `e` is the time-driven trigger's event, and absent on every other caller — see NIGHT PACING. */
+function refreshMarketingRequests(e) {
   var url = feedUrl();
   if (!url) {
     // No FEED_TOKEN configured. Treated exactly like an unreachable feed — leave the sheet alone.
@@ -527,8 +572,13 @@ function refreshMarketingRequests() {
     markFeedStale("no FEED_TOKEN is configured");
     return;
   }
+  if (nightTimerTickSkips_(e)) {
+    // Not a failure, so no banner: the last fetch is under an hour old and a push still lands now.
+    return;
+  }
   var response;
   try {
+    noteFeedFetch_();
     response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   } catch (err) {
     console.error("Feed unreachable: " + err);
@@ -1506,7 +1556,7 @@ function buildCoverSheet(ss, summary, stamp) {
     row++;
   }
   sheet.getRange(row + 1, 1)
-    .setValue("Refreshes every minute, and instantly whenever a request changes.")
+    .setValue("Refreshes every minute (hourly from 23:00 to 08:00 Cairo), and instantly whenever a request changes.")
     .setFontColor(MUTED).setFontStyle("italic").setFontFamily(FONT);
 }
 

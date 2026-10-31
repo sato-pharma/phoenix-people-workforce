@@ -15,9 +15,11 @@ import { logWarning } from "@/lib/observability/log";
 // credential in this repo. The URL and the shared secret live in Railway env only.
 //
 // CORRECTNESS NEVER DEPENDS ON THIS.
-// The sheet re-pulls the feed every 60 seconds on its own timer. A ping that fails, times out, or
-// is not configured at all costs at most one minute of freshness. That is why every failure here is
-// swallowed: a spreadsheet refresh must never be able to fail a payroll-adjacent mutation.
+// The sheet re-pulls the feed every 60 seconds on its own timer, and once an hour from 23:00 to
+// 08:00 Cairo (NIGHT PACING in docs/direct-orders-live-sheet.gs). A ping that fails, times out, or
+// is not configured at all costs at most one minute of freshness by day and an hour overnight. That
+// is why every failure here is swallowed: a spreadsheet refresh must never be able to fail a
+// payroll-adjacent mutation.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Give up quickly. Apps Script can be slow, and nothing here is worth holding a request open for. */

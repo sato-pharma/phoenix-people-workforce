@@ -180,7 +180,7 @@ export function runDirectOrderSheetWebhookTests() {
   // configured" apart from "the feed refused us" — both of which look identical from the sheet.
   assert.match(
     scriptSource,
-    /function refreshDirectOrders\(\) \{\s*\n\s*var url = feedUrl\(\);/,
+    /function refreshDirectOrders\(e\) \{\s*\n\s*var url = feedUrl\(\);/,
     "the refresh must resolve the feed URL per run, or rotation never takes effect",
   );
   assert.match(

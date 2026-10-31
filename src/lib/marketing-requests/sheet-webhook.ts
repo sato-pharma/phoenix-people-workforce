@@ -12,9 +12,11 @@ import { logWarning } from "@/lib/observability/log";
 // no key, and no credential in this repo. The URL and the shared secret live in Railway env only.
 //
 // CORRECTNESS NEVER DEPENDS ON THIS.
-// The sheet re-pulls the feed on its own 60-second timer. A ping that fails, times out, or is not
-// configured at all costs at most one minute of freshness. That is why every failure here is
-// swallowed: a spreadsheet refresh must never be able to fail an approval or a payment.
+// The sheet re-pulls the feed on its own 60-second timer, and once an hour from 23:00 to 08:00
+// Cairo (NIGHT PACING in docs/marketing-request-live-sheet.gs). A ping that fails, times out, or is
+// not configured at all costs at most one minute of freshness by day and an hour overnight. That is
+// why every failure here is swallowed: a spreadsheet refresh must never be able to fail an approval
+// or a payment.
 //
 // A SEPARATE SECRET FROM THE DIRECT ORDERS SHEET. Two different spreadsheets, two different
 // audiences; sharing one secret would mean revoking either one breaks both.
