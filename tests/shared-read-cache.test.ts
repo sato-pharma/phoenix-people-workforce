@@ -10,6 +10,7 @@ import {
   getOrLoadShared,
   sharedReadKey,
 } from "../src/lib/cache/shared-read.ts";
+import { loadPeopleNames } from "../src/lib/phoenix-crm/server/people.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -312,5 +313,91 @@ export async function runSharedReadCacheTests() {
     );
   }
 
-  console.log("shared read cache: 13 blocks passed");
+  // ── (14) Phoenix CRM's people's names are one shared copy per set of people, display only ──
+  // Every CRM screen names the rep and the manager above him, and each of its loaders asked for the same
+  // names again: 2,239 requests in the two busiest hours of Wednesday 28 Oct 2026, 1,582 of them the very
+  // same request made within the minute before. A name prints on a screen or in a notice's sentence —
+  // nothing approves, pays or picks a recipient from it.
+  {
+    const people = code("src/lib/phoenix-crm/server/people.ts");
+    assert.match(
+      people,
+      /const people = \[\.\.\.wanted\]\.sort\(\);\s*const \{ rows \} = await getOrLoadShared\(PEOPLE_NAMES_SHARED, sharedReadKey\(\{ people \}\), \(\) => readNameRows\(people\),/,
+      "RED PHOENIX CRM'S NAMES ARE READ FRESH AGAIN: every loader on a screen re-reads the same rep's and manager's names — or the key stopped being the exact set of people, which would hand one caller names it never asked for",
+    );
+
+    const json = { "content-type": "application/json" };
+    const original = globalThis.fetch;
+    const realNow = Date.now;
+    // The admin client is built from these, and the suite may run with the real ones in its environment —
+    // so a sentinel pair stands in, and the stub below answers every request: nothing here reaches a database.
+    const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+    const asked: string[] = [];
+    let failing = false;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (url.pathname.endsWith("/employees")) {
+        asked.push(url.searchParams.get("hr_id") ?? "");
+        if (failing) return new Response(JSON.stringify({ code: "42703", message: "column employees.nickname does not exist" }), { status: 400, headers: json });
+        return new Response(
+          JSON.stringify([
+            { hr_id: "B-7", full_name: "Seven Person", nickname: null },
+            { hr_id: "B-12", full_name: "Twelve Person", nickname: null },
+          ]),
+          { status: 200, headers: json },
+        );
+      }
+      return new Response("[]", { status: 200, headers: json });
+    }) as typeof fetch;
+    try {
+      _resetSharedReadCache();
+      const first = await loadPeopleNames(["B-7", "b-12"]);
+      assert.equal(asked.length, 1, "the first ask reads the names");
+      assert.deepEqual([...first.entries()].sort(), [["B-12", "Twelve Person"], ["B-7", "Seven Person"]]);
+
+      const again = await loadPeopleNames(["B-12", "B-7", null, ""]);
+      assert.equal(asked.length, 1, "RED the same people asked again inside the minute — in any order or case — must be served from the shared copy");
+      assert.deepEqual([...again.entries()].sort(), [...first.entries()].sort(), "and name them exactly as the read did");
+
+      const one = await loadPeopleNames(["b-7"]);
+      assert.equal(asked.length, 2, "a different set of people is its own read");
+      assert.deepEqual([...one.keys()], ["B-7"], "and hands back only the names it asked for, though the rows held another");
+
+      _resetSharedReadCache();
+      const [left, right] = await Promise.all([loadPeopleNames(["B-7"]), loadPeopleNames(["b-7"])]);
+      assert.equal(asked.length, 3, "RED two screens asking for the same people at once must share one read");
+      assert.equal(left.get("B-7"), "Seven Person");
+      assert.equal(right.get("B-7"), "Seven Person");
+
+      const start = realNow();
+      Date.now = () => start + SHARED_READ_TTL_MS;
+      await loadPeopleNames(["B-7"]);
+      assert.equal(asked.length, 4, "a copy a minute old is read again");
+      Date.now = realNow;
+
+      assert.equal((await loadPeopleNames([null, " "])).size, 0);
+      assert.equal(asked.length, 4, "nobody asked about reads nothing");
+
+      _resetSharedReadCache();
+      failing = true;
+      await assert.rejects(loadPeopleNames(["B-12"]), "a failed read throws, exactly as before");
+      assert.equal(asked.length, 5);
+      failing = false;
+      assert.equal((await loadPeopleNames(["B-12"])).get("B-12"), "Twelve Person");
+      assert.equal(asked.length, 6, "RED a failed read must never be kept — the next ask reads again");
+    } finally {
+      Date.now = realNow;
+      globalThis.fetch = original;
+      _resetSharedReadCache();
+      if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;
+      if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+    }
+  }
+
+  console.log("shared read cache: 14 blocks passed");
 }
