@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, cairoMonthDayTime12h, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
+import { offerWhen } from "../src/components/offers/offer-ui.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
@@ -518,6 +519,40 @@ export function runReact418HydrationSafeTextTests() {
   }
   const accessControl = codeOnly(read("src/components/admin/access-control-manager.tsx"));
   assert.match(accessControl, /function formatDate\([^)]*\)\s*\{\s*return cairoMonthDayTime12h\(value\);/, "🔴 Access Control formats its times through cairoMonthDayTime12h");
+
+  // (d3) Offers (System Audit, "/offers", 31 Oct 2026). Its four recorded #418s were the Cloudflare
+  // email rewrite (every offer row prints the candidate's email; none in 13 days of use before the
+  // 26 Oct move, two on each of the two days after). What remained was offerWhen — the "Sent" time on
+  // every row — asking the reader's engine for an en-GB short month: "Sept" on the server, "Sep" in an
+  // older browser, every September. 3f never saw it because offer-ui.ts is a plain module the client
+  // composer imports, not a "use client" file. It now goes through formatStableEnGb, byte-identical.
+  const offerWhenBefore = (iso: string) =>
+    new Date(iso).toLocaleString("en-GB", { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" });
+  for (let month = 0; month < 12; month += 1) {
+    const iso = new Date(Date.UTC(2026, month, 14, 9, 7)).toISOString();
+    assert.equal(offerWhen(iso), offerWhenBefore(iso), `${iso}: the offer's Sent time must read exactly as the server printed it before`);
+  }
+  assert.equal(offerWhen(null), "—", "an unsent offer keeps its dash");
+  assert.equal(offerWhen("not a date"), "—", "an unreadable instant keeps its dash");
+  const septemberSend = "2026-09-14T09:07:00Z";
+  const serverSeptember = offerWhen(septemberSend);
+  try {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = function OlderEngine(locale?: string, options?: Intl.DateTimeFormatOptions) {
+      const inner = new RealDateTimeFormat(locale, options);
+      const old = (text: string) => text.replace(/\bSept\b/g, "Sep");
+      return {
+        format: (d: Date) => old(inner.format(d)),
+        formatToParts: (d: Date) => inner.formatToParts(d).map((part) => ({ ...part, value: old(part.value) })),
+        resolvedOptions: () => inner.resolvedOptions(),
+      };
+    } as unknown as typeof Intl.DateTimeFormat;
+    assert.equal(offerWhen(septemberSend), serverSeptember, "🔴 an older engine that spells September 'Sep' must still get the server's exact Sent time");
+  } finally {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = RealDateTimeFormat;
+  }
+  const offerUi = codeOnly(read("src/components/offers/offer-ui.ts"));
+  assert.match(offerUi, /export function offerWhen\([^)]*\)[^{]*\{[\s\S]*?return formatStableEnGb\(parsed,/, "🔴 the offer's Sent time goes through formatStableEnGb");
+  assert.doesNotMatch(offerUi, /\.toLocale(?:Date|Time)?String\(\s*["']en-GB["']/, "🔴 offer-ui must not ask the reader's engine for an en-GB date");
 
   // (e) No NEW client component may ask the browser for a 12-hour time. `hour12: true`, an h11/h12
   // hourCycle, or an "en"/"en-US" call with an hour (whose default is 12-hour) all print the AM/PM

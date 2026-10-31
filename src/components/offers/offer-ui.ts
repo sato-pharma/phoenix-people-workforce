@@ -3,6 +3,8 @@
 // Lifted verbatim from the HR Forms screen so the two hiring-paperwork screens are
 // visibly one family. Kept in a module rather than copied per component so they cannot drift.
 
+import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+
 /**
  * Who the offer will come from, as shown to HR before they send.
  *
@@ -36,12 +38,19 @@ export function offerMoney(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(value || 0));
 }
 
-/** Africa/Cairo, always — never a raw UTC stamp. */
+/**
+ * Africa/Cairo, always — never a raw UTC stamp.
+ *
+ * Through `formatStableEnGb`, never the reader's own engine: the offers list draws this in its first
+ * render on the server and again in the browser, and en-GB's short September is "Sept" on the
+ * server (CLDR 42+) but "Sep" in an older browser — React #418 every September (31 Oct 2026, the
+ * Offers System Audit item). Same options, byte-identical text.
+ */
 export function offerWhen(iso: string | null): string {
   if (!iso) return "—";
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return "—";
-  return parsed.toLocaleString("en-GB", {
+  return formatStableEnGb(parsed, {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
