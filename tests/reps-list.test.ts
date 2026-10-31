@@ -205,6 +205,73 @@ export function runRepsListTests() {
     assert.equal(grouped.unmappedRegionCount, 0, "both contacts resolved, so nothing is awaiting a brick");
   }
 
+  // ── Phoenix CRM first: the validated place's brick, then the SFE's "where to find" ─────────────
+  // Owner, 2026-10-31: "any data anywhere depending on data from ireports must shift to pulling its
+  // data from phoenix crm". Contact 1 has all four routes and must sit where his validated place was
+  // filed; contact 2 is still waiting and carries only the SFE sheet's locality; contact 3's place
+  // brick is stale (no name row), so the next route — his "where to find" — is taken; contact 4 has a
+  // locality with its own hyphen. Shahd's whole list sat under "No CRM region recorded" before this.
+  {
+    const grouped = groupContactsByBrick(
+      [row(1, "Ahmed", "Smouha"), row(2, "Mohamed", null), row(3, "Omar", null), row(4, "Hassan", null)],
+      index({
+        brickByContactId: new Map([[1, "B-PRECISE"]]),
+        brickByRegionName: new Map([
+          ["smouha", "B-REGION"],
+          ["damanhor", "B182-1"],
+          ["ma-adi", "B-MAADI"],
+        ]),
+        intakeByContactId: new Map([
+          [1, "Damanhor-Behira I-Alex"],
+          [2, "Damanhor-Behira I-Alex"],
+          [3, "Damanhor -Behira I-Alex"],
+          [4, "Ma-adi-Cairo 1-Cairo"],
+        ]),
+        metaByBrickId: new Map([
+          ["B-PLACE", { areaCode: "BH1", areaName: "Behira 1", name: "Damanhor West", regionName: "Alex-BHR" }],
+          ["B-PRECISE", { areaCode: "AL1", areaName: "Alexandria 1", name: "Smouha East" }],
+          ["B-REGION", { areaCode: "AL1", areaName: "Alexandria 1", name: "Smouha" }],
+          ["B182-1", { areaCode: "BH1", areaName: "Behira 1", name: "Damanhor", regionName: "Alex-BHR" }],
+          ["B-MAADI", { areaCode: "CA1", areaName: "Cairo 1", name: "Maadi", regionName: "Cairo" }],
+        ]),
+        placeBrickByContactId: new Map([
+          [1, "B-PLACE"],
+          [3, "B-STALE"],
+        ]),
+      }),
+    );
+
+    assert.deepEqual(
+      grouped.groups.map((group) => [group.heading, group.rows.map((contact) => contact.name)]),
+      [
+        ["Damanhor", ["Mohamed", "Omar"]],
+        ["Damanhor West", ["Ahmed"]],
+        ["Maadi", ["Hassan"]],
+      ],
+      "the validated place's brick beats every iReports360 route; a doctor still waiting sits under the brick of the locality the SFE wrote; a stale place brick falls through to that locality; a hyphenated locality is matched whole",
+    );
+    assert.equal(
+      grouped.groups.find((group) => group.heading === "Damanhor West")?.regionName,
+      "Alex-BHR",
+      "a brick heading carries its area's region, so the board can say Behira 1 · Alex-BHR",
+    );
+    assert.equal(grouped.unmappedRegionCount, 0);
+  }
+
+  // ── The SFE's own words head an unmapped group; "No location yet" is the last resort, last ───
+  {
+    const grouped = groupContactsByBrick(
+      [row(1, "Ahmed", null), row(2, "Mohamed", null), row(3, "Omar", null), row(4, "Hassan", "Qena")],
+      index({ intakeByContactId: new Map([[4, "Nag Hammadi-Qena I-Upper Egypt"]]) }),
+    );
+
+    assert.deepEqual(
+      grouped.groups.map((group) => `${group.heading}:${group.rows.length}`),
+      ["Nag Hammadi-Qena I-Upper Egypt:1", "No location yet:3"],
+      "the SFE's \"where to find\" outranks the CRM region as a heading, and the three doctors Phoenix knows nothing about sit under Phoenix CRM's own words, after every named locality however large",
+    );
+  }
+
   // ── An unmapped contact is SHOWN, under its own region name ─────────────────────────────────
   {
     const grouped = groupContactsByBrick(
@@ -253,7 +320,7 @@ export function runRepsListTests() {
     assert.equal(grouped.counts.total, 2);
     assert.deepEqual(
       grouped.groups.map((group) => group.heading),
-      ["No CRM region recorded"],
+      ["No location yet"],
       "a null and a blank region are the same statement and share one heading, which says what is true rather than showing an empty label",
     );
   }

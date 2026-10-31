@@ -15,12 +15,16 @@
  *    the owner's own wording when he specified the board this one replaces ("Not visits."), and it
  *    is why the retired Doctor List existed at all.
  *
- * 2. THE BRICK IS RESOLVED IN TWO STEPS, PRECISE FIRST. A contact's own mapping
- *    (`ireports360_crm_customer_brick_resolutions`, keyed on the iReports360 contactID) always wins;
- *    only when there is none does the contact's CRM REGION supply one
- *    (`ireports360_crm_region_brick_resolutions`). That is the same precedence
- *    `src/lib/crm/customer-brick.ts` describes — a customer is the finest thing Phoenix can resolve,
- *    a region is a rough locality grouping many of them.
+ * 2. THE BRICK COMES FROM PHOENIX CRM FIRST, THEN THE FINEST THING LEFT (owner, 2026-10-31: "any data
+ *    anywhere depending on data from ireports must shift to pulling its data from phoenix crm"). In
+ *    order (`brickCandidates`): the brick the doctor's validated place was filed in — the one the KPIs
+ *    count him under; the brick of the locality the SFE wrote on the list sheet (`intake_where`,
+ *    "Damanhor-Behira I-Alex"), looked up in the locality map
+ *    (`ireports360_crm_region_brick_resolutions`); the contact's own carried-over mapping
+ *    (`ireports360_crm_customer_brick_resolutions`), kept for a doctor Phoenix CRM knows nothing more
+ *    about, exactly as Phoenix CRM's own List (`groupOf`) keeps it; and last the contact's region.
+ *    Before 2026-10-31 only the last two existed, so every doctor a rep added in Phoenix CRM — no
+ *    iReports360 contact, no region — sat under "No CRM region recorded" (Shahd's whole list).
  *
  * 3. AN UNMAPPED CONTACT IS SHOWN, NAMED BY ITS CRM REGION — NEVER DROPPED, NEVER POOLED.
  *    Measured against production 2026-08-31: only 5,608 of 9,518 contacts (58.9%) resolve to a brick
@@ -34,6 +38,8 @@
  *    thing an admin needs in order to FIX the mapping. Instead each unmapped contact groups under
  *    its own CRM region, flagged `mapped: false`, so the board reads as a punch-list of exactly
  *    which localities still need a brick. `countUnmappedRegions` is what the page states out loud.
+ *    The heading is the SFE's own "where to find" when Phoenix CRM holds one, else the region, else
+ *    `REPS_LIST_NO_LOCATION` — Phoenix CRM's own words, never "No CRM region recorded".
  *
  * The grouping core is pure and fixture-testable; everything touching Supabase sits below it.
  */
@@ -65,7 +71,8 @@ import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_CONTACT_ROSTER } from "@/lib/crm/shared-windows";
-import { loadValidatedPlacePoints, type ValidatedPlacePoint } from "@/lib/crm/validated-place-points";
+import { REPS_LIST_NO_LOCATION } from "@/lib/crm/reps-list-labels";
+import { loadPhoenixContactPlaces, type PhoenixContactPlaces, type ValidatedPlacePoint } from "@/lib/crm/validated-place-points";
 import {
   CRM_CHECKINS_UNIFIED_VIEW,
   CRM_CONTACT_ASSIGNMENTS_TABLE,
@@ -113,6 +120,8 @@ export type RepsListGroup = {
    * printing `GZ3` at the reader.
    */
   areaName: string | null;
+  /** The sales region the area sits in, by name (e.g. `Alex-BHR`). Null for an unmapped group or a region with no name row. */
+  regionName?: string | null;
   /** Brick id (e.g. `B198-5`). Null for an unmapped group. Never rendered — the name is. */
   brickId: string | null;
   rows: RepsListContact[];
@@ -230,14 +239,79 @@ export type RepsListForRep = {
   unmappedContactCount: number;
 };
 
+/** What a heading shows for a brick: its name, its area and the area's region. */
+export type BrickMeta = { areaCode: string | null; areaName: string | null; name: string; regionName?: string | null };
+
 /** contactCrmId -> brickId, and brickId -> its display metadata. */
 export type BrickIndex = {
+  /** The contact's own carried-over iReports360 mapping. */
   brickByContactId: Map<number, string>;
+  /** Locality (CRM region) name, lowered -> brick. Read for the SFE's "where to find" AND the region. */
   brickByRegionName: Map<string, string>;
-  metaByBrickId: Map<string, { areaCode: string | null; areaName: string | null; name: string }>;
+  /** Phoenix CRM: the SFE sheet's "where to find" of each contact (`validated-place-points.ts`). */
+  intakeByContactId?: Map<number, string>;
+  metaByBrickId: Map<string, BrickMeta>;
+  /** Phoenix CRM: the brick each contact's validated place was filed in (`validated-place-points.ts`). */
+  placeBrickByContactId?: Map<number, string>;
 };
 
 const normalizeRegionKey = (value: string | null | undefined): string => (value ?? "").trim().toLowerCase();
+
+/**
+ * The locality keys an SFE's "where to find" can name, longest first. The sheet writes
+ * locality-area-region ("Damanhor-Behira I-Alex", "Assiut -Assiut II-Upper Egypt"), and a locality
+ * can carry its own hyphen ("Ma-adi"), so every leading run of parts is tried, the whole text first.
+ */
+export function intakeLocalityKeys(intake: string | null | undefined): string[] {
+  const parts = (intake ?? "").split("-").map((part) => part.trim());
+  const keys: string[] = [];
+  for (let take = parts.length; take >= 1; take -= 1) {
+    const key = normalizeRegionKey(parts.slice(0, take).join("-"));
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+/** Every brick a row could sit in, in the order of the header's point 2. Pure; the first with meta wins. */
+export function brickCandidates(row: Pick<DoctorListRow, "contactCrmId" | "region">, index: BrickIndex): string[] {
+  const out: string[] = [];
+  const add = (brickId: string | null | undefined) => {
+    const id = brickId?.trim();
+    if (id && !out.includes(id)) out.push(id);
+  };
+  add(index.placeBrickByContactId?.get(row.contactCrmId));
+  for (const key of intakeLocalityKeys(index.intakeByContactId?.get(row.contactCrmId))) add(index.brickByRegionName.get(key));
+  add(index.brickByContactId.get(row.contactCrmId));
+  add(index.brickByRegionName.get(normalizeRegionKey(row.region)));
+  return out;
+}
+
+/**
+ * The brick a row sits in: the first candidate the master names. A brick id with no live row in
+ * `source_of_sales_bricks` is a stale mapping, not a brick, so the next candidate is tried.
+ */
+export function resolveRowBrick(
+  row: Pick<DoctorListRow, "contactCrmId" | "region">,
+  index: BrickIndex,
+): { brickId: string; meta: BrickMeta } | null {
+  for (const brickId of brickCandidates(row, index)) {
+    const meta = index.metaByBrickId.get(brickId);
+    if (meta) return { brickId, meta };
+  }
+  return null;
+}
+
+/** Every brick id the rows could need a name for — the meta read asks for all of them. */
+function brickIdsInPlay(rows: readonly Pick<DoctorListRow, "contactCrmId" | "region">[], index: BrickIndex): string[] {
+  const needed = new Set<string>();
+  for (const row of rows) for (const brickId of brickCandidates(row, index)) needed.add(brickId);
+  return [...needed];
+}
+
+/** The heading of a row no brick was found for: the SFE's "where to find", else the region, else no location. */
+function unmappedHeading(row: Pick<DoctorListRow, "contactCrmId" | "region">, index: BrickIndex): string {
+  return index.intakeByContactId?.get(row.contactCrmId)?.trim() || (row.region ?? "").trim() || REPS_LIST_NO_LOCATION;
+}
 
 /**
  * PURE CORE — group one rep's contacts by brick. No IO, so the fixtures in the test file are the
@@ -259,17 +333,16 @@ export function groupContactsByBrick(rows: readonly RepsListContact[], index: Br
     // See RepsListCounts: contacts are AM + PM. A pharmacy row increments `total` and nothing else.
     if (row.listType !== "Pharmacy") counts.contacts += 1;
 
-    // Precise first: the contact's own mapping, then its region's. See the header.
-    const brickId =
-      index.brickByContactId.get(row.contactCrmId) ??
-      index.brickByRegionName.get(normalizeRegionKey(row.region)) ??
-      null;
-    const meta = brickId ? index.metaByBrickId.get(brickId) : undefined;
+    // Phoenix CRM first, then the finest thing left. See the header's point 2.
+    const found = resolveRowBrick(row, index);
+    const brickId = found?.brickId ?? null;
+    const meta = found?.meta;
 
     // A brick id with no row in `source_of_sales_bricks` is a stale mapping, not a brick. It is
     // treated as unmapped rather than rendered as a bare code, which the owner's naming rule forbids.
     const isMapped = Boolean(brickId && meta);
-    const key = isMapped ? `brick:${brickId}` : `region:${normalizeRegionKey(row.region) || "(none)"}`;
+    const unmappedName = isMapped ? "" : unmappedHeading(row, index);
+    const key = isMapped ? `brick:${brickId}` : `region:${normalizeRegionKey(unmappedName)}`;
 
     let group = groups.get(key);
     if (!group) {
@@ -277,10 +350,9 @@ export function groupContactsByBrick(rows: readonly RepsListContact[], index: Br
         areaCode: isMapped ? (meta?.areaCode ?? null) : null,
         areaName: isMapped ? (meta?.areaName ?? null) : null,
         brickId: isMapped ? brickId : null,
+        regionName: isMapped ? (meta?.regionName ?? null) : null,
         rows: [],
-        heading: isMapped
-          ? (meta?.name ?? "").trim() || "Unnamed brick"
-          : (row.region ?? "").trim() || "No CRM region recorded",
+        heading: isMapped ? (meta?.name ?? "").trim() || "Unnamed brick" : unmappedName,
         mapped: isMapped,
       };
       groups.set(key, group);
@@ -290,6 +362,11 @@ export function groupContactsByBrick(rows: readonly RepsListContact[], index: Br
 
   const ordered = [...groups.values()].sort((left, right) => {
     if (left.mapped !== right.mapped) return left.mapped ? -1 : 1;
+    // "No location yet" last, after every named locality — territories before gaps, as Phoenix CRM's
+    // own List orders them (`phoenix-crm/customer-list-grouping.ts`).
+    const leftNowhere = !left.mapped && left.heading === REPS_LIST_NO_LOCATION;
+    const rightNowhere = !right.mapped && right.heading === REPS_LIST_NO_LOCATION;
+    if (leftNowhere !== rightNowhere) return leftNowhere ? 1 : -1;
     if (left.rows.length !== right.rows.length) return right.rows.length - left.rows.length;
     return left.heading.localeCompare(right.heading);
   });
@@ -386,36 +463,54 @@ async function loadContactBrickMap(contactIds: readonly number[]): Promise<Map<n
   return map;
 }
 
-/** Area code -> area name, for exactly the areas the bricks in play sit in. */
-async function loadAreaNames(areaCodes: readonly string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  if (areaCodes.length === 0) return names;
+/** Area code -> its name and region code, for exactly the areas the bricks in play sit in. */
+async function loadAreaNames(areaCodes: readonly string[]): Promise<Map<string, { name: string | null; regionCode: string | null }>> {
+  const areas = new Map<string, { name: string | null; regionCode: string | null }>();
+  if (areaCodes.length === 0) return areas;
   const supabase = getSupabaseAdmin();
   // A few chunks at once, folded in chunk order (2026-10-16 performance audit): the same names, and the
   // same first failure, as the one-chunk-at-a-time loop gave.
   const answers = await mapWithConcurrency(inChunks(areaCodes), CHUNK_CONCURRENCY, async (chunk) =>
-    supabase.from("source_of_sales_areas").select("area_code, area_name").in("area_code", chunk),
+    supabase.from("source_of_sales_areas").select("area_code, area_name, region_code").in("area_code", chunk),
   );
   for (const { data, error } of answers) {
     if (error) throw new Error(`Could not read area names: ${error.message}`);
-    for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
-      const name = (row.area_name ?? "").trim();
-      if (row.area_code && name && !names.has(row.area_code)) names.set(row.area_code, name);
+    for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null; region_code: string | null }>) {
+      if (!row.area_code || areas.has(row.area_code)) continue;
+      areas.set(row.area_code, { name: (row.area_name ?? "").trim() || null, regionCode: row.region_code?.trim() || null });
+    }
+  }
+  return areas;
+}
+
+/** Region code -> region name, for exactly the regions the areas in play sit in. */
+async function loadRegionNames(regionCodes: readonly string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (regionCodes.length === 0) return names;
+  const supabase = getSupabaseAdmin();
+  const answers = await mapWithConcurrency(inChunks(regionCodes), CHUNK_CONCURRENCY, async (chunk) =>
+    supabase.from("source_of_sales_regions").select("region_code, region_name").in("region_code", chunk),
+  );
+  for (const { data, error } of answers) {
+    if (error) throw new Error(`Could not read region names: ${error.message}`);
+    for (const row of (data ?? []) as Array<{ region_code: string | null; region_name: string | null }>) {
+      const name = (row.region_name ?? "").trim();
+      if (row.region_code && name && !names.has(row.region_code)) names.set(row.region_code, name);
     }
   }
   return names;
 }
 
 /** Brick display metadata for the ids actually in play. Names are what the page renders. */
-async function loadBrickMeta(
-  brickIds: readonly string[],
-): Promise<Map<string, { areaCode: string | null; areaName: string | null; name: string }>> {
-  const meta = new Map<string, { areaCode: string | null; areaName: string | null; name: string }>();
+async function loadBrickMeta(brickIds: readonly string[]): Promise<Map<string, BrickMeta>> {
+  const meta = new Map<string, BrickMeta>();
+  // The brick's own region code, used only when its area names none.
+  const brickRegion = new Map<string, string | null>();
   if (brickIds.length === 0) return meta;
   const supabase = getSupabaseAdmin();
   // A few chunks at once, folded in chunk order (2026-10-16 performance audit) — see `loadAreaNames`.
   const answers = await mapWithConcurrency(inChunks(brickIds), CHUNK_CONCURRENCY, async (chunk) =>
-    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, active").in("brick_id", chunk),
+    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, region_code, active").in("brick_id", chunk),
   );
   for (const { data, error } of answers) {
     if (error) throw new Error(`Could not read brick names: ${error.message}`);
@@ -424,20 +519,29 @@ async function loadBrickMeta(
       area_code: string | null;
       brick_id: string | null;
       brick_name: string | null;
+      region_code: string | null;
     }>) {
       // A retired brick still names itself; dropping it here would turn a historically-correct
       // mapping into an "unmapped" group and hide the fact that the brick simply moved.
       if (!row.brick_id || meta.has(row.brick_id)) continue;
       if (row.active === false) continue;
-      meta.set(row.brick_id, { areaCode: row.area_code, areaName: null, name: (row.brick_name ?? "").trim() });
+      meta.set(row.brick_id, { areaCode: row.area_code, areaName: null, name: (row.brick_name ?? "").trim(), regionName: null });
+      brickRegion.set(row.brick_id, row.region_code?.trim() || null);
     }
   }
 
-  const areaNames = await loadAreaNames([
+  const areas = await loadAreaNames([
     ...new Set([...meta.values()].map((entry) => entry.areaCode).filter((code): code is string => Boolean(code))),
   ]);
-  for (const entry of meta.values()) {
-    entry.areaName = entry.areaCode ? (areaNames.get(entry.areaCode) ?? null) : null;
+  const regionCodeOf = (brickId: string, entry: BrickMeta) =>
+    (entry.areaCode ? areas.get(entry.areaCode)?.regionCode : null) ?? brickRegion.get(brickId) ?? null;
+  const regionNames = await loadRegionNames([
+    ...new Set([...meta].map(([brickId, entry]) => regionCodeOf(brickId, entry)).filter((code): code is string => Boolean(code))),
+  ]);
+  for (const [brickId, entry] of meta) {
+    entry.areaName = entry.areaCode ? (areas.get(entry.areaCode)?.name ?? null) : null;
+    const regionCode = regionCodeOf(brickId, entry);
+    entry.regionName = regionCode ? (regionNames.get(regionCode) ?? null) : null;
   }
   return meta;
 }
@@ -779,16 +883,12 @@ export async function getRepsListForAgent(
   // one the staged reads gave. Each is handled the moment it starts and awaited where it was used.
   const contactBrickMapRead = loadContactBrickMap(contactIds);
   const checkinsRead = loadCheckins(contactIds);
-  // Never throws: a failed read answers an empty map and every row falls back to its check-ins.
-  const placesRead = loadValidatedPlacePoints(contactIds);
-  const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead]).then(([byContactId, byRegionName]) => {
-    const needed = new Set<string>();
-    for (const row of rows) {
-      const brickId = byContactId.get(row.contactCrmId) ?? byRegionName.get(normalizeRegionKey(row.region));
-      if (brickId) needed.add(brickId);
-    }
-    return loadBrickMeta([...needed]);
-  });
+  // Never throws: a failed read answers empty maps, and every row falls back to its check-ins and
+  // the carried-over brick mapping.
+  const placesRead = loadPhoenixContactPlaces(contactIds);
+  const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead, placesRead]).then(([byContactId, byRegionName, places]) =>
+    loadBrickMeta(brickIdsInPlay(rows, brickIndexOf(byContactId, byRegionName, places, new Map()))),
+  );
   const otherPinsRead = rosterRead.then((rosterRows) => {
     // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
     // more check-ins. Matching keys come from the roster on both sides so the two halves of a pair are
@@ -817,7 +917,7 @@ export async function getRepsListForAgent(
   });
   for (const read of [contactBrickMapRead, checkinsRead, metaRead, otherPinsRead]) read.catch(() => undefined);
 
-  const [brickByContactId, brickByRegionName, checkins, roster, otherPins, placeByContact] = await Promise.all([
+  const [brickByContactId, brickByRegionName, checkins, roster, otherPins, places] = await Promise.all([
     contactBrickMapRead,
     regionBrickMapRead,
     checkinsRead,
@@ -857,6 +957,7 @@ export async function getRepsListForAgent(
     metaRead,
     counterpartiesRead,
   ]);
+  const index = brickIndexOf(brickByContactId, brickByRegionName, places, metaByBrickId);
 
   // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`
   // because the area a contact sits in is the SAME two-step brick resolution the grouping below
@@ -865,8 +966,7 @@ export async function getRepsListForAgent(
   // match trustworthy.
   const tradeByContact = matchContactTrade(
     rows.map((row) => {
-      const brickId =
-        brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region)) ?? null;
+      const brickId = resolveRowBrick(row, index)?.brickId ?? null;
       return {
         areaCode: brickId ? (metaByBrickId.get(brickId)?.areaCode ?? null) : null,
         contactCrmId: row.contactCrmId,
@@ -934,14 +1034,29 @@ export async function getRepsListForAgent(
       ),
       insights: insightsByContact.get(row.contactCrmId) ?? null,
       nearby: null,
-      place: placeByContact.get(row.contactCrmId) ?? null,
+      place: places.points.get(row.contactCrmId) ?? null,
       seenAt: found?.seenAt ?? null,
       sharedWith,
       trade: tradeByContact.get(row.contactCrmId) ?? null,
     };
   });
 
-  return groupContactsByBrick(annotated, { brickByContactId, brickByRegionName, metaByBrickId });
+  return groupContactsByBrick(annotated, index);
+}
+
+function brickIndexOf(
+  brickByContactId: Map<number, string>,
+  brickByRegionName: Map<string, string>,
+  places: PhoenixContactPlaces,
+  metaByBrickId: Map<string, BrickMeta>,
+): BrickIndex {
+  return {
+    brickByContactId,
+    brickByRegionName,
+    intakeByContactId: places.intakes,
+    metaByBrickId,
+    placeBrickByContactId: places.brickIds,
+  };
 }
 
 /**
@@ -949,7 +1064,7 @@ export async function getRepsListForAgent(
  * insight and trade annotations `getRepsListForAgent` adds for its own board.
  *
  * For a caller that needs only brick placement: Employee 360 compares the bricks of a rep's current
- * list with the bricks of his area. It resolves the brick with the SAME two steps and the SAME
+ * list with the bricks of his area. It resolves the brick with the SAME four steps and the SAME
  * loaders as the board above, so the two screens can never place one doctor in two bricks. Skipping
  * the annotations also skips the company-wide roster read, which this caller has no use for.
  */
@@ -963,15 +1078,12 @@ export async function getRepsListBrickPlacement(hrId: string): Promise<RepsListF
       unmappedRegionCount: 0,
     };
   }
-  const [brickByContactId, brickByRegionName] = await Promise.all([
-    loadContactBrickMap(rows.map((row) => row.contactCrmId)),
+  const contactIds = rows.map((row) => row.contactCrmId);
+  const [brickByContactId, brickByRegionName, places] = await Promise.all([
+    loadContactBrickMap(contactIds),
     loadRegionBrickMap(),
+    loadPhoenixContactPlaces(contactIds),
   ]);
-  const needed = new Set<string>();
-  for (const row of rows) {
-    const brickId = brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region));
-    if (brickId) needed.add(brickId);
-  }
-  const metaByBrickId = await loadBrickMeta([...needed]);
-  return groupContactsByBrick(rows, { brickByContactId, brickByRegionName, metaByBrickId });
+  const metaByBrickId = await loadBrickMeta(brickIdsInPlay(rows, brickIndexOf(brickByContactId, brickByRegionName, places, new Map())));
+  return groupContactsByBrick(rows, brickIndexOf(brickByContactId, brickByRegionName, places, metaByBrickId));
 }

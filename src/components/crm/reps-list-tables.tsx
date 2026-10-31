@@ -39,6 +39,7 @@ import {
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
+import { REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
@@ -365,10 +366,15 @@ function GroupHeading({
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900" dir="auto">
           {group.heading}
         </h3>
-        {group.mapped && group.areaName ? (
-          <span className="text-phx-2xs font-semibold text-slate-500">{group.areaName}</span>
+        {/* The brick's area and the area's region, from the sales master (owner, 2026-10-31: "get the
+            brick area and region"). */}
+        {group.mapped && (group.areaName || group.regionName) ? (
+          <span className="text-phx-2xs font-semibold text-slate-500">
+            {[group.areaName, group.regionName].filter(Boolean).join(" · ")}
+          </span>
         ) : null}
-        {group.mapped ? null : (
+        {/* "No location yet" already says it all; a named locality says which step is missing. */}
+        {group.mapped || group.heading === REPS_LIST_NO_LOCATION ? null : (
           <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
             Locality not yet mapped to a brick
           </span>
@@ -1084,7 +1090,7 @@ function GroupTable({
           <PortalRecordFields
             fields={[
               { label: "Specialty", value: row.speciality ?? "Unspecified" },
-              { label: "Brick", value: group.mapped ? brickCell : `${brickCell} — no brick yet` },
+              { label: "Brick", value: group.mapped ? brickCell : unmappedBrickLabel(brickCell) },
             ]}
           />
           <div className="mt-2 text-xs">
@@ -1379,7 +1385,7 @@ export function RepsListContacts({
       // The validated photo's point first, else the last check-in's — the screen's own precedence.
       address: polishAddressText((row.place ?? row.seenAt)?.address ?? row.address),
       area: entry.group.mapped ? (entry.group.areaName ?? "") : "",
-      brick: entry.group.mapped ? entry.group.heading : `${entry.group.heading} (not yet mapped to a brick)`,
+      brick: entry.group.mapped ? entry.group.heading : unmappedBrickLabel(entry.group.heading, "(not yet mapped to a brick)"),
       // The three judgements go out with the rows. An export must match the screen, and these are
       // the columns a manager would actually sort on — "show me every doubtful pin" is the whole
       // point of scoring them. The score is a NUMBER so it sorts; the word beside it says what the
@@ -1506,7 +1512,7 @@ export function RepsListContacts({
               <option value="">All bricks</option>
               {tabGroups.map((group) => (
                 <option key={groupKey(group)} value={groupKey(group)}>
-                  {group.mapped ? group.heading : `${group.heading} — no brick yet`}
+                  {group.mapped ? group.heading : unmappedBrickLabel(group.heading)}
                 </option>
               ))}
             </select>
@@ -1872,7 +1878,7 @@ function PlanDayTable({
   onOpenConfidence: (row: RepsListContact) => void;
   onOpenInsights: (row: RepsListContact) => void;
 }) {
-  const offListBrick = (row: PlanDoctorRow) => row.entry.region?.trim() || "No CRM region recorded";
+  const offListBrick = (row: PlanDoctorRow) => row.entry.region?.trim() || REPS_LIST_NO_LOCATION;
   const speciality = (row: PlanDoctorRow) =>
     row.contact?.contact.speciality?.trim() || row.entry.speciality?.trim() || UNSPECIFIED;
 
@@ -1946,7 +1952,7 @@ function PlanDayTable({
                 { label: "Specialty", value: speciality(row) },
                 {
                   label: "Brick",
-                  value: joined.brick.mapped ? joined.brick.heading : `${joined.brick.heading} — no brick yet`,
+                  value: joined.brick.mapped ? joined.brick.heading : unmappedBrickLabel(joined.brick.heading),
                 },
               ]}
             />

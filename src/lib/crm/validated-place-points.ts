@@ -13,6 +13,20 @@
  * 🔴 A LOCATION, NEVER A READING (golden rule #1, `phoenix-crm/server/blind-payloads.ts`): the point and
  * the address only — no accuracy, no pin or photo reading, no source. A rep's own board may show where
  * his customers are; it may never show how well a capture was taken.
+ *
+ * ## The brick comes from Phoenix CRM too (owner, 2026-10-31)
+ *
+ * "donot show no crm region from the address get the brick area and region … any data anywhere depending
+ * on data from ireports must shift to pulling its data from phoenix crm". A doctor a rep added in Phoenix
+ * CRM has no iReports360 contact, so the list used to file every one of them under "No CRM region
+ * recorded" (Shahd's 122 doctors on 2026-10-31, all of them). Phoenix CRM already knows where each one is:
+ *
+ *   - a validated doctor's place was filed in a brick when it was captured (`phoenix_crm_places.brick_id`,
+ *     the same place the KPIs count him under);
+ *   - a doctor still waiting to be validated carries the "where to find" the SFE wrote on the list sheet
+ *     (`phoenix_crm_customers.intake_where`, e.g. "Damanhor-Behira I-Alex": locality, area, region).
+ *
+ * This file reads both; `reps-list.ts` decides the order.
  */
 
 import { phoenixContactId, PHOENIX_VALIDATED_AT_COLUMN } from "@/lib/customer-360/validated";
@@ -33,7 +47,21 @@ export type ValidatedPlacePoint = {
   validatedAt: string | null;
 };
 
-type PlaceRow = KpiBrickPlace & { address: string | null; lat: number | null; lon: number | null };
+type PlaceRow = KpiBrickPlace & { address: string | null; brick_id: string | null; lat: number | null; lon: number | null };
+
+type CustomerRow = KpiBrickCustomer & { intake_where: string | null };
+
+/** What Phoenix CRM knows about where each contact on a list is. */
+export type PhoenixContactPlaces = {
+  /** The brick id the validated place was filed in. Missing when not validated, or filed in no brick. */
+  brickIds: Map<number, string>;
+  /** The SFE sheet's "where to find" text, for a contact Phoenix CRM holds one for. */
+  intakes: Map<number, string>;
+  /** The validated place's point, kept only when it is a usable fix. */
+  points: Map<number, ValidatedPlacePoint>;
+};
+
+const EMPTY_PLACES = (): PhoenixContactPlaces => ({ brickIds: new Map(), intakes: new Map(), points: new Map() });
 
 function chunk<T>(values: readonly T[]): T[][] {
   const out: T[][] = [];
@@ -71,27 +99,59 @@ export function chooseValidatedPlacePoints(
   return out;
 }
 
+/** The brick id each contact's validated place was filed in — the SAME place `chooseValidatedPlacePoints` reads. */
+export function chooseValidatedPlaceBricks(
+  customers: readonly KpiBrickCustomer[],
+  places: readonly PlaceRow[],
+): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const [contactId, { place }] of chooseValidatedPlaces(customers, places)) {
+    const brickId = place.brick_id?.trim();
+    if (brickId) out.set(contactId, brickId);
+  }
+  return out;
+}
+
 /**
- * The validated place points of the given contacts. A contact missing from the map has no validated
- * place with a usable point. A failed read answers an EMPTY map, so the board falls back to the
- * check-ins it always used rather than losing the list.
+ * The "where to find" of each contact: from a customer still on a list before a dropped one, then the
+ * latest validated, then the lowest id so the answer never depends on read order.
  */
-export async function loadValidatedPlacePoints(contactIds: readonly number[]): Promise<Map<number, ValidatedPlacePoint>> {
+export function chooseIntakeWhere(customers: readonly CustomerRow[]): Map<number, string> {
+  const held = new Map<number, CustomerRow>();
+  const active = (row: CustomerRow) => String(row.status ?? "").trim().toLowerCase() !== "dropped";
+  for (const row of customers) {
+    if (!row.intake_where?.trim()) continue;
+    const contactId = phoenixContactId(row);
+    if (contactId == null) continue;
+    const before = held.get(contactId);
+    const better =
+      !before ||
+      (active(row) && !active(before)) ||
+      (active(row) === active(before) &&
+        ((row.validated_at ?? "") > (before.validated_at ?? "") ||
+          ((row.validated_at ?? "") === (before.validated_at ?? "") && row.id < before.id)));
+    if (better) held.set(contactId, row);
+  }
+  return new Map([...held].map(([contactId, row]) => [contactId, String(row.intake_where).trim()]));
+}
+
+/**
+ * What Phoenix CRM knows about where the given contacts are: each validated place's point and brick,
+ * and each customer's "where to find". A failed read answers EMPTY maps, so the board falls back to the
+ * check-ins and the iReports360 mapping it always used rather than losing the list.
+ */
+export async function loadPhoenixContactPlaces(contactIds: readonly number[]): Promise<PhoenixContactPlaces> {
   const ids = [...new Set(contactIds.filter((id) => Number.isFinite(id) && id > 0))];
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) return EMPTY_PLACES();
   try {
     const db = getSupabaseAdmin();
-    const customerColumns = `id, status, ${PHOENIX_VALIDATED_AT_COLUMN}, reference_contact_crm_id, own_contact_crm_id`;
+    const customerColumns = `id, status, ${PHOENIX_VALIDATED_AT_COLUMN}, reference_contact_crm_id, own_contact_crm_id, intake_where`;
     // By either contact id: a contact is carried over from iReports360 (reference) or minted by Phoenix
     // for a customer a rep added himself (own) — `phoenixContactId` decides which one he is known by.
+    // Every customer, validated or not: a doctor still waiting carries the SFE's "where to find".
     const readBy = (column: "reference_contact_crm_id" | "own_contact_crm_id") =>
-      readChunked<KpiBrickCustomer>(ids, (part) =>
-        db
-          .from("phoenix_crm_customers")
-          .select(customerColumns)
-          .not(PHOENIX_VALIDATED_AT_COLUMN, "is", null)
-          .eq("is_test", false)
-          .in(column, part),
+      readChunked<CustomerRow>(ids, (part) =>
+        db.from("phoenix_crm_customers").select(customerColumns).eq("is_test", false).in(column, part),
       );
     const [byReference, byOwn] = await Promise.all([readBy("reference_contact_crm_id"), readBy("own_contact_crm_id")]);
     const wanted = new Set(ids);
@@ -99,20 +159,28 @@ export async function loadValidatedPlacePoints(contactIds: readonly number[]): P
       const contactId = phoenixContactId(row);
       return contactId != null && wanted.has(contactId);
     });
-    if (customers.length === 0) return new Map();
-    const places = await readChunked<PlaceRow>(
-      customers.map((row) => String(row.id)),
-      (part) =>
-        db
-          .from("phoenix_crm_places")
-          .select("customer_id, brick_name, created_at, address, lat, lon")
-          .eq("is_test", false)
-          .eq("status", "active")
-          .in("customer_id", part),
-    );
-    return chooseValidatedPlacePoints(customers, places);
+    if (customers.length === 0) return EMPTY_PLACES();
+    const validated = customers.filter((row) => row.validated_at);
+    const places =
+      validated.length === 0
+        ? []
+        : await readChunked<PlaceRow>(
+            validated.map((row) => String(row.id)),
+            (part) =>
+              db
+                .from("phoenix_crm_places")
+                .select("customer_id, brick_id, brick_name, created_at, address, lat, lon")
+                .eq("is_test", false)
+                .eq("status", "active")
+                .in("customer_id", part),
+          );
+    return {
+      brickIds: chooseValidatedPlaceBricks(validated, places),
+      intakes: chooseIntakeWhere(customers),
+      points: chooseValidatedPlacePoints(validated, places),
+    };
   } catch (error) {
-    console.error("[reps-list] the validated place points could not be read; the list falls back to check-ins", error);
-    return new Map();
+    console.error("[reps-list] Phoenix CRM's places could not be read; the list falls back to check-ins and the iReports360 mapping", error);
+    return EMPTY_PLACES();
   }
 }
