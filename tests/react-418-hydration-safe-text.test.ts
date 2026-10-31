@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, cairoMonthDayTime12h, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
+import { CAIRO_MONTHS, cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, cairoMonthDayTime12h, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
 import { offerWhen } from "../src/components/offers/offer-ui.ts";
+import { cairoStamp } from "../src/components/recruitment/workspace/workspace-format.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
@@ -553,6 +554,52 @@ export function runReact418HydrationSafeTextTests() {
   const offerUi = codeOnly(read("src/components/offers/offer-ui.ts"));
   assert.match(offerUi, /export function offerWhen\([^)]*\)[^{]*\{[\s\S]*?return formatStableEnGb\(parsed,/, "🔴 the offer's Sent time goes through formatStableEnGb");
   assert.doesNotMatch(offerUi, /\.toLocale(?:Date|Time)?String\(\s*["']en-GB["']/, "🔴 offer-ui must not ask the reader's engine for an en-GB date");
+
+  // (d4) Recruitment (System Audit, "/recruitment", "/recruitment/previous" and a candidate's page,
+  // 26–29 Oct 2026). All eight recorded #418s were one HR Resourcing reader from 26 Oct on — the
+  // Cloudflare email rewrite #6718 ended; she used the same pages 20–25 Oct with none. What remained
+  // asked the reader's engine for Africa/Cairo: the pool's Received time (`toLocaleTimeString` in
+  // recruitment-workspace.tsx's own cairoDateTime) and every workspace row's stamp (`cairoStamp`, an
+  // Intl formatter zoned to Africa/Cairo). An engine built before Egypt's 2023 return to daylight
+  // saving prints those an hour early from late April to late October, on rows the server already
+  // drew. Both now read the shipped offset table, and nothing on screen moves.
+  const workspaceStampWith = (format: Intl.DateTimeFormat) => (iso: string, today: string) => {
+    const parts = format.formatToParts(new Date(iso));
+    const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    const day = `${Number(part("day"))} ${CAIRO_MONTHS[Number(part("month")) - 1]}`;
+    return `${Number(part("year")) === Number(today.slice(0, 4)) ? day : `${day} ${part("year")}`} · ${part("hour")}:${part("minute")}`;
+  };
+  const workspaceStampOptions: Intl.DateTimeFormatOptions = {
+    day: "numeric", hour: "2-digit", hourCycle: "h23", minute: "2-digit", month: "numeric", timeZone: "Africa/Cairo", year: "numeric",
+  };
+  const workspaceStampBefore = workspaceStampWith(new RealDateTimeFormat("en-GB", workspaceStampOptions));
+  const poolReceivedBefore = (iso: string) =>
+    `${stableEnGbFormatter({ day: "2-digit", month: "short", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date(iso))} · ${new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" })}`;
+  for (const iso of [
+    "2026-01-15T08:05:00Z", "2026-04-23T21:59:00Z", "2026-04-23T22:00:00Z", "2026-07-01T21:30:00Z", "2026-09-14T09:07:00Z",
+    "2026-10-19T14:32:00Z", "2026-10-29T20:59:00Z", "2026-10-29T21:00:00Z", "2026-12-31T22:00:00Z", "2025-06-01T09:05:00Z",
+  ]) {
+    assert.equal(cairoStamp(iso, "2026-10-31"), workspaceStampBefore(iso, "2026-10-31"), `${iso}: a workspace row's stamp must read exactly as the server printed it before`);
+    assert.equal(cairoDateTime(iso), poolReceivedBefore(iso), `${iso}: the pool's Received time must read exactly as the server printed it before`);
+  }
+  const summerArrival = "2026-07-01T09:30:00Z";
+  const [serverStamp, serverReceived] = [cairoStamp(summerArrival, "2026-10-31"), cairoDateTime(summerArrival)];
+  try {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = function PreDaylightSavingEngine(locale?: string, options?: Intl.DateTimeFormatOptions) {
+      return new RealDateTimeFormat(locale, options?.timeZone === "Africa/Cairo" ? { ...options, timeZone: "Etc/GMT-2" } : options);
+    } as unknown as typeof Intl.DateTimeFormat;
+    assert.notEqual(workspaceStampWith(new Intl.DateTimeFormat("en-GB", workspaceStampOptions))(summerArrival, "2026-10-31"), serverStamp, "the probe really is stale: asked for Cairo, it answers an hour early in July");
+    assert.equal(cairoStamp(summerArrival, "2026-10-31"), serverStamp, "🔴 an engine with pre-2023 Cairo rules must still get the server's exact row stamp");
+    assert.equal(cairoDateTime(summerArrival), serverReceived, "🔴 an engine with pre-2023 Cairo rules must still get the server's exact Received time");
+  } finally {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = RealDateTimeFormat;
+  }
+  const workspaceFormat = codeOnly(read("src/components/recruitment/workspace/workspace-format.ts"));
+  assert.match(workspaceFormat, /cairoWallClock\(instant\)/, "🔴 the workspace stamps read Cairo's wall clock from the shipped table");
+  assert.doesNotMatch(workspaceFormat, /Intl\.DateTimeFormat|toLocale(?:Date|Time)?String|Africa\/Cairo/, "🔴 workspace-format must not ask the reader's engine for Cairo's time");
+  const recruitmentPool = codeOnly(read("src/components/recruitment/recruitment-workspace.tsx"));
+  assert.match(recruitmentPool, /import \{[^}]*\bcairoDateTime\b[^}]*\} from "@\/lib\/format\/cairo-datetime";/, "🔴 the recruitment pool prints its times through the shared cairoDateTime");
+  assert.doesNotMatch(recruitmentPool, /function cairoDateTime\(|toLocaleTimeString\(|timeZone:\s*["']Africa\/Cairo["']/, "🔴 the recruitment pool must not keep its own Cairo formatter or ask the reader's engine for Cairo's time");
 
   // (e) No NEW client component may ask the browser for a 12-hour time. `hour12: true`, an h11/h12
   // hourCycle, or an "en"/"en-US" call with an hour (whose default is 12-hour) all print the AM/PM
