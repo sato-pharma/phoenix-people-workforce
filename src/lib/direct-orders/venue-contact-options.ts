@@ -59,6 +59,7 @@ import { getManagerScope, scopeAllowsAgent, type CrmManagerScope } from "@/lib/c
 import { doctorListBasisForRole } from "@/lib/crm/doctor-list-access";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
+import { loadContactPlacements } from "@/lib/crm/reps-list";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE, CRM_CONTACTS_TABLE } from "@/lib/crm/tables";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
@@ -142,6 +143,21 @@ function matchesSearch(option: VenueContactOption, needle: string): boolean {
   if (!needle) return true;
   const hay = `${option.name} ${option.nameAr ?? ""} ${option.address ?? ""} ${option.region ?? ""}`.toLowerCase();
   return hay.includes(needle);
+}
+
+/**
+ * Where each option is, from Phoenix CRM first (owner, 2026-10-31: "any data anywhere depending on data
+ * from ireports must shift to pulling its data from phoenix crm"): the Reps List's own placement —
+ * "Brick · Area · Region" and the validated place's address — with the iReports360 contact master's
+ * values kept when Phoenix has none. Display only: the write gate below never reads either field.
+ * Never throws; a failed read leaves every option as it was built.
+ */
+async function placeOptions(options: readonly VenueContactOption[]): Promise<VenueContactOption[]> {
+  const placements = await loadContactPlacements(options.map((option) => ({ contactCrmId: option.contactCrmId, region: option.region })));
+  return options.map((option) => {
+    const placement = placements.get(option.contactCrmId);
+    return placement ? { ...option, address: placement.address ?? option.address, region: placement.label } : option;
+  });
 }
 
 /** Pharmacies first for a pharmacy venue, then doctors; alphabetical inside each band. */
@@ -425,6 +441,7 @@ export async function describeVenueContacts(
     // whichever row the database returned first, so a label does not change between two loads.
     if (!existing || compareOptions(option, existing) < 0) described.set(option.contactCrmId, option);
   }
+  for (const option of await placeOptions([...described.values()])) described.set(option.contactCrmId, option);
   return described;
 }
 
@@ -499,7 +516,7 @@ export async function listVenueContactOptions(
 
   matched.sort(compareOptions);
   return {
-    options: matched.slice(0, limit),
+    options: await placeOptions(matched.slice(0, limit)),
     scopeLabel,
     truncated: matched.length > limit,
     unavailableReason: null,

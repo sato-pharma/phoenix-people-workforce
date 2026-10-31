@@ -1087,3 +1087,67 @@ export async function getRepsListBrickPlacement(hrId: string): Promise<RepsListF
   const metaByBrickId = await loadBrickMeta(brickIdsInPlay(rows, brickIndexOf(brickByContactId, brickByRegionName, places, new Map())));
   return groupContactsByBrick(rows, brickIndexOf(brickByContactId, brickByRegionName, places, metaByBrickId));
 }
+
+/** Where one contact sits, by the Reps List's four steps — see {@link loadContactPlacements}. */
+export type ContactPlacement = {
+  /** The validated Phoenix place's address, or null when the place has no usable fix. */
+  address: string | null;
+  /** The brick, or null when no step found one the sales master names. */
+  brickId: string | null;
+  /**
+   * What a screen prints for where the contact is: "Brick · Area · Region" on a brick, else the
+   * Reps List's own unmapped heading — the SFE's "where to find", the CRM region, or "No location yet".
+   */
+  label: string;
+  meta: BrickMeta | null;
+};
+
+/** "Brick · Area · Region" — the Reps List heading and its sub-line, as one string. */
+export function placementLabel(meta: BrickMeta | null): string | null {
+  if (!meta) return null;
+  return [meta.name, meta.areaName, meta.regionName].filter(Boolean).join(" · ") || null;
+}
+
+/**
+ * THE ONE DOOR FOR "WHERE IS THIS CONTACT" OUTSIDE THE REPS LIST (owner, 2026-10-31: "any data
+ * anywhere depending on data from ireports must shift to pulling its data from phoenix crm").
+ *
+ * The SAME four steps and loaders as the board above — the validated Phoenix place's brick first,
+ * then the SFE's locality, then the old iReports360 mappings — so a plan, a drill-down, a pack and a
+ * picker can never place one doctor in a different brick from his rep's own list.
+ *
+ * `region` is the row's raw CRM region name (the fourth step's key), never a label from this door.
+ *
+ * Never throws: every caller keeps the value it read before as its fallback, and a plan or a pack
+ * must not be lost because a placement read failed.
+ */
+export async function loadContactPlacements(
+  rows: readonly Pick<DoctorListRow, "contactCrmId" | "region">[],
+): Promise<Map<number, ContactPlacement>> {
+  const placements = new Map<number, ContactPlacement>();
+  const unique = [...new Map(rows.filter((row) => row.contactCrmId > 0).map((row) => [row.contactCrmId, row])).values()];
+  if (unique.length === 0) return placements;
+  try {
+    const contactIds = unique.map((row) => row.contactCrmId);
+    const [brickByContactId, brickByRegionName, places] = await Promise.all([
+      loadContactBrickMap(contactIds),
+      loadRegionBrickMap(),
+      loadPhoenixContactPlaces(contactIds),
+    ]);
+    const metaByBrickId = await loadBrickMeta(brickIdsInPlay(unique, brickIndexOf(brickByContactId, brickByRegionName, places, new Map())));
+    const index = brickIndexOf(brickByContactId, brickByRegionName, places, metaByBrickId);
+    for (const row of unique) {
+      const hit = resolveRowBrick(row, index);
+      placements.set(row.contactCrmId, {
+        address: places.points.get(row.contactCrmId)?.address?.trim() || null,
+        brickId: hit?.brickId ?? null,
+        label: placementLabel(hit?.meta ?? null) ?? unmappedHeading(row, index),
+        meta: hit?.meta ?? null,
+      });
+    }
+  } catch (error) {
+    console.warn("[reps-list] contact placements unavailable; callers keep their own read", error);
+    return new Map();
+  }
+  return placements;
+}

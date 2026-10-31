@@ -3,6 +3,8 @@ import { extractCampaignAccounts } from "@/lib/crm/campaign-account";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { getCrmCutoverSetting, isOnOrAfterCrmCutover, vendorSyncStandDownReason } from "@/lib/crm/cutover";
 import { cairoTodayIso } from "@/lib/crm/dates";
+import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
+import { startedWindowCovers, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 import {
   CRM_DOUBLE_VISIT_TYPE_CODES,
   queryCheckins,
@@ -209,6 +211,21 @@ export function nsmCrmComplianceUnavailable(input: { reps: CrmPerson[]; dsms: Cr
   };
 }
 
+/**
+ * Whether EVERY person on this roster is counted from Phoenix CRM on `date` (owner, 2026-10-31: "any
+ * data anywhere depending on data from ireports must shift to pulling its data from phoenix crm").
+ * Such a roster records its visits in Phoenix itself, so the board has nothing to wait for from the
+ * iReports360 pull and the day counts as checked now. A MIXED roster keeps the vendor ledger: one rep
+ * still on iReports360 is still waiting for it. An empty roster is never "counted from Phoenix".
+ */
+export function rosterCountedFromPhoenix(
+  windows: readonly StartedRepWindow[],
+  people: readonly CrmPerson[],
+  date: string,
+): boolean {
+  return people.length > 0 && people.every((person) => startedWindowCovers(windows, { hrId: person.hrId, crmId: null }, date));
+}
+
 export async function getNsmCrmCompliance(input: {
   reps: CrmPerson[];
   dsms: CrmPerson[];
@@ -232,6 +249,15 @@ export async function getNsmCrmCompliance(input: {
     getCrmCutoverSetting()
       .then((setting) =>
         vendorSyncStandDownReason(setting) || isOnOrAfterCrmCutover(setting, date) ? new Date().toISOString() : null,
+      )
+      .catch(() => null)
+      // A roster wholly on started Phoenix CRM teams is checked NOW too — the global cutover is never
+      // set by a per-team start, so without this a started team waited all day on the vendor's pull.
+      .then(async (phoenixCheckedAt) =>
+        phoenixCheckedAt ??
+        (rosterCountedFromPhoenix(await loadStartedRepWindows(), [...input.reps, ...input.dsms], date)
+          ? new Date().toISOString()
+          : null),
       )
       .catch(() => null)
       .then((phoenixCheckedAt) => phoenixCheckedAt ?? getLatestSuccessfulSyncRunFor(date).catch(() => null)),

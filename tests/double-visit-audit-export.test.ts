@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildAuditWeeks,
@@ -206,4 +207,15 @@ export async function runDoubleVisitAuditExportTests() {
     if (typeof value === "string" && /^(Jul|Sep) 2026/.test(value)) bandCells.push(value.slice(0, 8));
   });
   assert.deepEqual(bandCells, ["Jul 2026", "Sep 2026"], "both months appear as stacked bands in the one coach tab, in order");
+
+  // ── The check-in times read Phoenix CRM visits too (owner, 2026-10-31) ─────────────────────────────
+  // A started team's rep records his visits in Phoenix CRM, so an iReports360-only read printed no
+  // check-in time beside any of his double visits. The workbook is behind double_visit_analytics
+  // export, which no rep holds, so it may ask (phoenix-team-starts.ts).
+  const auditSource = readFileSync("src/lib/double-visit-analytics/audit-export.ts", "utf8");
+  assert.match(
+    auditSource,
+    /queryCheckins<[^>]*>\(\{[^}]*includePhoenixVisits: true,[^}]*\}\)/,
+    "the audit workbook's check-in read asks for the Phoenix CRM visits as well",
+  );
 }

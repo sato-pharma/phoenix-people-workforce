@@ -110,7 +110,9 @@
  *   - the managers' first-visit board on the District, Regional and National Sales Managers' home pages;
  *   - the rep-day drill-down behind HR's field-workforce compliance and the National Sales Manager's
  *     team calendar; Field Activity (`double_visit_analytics`, which no Medical Rep holds); probation SFE
- *     evidence (company-wide probation access, or the SFE Manager).
+ *     evidence (company-wide probation access, or the SFE Manager);
+ *   - the Double Visit audit workbook's check-in times (`double_visit_analytics` export, which no
+ *     Medical Rep holds).
  * Every other check-in reader reads iReports360 check-ins only, so a started team's people show none
  * there within the start — see "Which still do not".
  *

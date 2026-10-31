@@ -528,6 +528,19 @@ export function runCrmPlanVerificationTests() {
     planBoardSource.includes("isTerminalEmploymentStatus"),
     "a rep who has left the company must not be listed as having failed to file",
   );
+  // (c2) WHERE EACH PLANNED DOCTOR IS COMES FROM PHOENIX CRM FIRST (owner, 2026-10-31). A Phoenix plan
+  // row carries no CRM region, so every started team's plan read a blank locality; the Reps List's own
+  // placement answers first and the iReports360 values stay as the fallback.
+  const planEntriesBody = planBoardSource.slice(
+    planBoardSource.indexOf("export async function getPlanEntries("),
+    planBoardSource.indexOf("export type AgentPlanEntryRow"),
+  );
+  assert.match(planEntriesBody, /await loadContactPlacements\(/, "the plan's doctors are placed by the Reps List's own door");
+  assert.match(
+    planEntriesBody,
+    /address: placement\.address \?\? row\.address, region: placement\.label/,
+    "Phoenix CRM's address and brick come first, the iReports360 ones only when Phoenix has none",
+  );
 
   // (d) Sorted by name. The list is read top-down by a manager deciding who to chase, and an
   // arbitrary order makes the same list look different on every refresh.

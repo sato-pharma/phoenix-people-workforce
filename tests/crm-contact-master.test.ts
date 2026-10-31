@@ -225,6 +225,15 @@ export function runCrmContactMasterTests() {
     assert.ok(start > -1 && end > start, "MASTER_SELECT_COLUMNS must be findable");
     assert.doesNotMatch(options.slice(start, end), /phone/, "the master read must not SELECT a phone either");
   }
+  // Where each contact is, from Phoenix CRM first (owner, 2026-10-31): both the picker and the registry's
+  // labels go through the Reps List's own placement, the iReports360 values only as the fallback.
+  assert.match(options, /options: await placeOptions\(matched\.slice\(0, limit\)\)/, "the picker's options are placed by Phoenix CRM");
+  assert.match(options, /for \(const option of await placeOptions\(\[\.\.\.described\.values\(\)\]\)\)/, "the registry's contact labels are placed by Phoenix CRM");
+  assert.match(
+    options,
+    /placement \? \{ \.\.\.option, address: placement\.address \?\? option\.address, region: placement\.label \} : option/,
+    "Phoenix CRM's address and brick come first, the contact master's only when Phoenix has none",
+  );
 
   // ── 7. The cron rebuilds the master after the slice, and never fails the sync over it ─
   const syncAt = route.indexOf("await syncCrmContactLists(");

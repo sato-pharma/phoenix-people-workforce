@@ -265,6 +265,24 @@ export function runCrmReportsReadPhoenixTests() {
       master.includes('agentHrId: typeof row.agent_hr_id === "string" ? row.agent_hr_id : null'),
       "E4: the matcher is told the visit's HR id",
     );
+
+    // PHX Brick/Area/Region come from Phoenix CRM first (owner, 2026-10-31): the contact's validated
+    // Phoenix place answers before either iReports360 mapping, and it is read for the call's own rows.
+    const attach = block(master, "function attachBrickMapping(");
+    assert.match(
+      attach,
+      /\(contactId != null \? mapByPlace\.get\(contactId\) : undefined\) \?\?\s+\(contactId != null \? mapByContactId\.get/,
+      "the validated Phoenix place is asked before the iReports360 contact mapping",
+    );
+    assert.match(
+      master,
+      /isVisitDataset\(dataset\) \? loadBrickMappingByPhoenixPlace\(brickLookupContactIds\(rows\)\) : null,/,
+      "every visit read loads the Phoenix places for its own contacts",
+    );
+    assert.match(master, /attachBrickMapping\(rows, byRegion, byContact, byPlace \?\? undefined\)/, "and hands them to the brick columns");
+    const placeLoader = block(master, "async function loadBrickMappingByPhoenixPlace(");
+    assert.ok(placeLoader.includes("loadPhoenixContactPlaces(contactIds)"), "the place is the Reps List's own validated place");
+    assert.ok(placeLoader.includes("if (b.active === false) continue;"), "a brick the sales master no longer runs leaves the old mapping to answer");
   }
   assert.equal(vacationAgentKey({ agent_crm_id: 12, agent_hr_id: "B-1" }), "crm:12");
   assert.equal(vacationAgentKey({ agent_crm_id: null, agent_hr_id: " B-40 " }), "hr:b-40", "a rep with no CRM account is grouped by his HR id");

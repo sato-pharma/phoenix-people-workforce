@@ -32,6 +32,7 @@ import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { dayScanSlices, readCompanyWindow } from "@/lib/crm/reads";
 import { planEntryKeysetAfter } from "@/lib/crm/plan-entry-keyset";
+import { loadContactPlacements } from "@/lib/crm/reps-list";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
@@ -551,7 +552,21 @@ export async function getPlanEntries(crmPlanId: number, agentCrmId?: number | nu
     if (page.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
   }
-  return rows;
+  // WHERE EACH DOCTOR IS, FROM PHOENIX CRM FIRST (owner, 2026-10-31: "donot show no crm region from the
+  // address get the brick area and region … any data anywhere depending on data from ireports must
+  // shift to pulling its data from phoenix crm"). A Phoenix plan row carries no CRM region at all (the
+  // plan door's Phoenix branch writes null) and a rep with no CRM id has no iReports360 list to read an
+  // address from, so a started team's plans read blank on both. The Reps List's own placement answers
+  // instead — "Brick · Area · Region" and the validated place's address — with the iReports360 values
+  // kept as the fallback. It never throws: a failed read leaves every row as it was read above.
+  const placements = await loadContactPlacements(
+    rows.flatMap((row) => (row.contactCrmId != null && row.contactCrmId > 0 ? [{ contactCrmId: row.contactCrmId, region: row.region }] : [])),
+  );
+  if (placements.size === 0) return rows;
+  return rows.map((row) => {
+    const placement = row.contactCrmId == null ? undefined : placements.get(row.contactCrmId);
+    return placement ? { ...row, address: placement.address ?? row.address, region: placement.label } : row;
+  });
 }
 
 /** One agent's plan rows over a date window, for the Phoenix CRM "Copy last month" reference. */

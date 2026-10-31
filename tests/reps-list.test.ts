@@ -29,7 +29,7 @@ import {
 import { buildPhoenixInsights } from "../src/lib/crm/phoenix-insights.ts";
 import { pruneLineFirst, regionsForLine } from "../src/lib/crm/reps-list-board.ts";
 import { awaitingBrickSub, brickSpreadLine } from "../src/lib/crm/reps-list-labels.ts";
-import { groupContactsByBrick, type BrickIndex } from "../src/lib/crm/reps-list.ts";
+import { groupContactsByBrick, placementLabel, type BrickIndex } from "../src/lib/crm/reps-list.ts";
 
 /**
  * Reps List — the board the owner specified on 2026-08-31: filter Line -> Region -> Area, pick a
@@ -1978,4 +1978,20 @@ export function runRepsListTests() {
     );
   }
 
+  // ── THE ONE DOOR'S LABEL (owner, 2026-10-31) ──────────────────────────────────────────────────────
+  // Every screen that moved off iReports360 — the plan board, the rep's visit table, the venue picker —
+  // prints a placed contact exactly as the Reps List heads his brick: "Brick · Area · Region", and never
+  // the raw CRM region name.
+  assert.equal(placementLabel({ name: "Dokki", areaCode: "G1", areaName: "Giza I", regionName: "Cairo" }), "Dokki · Giza I · Cairo");
+  assert.equal(placementLabel({ name: "Dokki", areaCode: "G1", areaName: null, regionName: null }), "Dokki", "a missing part is left out, never printed empty");
+  assert.equal(placementLabel(null), null, "no brick, no label — the caller falls back to the unmapped heading");
+  {
+    const door = readFileSync("src/lib/crm/reps-list.ts", "utf8");
+    assert.match(
+      door,
+      /label: placementLabel\(hit\?\.meta \?\? null\) \?\? unmappedHeading\(row, index\)/,
+      "an unplaced contact reads the Reps List's own unmapped heading, never \"No CRM region\"",
+    );
+    assert.match(door, /console\.warn\("\[reps-list\] contact placements unavailable/, "a failed placement read never fails the caller");
+  }
 }

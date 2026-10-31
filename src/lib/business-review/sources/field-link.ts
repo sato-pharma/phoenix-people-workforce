@@ -13,9 +13,12 @@
 //
 //   * THE LIST is Phoenix's own contact register (`crm_contact_assignments` + `crm_contacts`), never
 //     the raw `ireports360_contacts` scrape. The register dates every list period from its first
-//     sweep on 28 Aug 2026, so a month is measured against the list AS IT STOOD, and it already
-//     carries each contact's brick — the doctor map first, then the region map, the same order every
-//     CRM surface applies — so a doctor and his visits can never disagree about where he is.
+//     sweep on 28 Aug 2026, so a month is measured against the list AS IT STOOD.
+//   * EACH CONTACT'S BRICK comes through the Reps List's one door (`loadContactPlacements`, owner,
+//     2026-10-31: "any data anywhere depending on data from ireports must shift to pulling its data
+//     from phoenix crm") — the validated Phoenix place first, then the SFE's locality, and only then
+//     the register's old iReports360 brick — so a doctor and his visits can never disagree about where
+//     he is, and the pack places him where his rep's own list does.
 //   * VISITS AND RIDES come through the CRM read door (`queryVisits`), with the resigned floor
 //     opened exactly as the review's own visit source opens it, and the same duplicate collapse. The
 //     door itself decides which system speaks for a rep-day (owner, 2026-10-02): a team that works in
@@ -33,6 +36,7 @@
 
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
 import { tidyAllCapitalsName } from "@/lib/employees/display-name";
+import { loadContactPlacements } from "@/lib/crm/reps-list";
 import { collapseDuplicateVisitSubmissions, isCrmDoubleVisitRow, queryVisits } from "@/lib/crm/reads";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket } from "@/lib/crm/visit-count-buckets";
@@ -432,11 +436,14 @@ async function loadListedContacts(
   }
 
   const ids = [...new Set([...latest.values()].map((row) => Number(row.contact_crm_id)))];
-  const detail = new Map<number, { name: string; speciality: string; brickId: string | null; lastVisitedOn: string | null }>();
+  const detail = new Map<
+    number,
+    { name: string; speciality: string; brickId: string | null; lastVisitedOn: string | null; region: string | null }
+  >();
   for (const part of chunks(ids)) {
     const { data, error } = await db
       .from("crm_contacts")
-      .select("contact_crm_id, name, name_ar, speciality, brick_id, last_visited_on")
+      .select("contact_crm_id, name, name_ar, speciality, brick_id, crm_region_name, last_visited_on")
       .in("contact_crm_id", part);
     if (error) break;
     for (const row of (data ?? []) as {
@@ -445,16 +452,23 @@ async function loadListedContacts(
       name_ar: string | null;
       speciality: string | null;
       brick_id: string | null;
+      crm_region_name: string | null;
       last_visited_on: string | null;
     }[]) {
       detail.set(Number(row.contact_crm_id), {
         brickId: text(row.brick_id) || null,
         lastVisitedOn: row.last_visited_on ? text(row.last_visited_on).slice(0, 10) : null,
         name: text(row.name) || text(row.name_ar) || "Unnamed customer",
+        region: text(row.crm_region_name) || null,
         speciality: text(row.speciality),
       });
     }
   }
+  // Phoenix CRM's place first; the register's old iReports360 brick only where Phoenix has none.
+  const placements = await loadContactPlacements(
+    [...detail.entries()].map(([contactCrmId, info]) => ({ contactCrmId, region: info.region })),
+  );
+  for (const [id, info] of detail) info.brickId = placements.get(id)?.brickId ?? info.brickId;
 
   const contacts: ListedContact[] = [];
   for (const row of latest.values()) {
@@ -475,16 +489,26 @@ async function loadListedContacts(
   return { contacts };
 }
 
-/** The register's brick for each contact — for contacts visited but not on any list in the pack. */
+/**
+ * Each contact's brick — for contacts visited but not on any list in the pack. Phoenix CRM's place
+ * first (the one door), the register's old iReports360 brick only where Phoenix has none.
+ */
 async function loadContactBricks(db: Db, ids: readonly number[]): Promise<Map<number, string | null>> {
   const out = new Map<number, string | null>();
+  const regions: { contactCrmId: number; region: string | null }[] = [];
   for (const part of chunks([...new Set(ids)].filter((id) => Number.isFinite(id)))) {
-    const { data, error } = await db.from("crm_contacts").select("contact_crm_id, brick_id").in("contact_crm_id", part);
+    const { data, error } = await db
+      .from("crm_contacts")
+      .select("contact_crm_id, brick_id, crm_region_name")
+      .in("contact_crm_id", part);
     if (error) throw error;
-    for (const row of (data ?? []) as { contact_crm_id: number; brick_id: string | null }[]) {
+    for (const row of (data ?? []) as { contact_crm_id: number; brick_id: string | null; crm_region_name: string | null }[]) {
       out.set(Number(row.contact_crm_id), text(row.brick_id) || null);
+      regions.push({ contactCrmId: Number(row.contact_crm_id), region: text(row.crm_region_name) || null });
     }
   }
+  const placements = await loadContactPlacements(regions);
+  for (const [id, brickId] of out) out.set(id, placements.get(id)?.brickId ?? brickId);
   return out;
 }
 

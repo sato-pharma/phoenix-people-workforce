@@ -50,6 +50,7 @@ import {
   type VisitForCallRate,
 } from "@/lib/crm/call-rate";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import { REPS_LIST_NO_LOCATION } from "@/lib/crm/reps-list-labels";
 import { isPharmacyListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import {
   matchCampaignNote,
@@ -294,6 +295,13 @@ export function toRepVisitRow<C extends CheckinForMatch>(
    * not opted in gets and is exactly the behaviour before 2026-10-07.
    */
   viewer?: PhoenixDetailViewer,
+  /**
+   * Where each contact sits by Phoenix CRM, keyed by contact id — the Reps List's own brick
+   * (`loadContactPlacements`), mapped only. Asked FIRST, so a Phoenix visit (which carries no CRM
+   * region) and an iReports360 one both read the brick the rep's list files the doctor under.
+   * Omitted, or no entry → the visit's CRM region, exactly as before (owner, 2026-10-31).
+   */
+  contactTerritory?: ReadonlyMap<number, RepVisitTerritory>,
 ): RepVisitRow {
   const { label, bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
   const partnerHrId = text(visit.double_hr_id);
@@ -345,7 +353,9 @@ export function toRepVisitRow<C extends CheckinForMatch>(
     grade: text(visit.crm_contact_grade),
     crmRegionId: visit.crm_region_id,
     crmRegionName: text(visit.crm_region_name),
-    territory: resolveVisitTerritory(visit.crm_region_id, territoryIndex),
+    territory:
+      (visit.contact_crm_id ? contactTerritory?.get(visit.contact_crm_id) : undefined) ??
+      resolveVisitTerritory(visit.crm_region_id, territoryIndex),
     visitTypeCode: visit.visit_type,
     visitTypeLabel: label,
     bucket,
@@ -542,6 +552,8 @@ export function buildRepVisits<C extends CheckinForMatch>(
     assisted?: ReadonlyMap<string, CampaignAssistReading>;
     /** Who is reading — see `toRepVisitRow`. Omitted → no Phoenix half on any row. */
     viewer?: PhoenixDetailViewer;
+    /** Each contact's Phoenix CRM brick — see `toRepVisitRow`. Omitted → the CRM region only. */
+    contactTerritory?: ReadonlyMap<number, RepVisitTerritory>;
   },
 ): { rows: RepVisitRow[]; summary: RepVisitsSummary } {
   const checkinIndex = indexCheckinsByAgentContactDay(checkins);
@@ -556,6 +568,7 @@ export function buildRepVisits<C extends CheckinForMatch>(
         options.assisted,
         options.holidays,
         options.viewer,
+        options.contactTerritory,
       ),
     ),
   );
@@ -717,5 +730,7 @@ export function territoryLabel(row: RepVisitRow): string {
     return parts.filter((part): part is string => Boolean(part)).join(" · ");
   }
   if (row.territory.status === "unmapped") return row.crmRegionName ?? `CRM region ${row.crmRegionId ?? ""}`.trim();
-  return "No region recorded";
+  // Phoenix CRM's own words for a contact no step could place — the Reps List's, so the two never
+  // disagree (owner, 2026-10-31: "donot show no crm region").
+  return REPS_LIST_NO_LOCATION;
 }

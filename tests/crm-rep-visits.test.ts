@@ -104,10 +104,50 @@ export function runCrmRepVisitsTests() {
     const noRegion = buildRepVisits([visit({ crm_region_id: null, crm_region_name: null })], [], {
       territoryIndex: MAPPED,
     });
-    assert.equal(territoryLabel(noRegion.rows[0]!), "No region recorded");
+    assert.equal(
+      territoryLabel(noRegion.rows[0]!),
+      "No location yet",
+      "a visit nothing can place reads Phoenix CRM's own words, the Reps List's — never \"No region recorded\" (owner, 2026-10-31)",
+    );
     for (const row of [built.rows[0]!, unmapped.rows[0]!, noRegion.rows[0]!]) {
       assert.ok(territoryLabel(row).trim().length > 0, "the territory cell must never render empty");
     }
+  }
+
+  // ── The doctor's Phoenix CRM brick comes first (owner, 2026-10-31) ────────────────────────────────
+  // "donot show no crm region from the address get the brick area and region": a Phoenix visit carries
+  // no CRM region, so it read "no region"; the doctor's brick from the Reps List's own placement is
+  // asked first, for every visit, and a contact with no brick falls back to the CRM region as before.
+  {
+    const phoenixBrick = new Map([
+      [
+        DOCTOR,
+        {
+          status: "mapped" as const,
+          brickId: "BH-01",
+          brickName: "Damanhour",
+          areaCode: "A21",
+          areaName: "Behira 1",
+          regionCode: null,
+          regionName: "Alex-BHR",
+        },
+      ],
+    ]);
+    const phoenixVisit = buildRepVisits([visit({ crm_region_id: null, crm_region_name: null })], [], {
+      contactTerritory: phoenixBrick,
+      territoryIndex: UNMAPPED,
+    });
+    assert.equal(territoryLabel(phoenixVisit.rows[0]!), "Damanhour · Behira 1 · Alex-BHR", "a Phoenix visit with no CRM region reads its doctor's brick");
+
+    const regionVisit = buildRepVisits([visit()], [], { contactTerritory: phoenixBrick, territoryIndex: MAPPED });
+    assert.equal(
+      territoryLabel(regionVisit.rows[0]!),
+      "Damanhour · Behira 1 · Alex-BHR",
+      "the Phoenix brick outranks the CRM region's, exactly as on the Reps List",
+    );
+
+    const otherDoctor = buildRepVisits([visit({ contact_crm_id: 777 })], [], { contactTerritory: phoenixBrick, territoryIndex: MAPPED });
+    assert.equal(territoryLabel(otherDoctor.rows[0]!), "المحلة الكبرى · Gharbia 2 (Mahalla) · Delta (1)", "a doctor Phoenix has not placed keeps his CRM region");
   }
 
   // ── Proof: the SAME three buckets the rate uses, per row ────────────────────────

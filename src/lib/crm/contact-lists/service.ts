@@ -74,6 +74,7 @@ import {
   type Directory,
 } from "@/lib/crm/native-visits/server-shared";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
+import { loadPhoenixContactPlaces } from "@/lib/crm/validated-place-points";
 import { isActiveDirectoryEmployee, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -241,7 +242,10 @@ async function loadRepList(repHrId: string): Promise<Omit<ContactListEntry, "pen
     const id = Number(row.contact_crm_id);
     return Number.isInteger(id) && id > 0 && id !== CATCH_ALL_CONTACT;
   });
-  const details = await loadContactDetails(rows.map((row) => Number(row.contact_crm_id)));
+  const contactIds = rows.map((row) => Number(row.contact_crm_id));
+  // The address from Phoenix CRM first — the doctor's validated place — and the iReports360 contact
+  // master's only when Phoenix has none (owner, 2026-10-31). A failed Phoenix read answers empty maps.
+  const [details, places] = await Promise.all([loadContactDetails(contactIds), loadPhoenixContactPlaces(contactIds)]);
   const seen = new Set<string>();
   const entries: Omit<ContactListEntry, "pendingChange">[] = [];
   for (const row of rows) {
@@ -254,7 +258,7 @@ async function loadRepList(repHrId: string): Promise<Omit<ContactListEntry, "pen
       contactCrmId,
       name: detail?.name ?? "Unnamed doctor",
       speciality: detail?.speciality ?? null,
-      address: detail?.address ?? null,
+      address: places.points.get(contactCrmId)?.address ?? detail?.address ?? null,
       listType,
       grade: text(row.grade),
       since: String(row.effective_from ?? "").slice(0, 10),
@@ -580,15 +584,17 @@ export async function searchContactListDoctors(
     if (isMissingTable(error)) return [];
     throw error;
   }
-  return ((data ?? []) as Array<Record<string, unknown>>)
+  const found = ((data ?? []) as Array<Record<string, unknown>>)
     .filter((row) => !isPharmacySpeciality(text(row.speciality)))
-    .slice(0, SEARCH_LIMIT)
-    .map((row) => ({
-      contactCrmId: Number(row.contact_crm_id),
-      name: String(row.name ?? "").trim() || "Unnamed doctor",
-      speciality: text(row.speciality),
-      address: text(row.address),
-    }));
+    .slice(0, SEARCH_LIMIT);
+  // The address from Phoenix CRM first, as on the list itself (owner, 2026-10-31).
+  const places = await loadPhoenixContactPlaces(found.map((row) => Number(row.contact_crm_id)));
+  return found.map((row) => ({
+    contactCrmId: Number(row.contact_crm_id),
+    name: String(row.name ?? "").trim() || "Unnamed doctor",
+    speciality: text(row.speciality),
+    address: places.points.get(Number(row.contact_crm_id))?.address ?? text(row.address),
+  }));
 }
 
 // ── A rep asks ──────────────────────────────────────────────────────────────────────────────────

@@ -508,7 +508,12 @@ export function runBusinessReviewFieldLinkTests() {
 
     const loader = stripComments(readFileSync("src/lib/business-review/sources/field-link.ts", "utf8"));
     assert.match(loader, /from\("crm_contact_assignments"\)/, "the list is the dated contact register");
-    assert.match(loader, /from\("crm_contacts"\)/, "and its brick is the register's own");
+    assert.match(loader, /from\("crm_contacts"\)/, "the register still names each contact and keeps his old brick as the fallback");
+    // WHERE A CONTACT IS comes from Phoenix CRM first (owner, 2026-10-31): the Reps List's one door, on
+    // the listed doctors AND on every visited contact, the register's iReports360 brick only behind it.
+    assert.match(loader, /import \{ loadContactPlacements \} from "@\/lib\/crm\/reps-list"/, "the brick comes through the one door");
+    assert.match(loader, /info\.brickId = placements\.get\(id\)\?\.brickId \?\? info\.brickId/, "a listed doctor sits in Phoenix's brick first");
+    assert.match(loader, /out\.set\(id, placements\.get\(id\)\?\.brickId \?\? brickId\)/, "a visited contact sits in Phoenix's brick first");
     assert.ok(!/ireports360_contacts/.test(loader), "never the raw list scrape, which keeps no history");
     assert.match(loader, /includeResignedAgents: true/, "a leaver's past months keep the visits they had");
     assert.match(loader, /collapseDuplicateVisitSubmissions/, "a re-save is not a second visit");
