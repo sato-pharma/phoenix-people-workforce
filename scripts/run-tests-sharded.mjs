@@ -30,17 +30,23 @@
 // cannot prove the whole suite ran, so on success it writes a record (`PHX_TEST_RESULT_FILE`) of what it
 // ran, and `scripts/ci-unit-coverage.mjs` refuses unless every part's record is there and they add up.
 //
+// 🔴 A SHARD THAT HANGS IS STOPPED AND NAMED (2026-10-31). Each shard runs under a hang watch
+// (scripts/run-tests-sharded-shard.mjs): a test still running after PHX_TEST_HANG_SECONDS (180 by default),
+// or a shard that long without starting a test or exiting, is killed and reported as `shard i/n was
+// stopped: "<test>" was still running`. Before it, one stuck test held its CI job until the job's own
+// 20-minute timeout and the log named nothing.
+//
 // Usage:  node scripts/run-tests-sharded.mjs          (shards = CPUs, capped by free memory, max 4)
 //         PHX_TEST_SHARDS=1 node scripts/run-tests-sharded.mjs   (one shard = the serial run)
 //         PHX_TEST_PART=2/3 PHX_TEST_SHARDS=2 PHX_TEST_RESULT_FILE=out.json node scripts/run-tests-sharded.mjs
 
-import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   collectProblems,
+  hangLimitMs,
   parsePart,
   parseResult,
   parseSlowest,
@@ -48,6 +54,7 @@ import {
   ranTotal,
   shardCount,
 } from "./run-tests-sharded-plan.mjs";
+import { runShard } from "./run-tests-sharded-shard.mjs";
 import { refuseArguments } from "./lib/refuse-arguments.mjs";
 
 // It takes no arguments — what to run and how is read from the environment (PHX_TEST_SHARDS, PHX_TEST_PART,
@@ -61,7 +68,8 @@ refuseArguments({
   node scripts/run-tests-sharded.mjs -h   this text
 
 It takes no arguments. Environment: PHX_TEST_SHARDS (shards in this process), PHX_TEST_PART=p/P with PHX_TEST_RESULT_FILE
-(one part of a P-part run, as ci.yml's unit job does).`,
+(one part of a P-part run, as ci.yml's unit job does), PHX_TEST_HANG_SECONDS (how long one test may run before its
+shard is stopped; 180 by default).`,
   hints: ["to run only some tests, run tests/run-tests.ts yourself with the node flags in package.json's `test` script"],
 });
 
@@ -95,38 +103,6 @@ function testScriptArgs() {
   return args.slice(1);
 }
 
-async function runShard(args, index, total) {
-  return new Promise((resolveShard) => {
-    const child = spawn(process.execPath, args, {
-      cwd: ROOT,
-      env: { ...process.env, PHX_TEST_SHARD: `${index}/${total}` },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let out = "";
-    const tag = total === 1 ? "" : `[shard ${index}/${total}] `;
-    const pump = (stream, sink) => {
-      let partial = "";
-      stream.setEncoding("utf8");
-      stream.on("data", (chunk) => {
-        out += chunk;
-        partial += chunk;
-        const lines = partial.split("\n");
-        partial = lines.pop() ?? "";
-        // FAIL and the stack behind it are what a reader needs immediately; PASS lines are noise at
-        // 2,000 a run, so they are counted and summarised instead.
-        for (const line of lines) if (!line.startsWith("PASS ")) sink.write(`${tag}${line}\n`);
-      });
-      stream.on("end", () => {
-        if (partial) sink.write(`${tag}${partial}\n`);
-      });
-    };
-    pump(child.stdout, process.stdout);
-    pump(child.stderr, process.stderr);
-    child.on("error", (error) => resolveShard({ index, code: 1, out, spawnError: error }));
-    child.on("close", (code, signal) => resolveShard({ index, code: code ?? 1, signal, out }));
-  });
-}
-
 const args = testScriptArgs();
 const part = parsePart(process.env.PHX_TEST_PART);
 const resultFile = process.env.PHX_TEST_RESULT_FILE;
@@ -152,14 +128,18 @@ if (part) {
   total = shardCount(process.env.PHX_TEST_SHARDS);
   count = total;
 }
+const hangMs = hangLimitMs(process.env.PHX_TEST_HANG_SECONDS);
 const startedAt = Date.now();
 const scope = part ? `part ${part.part}/${part.parts}, shards ${first}..${first + count - 1} of ${total}` : `${total} shard(s)`;
 console.log(
   `run-tests-sharded: ${scope} of \`${["node", ...args].join(" ")}\`` +
-    (total === 1 ? " (one shard — identical to `pnpm run test`)" : ""),
+    (total === 1 ? " (one shard — identical to `pnpm run test`)" : "") +
+    `; a test still running after ${hangMs / 1000}s stops its shard`,
 );
 
-const results = await Promise.all(Array.from({ length: count }, (_, i) => runShard(args, first + i, total)));
+const results = await Promise.all(
+  Array.from({ length: count }, (_, i) => runShard({ args, cwd: ROOT, env: process.env, index: first + i, total, hangMs })),
+);
 const wallSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 
 const problems = collectProblems(results, total, window);

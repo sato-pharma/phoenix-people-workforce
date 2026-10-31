@@ -2994,11 +2994,23 @@ const dealShard = createShardDeal(shardTotal);
  */
 const failedTests: string[] = [];
 
+/**
+ * 🔴 IN A SHARDED RUN EVERY TEST IS BRACKETED BY `PHX_TEST_START <id> <name>` AND `PHX_TEST_END <id>`, for
+ * the hang watch in `scripts/run-tests-sharded-shard.mjs`: a test still running past its limit gets its
+ * shard stopped and is named, instead of holding the CI job to its 20-minute timeout in silence (31 Oct
+ * 2026, twice). The parent keeps the clock; this process only says where it is. The write is the real
+ * `process.stdout.write`, taken before any test runs, so a test that captures stdout and forgets to put it
+ * back cannot silence the markers and get a healthy shard stopped. A plain run prints none.
+ */
+const writeWatchMarker = shardSpec ? process.stdout.write.bind(process.stdout) : null;
+
 async function runTest(name: string, execute: () => void | Promise<void>) {
   seenCount += 1;
   const mine = dealShard(execute.name) === shardIndex - 1;
   if (!mine) return;
   ranCount += 1;
+  const watchId = seenCount;
+  writeWatchMarker?.(`PHX_TEST_START ${watchId} ${name.replace(/\s+/g, " ")}\n`);
   const startedAt = performance.now();
   try {
     await execute();
@@ -3010,6 +3022,8 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
     process.exitCode = 1;
     console.error(`FAIL ${name}`);
     console.error(error);
+  } finally {
+    writeWatchMarker?.(`PHX_TEST_END ${watchId}\n`);
   }
 }
 
