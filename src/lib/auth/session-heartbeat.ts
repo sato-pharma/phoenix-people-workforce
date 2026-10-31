@@ -28,7 +28,7 @@ import {
 import { isSessionVerificationUnavailable } from "@/lib/auth/session-lifecycle";
 import { isSupabaseTimeout } from "@/lib/reports/vacancies";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
-import { classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
+import { classifyCloudflareGatewayPage, classifySupabaseUnreachable } from "@/lib/error-monitor/supabase-unreachable";
 
 /**
  * THE SESSION HEARTBEAT — the one live read that keeps a signed-in page signed in.
@@ -76,13 +76,13 @@ export type SessionHeartbeatResult = {
  * heartbeat’s database steps use this one test: until 23 Oct 2026 only the session read did, and the
  * request-counting step before it rethrew its timeout, so every open page crashed with a 500 during
  * each database restart — 106 times for 50 people, mostly 22 Oct 12:00-15:00 Cairo (APP-20D39617).
+ * Cloudflare's PLAIN gateway page counts too: every step here is a database read, so that page can only be
+ * Supabase's edge. It crashed the pulse with a 500 on 26 and 30 Oct (System Audit, 31 Oct 2026).
  */
 function isSessionServiceOutage(error: unknown): boolean {
-  return (
-    isSupabaseTimeout(error) ||
-    isSessionVerificationUnavailable(error) ||
-    Boolean(classifySupabaseUnreachable(describeThrown(error)))
-  );
+  if (isSupabaseTimeout(error) || isSessionVerificationUnavailable(error)) return true;
+  const described = describeThrown(error);
+  return Boolean(classifySupabaseUnreachable(described) ?? classifyCloudflareGatewayPage(described));
 }
 
 // 503, never 401: the client signs the person out on a 401 alone. The cookies are left untouched and

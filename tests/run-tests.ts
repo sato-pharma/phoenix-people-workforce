@@ -197,6 +197,7 @@ import { runOutstationExpenseTemplatePharmaciesTests } from "./outstation-expens
 import { runMarketingBulkImportAtomicityTests } from "./marketing-bulk-import-atomicity.test.ts";
 import { runSalesBulkImportGatingTests } from "./sales-bulk-import-gating.test.ts";
 import { runMarketingAccessGatesTests } from "./marketing-access-gates.test.ts";
+import { runMarketingProofUploadOfferTests } from "./marketing-proof-upload-offer.test.ts";
 import { runValidatedCustomerTransferTests } from "./validated-customer-transfer.test.ts";
 import { runPhotoPinTerritoryTests } from "./photo-pin-territory.test.ts";
 import { runMarketingVenueDirectOrderSyncTests } from "./marketing-venue-direct-order-sync.test.ts";
@@ -3476,6 +3477,7 @@ await runTest("outstation expense template carries AM · PM · Pharmacies both w
 await runTest("marketing bulk-import atomicity", runMarketingBulkImportAtomicityTests);
 await runTest("sales bulk-import gating (idle/untouched never blocks Confirm & Import All)", runSalesBulkImportGatingTests);
 await runTest("marketing access gates (bulk-upload preview/template + direct-tracking read)", runMarketingAccessGatesTests);
+await runTest("marketing approved list: the money transfer proof upload is offered only to whoever the server lets attach it, so a rep is never handed a Forbidden", runMarketingProofUploadOfferTests);
 await runTest("validated customer register + Direct Order transfer gates", runValidatedCustomerTransferTests);
 await runTest("a marketing transfer files a venue's territory from its photo pin, never the inherited label", runPhotoPinTerritoryTests);
 await runTest("a customer validated for marketing is validated in Direct Orders, in the rep's venues, and every photo reaches the approvers", runMarketingVenueDirectOrderSyncTests);

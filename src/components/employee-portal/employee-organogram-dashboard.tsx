@@ -25,6 +25,9 @@ type EmployeeOrganogramDashboardProps = {
   // Server-decided: does this viewer hold `employees:update`? Only then does a vacancy
   // popup offer "Add employee to this seat". Never inferred client-side.
   canAddEmployee?: boolean;
+  // Server-decided: may this viewer read a CV (canDownloadEmployeeCv)? False keeps the person
+  // popup from probing a CV route that would refuse it. Absent asks the route, as before.
+  canReadEmployeeCv?: boolean;
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
@@ -59,6 +62,7 @@ const PORTAL_KPI_LABELS: OrgChartKpiLabels = {
 
 export function EmployeeOrganogramDashboard({
   canAddEmployee = false,
+  canReadEmployeeCv = true,
   fixedLine = null,
   initialError = null,
   initialReport = null,
@@ -289,6 +293,7 @@ export function EmployeeOrganogramDashboard({
               <OrgChartTree
                 asOfMonth={reportAsOf}
                 canAddEmployee={canAddEmployee}
+                canReadEmployeeCv={canReadEmployeeCv}
                 kpiLabels={PORTAL_KPI_LABELS}
                 lineName={effectiveLineFilter || lineName}
                 rows={filteredRows}

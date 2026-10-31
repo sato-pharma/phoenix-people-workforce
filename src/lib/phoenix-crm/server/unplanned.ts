@@ -22,6 +22,7 @@ import type { OffPlanVisitRef } from "@/lib/phoenix-crm/server/offplan-day";
 import { nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
+  isRepeatOfOwnUnplannedDecision,
   isUnplannedVisitStatus,
   isUnplannedVisitWaiting,
   reviewerWasOnTheVisit,
@@ -295,7 +296,10 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
       // The three companion columns are read for the fence below: this read, unlike the board's, has
       // no visit join at all, so without them the decision cannot tell whether the person clicking
       // was on the visit he is deciding.
+      // Who took each step, and the version, answer a second press of the same decision with the
+      // answer he already has (`isRepeatOfOwnUnplannedDecision`).
       "visit_id, seat_id, rep_hr_id, customer_id, visit_date, status, clarification, is_test, " +
+        "manager_decided_by_hr_id, sfe_decided_by_hr_id, version, " +
         "customer:phoenix_crm_customers!customer_id(name), " +
         "visit:phoenix_crm_visits!visit_id(manager_hr_id, senior_hr_id, product_manager_hr_id, companions:phoenix_crm_visit_companions(hr_id, position))",
     )
@@ -309,6 +313,16 @@ export async function decideUnplannedVisit(viewer: PhoenixCrmViewer, raw: unknow
   const seat = viewer.org.seats.get(String(row.seat_id));
   if (!seat) throw notFoundError("This territory is no longer in the organogram. Reload the page.");
   const status: UnplannedVisitStatus = isUnplannedVisitStatus(row.status) ? row.status : "approved";
+  // 🔴 THE SAME PERSON'S SAME DECISION AGAIN IS THE ANSWER HE ALREADY HAS — read before any step is
+  // checked, because his own approval has moved the visit to a step that is not his (production,
+  // 24–30 Oct 2026: fourteen refusals, every one a second press seconds after his own decision saved).
+  // Nothing is written and nobody is told twice.
+  const repeat = isRepeatOfOwnUnplannedDecision(
+    { status, managerDecidedByHrId: textOrNull(row.manager_decided_by_hr_id), sfeDecidedByHrId: textOrNull(row.sfe_decided_by_hr_id) },
+    viewer.hrId,
+    decision,
+  );
+  if (repeat) return { visitId, status, version: Number(row.version) };
   if (!isUnplannedVisitWaiting(status)) throw forbiddenError("This visit was already decided. Reload the page.");
   // A RECORDED visit waits for the Administrator first (owner, 2026-10-16), and his step is taken on the
   // Visit Recording page — never here, by anybody, his own override included.

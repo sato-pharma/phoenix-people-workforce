@@ -42,7 +42,16 @@ import { offPlanLocationFlag } from "@/lib/phoenix-crm/server/blind-payloads";
 import { loadDayStartsBySeat } from "@/lib/phoenix-crm/server/day-start";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { managerPlanReach } from "@/lib/phoenix-crm/server/manager-plan-reach";
-import { loadReadiness, loadRequestRows, mapRequestRow, requestPeople, requestRights, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
+import {
+  loadReadiness,
+  loadRequestRows,
+  mapRequestRow,
+  requestPeople,
+  requestRights,
+  withPlaceCheckHolds,
+  type ListRequest,
+  type SeatReadiness,
+} from "@/lib/phoenix-crm/server/list";
 import { loadExemptVisitIds, loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
 import { loadMovedFromDays } from "@/lib/phoenix-crm/server/offplan-day";
 import {
@@ -466,24 +475,29 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   );
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
-  const requests = requestRows
-    .map((row): TeamRequest => {
-      const seatId = String(row.seat_id);
-      const seat = seatsById.get(seatId) as OrgSeat;
-      const request = mapRequestRow(row, names);
-      return {
-        ...request,
-        seatId,
-        territoryName: summaries.get(seatId)?.name ?? "Territory",
-        // The step it is ON decides who may press the button (2026-09-29): a grade change and the
-        // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
-        // is the SFE Manager's. Everyone else in scope reads it and no more.
-        // A request SFE returned for a comment is with the rep: nobody decides it, and the bulk drop skips it.
-        ...requestRights(viewer, seat, isTest, request),
-        canOverride: canOverrideDecision(viewer, isTest),
-      };
-    })
-    .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt));
+  // A request whose place is still on Place checks says so in place of its Approve (`withPlaceCheckHolds`).
+  const requests = await withPlaceCheckHolds(
+    viewer,
+    isTest,
+    requestRows
+      .map((row): TeamRequest => {
+        const seatId = String(row.seat_id);
+        const seat = seatsById.get(seatId) as OrgSeat;
+        const request = mapRequestRow(row, names);
+        return {
+          ...request,
+          seatId,
+          territoryName: summaries.get(seatId)?.name ?? "Territory",
+          // The step it is ON decides who may press the button (2026-09-29): a grade change and the
+          // first step of a drop, an add or a bring-back are the territory's reviewer's; the second step
+          // is the SFE Manager's. Everyone else in scope reads it and no more.
+          // A request SFE returned for a comment is with the rep: nobody decides it, and the bulk drop skips it.
+          ...requestRights(viewer, seat, isTest, request),
+          canOverride: canOverrideDecision(viewer, isTest),
+        };
+      })
+      .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt)),
+  );
 
   const unplannedVisits = unplannedRows
     .map((row): TeamUnplannedVisit => {

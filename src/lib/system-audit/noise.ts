@@ -25,6 +25,7 @@ export const APP_ERROR_NOISE_CLASSES = [
   "development",
   "masked_script_error",
   "browser_network",
+  "browser_injected_script",
   "benign_disconnect",
   "stale_deploy_chunk",
   "router_mount_recovered",
@@ -37,6 +38,7 @@ export const EXCLUDED_NOISE_CLASSES: ReadonlySet<AppErrorNoiseClass> = new Set([
   "development",
   "masked_script_error",
   "browser_network",
+  "browser_injected_script",
   "benign_disconnect",
   "stale_deploy_chunk",
   "router_mount_recovered",
@@ -63,6 +65,17 @@ const BROWSER_NETWORK_MESSAGES = new Set([
   "network error",
   "networkerror when attempting to fetch resource.",
 ]);
+
+/**
+ * Scripts a BROWSER runs inside our page: Brave on iPhone injects a crypto-wallet shim
+ * (`window.ethereum.selectedAddress = undefined`) and an ad-block selector poller
+ * (`n.standardSelectors`) as page scripts. Their frame is the page's own URL, so hasAppFrame reads
+ * them as ours — but nothing in src/, app/ or public/ names either word (the test pins that).
+ * Production, 31 Oct 2026: 27 + 1 rows, every one Brave on iPhone, five audit issues opened for a
+ * fault no change of ours can reach. Matched on the raw message, which may be the JSON the browser's
+ * own error event was stored as.
+ */
+const BROWSER_INJECTED_SCRIPT = /\bwindow\.ethereum\.selectedAddress\b|'[\w$]+\.standardSelectors'/;
 
 const STACK_FRAME_URL = /(?:@|\(|\bat\s+)(https?:\/\/[^\s)]+?):\d+:\d+/g;
 
@@ -135,6 +148,7 @@ export function classifyAppErrorNoise(row: AppErrorEventRow, options: NoiseOptio
 
   if (isClient && isCrossOriginMaskedMessage(message) && !hasAppFrame(row.stack)) return "masked_script_error";
   if (isClient && BROWSER_NETWORK_MESSAGES.has(message.toLowerCase())) return "browser_network";
+  if (isClient && BROWSER_INJECTED_SCRIPT.test(raw)) return "browser_injected_script";
   // Exact messages only — "Connection closed." is not among them and stays a finding.
   if (isBenignClientDisconnect({ message: raw }) || isBenignClientDisconnect({ message })) return "benign_disconnect";
   if (isStaleDeployChunkError(new Error(message))) return "stale_deploy_chunk";

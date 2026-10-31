@@ -127,6 +127,7 @@ import {
   loadLocationChecks,
   notifyValidationReviewWaiting,
   pendingLocationReview,
+  pendingLocationReviewCustomers,
   withdrawValidationNotConfirmed,
 } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
@@ -582,6 +583,12 @@ export type ListRequest = {
   repliedAt: string | null;
   /** The viewer may return it for a comment (the caller sets it, like `canDecide`). */
   canReturn: boolean;
+  /**
+   * SFE's step of an add or a bring-back whose customer's place is still with Place checks: the sentence
+   * the card shows in place of Approve, which the server would refuse (`withPlaceCheckHolds`). Null for
+   * everyone who does not decide that step — never the rep (Golden Rule #1).
+   */
+  placeCheckHold: string | null;
 };
 
 /**
@@ -1335,6 +1342,7 @@ export function mapRequestRow(row: Row, names: ReadonlyMap<string, string>): Lis
     repReply: text(row.rep_reply),
     repliedAt: text(row.replied_at),
     canReturn: false,
+    placeCheckHold: null,
   };
 }
 
@@ -1361,6 +1369,35 @@ export function requestRights(
     hasReviewer: territoryReviewer(viewer.org, seat.seatId) !== null,
   });
   return { canDecide, canReturn };
+}
+
+/** SFE's step of an add or a bring-back admits the customer, so it waits while his place is on Place checks. */
+export function awaitsPlaceCheck(request: { kind: PhoenixCrmRequestKind; stage: PhoenixCrmRequestStage | null; customerId: string | null }): boolean {
+  return request.stage === "sfe" && (request.kind === "add" || request.kind === "restore") && Boolean(request.customerId);
+}
+
+/**
+ * Sets `placeCheckHold` on every waiting request the viewer would approve at SFE's step while its
+ * customer's place is still with Place checks — the same test `decideListRequest` refuses on, asked
+ * before the press. The SFE Manager pressed Approve on seventeen held adds between 25 and 29 Oct and was
+ * refused each time (System Audit, 2026-10-31). Only whoever decides the step reads it, never the rep
+ * (Golden Rule #1). A failed read leaves every card as it was: the server still refuses.
+ */
+export async function withPlaceCheckHolds<T extends ListRequest>(viewer: PhoenixCrmViewer, isTest: boolean, requests: T[]): Promise<T[]> {
+  const override = canOverrideDecision(viewer, isTest);
+  const asked = requests.filter((request) => request.status === "pending" && !request.withRep && (request.canDecide || override) && awaitsPlaceCheck(request));
+  if (asked.length === 0) return requests;
+  let held: Set<string>;
+  try {
+    held = await pendingLocationReviewCustomers(asked.map((request) => request.customerId as string));
+  } catch (error) {
+    logError("Phoenix CRM list: the Place checks holds could not be read", { error, labels: { event: "phoenix_crm_place_check_holds_failed" } });
+    return requests;
+  }
+  if (held.size === 0) return requests;
+  const message = placeCheckHoldMessage(canDecideValidationReviews(viewer));
+  const askedSet = new Set<T>(asked);
+  return requests.map((request) => (askedSet.has(request) && held.has(request.customerId as string) ? { ...request, placeCheckHold: message } : request));
 }
 
 const REQUEST_COLUMNS =
@@ -1520,10 +1557,14 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     names,
     referenceBrickMeta,
   ] = await wave;
-  const requests = requestRows.map((row) => {
-    const request = mapRequestRow(row, names);
-    return { ...request, ...requestRights(viewer, seat, isTest, request) };
-  });
+  const requests = await withPlaceCheckHolds(
+    viewer,
+    isTest,
+    requestRows.map((row) => {
+      const request = mapRequestRow(row, names);
+      return { ...request, ...requestRights(viewer, seat, isTest, request) };
+    }),
+  );
   const pendingByCustomer = new Map<string, Partial<Record<PhoenixCrmRequestKind, ListRequest>>>();
   const pendingDropByContact = new Map<number, ListRequest>();
   for (const request of requests) {
@@ -3351,7 +3392,8 @@ export async function decideListRequest(
   // old "still being checked … once the check is finished" read as a lookup still running and sent
   // Khaled Bedair back to wait on a decision that was his own (production, 2026-10-24).
   const customerId = text(request.customer_id);
-  if (decision === "approve" && rowStage === "sfe" && (kind === "add" || kind === "restore") && customerId && (await pendingLocationReview(customerId))) {
+  // One rule with the card's `withPlaceCheckHolds`, so a card never offers the Approve this refuses.
+  if (decision === "approve" && customerId && awaitsPlaceCheck({ kind, stage: rowStage, customerId }) && (await pendingLocationReview(customerId))) {
     throw validationError(placeCheckHoldMessage(canDecideValidationReviews(viewer)));
   }
 

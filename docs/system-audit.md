@@ -242,6 +242,48 @@ only (`merge: "max"`), so the nightly sweep continues from wherever is further o
 their dedupe key (`<signature>:<person>:<first event id>`), so history the live sweep already folded is
 merged, not doubled. Pinned by `tests/system-audit-historical-runner.test.ts`.
 
+## The 31 Oct 2026 digest, triaged
+
+The 04:57 message of 31 Oct 2026 led with four items; PR 6699 fixed those. The rest, one line each.
+
+**Fixed** — each pinned by a test that fires when the fix is removed:
+
+- **A second press on your own off-plan decision** — 7 "already decided" and 7 "waiting for SFE" refusals,
+  each seconds after the same person's own press. The repeat is answered with where the visit stands.
+  `tests/phoenix-crm-unplanned-visit.test.ts`.
+- **Approve on a card waiting on a Place Check** — the SFE Manager was refused 17 times, 25–29 Oct. The
+  card says it waits on the check and draws no Approve. `tests/phoenix-crm-google-place-check.test.ts`.
+- **"We don't have your area on file yet" during an outage** — in the 29 Oct 14:04 outage a timed-out
+  area read came back as "no area" for a rep whose area is on file. A failed read now reads as a failure.
+  `tests/medical-rep-monthly-closing.test.ts`.
+- **The organogram popup's CV check** — 18 refusals for a Training Manager, one per person opened; the CV
+  route admits only its reader roles. The page tells the popup whether the viewer may read CVs, and it
+  asks only then. `tests/organogram-seat-cv-notice.test.ts`.
+- **"Upload proof" offered to people the server refuses** — the Approved marketing list offered the
+  money-transfer proof upload to every viewer; the server accepts it from Finance Manager and Super Admin
+  only. Everyone else sees the proof on file, or "Finance attaches it". `tests/marketing-proof-upload-offer.test.ts`.
+- **An outstation Meeting or Other claim priced before its amount** — the phone wizard asked for the
+  calculation once the dates were set, and the server refused it for the missing amount. It waits for
+  the amount now. `tests/outstation-non-travel-expense.test.ts`.
+- **Brave on iPhone** — 27 + 1 rows from the browser's own wallet shim and ad-block poller, five issues.
+  New rows leave the audit as `browser_injected_script`; the five existing issues stay until closed on
+  the page. `tests/system-audit-noise.test.ts`.
+- **The heartbeat 500 on Cloudflare's plain 502 page** (26 Oct 22:10 and 30 Oct 17:03 Cairo) — the page
+  names no host, so the outage check missed it and the heartbeat crashed instead of answering 503.
+  `classifyCloudflareGatewayPage` covers it for the heartbeat only: the every-sink classifier still needs
+  the Supabase title, because the AI provider sits behind Cloudflare too. `tests/supabase-unreachable.test.ts`.
+
+**No change, and why:**
+
+- "Balance-settled days lookup failed" — one timeout, once; it did not repeat.
+- "No deliverable address" for two employees — their Employee Master records hold no Sato work email.
+  Data, entered in Employee Master, not code.
+- "Minified React error #441" for one person — not proven to be the session-unavailable digest the
+  reporter already skips (`isSessionVerificationUnavailableDigest` reads the error's own digest); left open.
+- The plan 409s and plan limits, the list and validate refusals — the server refusing what it should.
+  "No answer" leaves the audit since PR 6699.
+- Everything else in the message is the 29 Oct 14:04–14:09 Cairo database outage.
+
 ## What it replaced, and why
 
 Measured on production, 23 Oct 2026:

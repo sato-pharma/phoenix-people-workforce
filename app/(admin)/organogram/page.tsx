@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canDownloadEmployeeCv } from "@/lib/employees/employee-cv";
 import { canAccessCompanyOrganogram, getOrganogramReport, isLineScopedOrganogramRole, resolveOrganogramLineForEmployee } from "@/lib/reports/organogram";
 import {
   errorMessage,
@@ -75,6 +76,7 @@ export default async function OrganogramPage() {
   return (
     <OrganogramReport
       canAddEmployee={canAddEmployee}
+      canReadEmployeeCv={canDownloadEmployeeCv(access)}
       fixedLine={fixedLine}
       initialError={initialError}
       initialReport={initialReport}

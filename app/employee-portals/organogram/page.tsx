@@ -8,6 +8,7 @@ import {
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { canDownloadEmployeeCv } from "@/lib/employees/employee-cv";
 import {
   canAccessCompanyOrganogram,
   canAccessHeadOffice,
@@ -137,6 +138,7 @@ export default async function EmployeePortalOrganogramPage() {
       </div>
       <EmployeeOrganogramDashboard
         canAddEmployee={canAddEmployee}
+        canReadEmployeeCv={canDownloadEmployeeCv(access)}
         fixedLine={fixedLine}
         initialError={initialError}
         initialReport={initialReport}

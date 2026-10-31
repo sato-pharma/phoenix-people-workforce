@@ -722,6 +722,8 @@ export type MarketingRequestDraftWorkspace = {
   canCreateDraft: boolean;
   /** Finance (and System Admin) may settle an approved request against a direct order's debt. */
   canSettleAgainstDirectOrder: boolean;
+  /** Only Finance Manager, Super Admin and system scope may attach the money transfer proof. */
+  canUploadMoneyTransferProof: boolean;
   customers: MarketingCustomer[];
   distributors: MarketingDistributor[];
   drafts: MarketingRequest[];
@@ -8294,6 +8296,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     }),
     canCreateDraft: productScope.canCreateDraft,
     canSettleAgainstDirectOrder: canRecordDirectOrderCollection(access),
+    canUploadMoneyTransferProof: canUploadMoneyTransferProof(access),
     contactsByCustomer,
     customers,
     pharmaciesByCustomer,
@@ -10280,6 +10283,26 @@ function sanitizeStorageSegment(value: string | null | undefined, fallback: stri
     .replace(/^-|-$/g, "")
     .slice(0, 90);
   return sanitized || fallback;
+}
+
+/**
+ * Who may attach the money transfer proof — the screen asks this so it never offers an upload the
+ * server will refuse.
+ *
+ * It is what the two gates below let through TOGETHER: uploadMarketingFinanceEvidence admits system
+ * scope, marketingCreatorRoles and Finance Manager; assertMarketingFinanceEvidenceAccess then admits
+ * only Finance Manager, Financial Advisor and Super Admin for this evidence type. Every other creator
+ * (a rep, a manager, Marketing, the CEO) passes the first and fails the second, and a Financial
+ * Advisor the reverse — yet the Approved list offered all of them "Upload proof", a guaranteed
+ * "Forbidden" (System Audit, 31 Oct 2026). The gates stay the security boundary; this only stops the
+ * screen offering what they refuse.
+ */
+export function canUploadMoneyTransferProof(access: AccessContext): boolean {
+  return (
+    access.scope === "system" ||
+    access.role === "Finance Manager" ||
+    access.role === "Super Admin"
+  );
 }
 
 function assertMarketingFinanceEvidenceAccess(params: {

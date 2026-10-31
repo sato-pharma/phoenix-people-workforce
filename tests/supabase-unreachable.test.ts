@@ -5,6 +5,7 @@ import { describeThrown } from "../src/lib/error-monitor/describe-thrown.ts";
 import {
   SUPABASE_UNREACHABLE_FINGERPRINT,
   SUPABASE_UNREACHABLE_TITLE,
+  classifyCloudflareGatewayPage,
   classifySupabaseUnreachable,
 } from "../src/lib/error-monitor/supabase-unreachable.ts";
 import { scrubSentryEvent, scrubSentryLog, type ScrubbableSentryEvent } from "../src/lib/observability/sentry-policy.ts";
@@ -96,6 +97,43 @@ function nonMatchTests() {
   }
 }
 
+/** Cloudflare's PLAIN gateway page — no host in it — as Supabase's edge served it on 26 and 30 Oct 2026. */
+const PLAIN_GATEWAY_PAGE = [
+  "<html>",
+  "<head><title>502 Bad Gateway</title></head>",
+  "<body>",
+  "<center><h1>502 Bad Gateway</h1></center>",
+  "<hr><center>cloudflare</center>",
+  "</body>",
+  "</html>",
+].join("\r\n");
+
+function gatewayPageTests() {
+  // The heartbeat crashed with a 500 on this page (System Audit, 31 Oct 2026): it names no host, so the
+  // branded-title classifier never saw it. The plain-page helper does, raw and inside the thrown JSON.
+  assert.deepEqual(classifyCloudflareGatewayPage(PLAIN_GATEWAY_PAGE), { status: 502, label: "Bad Gateway" });
+  const wrapped = describeThrown({ message: PLAIN_GATEWAY_PAGE, details: "", hint: "", code: "" });
+  assert.ok(wrapped.startsWith("{"), "the thrown object is described as JSON, with the page escaped inside it");
+  assert.deepEqual(classifyCloudflareGatewayPage(wrapped), { status: 502, label: "Bad Gateway" });
+  assert.equal(
+    classifyCloudflareGatewayPage(PLAIN_GATEWAY_PAGE.replace("502 Bad Gateway</title>", "504 Gateway Time-out</title>"))?.status,
+    504,
+  );
+
+  // Only CLOUDFLARE's page: the same markup from another server is not Supabase's edge.
+  assert.equal(classifyCloudflareGatewayPage(PLAIN_GATEWAY_PAGE.replace("<center>cloudflare</center>", "<center>nginx</center>")), null);
+  assert.equal(classifyCloudflareGatewayPage("<title>404 Not Found</title><hr><center>cloudflare</center>"), null, "a 4xx is not an outage");
+  assert.equal(classifyCloudflareGatewayPage("502 Bad Gateway from cloudflare"), null, "words without the page are not the page");
+  for (const notText of [null, undefined, 502, {}, "", [PLAIN_GATEWAY_PAGE]]) {
+    assert.equal(classifyCloudflareGatewayPage(notText), null, "a non-string is never classified");
+  }
+
+  // It stays OUT of the every-sink classifier: the AI provider sits behind Cloudflare too, and its 502 is
+  // not "Supabase unreachable".
+  assert.equal(classifySupabaseUnreachable(PLAIN_GATEWAY_PAGE), null, "the plain page is not renamed in every sink");
+  assert.equal(classifySupabaseUnreachable(wrapped), null);
+}
+
 function sentryEventTests() {
   const fingerprint = [...SUPABASE_UNREACHABLE_FINGERPRINT];
 
@@ -168,7 +206,9 @@ function sinkWiringTests() {
   const heartbeat = code("src/lib/auth/session-heartbeat.ts");
   const branch = heartbeat.slice(heartbeat.indexOf("isSupabaseTimeout(error)"));
   const body = branch.slice(0, branch.indexOf("throw error"));
-  assert.match(body, /classifySupabaseUnreachable\(describeThrown\(error\)\)/, "the heartbeat recognises the Cloudflare page");
+  assert.match(body, /const described = describeThrown\(error\);/);
+  assert.match(body, /classifySupabaseUnreachable\(described\)/, "the heartbeat recognises the Cloudflare page");
+  assert.match(body, /classifyCloudflareGatewayPage\(described\)/, "…and Cloudflare's plain gateway page, which only Supabase's edge serves here");
   assert.match(body, /status:\s*503/, "…and answers 503, which never signs a person out");
   assert.doesNotMatch(body, /status:\s*401|maxAge:\s*0/, "…without clearing a cookie");
 
@@ -180,6 +220,7 @@ function sinkWiringTests() {
 export async function runSupabaseUnreachableTests() {
   classifierTests();
   nonMatchTests();
+  gatewayPageTests();
   sentryEventTests();
   sinkWiringTests();
 }

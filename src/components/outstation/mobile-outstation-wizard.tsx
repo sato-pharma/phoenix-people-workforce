@@ -19,7 +19,7 @@ import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
-import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
+import { isNonTravelExpenseType, nonTravelAmountRefusal } from "@/lib/outstation/non-travel-expense";
 import { Field } from "@/components/outstation/wizard-primitives";
 import { FormWizard } from "@/components/ui/form-kit";
 import {
@@ -895,7 +895,15 @@ export function MobileOutstationWizard({
     ],
   );
 
-  const canAutoCalculate = Boolean((captured || isNonTravel) && tripStartDate && tripEndDate);
+  // A Meeting or Other claim with no amount typed yet cannot be priced — the server refuses it with
+  // nonTravelAmountRefusal's message — so it is not asked. Asking anyway logged a failed calculation
+  // for every rep who set the dates before the amount (System Audit, 31 Oct 2026).
+  const canAutoCalculate = Boolean(
+    (captured || isNonTravel) &&
+      tripStartDate &&
+      tripEndDate &&
+      !(isNonTravel && nonTravelAmountRefusal({ meetingAmount, otherAmount })),
+  );
   const calculationKey = useMemo(() => {
     if ((!captured && !isNonTravel) || !tripStartDate || !tripEndDate) return "";
 
