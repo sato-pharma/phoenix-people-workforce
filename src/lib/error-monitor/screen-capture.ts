@@ -23,7 +23,10 @@
  * WHAT IS NEVER PHOTOGRAPHED: the skip list in screen-capture-rules.ts (the capture's own endpoint,
  * sign-in and the heartbeat, background polls), a hidden tab, a GET answered 404, a request the page
  * itself cancelled, anything while the browser reports itself offline (the picture could not be sent),
- * and anything beyond the per-tab throttle — the same screen once in 2 minutes, 12 a tab an hour.
+ * a request with NO answer whose page was out of sight at any moment between sending and failing
+ * (`noAnswerHappenedInSight` — a locked phone kills its requests, and the failure surfaced on a page
+ * that was working again), and anything beyond the per-tab throttle — the same screen once in
+ * 2 minutes, 12 a tab an hour.
  *
  * NOTHING WHILE THE SERVER CANNOT STORE ONE. An upload answered 5xx, 429 or not at all pauses every
  * tab of the browser — nothing drawn, nothing sent — for 5 minutes, doubling to an hour while it
@@ -44,6 +47,7 @@ import {
   extractRefusalMessage,
   isSkippedScreenPath,
   nextUploadPause,
+  noAnswerHappenedInSight,
   parseUploadPause,
   pathWithoutQuery,
   sameOriginApiPath,
@@ -86,6 +90,14 @@ let throttle: ScreenThrottleState = EMPTY_SCREEN_THROTTLE;
 let tabPause: UploadPauseState = EMPTY_UPLOAD_PAUSE;
 let capturing = false;
 let realFetch: typeof fetch | null = null;
+/** Bumped each time the page goes out of sight, so a request can tell it was hidden while in flight. */
+let hiddenEpoch = 0;
+
+function pageHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+type SendSight = { sentHidden: boolean; epochAtSend: number };
 
 /** The outage pause every tab shares; this tab's own copy when storage is blocked (a private window). */
 function readUploadPause(): UploadPauseState {
@@ -275,10 +287,12 @@ async function onAnswer(request: { path: string; method: string }, response: Res
   later({ kind, status: response.status, method: request.method, apiPath: request.path, message });
 }
 
-function onFailure(request: { path: string; method: string }, error: unknown): void {
+function onFailure(request: { path: string; method: string }, error: unknown, sight: SendSight): void {
   if (capturing) return;
   // The page cancelled its own request — nobody was refused anything.
   if (error && typeof error === "object" && (error as { name?: unknown }).name === "AbortError") return;
+  // Out of sight at any moment on the way: nobody met this failure (noAnswerHappenedInSight).
+  if (!noAnswerHappenedInSight({ ...sight, epochNow: hiddenEpoch, hiddenNow: pageHidden() })) return;
   later({ kind: "failed_request", status: null, method: request.method, apiPath: request.path, message: null });
 }
 
@@ -293,16 +307,33 @@ export function installScreenCapture(): void {
     marked[INSTALLED_MARKER] = true;
     realFetch = original.bind(window);
 
+    // Counts each time the page goes out of sight. Listening is best-effort: without it every
+    // no-answer failure is photographed exactly as before.
+    try {
+      const markHidden = () => {
+        hiddenEpoch += 1;
+      };
+      if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+        document.addEventListener("visibilitychange", () => {
+          if (pageHidden()) markHidden();
+        });
+      }
+      if (typeof window.addEventListener === "function") window.addEventListener("pagehide", markHidden);
+    } catch {
+      // Not listening — the capture still works.
+    }
+
     const wrapped = function phoenixScreenCaptureFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       const result = original.call(window, input, init);
       try {
         if (!capturing) {
           const request = describeRequest(input, init);
           if (request) {
+            const sight: SendSight = { sentHidden: pageHidden(), epochAtSend: hiddenEpoch };
             // A separate branch: the caller gets `result` untouched, and nothing here can reject it.
             result.then(
               (response) => onAnswer(request, response).catch(() => undefined),
-              (error: unknown) => onFailure(request, error),
+              (error: unknown) => onFailure(request, error, sight),
             ).catch(() => undefined);
           }
         }

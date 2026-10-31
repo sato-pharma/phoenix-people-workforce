@@ -141,6 +141,28 @@ export function classifyScreenKind(input: { status: number | null; networkFailur
   return null;
 }
 
+/**
+ * Whether a request that got NO ANSWER failed in front of the person, and so may be photographed.
+ *
+ * Not when the page was out of sight as it was sent, is out of sight now, or went out of sight at
+ * any moment while the request was on its way (`hiddenEpoch` moved). A phone that locks or switches
+ * app kills the requests in flight, and the rejection reaches the page only when it is back in sight
+ * — so the picture showed a working page, of a failure nobody met. Measured on the Phoenix CRM plan
+ * board (29 Oct 2026): the failed saves never reached the server, and one phone saved with 200 three
+ * seconds after its picture landed — the board's own retry once it was back in sight.
+ *
+ * Only the no-answer case: a refusal or a 5xx is an ANSWER the page drew, and is photographed as before.
+ */
+export function noAnswerHappenedInSight(input: {
+  sentHidden: boolean;
+  hiddenNow: boolean;
+  epochAtSend: number;
+  epochNow: number;
+}): boolean {
+  if (input.sentHidden || input.hiddenNow) return false;
+  return input.epochAtSend === input.epochNow;
+}
+
 function stringField(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (value && typeof value === "object" && !Array.isArray(value)) {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { CROSS_ORIGIN_MASKED_DISPLAY } from "../src/lib/error-monitor/cross-origin-masked.ts";
 import {
   APP_ERROR_NOISE_CLASSES,
   EXCLUDED_NOISE_CLASSES,
@@ -55,6 +56,20 @@ export function runSystemAuditNoiseTests() {
     classifyAppErrorNoise(row({ message: "Script error.", stack: "boom\n\n— Component stack —\n    in VisitForm" })),
     null,
     "a masked error a React boundary named our component for must be KEPT",
+  );
+  // The reporter STORES the display text, never "Script error." — the shape of all 217 such rows on
+  // production (31 Oct 2026). Eight of them reached the morning message as a Command Center fault.
+  const CLIENT_CONTEXT_ONLY =
+    "— Client context —\nseq=1 readyState=complete visibility=visible unloading=false sinceNavMs=23156 navType=navigate";
+  assert.equal(
+    classifyAppErrorNoise(row({ message: CROSS_ORIGIN_MASKED_DISPLAY, stack: CLIENT_CONTEXT_ONLY })),
+    "masked_script_error",
+    "the stored browser-injected-script text with no frame of ours must leave the System Audit like 'Script error.' does",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({ message: CROSS_ORIGIN_MASKED_DISPLAY, stack: APP_FRAME })),
+    null,
+    "the stored text with one of OUR frames is still KEPT",
   );
   assert.equal(hasAppFrame(APP_FRAME), true);
   assert.equal(hasAppFrame(OFF_APP_FRAME), false);

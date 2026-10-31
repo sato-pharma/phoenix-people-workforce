@@ -138,7 +138,11 @@ guests included, and the incident drawer shows it under "What the employee saw".
 that one cannot see — a person refused or failed without a crash. The wrapper returns the caller's own promise untouched, never
 retries, never delays it and never throws.
 
-**Never captured.** A hidden tab; a request the page cancelled itself; the browser offline; a GET or
+**Never captured.** A hidden tab; a request the page cancelled itself; a request with NO answer whose
+page was out of sight at any moment between sending and failing (`noAnswerHappenedInSight`, 31 Oct 2026:
+a locked phone kills the plan board's saves in flight, the failure reaches the page once it is back in
+sight and working, and the board's own retry then saves — five pictures of a failure nobody met; a
+refusal or a 5xx is an answer the page drew and is still photographed); the browser offline; a GET or
 HEAD answered 404 (that is a page asking "is there one?", not a block); anything past the per-tab
 throttle (the same kind + masked path + status once in 2 minutes, 12 pictures a tab an hour); anything
 while the **outage pause** runs (below); and the
