@@ -519,7 +519,12 @@ export function runPhoenixCrmTodayTests(): void {
     // Loaded BESIDE the home snapshot, not after it (2026-10-01, "slow to transfer between page and
     // page"): started first, awaited once the snapshot is in. It never rejects, which is what makes
     // leaving it running safe when the snapshot fails.
-    const started = home.indexOf("const repTodayPlanPromise = loadRepTodayPlan(access);");
+    // For the rep only (2026-10-31): his is the one landing that draws the panel.
+    const started = home.indexOf("const repTodayPlanPromise =");
+    assert.ok(
+      /const repTodayPlanPromise =\s*\(access\.role \?\? ""\)\.toLowerCase\(\) === "medical rep" \? loadRepTodayPlan\(access\) : Promise\.resolve\(null\);/.test(home),
+      "the day is read for the Medical Rep, the one landing that draws it",
+    );
     // The prefix only: the call also carries the rep's picked keycard month (#5005).
     const snapshot = home.indexOf("snapshot = await getPortalHomeSnapshot(access");
     assert.ok(started !== -1, "and the page loads it");

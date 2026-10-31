@@ -172,8 +172,13 @@ export function performanceBoundFor(role: AccessContext["role"], bound: VsTarget
 async function loadScopedRows(
   ctx: AccessContext,
 ): Promise<{ rows: AchievementRow[]; activePeriods: string[]; publishedKeys: Set<string> }> {
-  const bound = performanceBoundFor(ctx.role, await resolveVsTargetBound(ctx));
-  const { rows: windowRows, publishedKeys } = await loadWindowRows();
+  // The bound and the window are read TOGETHER (2026-10-31, "fix the slowest five pages"): the
+  // window is the same company-wide read whatever the bound, and the cut below is what scopes it.
+  const [viewerBound, { rows: windowRows, publishedKeys }] = await Promise.all([
+    resolveVsTargetBound(ctx),
+    loadWindowRows(),
+  ]);
+  const bound = performanceBoundFor(ctx.role, viewerBound);
   const rows = filterRowsForBound(windowRows, bound);
   return { rows, activePeriods: activePeriodsOf(rows, publishedKeys), publishedKeys };
 }
@@ -191,8 +196,12 @@ async function loadScopedRows(
 export async function loadPublishedClosingRowsForViewer(
   ctx: AccessContext,
 ): Promise<{ boundKind: VsTargetBound["kind"]; rows: AchievementRow[] }> {
-  const bound = performanceBoundFor(ctx.role, await resolveVsTargetBound(ctx));
-  const { rows: windowRows, publishedKeys } = await loadWindowRows();
+  // Read together, as in loadScopedRows above.
+  const [viewerBound, { rows: windowRows, publishedKeys }] = await Promise.all([
+    resolveVsTargetBound(ctx),
+    loadWindowRows(),
+  ]);
+  const bound = performanceBoundFor(ctx.role, viewerBound);
   const scoped = filterRowsForBound(windowRows, bound);
   return { boundKind: bound.kind, rows: selectRows(scoped, activePeriodsOf(scoped, publishedKeys), null, publishedKeys) };
 }
@@ -518,8 +527,9 @@ export async function buildNsmDsmPerformanceFromSos(
   ctx: AccessContext,
   requested: string | string[] | null | undefined,
 ): Promise<NsmDsmPerformanceData> {
-  const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
-  const [employeeNames, productNames, seats, tenure] = await Promise.all([
+  // The four lookups need nothing from the rows, so they start with them (2026-10-31).
+  const [{ rows, activePeriods, publishedKeys }, employeeNames, productNames, seats, tenure] = await Promise.all([
+    loadScopedRows(ctx),
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),
@@ -566,8 +576,9 @@ export async function buildDsmTeamPerformanceFromSos(
   requested: string | string[] | null | undefined,
   options?: RepBoardOptions,
 ): Promise<DsmTeamPerformanceData> {
-  const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
-  const [employeeNames, productNames, seats, tenure] = await Promise.all([
+  // The four lookups need nothing from the rows, so they start with them (2026-10-31).
+  const [{ rows, activePeriods, publishedKeys }, employeeNames, productNames, seats, tenure] = await Promise.all([
+    loadScopedRows(ctx),
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadSalesSeatTree(),

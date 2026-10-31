@@ -569,12 +569,27 @@ export type VisitDayView = {
   dayStart: DayStartView | null;
 };
 
-export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown; date: unknown }): Promise<VisitDayView> {
+/**
+ * The seat, test flag and day a visit-day read is ABOUT — with no read of its own, and the same refusal
+ * `territoryForRead` throws. Exported so the day page can start its other reads of the same day BESIDE
+ * `loadVisitDay` instead of after it (2026-10-31, "fix the slowest five pages"), with the day clamped
+ * here, once, for both.
+ */
+export function resolveVisitDayAddress(
+  viewer: PhoenixCrmViewer,
+  raw: { seatId: unknown; test: unknown; date: unknown },
+): { seat: ReturnType<typeof territoryForRead>["seat"]; isTest: boolean; date: string } {
   const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
   // The visit day, not the calendar day: until 02:00 the day that just ended is still the one a rep
   // adds to (owner, 2026-09-29). A past day is read only; a future one does not exist yet.
   const today = viewer.visitDay;
   const date = isIsoDay(raw.date) && raw.date <= today ? raw.date : today;
+  return { seat, isTest, date };
+}
+
+export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown; date: unknown }): Promise<VisitDayView> {
+  const { seat, isTest, date } = resolveVisitDayAddress(viewer, raw);
+  const today = viewer.visitDay;
   const ownSeat = date === today ? ownDaySeat(viewer, seat) : null;
   // TWO WAVES, NOT THREE (2026-10-23, every page change under 1 second). The day's activities, its
   // start and the line's product managers need only the seat and the date, so they start BESIDE the

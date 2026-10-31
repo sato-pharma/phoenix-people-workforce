@@ -13,6 +13,7 @@ import { SHARED_PLACE_DAY_FULL_TEXT } from "@/lib/phoenix-crm/shared-place-rules
 import { OFFPLAN_DAY_FULL_TEXT, OFFPLAN_WEEK_FULL_TEXT } from "@/lib/phoenix-crm/unplanned-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Refusal = { status: number; message: string };
 
@@ -455,18 +456,19 @@ export async function selectByIds<T extends Record<string, unknown> = Record<str
 ): Promise<T[]> {
   const unique = dedupeIds(ids);
   if (unique.length === 0) return [];
-  const rows: T[] = [];
-  for (const part of chunk(unique, IN_ID_CHUNK)) {
-    const page = await fetchAllRowsKeyset<T>(
+  // Four chunks at a time, not one after another (2026-10-31, "fix the slowest five pages"): Place
+  // checks reads every active place and waited for each chunk in turn. The pages come back in chunk
+  // order, so the rows are in the same order as before.
+  const pages = await mapWithConcurrency(chunk(unique, IN_ID_CHUNK), 4, (part) =>
+    fetchAllRowsKeyset<T>(
       () => {
         const base = getSupabaseAdmin().from(table).select(columns).in(idColumn, part);
         return tune ? tune(base) : base;
       },
       { cursorColumn, cursorOf: (row) => (row[cursorColumn] == null ? null : String(row[cursorColumn])) },
-    );
-    rows.push(...page);
-  }
-  return rows;
+    ),
+  );
+  return pages.flat();
 }
 
 export function numberOrNull(value: unknown): number | null {

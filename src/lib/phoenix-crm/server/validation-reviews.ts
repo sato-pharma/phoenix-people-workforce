@@ -56,6 +56,7 @@ import {
 } from "@/lib/phoenix-crm/validation-feedback";
 import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
@@ -173,12 +174,14 @@ export async function pendingLocationReview(customerId: string): Promise<boolean
 export async function pendingLocationReviewCustomers(customerIds: ReadonlyArray<string>): Promise<Set<string>> {
   const unique = [...new Set(customerIds)];
   const held = new Set<string>();
-  for (let start = 0; start < unique.length; start += 150) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("phoenix_crm_validation_reviews")
-      .select("customer_id")
-      .in("customer_id", unique.slice(start, start + 150))
-      .eq("status", "pending");
+  // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
+  // were read one after another.
+  const slices: string[][] = [];
+  for (let start = 0; start < unique.length; start += 150) slices.push(unique.slice(start, start + 150));
+  const answers = await mapWithConcurrency(slices, 4, async (slice) =>
+    getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("customer_id").in("customer_id", slice).eq("status", "pending"),
+  );
+  for (const { data, error } of answers) {
     throwIfError(error);
     for (const row of data ?? []) held.add(String(row.customer_id));
   }
@@ -548,7 +551,8 @@ export async function loadValidationReviews(
   const placeIds = [...new Set(reviews.map((row) => String(row.place_id)))];
   // selectByIds, never a bare `.in()`: at the page's 500-review cap these id lists can cross the ~395
   // that overflows the request headers (see selectByIds / the postgrest-in memory note).
-  const [customers, places] = await Promise.all([
+  // The people names read in the same batch (2026-10-31): they come from the reviews alone.
+  const [customers, places, names] = await Promise.all([
     selectByIds<Row>("phoenix_crm_customers", "id, name, list_type, speciality", "id", customerIds),
     selectByIds<Row>(
       "phoenix_crm_places",
@@ -556,10 +560,10 @@ export async function loadValidationReviews(
       "id",
       placeIds,
     ),
+    loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)])),
   ]);
   const customerById = new Map(customers.map((row) => [String(row.id), row]));
   const placeById = new Map(places.map((row) => [String(row.id), row]));
-  const names = await loadPeopleNames(reviews.flatMap((row) => [text(row.created_by_hr_id), text(row.decided_by_hr_id)]));
 
   const rows = reviews.map((row): ValidationReviewRow => {
     const customer = customerById.get(String(row.customer_id)) ?? {};

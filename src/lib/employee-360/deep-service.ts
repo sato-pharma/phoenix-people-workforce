@@ -1624,14 +1624,15 @@ async function getLeadershipActivity(
   window: Employee360Window,
   nameByHrId: Map<string, string>,
   computeImpact: boolean,
-  /** His Phoenix CRM visits (own and ride-alongs) for the window, read once by the profile; null when that read failed. */
-  phoenixVisits: readonly ManagerDayVisit[] | null,
+  /** His Phoenix CRM visits (own and ride-alongs) for the window, read once by the profile; null when that read failed.
+   * Passed still IN FLIGHT, so the two reads below run beside it instead of after it. */
+  phoenixVisitsRead: Promise<readonly ManagerDayVisit[] | null>,
 ): Promise<LeadershipActivity> {
   const supabase = getSupabaseAdmin();
   const keys = hrIdLookupKeys(hrId);
   const today = todayInCairo();
 
-  const [coachRes, dvRows] = await Promise.all([
+  const [coachRes, dvRows, phoenixVisits] = await Promise.all([
     supabase
       .from("coaching_reports")
       .select("medical_rep_hr_id,coaching_date,final_score_percent,performance_zone")
@@ -1655,6 +1656,7 @@ async function getLeadershipActivity(
       limit: 8000,
       collapseDoubleVisits: true,
     }),
+    phoenixVisitsRead,
   ]);
   const phoenix = phoenixVisits ? leaderVisitFigures(phoenixVisits) : null;
   const ownSingle = phoenix ? { ...phoenix.ownSingle, withSenior: phoenix.ownWithSenior } : null;
@@ -1947,11 +1949,16 @@ export async function getEmployee360Profile(
   // PM / Group PM: attribute sales by the PRODUCTS they own (product master), not a
   // team roll-up (they have no reports). Falls back to the team path when a PM has
   // no assignments yet (or before the pm_product_assignments migration is applied).
-  const pmSalesFamilies =
-    roleCategory === "product-manager" ? await resolvePmSalesFamilies(await getPmProductCodes(hrId)) : [];
+  // A chain, not an await: the PM's two product reads used to hold every other read below back.
   const salesPromise =
-    pmSalesFamilies.length > 0
-      ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
+    roleCategory === "product-manager"
+      ? getPmProductCodes(hrId)
+          .then(resolvePmSalesFamilies)
+          .then((pmSalesFamilies) =>
+            pmSalesFamilies.length > 0
+              ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
+              : getEmployeeSales(hrId, salesTeam, viewerRole),
+          )
       : getEmployeeSales(hrId, salesTeam, viewerRole);
   // A leader's Phoenix CRM visits — his own and the ride-alongs he joined — read ONCE: the leadership figures and his
   // own field presence both come from it. `productManagerSlot` lets a Training or product manager's seat count too;
@@ -1971,9 +1978,7 @@ export async function getEmployee360Profile(
     getTrainingManagerHrIds(),
     includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),
     isLeader
-      ? phoenixVisitsPromise.then((phoenixVisits) =>
-          getLeadershipActivity(hrId, window, nameByHrId, roleCategory === "training-manager", phoenixVisits),
-        )
+      ? getLeadershipActivity(hrId, window, nameByHrId, roleCategory === "training-manager", phoenixVisitsPromise)
       : Promise.resolve(null),
     // A rep's own area against his own current list. A manager's seat carries no area of his own.
     roleCategory === "medical-rep" ? loadEmployee360BrickPanel(hrId, window, viewerRole) : Promise.resolve(null),

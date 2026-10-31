@@ -101,7 +101,46 @@ export async function loadPhoenixCrmManagerDayDetail(
   const subject = await resolveSubject(viewer, seatId, seats);
   if (!subject) throw forbiddenError(REFUSED);
 
-  const [visits, names] = await Promise.all([
+  // 🔴 HIS VISITS, HIS LEAVE AND HIS WEEK'S PLAN ARE READ AT ONCE (2026-10-31, "fix the slowest five pages"): each
+  // needs only the subject and the date, and the page used to wait for the visits, THEN the leave, THEN the plan. The
+  // leave and the plan keep their own catches and their own sentences, so neither ever rejects while the rest is read.
+  const namesRead = loadPeopleNames([subject.hrId, subject.aboveHrId]);
+
+  // Leave is HR's, read through HR's own module and only ever an annotation: losing it must not lose the day,
+  // and a failed read is SAID rather than swallowed (a vacation day otherwise reads like a day he did nothing).
+  const leaveRead = (async () => {
+    let onLeave = false;
+    let leaveUnread = false;
+    try {
+      onLeave = (await loadApprovedLeaveDays([subject.hrId], { from: date, to: date })).length > 0;
+    } catch (error) {
+      leaveUnread = true;
+      logError("Phoenix CRM manager day could not read approved leave", { error, labels: { event: "phoenix_crm_manager_day_leave_unread" } });
+    }
+    return { onLeave, leaveUnread };
+  })();
+
+  // The plan of the week this day sits in, through the weekly report. Only ever an addition to the visits:
+  // losing it must not lose the day, and a failed read is said, not swallowed.
+  const planRead = (async () => {
+    let plan: ManagerDayPlan | null = null;
+    let planUnread = false;
+    try {
+      const names = await namesRead;
+      const report = (await computeManagerReports(viewer, [subject.hrId], fieldWeekStart(date), isTest, names)).get(subject.hrId) ?? null;
+      plan = {
+        halves: (report?.days.find((day) => day.date === date)?.halves ?? []).map((half) => ({ ...half })),
+        sent: isManagerPlanSent(report?.status ?? null),
+        statusLine: report?.statusLine ?? "",
+      };
+    } catch (error) {
+      planUnread = true;
+      logError("Phoenix CRM manager day could not read the weekly plan", { error, labels: { event: "phoenix_crm_manager_day_plan_unread" } });
+    }
+    return { plan, planUnread };
+  })();
+
+  const [visits, names, { onLeave, leaveUnread }, { plan, planUnread }] = await Promise.all([
     loadManagerVisitDetails({
       end: date,
       isTest,
@@ -114,35 +153,10 @@ export async function loadPhoenixCrmManagerDayDetail(
       },
       territorySeatIds: reads,
     }),
-    loadPeopleNames([subject.hrId, subject.aboveHrId]),
+    namesRead,
+    leaveRead,
+    planRead,
   ]);
-
-  // Leave is HR's, read through HR's own module and only ever an annotation: losing it must not lose the day,
-  // and a failed read is SAID rather than swallowed (a vacation day otherwise reads like a day he did nothing).
-  let onLeave = false;
-  let leaveUnread = false;
-  try {
-    onLeave = (await loadApprovedLeaveDays([subject.hrId], { from: date, to: date })).length > 0;
-  } catch (error) {
-    leaveUnread = true;
-    logError("Phoenix CRM manager day could not read approved leave", { error, labels: { event: "phoenix_crm_manager_day_leave_unread" } });
-  }
-
-  // The plan of the week this day sits in, through the weekly report. Only ever an addition to the visits above:
-  // losing it must not lose the day, and a failed read is said, not swallowed.
-  let plan: ManagerDayPlan | null = null;
-  let planUnread = false;
-  try {
-    const report = (await computeManagerReports(viewer, [subject.hrId], fieldWeekStart(date), isTest, names)).get(subject.hrId) ?? null;
-    plan = {
-      halves: (report?.days.find((day) => day.date === date)?.halves ?? []).map((half) => ({ ...half })),
-      sent: isManagerPlanSent(report?.status ?? null),
-      statusLine: report?.statusLine ?? "",
-    };
-  } catch (error) {
-    planUnread = true;
-    logError("Phoenix CRM manager day could not read the weekly plan", { error, labels: { event: "phoenix_crm_manager_day_plan_unread" } });
-  }
 
   const above = subject.aboveHrId;
   return {

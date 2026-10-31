@@ -31,6 +31,7 @@ import { loadPlanDayFacts, PLAN_DAY_COLUMNS } from "@/lib/phoenix-crm/server/pla
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
@@ -216,8 +217,12 @@ async function movedFromDaysOfBatch(visits: ReadonlyArray<OffPlanVisitRef & { ca
   });
   const copyIds = [...new Set(planned.flatMap((entry) => (entry.copyId === null ? [] : [entry.copyId])))];
   const copies = new Map<number, PlanItemFact[] | null>();
-  for (const batch of chunk(copyIds, 50)) {
-    const { data, error } = await supabase.from("phoenix_crm_plan_events").select("id, items:details->items").in("id", batch);
+  // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
+  // were read one after another.
+  const answers = await mapWithConcurrency(chunk(copyIds, 50), 4, async (batch) =>
+    supabase.from("phoenix_crm_plan_events").select("id, items:details->items").in("id", batch),
+  );
+  for (const { data, error } of answers) {
     throwIfError(error);
     for (const row of (data ?? []) as Row[]) copies.set(Number(row.id), parseSentCopy(row.items));
   }

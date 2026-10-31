@@ -113,7 +113,7 @@ export async function runPhoenixCrmManagerMissedRecordsTests(): Promise<void> {
   assert.match(repDetails, /const WAITING_STATUSES = \["admin_pending", "manager_pending", "sfe_pending"\];/, "exactly the statuses the countable view holds out");
   assert.match(repDetails, /\.from\("phoenix_crm_unplanned_visits"\)[\s\S]*?\.in\("status", WAITING_STATUSES\)/, "found through the approval table's own status");
   assert.match(repDetails, /awaitingApproval: true, awaitingValidation: false/, "marked waiting, and not 'not scored' for a reason it does not have");
-  assert.match(repDetails, /input\.includeWaiting \? await loadWaitingOffPlanRows\(/, "read only when the caller asks");
+  assert.match(repDetails, /input\.includeWaiting \? loadWaitingOffPlanRows\(/, "read only when the caller asks");
   assert.match(source("src/lib/phoenix-crm/server/day-detail.ts"), /includeWaiting: true,/, "the rep's day page asks");
   assert.doesNotMatch(source("src/lib/private-calendar/visit-detail-items.ts"), /includeWaiting/, "the private calendar's figures are untouched");
   assert.match(table, /visit\.awaitingApproval \? <Chip[^>]*>Waiting for approval/, "the table says what the visit waits for");

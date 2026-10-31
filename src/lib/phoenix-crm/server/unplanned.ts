@@ -33,6 +33,7 @@ import {
   type UnplannedVisitStatus,
 } from "@/lib/phoenix-crm/unplanned-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
@@ -158,8 +159,10 @@ const UNPLANNED_PAGE = 1000;
  */
 export async function loadUnplannedRows(seatIds: ReadonlyArray<string>, isTest: boolean, options: { waitingOnly?: boolean } = {}): Promise<Row[]> {
   if (seatIds.length === 0) return [];
-  const rows: Row[] = [];
-  for (const batch of chunk([...seatIds])) {
+  // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
+  // were read one after another.
+  const pages = await mapWithConcurrency(chunk([...seatIds]), 4, async (batch) => {
+    const rows: Row[] = [];
     let after: string | null = null;
     for (;;) {
       let query = getSupabaseAdmin()
@@ -180,7 +183,9 @@ export async function loadUnplannedRows(seatIds: ReadonlyArray<string>, isTest: 
       if (page.length < UNPLANNED_PAGE) break;
       after = String(page[page.length - 1].visit_id);
     }
-  }
+    return rows;
+  });
+  const rows = pages.flat();
   return rows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
 }
 

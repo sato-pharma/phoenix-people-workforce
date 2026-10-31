@@ -47,10 +47,13 @@ export async function GET(request: Request) {
       }, { status: 403 });
     }
 
-    const result = await getIReports360RepDayVisits({ date, hrId });
-    // Best-effort: a fingerprint-domain hiccup must never break the CRM visits view that
-    // already worked fine without it — degrade to null punches rather than fail the request.
-    const punches = await loadSingleEmployeeDayPunchSummary({ dateIso: date, hrId }).catch(() => null);
+    // Read together (2026-10-31, "fix the slowest five pages"): neither needs the other.
+    const [result, punches] = await Promise.all([
+      getIReports360RepDayVisits({ date, hrId }),
+      // Best-effort: a fingerprint-domain hiccup must never break the CRM visits view that
+      // already worked fine without it — degrade to null punches rather than fail the request.
+      loadSingleEmployeeDayPunchSummary({ dateIso: date, hrId }).catch(() => null),
+    ]);
     return NextResponse.json({ data: { date, punches, ...result }, success: true });
   } catch (error) {
     if (isForbiddenError(error)) {

@@ -13,6 +13,7 @@ import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 /** Visit ids per read — well under PostgREST's URL limit with uuids. */
 const CHUNK = 200;
@@ -22,13 +23,18 @@ type CompanionRow = { visit_id: string | null; manager_visit_id: string | null; 
 async function readCompanions(column: "visit_id" | "manager_visit_id", ids: ReadonlyArray<string>): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   const distinct = [...new Set(ids.filter(Boolean))];
-  for (let start = 0; start < distinct.length; start += CHUNK) {
-    const slice = distinct.slice(start, start + CHUNK);
-    const { data, error } = await getSupabaseAdmin()
+  // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
+  // were read one after another.
+  const slices: string[][] = [];
+  for (let start = 0; start < distinct.length; start += CHUNK) slices.push(distinct.slice(start, start + CHUNK));
+  const answers = await mapWithConcurrency(slices, 4, async (slice) =>
+    getSupabaseAdmin()
       .from("phoenix_crm_visit_companions")
       .select("visit_id, manager_visit_id, hr_id, position")
       .in(column, slice)
-      .order("position", { ascending: true });
+      .order("position", { ascending: true }),
+  );
+  for (const { data, error } of answers) {
     throwIfError(error);
     for (const row of (data ?? []) as CompanionRow[]) {
       const key = String(row[column]);

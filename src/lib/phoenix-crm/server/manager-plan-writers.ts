@@ -54,9 +54,11 @@ async function readRoleRoster(roles: ReadonlySet<string>, purpose: string): Prom
   // The role holders come through the shared resolver, as the SFE Managers do (`notifications.ts`): Phoenix
   // CRM's services read no login table of their own. It swallows a failed read into a warning, so any
   // warning is thrown here — the cache never keeps a degraded roster for five minutes.
+  // Every role is asked at once (2026-10-31, "fix the slowest five pages"): on a cold cache they went one after
+  // another. The holders are gathered, and a warning thrown, in the same role order as before.
+  const answers = await Promise.all([...roles].map((role) => resolveHrIdsForRole(role as PhoenixRole, purpose)));
   const holders: string[] = [];
-  for (const role of roles) {
-    const { hrIds, warnings } = await resolveHrIdsForRole(role as PhoenixRole, purpose);
+  for (const { hrIds, warnings } of answers) {
     if (warnings.length > 0) throw new Error(warnings.join("; "));
     holders.push(...hrIds);
   }

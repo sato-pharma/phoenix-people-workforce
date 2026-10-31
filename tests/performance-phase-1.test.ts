@@ -26,8 +26,9 @@ export function directoryPhase1Missing(source: string): string[] {
   const code = stripComments(source).replace(/\r\n/g, "\n");
   const missing: string[] = [];
 
-  // The three directory loads build manager names from rows they already hold, never a second read.
-  const builderCalls = code.match(/Promise\.resolve\(managerNamesFromEmployeeRows\(employeeRows\)\)/g) ?? [];
+  // The three directory loads build manager names from rows they already hold, never a second read —
+  // inside a Promise.all or called directly once the first batch is in.
+  const builderCalls = code.match(/(?:Promise\.resolve\()?\bmanagerNamesFromEmployeeRows\(employeeRows\)/g) ?? [];
   if (builderCalls.length !== 3) {
     missing.push(`the three directory loads must build manager names from their own rows (found ${builderCalls.length})`);
   }

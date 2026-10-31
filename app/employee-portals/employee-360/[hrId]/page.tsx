@@ -30,6 +30,23 @@ export const dynamic = "force-dynamic";
 
 const PORTAL_BASE_PATH = "/employee-portals/employee-360";
 
+type SectionResult<T> = { ok: true; value: T } | { ok: false };
+
+// Starts one section's read and turns its failure into a value at once, so a read still in flight when
+// the profile fails (and the page returns early) is never an unhandled rejection.
+function startSection<T>(read: () => Promise<T>): Promise<SectionResult<T>> {
+  return Promise.resolve()
+    .then(read)
+    .then(
+      (value) => ({ ok: true as const, value }),
+      () => ({ ok: false as const }),
+    );
+}
+
+function sectionValue<T>(result: SectionResult<T> | null): T | null {
+  return result?.ok ? result.value : null;
+}
+
 function Shell({
   children,
   description,
@@ -148,6 +165,38 @@ export default async function EmployeePortalEmployee360DetailPage({
     }
   }
 
+  const periodWindow = { from: period.current.from, to: period.current.to };
+  const isFieldManager =
+    roleCategory === "district-manager" ||
+    roleCategory === "regional-manager" ||
+    roleCategory === "national-sales-manager";
+
+  // The sections that do not read the profile start WITH it, not in line after it: a manager's open
+  // used to pay profile + team health + team compliance + CRM insights one after another. Same reads,
+  // same arguments, same fallbacks — only the start time moved. Team Health still waits, because it
+  // reads the profile's double visits.
+  const teamLifecycleRead = isFieldManager
+    ? startSection(() => getEmployee360TeamLifecycle({ subjectHrId: target.hrId, teamHrIds, employees: rows, window: periodWindow }))
+    : null;
+  const tmAnalyticsRead =
+    roleCategory === "training-manager"
+      ? startSection(() => getTrainingManagerAnalytics({ tmHrId: target.hrId, employees: rows, window: periodWindow }))
+      : null;
+  const pmMarketingRead =
+    roleCategory === "product-manager"
+      ? startSection(() => getPmMarketingRoi(target.hrId, access, new Date().toISOString()))
+      : null;
+  // Phoenix CRM: plan compliance and visit frequency by grade, read in the subject's own scope.
+  const crmInsightsRead = startSection(() =>
+    loadEmployee360CrmInsights({
+      viewerAccess: access,
+      subjectHrId: target.hrId,
+      category: roleCategory,
+      from: period.current.from,
+      to: period.current.to,
+    }),
+  );
+
   let summary: Awaited<ReturnType<typeof getEmployee360Profile>> | null = null;
   let previous: Awaited<ReturnType<typeof getEmployee360Summary>> | null = null;
   try {
@@ -175,88 +224,43 @@ export default async function EmployeePortalEmployee360DetailPage({
     );
   }
 
-  // A section whose read fails says so on the page; it never silently disappears.
+  const profile = summary;
+  // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM). The only section that
+  // needs the profile, so it starts now and runs beside the reads already in flight.
+  const [teamHealthResult, teamLifecycleResult, tmAnalyticsResult, pmMarketingResult, crmInsightsResult] =
+    await Promise.all([
+      isFieldManager
+        ? startSection(() =>
+            getEmployee360TeamHealth({
+              teamHrIds,
+              employees: rows,
+              window: periodWindow,
+              dvRepHrIds: (profile.leadership?.byRep ?? []).filter((r) => r.doubleVisits > 0).map((r) => r.hrId),
+            }),
+          )
+        : null,
+      // Team Compliance — weekly plans, field discipline & probation of the manager's reps.
+      teamLifecycleRead,
+      // Training Manager god-mode analytics — coverage/neglect/concentration + verdict.
+      tmAnalyticsRead,
+      // PM / Group PM: ROI on the marketing requests they submitted.
+      pmMarketingRead,
+      crmInsightsRead,
+    ]);
+
+  // A section whose read fails says so on the page; it never silently disappears. Same order as before.
   const unreadSections: string[] = [];
-
-  // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM).
-  let teamHealth: TeamHealthSummary | null = null;
-  if (
-    roleCategory === "district-manager" ||
-    roleCategory === "regional-manager" ||
-    roleCategory === "national-sales-manager"
-  ) {
-    try {
-      teamHealth = await getEmployee360TeamHealth({
-        teamHrIds,
-        employees: rows,
-        window: { from: period.current.from, to: period.current.to },
-        dvRepHrIds: (summary.leadership?.byRep ?? []).filter((r) => r.doubleVisits > 0).map((r) => r.hrId),
-      });
-    } catch {
-      teamHealth = null;
-      unreadSections.push("Team Development");
-    }
-  }
-
-  // Team Compliance — weekly plans, field discipline & probation of the manager's reps.
-  let teamLifecycle: TeamLifecycleSummary | null = null;
-  if (
-    roleCategory === "district-manager" ||
-    roleCategory === "regional-manager" ||
-    roleCategory === "national-sales-manager"
-  ) {
-    try {
-      teamLifecycle = await getEmployee360TeamLifecycle({
-        subjectHrId: target.hrId,
-        teamHrIds,
-        employees: rows,
-        window: { from: period.current.from, to: period.current.to },
-      });
-    } catch {
-      teamLifecycle = null;
-      unreadSections.push("Team Compliance");
-    }
-  }
-
-  // Training Manager god-mode analytics — coverage/neglect/concentration + verdict.
-  let tmAnalytics: TrainingManagerAnalytics | null = null;
-  if (roleCategory === "training-manager") {
-    try {
-      tmAnalytics = await getTrainingManagerAnalytics({
-        tmHrId: target.hrId,
-        employees: rows,
-        window: { from: period.current.from, to: period.current.to },
-      });
-    } catch {
-      tmAnalytics = null;
-      unreadSections.push("Training-Manager Effectiveness");
-    }
-  }
-
-  // PM / Group PM: ROI on the marketing requests they submitted.
-  let pmMarketing: PmMarketingSummary | null = null;
-  if (roleCategory === "product-manager") {
-    try {
-      pmMarketing = await getPmMarketingRoi(target.hrId, access, new Date().toISOString());
-    } catch {
-      pmMarketing = null;
-      unreadSections.push("Marketing ROI");
-    }
-  }
-
-  // Phoenix CRM: plan compliance and visit frequency by grade, read in the subject's own scope.
-  let crmInsights: Employee360CrmInsights | null = null;
-  try {
-    crmInsights = await loadEmployee360CrmInsights({
-      viewerAccess: access,
-      subjectHrId: target.hrId,
-      category: roleCategory,
-      from: period.current.from,
-      to: period.current.to,
-    });
-  } catch {
-    crmInsights = unreadCrmInsights(roleCategory);
-  }
+  if (teamHealthResult && !teamHealthResult.ok) unreadSections.push("Team Development");
+  if (teamLifecycleResult && !teamLifecycleResult.ok) unreadSections.push("Team Compliance");
+  if (tmAnalyticsResult && !tmAnalyticsResult.ok) unreadSections.push("Training-Manager Effectiveness");
+  if (pmMarketingResult && !pmMarketingResult.ok) unreadSections.push("Marketing ROI");
+  const teamHealth: TeamHealthSummary | null = sectionValue(teamHealthResult);
+  const teamLifecycle: TeamLifecycleSummary | null = sectionValue(teamLifecycleResult);
+  const tmAnalytics: TrainingManagerAnalytics | null = sectionValue(tmAnalyticsResult);
+  const pmMarketing: PmMarketingSummary | null = sectionValue(pmMarketingResult);
+  const crmInsights: Employee360CrmInsights = crmInsightsResult.ok
+    ? crmInsightsResult.value
+    : unreadCrmInsights(roleCategory);
 
   const comparison: Employee360Comparison | null = previous
     ? {

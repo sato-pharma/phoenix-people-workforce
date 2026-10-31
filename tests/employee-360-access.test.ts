@@ -421,6 +421,12 @@ async function runEmployee360RegionalManagerReportTests() {
   ]) {
     const source = stripComments(readFileSync(page, "utf8"));
     const gates = source.split('roleCategory === "regional-manager"').length - 1;
-    assert.equal(gates, 2, `${page} loads Team Health and Team Compliance for a Regional Manager`);
+    // The portal detail page starts both reads together (2026-10-31, portal speed), so ONE shared
+    // field-manager gate names his family and both reads stand behind it.
+    const sharedGate =
+      /const isFieldManager =[^;]*roleCategory === "regional-manager"/.test(source) &&
+      /isFieldManager\s*\?\s*startSection\(\(\) => getEmployee360TeamLifecycle\(/.test(source) &&
+      /isFieldManager\s*\?\s*startSection\(\(\) =>\s*getEmployee360TeamHealth\(/.test(source);
+    assert.ok(gates === 2 || (gates === 1 && sharedGate), `${page} loads Team Health and Team Compliance for a Regional Manager`);
   }
 }
