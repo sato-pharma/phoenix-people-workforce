@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { cairoMonthDayTime12h } from "@/lib/format/cairo-datetime";
 import {
   AdminCallout,
   AdminTableShell,
@@ -194,14 +194,12 @@ const roleFamilies: Record<PhoenixRole, "executive" | "finance" | "hr" | "manage
   "Training Manager": "manager",
 };
 
+// "Oct 28, 11:16 AM", built from digits. Drawn in the first render of every account row and the audit
+// list, so the server's text and the browser's must be byte-identical — and an en-US Intl call with an
+// hour defaults to the 12-hour clock, whose AM/PM space Safari draws as U+202F: React #418 on any
+// iPhone or Mac (31 Oct 2026, the vacation approval page's bug).
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-  }).format(new Date(value));
+  return cairoMonthDayTime12h(value);
 }
 
 function getScopeSemanticClasses(scope: BusinessScope) {

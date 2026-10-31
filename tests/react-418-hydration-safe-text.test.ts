@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
+import { cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, cairoMonthDayTime12h, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
@@ -494,6 +494,31 @@ export function runReact418HydrationSafeTextTests() {
   assert.match(attachmentHistory, /function formatUploadedAt\([^)]*\)\s*\{\s*return cairoDateTime12h\(value\);/, "🔴 the vacation evidence list formats each upload time through cairoDateTime12h");
   assert.doesNotMatch(attachmentHistory, /Intl\.DateTimeFormat|toLocale(?:Date|Time)?String|hour12/, "🔴 the vacation evidence list must not ask the browser for a time — an Apple device spaces PM differently from the server");
 
+  // (d2) The same bug a third time, on Access Control (System Audit, "/admin/access", 31 Oct 2026):
+  // "Updated Oct 28, 11:16 AM" on every account row and audit line, from `Intl.DateTimeFormat("en-US",
+  // { hour: "2-digit", … })` — no `hour12` written, but en-US with an hour IS the 12-hour clock.
+  // cairoMonthDayTime12h prints exactly what the server printed, and asks the engine for nothing.
+  const accessServerBefore = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit", hour: "2-digit", minute: "2-digit", month: "short", timeZone: "Africa/Cairo",
+  });
+  for (const iso of [
+    "2026-10-28T08:16:59Z", "2026-09-05T22:05:00Z", "2026-01-01T00:00:00Z", "2026-06-15T09:00:00Z",
+    "2026-04-24T21:59:00Z", "2026-10-29T21:00:00Z", "2026-12-31T22:00:00Z", "2026-03-10T11:59:00Z",
+  ]) {
+    assert.equal(cairoMonthDayTime12h(iso), accessServerBefore.format(new Date(iso)).replace(/[  ]/g, " "), `${iso}: Access Control's time must read exactly as the server printed it before`);
+  }
+  assert.equal(cairoMonthDayTime12h(null), "-", "an empty instant is a dash");
+  try {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = function SafariLike() {
+      return { format: () => "Jan 01, 01:00 AM", formatToParts: () => [], resolvedOptions: () => ({}) };
+    } as unknown as typeof Intl.DateTimeFormat;
+    assert.equal(cairoMonthDayTime12h("2026-10-28T08:16:59Z"), "Oct 28, 11:16 AM", "🔴 Access Control's time must not depend on the reader's engine at all");
+  } finally {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = RealDateTimeFormat;
+  }
+  const accessControl = codeOnly(read("src/components/admin/access-control-manager.tsx"));
+  assert.match(accessControl, /function formatDate\([^)]*\)\s*\{\s*return cairoMonthDayTime12h\(value\);/, "🔴 Access Control formats its times through cairoMonthDayTime12h");
+
   // (e) No NEW client component may ask the browser for a 12-hour time. `hour12: true`, an h11/h12
   // hourCycle, or an "en"/"en-US" call with an hour (whose default is 12-hour) all print the AM/PM
   // space that Safari's engine draws as U+202F and Node's as a plain space. A call that only runs
@@ -502,7 +527,6 @@ export function runReact418HydrationSafeTextTests() {
   // ratchet: it may only shrink. A new file, or one more call in a listed file, is refused; route it
   // through cairoDateTime12h or a mount effect. A fixed call means lowering its number here.
   const KNOWN_CLIENT_12H_CALLS: Record<string, number> = {
-    "src/components/admin/access-control-manager.tsx": 1,
     "src/components/admin/ceo-hero-clock.tsx": 1,
     "src/components/admin/email-notification-center.tsx": 1,
     "src/components/admin/notification-confidence-workspace.tsx": 1,
