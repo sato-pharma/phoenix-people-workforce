@@ -17,6 +17,10 @@
 //
 // It reads the report the journeys wrote (tests/synthetic/report/latest.json, the file
 // synthetic:save-report saves to the dashboard) and never writes anything.
+//
+// TEST MODE. With SYNTHETIC_ALERT_TEST=true it sends one message headed TEST that says nothing failed
+// and reads no report — the workflow's `test_alert` switch, the same "send a test alert and stop"
+// every other Telegram alarm here has, so the alarm can be proved without breaking production.
 // ---------------------------------------------------------------------------
 
 import fs from "node:fs";
@@ -71,13 +75,33 @@ export function journeyVerdicts(results) {
 /**
  * The message. `results` is null when the run left no readable report — it died before the journeys,
  * or the step timed out before the reporter wrote — and then production was NOT checked at all.
+ * `test` is the workflow's test switch: a message headed TEST that reads no results.
+ *
+ * @param {{
+ *   results?: Array<{ journeyName?: string; status?: string }> | null;
+ *   baseUrl?: string;
+ *   finishedAt: Date;
+ *   runUrl?: string;
+ *   test?: boolean;
+ * }} input
  */
-export function buildSmokeTestAlert({ results, baseUrl, finishedAt, runUrl }) {
+export function buildSmokeTestAlert({ results, baseUrl, finishedAt, runUrl, test = false }) {
   const site = String(baseUrl || PRODUCTION_URL).replace(/\/+$/, "");
   const host = site.replace(/^https?:\/\//, "");
   const when = cairoStamp(finishedAt);
   const dashboardUrl = `${site}${DASHBOARD_PATH}`;
   const button = { text: "Open Synthetic Journeys", url: dashboardUrl };
+
+  if (test) {
+    return {
+      button,
+      text: [
+        "TEST — production smoke test alert",
+        `${when} Cairo: this is a test, sent on purpose. Nothing failed, and this run did not check ${host}.`,
+        "When a real smoke test of production fails, this chat gets a message from this bot naming each failed check, with the button below.",
+      ].join("\n\n"),
+    };
+  }
 
   if (!Array.isArray(results) || results.length === 0) {
     return {
@@ -124,24 +148,29 @@ async function main() {
     usage:
       "node scripts/synthetic-telegram-alert.mjs\n\n" +
       "Sends the owner's Telegram one message saying the production smoke test failed, built from\n" +
-      `${REPORT_PATH}. Run by synthetic-journeys.yml only, on a failed run of main against production.\n` +
-      "Reads TELEGRAM_BOT_TOKEN, TELEGRAM_ALERT_CHAT_ID, SYNTHETIC_BASE_URL and RUN_URL. Writes nothing.",
+      `${REPORT_PATH}. Run by synthetic-journeys.yml only, on a failed run of main against production,\n` +
+      "or with SYNTHETIC_ALERT_TEST=true by its test_alert switch, as one message headed TEST.\n" +
+      "Reads TELEGRAM_BOT_TOKEN, TELEGRAM_ALERT_CHAT_ID, SYNTHETIC_BASE_URL, RUN_URL and SYNTHETIC_ALERT_TEST.\n" +
+      "Writes nothing.",
   });
 
+  const test = process.env.SYNTHETIC_ALERT_TEST?.trim() === "true";
+  const what = test ? "The TEST smoke-test alert was requested" : "The smoke test FAILED";
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const chatId = process.env.TELEGRAM_ALERT_CHAT_ID?.trim();
   if (!token || !chatId) {
     console.log(
-      "::warning::The smoke test FAILED but no Telegram alert was sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is not set in this repository's Actions secrets.",
+      `::warning::${what} but no Telegram alert was sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is not set in this repository's Actions secrets.`,
     );
     process.exit(1);
   }
 
   const alert = buildSmokeTestAlert({
-    results: readReport(path.resolve(process.cwd(), REPORT_PATH)),
+    results: test ? null : readReport(path.resolve(process.cwd(), REPORT_PATH)),
     baseUrl: process.env.SYNTHETIC_BASE_URL,
     finishedAt: new Date(),
     runUrl: process.env.RUN_URL,
+    test,
   });
 
   try {
@@ -163,11 +192,11 @@ async function main() {
     }
   } catch (error) {
     const reason = String(error instanceof Error ? error.message : error).replaceAll(token, "[token]");
-    console.log(`::warning::The smoke test FAILED and the Telegram alert could not be sent: ${reason}`);
+    console.log(`::warning::${what} and the Telegram alert could not be sent: ${reason}`);
     process.exit(1);
   }
 
-  console.log("Telegram alert sent to the owner.");
+  console.log(test ? "TEST Telegram alert sent to the owner." : "Telegram alert sent to the owner.");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

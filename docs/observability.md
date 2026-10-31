@@ -1305,7 +1305,10 @@ owner's word — **a Telegram message to the owner** (`scripts/synthetic-telegra
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALERT_CHAT_ID`). It fires once per failed run of `main` against
 production — on a failed journey, or on a run that died before checking anything — names each failed
 journey once in Cairo time, and goes out before the dashboard save so it never waits on the
-database. A branch dispatch never pages him. Before it existed, every run failed from 28 Oct 05:18 to
+database. A branch dispatch never pages him. To prove the alarm without breaking anything, dispatch
+the workflow with `test_alert` ticked: it runs only a small `test alert` job — no login, no journeys,
+no dashboard row — and sends one message headed TEST through the same bot, chat and script, the same
+switch every other Telegram alarm here has. Before it existed, every run failed from 28 Oct 05:18 to
 31 Oct 2026 (23 in a row, two Employee 360 journeys still asking for a heading level the 27 Oct
 personnel-record layout had changed) and nobody knew for three and a half days. Pinned by
 `tests/synthetic-telegram-alert.test.ts`.

@@ -40,6 +40,12 @@ on:
         description: "Environment to smoke-test"
         required: false
         default: "https://phoenix-hr.satopharma.com"
+      # The same switch every other Telegram alarm here has. It runs only the `test-alert` job below:
+      # no login, no journeys, no dashboard row — one message headed TEST to the owner's alert chat.
+      test_alert:
+        description: "Send a test Telegram alert and stop (proves the alarm still works)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,14 +55,40 @@ env:
   CI_NODE_VERSION: "24"
 
 # Never let two runs overlap — they share one Super Admin account, and a second login would
-# invalidate the first run's session mid-journey and report a false failure.
+# invalidate the first run's session mid-journey and report a false failure. A test alert logs in to
+# nothing, so it takes its own group and never queues behind, or displaces, a real run.
 concurrency:
-  group: synthetic-journeys
+  group: synthetic-journeys${{ inputs.test_alert && '-test-alert' || '' }}
   cancel-in-progress: false
 
 jobs:
+  # TEST THE ALARM WITHOUT BREAKING PRODUCTION (owner, 2026-10-31). Dispatched with test_alert=true,
+  # it sends the owner one message headed TEST through the same bot, chat and script a real failure
+  # uses, and stops. Pinned by tests/synthetic-telegram-alert.test.ts.
+  test-alert:
+    name: test alert
+    if: ${{ inputs.test_alert }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Send the owner a TEST smoke-test alert on Telegram
+        timeout-minutes: 2
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SYNTHETIC_ALERT_TEST: "true"
+        run: node scripts/synthetic-telegram-alert.mjs
+
   synthetic:
     name: synthetic
+    # A test-alert dispatch runs only the job above. cron-job.org's dispatch sends no inputs, so
+    # test_alert takes its default, false, and every real run lands here.
+    if: ${{ !inputs.test_alert }}
     runs-on: ubuntu-latest
 
     # 🔴 45, NOT 20, AND THE ARITHMETIC IS THE WHOLE REASON. A JOB timeout ignores step-level

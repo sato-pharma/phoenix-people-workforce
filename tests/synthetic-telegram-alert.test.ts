@@ -111,46 +111,78 @@ export function runSyntheticTelegramAlertTests() {
     "a passed attempt wins, a failed-only journey fails, a skipped-only journey is skipped, and a nameless row is dropped",
   );
 
+  // 7. The test switch's message. It must say TEST first and that nothing failed, so a deliberate
+  //    test can never read as production down — and it must ignore any results it is handed.
+  const testAlert = buildSmokeTestAlert({ results: report, baseUrl: PRODUCTION, finishedAt, test: true });
+  assert.match(testAlert.text, /^TEST — /, "the test alert must open with the word TEST");
+  assert.match(testAlert.text, /Nothing failed, and this run did not check phoenix-hr\.satopharma\.com\./, "the test alert must say nothing failed and production was not checked");
+  assert.doesNotMatch(testAlert.text, /FAILED|checks failed|Employee 360/, "the test alert must never carry a failure count or a journey name");
+  assert.match(testAlert.text, /1 Dec, 12:05 Cairo:/, "the test alert must carry the Cairo time too");
+  assert.deepEqual(testAlert.button, alert.button, "the test alert must carry the same button a real alert does");
+  assert.match(alert.text, /^Production smoke test FAILED/, "without the test flag the alert is the real one");
+
   // ── When the workflow sends it ─────────────────────────────────────────────────────────────────
 
   const source = readFileSync(WORKFLOW, "utf8");
+
+  // 8. The test switch: a boolean input, default false, so cron-job.org's input-less dispatch is
+  //    always a real run. A test-alert run runs ONLY the test job, through the same script and
+  //    secrets, and the suite job is skipped — no login, no journeys, no dashboard row.
+  assert.match(
+    source,
+    /^ {6}test_alert:\n(?: {8}.*\n)*? {8}type:\s*boolean\n(?: {8}.*\n)*? {8}default:\s*false\s*$/m,
+    "the workflow must keep a boolean test_alert input that defaults to false",
+  );
+  const testJobAt = source.indexOf("\n  test-alert:\n");
+  const suiteJobAt = source.indexOf("\n  synthetic:\n");
+  assert.ok(testJobAt !== -1 && suiteJobAt !== -1, "the workflow must keep both the test-alert and the synthetic jobs");
+  const testJob = source.slice(testJobAt, testJobAt < suiteJobAt ? suiteJobAt : undefined);
+  const suiteJobHead = source.slice(suiteJobAt, source.indexOf("\n    steps:", suiteJobAt));
+  assert.match(testJob, /^ {4}if:\s*\$\{\{\s*inputs\.test_alert\s*\}\}\s*$/m, "the test-alert job must run only when test_alert is set");
+  assert.match(testJob, /^ {4}timeout-minutes:\s*\d+\s*$/m, "the test-alert job must carry its own timeout");
+  assert.match(suiteJobHead, /^ {4}if:\s*\$\{\{\s*!inputs\.test_alert\s*\}\}\s*$/m, "the suite must be skipped on a test-alert run, or a test logs in to production and runs every journey");
+  assert.match(testJob, /SYNTHETIC_ALERT_TEST:\s*"true"/, "the test-alert job must ask the script for its TEST message");
+  assert.match(testJob, /TELEGRAM_BOT_TOKEN:\s*\$\{\{\s*secrets\.TELEGRAM_BOT_TOKEN\s*\}\}/, "the test must go through the same bot");
+  assert.match(testJob, /TELEGRAM_ALERT_CHAT_ID:\s*\$\{\{\s*secrets\.TELEGRAM_ALERT_CHAT_ID\s*\}\}/, "the test must go to the same chat");
+  assert.match(testJob, /^ {8}run:\s*node scripts\/synthetic-telegram-alert\.mjs\s*$/m, "the test must run the same script a real failure does");
+  assert.doesNotMatch(testJob, /SYNTHETIC_ADMIN|PRODUCTION_SUPABASE/, "the test-alert job must never be handed the login or the database key");
   const alertStep = step(source, ALERT_STEP);
   const ifLine = alertStep.match(/^ {8}if:\s*(.*)$/m)?.[1] ?? "";
   assert.ok(ifLine, "the Telegram step must have an `if:` — without one it runs on every PASSING run and pages him six times a day");
 
-  // 7. On a failed journey. `failure()` alone is permanently false here, because the journeys step
+  // 9. On a failed journey. `failure()` alone is permanently false here, because the journeys step
   //    is continue-on-error and the job concludes success — gating on it would mute the alert.
   assert.match(ifLine, /steps\.journeys\.outcome\s*==\s*'failure'/, "the Telegram step must fire on the journeys step's own outcome");
-  // 8. And on a run that died before the journeys (a missing credential, a failed install).
+  // 10. And on a run that died before the journeys (a missing credential, a failed install).
   assert.match(ifLine, /\|\|\s*failure\(\)/, "the Telegram step must also fire when the run died before checking production");
-  // 9. always(), or a run that died in setup skips the step and the unchecked case goes silent.
+  // 11. always(), or a run that died in setup skips the step and the unchecked case goes silent.
   assert.match(ifLine, /^\$\{\{\s*always\(\)\s*&&/, "the Telegram step must be gated with always() first, or a setup failure skips it");
-  // 10. main only — a branch dispatch testing a journey change (as on 31 Oct) must never page him.
+  // 12. main only — a branch dispatch testing a journey change (as on 31 Oct) must never page him.
   assert.match(ifLine, /github\.ref\s*==\s*'refs\/heads\/main'/, "the Telegram step must fire only for runs of main");
-  // 11. production only — a manual run against another environment must never read as production down.
+  // 13. production only — a manual run against another environment must never read as production down.
   assert.match(
     ifLine,
     /\(inputs\.base_url \|\| 'https:\/\/phoenix-hr\.satopharma\.com'\)\s*==\s*'https:\/\/phoenix-hr\.satopharma\.com'/,
     "the Telegram step must fire only when the run checked production",
   );
 
-  // 12. A Telegram outage must not turn the job red and withhold a deploy.
+  // 14. A Telegram outage must not turn the job red and withhold a deploy.
   assert.match(alertStep, /^ {8}continue-on-error:\s*true\s*$/m, "the Telegram step must be continue-on-error");
   assert.match(alertStep, /^ {8}timeout-minutes:\s*\d+\s*$/m, "the Telegram step must carry its own timeout, or a hang cancels the job");
 
-  // 13. The secrets it reads, and the plain runner Node it runs on.
+  // 15. The secrets it reads, and the plain runner Node it runs on.
   assert.match(alertStep, /TELEGRAM_BOT_TOKEN:\s*\$\{\{\s*secrets\.TELEGRAM_BOT_TOKEN\s*\}\}/, "the Telegram step must read the bot token secret");
   assert.match(alertStep, /TELEGRAM_ALERT_CHAT_ID:\s*\$\{\{\s*secrets\.TELEGRAM_ALERT_CHAT_ID\s*\}\}/, "the Telegram step must read the owner's alert chat secret");
   assert.match(alertStep, /^ {8}run:\s*node scripts\/synthetic-telegram-alert\.mjs\s*$/m, "the Telegram step must run the script with plain node — no pnpm, no loader");
 
-  // 14. Before the dashboard save, which writes to the production database — down exactly when
+  // 16. Before the dashboard save, which writes to the production database — down exactly when
   //     production is, and allowed four minutes. The alert must not wait on it.
   assert.ok(
     source.indexOf(`      - name: ${ALERT_STEP}`) < source.indexOf("      - name: Save the run to the dashboard"),
     "the Telegram step must run BEFORE the dashboard save, so the alert never waits on the production database",
   );
 
-  // 15. The script needs nothing installed: on a run that died in setup there is no node_modules.
+  // 17. The script needs nothing installed: on a run that died in setup there is no node_modules.
   const imports = [...readFileSync(SCRIPT, "utf8").matchAll(/^import\s[^;]*?from\s+"([^"]+)";/gm)].map((match) => match[1]);
   assert.ok(imports.length >= 3, `expected the script's imports to parse, found ${imports.length} — the import reader has stopped matching`);
   for (const specifier of imports) {
