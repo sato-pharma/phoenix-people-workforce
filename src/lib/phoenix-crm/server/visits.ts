@@ -699,6 +699,14 @@ export type VisitCustomerOption = {
    */
   pending: boolean;
   /**
+   * 🔴 HIS THIRD VISIT HERE WOULD BE REFUSED: nobody has validated this customer and the seat already holds
+   * two visits to him (owner, 2026-10-28, `unvalidatedVisitRefused`). Add visit says so on the row and
+   * offers no visit, instead of letting him fill one in for the save to refuse — 21 refusals from 7 reps
+   * on 31 Oct 2026, every one after a whole visit was written (System Audit). His own work and the way
+   * out, the save's own sentence: never a count. False on a manager's form, whose visits still save.
+   */
+  validateFirst: boolean;
+  /**
    * Met outside the list and validated at the door, waiting to be added (2026-09-29). A visit to him
    * is an out-of-list visit: it counts once the district manager and SFE admit him.
    */
@@ -1008,6 +1016,42 @@ export async function loadWeekPlanRow(seatId: string, isTest: boolean, date: str
   return (plan as Row | null) ?? null;
 }
 
+/**
+ * The seat's earlier visits to each of its customers nobody has validated yet — the number `saveVisit`
+ * counts before it refuses a rep's third, read for the whole list at once so Add visit can say it first.
+ * 🔴 THE SAME VISITS THE SAVE COUNTS, no more and no fewer: the seat's own, in the same test world, never a
+ * pharmacy row filed from a doctor's visit, never a visit copied from iReports360 history. A pharmacy is
+ * never asked about (it needs no validation). Pinned against the save by
+ * `tests/phoenix-crm-unvalidated-visit-cap.test.ts`.
+ */
+async function loadUnvalidatedVisitCounts(seatId: string, isTest: boolean, customers: Row[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const unvalidated = customers
+    .filter((row) => (row.validated_at === null || row.validated_at === undefined) && !isPharmacyListType(row.list_type))
+    .map((row) => String(row.id));
+  // A hundred ids a read keeps the address well inside what the API accepts.
+  for (let start = 0; start < unvalidated.length; start += 100) {
+    const ids = unvalidated.slice(start, start + 100);
+    const rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_visits")
+          .select("id, customer_id")
+          .eq("seat_id", seatId)
+          .eq("is_test", isTest)
+          .in("customer_id", ids)
+          .is("linked_from_visit_id", null)
+          .is("imported_from_ireports360_at", null),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const row of rows) {
+      const customerId = String(row.customer_id);
+      counts.set(customerId, (counts.get(customerId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
   const { seat, isTest, enteredAs } = territoryForVisit(viewer, raw.seatId, readTestFlag(raw.test));
   // The visit day: until 02:00 the day that just ended is still today's (owner, 2026-09-29).
@@ -1035,10 +1079,17 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   // other once the whole wave was in, two more round trips before the form could paint. The switch is
   // read ONCE now, where the vacant-territory flag used to read it a second time.
   const lineProductManagersRead = loadLineProductManagers(seat);
+  // The list, and the customers waiting outside it: a second visit to someone met outside the list
+  // is another out-of-list visit to the same customer, never a second customer.
+  const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true }));
+  // Only a rep's own save refuses a third visit before validation, so only his form counts them — on the
+  // wave, the moment the list it counts for is in.
+  const unvalidatedVisitsRead =
+    enteredAs === "rep"
+      ? customersRead.then(({ customers }) => loadUnvalidatedVisitCounts(seat.seatId, isTest, customers))
+      : Promise.resolve(new Map<string, number>());
   const wave = Promise.all([
-    // The list, and the customers waiting outside it: a second visit to someone met outside the list
-    // is another out-of-list visit to the same customer, never a second customer.
-    ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true })),
+    customersRead,
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     // Today's plan row WHATEVER its status: the sent set is filtered out of it below, and the status
     // itself is what Add visit needs to say why Planned has nobody to offer.
@@ -1072,6 +1123,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     // the day's visits nor in the chain.
     lineProductManagersRead.then((managers) => loadPeopleNames(managers.map((manager) => manager.hrId))),
     enteredAs === "manager" ? managerOwnVisitClosedNow(viewer) : Promise.resolve(false),
+    unvalidatedVisitsRead,
   ]);
   // Handled at once: if the mint fails, `await ensured` below throws its error and the wave is dropped.
   wave.catch(() => undefined);
@@ -1093,6 +1145,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     offPlanExemptions,
     productManagerNames,
     managerOwnVisitClosed,
+    unvalidatedVisits,
   ] = await wave;
   // The SENT set, and only it, is what the picker offers and what the ordering follows — a draft is the
   // rep's own to edit today, so counting one would let him place the doctor at the door and never be off
@@ -1142,6 +1195,15 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       target: doctorListType(row.list_type) === null ? null : gradeTarget(settings, listType as "AM" | "PM", grade),
       // A pharmacy needs no validation (owner, 2026-10-03): never "not validated yet" to him.
       pending: row.status === "pending" && !isPharmacyListType(row.list_type),
+      // The save's own question, with the save's own answers: his raw list (a pharmacy is never counted)
+      // and `validated_at`, never the seating's AM/PM or the status above.
+      validateFirst:
+        enteredAs === "rep" &&
+        unvalidatedVisitRefused({
+          listType: row.list_type,
+          validated: row.validated_at !== null && row.validated_at !== undefined,
+          earlierVisits: unvalidatedVisits.get(customerId) ?? 0,
+        }),
       outside: row.status === "outside",
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
       // Pharmacies only, both of them: a doctor's phone is shown on his own page and the picker has

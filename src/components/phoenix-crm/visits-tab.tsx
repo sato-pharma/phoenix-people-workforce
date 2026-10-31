@@ -67,7 +67,7 @@ import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
-import type { ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
+import { UNVALIDATED_CUSTOMER_VISIT_REFUSED, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MANAGER_OWN_VISIT_ON_VACANT_SAVED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
@@ -858,6 +858,19 @@ function AddFlow({
       )}
     </CrmPanel>
   );
+  // 🔴 THE SAVE WOULD REFUSE THIS VISIT, SO IT IS NEVER WRITTEN (System Audit, 31 Oct 2026: 21 refusals from 7
+  // reps, each after a whole visit was filled in). Whatever road led here — Today's stop, a link, the picker —
+  // he reads the save's own sentence before the form, never after it.
+  const validateFirst = (customer: VisitCustomerOption) => (
+    <CrmPanel>
+      {back}
+      <CrmBlock>
+        <CrmNote title={customer.name} tone="warn">
+          {UNVALIDATED_CUSTOMER_VISIT_REFUSED}
+        </CrmNote>
+      </CrmBlock>
+    </CrmPanel>
+  );
 
   // 🔴 A REP THE SUPER ADMIN SWITCHED ON RECORDS THE VISIT BEFORE ANY STEP OF LOGGING IT (owner,
   // 2026-10-16). The first screen stays reachable — it also carries the day's activity, which is not a
@@ -884,6 +897,7 @@ function AddFlow({
   if (step.name === "open") {
     const customer = find(step.customerId);
     if (!customer) return missing(step.customerName);
+    if (customer.validateFirst) return validateFirst(customer);
     current = routeFor(customer);
   }
 
@@ -1028,6 +1042,7 @@ function AddFlow({
       const formStep = current;
       const customer = find(formStep.customerId);
       if (!customer) return missing(null);
+      if (customer.validateFirst) return validateFirst(customer);
       return shell(
         formStep,
         <VisitLogForm

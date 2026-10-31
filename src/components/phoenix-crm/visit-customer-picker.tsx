@@ -27,7 +27,7 @@ import { MapPin, Plus, Search } from "lucide-react";
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { DirectionsLink } from "@/components/phoenix-crm/directions-link";
 import { countText } from "@/components/phoenix-crm/format";
-import { customerMetaText, monthVisitsText, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
+import { customerMetaText, monthVisitsText, PENDING_PILL, pendingVisitsText, VALIDATE_FIRST_PILL } from "@/components/phoenix-crm/labels";
 import { OffPlanAllowanceCard } from "@/components/phoenix-crm/offplan-allowance";
 import { pharmacyWhereLine } from "@/components/phoenix-crm/pharmacy-details";
 import {
@@ -44,6 +44,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
+import { UNVALIDATED_CUSTOMER_VISIT_REFUSED } from "@/lib/phoenix-crm/entry-rules";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { offPlanBlock, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
@@ -298,7 +299,7 @@ export function VisitCustomerPicker({
                           <li className="min-w-0" key={customer.customerId}>
                             <button
                               className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
-                              disabled={customer.visitedToday || blocked !== null}
+                              disabled={customer.visitedToday || blocked !== null || customer.validateFirst}
                               onClick={() => onPick(customer.customerId)}
                               type="button"
                             >
@@ -317,13 +318,21 @@ export function VisitCustomerPicker({
                                   {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
                                   {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
                                   {blocked ? <CrmPill tone="warn">{blocked === "day" ? "Plan for another day" : "This week is full"}</CrmPill> : null}
+                                  {customer.validateFirst ? <CrmPill tone="warn">{VALIDATE_FIRST_PILL}</CrmPill> : null}
                                 </span>
                               </span>
                               <PlaceWindows customer={customer} />
                               {/* A customer not validated yet has no month standing to report: "2 of 3 visits this
                                   month" would read as progress on a figure his visits do not move. */}
+                              {/* 🔴 A THIRD VISIT BEFORE VALIDATION IS SAID HERE, NOT AFTER IT IS WRITTEN (System Audit,
+                                  31 Oct 2026): listed with the save's own sentence and not offered, like a doctor the
+                                  allowance holds no place for. */}
                               <span className="mt-1 block text-xs font-semibold text-slate-600">
-                                {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
+                                {customer.validateFirst
+                                  ? UNVALIDATED_CUSTOMER_VISIT_REFUSED
+                                  : customer.pending
+                                    ? pendingVisitsText(customer.visitsThisMonth)
+                                    : monthVisitsText(customer.visitsThisMonth, customer.target)}
                               </span>
                             </button>
                             {/* The way to his saved place (owner, 2026-10-02) hangs UNDER the card, joined by its

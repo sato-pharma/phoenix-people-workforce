@@ -22,6 +22,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { isBenignClientDisconnect } from "../src/lib/error-monitor/benign-disconnect.ts";
+import { reportClientError } from "../src/lib/error-monitor/report-client-error.ts";
 
 export function runBenignClientDisconnectTests() {
   // ── The headline: the exact Error that produced the 15 production rows ─────────────────────
@@ -98,4 +99,32 @@ export function runBenignClientDisconnectTests() {
     /IGNORED_CONNECTION_ERROR_CODES/,
     "the inline errno set is what missed the Next 16.3.3 wording; it must not come back alongside the shared filter",
   );
+
+  // ── The browser's own copy: a read its page cancelled (System Audit, 31 Oct 2026) ──────────
+  // Safari on iOS 16 raises a fetch its page aborted as an unhandled rejection, worded "Fetch is
+  // aborted". 108 rows from two reps in 30 days, every stack a Phoenix CRM screen's own abort() as it
+  // closed. Verbatim from app_error_events — the wording is WebKit's, so it is matched exactly.
+  assert.equal(isBenignClientDisconnect(new Error("Fetch is aborted")), true, "WebKit's wording for a fetch its own page cancelled");
+  assert.equal(isBenignClientDisconnect(new Error("Fetch is aborted because the server is down")), false, "exact, never a prefix");
+
+  const originalFetch = globalThis.fetch;
+  const posted: string[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+    posted.push(String(init?.body ?? ""));
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+  try {
+    reportClientError({ error: new Error("Fetch is aborted"), route: "/phoenix-crm" });
+    assert.equal(posted.length, 0, "🔴 Safari's cancelled read is not filed as a crash");
+    reportClientError({ error: Object.assign(new Error("signal is aborted without reason"), { name: "AbortError" }), route: "/phoenix-crm" });
+    assert.equal(posted.length, 0, "nor any browser's AbortError — the name carries it, whatever the message");
+    reportClientError({ error: Object.assign(new Error("signal timed out"), { name: "TimeoutError" }), route: "/phoenix-crm" });
+    assert.equal(posted.length, 1, "🔴 a read that TIMED OUT is ours to know about — it is still reported");
+    reportClientError({ error: new Error("Connection closed."), route: "/weekly-sales" });
+    assert.equal(posted.length, 2, "and so is every real fault");
+    // The filed row carries the message, so the second post is the real fault, never the abort.
+    assert.match(posted[1] ?? "", /Connection closed./);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }

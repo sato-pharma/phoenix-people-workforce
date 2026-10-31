@@ -83,4 +83,61 @@ export function runPhoenixCrmUnvalidatedVisitCapTests() {
     /\.from\("phoenix_crm_customers"\)\.select\("validated_at, list_type"\)\.eq\("id", visit\.customerId\)/,
     "the customer's own validation and list are read",
   );
+
+  // ── 4 · Said BEFORE the visit is written, never after (System Audit, 31 Oct 2026) ─────────────
+  // 21 refusals from 7 reps in one day, every one after a whole visit was filled in. Add visit now asks
+  // the same question first — with the same count, or it warns about a visit the save would take, or
+  // stays silent about one it would refuse.
+  const counter = functionBody(visits, /async function loadUnvalidatedVisitCounts\(/);
+  assert.match(counter, /\.from\("phoenix_crm_visits"\)/, "the form counts the same table");
+  assert.match(counter, /\.in\("customer_id", ids\)/, "for every customer on the list at once");
+  // Every filter the save's count carries, bar the customer and the visit being saved, the form's carries too.
+  const saveFilters = [...countRead.matchAll(/\.(eq|is)\("([a-z_0-9]+)"/g)]
+    .map(([, kind, column]) => `${kind}:${column}`)
+    .filter((filter) => filter !== "eq:customer_id");
+  assert.ok(saveFilters.length >= 4, `the save's filters are read from its own code (${saveFilters.join(", ")})`);
+  for (const filter of saveFilters) {
+    const [kind, column] = filter.split(":");
+    assert.ok(counter.includes(`.${kind}("${column}"`), `🔴 the form's count carries the save's own .${kind}("${column}") — the two must count the same visits`);
+  }
+  assert.match(counter, /\.is\("imported_from_ireports360_at", null\)/, "never a visit copied from iReports360 history, as the save");
+  assert.match(counter, /validated_at === null/, "only customers nobody has validated are counted");
+  assert.match(counter, /!isPharmacyListType\(row\.list_type\)/, "a pharmacy is never asked about");
+
+  const form = functionBody(visits, /export async function loadVisitForm\(/);
+  assert.match(
+    form,
+    /const unvalidatedVisitsRead =\s*enteredAs === "rep"\s*\?\s*customersRead\.then/,
+    "only the rep's own form counts — the save asks nobody else",
+  );
+  assert.match(
+    form,
+    /validateFirst:\s*enteredAs === "rep" &&\s*unvalidatedVisitRefused\(\{\s*listType: row\.list_type,\s*validated: row\.validated_at !== null && row\.validated_at !== undefined,\s*earlierVisits: unvalidatedVisits\.get\(customerId\) \?\? 0,/,
+    "🔴 the save's own rule, with the save's own answers: the raw list, validated_at and the counted visits",
+  );
+
+  const picker = stripComments(read("src/components/phoenix-crm/visit-customer-picker.tsx"));
+  assert.match(
+    picker,
+    /disabled=\{customer\.visitedToday \|\| blocked !== null \|\| customer\.validateFirst\}/,
+    "🔴 the picker never offers the visit the save would refuse",
+  );
+  assert.match(picker, /\{customer\.validateFirst \? <CrmPill tone="warn">\{VALIDATE_FIRST_PILL\}<\/CrmPill> : null\}/, "the row says why");
+  assert.match(picker, /\{customer\.validateFirst\s*\?\s*UNVALIDATED_CUSTOMER_VISIT_REFUSED/, "and the way out, in the save's own sentence");
+
+  const tab = stripComments(read("src/components/phoenix-crm/visits-tab.tsx"));
+  const openAt = tab.indexOf('if (step.name === "open") {');
+  assert.ok(openAt > 0, "Add visit still opens a customer from a link or Today's stop");
+  const openGuard = tab.indexOf("if (customer.validateFirst) return validateFirst(customer);", openAt);
+  const routeAt = tab.indexOf("current = routeFor(customer);", openAt);
+  assert.ok(openGuard > openAt && openGuard < routeAt, "🔴 a customer opened from a link reads the sentence before any step");
+  const formAt = tab.indexOf("const formStep = current;");
+  const formGuard = tab.indexOf("if (customer.validateFirst) return validateFirst(customer);", formAt);
+  const logFormAt = tab.indexOf("<VisitLogForm", formAt);
+  assert.ok(formAt > 0 && formGuard > formAt && formGuard < logFormAt, "🔴 and the visit form itself is never drawn for him");
+  assert.match(
+    tab,
+    /const validateFirst = \(customer: VisitCustomerOption\) => \([\s\S]*?<CrmNote title=\{customer\.name\} tone="warn">\s*\{UNVALIDATED_CUSTOMER_VISIT_REFUSED\}/,
+    "the panel names the customer and says the save's own sentence",
+  );
 }

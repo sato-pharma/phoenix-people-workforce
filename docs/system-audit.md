@@ -284,6 +284,42 @@ The 04:57 message of 31 Oct 2026 led with four items; PR 6699 fixed those. The r
   "No answer" leaves the audit since PR 6699.
 - Everything else in the message is the 29 Oct 14:04–14:09 Cairo database outage.
 
+## Today's errors, 31 Oct 2026
+
+The errors new since that message, read the same afternoon. None of the faults PR 6699 and PR 6702 fixed
+came back.
+
+**Fixed** — each pinned by a test that fires when the fix is removed:
+
+- **A third visit before validation, refused only after it was written** — 21 refusals from 7 reps in one
+  day. Add visit now counts the same visits the save counts, lists the customer with "Validate first" and
+  the save's own sentence, and does not offer the visit; a link to him lands on the same sentence. The
+  save still refuses. How: `loadVisitForm` reads `loadUnvalidatedVisitCounts` (the rep's form only, one read
+  per 100 customers, the save's own filters) and sets `validateFirst` on each customer; `AddFlow` stops at
+  both the `open` step (a link, Today's stop) and the `form` step. `tests/phoenix-crm-unvalidated-visit-cap.test.ts`,
+  whose section 4 fails if the form's count drops any filter the save's count carries.
+- **"Fetch is aborted" on iPhones running iOS 16** — 108 rows from two reps in 30 days, 24 of them today.
+  The stack is Phoenix CRM's own `abort()` as a screen closes; Safari on iOS 16 raises the cancelled read
+  as an unhandled rejection. The browser reporter no longer files a request the page cancelled itself,
+  and the audit drops the rows old tabs still send as `benign_disconnect`. A timeout is still reported.
+  `tests/benign-client-disconnect.test.ts`, `tests/system-audit-noise.test.ts`.
+
+**No change, and why:**
+
+- "Minified React error #418" on Employees — 35 times since 26 Oct from the health-check sign-in, every
+  three hours, and 6 times from one HR Administration user on 28–29 Oct. Never the owner. The code read
+  found no cause, and the page was not opened in a browser to find one. **Found, not fixed.**
+- "Minified React error #441" on Expense Submissions — one District Manager, 29 Oct 11:28, with no digest
+  and no server error beside it. Without a digest it appeared 3 times in 30 days, on 3 pages.
+- "Minified React error #412" on Weekly Sales — the page's stream closed ("Connection closed."), once.
+- "Load failed" and "Error in input stream" — already counted as network noise.
+- 22 rows of a masked script error with no frame of ours — excluded as `masked_script_error`.
+- "Could not load map/util" — Google Maps' own loader, one rep, one moment.
+- The recruitment mailbox intake — one connection timeout, at 06:14; it did not repeat.
+- The geofence, duplicate-name, day-limit and nameplate refusals — the server refusing what it should.
+- "No deliverable address" — two active Medical Reps still have no Sato work email in Employee Master.
+  Data, entered there, not code.
+
 ## What it replaced, and why
 
 Measured on production, 23 Oct 2026:
