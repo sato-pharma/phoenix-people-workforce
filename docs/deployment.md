@@ -1053,10 +1053,13 @@ build from production), and Vercel is a retired platform here.
    printed, the temporary file removed). `scripts/emergency-host.mjs` drops every `RAILWAY_*` key and every key
    `fly.toml` forces, because a Fly secret outranks `[env]`. The copy is as fresh as the last `setup`: **re-run setup
    after changing a production variable on Railway**, while Railway's API answers.
-5. **The switch** — one Cloudflare record: `CNAME phoenix-hr` holds `xok6ir4p.up.railway.app` normally and
+5. **The switch** — one Cloudflare record: `CNAME phoenix-hr` holds
+   `phoenix-people-workforce-production.up.railway.app` normally (since 2026-10-31, "Production Verification") and
    `<app>.fly.dev` during an emergency, unproxied, TTL 60 s (`setup` lowers it from Cloudflare's automatic 300 s,
    content untouched). The certificate is issued beforehand through an `_acme-challenge` record, so the standby can
-   answer for the domain the moment the record moves. `point` refuses: a record holding anything else (a state
+   answer for the domain the moment the record moves. A record still on the old edge target
+   `xok6ir4p.up.railway.app` reads `railway-legacy`: it is recognised, and a flip back rewrites it to the railway.app
+   host — `point` never writes `xok6ir4p` again. `point` refuses: a record holding anything else (a state
    nobody here set), a standby without a certificate or not answering with the commit, and a flip back to a Railway
    that does not answer. Its proof is **the domain answering from the chosen host** (Fly's `fly-request-id` header).
 6. **Same address, same everything** — staff keep `phoenix-hr.satopharma.com`, so logins, emailed links and the
@@ -1141,7 +1144,24 @@ and that the variable copy drops every key the config forces).
 
 The public production domain is https://phoenix-hr.satopharma.com (also reachable at
 `https://phoenix-people-workforce-production.up.railway.app`). Cloudflare holds
-`CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied.
+`CNAME phoenix-hr -> phoenix-people-workforce-production.up.railway.app`, **unproxied**, TTL 60 — it resolves to
+Railway's edge 69.46.46.108.
+
+🔴 **Never re-enable the Cloudflare proxy on this record, or repoint it at `xok6ir4p.up.railway.app`, without the
+owner** (owner, 2026-10-31 20:36 Cairo). History:
+
+- Until 2026-10-27 the record was `CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied — the custom domain's own
+  Railway edge target, which resolves to 69.46.46.36. That edge dropped about one in six Egyptian connections.
+- From 2026-10-27 12:25 Cairo the record was proxied through Cloudflare to get away from that edge.
+- On 2026-10-31 a Medical Rep could not open Phoenix at all on her home wifi. Vodafone home broadband (AS24835)
+  silently drops traffic to Cloudflare's addresses: Cloudflare's `/cdn-cgi/trace` hung on that connection while the
+  railway.app host opened at once. At 20:36 Cairo the owner approved the move to the web service's own railway.app
+  host, unproxied.
+
+Re-enabling the proxy cuts off Vodafone home users again; going back to `xok6ir4p` brings the drops back. The
+emergency host's `point` writes only the railway.app host on a flip back ("The emergency host" above). The origin
+certificate check (`.github/workflows/origin-certificate-check.yml`) still connects to `xok6ir4p` by SNI: Railway
+keeps that edge target for the custom domain, so the certificate is read there whatever the record holds.
 
 **To confirm what is actually live, ask the app — not the workflow list:**
 
