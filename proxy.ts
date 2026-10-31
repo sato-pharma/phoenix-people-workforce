@@ -19,6 +19,7 @@ import {
   shouldSendPageCsp,
 } from "@/lib/security/content-security-policy";
 import { logStructured } from "@/lib/observability/log";
+import { PAGE_CACHE_CONTROL } from "@/lib/security/page-cache-control";
 import {
   isAllowedPhoenixOrigin,
   normalizeOrigin,
@@ -465,7 +466,13 @@ function pageCspFor(pathname: string): PageCsp | null {
 }
 
 function withPageCsp(response: NextResponse, pageCsp: PageCsp | null): NextResponse {
-  if (pageCsp) response.headers.set("Content-Security-Policy", pageCsp.policy);
+  if (pageCsp) {
+    response.headers.set("Content-Security-Policy", pageCsp.policy);
+    // `no-transform` keeps Cloudflare from rewriting the email addresses a page renders into
+    // "[email protected]", which broke hydration (React #418) — src/lib/security/page-cache-control.ts.
+    // A redirect already names its own and has no body to rewrite, so it keeps it.
+    if (!response.headers.has("Cache-Control")) response.headers.set("Cache-Control", PAGE_CACHE_CONTROL);
+  }
   return response;
 }
 
