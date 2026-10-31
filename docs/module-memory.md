@@ -144,6 +144,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `devices` — Devices and tablet management (Headwind MDM) | `src/lib/devices/**` and 4 more |
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,system-audit,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 9 more |
 | `platform-system-audit` — Platform — the System Audit board, its daily message and the error screenshots | `src/lib/system-audit/**` and 7 more |
+| `platform-sessions` — Platform — the login check, the session copy, the heartbeat and the open tab's pulse | `src/lib/auth/{server,session,session-bundle-cache,session-heartbeat,session-lifecycle,session-token,app-sessions,client-session}.ts` and 4 more |
 | `platform-design-tokens` — Platform — design tokens, the form kit and the square-edge look | `src/components/ui/{form-kit,form-tokens,brand-tokens}*` and 3 more |
 | `platform-observability` — Platform — structured logging, Sentry and the audit trail's own persistence | `src/lib/observability/**` and 13 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |

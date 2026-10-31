@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   HEARTBEAT_GAP_MS,
+  HEARTBEAT_GATHER_MS,
   NOTICES_GAP_MS,
   PULSE_RETURN_GAP_MS,
   notePulseActivity,
@@ -62,6 +63,12 @@ export async function runSessionPulseTests() {
   g["document"] = mockDocument;
   const realSetInterval = globalThis.setInterval;
   const realClearInterval = globalThis.clearInterval;
+  const realSetTimeout = globalThis.setTimeout;
+  const realClearTimeout = globalThis.clearTimeout;
+  // The bare heartbeat's wait (HEARTBEAT_GATHER_MS) runs on setTimeout; the fake keeps each pending
+  // wait with its delay so a test fires it by hand.
+  const timeouts = new Map<number, { fn: () => void; ms: number }>();
+  let nextTimeoutId = 1;
 
   let now = 5_000_000;
   const ticks: Array<() => void> = [];
@@ -80,6 +87,15 @@ export async function runSessionPulseTests() {
       return ticks.length as unknown as ReturnType<typeof setInterval>;
     };
     g["clearInterval"] = () => {};
+    timeouts.clear();
+    g["setTimeout"] = (fn: () => void, ms: number) => {
+      const id = nextTimeoutId++;
+      timeouts.set(id, { fn, ms });
+      return id as unknown as ReturnType<typeof setTimeout>;
+    };
+    g["clearTimeout"] = (id: number) => {
+      timeouts.delete(id);
+    };
     g["fetch"] = (url: string, init?: { method?: string }) => {
       calls.push({ url, method: init?.method ?? "GET" });
       // Like the route: each half is in the answer only when the request asked for it.
@@ -328,10 +344,74 @@ export async function runSessionPulseTests() {
       unsub();
       reset();
     }
+
+    // ── 11. A heartbeat with nothing to carry waits for the bell, so a page opening sends ONE request ──
+    // Production, 31 Oct 14:51-15:00 Cairo: 14 of 67 pulse requests were a bare heartbeat POST sent the
+    // moment the session guard mounted, then the bell's own GET 0.4-2.5 s later from the same phone.
+    {
+      install();
+      reset();
+      now = 8_000_000;
+      const unsubEnded = subscribePulseSessionEnded(() => {});
+      notePulseActivity();
+      await flush();
+      assert.equal(calls.length, 0, "11: a heartbeat with nothing else to carry must not go out the moment the guard mounts");
+      assert.equal(timeouts.size, 1, "11: it waits instead, on one timer");
+      assert.equal([...timeouts.values()][0].ms, HEARTBEAT_GATHER_MS, "11: for HEARTBEAT_GATHER_MS");
+      assert.ok(HEARTBEAT_GATHER_MS >= 2_500 && HEARTBEAT_GATHER_MS <= 5_000, "11: long enough for the slowest bell seen (2.5 s), short enough to be invisible");
+
+      now += 1_200;
+      notePulseActivity();
+      await flush();
+      assert.equal(timeouts.size, 1, "11: more activity during the wait starts no second timer");
+
+      const noticesGot: PulseNotices[] = [];
+      const unsubNotices = subscribePulseNotices((n) => noticesGot.push(n));
+      await flush();
+      assert.deepEqual(
+        calls,
+        [{ url: "/api/auth/pulse?notices=1", method: "POST" }],
+        "11: the bell arriving during the wait must make ONE request that is both the heartbeat and the notices",
+      );
+      assert.deepEqual(noticesGot, [NOTICES], "11: and the bell gets its notices from it");
+      assert.equal(timeouts.size, 0, "11: the wait is cancelled once the heartbeat has gone");
+      unsubNotices();
+      unsubEnded();
+      reset();
+    }
+    {
+      install();
+      reset();
+      now = 9_000_000;
+      const unsubEnded = subscribePulseSessionEnded(() => {});
+      notePulseActivity();
+      await flush();
+      assert.equal(calls.length, 0);
+      const [[waitId, wait]] = [...timeouts.entries()];
+      now += HEARTBEAT_GATHER_MS;
+      // A real timer is gone once it has fired; so is the fake.
+      timeouts.delete(waitId);
+      wait.fn();
+      await flush();
+      assert.deepEqual(
+        calls,
+        [{ url: "/api/auth/pulse", method: "POST" }],
+        "11: when nothing rides with it, the heartbeat goes on its own once the wait is over -- a session is never left unrefreshed",
+      );
+      now += 1_000;
+      notePulseActivity();
+      await flush();
+      assert.equal(calls.length, 1, "11: and the 60 s floor still holds after it");
+      assert.equal(timeouts.size, 0, "11: with no wait pending");
+      unsubEnded();
+      reset();
+    }
   } finally {
     Date.now = realNow;
     g["setInterval"] = realSetInterval;
     g["clearInterval"] = realClearInterval;
+    g["setTimeout"] = realSetTimeout;
+    g["clearTimeout"] = realClearTimeout;
     mockDocument.visibilityState = "visible";
     _resetSessionPulse();
     g["fetch"] = realFetch;

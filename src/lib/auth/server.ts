@@ -50,6 +50,7 @@ import {
   recallRememberedBundle,
   rememberAcceptedBundle,
   sessionBundleCacheKey,
+  shareLiveBundleRead,
   withRefreshedSessionExpiry,
 } from "@/lib/auth/session-bundle-cache";
 import { logError, logWarning } from "@/lib/observability/log";
@@ -307,6 +308,13 @@ export async function resolveSessionState(
      */
     allowRecentCopy?: boolean;
     refreshIdle?: boolean;
+    /**
+     * True only for a request that cannot change anything (a GET or HEAD API call, a page render that is
+     * not a server action): it may wait for a LIVE read of the same session that is already in flight
+     * instead of starting its own (shareLiveBundleRead, session-bundle-cache.ts). Left out, the request
+     * always runs its own read -- a write, a heartbeat, a passkey and a password change never share.
+     */
+    shareLiveRead?: boolean;
   } = {},
 ): Promise<ResolvedSessionState | null> {
   const payload = verifySessionToken(token);
@@ -395,19 +403,38 @@ export async function resolveSessionState(
   // reach the database" is not a verdict on the session (see that class), and a plain object
   // thrown into a server render surfaced only as Next's opaque digest error (PHOENIX-WORKFORCE-9,
   // 2026-10-17: field-crm renders failing with "Supabase request timed out.").
-  // When this read BEGAN, so a slow answer that finally arrives after a newer one (or a revocation made
-  // here) cannot store its older picture of the session as the copy.
-  const bundleReadStartedAt = Date.now();
-  let bundleSettled = await callBundle();
-  if (isTransientBundleFailure(bundleSettled)) {
-    await new Promise((resolve) => setTimeout(resolve, SESSION_BUNDLE_RETRY_DELAY_MS));
-    bundleSettled = await callBundle();
+  const readLiveBundle = async () => {
+    let settled = await callBundle();
+    if (isTransientBundleFailure(settled)) {
+      await new Promise((resolve) => setTimeout(resolve, SESSION_BUNDLE_RETRY_DELAY_MS));
+      settled = await callBundle();
+    }
+    return settled;
+  };
+  const bundleCacheKey = sessionBundleCacheKey({ sid: payload.sid, loginId: payload.loginId });
+  // ONE LIVE READ FOR READ-ONLY REQUESTS THAT ARRIVE TOGETHER (31 Oct 2026): the fifteen prefetches a
+  // portal page sends at once each ran this read for the same person. A read-only request now waits for
+  // the same session's live read when one began under a second ago, and works on its own deep copy of
+  // the rows; every check below still runs for it against its own token. Nothing is kept after the read
+  // settles -- this is not the copy (session-bundle-cache.ts, "ONE LIVE READ").
+  // When the read that answered BEGAN, so a slow answer that finally arrives after a newer one (or a
+  // revocation made here) cannot store its older picture of the session as the copy.
+  let bundleReadStartedAt = Date.now();
+  let bundleSettled: Awaited<ReturnType<typeof readLiveBundle>>;
+  let joinedLiveRead = false;
+  // A heartbeat writes the idle refresh off the back of its read, so it never shares one, whatever it was passed.
+  if (options.shareLiveRead && !options.refreshIdle) {
+    const shared = await shareLiveBundleRead(bundleCacheKey, readLiveBundle);
+    bundleReadStartedAt = shared.startedAt;
+    bundleSettled = shared.value;
+    joinedLiveRead = shared.joined;
+  } else {
+    bundleSettled = await readLiveBundle();
   }
   // THE LAST ACCEPTED BUNDLE MAY STAND IN FOR A READ THAT FAILED, for ten minutes at most (owner,
   // 18 Oct 2026; src/lib/auth/session-bundle-cache.ts has the rules and the incident). Live is always
   // tried first, so this branch is reached only after the call AND its retry both failed for an
   // infrastructure reason; a copy goes through every check below exactly as a live bundle does.
-  const bundleCacheKey = sessionBundleCacheKey({ sid: payload.sid, loginId: payload.loginId });
   let bundleData: unknown;
   let servedFromRecentCopy = false;
   if (isTransientBundleFailure(bundleSettled)) {
@@ -430,7 +457,8 @@ export async function resolveSessionState(
     // A non-transient PostgREST-level error is still thrown first, before any other check.
     if (!bundleSettled.ok) throw bundleSettled.error;
     if (bundleSettled.value.error) throw bundleSettled.value.error;
-    bundleData = bundleSettled.value.data;
+    // A request that shared another's read works on its own copy, so nothing either does to the rows can reach the other.
+    bundleData = joinedLiveRead ? structuredClone(bundleSettled.value.data) : bundleSettled.value.data;
     // A live answer replaces whatever was held for this session, and it is held again only if every
     // check below accepts it -- so a rejection can never be undone by a later outage.
     forgetRememberedBundle(bundleCacheKey, bundleReadStartedAt);
@@ -655,7 +683,7 @@ export async function resolveSessionState(
 
 export async function resolveSessionAccessContext(
   token: string | null | undefined,
-  options: { allowRecentCopy?: boolean } = {},
+  options: { allowRecentCopy?: boolean; shareLiveRead?: boolean } = {},
 ) {
   const state = await resolveSessionState(token, options);
   return state?.access ?? null;
@@ -676,9 +704,10 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
   const cookieHeader = request.headers.get("cookie");
   const allowRecentCopy = mayUseRecentSessionCopy(request);
   const sessionToken = getCookieValue(cookieHeader, phoenixSessionCookieName);
+  // The same GET/HEAD test decides both: a request that may use the copy may also share a live read.
   const sessionContext = await resolveSessionAccessContext(
     sessionToken,
-    { allowRecentCopy },
+    { allowRecentCopy, shareLiveRead: allowRecentCopy },
   );
 
   if (sessionContext) {
@@ -694,7 +723,10 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
   // request that has both is a browser request, and its cookie is the more trustworthy of the two.
   // Only this Request-based resolver accepts it; resolveAccessContextFromPage stays cookie-only,
   // because a server-rendered page is never loaded by the native client.
-  const bearerContext = await resolveSessionAccessContext(bearerTokenFromRequest(request), { allowRecentCopy });
+  const bearerContext = await resolveSessionAccessContext(bearerTokenFromRequest(request), {
+    allowRecentCopy,
+    shareLiveRead: allowRecentCopy,
+  });
 
   if (bearerContext) {
     return bearerContext;
@@ -753,8 +785,12 @@ const resolveAccessContextFromPageInner = cache(async (): Promise<AccessContext>
   const cookieValue = cookieStore.get(phoenixSessionCookieName)?.value;
   // A server action authorises a write here, so it never runs on the session copy (the GET/HEAD rule's
   // page-side twin, session-bundle-cache.ts).
+  // A page render may also share a live read already in flight for this session -- the prefetch burst
+  // a portal page sends (session-bundle-cache.ts, "ONE LIVE READ"); a server action never does.
+  const pageMayShare = pageRequestMayUseRecentCopy(headerStore);
   const sessionContext = await resolveSessionAccessContext(cookieValue, {
-    allowRecentCopy: pageRequestMayUseRecentCopy(headerStore),
+    allowRecentCopy: pageMayShare,
+    shareLiveRead: pageMayShare,
   });
 
   if (sessionContext) {

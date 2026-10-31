@@ -1182,6 +1182,27 @@ export const MODULES = [
     keywords: ["system audit", "system-audit", "daily message", "error screenshot", "crash screenshot", "what the person saw", "what the employee saw", "blocked"],
     tables: ["system_audit_", "user_error_screens"],
   },
+  // 🔴 SPLIT 2026-10-31, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` had 31
+  // rules and its injected pointer measured 3,909 bytes; the two session-pulse rules (one live login
+  // check shared by requests that arrive together, and the held bare heartbeat) would have taken it to
+  // 4,098 against the 4,000-byte margin `tests/module-memory.test.ts` holds. The login check, its
+  // outage copy, the heartbeat and the audit rows a sign-in leaves are one family — how a signed-in
+  // person stays signed in and what each check costs — so their four rules moved VERBATIM. `platform`
+  // KEEPS EVERY GLOB IT HAD, so an auth file loads the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "platform-sessions",
+    title: "Platform — the login check, the session copy, the heartbeat and the open tab's pulse",
+    scope: "How a signed-in person stays signed in and what it costs: the phx_auth_session_bundle read and the one live read that requests arriving together share, the ten-minute outage copy, the session heartbeat and its outage answer, the session pulse an open tab sends, and the audit rows a sign-in and a rejected session leave.",
+    globs: [
+      "src/lib/auth/{server,session,session-bundle-cache,session-heartbeat,session-lifecycle,session-token,app-sessions,client-session}.ts",
+      "src/lib/session-pulse-store.ts",
+      "src/components/auth/session-security-guard.tsx",
+      "app/api/auth/{pulse,heartbeat,login,logout}/**",
+      "tests/*{session,pulse}*",
+    ],
+    keywords: ["session pulse", "session heartbeat", "login check", "session bundle", "phx_auth_session_bundle", "signed out"],
+    tables: ["app_sessions"],
+  },
   // 🔴 SPLIT 2026-10-18, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `platform` reached 29
   // rules and its injected pointer measured 4,141 bytes against the 4,000-byte margin
   // `tests/module-memory.test.ts` holds, the moment the AI-providers rule landed. The cut is the
