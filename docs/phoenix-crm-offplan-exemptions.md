@@ -19,6 +19,33 @@ district manager, then the SFE). Asked three questions in chat, he answered:
   Elsebaey) and the SFE Manager (Khaled Mohamed Ali Bedair). One in-app notice each, sent 2026-10-17; no email, no
   Telegram (Phoenix CRM sends none by owner rule).
 
+## Four hospitals with no cap at all (owner, 2026-10-31)
+
+Read the Air Force hospital exception back, he answered: *"DO THE SAME FOR THE MENTIONED HOSPITALS MAKE THEM
+NORMALLY ADD IN THEIR PLANS ANY COUNT IN THIS HOSPITALS AND MAKE THEM LOG VISITS PLANNED/UNPLANNED IN THOSE HOSPITALS
+WITHOUT CAP"* — of the four hospitals in Saad Salama's district (CNS, Alex-BHR) he had just asked about:
+
+| Rep (seat) | Hospital | Venue name key |
+| --- | --- | --- |
+| Ahmed Ashraf Mahmoud Elsayed (`SEAT-CNS-REP-AB3`, Alex Center 1-West) | مستشفى ايليت | `ايليت` |
+| Ahmed Ashraf Mahmoud Elsayed | مستشفي زمزم | `زمزم` |
+| Ahmed Ashraf Mahmoud Elsayed | مستشفي الروماني | `الروماني` |
+| Hager Noureldeen Ahmed Abdelmaged (`SEAT-CNS-REP-AB1`, Alex East) | مستشفي مرقص ماري | `مرقص`, and a key-only row `مرقس` for the other spelling |
+
+- Each row names the hospital account AND the venue key, with **`lifts_venue_cap = true`**. That flag is the whole
+  difference from the Air Force row (which keeps `false`): the venue's own daily number (`shared_place_daily_cap`, 3)
+  is lifted for **planned** visits too — at the door (`phoenix_crm_shared_place_day_cap` returns before it counts),
+  on the plan's **save** (`resolvePlanItems`) and on its **send** (`transitionPlan`). Both sides ask one rule,
+  `phoenix_crm_venue_cap_lifted(seat)`; the plan reads it through `loadLiftedVenues` and passes it to
+  `sharedPlanCapRefusal`, which leaves items in a lifted venue out of the count. A failed read answers none, so the
+  plan falls back to the ordinary number, never a wider door than the database's.
+- The out-of-plan cap (2 a day, 8 a week) is lifted there by the existing venue-row door, unchanged.
+- **What stays:** the approval chain (written reason, district manager then SFE); one visit per customer per day; the
+  plan's AM / PM day caps (5 and 15); the settings; every other seat; and an account nobody has validated is still
+  held at two visits — Mary Morcos Hospital is still `pending` on Hager's list with no place captured.
+- Migration `20261031170001_phoenix_crm_alex_hospitals_no_cap.sql`, which stops itself unless every hospital
+  account is still on its seat. Pinned by `tests/phoenix-crm-offplan-exemption.test.ts` (`runLiftedVenueTests`).
+
 ## A new hire's first month (owner, 2026-10-26)
 
 *"Aya Mamdouh is a new hire — make her able to submit unplanned visits during her first hiring month with no cap, only
@@ -47,7 +74,8 @@ On 24 November the usual 2 a day and 8 a week apply again with no job and no han
   `phoenix_crm_offplan_exempt_customers(seat)` lists the customers it covers, for the rep's picker.
 - The cap trigger stamps `phoenix_crm_visits.offplan_exempt = true` and returns **before it counts anything**. The two
   out-of-plan counts and the venue count all say `and not v.offplan_exempt`, so a stamped visit is in nobody's total.
-- The shared-place daily number is lifted for an **out-of-plan** hospital visit only — a planned one still counts.
+- The shared-place daily number is lifted for an **out-of-plan** hospital visit only — a planned one still counts —
+  unless the row carries `lifts_venue_cap` (2026-10-31), which lifts it for planned visits too, door and plan alike.
 - The allowance card tells the rep where the limit is lifted; a manager's off-plan card carries
   `OFF_PLAN_EXEMPT_CARD_TEXT`. Pinned by `tests/phoenix-crm-offplan-exemption.test.ts`.
 

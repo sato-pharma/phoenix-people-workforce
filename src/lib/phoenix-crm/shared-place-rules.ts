@@ -307,9 +307,18 @@ export function sharedPlanCapRefusal(input: {
   onlyDays?: ReadonlyArray<string> | null;
   /** The send's own closing sentence. The save's refusal ends at the cap. */
   forSend?: boolean;
+  /**
+   * The venues the owner lifted outright for this seat (owner, 2026-10-31 — named hospitals: any count on
+   * the plan, planned or not), from `phoenix_crm_venue_cap_lifted`, the door's own rule. Nothing planned
+   * there is counted, so the venue is never full.
+   */
+  liftedVenues?: ReadonlySet<string>;
 }): string | null {
   const nameable = input.onlyDays ? new Set(input.onlyDays) : null;
-  const perDay = countSharedPlaceDays(input.items);
+  const lifted = input.liftedVenues;
+  const perDay = countSharedPlaceDays(
+    lifted && lifted.size > 0 ? input.items.filter((item) => !item.sharedPlaceId || !lifted.has(item.sharedPlaceId)) : input.items,
+  );
   for (const day of [...perDay.keys()].sort()) {
     if (nameable && !nameable.has(day)) continue;
     const venues = perDay.get(day);
