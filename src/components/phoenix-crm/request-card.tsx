@@ -161,10 +161,15 @@ export function RequestCard({
   // with the same buttons. A request with the rep waits for the rep's comment, so there is nothing to approve.
   const administratorDecides = pending && canOverride && !decides && !request.withRep && request.stage !== null;
   const deciding = decides || administratorDecides;
+  // SFE's step of an add or a bring-back waits while the customer's place is on Place checks. The server
+  // says so and refuses the approval, so the card shows why and offers only Refuse (System Audit,
+  // 2026-10-31: seventeen presses refused from 25 to 29 Oct). Only an approver ever receives it.
+  const heldOnPlaceChecks = request.placeCheckHold;
   // Who grades an add: the district manager at his step, and SFE where the territory has no manager at
   // all (one pure rule, `setsAdmissionGrades`, so the card can never differ from what the server takes).
   const admitting =
     deciding &&
+    !heldOnPlaceChecks &&
     setsAdmissionGrades({ kind: request.kind, stage: request.stage, managerDecidedAt: request.managerDecision?.at ?? null });
   // Said plainly on the card, because SFE is doing somebody else's job here and should know why.
   const admittingForVacantSeat = decides && admitting && request.stage === "sfe";
@@ -399,13 +404,16 @@ export function RequestCard({
               value={note}
             />
           </CrmField>
+          {heldOnPlaceChecks ? <CrmNote tone="warn">{heldOnPlaceChecks}</CrmNote> : null}
           {request.stage === "manager" ? (
             <p className="break-words text-xs font-semibold leading-5 text-slate-500">Approving hands it to SFE, who decides the last step. Refusing ends it.</p>
           ) : null}
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            <CrmButton busy={busy === "approve"} disabled={busy !== null} onClick={() => void decide("approve")} variant="success">
-              Approve
-            </CrmButton>
+            {heldOnPlaceChecks ? null : (
+              <CrmButton busy={busy === "approve"} disabled={busy !== null} onClick={() => void decide("approve")} variant="success">
+                Approve
+              </CrmButton>
+            )}
             <CrmButton busy={busy === "refuse"} disabled={busy !== null} onClick={() => void decide("refuse")} variant="danger">
               Refuse
             </CrmButton>

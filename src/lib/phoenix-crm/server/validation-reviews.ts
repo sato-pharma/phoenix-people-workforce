@@ -166,6 +166,26 @@ export async function pendingLocationReview(customerId: string): Promise<boolean
 }
 
 /**
+ * Which of these customers' places are with the Super Admin right now — `pendingLocationReview` for a
+ * whole page of request cards in one read per chunk, so a card can say a request waits on Place checks
+ * before anyone presses an Approve the server would refuse. Throws on a failed read, like the single one.
+ */
+export async function pendingLocationReviewCustomers(customerIds: ReadonlyArray<string>): Promise<Set<string>> {
+  const unique = [...new Set(customerIds)];
+  const held = new Set<string>();
+  for (let start = 0; start < unique.length; start += 150) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_validation_reviews")
+      .select("customer_id")
+      .in("customer_id", unique.slice(start, start + 150))
+      .eq("status", "pending");
+    throwIfError(error);
+    for (const row of data ?? []) held.add(String(row.customer_id));
+  }
+  return held;
+}
+
+/**
  * How many places are waiting on his decision right now, and when the oldest of them was held — the
  * one figure the central Needs You board asks of this queue (`src/lib/needs-you`, added 2026-10-05).
  *

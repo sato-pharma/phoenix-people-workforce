@@ -417,6 +417,21 @@ export function runMedicalRepMonthlyClosingTests() {
     "and holds no second copy of the area chain that could drift from the closing's",
   );
 
+  // A failed read is a failure, never "no area on file" (31 Oct 2026 System Audit digest): in the
+  // 29 Oct 14:04 outage a timed-out areas read returned null, and a rep whose area was on file was
+  // told the drilldown had none. Null stays for a record with no area; a read error throws.
+  const areaScope = readSource("../src/lib/sales/medical-rep-area-scope.ts");
+  assert.ok(
+    areaScope.includes("const { data: areaRow, error: areaError } = await supabase")
+      && areaScope.includes("if (areaError) throw areaError;"),
+    "the areas read's error is read and thrown — a timeout must not pass for a rep with no area",
+  );
+  assert.ok(
+    areaScope.includes("if (crosswalkError) throw crosswalkError;")
+      && !areaScope.includes("if (crosswalkError) return null;"),
+    "and so is the area-code crosswalk's — its failure is not a rep with no area either",
+  );
+
   // The scoped export hands the comparison the rep's scope, for a Medical Rep and no other role.
   const exportRoute = readSource("../app/api/sales/monthly-closing/export/route.ts");
   assert.ok(

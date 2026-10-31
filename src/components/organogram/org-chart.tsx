@@ -121,6 +121,12 @@ type OrgChartTreeProps = {
    */
   canAddEmployee?: boolean;
   /**
+   * Whether this viewer may read anybody's CV (`canDownloadEmployeeCv`), resolved server-side on the
+   * page and handed to the person popup, which skips its CV probe when it is false. Absent asks the
+   * CV route, as before.
+   */
+  canReadEmployeeCv?: boolean;
+  /**
    * `YYYY-MM` of a finished month when `rows` are a past picture of the structure (the screen
    * fetched `?asOf=`); null or absent for the live chart. A past picture is read-only: it drops
    * Edit, Resign, "Add employee to this seat", the spreadsheet export and the email picker, because
@@ -1059,6 +1065,7 @@ function OrgChartTreeBody({
   theme = "admin",
   kpiLabels = DEFAULT_ORG_KPI_LABELS,
   canAddEmployee = false,
+  canReadEmployeeCv = true,
   asOfMonth = null,
 }: OrgChartTreeProps) {
   // Change #2 — the pressed node's row; non-null opens the employee-master popup.
@@ -1624,7 +1631,12 @@ function OrgChartTreeBody({
           modal fetches the role-gated detail itself; a vacancy renders from the row
           alone. Rendered here (portaled to <body>) so it overlays the whole chart. */}
       {selectedRow ? (
-        <OrganogramNodeDetailModal canAddEmployee={canAddEmployee} onClose={() => setSelectedRow(null)} row={selectedRow} />
+        <OrganogramNodeDetailModal
+          canAddEmployee={canAddEmployee}
+          canReadEmployeeCv={canReadEmployeeCv}
+          onClose={() => setSelectedRow(null)}
+          row={selectedRow}
+        />
       ) : null}
     </div>
   );

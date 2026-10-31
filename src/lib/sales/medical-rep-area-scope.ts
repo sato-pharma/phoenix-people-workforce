@@ -38,9 +38,14 @@ export const loadSalesNameMastersOncePerRender = cache(() =>
 );
 
 /**
- * The Source of Sales area codes (UPPER-cased) this rep covers, or null when any link of the chain
- * does not answer. Null is an access answer — "no area on file" — and callers must show nothing for
- * it, never fall back to the rep's region.
+ * The Source of Sales area codes (UPPER-cased) this rep covers, or null when the rep's record holds no
+ * area the chain can follow. Null is an access answer — "no area on file" — and callers must show
+ * nothing for it, never fall back to the rep's region.
+ *
+ * A read that FAILS throws instead (31 Oct 2026 System Audit digest): during the 29 Oct 14:04
+ * outage a timed-out `areas` read came back as "no area", and a rep whose area (Alex West) was on
+ * file was told "We don't have your area on file yet". Data is withheld either way; only the
+ * sentence changes — a failure reads as a failure, never as a fact about the rep's record.
  *
  * `references` lets a caller that has already read the sales reference data (the closing details
  * loader) skip a second read of it; only its area master is used.
@@ -59,11 +64,12 @@ export async function resolveMedicalRepSosAreaCodes(
   if (areaId == null) return null;
 
   const supabase = getSupabaseAdmin();
-  const { data: areaRow } = await supabase
+  const { data: areaRow, error: areaError } = await supabase
     .from("areas")
     .select("code, is_active")
     .eq("id", areaId)
     .maybeSingle();
+  if (areaError) throw areaError;
   const typedAreaRow = areaRow as { code?: string | null; is_active?: boolean | null } | null;
   const canonicalAreaCode = typedAreaRow?.is_active ? String(typedAreaRow.code ?? "").trim() : "";
   if (!canonicalAreaCode) return null;
@@ -72,7 +78,7 @@ export async function resolveMedicalRepSosAreaCodes(
     "phx_territory_resolve_sos_area_codes",
     { p_canonical_area_code: canonicalAreaCode },
   );
-  if (crosswalkError) return null;
+  if (crosswalkError) throw crosswalkError;
   const sosAreaCodes = ((crosswalkRows ?? []) as Array<{ sos_area_code: string }>)
     .map((row) => String(row.sos_area_code ?? "").trim().toUpperCase())
     .filter(Boolean);

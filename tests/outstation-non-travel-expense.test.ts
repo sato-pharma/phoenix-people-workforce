@@ -98,6 +98,21 @@ export function runOutstationNonTravelExpenseTests() {
   ]) {
     assert.ok(wizard.includes(needle), `the wizard must carry: ${needle}`);
   }
+  // The screen never asks the server to price a Meeting/Other claim that has no amount yet: the
+  // server refuses it, and every rep who set the dates first logged a failed calculation (System
+  // Audit, 31 Oct 2026). The auto-calculate gate must carry the same refusal the server applies.
+  const gateAt = wizard.indexOf("const canAutoCalculate = Boolean(");
+  assert.notEqual(gateAt, -1, "the wizard still decides when to auto-calculate");
+  const gate = wizard.slice(gateAt, wizard.indexOf(");", gateAt));
+  assert.ok(
+    gate.includes("!(isNonTravel && nonTravelAmountRefusal({ meetingAmount, otherAmount }))"),
+    "a Meeting or Other claim with no amount must not be sent for pricing",
+  );
+  assert.equal(
+    nonTravelAmountRefusal({ meetingAmount: "", otherAmount: "" }),
+    NON_TRAVEL_AMOUNT_REQUIRED_MESSAGE,
+    "an empty Meeting/Other claim is exactly what the server refuses",
+  );
   const card = read("src/components/outstation/ticket-upload-card.tsx");
   assert.ok(card.includes('"application/pdf,image/*"'), "the upload accepts pictures and PDFs");
 }

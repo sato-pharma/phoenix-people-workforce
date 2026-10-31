@@ -207,6 +207,37 @@ export function reviewerWasOnTheVisit(
 }
 
 /**
+ * 🔴 IS THIS PRESS THE SAME PERSON'S SAME DECISION AGAIN — a second press of Approve, or a retry whose
+ * first answer was lost, on a visit his own decision already moved on. The answer is the one he already
+ * has, never a refusal: production, 24–30 Oct 2026, fourteen refusals of seven presses each, every one
+ * a manager or the SFE Manager pressing again seconds after his own decision of that visit had saved —
+ * "This visit was already decided" to the SFE step, "only the SFE Manager decides that step" to the
+ * manager whose approval had just sent it there. The list request answers the same way (server/list.ts
+ * `decideListRequest`, 2026-10-24).
+ *
+ * Read from who took each step, exactly as `phoenix_crm_decide_unplanned_visit` writes it: the manager's
+ * approval leaves `sfe_pending`, his refusal `refused` with no SFE decider; the SFE step's decision is
+ * the final status. Anything else — another person's decision, the opposite decision, a refusal by SFE
+ * of what this manager approved — is NOT his answer, and stays refused as decided.
+ */
+export function isRepeatOfOwnUnplannedDecision(
+  row: { status: UnplannedVisitStatus; managerDecidedByHrId: string | null; sfeDecidedByHrId: string | null },
+  viewerHrId: string,
+  decision: "approve" | "refuse",
+): boolean {
+  const viewer = personKey(viewerHrId);
+  if (viewer === null) return false;
+  const byManager = personKey(row.managerDecidedByHrId) === viewer;
+  const sfe = personKey(row.sfeDecidedByHrId);
+  const bySfe = sfe === viewer;
+  if (decision === "approve") {
+    if (row.status === "sfe_pending") return byManager;
+    return row.status === "approved" && (bySfe || byManager);
+  }
+  return row.status === "refused" && (bySfe || (sfe === null && byManager));
+}
+
+/**
  * 🔴 DOES THIS VISIT COUNT IN A KPI — THE TYPESCRIPT TWIN OF `phoenix_crm_countable_visits` AND ITS
  * `customer_validated` COLUMN, WORD FOR WORD.
  *

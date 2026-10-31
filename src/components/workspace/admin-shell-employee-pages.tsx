@@ -94,6 +94,7 @@ import {
   isEmployeeDirectorySchemaMissing,
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
+import { canDownloadEmployeeCv } from "@/lib/employees/employee-cv";
 import { excuseErrorMessage, getExcuseWorkspace, isExcusesSchemaMissing } from "@/lib/excuses/service";
 import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
 import type { ProbationRow } from "@/lib/probation/types";
@@ -785,7 +786,12 @@ export async function WorkspaceOrganogramPage() {
       title="Organogram"
     >
       {/* Third page with the same doubled hero. */}
-      <OrganogramReport initialError={initialError} initialReport={initialReport} showHero={false} />
+      <OrganogramReport
+        canReadEmployeeCv={canDownloadEmployeeCv(access)}
+        initialError={initialError}
+        initialReport={initialReport}
+        showHero={false}
+      />
     </WorkspaceFrame>
   );
 }

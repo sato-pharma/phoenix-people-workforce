@@ -252,8 +252,11 @@ export function runPhoenixCrmVisitRecordingTests(): void {
   const unplanned = read("src/lib/phoenix-crm/server/unplanned.ts");
   const decideAt = unplanned.indexOf("export async function decideUnplannedVisit(");
   assert.ok(decideAt > 0, "the decide path could not be located");
+  // Up to the write, not a fixed number of characters: the refusal must come before anything is decided.
+  const decideWriteAt = unplanned.indexOf('"phoenix_crm_decide_unplanned_visit"', decideAt);
+  assert.ok(decideWriteAt > decideAt, "the decide path's write could not be located");
   assert.match(
-    unplanned.slice(decideAt, decideAt + 3000),
+    unplanned.slice(decideAt, decideWriteAt),
     /if \(status === "admin_pending"\) throw forbiddenError\(/,
     "a manager cannot decide a visit still waiting for the Administrator",
   );

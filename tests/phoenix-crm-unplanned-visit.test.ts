@@ -6,6 +6,7 @@ import { emptyPlanCounts, emptyVisitCounts, groupPlanByTerritory, groupVisitsByR
 import { mapUnplannedRow } from "../src/lib/phoenix-crm/server/unplanned.ts";
 import { plannedStartEmptyNote } from "../src/lib/phoenix-crm/today-rules.ts";
 import {
+  isRepeatOfOwnUnplannedDecision,
   isUnplannedVisitStatus,
   isUnplannedVisitWaiting,
   parseUnplannedReason,
@@ -499,6 +500,42 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
     );
     assert.doesNotMatch(stripComments(move), /delete\s+from/i, "nothing is deleted");
     assert.match(move, /version = u\.version \+ 1/, "the optimistic lock is bumped so a page loaded before this is told to reload");
+  }
+
+  // ── A second press of one's own decision is the answer already given (System Audit, 24–30 Oct) ──
+  {
+    const row = (status: "manager_pending" | "sfe_pending" | "approved" | "refused", manager: string | null, sfe: string | null) => ({
+      status,
+      managerDecidedByHrId: manager,
+      sfeDecidedByHrId: sfe,
+    });
+    // The manager approved; the visit now waits for SFE. His second Approve is answered, not refused.
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("sfe_pending", "B-120", null), "b-120", "approve"), true, "the manager's own approval, pressed again, matched across case");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("sfe_pending", "B-120", null), "B-121", "approve"), false, "another manager pressing is not his answer");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("sfe_pending", "B-120", null), "B-120", "refuse"), false, "the opposite decision is not his answer");
+    // The SFE Manager's own final decision, pressed again.
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("approved", "PD-0014", "A-2"), "A-2", "approve"), true, "SFE's own approval again");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("refused", "PD-0014", "A-2"), "A-2", "refuse"), true, "SFE's own refusal again");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("approved", "PD-0014", "A-2"), "A-2", "refuse"), false, "a refusal of what he approved is refused as decided");
+    // A refusal by SFE of what this manager approved is NOT the manager's refusal.
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("refused", "PD-0014", "A-2"), "PD-0014", "refuse"), false, "SFE's refusal is not the manager's");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("refused", "PD-0014", "A-2"), "PD-0014", "approve"), false, "nor is his approval still standing once SFE refused");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("refused", "PD-0014", null), "PD-0014", "refuse"), true, "the manager's own refusal again");
+    // A visit still waiting for this person is decided as usual, never short-cut.
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("manager_pending", null, null), "PD-0014", "approve"), false, "a waiting visit is decided, not answered");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("sfe_pending", "PD-0014", null), "A-2", "approve"), false, "SFE's own step is decided, not answered");
+    assert.equal(isRepeatOfOwnUnplannedDecision(row("approved", null, null), "", "approve"), false, "nobody is nobody's repeat");
+
+    // The decide path asks it BEFORE any step is checked — the manager's approval moved the visit to a
+    // step that is not his, so a later check would refuse him with "only the SFE Manager decides that step".
+    const decideSource = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/unplanned.ts", import.meta.url), "utf8"));
+    const decideBody = decideSource.slice(decideSource.indexOf("export async function decideUnplannedVisit("));
+    const repeatAt = decideBody.indexOf("isRepeatOfOwnUnplannedDecision(");
+    assert.ok(repeatAt > 0, "the decide path asks whether this is his own decision again");
+    assert.ok(repeatAt < decideBody.indexOf("if (!isUnplannedVisitWaiting(status))"), "before 'already decided'");
+    assert.ok(repeatAt < decideBody.indexOf("assertUnplannedVisitApprover("), "and before the step's approver is checked");
+    assert.ok(repeatAt < decideBody.indexOf('"phoenix_crm_decide_unplanned_visit"'), "and nothing is written for it");
+    assert.match(decideBody, /manager_decided_by_hr_id, sfe_decided_by_hr_id, version/, "the read carries who took each step");
   }
 
   console.log("phoenix-crm unplanned visit: OK");

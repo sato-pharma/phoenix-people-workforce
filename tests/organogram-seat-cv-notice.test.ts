@@ -186,4 +186,56 @@ export function runOrganogramSeatCvNoticeTests() {
     parentDiv && !parentDiv[1]?.includes("shrink-0"),
     "the cluster's own parent must NOT be shrink-0 — that is what makes the inner flex-wrap inert",
   );
+
+  // ── 7. A VIEWER THE SERVER ALREADY KNOWS CANNOT READ A CV NEVER SENDS THE PROBE ──────────
+  // 31 Oct 2026 System Audit digest: a Training Manager's every person popup sent the ?meta=1
+  // probe, the CV route refused it, and 18 refusals landed on the audit board for a popup that
+  // showed nothing either way. The page asks canDownloadEmployeeCv once and threads the answer
+  // down; the popup starts at "forbidden" and its probe effect returns before any fetch.
+  const probeAt = modal.indexOf("fetch(`${employeeCvHref(row.hrId)}?meta=1`");
+  assert.notEqual(probeAt, -1, "the CV probe is still in the popup");
+  const probeEffect = modal.slice(modal.lastIndexOf("React.useEffect(", probeAt), probeAt);
+  assert.ok(
+    probeEffect.includes("if (isVacancy || !canReadEmployeeCv) return;"),
+    "the CV probe must return before its fetch when the page said this viewer cannot read a CV",
+  );
+  // Only the CV probe: the person's own details load for every viewer who may open the chart. The
+  // guard landed on the wrong effect once while this was written, and that popup was blank.
+  const detailAt = modal.indexOf("/api/reports/organogram/employee/${encodeURIComponent(row.hrId)}`");
+  assert.notEqual(detailAt, -1, "the person-details fetch is still in the popup");
+  const detailEffect = modal.slice(modal.lastIndexOf("React.useEffect(", detailAt), detailAt);
+  assert.ok(
+    detailEffect.includes("if (isVacancy) return;") && !detailEffect.includes("canReadEmployeeCv"),
+    "the person's details must still load for a viewer who cannot read a CV — only the CV probe is skipped",
+  );
+  assert.ok(
+    modal.includes('React.useState<CvNoticeState>(canReadEmployeeCv ? "probing" : "forbidden")'),
+    "and the slot starts at \"forbidden\" for that viewer — silent, never \"No CV on file\"",
+  );
+  const chart = readFileSync(new URL("../src/components/organogram/org-chart.tsx", import.meta.url), "utf8");
+  assert.ok(
+    /<OrganogramNodeDetailModal[^>]*canReadEmployeeCv={canReadEmployeeCv}/.test(chart),
+    "the chart hands the page's answer to the popup",
+  );
+  for (const [screen, path] of [
+    ["the portal organogram", "src/components/employee-portal/employee-organogram-dashboard.tsx"],
+    ["the admin organogram", "src/components/reports/organogram-report.tsx"],
+  ] as const) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.ok(
+      /<OrgChartTree[^>]*canReadEmployeeCv={canReadEmployeeCv}/.test(source),
+      `${screen} hands the page's answer to the chart`,
+    );
+  }
+  for (const path of [
+    "app/employee-portals/organogram/page.tsx",
+    "app/(admin)/organogram/page.tsx",
+    "src/components/workspace/admin-shell-employee-pages.tsx",
+  ]) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.ok(
+      source.includes("canReadEmployeeCv={canDownloadEmployeeCv(access)}"),
+      `${path} must decide the CV answer on the server with the CV route's own predicate`,
+    );
+  }
 }

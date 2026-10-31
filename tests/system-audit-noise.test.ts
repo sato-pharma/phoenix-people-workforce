@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import { CROSS_ORIGIN_MASKED_DISPLAY } from "../src/lib/error-monitor/cross-origin-masked.ts";
 import {
@@ -107,6 +109,57 @@ export function runSystemAuditNoiseTests() {
   assert.equal(isTestAccountRow({ login_id: "B-10", hr_id: "B-10" }), false);
   // An excluded class still wins over the test flag: a test account's masked placeholder is noise.
   assert.equal(classifyAppErrorNoise(row({ login_id: "TEST-B-10", message: "Script error." })), "masked_script_error");
+
+  // ── A script the BROWSER injected (Brave on iPhone) leaves; one of ours with the same shape stays ─
+  // The exact production rows, 31 Oct 2026: the frame is the page's own URL, so hasAppFrame is true.
+  const BRAVE_WALLET = "undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')";
+  assert.equal(
+    classifyAppErrorNoise(row({ message: BRAVE_WALLET, stack: "global code@https://phoenix-hr.satopharma.com/login:1:16" })),
+    "browser_injected_script",
+    "Brave's wallet shim is the browser's script, not ours",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({
+      message: JSON.stringify({
+        message: "undefined is not an object (evaluating 'n.standardSelectors')",
+        line: 17,
+        column: 6302,
+        sourceURL: "https://phoenix-hr.satopharma.com/employee-portals/ranks",
+      }),
+      route: "/employee-portals/private-calendar",
+    })),
+    "browser_injected_script",
+    "Brave's ad-block poller, stored as the JSON of its error event, is the browser's script",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({ source: "server", message: BRAVE_WALLET })),
+    null,
+    "a server row never comes from a browser's injected script",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({ message: "undefined is not an object (evaluating 'a.selectedAddress')" })),
+    null,
+    "only the wallet shim's own global leaves — a selectedAddress of ours would stay a finding",
+  );
+  // The exclusion is safe only while our code never names either word; the day it does, this fails.
+  const ownCode: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(?:[cm]?[jt]sx?)$/.test(name)) ownCode.push(path);
+    }
+  };
+  for (const dir of ["app", "src", "public"]) walk(join(process.cwd(), dir));
+  const NOISE_FILE = join("src", "lib", "system-audit", "noise.ts");
+  for (const path of ownCode) {
+    if (path.endsWith(NOISE_FILE)) continue;
+    const text = readFileSync(path, "utf8");
+    assert.ok(
+      !text.includes("ethereum.selectedAddress") && !text.includes("standardSelectors"),
+      `${path} names a word the System Audit treats as a browser's own script — narrow BROWSER_INJECTED_SCRIPT first`,
+    );
+  }
 
   // ── The excluded set is every class but test_account ───────────────────────────────────────────
   assert.equal(EXCLUDED_NOISE_CLASSES.has("test_account"), false, "test_account must never leave the ledger");

@@ -88,6 +88,7 @@ type DraftWorkspacePayload = {
   approvedRequests: MarketingApprovedRequestRow[];
   canCreateDraft: boolean;
   canSettleAgainstDirectOrder: boolean;
+  canUploadMoneyTransferProof: boolean;
   customers: MarketingCustomer[];
   drafts: MarketingRequest[];
   contactsByCustomer: Record<string, MarketingRequestContactOption[]>;
@@ -290,6 +291,7 @@ function emptyPayload(): DraftWorkspacePayload {
     // server's explicit value applies once the workspace is fetched.
     canCreateDraft: true,
     canSettleAgainstDirectOrder: false,
+    canUploadMoneyTransferProof: false,
     customers: [],
     contactsByCustomer: {},
     pharmaciesByCustomer: {},
@@ -779,6 +781,22 @@ function EvidenceUpload({
   );
 }
 
+/**
+ * The money transfer proof for a viewer who may not attach it — Finance does that. Same frame as
+ * EvidenceUpload so the row keeps its shape, but no file input: offering one meant a guaranteed
+ * "Forbidden" from the server (System Audit, 31 Oct 2026).
+ */
+function EvidenceOnFile({ fileName, label }: { fileName: string | null; label: string }) {
+  return (
+    <div className={`flex min-w-0 flex-col gap-1 border border-slate-200 bg-slate-50 px-2.5 py-2 ${adminControlDepthClassName}`}>
+      <span className="text-phx-xs font-bold text-slate-700">{label}</span>
+      <span className="break-all text-phx-2xs font-medium text-slate-500">
+        {fileName ?? "Finance attaches it"}
+      </span>
+    </div>
+  );
+}
+
 /** Inline share bar in ROI table --- gradient proportional to share % */
 function ShareBar({ pct }: { pct: number }) {
   return (
@@ -1003,6 +1021,7 @@ function MarketingRequestDraftWorkspaceInner() {
         approvedRequests: payload.approvedRequests ?? [],
         canCreateDraft: payload.canCreateDraft ?? true,
         canSettleAgainstDirectOrder: payload.canSettleAgainstDirectOrder ?? false,
+        canUploadMoneyTransferProof: payload.canUploadMoneyTransferProof ?? false,
         customers: payload.customers ?? [],
         contactsByCustomer: payload.contactsByCustomer ?? {},
         pharmaciesByCustomer: payload.pharmaciesByCustomer ?? {},
@@ -2825,22 +2844,29 @@ function MarketingRequestDraftWorkspaceInner() {
                           )}
                         </td>
                         <td className="min-w-0 break-words border-r border-slate-100 px-3 py-2">
-                          <EvidenceUpload
-                            accept="image/jpeg,image/png,image/webp"
-                            fileName={row.financeProofFileName}
-                            isUploading={
-                              uploadingEvidenceKey ===
-                              `${row.id}:money_transfer_proof`
-                            }
-                            label="Upload proof"
-                            onUpload={(file) =>
-                              void uploadFinanceEvidence(
-                                row.id,
-                                "money_transfer_proof",
-                                file,
-                              )
-                            }
-                          />
+                          {workspace.canUploadMoneyTransferProof ? (
+                            <EvidenceUpload
+                              accept="image/jpeg,image/png,image/webp"
+                              fileName={row.financeProofFileName}
+                              isUploading={
+                                uploadingEvidenceKey ===
+                                `${row.id}:money_transfer_proof`
+                              }
+                              label="Upload proof"
+                              onUpload={(file) =>
+                                void uploadFinanceEvidence(
+                                  row.id,
+                                  "money_transfer_proof",
+                                  file,
+                                )
+                              }
+                            />
+                          ) : (
+                            <EvidenceOnFile
+                              fileName={row.financeProofFileName}
+                              label="Transfer proof"
+                            />
+                          )}
                           <DirectOrderSettleControl
                             canSettle={workspace.canSettleAgainstDirectOrder}
                             onChanged={applyDirectOrderOffset}
@@ -2943,22 +2969,29 @@ function MarketingRequestDraftWorkspaceInner() {
                       ) : null}
 
                       <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                        <EvidenceUpload
-                          accept="image/jpeg,image/png,image/webp"
-                          fileName={row.financeProofFileName}
-                          isUploading={
-                            uploadingEvidenceKey ===
-                            `${row.id}:money_transfer_proof`
-                          }
-                          label="Proof"
-                          onUpload={(file) =>
-                            void uploadFinanceEvidence(
-                              row.id,
-                              "money_transfer_proof",
-                              file,
-                            )
-                          }
-                        />
+                        {workspace.canUploadMoneyTransferProof ? (
+                          <EvidenceUpload
+                            accept="image/jpeg,image/png,image/webp"
+                            fileName={row.financeProofFileName}
+                            isUploading={
+                              uploadingEvidenceKey ===
+                              `${row.id}:money_transfer_proof`
+                            }
+                            label="Proof"
+                            onUpload={(file) =>
+                              void uploadFinanceEvidence(
+                                row.id,
+                                "money_transfer_proof",
+                                file,
+                              )
+                            }
+                          />
+                        ) : (
+                          <EvidenceOnFile
+                            fileName={row.financeProofFileName}
+                            label="Proof"
+                          />
+                        )}
                         <EvidenceUpload
                           accept="image/jpeg,image/png,image/webp,application/pdf"
                           fileName={row.invoiceFileName}

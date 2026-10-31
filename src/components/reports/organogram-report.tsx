@@ -38,6 +38,9 @@ import { cn } from "@/lib/utils";
 
 type OrganogramReportProps = {
   canAddEmployee?: boolean;
+  // Server-decided: may this viewer read a CV (canDownloadEmployeeCv)? False keeps the person
+  // popup from probing a CV route that would refuse it. Absent asks the route, as before.
+  canReadEmployeeCv?: boolean;
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
@@ -92,11 +95,13 @@ function LineButtons({
 function OrganogramView({
   asOfMonth = null,
   canAddEmployee = false,
+  canReadEmployeeCv = true,
   rows,
   selectedLine,
 }: {
   asOfMonth?: string | null;
   canAddEmployee?: boolean;
+  canReadEmployeeCv?: boolean;
   rows: OrganogramRow[];
   selectedLine: string | null;
 }) {
@@ -128,6 +133,7 @@ function OrganogramView({
           <OrgChartTree
             asOfMonth={asOfMonth}
             canAddEmployee={canAddEmployee}
+            canReadEmployeeCv={canReadEmployeeCv}
             lineName={selectedLine}
             rows={rows}
             theme="admin"
@@ -140,6 +146,7 @@ function OrganogramView({
 
 export function OrganogramReport({
   canAddEmployee = false,
+  canReadEmployeeCv = true,
   fixedLine = null,
   initialError = null,
   initialReport = null,
@@ -391,6 +398,7 @@ export function OrganogramReport({
           <OrganogramView
             asOfMonth={reportAsOf}
             canAddEmployee={canAddEmployee}
+            canReadEmployeeCv={canReadEmployeeCv}
             rows={canShowChart ? filteredRows : []}
             selectedLine={effectiveLineFilter || (normalizedOrganogramSearch ? "Search results" : null)}
           />

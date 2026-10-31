@@ -201,6 +201,35 @@ export function runPhoenixCrmGooglePlaceCheckTests() {
   assert.ok(decide.includes('throw conflictError("This request was already decided. Reload the page.");'), "and says it was decided");
   assert.ok(decide.includes("decidedBy !== null && decidedBy === personKey(viewer.hrId)"), "his own repeat is his answer again, and an empty id matches nobody");
 
+  // ── The card knows the hold before the press (System Audit, 2026-10-31) ───────
+  //
+  // The SFE Manager pressed Approve on seventeen held adds between 25 and 29 Oct and was refused each
+  // time: the card offered a button the server refuses. The request now carries the hold sentence,
+  // set from the SAME rule the refusal reads, and the card shows it in place of Approve.
+  assert.ok(decide.includes("awaitsPlaceCheck({ kind, stage: rowStage, customerId })"), "the refusal and the card read one rule");
+  const awaits = /export function awaitsPlaceCheck\([\s\S]*?\n\}/.exec(list)?.[0] ?? "";
+  assert.ok(awaits.includes('request.stage === "sfe"'), "only SFE's step admits the customer");
+  assert.ok(awaits.includes('(request.kind === "add" || request.kind === "restore")'), "and only an add or a bring-back admits him");
+  const holds = /export async function withPlaceCheckHolds<[\s\S]*?\n\}/.exec(list)?.[0] ?? "";
+  assert.ok(
+    holds.includes('request.status === "pending" && !request.withRep && (request.canDecide || override) && awaitsPlaceCheck(request)'),
+    "only a waiting request the viewer decides is asked — the rep never reads a hold (Golden Rule #1)",
+  );
+  assert.ok(holds.includes("placeCheckHoldMessage(canDecideValidationReviews(viewer))"), "and it reads the refusal's own words, worded for whether he decides the place");
+  assert.ok(/catch \(error\) \{\s*logError\([\s\S]*?return requests;/.test(holds), "a failed read leaves the cards as they were; the server still refuses");
+  assert.ok(list.includes("placeCheckHold: null,"), "every request starts without a hold");
+  assert.ok(list.includes("const requests = await withPlaceCheckHolds("), "the List tab asks it");
+  const team = stripComments(readFileSync("src/lib/phoenix-crm/server/team.ts", "utf8"));
+  assert.ok(team.includes("const requests = await withPlaceCheckHolds("), "and so does the Team tab");
+  const reviewsRead = stripComments(readFileSync("src/lib/phoenix-crm/server/validation-reviews.ts", "utf8"));
+  const batch = /export async function pendingLocationReviewCustomers\([\s\S]*?\n\}/.exec(reviewsRead)?.[0] ?? "";
+  assert.ok(batch.includes('.eq("status", "pending")'), "the batch reads the same waiting reviews as the single check");
+  const card = stripComments(readFileSync("src/components/phoenix-crm/request-card.tsx", "utf8"));
+  assert.ok(card.includes("const heldOnPlaceChecks = request.placeCheckHold;"), "the card reads the server's hold");
+  assert.match(card, /\{heldOnPlaceChecks \? null : \(\s*<CrmButton[\s\S]{0,200}?decide\("approve"\)/, "and draws no Approve while it holds");
+  assert.ok(card.includes('<CrmNote tone="warn">{heldOnPlaceChecks}</CrmNote>'), "it says why instead");
+  assert.match(card, /<CrmButton[\s\S]{0,200}?decide\("refuse"\)/, "and Refuse stays");
+
   // ── Only the Super Admin and the SFE Manager decide ───────────────────────────
   //
   // `canDecideValidationReviews` was DECLARED in `server/validation-reviews.ts` until 2026-10-13,

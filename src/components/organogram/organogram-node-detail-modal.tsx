@@ -39,6 +39,14 @@ type Props = {
    * a past-month picture, which takes all three away at once.
    */
   canAddEmployee?: boolean;
+  /**
+   * Whether this viewer may read anybody's CV — `canDownloadEmployeeCv`, resolved server-side on the
+   * page. False skips the person popup's `?meta=1` CV probe altogether: the CV route refuses every
+   * other role, so the probe answered a 403 for each person a Training Manager opened (18 refusals in
+   * the 31 Oct 2026 System Audit digest) and the popup showed nothing either way. Absent means "ask
+   * the route", the behaviour before this prop.
+   */
+  canReadEmployeeCv?: boolean;
 };
 
 function initials(name: string | null | undefined) {
@@ -118,7 +126,7 @@ function RowSummary({ row }: { row: OrganogramRow }) {
   return <SectionGrid section={{ title: "Summary", items }} />;
 }
 
-export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false }: Props) {
+export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false, canReadEmployeeCv = true }: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
   const pathname = usePathname();
   const isVacancy = row.type === "vacancy";
@@ -139,8 +147,8 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   const [error, setError] = React.useState<string | null>(null);
   // What this viewer is told about the person's CV. The ?meta=1 probe answers two questions at
   // once — may this viewer read a CV at all (the CV route gates on the named
-  // employeeCvReaderRoles set: Super Admin, SFE Manager, HR Advisory, HR Operations, and
-  // 401/403s everyone else), and is there a file on this person's master record — so the three
+  // employeeCvReaderRoles set: Super Admin, SFE Manager, HR Operations, and 401/403s everyone
+  // else — a viewer the page already knows is outside it never sends the probe), and is there a file on this person's master record — so the three
   // answers are three different things to show, NOT one boolean:
   //
   //   "probing"  the answer has not come back yet, or the probe failed/aborted — show nothing.
@@ -154,7 +162,7 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   //   "forbidden" this viewer may not read anybody's CV — show nothing at all. He is not missing
   //              a file, so telling him a record is empty would be noise about a door that is
   //              shut to him either way.
-  const [cvState, setCvState] = React.useState<CvNoticeState>("probing");
+  const [cvState, setCvState] = React.useState<CvNoticeState>(canReadEmployeeCv ? "probing" : "forbidden");
 
   React.useEffect(() => {
     if (isVacancy) return;
@@ -200,7 +208,7 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   // reset also drops the previous person's answer when the popup is reused for another node
   // without closing.
   React.useEffect(() => {
-    if (isVacancy) return;
+    if (isVacancy || !canReadEmployeeCv) return;
     const controller = new AbortController();
     let active = true;
     void (async () => {
@@ -232,7 +240,7 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
       active = false;
       controller.abort();
     };
-  }, [isVacancy, row.hrId]);
+  }, [canReadEmployeeCv, isVacancy, row.hrId]);
 
   if (typeof document === "undefined") return null;
 
