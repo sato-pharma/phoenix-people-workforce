@@ -4,6 +4,8 @@
 // endpoint (self-hosted, free-forever). Must never throw — a failed report should
 // never surface as a second, user-visible error on top of the one being reported.
 
+import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
+
 import {
   isSessionVerificationUnavailableDigest,
   SESSION_VERIFICATION_UNAVAILABLE_DIGEST,
@@ -140,6 +142,13 @@ function collectClientContext(): string | null {
   }
 }
 
+/** The digest React puts on a server-render error it hands the browser, when the thrown object has one. */
+function ownDigest(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const value = (error as { digest?: unknown }).digest;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 export function reportClientError({ error, route, digest, componentStack, context }: ReportClientErrorInput): void {
   try {
     // A page whose sign-in check could not reach the database. The server recorded the real error
@@ -152,6 +161,17 @@ export function reportClientError({ error, route, digest, componentStack, contex
     // screen's own abort() — and filed 108 rows from two reps in 30 days (System Audit, 31 Oct 2026).
     // Nobody met a failure. The server's own test for a client that hung up; a timeout is not one.
     if (isBenignClientDisconnect(error)) return;
+    // window.onerror and unhandledrejection hand over the thrown object and nothing else, so a
+    // server-render failure's digest rides on the error itself — read it there when the caller had
+    // none. Without it a browser "#441" cannot be matched to anything the server recorded.
+    const resolvedDigest = digest ?? ownDigest(error);
+    // A server page's redirect(), notFound(), forbidden() or unauthorized() reaches the browser as a
+    // "Minified React error #441" whose digest names the navigation — Next.js follows it, and nothing
+    // failed. Since 22 Oct 2026 Expense Submissions forwards every manager who files trips to Submit
+    // Expense, and on 29 Oct one District Manager's forward, on a 3G line, reached the page-wide
+    // listener and was filed as a crash while she landed on Submit Expense three seconds later; the
+    // server, which records every real render failure, recorded nothing. Next.js's own test decides.
+    if (isNextRouterError(error) || (resolvedDigest !== null && isNextRouterError({ digest: resolvedDigest }))) return;
     // NOT `String(error)`. The browser throws plenty that is not an Error — a rejected fetch
     // body, a Supabase PostgrestError read client-side, any `throw { code, message }` — and all
     // of it stringifies to the constant "[object Object]", which is what made 19 production rows
@@ -166,14 +186,14 @@ export function reportClientError({ error, route, digest, componentStack, contex
     const payload = JSON.stringify({
       clientContext,
       componentStack: componentStack ?? null,
-      digest: digest ?? null,
+      digest: resolvedDigest,
       message,
       route: resolvedRoute,
       stack,
     });
 
     // Sentry sees the same report, on the production host only (sentry-client.ts decides). Fire and forget.
-    captureClientErrorInSentry({ componentStack, context: clientContext, digest, error, route: resolvedRoute });
+    captureClientErrorInSentry({ componentStack, context: clientContext, digest: resolvedDigest, error, route: resolvedRoute });
 
     void fetch("/api/errors/client", {
       body: payload,
