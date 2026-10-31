@@ -47,6 +47,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { insideBounds } from "@/lib/phoenix-crm/my-map-geometry";
 import {
+  compareMyMapNames,
   countMyMap,
   MY_MAP_LAYER_COLOUR,
   MY_MAP_LAYER_LABEL,
@@ -191,7 +192,7 @@ export function MyMapScreen({ browserKey, view }: { browserKey: string; view: My
   const planShown = (view.scope === "rep" || view.scope === "district") && view.planRead;
   const showManagers = (view.scope === "manager" || view.scope === "company") && view.managers.length > 0;
   const lines = useMemo(
-    () => [...new Set(view.territories.map((territory) => territory.line).filter((name): name is string => Boolean(name)))].sort((left, right) => left.localeCompare(right)),
+    () => [...new Set(view.territories.map((territory) => territory.line).filter((name): name is string => Boolean(name)))].sort(compareMyMapNames),
     [view.territories],
   );
   const showLines = (view.scope === "manager" || view.scope === "company") && lines.length > 1;
@@ -274,7 +275,7 @@ export function MyMapScreen({ browserKey, view }: { browserKey: string; view: My
       out.push({ customer, pin, territory: view.territories[customer.territory] ?? null });
     }
     return out.sort(
-      (left, right) => Number(right.customer.plannedToday) - Number(left.customer.plannedToday) || left.customer.name.localeCompare(right.customer.name),
+      (left, right) => Number(right.customer.plannedToday) - Number(left.customer.plannedToday) || compareMyMapNames(left.customer.name, right.customer.name),
     );
   }, [mapView, needle, shownPins, view.customers, view.territories]);
 

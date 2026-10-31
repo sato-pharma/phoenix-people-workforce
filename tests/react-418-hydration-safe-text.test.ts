@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { CAIRO_MONTHS, cairoDate, cairoDateTime, cairoDateTime12h, cairoDateTimeSortable, cairoMonthDayTime12h, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
 import { offerWhen } from "../src/components/offers/offer-ui.ts";
 import { cairoStamp } from "../src/components/recruitment/workspace/workspace-format.ts";
+import { compareMyMapNames } from "../src/lib/phoenix-crm/my-map-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
@@ -600,6 +601,32 @@ export function runReact418HydrationSafeTextTests() {
   const recruitmentPool = codeOnly(read("src/components/recruitment/recruitment-workspace.tsx"));
   assert.match(recruitmentPool, /import \{[^}]*\bcairoDateTime\b[^}]*\} from "@\/lib\/format\/cairo-datetime";/, "🔴 the recruitment pool prints its times through the shared cairoDateTime");
   assert.doesNotMatch(recruitmentPool, /function cairoDateTime\(|toLocaleTimeString\(|timeZone:\s*["']Africa\/Cairo["']/, "🔴 the recruitment pool must not keep its own Cairo formatter or ask the reader's engine for Cairo's time");
+
+  // (d5) My Map (System Audit, "/employee-portals/my-map", 28 Oct 2026, a rep's iPhone). Its customer list is
+  // sorted during the first render, and a bare `localeCompare` sorts by the ENGINE'S own language: Node (en-US)
+  // and a phone set to Arabic disagree about أحمد / احمد, مستشفى / مستشفي and where the English-written names go,
+  // and one row apart is #418. The owner: "make all names arabic" — every name on My Map sorts by Arabic rules,
+  // on the server and on every phone alike, whatever language the engine itself speaks.
+  const myMapNames = ["Campaign visit 3", "مستشفي الأمل", "أحمد علي", "مستشفى السلام", "احمد سمير", "آمال حسن", "ENT Clinic", "ليلي", "ليلى"];
+  const arabicOrder = [...myMapNames].sort((left, right) => left.localeCompare(right, "ar"));
+  assert.notDeepEqual([...myMapNames].sort((left, right) => left.localeCompare(right, "en")), arabicOrder, "the probe really separates the two languages: English rules order these names differently");
+  assert.ok(arabicOrder.indexOf("آمال حسن") < arabicOrder.indexOf("Campaign visit 3"), "Arabic names lead, the English-written ones follow");
+  const RealLocaleCompare = String.prototype.localeCompare;
+  for (const engineLanguage of ["en-US", "ar-EG"]) {
+    (String.prototype as { localeCompare: unknown }).localeCompare = function (this: string, that: string, locales?: string | string[], options?: Intl.CollatorOptions) {
+      return RealLocaleCompare.call(this, that, locales ?? engineLanguage, options);
+    };
+    try {
+      assert.deepEqual([...myMapNames].sort(compareMyMapNames), arabicOrder, `🔴 My Map's names must sort the Arabic way on an engine whose own language is ${engineLanguage}`);
+    } finally {
+      (String.prototype as { localeCompare: unknown }).localeCompare = RealLocaleCompare;
+    }
+  }
+  const myMapScreen = codeOnly(read("src/components/phoenix-crm/my-map/my-map-screen.tsx"));
+  assert.match(myMapScreen, /compareMyMapNames\(left\.customer\.name, right\.customer\.name\)/, "🔴 My Map's customer list sorts through compareMyMapNames");
+  assert.doesNotMatch(myMapScreen, /\.localeCompare\(/, "🔴 My Map's screen must not sort by the reader's own language — use compareMyMapNames");
+  const myMapRules = codeOnly(read("src/lib/phoenix-crm/my-map-rules.ts"));
+  assert.match(myMapRules, /compareMyMapNames\(String\(facts\.get\(left\.customerId\)/, "🔴 the server orders the pins by the same Arabic rules");
 
   // (e) No NEW client component may ask the browser for a 12-hour time. `hour12: true`, an h11/h12
   // hourCycle, or an "en"/"en-US" call with an hour (whose default is 12-hour) all print the AM/PM
