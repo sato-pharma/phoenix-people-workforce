@@ -169,6 +169,37 @@ export async function runAccessBoundariesTests() {
     "172.70.40.12",
     "a malformed CF-Connecting-IP is ignored",
   );
+  // The chain Railway's edge really forwards (captured 2026-10-31 behind edge cdg1): it REWRITES
+  // X-Forwarded-For to "<address it saw>, <its own point-of-presence address>" and X-Real-IP to the
+  // address it saw, dropping whatever the caller sent; CF-Connecting-IP passes through untouched.
+  const railwayEdge = "79.127.178.81";
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": `154.180.222.79, ${railwayEdge}`, "x-real-ip": "154.180.222.79" })),
+    "154.180.222.79",
+    "HEADLINE: the visitor is the address Railway's edge saw, never the edge's own Paris address",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": `2c0f:fc89:101:a7d0::1, ${railwayEdge}`, "x-real-ip": "2C0F:FC89:101:A7D0::1" })),
+    "2c0f:fc89:101:a7d0::1",
+    "an IPv6 visitor is kept, in one spelling",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": `172.70.40.12, ${railwayEdge}`, "x-real-ip": "172.70.40.12", "cf-connecting-ip": "197.36.104.183" })),
+    "197.36.104.183",
+    "HEADLINE: production behind Cloudflare — the edge saw a Cloudflare server, so the visitor is CF-Connecting-IP",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": `154.180.222.79, ${railwayEdge}`, "x-real-ip": "154.180.222.79", "cf-connecting-ip": "1.1.1.1" })),
+    "154.180.222.79",
+    "HEADLINE: a caller reaching Railway directly still cannot choose its address with CF-Connecting-IP",
+  );
+  assert.equal(
+    clientAddress(req({ "x-forwarded-for": `41.33.10.7, ${railwayEdge}`, "x-real-ip": "not an address" })),
+    railwayEdge,
+    "a malformed X-Real-IP falls back to the chain (only possible with no Railway edge in front)",
+  );
+  const addressSource = source("src/lib/security/client-address.ts");
+  assert.match(addressSource, /const realIp = wellFormed\(headers\.get\("x-real-ip"\)\);\s*if \(realIp\) return realIp;/, "X-Real-IP is read first");
   for (const address of ["172.70.40.12", "104.16.0.1", "162.159.38.211", "2606:4700::6810:84e5", "2a06:98c0:3600::103", "::ffff:141.101.64.9"]) {
     assert.equal(isCloudflareAddress(address), true, `${address} is Cloudflare`);
   }
