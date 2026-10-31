@@ -548,6 +548,8 @@ export function resolvePlanItems(input: {
    * "Polyclinic or centre" — the cap must never depend on a lookup having succeeded.
    */
   sharedPlaces?: ReadonlyMap<string, SharedPlaceNamed>;
+  /** The venues lifted outright for this seat (owner, 2026-10-31): never held to the venue's daily number. */
+  liftedVenues?: ReadonlySet<string>;
   /** The week's public holidays, `day → name`: a day named here holds no customer (owner, 2026-10-02). */
   holidays?: ReadonlyMap<string, string>;
   /** The rep's own full days of approved leave, `day → its name` (server/leave-days.ts): days off too. */
@@ -635,6 +637,7 @@ export function resolvePlanItems(input: {
     dayLabel: planDayLabel,
     items: resolved,
     venues: input.sharedPlaces ?? new Map(),
+    liftedVenues: input.liftedVenues,
   });
   if (overVenue) return { ok: false, error: overVenue };
 
