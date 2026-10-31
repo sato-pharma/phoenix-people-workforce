@@ -27,6 +27,7 @@ import {
   type CoachingArchivedEvaluationInput,
 } from "@/lib/coaching/archived";
 import { calculateCoachingScore, toCoachingScoreRows } from "@/lib/coaching/scoring";
+import { refuseOldCoachingFormCreate } from "@/lib/coaching/old-form-retired";
 import type { CoachingScoreResult } from "@/lib/coaching/types";
 
 /**
@@ -605,6 +606,8 @@ export async function commitCoachingImport(
   access: AccessContext,
   options: { sourceFile?: string | null } = {},
 ): Promise<CoachingImportCommitResult> {
+  // The old form takes no new reports, imported ones included (owner, 2026-10-31).
+  refuseOldCoachingFormCreate();
   const workbook = await loadExcelWorkbook(buffer);
   const { rows } = parseCoachingWorkbookRows(workbook);
   const directory = await getEmployeeDirectoryRows();

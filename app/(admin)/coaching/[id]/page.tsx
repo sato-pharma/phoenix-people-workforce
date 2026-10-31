@@ -118,10 +118,10 @@ export default async function CoachingReportDetailPage({ params }: PageProps) {
             {canCreate ? (
               <Link
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover"
-                href="/coaching/new"
+                href="/coaching/skills-survey"
               >
                 <Plus className="h-4 w-4" />
-                Create Report
+                Team Coaching Skills Survey
               </Link>
             ) : null}
             {canSubmit ? <CoachingReportSubmitAction reportId={detail.report.id} /> : null}

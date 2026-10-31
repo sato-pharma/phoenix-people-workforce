@@ -21,6 +21,8 @@ import { employeeExitDay, getEmployeeDirectoryRows, isActiveLifecycleStatus } fr
 import { isExpenseAnalysisRole } from "@/lib/employees/job-function";
 import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { isSkillsSurveyMember, isSkillsSurveySubject } from "@/lib/coaching/skills-survey/access";
+import { getSkillsSurveyHistoryForMember } from "@/lib/coaching/skills-survey/service";
 
 export const dynamic = "force-dynamic";
 
@@ -277,6 +279,17 @@ export default async function Employee360DetailPage({
     }
   }
 
+  // The Team Coaching Skills Survey (owner, 2026-10-31) — managers only. Never read when the viewer is
+  // the person rated, and the service refuses that case again on its own.
+  let skillsSurveyHistory: Awaited<ReturnType<typeof getSkillsSurveyHistoryForMember>> = null;
+  if (summary && isSkillsSurveyMember(target) && !isSkillsSurveySubject(access, target.hrId)) {
+    try {
+      skillsSurveyHistory = await getSkillsSurveyHistoryForMember(access, target.hrId);
+    } catch {
+      unreadSections.push("Team Coaching Skills Survey");
+    }
+  }
+
   const comparison: Employee360Comparison | null = previous
     ? {
         previousLabel: period.previous.label,
@@ -306,6 +319,11 @@ export default async function Employee360DetailPage({
         tmAnalytics={tmAnalytics}
         pmMarketing={pmMarketing}
         crmInsights={crmInsights}
+        skillsSurvey={
+          skillsSurveyHistory
+            ? { history: skillsSurveyHistory, memberHref: `/coaching/skills-survey/${encodeURIComponent(target.hrId)}` }
+            : null
+        }
         unreadSections={unreadSections}
       />
     </div>

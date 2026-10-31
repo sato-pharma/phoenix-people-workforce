@@ -24,6 +24,8 @@ import { employeeExitDay, getEmployeeDirectoryRows, isActiveLifecycleStatus } fr
 import { isExpenseAnalysisRole } from "@/lib/employees/job-function";
 import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { isSkillsSurveyMember, isSkillsSurveySubject } from "@/lib/coaching/skills-survey/access";
+import { getSkillsSurveyHistoryForMember } from "@/lib/coaching/skills-survey/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
@@ -186,6 +188,12 @@ export default async function EmployeePortalEmployee360DetailPage({
     roleCategory === "product-manager"
       ? startSection(() => getPmMarketingRoi(target.hrId, access, new Date().toISOString()))
       : null;
+  // The Team Coaching Skills Survey (owner, 2026-10-31) — managers only. Never read when the viewer is
+  // the person rated, and the service refuses that case again on its own.
+  const skillsSurveyRead =
+    isSkillsSurveyMember(target) && !isSkillsSurveySubject(access, target.hrId)
+      ? startSection(() => getSkillsSurveyHistoryForMember(access, target.hrId))
+      : null;
   // Phoenix CRM: plan compliance and visit frequency by grade, read in the subject's own scope.
   const crmInsightsRead = startSection(() =>
     loadEmployee360CrmInsights({
@@ -227,7 +235,7 @@ export default async function EmployeePortalEmployee360DetailPage({
   const profile = summary;
   // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM). The only section that
   // needs the profile, so it starts now and runs beside the reads already in flight.
-  const [teamHealthResult, teamLifecycleResult, tmAnalyticsResult, pmMarketingResult, crmInsightsResult] =
+  const [teamHealthResult, teamLifecycleResult, tmAnalyticsResult, pmMarketingResult, crmInsightsResult, skillsSurveyResult] =
     await Promise.all([
       isFieldManager
         ? startSection(() =>
@@ -246,6 +254,7 @@ export default async function EmployeePortalEmployee360DetailPage({
       // PM / Group PM: ROI on the marketing requests they submitted.
       pmMarketingRead,
       crmInsightsRead,
+      skillsSurveyRead,
     ]);
 
   // A section whose read fails says so on the page; it never silently disappears. Same order as before.
@@ -254,6 +263,8 @@ export default async function EmployeePortalEmployee360DetailPage({
   if (teamLifecycleResult && !teamLifecycleResult.ok) unreadSections.push("Team Compliance");
   if (tmAnalyticsResult && !tmAnalyticsResult.ok) unreadSections.push("Training-Manager Effectiveness");
   if (pmMarketingResult && !pmMarketingResult.ok) unreadSections.push("Marketing ROI");
+  if (skillsSurveyResult && !skillsSurveyResult.ok) unreadSections.push("Team Coaching Skills Survey");
+  const skillsSurveyHistory = sectionValue(skillsSurveyResult);
   const teamHealth: TeamHealthSummary | null = sectionValue(teamHealthResult);
   const teamLifecycle: TeamLifecycleSummary | null = sectionValue(teamLifecycleResult);
   const tmAnalytics: TrainingManagerAnalytics | null = sectionValue(tmAnalyticsResult);
@@ -291,6 +302,14 @@ export default async function EmployeePortalEmployee360DetailPage({
           category={roleCategory}
           comparison={comparison}
           crmInsights={crmInsights}
+          skillsSurvey={
+            skillsSurveyHistory
+              ? {
+                  history: skillsSurveyHistory,
+                  memberHref: `/employee-portals/coaching-skills-survey/${encodeURIComponent(target.hrId)}`,
+                }
+              : null
+          }
           unreadSections={unreadSections}
           pmMarketing={pmMarketing}
           showExpenses={showExpenses}

@@ -160,7 +160,6 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   { route: "/admin/field-sales/med-reps-performance", roles: ["CEO", "Finance Manager", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/components/admin/ceo-command-center.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/admin/field-sales/source-of-sales", roles: ["CEO", "Finance Manager", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/components/admin/ceo-command-center.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/admin/field-sales/weekly-sales", roles: ["CEO", "Finance Manager", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/components/admin/ceo-command-center.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
-  { route: "/coaching/new", roles: ["Group Product Manager", "Product Manager", "Super Admin", "Training Manager"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/(admin)/coaching/analytics/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/employee-portals/direct-orders/new", roles: ["District Manager", "Employee", "Group Product Manager", "Manager", "Marketing Manager", "Medical Rep", "National Sales Manager", "Product Manager", "Regional Manager", "Training Manager"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/(admin)/admin/direct-orders/new/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   // RETIRED 2026-09-07. The row recorded /recruitment/screening as reachable only from a
   // hand-written link, "not the sidebar rail or a hub card — a recorded decision". It now has a
@@ -274,6 +273,14 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // 2026-09-25: the pilot itself is retired (the owner). /employee-portals/phoenix-crm is now a
   // redirect-only stub into the field app, which the reverse guard exempts mechanically, so its
   // gate-unreadable-and-unlinked row was removed rather than re-worded.
+  //
+  // 2026-10-31: the old coaching report form takes no new reports (owner) — the Team Coaching Skills
+  // Survey replaced it. The two rows below are the form's old addresses, kept as redirect-only stubs so
+  // a bookmark, an old notification or the portal coaching pages' admin redirect lands on the survey.
+  // Each declares its portal twin with a shell check (src/lib/navigation/portal-twins.ts), which makes
+  // its gate readable, so the guard counts it as a page; nothing should link to a forwarder.
+  { route: "/coaching/new", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Administration", "HR Advisory", "HR Operations", "HR Resourcing", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "A redirect-only stub onto the Team Coaching Skills Survey since the old coaching form stopped taking new reports (owner, 2026-10-31). Its only remaining links are the admin-shell redirects in app/employee-portals/coaching/page.tsx and app/employee-portals/coaching/[id]/page.tsx; nothing should offer a forwarder in the rail.", recorded: "2026-10-31" },
+  { route: "/coaching/import", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Administration", "HR Advisory", "HR Operations", "HR Resourcing", "SFE Manager", "Super Admin"], kind: "no-link-anywhere", reason: "A redirect-only stub onto the Team Coaching Skills Survey since the old coaching form stopped taking new reports, imported ones included (owner, 2026-10-31). Its hub card was replaced by the survey's; the address stays so old bookmarks land on the survey.", recorded: "2026-10-31" },
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;

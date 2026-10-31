@@ -666,6 +666,11 @@ const SQUARE_FORMS = [
   "src/components/outstation/outstation-pending-actions.tsx",
   "src/components/outstation/my-expense-submissions.tsx",
   "src/components/outstation/submit-expense-my-claims.tsx",
+  // The Team Coaching Skills Survey, which replaced the old coaching form (owner, 2026-10-31).
+  "src/components/coaching/skills-survey/skills-survey-form.tsx",
+  "src/components/coaching/skills-survey/skills-survey-parts.tsx",
+  "src/components/coaching/skills-survey/skills-survey-workspace.tsx",
+  "src/components/coaching/skills-survey/skills-survey-history.tsx",
 ];
 
 /** Every corner radius except `full` and `none`. */

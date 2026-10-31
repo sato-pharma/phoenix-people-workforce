@@ -8,6 +8,7 @@ import {
   Footprints,
   GraduationCap,
   Info,
+  ListChecks,
   MapPin,
   Megaphone,
   TrendingUp,
@@ -44,6 +45,11 @@ import { planEmployee360Sections } from "@/lib/employee-360/report-sections";
 import { crmInsightState, type Employee360CrmInsights } from "@/lib/employee-360/crm-insights";
 import { Employee360CrmInsightsSections } from "./crm-insights-sections";
 import { employeeAvatarGround, employeeInitials } from "./avatar";
+import {
+  SkillsSurveyHistory,
+  type SkillsSurveyHistoryData,
+} from "@/components/coaching/skills-survey/skills-survey-history";
+import { skillsSurveyTitle } from "@/lib/coaching/skills-survey/vocabulary";
 
 const CHART_COLORS = { regular: "#0ea5e9", campaign: "#f97316", sales: "#10b981", target: "#94a3b8", coverage: "#6366f1" };
 
@@ -820,6 +826,7 @@ export function Employee360View({
   tmAnalytics = null,
   pmMarketing = null,
   crmInsights = null,
+  skillsSurvey = null,
   unreadSections = [],
   bare = false,
 }: {
@@ -842,6 +849,12 @@ export function Employee360View({
   pmMarketing?: PmMarketingSummary | null;
   /** Phoenix CRM plan compliance and visit frequency by grade (`crm-insights.ts`). */
   crmInsights?: Employee360CrmInsights | null;
+  /**
+   * The Team Coaching Skills Survey, quarter by quarter (owner, 2026-10-31). Managers only: the two
+   * detail pages pass it only when the viewer is NOT the subject and the survey's read rule allows it,
+   * and the self-view never passes it — the person rated must never see their own survey.
+   */
+  skillsSurvey?: { history: SkillsSurveyHistoryData; memberHref: string } | null;
   /** Sections whose read failed on the server — named on the page, never silently left out. */
   unreadSections?: readonly string[];
   /**
@@ -1182,6 +1195,20 @@ export function Employee360View({
       <DoubleVisitSection dv={summary.doubleVisits} />
     </>
   ) : null;
+  // The Team Coaching Skills Survey — present only when the page passed it (managers only, never the
+  // person rated), so it needs no gate of its own here.
+  const skillsSurveyPart = skillsSurvey ? (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={ListChecks}
+        tone="violet"
+        sub="Rated by the District Manager once a quarter. Managers only: the team member never sees this survey."
+      >
+        {skillsSurveyTitle}
+      </SectionHeader>
+      <SkillsSurveyHistory history={skillsSurvey.history} memberHref={skillsSurvey.memberHref} />
+    </Card>
+  ) : null;
 
   // The record's chapters. Every section belongs to exactly one, and the role decides their order: a
   // leader's record opens on what they deliver, a rep's on their own field work. A chapter with nothing
@@ -1207,7 +1234,7 @@ export function Employee360View({
     development: {
       title: "Development",
       lede: "The coaching this employee received, what changed after it, and the double visits made with them.",
-      parts: [receivedPart],
+      parts: [receivedPart, skillsSurveyPart],
     },
     cost: {
       title: "Cost",

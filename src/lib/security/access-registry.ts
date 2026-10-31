@@ -644,6 +644,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/business-review/pack", permission: null, guard: "domain-helper" }),
 
   sessionApi({ methods: allMethods, pattern: "/api/coaching/**", permission: { resource: "coaching", action: "read" }, guard: "domain-helper" }),
+  // The Team Coaching Skills Survey (owner, 2026-10-31) — its own resource, never the old coaching
+  // form's. The fine scope (the District Manager's own team; never the person rated) is in
+  // src/lib/coaching/skills-survey/access.ts.
+  sessionApi({ methods: readOnly, pattern: "/api/coaching/skills-survey", permission: { resource: "coaching_skills_survey", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/coaching/skills-survey", permission: { resource: "coaching_skills_survey", action: "create" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/coaching/skills-survey/settings", permission: { resource: "coaching_skills_survey", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PUT"], pattern: "/api/coaching/skills-survey/settings", permission: { resource: "coaching_skills_survey", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/coaching/reports/export", permission: { resource: "coaching", action: "export" }, guard: "domain-helper" }),
   // `recruitment`, not `vacancies` — moved 2026-09-01 with the route itself, so this declaration

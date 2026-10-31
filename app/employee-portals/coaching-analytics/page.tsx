@@ -79,7 +79,7 @@ export default async function PortalCoachingAnalyticsPage() {
       title="Coaching Analytics"
     >
       <CoachingAnalyticsDashboard
-        canCreate={false}
+        showSkillsSurveyLink={false}
         filterOptions={buildCoachingAnalyticsFilterOptions(optionReports, optionQuarterlySummary, scopedEmployees)}
         initialFilters={{ year: String(currentYear) }}
         initialData={payload}

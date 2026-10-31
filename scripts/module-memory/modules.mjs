@@ -1091,7 +1091,7 @@ export const MODULES = [
     globs: [
       "src/lib/{coaching,visual-aids}/**",
       "src/components/{coaching,visual-aids}/**",
-      "app/**/{coaching,coaching-analytics,field-coaching,training-manager,visual-aids}/**",
+      "app/**/{coaching,coaching-analytics,coaching-skills-survey,field-coaching,training-manager,visual-aids}/**",
       "tests/*{coaching,visual-aid,training}*",
       "supabase/migrations/*{coaching,visual_aid,training}*",
     ],

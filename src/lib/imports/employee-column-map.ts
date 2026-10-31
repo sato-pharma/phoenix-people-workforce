@@ -370,6 +370,12 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     aliases: ["senior year", "Senior Year", "Graduation Year", "senior_year", "سنة التخرج"],
   },
   {
+    field: "totalExperienceYears",
+    dbPath: "employees.total_experience_years",
+    required: false,
+    aliases: ["Total years of experience", "Total Years Of Experience", "Years of experience", "total_experience_years", "سنوات الخبرة"],
+  },
+  {
     field: "contractDuration",
     dbPath: "employees.contract_duration",
     required: false,

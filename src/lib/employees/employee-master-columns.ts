@@ -134,6 +134,12 @@ export type MasterRow = {
   universityName: string | null;
   collegeMajor: string | null;
   seniorYear: string | null;
+  /**
+   * HR's total years of experience (owner, 2026-10-31) — a NUMBER, 0 to 60 with one decimal. Its
+   * column is still kind "text": FieldKind has no number kind, and "money" would hide it from the
+   * salary-blind seat, who fills it like any other HR record field.
+   */
+  totalExperienceYears: number | null;
   department: string | null;
   line: string | null;
   area: string | null;
@@ -253,6 +259,7 @@ export const columns: MasterColumn[] = [
   { header: "University Name", key: "universityName", section: "Educational Qualifications", width: 22, kind: "text", imported: true, guide: "الجامعة — the university the college belongs to." },
   { header: "College major", key: "collegeMajor", section: "Educational Qualifications", width: 22, kind: "text", imported: true, guide: "التخصص — the major read inside the college." },
   { header: "senior year", key: "seniorYear", section: "Educational Qualifications", width: 16, kind: "text", imported: true, guide: "سنة التخرج — graduation year. Free text, so \"2019/2020\" is fine." },
+  { header: "Total years of experience", key: "totalExperienceYears", section: "Educational Qualifications", width: 18, kind: "text", imported: true, guide: "All years in the role, at Sato and before. Filled by HR; the Team Coaching Skills Survey reads it as Years in Role.", allowed: "A number from 0 to 60, for example 2 or 0.5." },
 
   // ── Contract data ───────────────────────────────────────────────────────────
   { header: "Hiring Date", key: "hireDate", section: "Contract Data", width: 13, kind: "date", imported: true, guide: "First working day. Changing it moves probation and re-dates seat history.", allowed: "YYYY-MM-DD" },

@@ -105,10 +105,16 @@ export type EmployeePortalNavVisibility = {
   showAccountActivationTab?: boolean;
   showMyCoachingTab?: boolean;
   showTeamCoachingTab?: boolean;
-  showTrainingManagerCreateCoachingTab?: boolean;
   showTrainingManagerDashboardTab?: boolean;
   showTrainingManagerFieldCoachingTab?: boolean;
   showTrainingManagerWeeklyPlanTab?: boolean;
+  /**
+   * The Team Coaching Skills Survey (owner, 2026-10-31) — it replaced the old coaching report form.
+   * Managers only: the District Manager rates his team, the Regional Manager, the National Sales
+   * Manager and the Training Manager read it. Never a Medical Rep, who must never see his own survey.
+   * Mirrors canOpenSkillsSurvey (src/lib/coaching/skills-survey/access.ts); the page enforces it.
+   */
+  showCoachingSkillsSurveyTab?: boolean;
   showReportItTab?: boolean;
   showReportItDashboardTab?: boolean;
   showFingerprintReportTab?: boolean;
@@ -900,12 +906,15 @@ export function resolveEmployeePortalNavVisibility(
     showTeamPerformanceTab,
     // The Training Manager section is back in the portal (owner, 2026-10-24: "full section … lift the
     // hide from everyone"), after the 2026-09-29 hide.
-    showTrainingManagerCreateCoachingTab: isTrainingManager,
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
     // Her Phoenix CRM weekly plan, inside her own section (owner, 2026-10-24) — she has no territory,
     // so the Phoenix CRM row is never hers.
     showTrainingManagerWeeklyPlanTab: isTrainingManager,
+    // The Team Coaching Skills Survey (owner, 2026-10-31). `resolvedRole === "District Manager"`, not
+    // isDistrictManager: the Head-Office "Manager" rung rates no Medical Reps.
+    showCoachingSkillsSurveyTab:
+      resolvedRole === "District Manager" || isRegionalManager || isNationalSalesManager || isTrainingManager,
     // Regional Manager included: getEmployeePortalVacancies already has an RM branch that bounds
     // open seats to the RM's own line AND the regions in their management subtree, so the data was
     // there — the missing `vacancies` grant (added to defaultPermissionMatrix) and this flag were

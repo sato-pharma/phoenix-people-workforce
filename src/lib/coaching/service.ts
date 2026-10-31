@@ -24,6 +24,7 @@ import {
 } from "@/lib/coaching/analytics";
 import { calculateCoachingScore, normalizeCoachingScoreItems, toCoachingScoreRows } from "@/lib/coaching/scoring";
 import { assertCoachingWorkflowTransition } from "@/lib/coaching/workflow";
+import { refuseOldCoachingFormCreate } from "@/lib/coaching/old-form-retired";
 import type {
   CoachingAcknowledgmentInput,
   CoachingPerformanceZone,
@@ -502,6 +503,8 @@ function scoreInputFromRows(rows: CoachingScoreItemRow[]) {
 }
 
 export async function createDraftCoachingReport(input: CoachingReportCreateInput, access: AccessContext) {
+  // The old form takes no new reports (owner, 2026-10-31) — the Team Coaching Skills Survey replaced it.
+  refuseOldCoachingFormCreate();
   await assertCoachingWorkflowTransition({
     access,
     actionKey: "create_draft",

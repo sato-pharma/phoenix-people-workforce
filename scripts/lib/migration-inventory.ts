@@ -1983,6 +1983,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // phx_ci_advisor_counts() on production read unused_index 726 (772 before), under the 755 baseline. The file
   // defines no function, so there is no prosrc digest; the readback above is the evidence.
   "20261030215000_drop_redundant_unused_indexes.sql",
+  // THE TEAM COACHING SKILLS SURVEY — applied to PRODUCTION on 31 Oct 2026 at about 21:55 Cairo, on the owner's
+  // answer "Production now", through scripts/apply-sql-file.mjs (PHOENIX_POOLER_HOST=aws-1-eu-central-1), the
+  // standing route of AGENTS.md §8: the Supabase MCP's apply_migration answered {"status":"declined"}. The route
+  // writes no ledger row, hence this entry. Additive only; nothing existing was changed.
+  //
+  // Read live on ozucdzovmcqvepbozvqf right after the apply: the three tables exist with RLS on and three
+  // service-role policies, anon and authenticated hold no grant on any of them; the 10 skills read back in the
+  // workbook's order; the settings row reads 4.0 / 0.800 / 5.0 / 4 bands; 0 surveys; employees carries
+  // total_experience_years numeric(4,1) and total_experience_as_of date, both empty. Verified by digest, not by
+  // presence: md5(pg_proc.prosrc) for public.phx_stamp_total_experience_as_of reads b0ea9116d402db6e5ee9d98a085aec0b,
+  // the md5 of this file's own dollar-quoted body; prosecdef false, proconfig {search_path=public}, proacl
+  // {postgres=X/postgres,service_role=X/postgres}. No earlier file defines the function, so there is no pre-image.
+  // The ledger's newest row was 20261031195143, and ZERO rows carry this version or name.
+  "20261031210456_coaching_skills_survey.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

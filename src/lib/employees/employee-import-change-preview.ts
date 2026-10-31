@@ -111,6 +111,9 @@ const FIELDS: FieldSpec[] = [
   { compare: "text", from: (r) => r.universityName, group: "Identity", label: "University Name", to: (e) => e.universityName },
   { compare: "text", from: (r) => r.collegeMajor, group: "Identity", label: "College major", to: (e) => e.collegeMajor },
   { compare: "text", from: (r) => r.seniorYear, group: "Identity", label: "senior year", to: (e) => e.seniorYear },
+  // A number on both sides, already rounded to one decimal, so "text" compares it exactly: 2 and 2.0
+  // both render "2". Not "money" — that would format it with two decimals and count it as a pay move.
+  { compare: "text", from: (r) => r.totalExperienceYears, group: "Identity", label: "Total years of experience", to: (e) => e.totalExperienceYears },
 
   { compare: "text", from: (r) => r.departmentName, group: "Organization", label: "Department", to: (e) => e.departmentName },
   { compare: "text", from: (r) => r.lineName, group: "Organization", label: "Line", to: (e) => e.lineName },

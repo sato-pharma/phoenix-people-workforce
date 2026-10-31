@@ -1,4 +1,5 @@
 ﻿import { resolveRegionFromCrosswalk } from "@/lib/employees/region-resolver";
+import { parseTotalExperienceYears } from "@/lib/employees/total-experience-rules";
 import { canonicalHrIdKey, hrIdsMatch, resolveStoredHrId } from "@/lib/hr-id";
 import {
   createEmployeeColumnLookup,
@@ -93,6 +94,7 @@ const fieldPriority: EmployeeImportField[] = [
   "universityName",
   "collegeMajor",
   "seniorYear",
+  "totalExperienceYears",
   "contractDuration",
   "contractRenewalDate",
   "probationEndDate",
@@ -179,6 +181,21 @@ function valueFor(
   return header ? row[header] : null;
 }
 
+/**
+ * The Total years of experience cell, read with the same rule the employee form saves with.
+ *
+ * Blank (or "-", "n/a" — the words every other text column treats as blank) is null, which the
+ * confirm step leaves alone. An unreadable value is null too, with the rule's own sentence as the
+ * error, so `validateEmployeeImportRows` can block that row by name instead of writing a guess.
+ */
+function readTotalExperienceCell(value: unknown): { years: number | null; error: string | null } {
+  try {
+    return { error: null, years: parseTotalExperienceYears(normalizeTextValue(value)) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error), years: null };
+  }
+}
+
 function buildRecord(
   row: RawEmployeeImportRow,
   rowNumber: number,
@@ -252,6 +269,7 @@ function buildRecord(
     universityName: normalizeTextValue(valueFor(row, mapping, "universityName")),
     collegeMajor: normalizeTextValue(valueFor(row, mapping, "collegeMajor")),
     seniorYear: normalizeTextValue(valueFor(row, mapping, "seniorYear")),
+    totalExperienceYears: readTotalExperienceCell(valueFor(row, mapping, "totalExperienceYears")).years,
     contractDuration: normalizeTextValue(valueFor(row, mapping, "contractDuration")),
     contractRenewalDate: normalizeDateValue(valueFor(row, mapping, "contractRenewalDate")),
     probationEndDate: normalizeDateValue(valueFor(row, mapping, "probationEndDate")),
@@ -1031,6 +1049,16 @@ export function validateEmployeeImportRows(
         field: "paymentMode",
         code: "invalid_payment_mode",
         message: "Payment Mode must be two_parts, one_part, or blank.",
+      });
+    }
+
+    const totalExperience = readTotalExperienceCell(valueFor(record.source, mapping, "totalExperienceYears"));
+    if (totalExperience.error) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "totalExperienceYears",
+        code: "invalid_total_experience_years",
+        message: totalExperience.error,
       });
     }
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ArrowUpRight, Download, Filter, Loader2, Plus, RotateCcw, Search } from "lucide-react";
+import { ArrowUpRight, Download, Filter, Loader2, ListChecks, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
 
 import { formatDateOnly } from "@/lib/date-only";
@@ -37,9 +37,9 @@ export type CoachingReportsFilterOptions = {
 };
 
 type CoachingReportsCenterProps = {
-  canCreate: boolean;
+  showSkillsSurveyLink: boolean;
   canExport: boolean;
-  createHref?: string;
+  skillsSurveyHref?: string;
   detailHrefBase?: string;
   filterOptions: CoachingReportsFilterOptions;
   initialReports: CoachingReportSummaryRow[];
@@ -248,9 +248,9 @@ function detailHrefFor(base: string, reportId: string) {
 const REPORTS_PAGE_SIZE = 25;
 
 export function CoachingReportsCenter({
-  canCreate,
+  showSkillsSurveyLink,
   canExport,
-  createHref = "/coaching/new",
+  skillsSurveyHref = "/coaching/skills-survey",
   detailHrefBase = "/coaching",
   filterOptions,
   initialReports,
@@ -499,13 +499,13 @@ export function CoachingReportsCenter({
                 Export Excel
               </button>
             ) : null}
-            {canCreate ? (
+            {showSkillsSurveyLink ? (
               <Link
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-4 py-2 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.20)] transition hover:bg-phx-accent-hover"
-                href={createHref}
+                href={skillsSurveyHref}
               >
-                <Plus className="h-4 w-4" />
-                Create New Coaching Report
+                <ListChecks className="h-4 w-4" />
+                Team Coaching Skills Survey
               </Link>
             ) : null}
           </div>
@@ -521,15 +521,15 @@ export function CoachingReportsCenter({
                 No coaching reports found.
               </h3>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
-                Try adjusting the filters or create a new coaching report if you are authorized to do so.
+                Try adjusting the filters. New coaching is recorded in the Team Coaching Skills Survey.
               </p>
-              {canCreate ? (
+              {showSkillsSurveyLink ? (
                 <Link
                   className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover"
-                  href={createHref}
+                  href={skillsSurveyHref}
                 >
-                  <Plus className="h-4 w-4" />
-                  Create Coaching Report
+                  <ListChecks className="h-4 w-4" />
+                  Team Coaching Skills Survey
                 </Link>
               ) : null}
             </div>

@@ -184,6 +184,92 @@ export function CheckTile({
   );
 }
 
+// ─── Rating scale ─────────────────────────────────────────────────────────────
+
+export type RatingScaleOption = {
+  value: number;
+  /** Printed in the tile, e.g. "4". */
+  label: string;
+  /** The tile's tooltip and screen-reader name, e.g. "4 - Strong". */
+  title?: string;
+};
+
+/**
+ * A row of score tiles in the CheckTile skin — a 0 to 5 rating, with an optional "not rated" tile
+ * for a score that may be left empty (the Team Coaching Skills Survey's "Not observed"). One tap is
+ * the answer; tapping the chosen tile again does nothing. Square, like every tile in the kit.
+ */
+export function RatingScale({
+  options,
+  value,
+  onChange,
+  emptyLabel,
+  disabled,
+  ariaLabel,
+  className,
+}: {
+  options: RatingScaleOption[];
+  value: number | null;
+  onChange: (next: number | null) => void;
+  /** When given, an extra tile that clears the score. */
+  emptyLabel?: string;
+  disabled?: boolean;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className={cn(
+        "grid gap-1.5",
+        emptyLabel
+          ? "grid-cols-6 sm:grid-cols-[repeat(6,minmax(0,1fr))_minmax(0,2fr)]"
+          : "grid-cols-6",
+        className,
+      )}
+    >
+      {options.map((option) => {
+        const checked = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            title={option.title}
+            aria-label={option.title ?? option.label}
+            aria-pressed={checked}
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              phxCheckTileClassName(checked),
+              "justify-center px-0 tabular-nums",
+              checked && "font-black",
+              disabled && "cursor-default opacity-70",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+      {emptyLabel ? (
+        <button
+          type="button"
+          aria-pressed={value === null}
+          disabled={disabled}
+          onClick={() => onChange(null)}
+          className={cn(
+            phxCheckTileClassName(value === null),
+            "col-span-6 justify-center sm:col-span-1",
+            disabled && "cursor-default opacity-70",
+          )}
+        >
+          {emptyLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 // ─── Errors and actions ───────────────────────────────────────────────────────
 
 export function FormError({ children, className }: { children: ReactNode; className?: string }) {

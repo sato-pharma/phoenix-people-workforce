@@ -196,6 +196,10 @@ export type PermissionResource =
   | "resignations"
   | "contracts"
   | "coaching"
+  // Team Coaching Skills Survey (owner, 2026-10-31): the District Manager rates his team on the
+  // coaching matrix skills; the Training Manager owns the settings and the skills list. NEVER the
+  // person rated — capped in `hardBoundaryAllowedActions`, and the service refuses a self-read.
+  | "coaching_skills_survey"
   | "communication"
   | "hr_calendar"
   // HR Reminders (owner, 2026-10-17): the HR team's shared notes, reminders and calendar. `read`
@@ -347,6 +351,7 @@ export const permissionResources: PermissionResource[] = [
   "resignations",
   "contracts",
   "coaching",
+  "coaching_skills_survey",
   "communication",
   "user_admin",
   "permission_admin",
@@ -761,6 +766,16 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
     case "rep_product_achievement":
       // A read over the published closing: nothing to write. The Training Manager and the Super Admin.
       return role === "Super Admin" || role === "Training Manager" ? ["read", "export"] : [];
+    case "coaching_skills_survey":
+      // The owner, 2026-10-31: the District Manager rates (create/update); the Training Manager owns
+      // the settings and the skills list (update); the chain above and the CEO and SFE Manager read.
+      // Capped so an override can never hand a Medical Rep — the person rated — any of it.
+      if (role === "Super Admin" || role === "District Manager") return ["read", "create", "update"];
+      if (role === "Training Manager") return ["read", "update"];
+      if (role === "CEO" || role === "SFE Manager" || role === "National Sales Manager" || role === "Regional Manager") {
+        return ["read"];
+      }
+      return [];
     case "field_absence":
       // The owner's four, 2026-10-18 ("admin and national sales managers and SFE and CEO"), and READ
       // alone: the calendar is a view over records other modules own, so there is nothing to write.
@@ -1058,6 +1073,7 @@ const defaultPermissionMatrix: PermissionMap = {
     imports: allActions,
     contracts: allActions,
     coaching: allActions,
+    coaching_skills_survey: ["read", "create", "update"],
     employee_documents: allActions,
     employee_profile: allActions,
     employees: allActions,
@@ -1152,6 +1168,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // belongs to Super Admin/HR. The CEO is observational on contracts.
     contracts: ["read", "export"],
     coaching: ["read"],
+    coaching_skills_survey: ["read"],
     employee_profile: ["read", "update", "export"],
     // NOTE: hard boundary (hardBoundaryAllowedActions → "employees" → Super Admin only) removes
     // these actions at runtime. CEO sees only their own employee record via canSeeEmployee().
@@ -1456,6 +1473,7 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "create", "export"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
+    coaching_skills_survey: ["read", "create", "update"],
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -1506,6 +1524,7 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "create", "export"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
+    coaching_skills_survey: ["read"],
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -1561,6 +1580,7 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "create", "export"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read"],
+    coaching_skills_survey: ["read"],
     probation: ["read", "export"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
@@ -1691,6 +1711,7 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "create"],
     leave: allActions,
     coaching: ["read"],
+    coaching_skills_survey: ["read"],
     // SFE Manager submits the (data-driven) SFE probation assessment. probation:read admits them
     // through the coarse route/middleware gate; the fine boundary (canSubmitSfeAssessment) still
     // restricts writes to SFE Manager / probation admin.
@@ -1722,6 +1743,7 @@ const defaultPermissionMatrix: PermissionMap = {
     outstation: ["read", "create"],
     leave: ["read", "create", "approve", "export"],
     coaching: ["read", "create", "update"],
+    coaching_skills_survey: ["read", "update"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
     probation: ["read", "export"],

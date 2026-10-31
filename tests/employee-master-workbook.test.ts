@@ -17,6 +17,7 @@ import {
 } from "../src/lib/employees/employee-master-columns.ts";
 import { createEmployeeColumnLookup } from "../src/lib/imports/employee-column-map.ts";
 import { normalizeHeaderName } from "../src/lib/imports/employee-normalizers.ts";
+import { validateEmployeeImportRows } from "../src/lib/imports/employee-validator.ts";
 import {
   EMPLOYEE_UPLOAD_HEADER_SCAN_ROWS,
   EMPLOYEE_UPLOAD_NAME_HEADERS,
@@ -77,6 +78,7 @@ function fixtureEmployee(index: number) {
     universityName: "Cairo University",
     collegeMajor: "Pharmacology",
     seniorYear: "2019",
+    totalExperienceYears: 2.5,
     contractDuration: "1 Year",
     probationEndDate: "2022-09-01T00:00:00Z",
     medicalInsuranceCardReceivedDate: "2022-07-01T00:00:00Z",
@@ -457,6 +459,7 @@ export async function runEmployeeMasterWorkbookTests() {
     ['University Name', 'Cairo University'],
     ['College major', 'Pharmacology'],
     ['senior year', '2019'],
+    ['Total years of experience', '2.5'],
     ['contract duration', '1 Year'],
     ['End date of probation period', '2022-09-01'],
     ['Contract Renewal Date', '2027-01-01'],
@@ -469,6 +472,55 @@ export async function runEmployeeMasterWorkbookTests() {
   ] as const) {
     assert.equal(cellByHeader(firstDataRow, header), expected, `"${header}" must carry its value`);
   }
+
+  // ── 6c-bis. Total years of experience goes back in as a number ─────────────
+  //
+  // HR bulk-fills it for the Medical Reps from this sheet (owner, 2026-10-31), so the exported
+  // cell has to read back through the real parser and validator as the same number. A blank cell
+  // and an absent column both leave the saved value alone (null is omitted by the confirm step);
+  // 0 is a value, not a blank; anything outside 0 to 60 blocks its row with the form's own sentence.
+  const experienceHeader = 'Total years of experience';
+  const exportedExperience = (rows[0] as Record<string, unknown>)[experienceHeader];
+  assert.equal(exportedExperience, 2.5, 'the parser must read the exported cell back as the number 2.5');
+  const experienceState = { employeeHrIds: new Set<string>(), employeeHrIdByCanonicalKey: new Map() };
+  const experienceRow = (hrId: string, cell?: unknown) => ({
+    'Employee ID': hrId,
+    'Full English Name': `Person ${hrId}`,
+    ...(cell === undefined ? {} : { [experienceHeader]: cell }),
+  });
+  const experience = validateEmployeeImportRows(
+    [
+      experienceRow('T-1', exportedExperience),
+      experienceRow('T-2', '0'),
+      experienceRow('T-3', ''),
+      experienceRow('T-4', '-'),
+      experienceRow('T-5', '3.27'),
+      experienceRow('T-6', 'seven'),
+      experienceRow('T-7', 61),
+    ],
+    { existingState: experienceState },
+  );
+  const yearsByHrId = new Map(experience.rowsToInsert.map((record) => [record.hrId, record.totalExperienceYears]));
+  assert.equal(yearsByHrId.get('T-1'), 2.5, 'the exported value round-trips unchanged');
+  assert.equal(yearsByHrId.get('T-2'), 0, '0 years is a value HR typed, not a blank cell');
+  assert.equal(yearsByHrId.get('T-3'), null, 'a blank cell is null — the confirm step leaves the saved value alone');
+  assert.equal(yearsByHrId.get('T-4'), null, '"-" is blank here exactly as it is in every other text column');
+  assert.equal(yearsByHrId.get('T-5'), 3.3, 'kept to one decimal, the same rule the employee form saves with');
+  const experienceErrors = experience.validationErrors.filter((issue) => issue.field === 'totalExperienceYears');
+  assert.deepEqual(
+    experienceErrors.map((issue) => issue.code),
+    ['invalid_total_experience_years', 'invalid_total_experience_years'],
+    '"seven" and 61 each block their own row; 0, a blank, "-" and 3.27 do not',
+  );
+  assert.ok(!yearsByHrId.has('T-6') && !yearsByHrId.has('T-7'), 'a blocked row is never planned for a write');
+  assert.match(experienceErrors[0].message, /from 0 to 60, for example 2 or 0\.5/, "the row error is the rule's own sentence");
+  const absent = validateEmployeeImportRows([experienceRow('T-8')], { existingState: experienceState });
+  assert.equal(
+    absent.rowsToInsert[0]?.totalExperienceYears,
+    null,
+    'a sheet without the column must leave the value untouched — null, never a cleared value',
+  );
+  assert.equal(absent.validationErrors.length, 0, 'a sheet without the column is not an error');
 
   // ── 6d. the section bands are HR's own words, not upper-cased ────────────────
   const sectionRowCells = sheet.getRow(employeeMasterWorkbookContract.sectionRow);

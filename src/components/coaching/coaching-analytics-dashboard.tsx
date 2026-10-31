@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatDateOnly } from "@/lib/date-only";
-import { Loader2, Plus, RotateCcw, Search } from "lucide-react";
+import { Loader2, ListChecks, RotateCcw, Search } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import type {
@@ -67,8 +67,8 @@ export type CoachingAnalyticsPayload = {
 };
 
 type CoachingAnalyticsDashboardProps = {
-  canCreate: boolean;
-  createHref?: string;
+  showSkillsSurveyLink: boolean;
+  skillsSurveyHref?: string;
   filterOptions: CoachingAnalyticsFilterOptions;
   initialFilters?: Partial<FilterState>;
   initialData: CoachingAnalyticsPayload;
@@ -877,8 +877,8 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
 // ── main dashboard ───────────────────────────────────────────────────────────
 
 export function CoachingAnalyticsDashboard({
-  canCreate,
-  createHref = "/coaching/new",
+  showSkillsSurveyLink,
+  skillsSurveyHref = "/coaching/skills-survey",
   filterOptions,
   initialFilters: initialFilterOverrides,
   initialData,
@@ -1031,13 +1031,13 @@ export function CoachingAnalyticsDashboard({
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
               Score analytics, coverage, and per-rep development will appear here once coaching reports are submitted and scored for this scope.
             </p>
-            {canCreate ? (
+            {showSkillsSurveyLink ? (
               <Link
                 className="mt-5 inline-flex items-center justify-center gap-2 bg-phx-accent px-5 py-2 text-sm font-black text-white transition hover:bg-phx-accent-hover"
-                href={createHref}
+                href={skillsSurveyHref}
               >
-                <Plus className="h-4 w-4" />
-                Create Coaching Report
+                <ListChecks className="h-4 w-4" />
+                Team Coaching Skills Survey
               </Link>
             ) : null}
           </div>

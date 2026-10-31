@@ -15,6 +15,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canOpenSkillsSurvey } from "@/lib/coaching/skills-survey/access";
 import { canSubmitCoachingDraft, getCoachingReportById } from "@/lib/coaching/service";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ type PageProps = {
   }>;
 };
 
-const createCoachingReportHref = "/employee-portals/training-manager/create-coaching-report";
+const skillsSurveyHref = "/employee-portals/coaching-skills-survey";
 const fieldCoachingHref = "/employee-portals/training-manager/field-coaching";
 
 export default async function TrainingManagerCoachingReportDetailPage({ params }: PageProps) {
@@ -68,7 +69,9 @@ export default async function TrainingManagerCoachingReportDetailPage({ params }
   }
 
   const canManageCoaching = canManageCoachingReports(access);
-  const canCreate = canManageCoaching && (await canAccess(access, "coaching", "create"));
+  // The old coaching form takes no new reports (owner, 2026-10-31); this button now opens the survey.
+  const showSkillsSurveyLink =
+    canOpenSkillsSurvey(access) && (await canAccess(access, "coaching_skills_survey", "read"));
   // A Training Manager can resume only their own unsubmitted draft.
   const canEditDraft =
     detail.report.status === "draft" &&
@@ -93,8 +96,8 @@ export default async function TrainingManagerCoachingReportDetailPage({ params }
             {canEditDraft ? (
               <EmployeePortalActionLink href={`${fieldCoachingHref}/${id}/edit`} label="Resume Draft" />
             ) : null}
-            {canCreate ? (
-              <EmployeePortalActionLink href={createCoachingReportHref} label="Create Report" />
+            {showSkillsSurveyLink ? (
+              <EmployeePortalActionLink href={skillsSurveyHref} label="Team Coaching Skills Survey" />
             ) : null}
             {canSubmit ? <CoachingReportSubmitAction reportId={detail.report.id} /> : null}
           </>
