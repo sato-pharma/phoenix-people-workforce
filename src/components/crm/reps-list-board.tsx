@@ -4,6 +4,7 @@ import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import type { RepsListForRep } from "@/lib/crm/reps-list";
+import { awaitingBrickSub } from "@/lib/crm/reps-list-labels";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
 
 // Server half of Reps List. The Section/Tile vocabulary is copied verbatim from
@@ -203,9 +204,7 @@ export function RepsListTiles({
       <Tile
         label="Awaiting a brick"
         sub={
-          list.unmappedContactCount > 0
-            ? `${list.unmappedRegionCount} localities not yet mapped`
-            : "every locality is mapped"
+          list.unmappedContactCount > 0 ? awaitingBrickSub(list) : "every locality is mapped"
         }
         tone={list.unmappedContactCount > 0 ? "amber" : "emerald"}
         value={String(list.unmappedContactCount)}

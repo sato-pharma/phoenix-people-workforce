@@ -28,6 +28,7 @@ import {
 } from "../src/lib/crm/location-confidence.ts";
 import { buildPhoenixInsights } from "../src/lib/crm/phoenix-insights.ts";
 import { pruneLineFirst, regionsForLine } from "../src/lib/crm/reps-list-board.ts";
+import { awaitingBrickSub, brickSpreadLine } from "../src/lib/crm/reps-list-labels.ts";
 import { groupContactsByBrick, type BrickIndex } from "../src/lib/crm/reps-list.ts";
 
 /**
@@ -269,6 +270,53 @@ export function runRepsListTests() {
       grouped.groups.map((group) => `${group.heading}:${group.rows.length}`),
       ["Nag Hammadi-Qena I-Upper Egypt:1", "No location yet:3"],
       "the SFE's \"where to find\" outranks the CRM region as a heading, and the three doctors Phoenix knows nothing about sit under Phoenix CRM's own words, after every named locality however large",
+    );
+  }
+
+  // ── "No location yet" is never counted as a locality awaiting a brick ────────────────────────
+  // Shahd's Pharmacies tab read "2 pharmacies across 1 locality awaiting a brick" when both
+  // pharmacies had no location at all (owner, 2026-10-31). The summary line and the board tile
+  // state those rows apart, in rows.
+  {
+    const nowhere = { count: 2, heading: "No location yet", mapped: false };
+    assert.equal(
+      brickSpreadLine("2 pharmacies", [nowhere]),
+      "2 pharmacies, no location yet",
+      "a tab holding only the no-location group names no locality at all",
+    );
+    assert.equal(
+      brickSpreadLine("120 contacts", [
+        ...Array.from({ length: 6 }, (_, i) => ({ count: 20, heading: `Brick ${i}`, mapped: true })),
+        nowhere,
+      ]),
+      "120 contacts across 6 bricks · 2 with no location yet",
+    );
+    assert.equal(
+      brickSpreadLine("9 contacts", [
+        { count: 5, heading: "Smouha", mapped: true },
+        { count: 3, heading: "Qena", mapped: false },
+        nowhere,
+      ]),
+      "9 contacts across 1 brick and 1 locality awaiting one · 2 with no location yet",
+    );
+    assert.equal(brickSpreadLine("3 contacts", [{ count: 3, heading: "Qena", mapped: false }]), "3 contacts across 1 locality awaiting a brick");
+
+    const rows = (n: number) => Array.from({ length: n }, () => ({}));
+    assert.equal(
+      awaitingBrickSub({ groups: [{ heading: "No location yet", mapped: false, rows: rows(2) }], unmappedRegionCount: 1 }),
+      "2 with no location yet",
+      "the board tile does not call the no-location group a locality not yet mapped",
+    );
+    assert.equal(
+      awaitingBrickSub({
+        groups: [
+          { heading: "Qena", mapped: false, rows: rows(3) },
+          { heading: "No location yet", mapped: false, rows: rows(2) },
+        ],
+        unmappedRegionCount: 2,
+      }),
+      "1 locality not yet mapped · 2 with no location yet",
+      "and one locality is singular",
     );
   }
 

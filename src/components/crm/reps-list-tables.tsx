@@ -39,7 +39,7 @@ import {
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
-import { REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
+import { brickSpreadLine, REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
@@ -1433,16 +1433,16 @@ export function RepsListContacts({
   // somewhere this rep has a pharmacy, so counting it on the Pharmacies tab overstates the spread
   // and — worse — the same list feeds the Brick picker, where it becomes a choice that empties the
   // table with no explanation.
-  const brickCount = tabGroups.filter((group) => group.mapped).length;
-  const localityCount = tabGroups.length - brickCount;
-  const bricks = `${brickCount} ${brickCount === 1 ? "brick" : "bricks"}`;
-  const localities = `${localityCount} ${localityCount === 1 ? "locality" : "localities"}`;
-  const spread =
-    localityCount === 0
-      ? bricks
-      : brickCount === 0
-        ? `${localities} awaiting a brick`
-        : `${bricks} and ${localities} awaiting one`;
+  //
+  // "No location yet" is neither a brick nor a locality, and is stated apart — see brickSpreadLine.
+  const spread = brickSpreadLine(
+    held,
+    tabGroups.map((group) => ({
+      count: group.rows.filter((row) => inTab(row, tab)).length,
+      heading: group.heading,
+      mapped: group.mapped,
+    })),
+  );
 
   // The field surface's controls; every other surface keeps its own two classes.
   const labelClass = collapsible ? FIELD_LABEL_CLASS : LABEL_CLASS;
@@ -1673,7 +1673,7 @@ export function RepsListContacts({
         {totalCount === 0
           ? held
           : shownCount === totalCount
-            ? `${held} across ${spread}`
+            ? spread
             : `${shownCount} of ${totalCount} shown · ${visible.length} of ${tabGroups.length} groups`}
       </p>
 
