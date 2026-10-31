@@ -137,6 +137,8 @@ export const SEAT_VIEW_REFUSED_READS: readonly RegExp[] = [
   /^\/api\/recruitment\/interview-calendar\/my-calendar-feed(\/|$)/,
   // The month's bank transfer file: every account number and amount, and an audit row naming who took it.
   /^\/api\/payroll\/[^/]+\/bank-file(\/|$)/,
+  // The bank account-opening letter: national IDs, mobiles and base salaries, and an audit row naming who took it.
+  /^\/api\/hiring-pack\/bank-account-letter(\/|$)/,
 ];
 
 /** Whether a request with this method and path may run during a seat view. */

@@ -5,6 +5,7 @@ import { HiringPackManager } from "@/components/hiring-pack/hiring-pack-manager"
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { BANK_LETTER_PAGE } from "@/lib/hiring-pack/bank-account-letter";
 import { hrFormsAccessFor, packForViewer, type HrFormsAccess } from "@/lib/hiring-pack/paper-access";
 import {
   getHiringPack,
@@ -106,6 +107,7 @@ async function HiringPackContent({
 
   return (
     <HiringPackManager
+      bankLetterHref={forms.paperScope === null && !forms.withholdSalary ? BANK_LETTER_PAGE.href : null}
       canManage={forms.canManage}
       candidates={candidates}
       initialError={initialError}

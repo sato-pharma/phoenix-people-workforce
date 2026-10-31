@@ -1320,6 +1320,7 @@ import { runHiringDocumentsDeadlineTests } from "./hiring-documents-deadline.tes
 import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-notes.test.ts";
 import { runHiringPackInsuranceWageTests } from "./hiring-pack-insurance-wage.test.ts";
 import { runHiringPackCompanyDetailsTests } from "./hiring-pack-company-details.test.ts";
+import { runHiringPackBankAccountLetterTests } from "./hiring-pack-bank-account-letter.test.ts";
 import { runHiringPackPaperEditorTests } from "./hiring-pack-paper-editor.test.ts";
 import { runHiringPackCustomTemplateRenderTests } from "./hiring-pack-custom-template-render.test.ts";
 import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates.test.ts";
@@ -11586,6 +11587,11 @@ await runTest("same pharmacy, same person in a direct order and a marketing requ
 await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);
 
 await runTest("rollup settle: the roll-up reads a file over 1 MiB, so a suite-registry PR on main is closed as carried, never left open by ENOBUFS", runRollupExecBufferTests);
+
+await runTest(
+  "bank account letter: the original letter's seven columns in its order, right to left, base salary as a plain integer, everyone without FAB ticked, heading repeats and no row splits, no seal, audited before the file",
+  runHiringPackBankAccountLetterTests,
+);
 
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

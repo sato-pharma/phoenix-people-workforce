@@ -31,6 +31,7 @@ import {
   DoorOpen,
   FileSignature,
   FileText,
+  Landmark,
   Loader2,
   PencilLine,
   Printer,
@@ -38,6 +39,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -750,6 +752,11 @@ type Props = {
   paperScope?: readonly HiringPackDocument[] | null;
   /** True for the salary-blind seat: no salary or insurance-wage box on screen. */
   withholdSalary?: boolean;
+  /**
+   * Where the bank account-opening letter lives, or null to offer no link. Passed only by the admin
+   * page, and only for a viewer the letter's own gate admits (not a paper-scoped or salary-blind seat).
+   */
+  bankLetterHref?: string | null;
 };
 
 /**
@@ -769,6 +776,7 @@ const NO_TEMPLATES: StoredTemplate[] = [];
 const PaperScopeContext = createContext<readonly HiringPackDocument[] | null>(null);
 
 export function HiringPackManager({
+  bankLetterHref = null,
   canManage,
   candidates,
   initialError,
@@ -1359,6 +1367,16 @@ export function HiringPackManager({
     <div className="relative overflow-clip rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-5">
         <AdminPageHero
+          actions={
+            bankLetterHref ? (
+              <Button asChild className="h-10 rounded-none" variant="outline">
+                <Link href={bankLetterHref}>
+                  <Landmark />
+                  Bank account letter
+                </Link>
+              </Button>
+            ) : null
+          }
           badges={
             <>
               <AdminInsightChip tone="orange">{currentCount} on staff</AdminInsightChip>

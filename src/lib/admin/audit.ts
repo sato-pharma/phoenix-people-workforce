@@ -229,6 +229,9 @@ export type AuditEntityType =
   // request can take up to 500 of them, so who took which cards is recorded. Not written on the
   // screen's dry run, which hands back no file.
   | "business_cards_export"
+  // The bank account-opening letter: each file carries the chosen people's national IDs, mobiles,
+  // addresses and base salaries, so who took which list is recorded before the file is returned.
+  | "bank_account_letter_export"
   | "crm_plan_sync"
   // The Super Admin starting or stopping a TEAM's count from Phoenix CRM on every other screen (owner,
   // 2026-10-02: "Only when I start it"). Written by phoenix_crm_set_team_start itself, in the same
