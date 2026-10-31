@@ -1352,7 +1352,13 @@ export function runRepsListTests() {
       "the List filter must offer no pharmacy-only choice: it renders on the Contacts tab, where such an option empties the table by definition — the misleading the tabs were added to remove",
     );
 
-    const palette = board.match(/const NEIGHBOUR_TINTS = \[([\s\S]*?)\] as const;/);
+    // ONE copy of the palette, in brick-tints.ts, shared with the Phoenix CRM List and the plan day.
+    assert.ok(
+      /import \{[^}]*\bneighbourTint\b[^}]*\} from "@\/components\/phoenix-crm\/brick-tints";/.test(board),
+      "the Reps List reads the neighbourhood colours from the one shared palette, never a copy of its own",
+    );
+    assert.ok(!board.includes("const NEIGHBOUR_TINTS"), "no second copy on the Reps List");
+    const palette = readFileSync("src/components/phoenix-crm/brick-tints.ts", "utf8").match(/export const NEIGHBOUR_TINTS = \[([\s\S]*?)\] as const;/);
     assert.ok(
       palette,
       "the neighbourhood palette must exist: the owner asked for one colour per neighbourhood, not one colour for all of them",

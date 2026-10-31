@@ -24,6 +24,7 @@ import type { AddressInfo } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   HARD_STOP_AT,
@@ -69,6 +70,23 @@ function testTheDecision() {
   assert.equal(shouldInstall({ ...on, PHOENIX_DEV_GRACEFUL_RESTART: "0" }, ["node", ...server]), false);
 }
 
+// node's own http client and timers, never the globals: many test files in the same process swap
+// globalThis.fetch (and some the timers) for a stub, and one left in place meant /slow never reached
+// this server, so the wait below spun for ever and froze the whole test shard (2026-10-31).
+function get(url: string): Promise<string> {
+  return new Promise((done, fail) => {
+    http
+      .get(url, { agent: false }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => (body += chunk));
+        res.on("end", () => done(body));
+        res.on("error", fail);
+      })
+      .on("error", fail);
+  });
+}
+
 async function testOnARealServer() {
   const heap = { used_heap_size: at(0.5), heap_size_limit: LIMIT };
   const exits: number[] = [];
@@ -103,20 +121,24 @@ async function testOnARealServer() {
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-    const slow = fetch(`${base}/slow`).then((r) => r.text());
+    const slow = get(`${base}/slow`);
     slow.catch(() => {}); // a failure path drops the socket; the assertion, not this, is the report
-    while (hook.state.inFlight < 1) await new Promise((r) => setTimeout(r, 5));
+    const deadline = Date.now() + 10_000;
+    while (hook.state.inFlight < 1) {
+      assert.ok(Date.now() < deadline, "/slow never reached the server within 10 s — a failure, never a hang");
+      await sleep(5);
+    }
 
     heap.used_heap_size = at(0.85);
-    assert.equal(await fetch(`${base}/fast`).then((r) => r.text()), "fast");
-    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(await get(`${base}/fast`), "fast");
+    await sleep(20);
     assert.deepEqual(exits, [], "the restart came due while /slow was streaming, so it must wait — this exit is the 419");
     assert.equal(hook.state.inFlight, 1);
     assert.ok(logs.some((line) => line.includes("restarting once the 1 request(s) in flight finish")), `the wait is announced: ${logs.join(" | ")}`);
 
     releaseSlow();
     assert.equal(await slow, "first half, second half", "the streaming request is delivered whole before the restart");
-    await new Promise((r) => setTimeout(r, 20));
+    await sleep(20);
     assert.deepEqual(exits, [NEXT_RESTART_EXIT_CODE], "and the moment it closes, the server restarts with Next's own code");
     assert.ok(logs.some((line) => /restarting now \(no request in flight\)/.test(line)), `the restart says why: ${logs.join(" | ")}`);
 

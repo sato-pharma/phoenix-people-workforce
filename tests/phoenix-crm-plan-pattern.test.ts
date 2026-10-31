@@ -105,13 +105,17 @@ export function runPhoenixCrmPlanPatternTests() {
     assert.ok(board.includes("findNeighbours(keyed)"), "neighbours come from the old module");
     assert.ok(board.includes("clusterRows(keyed, found)"), "and so does the gathering that puts a block's rows under each other");
     assert.ok(board.includes("const neighbourhoods = neighbourhoodsIn(rawEntry.rows);"), "run per GROUP, so a comparison never crosses a brick heading");
-    assert.equal((board.match(/border-sky-400|border-rose-400|border-teal-400|border-lime-400|border-indigo-400/g) ?? []).length, 5, "five hues, as the old board has");
+    // The five hues live in ONE copy, brick-tints.ts, shared with the Reps List and the plan day.
+    const tints = stripComments(readFileSync(new URL("../src/components/phoenix-crm/brick-tints.ts", import.meta.url), "utf8"));
+    assert.equal((tints.match(/border-sky-400|border-rose-400|border-teal-400|border-lime-400|border-indigo-400/g) ?? []).length, 5, "five hues, as the old board has");
+    assert.ok(/import \{[^}]*\bneighbourTint\b[^}]*\} from "@\/components\/phoenix-crm\/brick-tints";/.test(board), "and the board reads them from there, never a copy of its own");
+    assert.ok(!board.includes("const NEIGHBOUR_TINTS"), "no second copy on the board");
     assert.ok(board.includes("nearTint?.fill"), "the wash lands on the ADDRESS cell — the thing being compared");
     assert.ok(board.includes("Also here:"), "and the row names WHICH doctors, because the use of it is planning one stop instead of three");
 
     // Violet is the shared customer on both boards; a hue that answered two questions would be worse
     // than no hue at all.
-    assert.ok(!/violet/.test(board.slice(board.indexOf("const NEIGHBOUR_TINTS"), board.indexOf("] as const;", board.indexOf("const NEIGHBOUR_TINTS")))), "violet is reserved for the shared customer");
+    assert.ok(!/violet/.test(tints.slice(tints.indexOf("export const NEIGHBOUR_TINTS"), tints.indexOf("] as const;", tints.indexOf("export const NEIGHBOUR_TINTS")))), "violet is reserved for the shared customer");
   }
 
   console.log("phoenix-crm plan pattern: OK");
