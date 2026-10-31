@@ -587,6 +587,30 @@ can see were the same set (83 for the company readers, 0 for the rest).
 read of a seat that can see others' requests) and its `payroll_resignation_candidates` reads (now only the
 resignations page itself); compare the day's total with Wednesday 28 Oct's 689,708.
 
+### Cut 4 — Phoenix CRM's people's names, shared for a minute (31 Oct 2026)
+
+After the badges, the next-largest repeat on Wednesday 28 Oct was one `employees` read:
+`select=hr_id,full_name,nickname&hr_id=in.(…)`, 17,895 requests that day, nearly every one of them from
+`loadPeopleNames` (`src/lib/phoenix-crm/server/people.ts`) — recognisable by each HR id asked twice, upper
+and lower case (`hrIdLookupKeys`). Every Phoenix CRM screen names the rep and the manager above him, and
+each loader on the screen asked for the same names again. In the two busiest hours (10:00–12:00 Cairo)
+it made 2,239 requests over 234 distinct sets of people, and 1,582 of them were the very same request
+made within the minute before.
+
+The read now goes through the shared read cache (`getOrLoadShared`, `src/lib/cache/shared-read.ts`), keyed
+by the exact sorted set of people: a caller only ever receives the names it asked about, a copy is at most
+a minute old, screens asking for the same people at once share one read, and a failed read throws and is
+never kept. A name is display only — nothing approves, pays or picks a recipient from it. Production has
+no employee stored twice under different capitalisation (checked 31 Oct), so "the first row wins" can
+pick no other row than before. Pinned by `tests/shared-read-cache.test.ts` block 14.
+
+Before relying on the door, it was checked against the same log: the brick-name read that already goes
+through it repeated within a minute only 4 times in those two hours, against 1,582 here.
+
+**How to see that it worked after the deploy.** Count a Cairo weekday's `employees` requests whose URL
+carries `select=hr_id%2Cfull_name%2Cnickname&hr_id=in.` against Wednesday 28 Oct's 17,895; the share
+repeated within a minute of the same request should fall from about 70% to near zero.
+
 ## Metrics & alerting — DEAD (nothing pages the owner)
 
 All of the below lived in GCP Cloud Monitoring inside project `phoenix-workforce-498619`. That
