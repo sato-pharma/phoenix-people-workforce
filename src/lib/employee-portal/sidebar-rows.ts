@@ -25,7 +25,6 @@ export type EmployeePortalSidebarRow = {
 export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] = [
   { href: "/employee-portals/training-manager", label: "Overview", section: "Training Manager" },
   { href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", section: "Training Manager" },
-  { href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", section: "Training Manager" },
   { href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", section: "Training Manager" },
   { href: "/employee-portals/training-manager/rep-achievement", label: "Rep Achievement", section: "Training Manager" },
   { href: "/employee-portals/field-crm/plan", label: "Weekly Plan", section: "Training Manager" },
@@ -73,6 +72,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/dsms-performance", label: "DSMs Performance", section: "Performance" },
   { href: "/employee-portals/incentive", label: "Incentive", section: "Performance" },
   { href: "/employee-portals/probation", label: "Probation Tracker", section: "Performance" },
+  { href: "/employee-portals/coaching-skills-survey", label: "Coaching Skills Survey", section: "Performance" },
 
   { href: "/employee-portals/make-it-happen", label: "Make It Happen", section: "Forecast & Target" },
   { href: "/employee-portals/field-crm/forecast", label: "Daily Forecast", section: "Forecast & Target" },

@@ -1,72 +1,17 @@
-import { ClipboardCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import {
-  AdminInsightChip,
-  AdminPageHero,
-} from "@/components/admin/admin-design-system";
-import { CoachingReportForm } from "@/components/coaching/coaching-report-form";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { canAccess, canManageCoachingReports } from "@/lib/auth/permissions";
-import {
-  resolveAccessContextFromPage,
-  resolveViewerIdentityFromPage,
-} from "@/lib/auth/server";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
+// The old coaching report form takes no new reports (owner, 2026-10-31): the Team Coaching Skills Survey
+// replaced it. This address and every old link to it land on the survey. The 122 old reports stay
+// readable at /coaching.
+// A portal viewer is forwarded by the admin layout before this runs (src/lib/navigation/portal-twins.ts);
+// the first redirect is the page's own declaration of that twin.
 export default async function NewCoachingReportPage() {
   const access = await resolveAccessContextFromPage();
-  if (!access.loginId && !access.hrId) {
-    redirect("/login");
-  }
-  if (access.role === "Training Manager") {
-    redirect("/employee-portals/training-manager/create-coaching-report");
-  }
-  if (!canManageCoachingReports(access) || !(await canAccess(access, "coaching", "create"))) {
-    redirect("/admin/access");
-  }
-
-  const [viewer, employees] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getEmployeeDirectoryRows(),
-  ]);
-
-  const activeEmployees = employees
-    .filter((employee) => (employee.employmentStatus ?? "active") === "active")
-    .map((employee) => ({
-      areaName: employee.areaName,
-      fullName: employee.displayName,
-      hrId: employee.hrId,
-      jobTitle: employee.jobTitle,
-      lineName: employee.lineName,
-      teamId: employee.teamId,
-    }));
-
-  return (
-    <div className="space-y-6">
-      <AdminPageHero
-        badges={
-            <div className="flex flex-wrap gap-2">
-              <AdminInsightChip>Field Excellence</AdminInsightChip>
-              <AdminInsightChip tone="orange">Structured 120-point score</AdminInsightChip>
-              <AdminInsightChip tone="slate">Employee acknowledgment workflow</AdminInsightChip>
-            </div>
-          }
-          description="Create a field coaching report with structured scoring, development feedback, and employee acknowledgment workflow."
-          eyebrow="Coaching"
-          icon={<ClipboardCheck className="h-3.5 w-3.5" />}
-          title="Coaching Report"
-        />
-
-        <CoachingReportForm
-          coach={{
-            hrId: access.hrId,
-            name: viewer.displayName,
-            role: viewer.roleLabel || access.role,
-          }}
-          employees={activeEmployees}
-        />
-    </div>
-  );
+  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/coaching-skills-survey");
+  redirect("/coaching/skills-survey");
 }

@@ -17,6 +17,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canOpenSkillsSurvey } from "@/lib/coaching/skills-survey/access";
 import { getCoachingReports } from "@/lib/coaching/service";
 import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
 import {
@@ -28,7 +29,7 @@ import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const createCoachingReportHref = "/employee-portals/training-manager/create-coaching-report";
+const skillsSurveyHref = "/employee-portals/coaching-skills-survey";
 const fieldCoachingHref = "/employee-portals/training-manager/field-coaching";
 const archivedCoachingHref = "/employee-portals/training-manager/field-coaching/archived";
 
@@ -132,9 +133,9 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
     );
   }
 
-  const canCreate =
-    canManageCoachingReports(access) &&
-    (await canAccess(access, "coaching", "create"));
+  // The old coaching form takes no new reports (owner, 2026-10-31); its button now opens the survey.
+  const showSkillsSurveyLink =
+    canOpenSkillsSurvey(access) && (await canAccess(access, "coaching_skills_survey", "read"));
   const canExport =
     canManageCoachingReports(access) ||
     (await canAccess(access, "coaching", "export"));
@@ -148,16 +149,16 @@ export default async function TrainingManagerFieldCoachingReportsPage() {
       <EmployeePortalActionBar
         actions={
           <>
-            {canCreate ? <EmployeePortalActionLink href={createCoachingReportHref} label="Create Coaching Report" /> : null}
+            {showSkillsSurveyLink ? <EmployeePortalActionLink href={skillsSurveyHref} label="Team Coaching Skills Survey" /> : null}
             <EmployeePortalActionLink href={archivedCoachingHref} label="Resigned Evaluations" />
           </>
         }
       />
 
       <CoachingReportsCenter
-        canCreate={canCreate}
         canExport={canExport}
-        createHref={createCoachingReportHref}
+        showSkillsSurveyLink={showSkillsSurveyLink}
+        skillsSurveyHref={skillsSurveyHref}
         detailHrefBase={fieldCoachingHref}
         filterOptions={buildFilterOptions(reports, employees)}
         initialReports={reports}

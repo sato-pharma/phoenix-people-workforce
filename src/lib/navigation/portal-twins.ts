@@ -162,10 +162,17 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/admin/direct-orders/report", to: "/employee-portals/direct-orders/report" },
   { from: "/admin/direct-orders/:id", to: "/employee-portals/direct-orders/:id", carryQuery: ["from"] },
 
+  // ── Team Coaching Skills Survey (owner, 2026-10-31) — ahead of the coaching block, whose
+  // `/coaching/:id` would otherwise read "skills-survey", "new" or "import" as a report id. The old
+  // form's create and import pages now land on the survey, for every role.
+  { from: "/coaching/skills-survey", to: "/employee-portals/coaching-skills-survey", carryQuery: ["quarter", "tab"] },
+  { from: "/coaching/skills-survey/:hrId", to: "/employee-portals/coaching-skills-survey/:hrId", carryQuery: ["quarter"] },
+  { from: "/coaching/new", to: "/employee-portals/coaching-skills-survey" },
+  { from: "/coaching/import", to: "/employee-portals/coaching-skills-survey" },
+
   // ── Coaching: the pages branch on role, so these rules do too ──────────────
   { from: "/coaching", to: "/employee-portals/training-manager/field-coaching", roles: TRAINING_MANAGER },
   { from: "/coaching", to: "/employee-portals/coaching", roles: COACHING_PORTAL_ROLES },
-  { from: "/coaching/new", to: "/employee-portals/training-manager/create-coaching-report", roles: TRAINING_MANAGER },
   { from: "/coaching/analytics", to: "/employee-portals/training-manager", roles: TRAINING_MANAGER },
   { from: "/coaching/analytics", to: "/employee-portals/coaching", roles: COACHING_PORTAL_ROLES },
   { from: "/coaching/:id", to: "/employee-portals/training-manager/field-coaching/:id", roles: TRAINING_MANAGER },

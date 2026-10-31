@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarX2, CheckCircle2, ClipboardCheck, FilePlus2, Receipt } from "lucide-react";
+import { CalendarDays, CalendarX2, CheckCircle2, ClipboardCheck, ListChecks, Receipt } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { CoachingQualityRadarCard } from "@/components/coaching/coaching-quality-radar-card";
@@ -149,7 +149,7 @@ export default async function TrainingManagerOverviewPage() {
 
       <QuickActions
         actions={[
-          { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Submit Coach Report" },
+          { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Skills Survey" },
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Submit Vacation" },
           { href: "/employee-portals/excuses", icon: CalendarX2, label: "Submit Excuse" },
           { href: "/employee-portals/submit-expense", icon: Receipt, label: "Submit Expense" },

@@ -7,8 +7,8 @@ import {
   ChartColumnBig,
   CheckCircle2,
   CircleDollarSign,
-  ClipboardCheck,
   Flag,
+  ListChecks,
   Network,
   PieChart,
   ReceiptText,
@@ -137,7 +137,9 @@ const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales" },
   { href: "/employee-portals/roi", icon: PieChart, label: "ROI" },
   { href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, label: "Expenses" },
-  { href: "/employee-portals/coaching", icon: ClipboardCheck, label: "Coaching" },
+  // The Team Coaching Skills Survey (owner, 2026-10-31) replaced the old coaching reports, so it takes
+  // their tile. The old reports stay readable on each rep's Employee 360.
+  { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Skills Survey" },
   { href: "/employee-portals/med-reps-performance", icon: Users, label: "Med Reps" },
   { href: "/employee-portals/dsms-performance", icon: Network, label: "DSMs" },
   { href: "/employee-portals/organogram", icon: Building2, label: "Organogram" },

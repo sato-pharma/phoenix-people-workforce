@@ -168,7 +168,8 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(medicalRep.showMedicalRepExpensesTab, true, "Medical Rep should see their own expenses tab");
   assert.equal(medicalRep.showMyCoachingTab, false, "Medical Rep should not see My Coaching Reports on the sidebar (hidden by owner instruction 2026-09-24)");
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
-  assert.equal(medicalRep.showTrainingManagerCreateCoachingTab, false, "Medical Rep should not see Create Coaching Report");
+  // The Team Coaching Skills Survey replaced the old form (owner, 2026-10-31): never shown to the person rated.
+  assert.equal(medicalRep.showCoachingSkillsSurveyTab, false, "Medical Rep must never see the Coaching Skills Survey");
 
   // The APP ACCESS role is authoritative and now takes precedence over the job title in
   // resolvePortalRole (fix 2026-08-15; see tests/portal-nav-acting-dm-uses-app-role.test.ts for the
@@ -232,7 +233,7 @@ export function runEmployeePortalNavigationTests() {
   const districtManager = resolveEmployeePortalNavVisibility("District Manager");
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
-  assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
+  assert.equal(districtManager.showCoachingSkillsSurveyTab, true, "DSM rates their team in the Coaching Skills Survey");
   // Added 2026-08-22 with isLineScopedOrganogramRole's District Manager branch. The DSM held
   // organogram: ["read"] with no link and no scope gate, so the audience picker inside OrgChartTree
   // was unreachable for him. The second assertion is the point of the exact-match spelling: the
@@ -256,6 +257,7 @@ export function runEmployeePortalNavigationTests() {
   // missing (probation walks the RM subtree, coaching is RM=hierarchy, organogram is line-scoped).
   const regionalManager = resolveEmployeePortalNavVisibility("Regional Manager");
   assert.equal(regionalManager.showTeamCoachingTab, true, "RM should see Team Coaching Reports (coaching read is RM=hierarchy)");
+  assert.equal(regionalManager.showCoachingSkillsSurveyTab, true, "RM reads their region in the Coaching Skills Survey");
   assert.equal(regionalManager.showProbationTab, true, "RM should see the Probation Tracker (canReadProbationEmployee has an RM subtree branch)");
   assert.equal(regionalManager.showOrganogramTab, true, "RM should see the Organogram (line-scoped, same grain as NSM)");
   assert.equal(regionalManager.showMyCoachingTab, false, "RM should not see My Coaching Reports (that is the Medical Rep view)");
@@ -530,7 +532,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(trainingManager.showMyPerformanceTab, false, "Training Manager should not see My Performance");
   assert.equal(trainingManager.showIncentiveTab, false, "Training Manager should not see Incentive");
   assert.equal(trainingManager.showTrainingManagerDashboardTab, true, "Training Manager should see Coaching Dashboard");
-  assert.equal(trainingManager.showTrainingManagerCreateCoachingTab, true, "Training Manager should see Create Coaching Report");
+  assert.equal(trainingManager.showCoachingSkillsSurveyTab, true, "Training Manager should see the Coaching Skills Survey, which replaced Create Coaching Report");
   assert.equal(trainingManager.showTrainingManagerFieldCoachingTab, true, "Training Manager should see Field Coaching");
   assert.equal(
     trainingManager.showTrainingManagerWeeklyPlanTab,

@@ -37,6 +37,7 @@ import { EmployeeCvManager, EmployeeCvPicker, type StagedCv } from "@/components
 import { EmployeeHiringDocumentsCard } from "@/components/employees/employee-hiring-documents-card";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import { totalExperienceMaxYears } from "@/lib/employees/total-experience-rules";
 import type { EmployeeImportDryRunResponse } from "@/lib/imports/employee-import-types";
 import { suggestOrgTitleCasing } from "@/lib/imports/org-title-case";
 import {
@@ -212,6 +213,10 @@ type EmployeeFormState = {
   universityName: string;
   collegeMajor: string;
   seniorYear: string;
+  // HR's total years of experience (owner, 2026-10-31), and the value it was opened with — the save
+  // sends the field only when HR changed it, so an ordinary save never touches it.
+  totalExperienceYears: string;
+  totalExperienceYearsSaved: string;
   contractDuration: string;
   contractRenewalDate: string;
   probationEndDate: string;
@@ -291,6 +296,8 @@ const emptyForm: EmployeeFormState = {
   universityName: "",
   collegeMajor: "",
   seniorYear: "",
+  totalExperienceYears: "",
+  totalExperienceYearsSaved: "",
   contractDuration: "",
   contractRenewalDate: "",
   probationEndDate: "",
@@ -798,6 +805,8 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     universityName: employee.universityName ?? "",
     collegeMajor: employee.collegeMajor ?? "",
     seniorYear: employee.seniorYear ?? "",
+    totalExperienceYears: employee.totalExperienceYears == null ? "" : String(employee.totalExperienceYears),
+    totalExperienceYearsSaved: employee.totalExperienceYears == null ? "" : String(employee.totalExperienceYears),
     contractDuration: employee.contractDuration ?? "",
     contractRenewalDate: employee.contractRenewalDate ?? "",
     probationEndDate: employee.probationEndDate ?? "",
@@ -928,6 +937,9 @@ function formToFullPayload(form: EmployeeFormState, originalHrId: string | null)
     universityName: optionalText(form.universityName),
     collegeMajor: optionalText(form.collegeMajor),
     seniorYear: optionalText(form.seniorYear),
+    ...(form.totalExperienceYears.trim() !== form.totalExperienceYearsSaved
+      ? { totalExperienceYears: optionalText(form.totalExperienceYears) }
+      : {}),
     contractDuration: optionalText(form.contractDuration),
     contractRenewalDate: optionalText(form.contractRenewalDate),
     probationEndDate: optionalText(form.probationEndDate),
@@ -1630,6 +1642,11 @@ export function EmployeeManagement({
       if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
         return `${label} must be a valid positive number.`;
       }
+    }
+
+    const totalExperience = form.totalExperienceYears.trim();
+    if (totalExperience && !(Number(totalExperience) >= 0 && Number(totalExperience) <= totalExperienceMaxYears)) {
+      return `Total years of experience must be a number from 0 to ${totalExperienceMaxYears}, for example 2 or 0.5.`;
     }
 
     return null;
@@ -3750,6 +3767,14 @@ export function EmployeeManagement({
                     onChange={(value) => updateForm("seniorYear", value)}
                     placeholder="e.g. 2019"
                     value={form.seniorYear}
+                  />
+                  {/* HR's field (owner, 2026-10-31) — the Team Coaching Skills Survey reads it as Years in Role. */}
+                  <TextField
+                    label="Total years of experience"
+                    onChange={(value) => updateForm("totalExperienceYears", value)}
+                    placeholder="All years in the role, at Sato and before. e.g. 2.5"
+                    type="number"
+                    value={form.totalExperienceYears}
                   />
                 </div>
               </div>

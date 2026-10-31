@@ -257,7 +257,7 @@ export async function runSalaryBlindSeatTests() {
   const moneyColumns = employeeMasterWorkbookContract.columns
     .map((column, index) => ({ column, index }))
     .filter(({ column }) => column.kind === "money");
-  assert.ok(moneyColumns.length >= 10, "AL..AU: nine imported money columns plus the insurance wage");
+  assert.ok(moneyColumns.length >= 10, "AM..AV: nine imported money columns plus the insurance wage");
   for (const { column, index } of moneyColumns) {
     const letterColumn = master.getColumn(index + 1);
     assert.equal(letterColumn.hidden, true, `${column.header} must be HIDDEN, never removed — removing shifts every letter`);

@@ -69,7 +69,6 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   // ── Training Manager ──────────────────────────────────────────────────────────────────────────
   "/employee-portals/training-manager": { icon: "school-outline", section: "Training Manager" },
   "/employee-portals/training-manager/coaching": { icon: "easel-outline", section: "Training Manager" },
-  "/employee-portals/training-manager/create-coaching-report": { icon: "create-outline", section: "Training Manager" },
   "/employee-portals/training-manager/field-coaching": { icon: "walk-outline", section: "Training Manager" },
   "/employee-portals/training-manager/rep-achievement": { icon: "trophy-outline", section: "Training Manager" },
   // Her Phoenix CRM weekly plan sits in her own section, since the Phoenix CRM row is never hers.
@@ -122,6 +121,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/dsms-performance": { icon: "medal-outline", section: "Performance" },
   "/employee-portals/incentive": { icon: "gift-outline", section: "Performance" },
   "/employee-portals/probation": { icon: "checkbox-outline", section: "Performance" },
+  "/employee-portals/coaching-skills-survey": { icon: "list-outline", section: "Performance" },
   // ── Forecast & Target ─────────────────────────────────────────────────────────────────────────
   "/employee-portals/make-it-happen": { icon: "sparkles-outline", section: "Forecast & Target" },
   "/employee-portals/field-crm/forecast": { icon: "today-outline", section: "Forecast & Target" },

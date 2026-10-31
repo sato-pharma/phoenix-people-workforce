@@ -16,6 +16,7 @@ import type {
   CoachingScoreInput,
 } from "@/lib/coaching/types";
 import { coachingErrorMessage } from "@/lib/coaching/service";
+import { CoachingOldFormRetiredError } from "@/lib/coaching/old-form-retired";
 
 export class CoachingApiError extends Error {
   constructor(
@@ -239,6 +240,10 @@ export function filtersFromRequest(request: Request): CoachingReportFilters {
 export function jsonError(error: unknown, fallbackMessage: string) {
   if (error instanceof CoachingApiError) {
     return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });
+  }
+  // The old coaching form takes no new reports (owner, 2026-10-31).
+  if (error instanceof CoachingOldFormRetiredError) {
+    return NextResponse.json({ error: "retired", message: error.message }, { status: 410 });
   }
 
   const message = coachingErrorMessage(error) || fallbackMessage;

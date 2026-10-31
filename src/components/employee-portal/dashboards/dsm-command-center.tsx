@@ -1,7 +1,7 @@
 import {
   CalendarDays,
-  ChartColumnBig,
   ClipboardCheck,
+  ListChecks,
   ReceiptText,
   Target,
   TrendingUp,
@@ -48,7 +48,9 @@ import { adminSoftDepthClassName } from "@/components/admin/admin-design-tokens"
 
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Team Performance" },
-  { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics" },
+  // The Team Coaching Skills Survey (owner, 2026-10-31) took the Coaching Analytics tile: no District
+  // Manager ever wrote an old-form report, so that dashboard was always empty for them.
+  { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Skills Survey" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Vacation Request" },
   { href: "/employee-portals/med-reps-performance", icon: Target, label: "Med Rep Performance" },
@@ -57,7 +59,7 @@ const DASHBOARDS: readonly DashboardLink[] = [
 
 const ACTIONS: readonly ActionStripItem[] = [
   { href: "/employee-portals/team-performance", icon: Users, label: "Review Team Plan" },
-  { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics" },
+  { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Rate My Team" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approve Requests" },
   { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
 ];

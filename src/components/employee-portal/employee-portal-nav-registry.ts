@@ -13,7 +13,6 @@ import {
   ClipboardCheck,
   ClipboardList,
   Database,
-  FilePlus2,
   FileSpreadsheet,
   FileText,
   Fingerprint,
@@ -25,6 +24,7 @@ import {
   IdCard,
   Mail,
   Inbox,
+  ListChecks,
   type LucideIcon,
   Map as MapIcon,
   MapPinCheck,
@@ -228,7 +228,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Training Manager
   { label: "Overview", fullLabel: "TM Overview", href: "/employee-portals/training-manager", icon: Home, flags: ["showTrainingManagerDashboardTab"] },
   { label: "TM coach", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },
-  { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"], permission: { resource: "coaching", action: "create" } },
   { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Achieve", fullLabel: "Rep Achievement", href: "/employee-portals/training-manager/rep-achievement", icon: Trophy, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "rep_product_achievement", action: "read" } },
   { label: "Plan", fullLabel: "Weekly Plan", href: "/employee-portals/field-crm/plan", icon: CalendarRange, flags: ["showTrainingManagerWeeklyPlanTab"] },
@@ -260,6 +259,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // No `permission`: the page is opened by a share row, not by a grant (src/lib/recruitment/interview-calendar.ts).
   { label: "Interviews", fullLabel: "Interview Calendar", href: "/employee-portals/interview-calendar", icon: CalendarClock, flags: ["showInterviewCalendarTab"] },
   { label: "Probation", fullLabel: "Probation Tracker", href: "/employee-portals/probation", icon: ClipboardCheck, flags: ["showProbationTab"], permission: { resource: "probation", action: "read" } },
+  // The Team Coaching Skills Survey (owner, 2026-10-31) — managers only, never the person rated.
+  { label: "Survey", fullLabel: "Coaching Skills Survey", href: "/employee-portals/coaching-skills-survey", icon: ListChecks, flags: ["showCoachingSkillsSurveyTab"], permission: { resource: "coaching_skills_survey", action: "read" } },
   { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"], permission: { resource: "organogram", action: "read" } },
   // Expenses
   { label: "My exp", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"], permission: { resource: "expenses", action: "read" } },

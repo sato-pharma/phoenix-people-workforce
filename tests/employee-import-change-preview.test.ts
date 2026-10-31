@@ -186,6 +186,22 @@ export async function runEmployeeImportChangePreviewTests() {
   assert.equal(arabic.before, "—", "an empty current value renders as an em dash, not as nothing");
   assert.equal(arabic.after, "عمر جاويش");
 
+  // ── 4b. total years of experience is a NUMBER on both sides ─────────────────
+  const EXPERIENCE = "Total years of experience";
+  const experienceOf = (stored: number | undefined, uploaded: number | null) =>
+    buildImportChangePreview({
+      employees: [employee({ totalExperienceYears: stored })],
+      records: [record({ totalExperienceYears: uploaded })],
+    }).people[0]?.changes.find((change) => change.label === EXPERIENCE);
+  assert.equal(experienceOf(2, 2), undefined, "the same number HR exported is not a change");
+  assert.equal(experienceOf(2, null), undefined, "a blank cell is not a change — the confirm step skips it");
+  const firstFill = experienceOf(undefined, 0);
+  assert.ok(firstFill, "0 years over nothing is a change — 0 is a value, not a blank");
+  assert.equal(firstFill.before, "—");
+  assert.equal(firstFill.after, "0");
+  assert.equal(firstFill.isMoney, false, "years of experience is never counted as a pay move");
+  assert.equal(experienceOf(2, 2.5)?.after, "2.5", "the one decimal is shown as typed");
+
   // ── 5. HR_IDs match case-insensitively, as the importer resolves them ───────
   const lowerCase = buildImportChangePreview({
     employees: directory,

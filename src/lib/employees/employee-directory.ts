@@ -27,6 +27,8 @@ import { isMissingRequiredManager } from "./hierarchy-governance";
 import { isMissingColumnError } from "./missing-column";
 import { resolveEmployeeDisplayName } from "./display-name";
 import { storedPayFlagsFromRow, type StoredPayFlags } from "./salary-blind-pay-flags";
+import { readTotalExperienceByHrId, totalExperienceFor } from "./total-experience";
+import { parseTotalExperienceYears } from "./total-experience-rules";
 
 const hrIdPattern = /^[A-Z0-9][A-Z0-9_-]*$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -109,6 +111,10 @@ export type EmployeeDirectoryRow = {
   universityName: string | null;
   collegeMajor: string | null;
   seniorYear: string | null;
+  // HR's total years of experience (owner, 2026-10-31) and the Cairo day it last changed. Optional:
+  // only the cached directory carries them, from their own read (src/lib/employees/total-experience.ts).
+  totalExperienceYears?: number | null;
+  totalExperienceAsOf?: string | null;
   contractDuration: string | null;
   probationEndDate: string | null;
   // The day the COMPANY's private medical insurance card was received. The government booklet's
@@ -232,6 +238,8 @@ export type EmployeeMutationInput = {
   universityName?: string | null;
   collegeMajor?: string | null;
   seniorYear?: string | null;
+  /** HR's total years of experience. Left out = untouched; empty = cleared. */
+  totalExperienceYears?: string | number | null;
   contractDuration?: string | null;
   contractRenewalDate?: string | null;
   probationEndDate?: string | null;
@@ -1389,7 +1397,7 @@ async function loadResidenceByHrId(hrIds: string[]) {
 function loadDirectoryShared(): Promise<EmployeeDirectoryData> {
   if (!inFlightDirectory) {
     const generation = directoryGeneration;
-    inFlightDirectory = fetchEmployeeDirectory()
+    inFlightDirectory = fetchEmployeeDirectoryWithTotalExperience()
       .then((result) => {
         // A write that invalidated the cache while this load was running must not be undone by it.
         if (generation === directoryGeneration) {
@@ -1434,6 +1442,20 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
     throw error;
   }
+}
+
+// HR's total years of experience (owner, 2026-10-31) rides on the directory from its OWN fail-soft read,
+// never the big select below: a select naming a missing column fails the whole directory (42703).
+async function fetchEmployeeDirectoryWithTotalExperience(): Promise<EmployeeDirectoryData> {
+  const [directory, totalExperience] = await Promise.all([fetchEmployeeDirectory(), readTotalExperienceByHrId()]);
+  if (totalExperience.size === 0) return directory;
+  return {
+    ...directory,
+    employees: directory.employees.map((employee) => {
+      const value = totalExperienceFor(totalExperience, employee.hrId);
+      return value ? { ...employee, totalExperienceAsOf: value.asOf, totalExperienceYears: value.years } : employee;
+    }),
+  };
 }
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
@@ -2533,6 +2555,11 @@ async function employeePayload(
     university_name: compact(input.universityName),
     college_major: compact(input.collegeMajor),
     senior_year: compact(input.seniorYear),
+    // HR's total years of experience (owner, 2026-10-31) — written only when the save sends it, so a
+    // save that never touched the field never names the column.
+    ...(input.totalExperienceYears !== undefined
+      ? { total_experience_years: parseTotalExperienceYears(input.totalExperienceYears) }
+      : {}),
     contract_duration: compact(input.contractDuration),
     contract_renewal_date: compact(input.contractRenewalDate),
     probation_end_date: compact(input.probationEndDate),

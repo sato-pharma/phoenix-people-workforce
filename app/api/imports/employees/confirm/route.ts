@@ -561,6 +561,11 @@ function employeeValues(
     ...(record.universityName ? { university_name: truncate(record.universityName, 160) } : {}),
     ...(record.collegeMajor ? { college_major: truncate(record.collegeMajor, 160) } : {}),
     ...(record.seniorYear ? { senior_year: truncate(record.seniorYear, 40) } : {}),
+    // A NUMBER, so tested by type rather than for truth: 0 years is a value HR typed (a new starter
+    // with no experience), not a blank cell. Blank, or a column the sheet does not carry, is null.
+    ...(typeof record.totalExperienceYears === "number"
+      ? { total_experience_years: record.totalExperienceYears }
+      : {}),
     ...(record.contractDuration ? { contract_duration: truncate(record.contractDuration, 80) } : {}),
     ...(record.contractRenewalDate ? { contract_renewal_date: record.contractRenewalDate } : {}),
     ...(record.probationEndDate ? { probation_end_date: record.probationEndDate } : {}),
@@ -656,6 +661,7 @@ const OPTIONAL_EMPLOYEE_COLUMNS = [
   "university_name",
   "college_major",
   "senior_year",
+  "total_experience_years",
   "contract_duration",
   "contract_renewal_date",
   "probation_end_date",
@@ -670,7 +676,7 @@ const OPTIONAL_EMPLOYEE_COLUMNS = [
 ] as const;
 
 /**
- * 🔴 SAYING YES HERE RE-IMPORTS EVERY EMPLOYEE WITH ALL 45 OF THOSE COLUMNS STRIPPED — salary,
+ * 🔴 SAYING YES HERE RE-IMPORTS EVERY EMPLOYEE WITH ALL 46 OF THOSE COLUMNS STRIPPED — salary,
  * national id, bank account, contract, residence, insurance — and the import then reports success.
  *
  * It used to say yes to `message.includes(<column>)` for each of them, which is true of any error
@@ -723,6 +729,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
     university_name,
     college_major,
     senior_year,
+    total_experience_years,
     contract_duration,
     contract_renewal_date,
     probation_end_date,
@@ -771,6 +778,7 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
   void university_name;
   void college_major;
   void senior_year;
+  void total_experience_years;
   void contract_duration;
   void contract_renewal_date;
   void probation_end_date;

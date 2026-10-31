@@ -13,11 +13,11 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import {
   canAccess,
-  canManageCoachingReports,
   normalizeHrId,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canOpenSkillsSurvey } from "@/lib/coaching/skills-survey/access";
 import {
   buildCoachingReportAnalytics,
   buildTrainingManagerCoachingComparison,
@@ -41,7 +41,7 @@ import { formatEmployeeDisplayName } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const createCoachingReportHref = "/employee-portals/training-manager/create-coaching-report";
+const skillsSurveyHref = "/employee-portals/coaching-skills-survey";
 const fieldCoachingHref = "/employee-portals/training-manager/field-coaching";
 
 function toOptionMap(
@@ -166,9 +166,9 @@ export default async function TrainingManagerCoachingDashboardPage() {
     );
   }
 
-  const canCreate =
-    canManageCoachingReports(access) &&
-    (await canAccess(access, "coaching", "create"));
+  // The old coaching form takes no new reports (owner, 2026-10-31); its button now opens the survey.
+  const showSkillsSurveyLink =
+    canOpenSkillsSurvey(access) && (await canAccess(access, "coaching_skills_survey", "read"));
 
   return (
     <EmployeePortalPageShell
@@ -180,16 +180,16 @@ export default async function TrainingManagerCoachingDashboardPage() {
         actions={
           <>
             <EmployeePortalActionLink href={fieldCoachingHref} label="Back to Reports Center" />
-            {canCreate ? (
-              <EmployeePortalActionLink href={createCoachingReportHref} label="Create Coaching Report" />
+            {showSkillsSurveyLink ? (
+              <EmployeePortalActionLink href={skillsSurveyHref} label="Team Coaching Skills Survey" />
             ) : null}
           </>
         }
       />
 
       <CoachingAnalyticsDashboard
-        canCreate={canCreate}
-        createHref={createCoachingReportHref}
+        showSkillsSurveyLink={showSkillsSurveyLink}
+        skillsSurveyHref={skillsSurveyHref}
         filterOptions={buildFilterOptions(optionReports, optionQuarterlySummary, employees)}
         initialFilters={{ year: String(currentYear) }}
         initialData={payload}

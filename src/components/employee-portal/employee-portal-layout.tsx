@@ -42,7 +42,7 @@ import {
   Building2,
   ChartColumnBig,
   FileCheck2,
-  FilePlus2,
+  ListChecks,
   ClipboardList,
   ShieldCheck,
   Database,
@@ -380,10 +380,10 @@ function buildEmployeePortalSections({
   showDeductionsTab = true,
   showMyCoachingTab: _showMyCoachingTab = false,
   showTeamCoachingTab: _showTeamCoachingTab = false,
-  showTrainingManagerCreateCoachingTab = false,
   showTrainingManagerDashboardTab = false,
   showTrainingManagerFieldCoachingTab = false,
   showTrainingManagerWeeklyPlanTab = false,
+  showCoachingSkillsSurveyTab = false,
   showReportItTab = false,
   showReportItDashboardTab = false,
   showRoiIntelligenceTab = false,
@@ -434,7 +434,6 @@ function buildEmployeePortalSections({
       items: [
         ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager", label: "Overview", icon: Home }] : []),
         ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/coaching", label: "Coaching Dashboard", icon: ChartColumnBig }] : []),
-        ...(showTrainingManagerCreateCoachingTab ? [{ href: "/employee-portals/training-manager/create-coaching-report", label: "Create Coaching Report", icon: FilePlus2 }] : []),
         ...(showTrainingManagerFieldCoachingTab ? [{ href: "/employee-portals/training-manager/field-coaching", label: "Field Coaching", icon: ClipboardCheck }] : []),
         ...(showTrainingManagerDashboardTab ? [{ href: "/employee-portals/training-manager/rep-achievement", label: "Rep Achievement", icon: Trophy }] : []),
         // Her Phoenix CRM weekly plan (owner, 2026-10-24: "she doesnt have a phx crm from where does she
@@ -572,6 +571,9 @@ function buildEmployeePortalSections({
         ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: Users }] : []),
         ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
         ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
+        // The Team Coaching Skills Survey (owner, 2026-10-31) — managers only, never the person rated.
+        // It replaced the Training Manager's "Create Coaching Report" row.
+        ...(showCoachingSkillsSurveyTab ? [{ href: "/employee-portals/coaching-skills-survey", label: "Coaching Skills Survey", icon: ListChecks }] : []),
       ],
     },
     {

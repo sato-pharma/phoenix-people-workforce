@@ -28,7 +28,7 @@ const employeePortalStaticRoutes = [
   "/employee-portals/team-expenses",
   "/employee-portals/team-performance",
   "/employee-portals/training-manager",
-  "/employee-portals/training-manager/create-coaching-report",
+  "/employee-portals/coaching-skills-survey",
   "/employee-portals/training-manager/field-coaching",
   "/employee-portals/vacancies",
 ];

@@ -27,7 +27,6 @@ import {
   Contact,
   Database,
   FileCheck2,
-  FilePlus2,
   FileClock,
   FileSearch,
   FileSignature,
@@ -1269,6 +1268,7 @@ export const adminNavigationSectionSeeds = [
         permissions: [
           { resource: "coaching" },
           { resource: "coaching", action: "create" },
+          { resource: "coaching_skills_survey", action: "read" },
           { resource: "double_visit_analytics", action: "read" },
         ],
       },
@@ -1717,7 +1717,8 @@ const employeePortalNavigationSectionSeeds = [
       // The Training Manager section and the coaching destinations are back in the portal catalog
       // (owner, 2026-10-24: "lift the hide from everyone"), after the 2026-09-29 hide removed them.
       { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
-      { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },
+      // The Team Coaching Skills Survey (owner, 2026-10-31) replaced "Create Coaching Report" here.
+      { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Coaching Skills Survey", permissions: [{ resource: "coaching_skills_survey", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Training Manager"] },
       { href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       // Every rep's published achievement % per product — month, quarter, semester (owner, 2026-10-26).
       { href: "/employee-portals/training-manager/rep-achievement", icon: Trophy, label: "Rep Achievement", permissions: [{ resource: "rep_product_achievement", action: "read" }], roles: ["Training Manager"] },
@@ -4314,6 +4315,15 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
 // Coaching" section (see adminNavigationSectionSeeds above, now collapsed to
 // one link).
 export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
+  // The Team Coaching Skills Survey (owner, 2026-10-31) — it replaced the old coaching report form, so
+  // it leads the hub. Managers only; the person rated never sees it.
+  {
+    href: "/coaching/skills-survey",
+    icon: ListChecks,
+    label: "Coaching Skills Survey",
+    description: "Each District Manager rates their team's coaching skills once a quarter. Ranking and analysis are automatic.",
+    permissions: [{ resource: "coaching_skills_survey", action: "read" }],
+  },
   {
     href: "/coaching",
     icon: ClipboardCheck,
@@ -4334,13 +4344,8 @@ export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
   },
   // Double Visit Analytics moved to the CRM hub (2026-08-02) — see crmPageItems. It is CRM visit
   // data, and listing it in both hubs would put one module in two places.
-  {
-    href: "/coaching/import",
-    icon: FileUp,
-    label: "Import History",
-    description: "History of coaching evaluation imports.",
-    permissions: [{ action: "create", resource: "coaching" }],
-  },
+  // Import History left the hub on 2026-10-31: the old form takes no new reports, imported ones included,
+  // and /coaching/import now lands on the survey.
   {
     href: "/coaching/archived",
     icon: Archive,

@@ -1,4 +1,4 @@
-import { ClipboardCheck, Plus } from "lucide-react";
+import { ClipboardCheck, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -16,6 +16,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canOpenSkillsSurvey } from "@/lib/coaching/skills-survey/access";
 import { getCoachingReports } from "@/lib/coaching/service";
 import type { CoachingReportSummaryRow } from "@/lib/coaching/types";
 import {
@@ -95,9 +96,9 @@ export default async function CoachingReportsPage() {
     redirect("/admin/access");
   }
 
-  const canCreate =
-    canManageCoachingReports(access) &&
-    (await canAccess(access, "coaching", "create"));
+  // The old coaching form takes no new reports (owner, 2026-10-31); its button now opens the survey.
+  const showSkillsSurveyLink =
+    canOpenSkillsSurvey(access) && (await canAccess(access, "coaching_skills_survey", "read"));
   const canExport =
     canManageCoachingReports(access) ||
     (await canAccess(access, "coaching", "export"));
@@ -109,13 +110,13 @@ export default async function CoachingReportsPage() {
     <div className="space-y-6">
       <AdminPageHero
         actions={
-            canCreate ? (
+            showSkillsSurveyLink ? (
               <Link
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover"
-                href="/coaching/new"
+                href="/coaching/skills-survey"
               >
-                <Plus className="h-4 w-4" />
-                Create Coaching Report
+                <ListChecks className="h-4 w-4" />
+                Team Coaching Skills Survey
               </Link>
             ) : null
           }
@@ -133,7 +134,7 @@ export default async function CoachingReportsPage() {
         />
 
         <CoachingReportsCenter
-          canCreate={canCreate}
+          showSkillsSurveyLink={showSkillsSurveyLink}
           canExport={canExport}
           filterOptions={buildFilterOptions(reports, employees)}
           initialReports={reports}

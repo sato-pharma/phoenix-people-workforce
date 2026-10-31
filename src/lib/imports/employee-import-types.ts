@@ -38,6 +38,7 @@ export type EmployeeImportField =
   | "universityName"
   | "collegeMajor"
   | "seniorYear"
+  | "totalExperienceYears"
   | "contractDuration"
   | "contractRenewalDate"
   | "probationEndDate"
@@ -145,6 +146,12 @@ export type EmployeeImportRecord = {
   universityName: string | null;
   collegeMajor: string | null;
   seniorYear: string | null;
+  /**
+   * HR's total years of experience (owner, 2026-10-31): 0 to 60, one decimal, already checked by
+   * `parseTotalExperienceYears`. Null when the cell is blank, the column is absent or the value is
+   * unreadable — the last is reported as a row error, so it never reaches the confirm step.
+   */
+  totalExperienceYears: number | null;
   contractDuration: string | null;
   contractRenewalDate: string | null;
   probationEndDate: string | null;

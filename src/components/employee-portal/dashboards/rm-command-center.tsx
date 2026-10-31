@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Flag,
+  ListChecks,
   Map as MapIcon,
   Network,
   ReceiptText,
@@ -224,6 +225,8 @@ const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
   { href: "/employee-portals/plans", icon: CalendarDays, label: "Region Plans" },
   { href: "/employee-portals/expense-dashboard", icon: ReceiptText, label: "Expenses" },
+  // The Team Coaching Skills Survey (owner, 2026-10-31) — read only, across the whole region.
+  { href: "/employee-portals/coaching-skills-survey", icon: ListChecks, label: "Skills Survey" },
 ];
 
 const ACTIONS: readonly ActionStripItem[] = [
