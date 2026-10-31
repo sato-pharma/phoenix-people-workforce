@@ -2661,6 +2661,7 @@ import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runDeployFailureAlertTests } from "./deploy-failure-alert.test.ts";
 import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
+import { runSyntheticTelegramAlertTests } from "./synthetic-telegram-alert.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
@@ -10393,6 +10394,11 @@ await runTest(
 await runTest(
   "the production smoke test keeps a GREEN job conclusion and reports failure to the dashboard and as an ::error:: annotation, so a real outage can never withhold the deploy carrying its own fix (a schedule run always attaches its suite to main HEAD)",
   runSyntheticJourneysNeverWithholdsTests,
+);
+
+await runTest(
+  "a failed production smoke test pages the owner's Telegram: once per run, from main against production only, on a failed journey or a run that died before checking anything, naming each failed journey once in Cairo time, before the dashboard save, and from a script that needs nothing installed",
+  runSyntheticTelegramAlertTests,
 );
 
 await runTest(

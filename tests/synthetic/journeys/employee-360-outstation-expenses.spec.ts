@@ -12,6 +12,14 @@ import { runJourney } from "../helpers/run-journey";
 
 const SCHEMA_ERROR_TEXT = /could not find the table|schema cache|schema not ready/i;
 
+// The section headings below are matched by NAME, never by level. The 2026-10-27 personnel-record
+// layout (#6606) made the numbered chapters the <h2>s and moved every section title to <h3>; these
+// journeys still asked for level 2, so both profile journeys failed every run from 2026-10-28 while
+// the page was fine — and the "never shown to a Medical Rep" check below passed whatever the page
+// showed, because no level-2 heading by that name could exist any more. No chapter title
+// (Leadership, Results, Field work, Development, Cost) shares a section's name, so each name
+// still matches one heading.
+
 test("Employee 360 directory loads", async ({ page }, testInfo) => {
   await runJourney(
     page,
@@ -48,10 +56,10 @@ test("Employee 360 Medical Rep profile loads with expenses correctly hidden", as
       await expect(firstProfileLink).toBeVisible();
       await Promise.all([page.waitForURL(/\/employee-360\/.+/), firstProfileLink.click()]);
 
-      await expect(page.getByRole("heading", { level: 2, name: /Visits & Coverage/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /Visits & Coverage/i })).toBeVisible();
       await expect(page.getByText(SCHEMA_ERROR_TEXT)).toHaveCount(0);
-      // Business rule: Medical Reps never see the Expenses & Outstation section.
-      await expect(page.getByRole("heading", { level: 2, name: /Expenses & Outstation/i })).toHaveCount(0);
+      // Business rule: Medical Reps never see the Expenses & Outstation section — at ANY heading level.
+      await expect(page.getByRole("heading", { name: /Expenses & Outstation/i })).toHaveCount(0);
     },
   );
 });
@@ -76,14 +84,14 @@ test("Employee 360 manager profile shows expenses without a schema error", async
       await expect(firstProfileLink).toBeVisible();
       await Promise.all([page.waitForURL(/\/employee-360\/.+/), firstProfileLink.click()]);
 
-      // That section's heading is role-conditional — employee-360-view.tsx:560 renders
+      // That section's heading is role-conditional — employee-360-view.tsx's `ownVisitsPart` renders
       // `isLeader ? "Own Field Presence" : "Visits & Coverage"`. A district manager is a leader,
       // so asserting the rep wording here could never pass. Same section, different label.
-      await expect(page.getByRole("heading", { level: 2, name: /Own Field Presence/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /Own Field Presence/i })).toBeVisible();
       await expect(page.getByText(SCHEMA_ERROR_TEXT)).toHaveCount(0);
-      // Leaders only (DM/RM/NSM/PM/TM) — see employee-360-view.tsx:724. This is the assertion the
-      // whole journey exists for, and it has not executed since the UI changed.
-      await expect(page.getByRole("heading", { level: 2, name: /Expenses & Outstation/i })).toBeVisible();
+      // Leaders only (DM/RM/NSM/PM/TM) — `expensesPart` in employee-360-view.tsx. This is the
+      // assertion the whole journey exists for.
+      await expect(page.getByRole("heading", { name: /Expenses & Outstation/i })).toBeVisible();
     },
   );
 });
