@@ -28,6 +28,7 @@ import {
 } from "../src/lib/crm/location-confidence.ts";
 import { buildPhoenixInsights } from "../src/lib/crm/phoenix-insights.ts";
 import { pruneLineFirst, regionsForLine } from "../src/lib/crm/reps-list-board.ts";
+import { awaitingBrickSub, brickSpreadLine } from "../src/lib/crm/reps-list-labels.ts";
 import { groupContactsByBrick, type BrickIndex } from "../src/lib/crm/reps-list.ts";
 
 /**
@@ -205,6 +206,120 @@ export function runRepsListTests() {
     assert.equal(grouped.unmappedRegionCount, 0, "both contacts resolved, so nothing is awaiting a brick");
   }
 
+  // ── Phoenix CRM first: the validated place's brick, then the SFE's "where to find" ─────────────
+  // Owner, 2026-10-31: "any data anywhere depending on data from ireports must shift to pulling its
+  // data from phoenix crm". Contact 1 has all four routes and must sit where his validated place was
+  // filed; contact 2 is still waiting and carries only the SFE sheet's locality; contact 3's place
+  // brick is stale (no name row), so the next route — his "where to find" — is taken; contact 4 has a
+  // locality with its own hyphen. Shahd's whole list sat under "No CRM region recorded" before this.
+  {
+    const grouped = groupContactsByBrick(
+      [row(1, "Ahmed", "Smouha"), row(2, "Mohamed", null), row(3, "Omar", null), row(4, "Hassan", null)],
+      index({
+        brickByContactId: new Map([[1, "B-PRECISE"]]),
+        brickByRegionName: new Map([
+          ["smouha", "B-REGION"],
+          ["damanhor", "B182-1"],
+          ["ma-adi", "B-MAADI"],
+        ]),
+        intakeByContactId: new Map([
+          [1, "Damanhor-Behira I-Alex"],
+          [2, "Damanhor-Behira I-Alex"],
+          [3, "Damanhor -Behira I-Alex"],
+          [4, "Ma-adi-Cairo 1-Cairo"],
+        ]),
+        metaByBrickId: new Map([
+          ["B-PLACE", { areaCode: "BH1", areaName: "Behira 1", name: "Damanhor West", regionName: "Alex-BHR" }],
+          ["B-PRECISE", { areaCode: "AL1", areaName: "Alexandria 1", name: "Smouha East" }],
+          ["B-REGION", { areaCode: "AL1", areaName: "Alexandria 1", name: "Smouha" }],
+          ["B182-1", { areaCode: "BH1", areaName: "Behira 1", name: "Damanhor", regionName: "Alex-BHR" }],
+          ["B-MAADI", { areaCode: "CA1", areaName: "Cairo 1", name: "Maadi", regionName: "Cairo" }],
+        ]),
+        placeBrickByContactId: new Map([
+          [1, "B-PLACE"],
+          [3, "B-STALE"],
+        ]),
+      }),
+    );
+
+    assert.deepEqual(
+      grouped.groups.map((group) => [group.heading, group.rows.map((contact) => contact.name)]),
+      [
+        ["Damanhor", ["Mohamed", "Omar"]],
+        ["Damanhor West", ["Ahmed"]],
+        ["Maadi", ["Hassan"]],
+      ],
+      "the validated place's brick beats every iReports360 route; a doctor still waiting sits under the brick of the locality the SFE wrote; a stale place brick falls through to that locality; a hyphenated locality is matched whole",
+    );
+    assert.equal(
+      grouped.groups.find((group) => group.heading === "Damanhor West")?.regionName,
+      "Alex-BHR",
+      "a brick heading carries its area's region, so the board can say Behira 1 · Alex-BHR",
+    );
+    assert.equal(grouped.unmappedRegionCount, 0);
+  }
+
+  // ── The SFE's own words head an unmapped group; "No location yet" is the last resort, last ───
+  {
+    const grouped = groupContactsByBrick(
+      [row(1, "Ahmed", null), row(2, "Mohamed", null), row(3, "Omar", null), row(4, "Hassan", "Qena")],
+      index({ intakeByContactId: new Map([[4, "Nag Hammadi-Qena I-Upper Egypt"]]) }),
+    );
+
+    assert.deepEqual(
+      grouped.groups.map((group) => `${group.heading}:${group.rows.length}`),
+      ["Nag Hammadi-Qena I-Upper Egypt:1", "No location yet:3"],
+      "the SFE's \"where to find\" outranks the CRM region as a heading, and the three doctors Phoenix knows nothing about sit under Phoenix CRM's own words, after every named locality however large",
+    );
+  }
+
+  // ── "No location yet" is never counted as a locality awaiting a brick ────────────────────────
+  // Shahd's Pharmacies tab read "2 pharmacies across 1 locality awaiting a brick" when both
+  // pharmacies had no location at all (owner, 2026-10-31). The summary line and the board tile
+  // state those rows apart, in rows.
+  {
+    const nowhere = { count: 2, heading: "No location yet", mapped: false };
+    assert.equal(
+      brickSpreadLine("2 pharmacies", [nowhere]),
+      "2 pharmacies, no location yet",
+      "a tab holding only the no-location group names no locality at all",
+    );
+    assert.equal(
+      brickSpreadLine("120 contacts", [
+        ...Array.from({ length: 6 }, (_, i) => ({ count: 20, heading: `Brick ${i}`, mapped: true })),
+        nowhere,
+      ]),
+      "120 contacts across 6 bricks · 2 with no location yet",
+    );
+    assert.equal(
+      brickSpreadLine("9 contacts", [
+        { count: 5, heading: "Smouha", mapped: true },
+        { count: 3, heading: "Qena", mapped: false },
+        nowhere,
+      ]),
+      "9 contacts across 1 brick and 1 locality awaiting one · 2 with no location yet",
+    );
+    assert.equal(brickSpreadLine("3 contacts", [{ count: 3, heading: "Qena", mapped: false }]), "3 contacts across 1 locality awaiting a brick");
+
+    const rows = (n: number) => Array.from({ length: n }, () => ({}));
+    assert.equal(
+      awaitingBrickSub({ groups: [{ heading: "No location yet", mapped: false, rows: rows(2) }], unmappedRegionCount: 1 }),
+      "2 with no location yet",
+      "the board tile does not call the no-location group a locality not yet mapped",
+    );
+    assert.equal(
+      awaitingBrickSub({
+        groups: [
+          { heading: "Qena", mapped: false, rows: rows(3) },
+          { heading: "No location yet", mapped: false, rows: rows(2) },
+        ],
+        unmappedRegionCount: 2,
+      }),
+      "1 locality not yet mapped · 2 with no location yet",
+      "and one locality is singular",
+    );
+  }
+
   // ── An unmapped contact is SHOWN, under its own region name ─────────────────────────────────
   {
     const grouped = groupContactsByBrick(
@@ -253,7 +368,7 @@ export function runRepsListTests() {
     assert.equal(grouped.counts.total, 2);
     assert.deepEqual(
       grouped.groups.map((group) => group.heading),
-      ["No CRM region recorded"],
+      ["No location yet"],
       "a null and a blank region are the same statement and share one heading, which says what is true rather than showing an empty label",
     );
   }
@@ -841,6 +956,44 @@ export function runRepsListTests() {
       [0, 1],
       "neighbourhoods are numbered in the order they are READ down the column; numbering them any other way scatters the palette and costs the colours the legibility they were added for",
     );
+  }
+
+  // ── THE VALIDATION PIN OUTRANKS THE CHECK-IN ─────────────────────────────────────────────────
+  // Owner, 2026-10-31: "use the validation pin and build it". A rep with no iReports360 check-ins read
+  // "No address on record" on every row and was never painted a single neighbour, while her validated
+  // doctors stood on live photos 3 to 19 metres apart. A row now stands where its validated photo was
+  // taken, and on its last check-in only while it is not validated yet.
+  {
+    const validated = (lat: number) => ({ address: null, lat, lon: 30.7, validatedAt: "2026-10-20T08:00:00Z" });
+    const checkedIn = (lat: number) => ({ address: null, at: "2026-09-01T08:00:00Z", lat, lon: 30.7 });
+    const grouped = groupContactsByBrick(
+      [
+        // Two validated doctors 11 m apart with no check-in at all — a new rep's list.
+        { ...row(1, "Amal", "Kom Hamada"), place: validated(30.76), seenAt: null },
+        { ...row(2, "Ahmed", "Kom Hamada"), place: validated(30.7601), seenAt: null },
+        // An old check-in beside them, but the validated photo is 5 km away: the photo wins.
+        { ...row(3, "Basem", "Kom Hamada"), place: validated(30.805), seenAt: checkedIn(30.76005) },
+        // Not validated yet: the check-in still places him, 5 m from Ahmed.
+        { ...row(4, "Dina", "Kom Hamada"), place: null, seenAt: checkedIn(30.76015) },
+      ],
+      index(),
+    );
+    const byId = new Map(grouped.groups.flatMap((group) => group.rows).map((entry) => [entry.contactCrmId, entry]));
+    assert.ok(
+      byId.get(1)?.nearby?.some((entry) => entry.contactCrmId === 2),
+      "a validated doctor with no check-in is painted beside his validated neighbour — the whole point of the validation pin",
+    );
+    assert.equal(
+      byId.get(3)?.nearby ?? null,
+      null,
+      "the validated photo outranks an older check-in: a doctor whose photo stands 5 km away is not anyone's neighbour because a visit once logged him nearby",
+    );
+    assert.ok(
+      byId.get(4)?.nearby?.some((entry) => entry.contactCrmId === 2),
+      "a doctor not validated yet still stands on his check-in, so he is gathered with the validated doctors beside him",
+    );
+    assert.equal(byId.get(1)?.cluster, byId.get(4)?.cluster, "one neighbourhood, one colour, whichever pin placed each member");
+    assert.equal(byId.get(3)?.cluster ?? null, null, "the doctor standing alone carries no colour");
   }
 
   // ── SHARING IS AN IDENTITY JUDGEMENT, AND A NAME IS NOT AN IDENTITY ──────────────────────────
