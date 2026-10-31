@@ -342,6 +342,20 @@ export function boardLeadingWeek(monthStart: string, cairoToday: string): string
 }
 
 /**
+ * 🔴 WHETHER THE WEEK A BOARD OPENS WITH IS THE WEEK THE REP IS IN — then the board calls it "This
+ * week", never "First days" (2026-10-31, Alexandria CNS: "submitted weekly plans and got approval on it
+ * now they cannot see it").
+ *
+ * It is the running week whenever its Saturday is today's field week — the month's own leading week
+ * included. Saturday 31 October 2026 is both: November starts on a Sunday, so its leading week IS the
+ * running week, and the board filed the week the reps had just sent and had approved under "First days",
+ * beside an empty Week 1 it opened on. Asked only of `boardLeadingWeek`'s answer.
+ */
+export function boardLeadingWeekIsRunning(leadingWeek: string | null, cairoToday: string): boolean {
+  return leadingWeek !== null && leadingWeek === fieldWeekStart(cairoToday);
+}
+
+/**
  * When a month's plan is due: the last Thursday of the month BEFORE it (owner, 2026-09-26).
  *
  * Nothing in the module refuses a plan after this date — he ruled a late month is ACCEPTED and

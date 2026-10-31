@@ -828,6 +828,11 @@ export function PlanBoard({
         resource.reload();
         return;
       }
+      // 🔴 THE BOARD STAYS ON THE WEEK HE JUST SENT (2026-10-31, Alexandria CNS: "submitted weekly
+      // plans and got approval on it now they cannot see it"). A board opened on its default week holds
+      // no choice, so the read after the send moved it to `firstToPlan` — the next, empty week — and the
+      // week he had just sent seemed gone. Holding it makes that move his.
+      setWeekStart(state.week.weekStart);
       show({ tone: "good", title: `${name} sent for review`, message: reviewerSentence(view) });
       onChanged?.();
       resource.reload();
