@@ -339,8 +339,35 @@ function inboxEarlyZeroIsWiredBeforeTheReads() {
   const count = bodyOf(action, "export async function countAwaitingMyActionItems(", ACTION);
   const early = count.indexOf("if (!includeOutstationAdminSource && otherApprovalsInboxIsAlwaysEmptyFor(access)) return 0;");
   assert.ok(early >= 0, "countAwaitingMyActionItems must answer 0 for a self-only seat without reading the two dashboards");
-  assert.ok(early < count.indexOf("getResignationsDashboardData(access)"), "the early zero must come BEFORE the resignations read");
-  assert.ok(early < count.indexOf("getContractRenewalDashboardData(access)"), "the early zero must come BEFORE the contracts read");
+  const resignationsRead = count.indexOf("listVisibleResignationStatuses(access)");
+  const contractsRead = count.indexOf("listVisibleContractRenewalWorkflows(access)");
+  assert.ok(resignationsRead >= 0 && early < resignationsRead, "the early zero must come BEFORE the resignations read");
+  assert.ok(contractsRead >= 0 && early < contractsRead, "the early zero must come BEFORE the contracts read");
+
+  // THE LIGHTER COUNT (31 Oct 2026) reads two small loaders instead of the two dashboards. Each must
+  // scope a viewer exactly as its dashboard does, or the badge counts what the page will not list.
+  const lightResignations = bodyOf(resignations, "export async function listVisibleResignationStatuses(", RESIGNATIONS);
+  for (const [line, why] of [
+    ["const scopedAccess = access ?? systemAccessContext;", "the same default viewer as the dashboard"],
+    ["isCompanyResignationReader(scopedAccess)", "the same company-reader gate as the dashboard"],
+    ["return employee ? canSeeEmployee(scopedAccess, employee) : false;", "the same per-employee scope as the dashboard"],
+    ["resignationRowStatus(row)", "the same status rule as the dashboard's records"],
+  ] as const) {
+    assert.ok(lightResignations.includes(line), `listVisibleResignationStatuses must keep ${why}: ${line}`);
+  }
+  assert.match(bodyOf(resignations, "function mapResignation(", RESIGNATIONS), /const status = resignationRowStatus\(row\);/, "the dashboard's records must take their status from the same rule");
+  assert.match(lightResignations, /employeeHrId: row\.employee_hr_id/, "the count's resignation entry carries the record's own employee id, as mapResignation does");
+  for (const signature of ["export async function getContractRenewalDashboardData(", "export async function listVisibleContractRenewalWorkflows("]) {
+    assert.match(bodyOf(contracts, signature, CONTRACTS), /await visibleContractEmployees\(access\)|visibleContractEmployees\(access\),/, `${signature.slice(22, -1)} must take its employees from visibleContractEmployees, the one scope`);
+  }
+  assert.match(
+    bodyOf(contracts, "async function visibleContractEmployees(", CONTRACTS),
+    /isActiveEmployee\(employee\) && canSeeContractRow\(access, employee\)/,
+    "the one contract scope must stay the active employees canSeeContractRow admits",
+  );
+  const entries = bodyOf(action, "function residualInboxEntries(", ACTION);
+  assert.match(entries, /employeeHrId: record\.employeeHrId/, "the count's resignation entry must carry the record's own employee id");
+  assert.match(entries, /employeeHrId: workflow\.employeeHrId/, "the count's renewal entry must carry the request's own employee id, as mapContractRenewalItem does");
 
   // The proof leans on these exact lines; if one moves, the early zero must be re-proven.
   assert.match(

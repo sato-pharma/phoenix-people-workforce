@@ -337,10 +337,15 @@ export async function recordedContractRenewalDate(employeeHrId: string): Promise
   }
 }
 
-export async function getContractRenewalDashboardData(access?: AccessContext): Promise<ContractRenewalDashboardData> {
-  const employees = (await getEmployeeDirectoryRows()).filter(
+/** The active employees whose renewal this viewer may see — the dashboard's rows and the badge's, one rule. */
+async function visibleContractEmployees(access?: AccessContext) {
+  return (await getEmployeeDirectoryRows()).filter(
     (employee) => isActiveEmployee(employee) && canSeeContractRow(access, employee),
   );
+}
+
+export async function getContractRenewalDashboardData(access?: AccessContext): Promise<ContractRenewalDashboardData> {
+  const employees = await visibleContractEmployees(access);
   let contractsByHrId = new Map<string, ContractDbRow>();
   let requestsByHrId = new Map<string, ContractRenewalRecord>();
 
@@ -388,6 +393,29 @@ export async function getContractRenewalDashboardData(access?: AccessContext): P
       totalRequests: workflows.length,
     },
   };
+}
+
+/**
+ * The open renewal request of each employee this viewer may see — the dashboard's `workflow` column,
+ * row for row, without the dashboard. The sidebar badge's read (countAwaitingMyActionItems).
+ *
+ * WHY (31 Oct 2026, the owner's "lighter inbox count"). The badge read the whole dashboard above for
+ * a number, and that read every column of every active contract to work out renewal dates the count
+ * never looks at. This reads the same employees (visibleContractEmployees, the directory's cached
+ * copy) and only the open requests. A missing contract schema reads as no requests, as it does there.
+ */
+export async function listVisibleContractRenewalWorkflows(access?: AccessContext): Promise<ContractRenewalRecord[]> {
+  const [employees, requestsByHrId] = await Promise.all([
+    visibleContractEmployees(access),
+    getActiveRequestByHrId().catch((error: unknown) => {
+      if (!isContractRenewalSchemaMissing(error)) throw error;
+      return new Map<string, ContractRenewalRecord>();
+    }),
+  ]);
+  return employees.flatMap((employee) => {
+    const workflow = requestsByHrId.get(cleanHrId(employee.hrId) ?? "");
+    return workflow ? [workflow] : [];
+  });
 }
 
 function validateCreateInput(

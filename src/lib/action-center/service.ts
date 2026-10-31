@@ -23,8 +23,8 @@ import { canUseAdminOutstationWorkspace } from "@/lib/outstation/admin-access";
 import { listMedicalRepExpenseRequests, listOutstationRequests } from "@/lib/outstation/service";
 import { listMyOwnPlanSummaries, type OwnPlanSummary } from "@/lib/weekly-planning/service";
 import { resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
-import { getMyResignations, getResignationsDashboardData } from "@/lib/resignations/service";
-import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { getMyResignations, getResignationsDashboardData, listVisibleResignationStatuses } from "@/lib/resignations/service";
+import { getContractRenewalDashboardData, listVisibleContractRenewalWorkflows } from "@/lib/contracts/service";
 import { listMyDirectOrders } from "@/lib/direct-orders/service";
 import { describeDirectOrderBasketQuantities } from "@/lib/direct-orders/basket-label";
 import { formatHistoryMoney, historyDate, historyPlanPeriod } from "@/lib/action-center/approval-history-format";
@@ -275,6 +275,12 @@ export async function getMyRequestItems(
 
 const ACTIVE_CONTRACT_STATUSES = new Set(["requested", "manager_review", "hr_review"]);
 
+// What makes a record WAIT in this inbox — one rule each, read by the list (residualActionItems,
+// mapContractRenewalItem) and by the badge's count (residualInboxEntries), so the two cannot drift.
+const isOpenResignation = (status: string) => status === "submitted" || status === "under_review";
+const isOpenOutstation = (status: string) => status === "submitted";
+const isActiveContractRenewal = (status: string) => ACTIVE_CONTRACT_STATUSES.has(status);
+
 function liveEmployeeName(
   employees: EmployeeNameRosterRow[],
   hrId: string | null | undefined,
@@ -377,7 +383,7 @@ function mapContractRenewalItem(
   row: ContractRow,
   employees: EmployeeNameRosterRow[],
 ): ActionHubItem | null {
-  if (!row.workflow || !ACTIVE_CONTRACT_STATUSES.has(row.workflow.status)) return null;
+  if (!row.workflow || !isActiveContractRenewal(row.workflow.status)) return null;
   const w = row.workflow;
   return {
     id: w.id,
@@ -536,7 +542,7 @@ export async function getAwaitingMyActionItemsWithHealth(
 // Vacation (leave), excuse & weekly/monthly plans now live on the dedicated Approvals Hub pages
 // (/…/approvals/vacation, /…/approvals/excuse, /…/approvals/plan) — exclude them here so this
 // residual "Other Approvals" inbox shows each request in exactly one place.
-function survivesAwaitingInbox(item: ActionHubItem, access: AccessContext): boolean {
+function survivesAwaitingInbox(item: Pick<ActionHubItem, "module" | "employeeHrId">, access: AccessContext): boolean {
   return (
     item.module !== "leave" &&
     item.module !== "excuse" &&
@@ -578,12 +584,10 @@ function residualActionItems(input: {
 }): ActionHubItem[] {
   const items: ActionHubItem[] = [];
   for (const record of input.resignations?.records ?? []) {
-    if (record.status === "submitted" || record.status === "under_review") {
-      items.push(mapResignationItem(record, input.employees));
-    }
+    if (isOpenResignation(record.status)) items.push(mapResignationItem(record, input.employees));
   }
   for (const request of input.outstation ?? []) {
-    if (request.status === "submitted") items.push(mapOutstationItem(request, input.employees));
+    if (isOpenOutstation(request.status)) items.push(mapOutstationItem(request, input.employees));
   }
   for (const row of input.contract?.rows ?? []) {
     const item = mapContractRenewalItem(row, input.employees);
@@ -593,13 +597,44 @@ function residualActionItems(input: {
 }
 
 /**
- * How many items {@link getAwaitingMyActionItems} would list — for the 30 s sidebar badge poll.
+ * The count's twin of residualActionItems: the same three sources, the same open-status rules, and
+ * only the two fields the inbox filter reads (module and employee). A count never shows a name or a
+ * date, so it never needs the records those come from.
+ */
+function residualInboxEntries(input: {
+  resignations: Array<{ employeeHrId: string; status: string }> | null;
+  outstation: Array<{ employeeHrId: string; status: string }> | null;
+  contracts: Array<{ employeeHrId: string; status: string }> | null;
+}): Array<Pick<ActionHubItem, "module" | "employeeHrId">> {
+  const entries: Array<Pick<ActionHubItem, "module" | "employeeHrId">> = [];
+  for (const record of input.resignations ?? []) {
+    if (isOpenResignation(record.status)) entries.push({ module: "resignation", employeeHrId: record.employeeHrId });
+  }
+  for (const request of input.outstation ?? []) {
+    if (isOpenOutstation(request.status)) entries.push({ module: "outstation", employeeHrId: request.employeeHrId });
+  }
+  for (const workflow of input.contracts ?? []) {
+    if (isActiveContractRenewal(workflow.status)) entries.push({ module: "contract_renewal", employeeHrId: workflow.employeeHrId });
+  }
+  return entries;
+}
+
+/**
+ * How many items {@link getAwaitingMyActionItems} would list — for the sidebar badge.
  *
  * WHY (2026-10-04 performance review, PERF-001): the list reads seven sources and then throws away
  * every leave, excuse and plan item, so the badge was paying for the full vacation report (and the
  * excuse and plan reads) on every poll of every open tab for items it never counted. This reads only
  * the three sources whose items survive, through the same item builders and the same filter. The
  * directory is skipped too: it only supplies display names, which a count never reads.
+ *
+ * LIGHTER STILL (31 Oct 2026, the owner's "lighter inbox count"). The two sources it kept were read
+ * through their whole dashboards — every resignation column, the payroll leaver candidates, the
+ * historical leavers, a people lookup, the device register and every active contract — to count the
+ * one or two requests still waiting. It now reads listVisibleResignationStatuses and
+ * listVisibleContractRenewalWorkflows: the same viewers' scope, line for line, and only who is
+ * waiting and in which status. The items go through the list's own open-status rules
+ * (residualInboxEntries) and the list's own filter.
  *
  * A failed source counts as nothing, exactly as it always did through the list. Callers that must
  * tell a failure from a zero keep calling {@link getAwaitingMyActionItemsWithHealth}.
@@ -621,16 +656,15 @@ export async function countAwaitingMyActionItems(
   // of every 30 s badge poll, and the seats listed in otherApprovalsInboxIsAlwaysEmptyFor are most of
   // the company). The proof, and why it is an allow-list, sit with that predicate.
   if (!includeOutstationAdminSource && otherApprovalsInboxIsAlwaysEmptyFor(access)) return 0;
-  const [resignations, outstation, contract] = await Promise.allSettled([
-    getResignationsDashboardData(access),
+  const [resignations, outstation, contracts] = await Promise.allSettled([
+    listVisibleResignationStatuses(access),
     includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),
-    getContractRenewalDashboardData(access),
+    listVisibleContractRenewalWorkflows(access),
   ]);
-  return residualActionItems({
+  return residualInboxEntries({
     resignations: resignations.status === "fulfilled" ? resignations.value : null,
     outstation: outstation.status === "fulfilled" ? outstation.value : null,
-    contract: contract.status === "fulfilled" ? contract.value : null,
-    employees: [],
+    contracts: contracts.status === "fulfilled" ? contracts.value : null,
   }).filter((item) => survivesAwaitingInbox(item, access) && belongsInOtherApprovalsInbox(item)).length;
 }
 
