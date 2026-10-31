@@ -40,6 +40,7 @@ import {
   placeCustomer,
   PLANNED_ACTIVITY_NOTE_MAX,
   rebaseDraft,
+  repWeekToOpen,
   sameWeekdayIn,
   sameWeekNumberIn,
   savedWeekActivities,
@@ -519,6 +520,26 @@ export function runPhoenixCrmPlanBoardTests(): void {
       "b",
       "else the first open week",
     );
+
+    // Which week the rep's own board opens on (owner, 2026-10-31). Saturday 31 October: the week he is in
+    // (31 Oct) is approved and the coming one (7 Nov) is untouched.
+    const repWeeks = (running: string | null, coming: string | null, overdueWeek = false) => [
+      { weekStart: "2026-10-24", status: "approved", repState: "done", overdue: false },
+      { weekStart: "2026-10-31", status: running, repState: overdueWeek ? "plan" : "done", overdue: overdueWeek },
+      { weekStart: "2026-11-07", status: coming, repState: "plan", overdue: false },
+    ];
+    const saturday = { repWeek: "2026-11-07", cairoToday: "2026-10-31" };
+    assert.equal(repWeekToOpen(repWeeks("approved", null), saturday)?.weekStart, "2026-10-31", "the approved week he is in, while the coming one is not started");
+    assert.equal(repWeekToOpen(repWeeks("submitted", null), saturday)?.weekStart, "2026-10-31", "a sent week he is in, too");
+    assert.equal(repWeekToOpen(repWeeks("approved", "draft"), saturday)?.weekStart, "2026-11-07", "once he starts the coming week it opens there");
+    assert.equal(repWeekToOpen(repWeeks(null, null, true), saturday)?.weekStart, "2026-10-31", "an overdue week he may still send opens first");
+    assert.equal(repWeekToOpen(repWeeks("returned", null), saturday)?.weekStart, "2026-11-07", "a week he is in that is not sent is not the one");
+    assert.equal(
+      repWeekToOpen(repWeeks("approved", null), { repWeek: "2026-11-07", cairoToday: "2026-11-06" })?.weekStart,
+      "2026-11-07",
+      "on Friday the week he was in is over: the coming week",
+    );
+    assert.equal(repWeekToOpen(repWeeks("approved", null).slice(2), saturday)?.weekStart, "2026-11-07", "the week he is in is not on the board: the coming week");
 
     // Since 2026-10-01 (owner — weekly only) "+ Make weekly plan" and the rep's own board both open on
     // his ONE week, `view.repWeek`, and its month is the server's default. The month-hopping search it
