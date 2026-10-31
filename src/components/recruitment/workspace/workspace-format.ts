@@ -13,32 +13,28 @@
 
 import type { RecruitmentPillTone } from "@/components/recruitment/recruitment-premium";
 import { CAIRO_MONTHS } from "@/lib/format/cairo-datetime";
+import { cairoWallClock } from "@/lib/format/cairo-zone";
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { interviewOutcomeLabels, type InterviewOutcome } from "@/lib/recruitment/interview-calendar-types";
 import { serializeWorkspaceFilters, type WorkspaceFilters } from "@/lib/recruitment/workspace/filters";
 import { workspaceRoleTabLabels, type WorkspaceRoleTab } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceCursor, WorkspacePlacement, WorkspaceRow } from "@/lib/recruitment/workspace/types";
 
-const CAIRO_PARTS = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  hour: "2-digit",
-  hourCycle: "h23",
-  minute: "2-digit",
-  month: "numeric",
-  timeZone: "Africa/Cairo",
-  year: "numeric",
-});
+const twoDigits = (value: number) => String(value).padStart(2, "0");
 
+// The wall clock comes from the offset table that ships with the code, never from the reader's own
+// `Africa/Cairo` data: a browser built before Egypt's 2023 return to daylight saving prints every
+// summer time an hour early, and these stamps are drawn on the server and again on hydrate — one
+// digit apart is React #418 on every row (src/lib/format/cairo-zone.ts).
 function cairoParts(iso: string): { day: number; month: number; year: number; time: string } | null {
   const instant = new Date(iso);
   if (Number.isNaN(instant.getTime())) return null;
-  const parts = CAIRO_PARTS.formatToParts(instant);
-  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const wall = cairoWallClock(instant);
   return {
-    day: Number(value("day")),
-    month: Number(value("month")),
-    time: `${value("hour")}:${value("minute")}`,
-    year: Number(value("year")),
+    day: wall.getUTCDate(),
+    month: wall.getUTCMonth() + 1,
+    time: `${twoDigits(wall.getUTCHours())}:${twoDigits(wall.getUTCMinutes())}`,
+    year: wall.getUTCFullYear(),
   };
 }
 

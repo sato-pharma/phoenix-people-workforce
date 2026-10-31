@@ -224,7 +224,7 @@ import {
 } from "@/lib/recruitment/cv-extraction-fields";
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
-import { formatStableEnGb } from "@/lib/format/cairo-datetime";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import {
   phxButtonGhostClassName,
   phxFieldClassName,
@@ -434,25 +434,6 @@ function RequisitionField({ hint, label, children }: { hint?: string; label: str
       {hint ? <span className="text-phx-xs text-slate-500">{hint}</span> : null}
     </div>
   );
-}
-
-// Every moment this module shows a person is Cairo local time, never a raw UTC string.
-function cairoDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return "—";
-  const date = formatStableEnGb(value, {
-    day: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  });
-  const time = value.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Africa/Cairo",
-  });
-  return `${date} · ${time}`;
 }
 
 // Light-touch color coding for stage/status pills — shared by the mobile cards and

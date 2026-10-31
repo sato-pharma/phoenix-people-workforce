@@ -144,11 +144,18 @@ export async function runRecruitmentHiringManagerPushTests() {
     /application\.managerNotified/,
     "the pipeline must show whether the manager was told, not just offer the button",
   );
-  // Cairo local time everywhere a moment is shown to a person — the owner's standing rule.
+  // Cairo local time everywhere a moment is shown to a person — the owner's standing rule. Through
+  // the shared cairoDateTime, which reads Cairo from the shipped offset table, never the reader's
+  // engine (tests/react-418-hydration-safe-text.test.ts §4 (d4)).
   assert.match(
     workspace,
-    /timeZone: "Africa\/Cairo"/,
+    /import \{[^}]*\bcairoDateTime\b[^}]*\} from "@\/lib\/format\/cairo-datetime";/,
     "the send time must be shown in Cairo local time, never raw UTC",
+  );
+  assert.match(
+    workspace,
+    /Sent to \$\{notified\.managerName\} on \$\{cairoDateTime\(notified\.sentAt\)\}/,
+    "the pipeline's send time goes through the shared Cairo formatter",
   );
 
   // ── The SHORT path: candidate → manager, with no requisition in between ────
