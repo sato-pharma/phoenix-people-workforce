@@ -12,6 +12,7 @@ import {
   extractRefusalMessage,
   isSkippedScreenPath,
   maskApiPath,
+  noAnswerHappenedInSight,
   sameOriginApiPath,
   screenThrottleKey,
   type ScreenThrottleState,
@@ -66,6 +67,15 @@ function rulesTests() {
   assert.equal(classifyScreenKind({ status: 401, networkFailure: false, method: "POST" }), null, "no session, no picture — the intake would refuse it");
   assert.equal(classifyScreenKind({ status: 404, networkFailure: false, method: "POST" }), "refused_request");
   assert.equal(classifyScreenKind({ status: 403, networkFailure: false, method: "GET" }), "refused_request", "a refused read is a block");
+
+  // A request with NO answer is photographed only if its page stayed in sight from send to failure.
+  // A locked phone kills its requests; the failure reaches the page once it is back in sight and
+  // working, so the picture was of a failure nobody met (the plan board, 29 Oct 2026).
+  const inSight = { sentHidden: false, hiddenNow: false, epochAtSend: 3, epochNow: 3 };
+  assert.equal(noAnswerHappenedInSight(inSight), true, "a failure met on a page in sight is photographed");
+  assert.equal(noAnswerHappenedInSight({ ...inSight, sentHidden: true }), false, "sent while out of sight — the save on going hidden");
+  assert.equal(noAnswerHappenedInSight({ ...inSight, hiddenNow: true }), false, "out of sight when it failed");
+  assert.equal(noAnswerHappenedInSight({ ...inSight, epochNow: 4 }), false, "went out of sight while the request travelled, back in sight when it failed");
 
   // The skip list: the capture's own path, the reporters, sign-in, and the background polls.
   for (const path of [
@@ -159,7 +169,17 @@ async function wrapperTests() {
     const answer = answers.get(url);
     return answer ? answer() : Promise.resolve(new Response("{}", { status: 200 }));
   };
+  const previousDocument = globals.document;
+  const listeners: Array<{ target: string; type: string; listener: () => void }> = [];
+  const fire = (target: string, type: string) => {
+    for (const entry of listeners) if (entry.target === target && entry.type === type) entry.listener();
+  };
+  const fakeDocument: Record<string, unknown> = {
+    visibilityState: "visible",
+    addEventListener: (type: string, listener: () => void) => listeners.push({ target: "document", type, listener }),
+  };
   const fakeWindow: Record<string, unknown> = {
+    addEventListener: (type: string, listener: () => void) => listeners.push({ target: "window", type, listener }),
     fetch: realFetch,
     location: { href: "https://phoenix.test/employee-portals/field-crm/visits", origin: "https://phoenix.test", pathname: "/employee-portals/field-crm/visits" },
     setTimeout: (_callback: () => void, ms: number) => {
@@ -170,6 +190,7 @@ async function wrapperTests() {
   try {
     env.NODE_ENV = "production";
     globals.window = fakeWindow;
+    globals.document = fakeDocument;
     installScreenCapture();
     const wrapped = fakeWindow.fetch as typeof fetch;
     assert.notEqual(wrapped, realFetch, "the wrapper is installed in a production build");
@@ -207,12 +228,73 @@ async function wrapperTests() {
     await assert.rejects(wrapped("/api/leave-balance"), (error) => error === abort);
     await settle();
     assert.deepEqual(scheduled, [900, 900], "an aborted request is not photographed");
+
+    // A request held open until the test fails it, so the page can change sight while it travels.
+    const held = (path: string) => {
+      let fail: (error: unknown) => void = () => undefined;
+      answers.set(path, () => new Promise<Response>((_resolve, reject) => {
+        fail = reject;
+      }));
+      return { fail: (error: unknown) => fail(error) };
+    };
+    const killed = new TypeError("Load failed");
+
+    // The phone locked while the plan saved, and the page was back in sight when the failure arrived.
+    const travelling = held("/api/phoenix-crm/plans");
+    const sentVisible = wrapped("/api/phoenix-crm/plans", { method: "POST" });
+    fakeDocument.visibilityState = "hidden";
+    fire("document", "visibilitychange");
+    fakeDocument.visibilityState = "visible";
+    fire("document", "visibilitychange");
+    travelling.fail(killed);
+    await assert.rejects(sentVisible, (error) => error === killed);
+    await settle();
+    assert.deepEqual(scheduled, [900, 900], "a no-answer failure whose page went out of sight on the way is not photographed");
+
+    // pagehide alone counts too (Safari can leave without a visibilitychange).
+    const leaving = held("/api/phoenix-crm/manager-plans");
+    const sentBeforeLeaving = wrapped("/api/phoenix-crm/manager-plans", { method: "POST" });
+    fire("window", "pagehide");
+    leaving.fail(killed);
+    await assert.rejects(sentBeforeLeaving, (error) => error === killed);
+    await settle();
+    assert.deepEqual(scheduled, [900, 900], "a page that was left while the request travelled is not photographed");
+
+    // Sent while out of sight — the board's own save on going hidden — failing once back in sight.
+    fakeDocument.visibilityState = "hidden";
+    const hiddenSave = held("/api/phoenix-crm/plans");
+    const sentHidden = wrapped("/api/phoenix-crm/plans", { method: "POST", keepalive: true });
+    fakeDocument.visibilityState = "visible";
+    hiddenSave.fail(killed);
+    await assert.rejects(sentHidden, (error) => error === killed);
+    await settle();
+    assert.deepEqual(scheduled, [900, 900], "a request sent while out of sight is not photographed when it gets no answer");
+
+    // In sight from send to failure is still photographed, after all of the above.
+    answers.set("/api/phoenix-crm/plans", () => Promise.reject(killed));
+    await assert.rejects(wrapped("/api/phoenix-crm/plans", { method: "POST" }), (error) => error === killed);
+    await settle();
+    assert.deepEqual(scheduled, [900, 900, 900], "a no-answer failure met in sight is still photographed");
+
+    // A refusal is an ANSWER the page drew, and is photographed whatever happened on the way.
+    let answerRefusal: (response: Response) => void = () => undefined;
+    answers.set("/api/phoenix-crm/plans/approve", () => new Promise<Response>((resolve) => {
+      answerRefusal = resolve;
+    }));
+    const sentForRefusal = wrapped("/api/phoenix-crm/plans/approve", { method: "POST" });
+    fire("window", "pagehide");
+    answerRefusal(new Response(JSON.stringify({ message: "Already approved." }), { status: 409, headers: { "content-type": "application/json" } }));
+    await sentForRefusal;
+    await settle();
+    assert.deepEqual(scheduled, [900, 900, 900, 900], "a refusal is photographed as before");
   } finally {
     // Assigning undefined to process.env would store the string "undefined".
     if (previousEnv === undefined) delete env.NODE_ENV;
     else env.NODE_ENV = previousEnv;
     if (previousWindow === undefined) delete globals.window;
     else globals.window = previousWindow;
+    if (previousDocument === undefined) delete globals.document;
+    else globals.document = previousDocument;
   }
 }
 

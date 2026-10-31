@@ -26,9 +26,18 @@ const MASKED_MESSAGE_PATTERN = /^(?:~#!#~\d+~#!#~)?script error\.?(?:~#!#~)?$/i;
 export const CROSS_ORIGIN_MASKED_DISPLAY =
   "A browser-injected script threw (extension, content blocker or reader). No detail is available — browsers withhold it for cross-origin scripts. This is not app code.";
 
-/** True when the message is the browser's sanitized placeholder rather than a real one. */
+/**
+ * True when the message is the browser's sanitized placeholder rather than a real one.
+ *
+ * Also true for `CROSS_ORIGIN_MASKED_DISPLAY` itself, because that is what gets STORED:
+ * `global-error-reporter.tsx` reports the display text, not "Script error.", so every masked row
+ * written since then carries it. Recognising only the browser's spelling let all 217 of them past
+ * the System Audit's `masked_script_error` filter, and eight reached the morning message as a
+ * Command Center fault (31 Oct 2026).
+ */
 export function isCrossOriginMaskedMessage(message: string | null | undefined): boolean {
-  return MASKED_MESSAGE_PATTERN.test((message ?? "").trim());
+  const text = (message ?? "").trim();
+  return text === CROSS_ORIGIN_MASKED_DISPLAY || MASKED_MESSAGE_PATTERN.test(text);
 }
 
 export type MaskedErrorEventShape = {

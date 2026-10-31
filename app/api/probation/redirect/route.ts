@@ -2,22 +2,28 @@ import { NextResponse } from "next/server";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { trustedOriginForRedirect } from "@/lib/security/origins";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Every redirect below is built on the PUBLIC origin. `request.url` behind Railway's proxy is the
+// container's own bind address (https://0.0.0.0:8080), so a probation email link built on it sent
+// the reader nowhere (System Audit, 29 Oct 2026). Path and query are still read from request.url —
+// only its origin is wrong. tests/redirect-public-origin.test.ts.
 export async function GET(request: Request) {
   const access = await resolveAccessContext(request);
+  const origin = trustedOriginForRedirect(request);
 
   if (!access.loginId && !access.hrId) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/login", origin);
     const { pathname, search } = new URL(request.url);
     loginUrl.searchParams.set("returnUrl", pathname + search);
     return NextResponse.redirect(loginUrl);
   }
 
   if (!(await canAccess(access, "probation", "read"))) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/", origin));
   }
 
   const { searchParams } = new URL(request.url);
@@ -31,12 +37,12 @@ export async function GET(request: Request) {
   // That view is the correct destination now: it lists their open DV feedback tasks.
 
   if (resolveNavigationMode(access) === "employee-portal") {
-    const dest = new URL("/employee-portals/probation", request.url);
+    const dest = new URL("/employee-portals/probation", origin);
     if (employeeHrId) dest.searchParams.set("employeeHrId", employeeHrId);
     return NextResponse.redirect(dest);
   }
 
-  const dest = new URL("/probation", request.url);
+  const dest = new URL("/probation", origin);
   if (employeeHrId) dest.searchParams.set("employeeHrId", employeeHrId);
   return NextResponse.redirect(dest);
 }

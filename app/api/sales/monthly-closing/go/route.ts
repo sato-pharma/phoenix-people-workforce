@@ -4,6 +4,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { isGuestFallbackAccess } from "@/lib/auth/page-access-guard";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { resolveClosingPublishDestination } from "@/lib/sales/closing-publish-destination";
+import { trustedOriginForRedirect } from "@/lib/security/origins";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,5 +42,8 @@ export async function GET(request: Request) {
         period,
       });
 
-  return NextResponse.redirect(new URL(destination, request.url));
+  // The PUBLIC origin, never `request.url`'s: behind Railway's proxy that is the container's own
+  // bind address, so every click on this email link landed on https://0.0.0.0:8080/… and the
+  // browser gave up with no answer (System Audit, 29 Oct 2026). tests/redirect-public-origin.test.ts.
+  return NextResponse.redirect(new URL(destination, trustedOriginForRedirect(request)));
 }

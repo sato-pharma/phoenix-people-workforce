@@ -2456,6 +2456,7 @@ import { runHrPremiumIdentityTests } from "./hr-premium-identity.test.ts";
 import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts";
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
+import { runRedirectPublicOriginTests } from "./redirect-public-origin.test.ts";
 import { runTalentAcquisitionOverviewTests } from "./talent-acquisition-overview.test.ts";
 import { runTalentAcquisitionRoleRetiredUiCopyTests } from "./talent-acquisition-role-retired-ui-copy.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
@@ -9361,6 +9362,7 @@ await runTest(
   runHrPremiumIdentityTests,
 );
 await runTest("closing workbook Export PDF link origin (allow-list validated, never the 0.0.0.0 bind address)", runClosingWorkbookLinkOriginTests);
+await runTest("no redirect is built on request.url's origin: the closing-published and probation email links land on the public domain, never the 0.0.0.0 bind address", runRedirectPublicOriginTests);
 await runTest(
   "today in Cairo is locale-safe (ISO shape the sign route accepts, Latin digits, year-month-day order, Cairo rollover)",
   runCairoTodayLocaleSafeTests,
