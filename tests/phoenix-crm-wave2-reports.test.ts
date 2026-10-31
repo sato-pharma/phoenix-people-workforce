@@ -511,7 +511,7 @@ export function runPhoenixCrmWave2ReportTests(): void {
       "planned counts read plans that were actually sent",
     );
     assert.match(service, /isPlanDaySent\(\{ \.\.\.plan, date: day \}\)/, "on the days they were sent — never a draft day, never a returned one");
-    assert.match(service, /from\("phoenix_crm_countable_visits"\)/, "and visits come from the countable view, never the raw table");
+    assert.match(service, /from\("phoenix_crm_countable_visits_with_history"\)/, "and visits come from the countable view with the copied history, never the raw table");
 
     const tab = stripComments(readFileSync("src/components/phoenix-crm/reports-tab.tsx", "utf8"));
     // 🔴 `SECTION_TITLES` moved to `src/lib/phoenix-crm/report-guide.ts` on 2026-10-03 (domain-first),
@@ -680,7 +680,7 @@ export function runPhoenixCrmWave2ReportTests(): void {
 
     // What counts as work is what COLOURS a cell — a visit or a day activity, never leave and
     // never a Friday. Opening on a grid of F and dashes would answer the letter and not the point.
-    assert.match(service, /newestOf\(\s*"phoenix_crm_countable_visits"/, "visits count as work");
+    assert.match(service, /newestOf\(\s*"phoenix_crm_countable_visits_with_history"/, "visits count as work");
     assert.match(service, /newestOf\(\s*"phoenix_crm_day_activities"/, "and so does a recorded day activity");
     assert.doesNotMatch(service, /newestOf\(\s*"[^"]*leave/i, "leave is not work");
     // 🔴 EACH SELECT LIST IS A LITERAL. PostgREST's types parse it at COMPILE time, so a template

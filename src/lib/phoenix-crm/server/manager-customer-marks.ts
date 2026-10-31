@@ -101,7 +101,7 @@ async function readRepVisits(seatIds: ReadonlyArray<string>, isTest: boolean, fr
       ...(await fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
-            .from("phoenix_crm_countable_visits")
+            .from("phoenix_crm_countable_visits_with_history")
             .select("id, customer_id, visit_date, kind, manager_hr_id, senior_hr_id, product_manager_hr_id")
             .in("seat_id", part)
             .eq("is_test", isTest)

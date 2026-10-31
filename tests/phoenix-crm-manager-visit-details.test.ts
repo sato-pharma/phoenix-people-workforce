@@ -220,7 +220,7 @@ export function runPhoenixCrmManagerVisitDetailTests(): void {
     const reader = source("src/lib/phoenix-crm/server/manager-visit-details.ts");
     assert.match(reader, /\.from\("phoenix_crm_manager_visits"\)/, "his own visits are read here, in a manager-*.ts file the boundary test allows");
     assert.match(reader, /countsAsManagersDoubleVisit\(visit, hrId\)/, "a ride-along is the rule the manager report judges by");
-    assert.match(reader, /\.from\("phoenix_crm_countable_visits"\)/, "and it is read from the countable view like every calendar row");
+    assert.match(reader, /\.from\("phoenix_crm_countable_visits_with_history"\)/, "and it is read from the countable view like every calendar row");
 
     const adapter = source("src/lib/phoenix-crm/server/manager-plan-readers.ts");
     assert.match(adapter, /loadManagerOwnVisitDetails,\s*loadManagerRideAlongDetails,\s*loadManagerVisitDetails,/, "an outside screen reads the detail through the one adapter");

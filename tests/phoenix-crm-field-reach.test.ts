@@ -171,7 +171,7 @@ export function runPhoenixCrmFieldReachTests() {
 
     // The reads: the countable visits, in the day's one parallel wave.
     const reads = source("src/lib/phoenix-crm/server/week-progress.ts");
-    assert.ok(reads.includes('.from("phoenix_crm_countable_visits")'), "the visits every figure reads — an off-plan visit nobody approved is not counted");
+    assert.ok(reads.includes('.from("phoenix_crm_countable_visits_with_history")'), "the countable visits with the rep's copied history — an off-plan visit nobody approved is not counted");
     assert.doesNotMatch(reads, /\.from\("phoenix_crm_visits"\)/, "never the raw visit table");
     assert.ok(reads.includes('.eq("seat_id", seatId)') && reads.includes('.eq("is_test", isTest)'), "his own territory, in his own world");
     assert.ok(reads.includes('.gte("visit_date", weekStart)') && reads.includes('.lte("visit_date", visitDay)'), "Saturday through today");

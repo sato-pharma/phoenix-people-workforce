@@ -316,7 +316,7 @@ export async function loadManagerRideAlongDetails(
       const rows = await fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
-            .from("phoenix_crm_countable_visits")
+            .from("phoenix_crm_countable_visits_with_history")
             .select(RIDE_COLUMNS)
             .eq("is_test", isTest)
             .gte("visit_date", input.start)
@@ -335,7 +335,7 @@ export async function loadManagerRideAlongDetails(
     const rows = await fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select(RIDE_COLUMNS)
           .eq("is_test", isTest)
           .gte("visit_date", input.start)
@@ -487,7 +487,7 @@ export async function loadRepVisitDetails(input: RepVisitDetailInput): Promise<M
       const rows = await fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
-            .from("phoenix_crm_countable_visits")
+            .from("phoenix_crm_countable_visits_with_history")
             .select(RIDE_COLUMNS)
             .eq("is_test", isTest)
             .gte("visit_date", input.start)

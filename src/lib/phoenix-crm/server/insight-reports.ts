@@ -159,7 +159,7 @@ async function countableVisits(
     fetchAllRowsKeyset<Row>(
       () => {
         let query = getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select(`id, ${columns}`)
           .in("seat_id", batch)
           .gte("visit_date", period.from)

@@ -239,7 +239,7 @@ async function loadDoneKeys(
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id, visit_date, list_type, kind, manager_hr_id, senior_hr_id")
           .in("seat_id", part)
           .eq("is_test", isTest)

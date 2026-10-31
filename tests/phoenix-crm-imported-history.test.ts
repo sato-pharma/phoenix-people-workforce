@@ -37,13 +37,17 @@ const SKIP_HOLDER = '.eq("campaign_visit_holder", false)';
 const read = (relativePath: string): string =>
   readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
-/** One top-level function, from its declaration to the first closing brace at column 0, comments stripped. */
+/** One function, from its declaration to the closing brace at the declaration's own indentation, comments stripped. */
 function body(path: string, declaration: string): string {
   const text = read(path);
   const start = text.indexOf(declaration);
   assert.notEqual(start, -1, `${path}: ${declaration} is gone — re-point this pin at whatever replaced it`);
-  const end = text.indexOf("\n}\n", start);
-  return stripComments(text.slice(start, end === -1 ? text.length : end));
+  const lineStart = text.lastIndexOf("\n", start) + 1;
+  const indent = /^[ \t]*/.exec(text.slice(lineStart, start))?.[0] ?? "";
+  const end = text.indexOf(`\n${indent}}\n`, start);
+  // Never the rest of the file: a pin that read past the function could pass on another function's filter.
+  assert.notEqual(end, -1, `${path}: ${declaration} has no closing brace at its own indentation — re-point this pin`);
+  return stripComments(text.slice(start, end));
 }
 
 const count = (text: string, needle: string): number => text.split(needle).length - 1;
@@ -64,12 +68,16 @@ function newestDefiner(pattern: RegExp, what: string): { file: string; sql: stri
 
 /** The text of one SQL object from its CREATE to the end of its dollar-quoted body (or its first `;`). */
 function sqlObject(sql: string, create: string): string {
-  const start = sql.indexOf(create);
+  // Exact: `…phoenix_crm_countable_visits` must never land on `…phoenix_crm_countable_visits_with_history`.
+  let start = sql.indexOf(create);
+  while (start !== -1 && /\w$/.test(create) && /\w/.test(sql.charAt(start + create.length))) start = sql.indexOf(create, start + 1);
   assert.notEqual(start, -1, `${create} not found`);
   const close = sql.indexOf("$function$;", start);
   const semicolon = sql.indexOf(";", start);
-  const end = sql.slice(start, semicolon).includes("$function$") ? close : semicolon;
-  return sql.slice(start, end).replace(/\s+/g, " ");
+  const quoted = sql.slice(start, semicolon).includes("$function$");
+  // `slice(start, -1)` would be the rest of the file, and a pin could pass on another object's text.
+  if (quoted) assert.notEqual(close, -1, `${create}: its body opens with $function$ but never closes with $function$;`);
+  return sql.slice(start, quoted ? close : semicolon).replace(/\s+/g, " ");
 }
 
 export function runPhoenixCrmImportedHistoryTests() {
@@ -134,6 +142,71 @@ export function runPhoenixCrmImportedHistoryTests() {
     const code = body(path, declaration);
     assert.equal(count(code, SKIP_VISIT), skips, `${path}: ${declaration} must skip a copied iReports360 visit ${skips} time(s) — ${why}`);
   }
+
+  // ── 1b. THE RATCHET: every file that reads the visits is classified ─────────
+  // The owner asked for the history "as if it is a complete data", so most screens count it — but a file
+  // that starts reading phoenix_crm_visits or phoenix_crm_countable_visits must say which kind it is: it
+  // names the mark, or it is listed here as a reader that counts the history on purpose. Listed
+  // 2026-10-31 from every reader that did not name the mark. A new reader fails by name until someone
+  // decides; a listed file that stops reading the visits, or starts skipping the copy, must leave the list.
+  // Since 20261031160000 phoenix_crm_countable_visits skips the copy itself; a history screen reads
+  // phoenix_crm_countable_visits_with_history, which counts here as a reader of the visits.
+  const countsHistory = new Set([
+    "src/lib/customer-identity/server/reads.ts",
+    "src/lib/phoenix-crm/server/behaviour.ts",
+    "src/lib/phoenix-crm/server/call-prep.ts",
+    "src/lib/phoenix-crm/server/commitments.ts",
+    "src/lib/phoenix-crm/server/customer-timeline.ts",
+    "src/lib/phoenix-crm/server/daily-plan-report.ts",
+    "src/lib/phoenix-crm/server/day-route.ts",
+    "src/lib/phoenix-crm/server/double-visit-plans.ts",
+    "src/lib/phoenix-crm/server/integrity-board.ts",
+    "src/lib/phoenix-crm/server/list.ts",
+    "src/lib/phoenix-crm/server/location-integrity.ts",
+    "src/lib/phoenix-crm/server/manager-customer-marks.ts",
+    "src/lib/phoenix-crm/server/manager-plan-report.ts",
+    "src/lib/phoenix-crm/server/manager-visit-details.ts",
+    "src/lib/phoenix-crm/server/master-list.ts",
+    "src/lib/phoenix-crm/server/missed-records.ts",
+    "src/lib/phoenix-crm/server/my-map.ts",
+    "src/lib/phoenix-crm/server/named-pharmacies.ts",
+    "src/lib/phoenix-crm/server/offplan-cap.ts",
+    "src/lib/phoenix-crm/server/offplan-day.ts",
+    "src/lib/phoenix-crm/server/plan-insight.ts",
+    "src/lib/phoenix-crm/server/refused-readings-board.ts",
+    "src/lib/phoenix-crm/server/reports.ts",
+    "src/lib/phoenix-crm/server/team-calendar.ts",
+    "src/lib/phoenix-crm/server/team.ts",
+    "src/lib/phoenix-crm/server/unplanned.ts",
+    "src/lib/phoenix-crm/server/validation-reviews.ts",
+    "src/lib/phoenix-crm/server/visit-detail-edit.ts",
+    "src/lib/phoenix-crm/server/visit-edit.ts",
+    "src/lib/phoenix-crm/server/visit-locations.ts",
+    "src/lib/phoenix-crm/server/visit-recordings.ts",
+    "src/lib/phoenix-crm/server/visit-report.ts",
+    "src/lib/phoenix-crm/server/visit-rollup.ts",
+    "src/lib/phoenix-crm/server/week-progress.ts",
+    "src/lib/system-audit/detectors/visit-lifecycle-expected.ts",
+  ]);
+  const sources = (dir: string): string[] =>
+    readdirSync(new URL(`../${dir}/`, import.meta.url), { withFileTypes: true }).flatMap((entry) => {
+      const child = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return sources(child);
+      return /\.tsx?$/.test(entry.name) ? [child] : [];
+    });
+  const readers = new Map<string, boolean>();
+  for (const file of [...sources("src"), ...sources("app")]) {
+    const code = stripComments(read(file));
+    if (/\bphoenix_crm_(?:countable_)?visits(?:_with_history)?\b/.test(code)) readers.set(file, code.includes("imported_from_ireports360_at"));
+  }
+  const unclassified = [...readers].filter(([file, skips]) => !skips && !countsHistory.has(file)).map(([file]) => file);
+  assert.deepEqual(
+    unclassified,
+    [],
+    "a new reader of the Phoenix CRM visits: skip a copied iReports360 visit by its mark (anything that judges, alarms or pays), or add the file to countsHistory above if it counts the history on purpose",
+  );
+  const stale = [...countsHistory].filter((file) => readers.get(file) !== false);
+  assert.deepEqual(stale, [], "these files no longer read the visits without the mark — take them off countsHistory");
 
   const customerReaders: Array<{ path: string; declaration: string; why: string }> = [
     {
@@ -206,6 +279,33 @@ export function runPhoenixCrmImportedHistoryTests() {
       /v\.product_manager_hr_id, v\.imported_from_ireports360_at from public\.phoenix_crm_visits v/,
       "the view carries the mark, appended last, so ranks and exceptions can skip a copied visit by name",
     );
+  }
+
+  // ── 2b. The countable view skips the copy at its root; the history view is the only one that keeps it ──
+  {
+    const { file, sql } = newestDefiner(/create or replace view public\.phoenix_crm_countable_visits\b/, "phoenix_crm_countable_visits");
+    const countable = sqlObject(sql, "create or replace view public.phoenix_crm_countable_visits");
+    const FILTER = " and v.imported_from_ireports360_at is null";
+    assert.ok(
+      countable.endsWith(FILTER),
+      `${file}: phoenix_crm_countable_visits must end with \`${FILTER.trim()}\` — a new reader that forgets the mark must still never count ~69,000 copied visits as Phoenix work`,
+    );
+    const history = newestDefiner(/create or replace view public\.phoenix_crm_countable_visits_with_history\b/, "phoenix_crm_countable_visits_with_history");
+    assert.equal(
+      sqlObject(history.sql, "create or replace view public.phoenix_crm_countable_visits_with_history").replace("_with_history", ""),
+      countable.slice(0, -FILTER.length),
+      `${history.file}: the history view is the countable view without the import filter — every other rule the same`,
+    );
+  }
+  for (const report of ["brick_coverage", "coverage", "manager_visits", "visits_by_day"]) {
+    const create = `create or replace function public.phoenix_crm_report_${report}(`;
+    const { file, sql } = newestDefiner(new RegExp(String.raw`create or replace function public\.phoenix_crm_report_${report}\(`), `phoenix_crm_report_${report}`);
+    const start = sql.indexOf(create);
+    const end = sql.indexOf("$$;", start);
+    assert.notEqual(end, -1, `${file}: phoenix_crm_report_${report} has no closing $$;`);
+    const fn = sql.slice(start, end);
+    assert.match(fn, /public\.phoenix_crm_countable_visits_with_history\b/, `${file}: phoenix_crm_report_${report} shows the rep's whole year — it reads the history view`);
+    assert.doesNotMatch(fn, /public\.phoenix_crm_countable_visits\b/, `${file}: phoenix_crm_report_${report} must not read the view that skips the copy`);
   }
 
   // ── 3. The triggers ─────────────────────────────────────────────────────────

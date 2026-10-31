@@ -1030,6 +1030,11 @@ const LATER_MIGRATIONS = [
   // The interviews on an Interviews day (owner, 2026-10-29): one new table locked by the same four statements
   // and a private bucket for the CVs added by hand — no function, it replaces nothing, so it appends at the end.
   "supabase/migrations/20261029235000_phoenix_crm_day_interviews.sql",
+  // The countable view skips copied iReports360 history at its root (2026-10-31): one new view, the history
+  // view, locked like every view here; the countable view re-created with the filter; and the four report
+  // functions that show history REPLACED with their live bodies reading the history view. It is the latest
+  // to replace those four, so it appends at the end.
+  "supabase/migrations/20261031160000_phoenix_crm_countable_visits_skip_imported_history.sql",
 ];
 
 /**
