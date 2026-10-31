@@ -29,10 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [iReports360 API closes after the Delta (2) training, Thu 2026-11-05](ireports360-api-closes-after-delta-2-training.md) - only on his word, and only once nobody records a day only in iReports360 (36 people still did on 31 Oct); never with a cutover date
-- [the unplanned queue has no 'pending' status](unplanned-queue-pending-is-two-statuses.md) - waiting = manager_pending or sfe_pending; status = 'pending' is a false zero (bit twice on the iReports360 import)
-- [opening an empty plan day as a rep WRITES production](opening-an-empty-plan-day-as-a-rep-writes-production.md) - the planner fills and saves the day itself, under the rep's HR id; never drive an empty day signed in as a real rep
-- [a leaked fetch stub hangs a later test in the shard](a-leaked-fetch-stub-hangs-a-later-test-in-the-shard.md) - nav-badge-store never restores fetch; a new runTest reshuffles the shard deal; real-server tests use node:http + a deadline
 
 
 
