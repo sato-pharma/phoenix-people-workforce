@@ -5,6 +5,8 @@ import {
   DNS_TTL_SECONDS,
   DOMAIN,
   FORCED_KEYS,
+  LEGACY_RAILWAY_TARGET,
+  RAILWAY_DIRECT_URL,
   RAILWAY_TARGET,
   certificateReady,
   classifyTarget,
@@ -120,7 +122,18 @@ export function runEmergencyHostTests(): void {
 
   // ── 2. Where the domain points, who answered, and when a flip is allowed ──────────────────────────────────────────
   {
+    // 2026-10-31 20:36 Cairo (owner): the record left Cloudflare's proxy and the custom domain's edge target
+    // (xok6ir4p, ~1 in 6 Egyptian connections dropped) for the web service's own railway.app address — Vodafone home
+    // broadband silently dropped Cloudflare's addresses. A flip back writes that host, and never the old target.
+    assert.equal(RAILWAY_TARGET, "phoenix-people-workforce-production.up.railway.app", "Railway's normal target is the web service's own railway.app host");
+    assert.equal(RAILWAY_DIRECT_URL, `https://${RAILWAY_TARGET}`);
+    assert.equal(LEGACY_RAILWAY_TARGET, "xok6ir4p.up.railway.app");
     assert.equal(classifyTarget(RAILWAY_TARGET, "phoenix-hr-standby"), "railway");
+    assert.equal(classifyTarget("Phoenix-People-Workforce-Production.up.railway.app.", "phoenix-hr-standby"), "railway");
+    assert.equal(classifyTarget(LEGACY_RAILWAY_TARGET, "phoenix-hr-standby"), "railway-legacy", "the old edge target is recognised, not refused");
+    assert.equal(planFlip({ current: "railway-legacy", to: "railway" }), "flip", "a record on the old target is rewritten to the railway.app host");
+    assert.equal(planFlip({ current: "railway-legacy", to: "fly" }), "flip");
+    assert.equal(planFlip({ current: "railway", to: "railway" }), "already");
     assert.equal(classifyTarget("PHOENIX-HR-STANDBY.fly.dev.", "phoenix-hr-standby"), "fly", "case and a trailing dot do not matter");
     assert.equal(classifyTarget("something-else.example.com", "phoenix-hr-standby"), "unknown");
     assert.equal(flyTarget("phoenix-hr-standby"), "phoenix-hr-standby.fly.dev");
@@ -164,6 +177,10 @@ export function runEmergencyHostTests(): void {
     assert.ok(point.indexOf("healthz(RAILWAY_DIRECT_URL)") < patchAt, "Railway must answer before a flip back");
     assert.ok(point.indexOf("healthz(`https://${DOMAIN}`)") > patchAt, "afterwards the domain itself is read");
     assert.match(point, /h\.host === to/, "the proof names the host that answered, not just a revision");
+    assert.match(point, /const content = to === "fly" \? flyTarget\(app\) : RAILWAY_TARGET;/, "a flip back writes the railway.app host");
+    assert.doesNotMatch(point, /LEGACY_RAILWAY_TARGET|xok6ir4p/, "the old edge target is never written back");
+    assert.doesNotMatch(point, /proxied: true/, "the record is never put behind Cloudflare's proxy");
+    assert.match(point, /proxied: false/, "every flip keeps the record unproxied");
     assert.equal(DNS_TTL_SECONDS, 60, "a one-minute TTL, so the flip and the flip back reach users within about a minute");
     assert.equal(DOMAIN, "phoenix-hr.satopharma.com");
   }

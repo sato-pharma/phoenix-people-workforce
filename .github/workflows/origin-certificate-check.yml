@@ -109,6 +109,9 @@ jobs:
           # host|railway edge target. The target is per-custom-domain and Railway mints a new random
           # one whenever a domain is removed and re-added — so a connection failure here is a real
           # signal (the domain was re-created, or the certificate is gone), not noise to be ignored.
+          # phoenix-hr's DNS no longer points at xok6ir4p (since 2026-10-31 it is the service's own
+          # railway.app host, docs/deployment.md "Production Verification"), but Railway still holds
+          # the domain's certificate on that edge target, so it is read there — never "fix" it.
           DOMAINS=(
             "phoenix-hr.satopharma.com|xok6ir4p.up.railway.app"
             "mdm.satopharma.com|iul4dp7h.up.railway.app"
