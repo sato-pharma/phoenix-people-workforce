@@ -440,11 +440,12 @@ function runPendingReachableTests() {
   const visits = ["visit-customer-picker.tsx", "visit-log-form.tsx"].map((file) => source(`src/components/phoenix-crm/${file}`)).join("\n");
   assert.match(
     visits,
-    /customer\.pending \? pendingVisitsText\(customer\.visitsThisMonth\) : monthVisitsText\(customer\.visitsThisMonth, customer\.target\)/,
+    // The picker's line is wrapped since it also says a third visit before validation is refused (31 Oct 2026).
+    /customer\.pending\s*\?\s*pendingVisitsText\(customer\.visitsThisMonth\)\s*:\s*monthVisitsText\(customer\.visitsThisMonth, customer\.target\)/,
     "the visit form never prints a month standing over visits that count for nothing",
   );
   assert.equal(
-    visits.match(/customer\.pending \? pendingVisitsText\(/g)?.length,
+    visits.match(/customer\.pending\s*\?\s*pendingVisitsText\(/g)?.length,
     2,
     "in the picker AND in the chosen-customer summary — both said 2 of 3 before",
   );

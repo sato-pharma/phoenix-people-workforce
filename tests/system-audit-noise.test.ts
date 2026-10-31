@@ -90,6 +90,8 @@ export function runSystemAuditNoiseTests() {
   // ── Disconnects: exact messages only. "Connection closed." is a finding ────────────────────────
   assert.equal(classifyAppErrorNoise(row({ source: "server", message: "Aborted" })), "benign_disconnect");
   assert.equal(classifyAppErrorNoise(row({ source: "server", message: "The destination stream closed early." })), "benign_disconnect");
+  // Safari on iOS 16's cancelled read, as an old tab still files it — verbatim, 108 rows (31 Oct 2026).
+  assert.equal(classifyAppErrorNoise(row({ message: "Fetch is aborted" })), "benign_disconnect");
   assert.equal(
     classifyAppErrorNoise(row({ source: "server", message: "Connection closed." })),
     null,

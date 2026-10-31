@@ -41,9 +41,15 @@ const BENIGN_DISCONNECT_CODES = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE"])
  * "Aborted" and "The user aborted a request." are the undici/fetch spellings of the same event,
  * included because the same upgrade moves streaming failures between these layers and a filter
  * that only knows one of them regrows the problem on the next bump.
+ *
+ * "Fetch is aborted" is WebKit's wording for a fetch its own page cancelled. Safari on iOS 16 also
+ * raises that cancelled read as an unhandled rejection, and the browser reporter filed it as a crash:
+ * 108 rows from two reps in 30 days, every stack the Phoenix CRM screen's own abort() as it closed
+ * (System Audit, 31 Oct 2026). It is listed here so the audit drops the rows an old tab still sends.
  */
 const BENIGN_DISCONNECT_MESSAGES = new Set([
   "Aborted",
+  "Fetch is aborted",
   "The destination stream closed early.",
   "The user aborted a request.",
 ]);

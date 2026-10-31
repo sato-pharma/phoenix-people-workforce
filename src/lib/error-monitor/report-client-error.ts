@@ -8,6 +8,7 @@ import {
   isSessionVerificationUnavailableDigest,
   SESSION_VERIFICATION_UNAVAILABLE_DIGEST,
 } from "@/lib/auth/session-unavailable-digest";
+import { isBenignClientDisconnect } from "@/lib/error-monitor/benign-disconnect";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { describeDomRewriters } from "@/lib/error-monitor/dom-rewriter";
 import { DOM_GUARD_COUNTER_KEY, domGuardMarker } from "@/lib/error-monitor/dom-translate-guard";
@@ -146,6 +147,11 @@ export function reportClientError({ error, route, digest, componentStack, contex
     // database restart on 25 Oct 2026 filed 8 of them for one Medical Representative. Every boundary
     // and window.onerror reach this one function, so the skip lives here.
     if (isSessionVerificationUnavailableDigest(error) || digest === SESSION_VERIFICATION_UNAVAILABLE_DIGEST) return;
+    // A request the page cancelled itself: a screen closing takes its read with it. Safari on iOS 16
+    // also raises that cancelled read as an unhandled rejection — "Fetch is aborted", its stack the
+    // screen's own abort() — and filed 108 rows from two reps in 30 days (System Audit, 31 Oct 2026).
+    // Nobody met a failure. The server's own test for a client that hung up; a timeout is not one.
+    if (isBenignClientDisconnect(error)) return;
     // NOT `String(error)`. The browser throws plenty that is not an Error — a rejected fetch
     // body, a Supabase PostgrestError read client-side, any `throw { code, message }` — and all
     // of it stringifies to the constant "[object Object]", which is what made 19 production rows

@@ -66,6 +66,8 @@ export function placeName(place: { label: string | null; zone: string | null; br
  * never says cannot, must, blocked or missing.
  */
 export const PENDING_PILL = "Not validated yet";
+/** Beside a customer whose third visit before validation the save would refuse (owner, 2026-10-28). */
+export const VALIDATE_FIRST_PILL = "Validate first";
 export const PENDING_COUNTS_NOTE = "Your visits here start counting once you validate.";
 
 /** "12 customers not validated yet — plan them and visit them as normal." */
