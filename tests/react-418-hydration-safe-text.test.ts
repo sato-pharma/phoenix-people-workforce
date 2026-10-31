@@ -628,6 +628,32 @@ export function runReact418HydrationSafeTextTests() {
   const myMapRules = codeOnly(read("src/lib/phoenix-crm/my-map-rules.ts"));
   assert.match(myMapRules, /compareMyMapNames\(String\(facts\.get\(left\.customerId\)/, "🔴 the server orders the pins by the same Arabic rules");
 
+  // (d6) Direct Orders (System Audit, "/employee-portals/direct-orders/[id]", 26 and 27 Oct 2026, one
+  // District Manager's iPhone, both on Back to an order she raised). No app code on her screen drew text
+  // that differs between server and phone, and neither order carried an email for Cloudflare to rewrite;
+  // the probe now names the outside rewriter it could not see (error-monitor-third-party-attribution).
+  // What the page DID hold was one engine-dependent day: the "Sent back to you" card printed
+  // `toLocaleDateString("en-GB")` with no zone — the server's UTC day, the phone's Cairo day — so a
+  // return sent between midnight and 3 AM Cairo was a day apart on the requester's own order.
+  const lateReturn = "2026-10-29T22:30:00Z"; // 30 Oct, 00:30 in Cairo
+  assert.notEqual(
+    new Date(lateReturn).toLocaleDateString("en-GB", { timeZone: "UTC" }),
+    new Date(lateReturn).toLocaleDateString("en-GB", { timeZone: "Africa/Cairo" }),
+    "the probe really is engine-dependent: the UTC server and a Cairo phone print different days",
+  );
+  assert.equal(cairoDate(lateReturn), "30 Oct 2026", "🔴 a return sent at 00:30 Cairo reads as the Cairo day");
+  try {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = function PreDaylightSavingEngine(locale?: string, options?: Intl.DateTimeFormatOptions) {
+      return new RealDateTimeFormat(locale, options?.timeZone === "Africa/Cairo" ? { ...options, timeZone: "Etc/GMT-2" } : options);
+    } as unknown as typeof Intl.DateTimeFormat;
+    assert.equal(cairoDate("2026-07-01T21:30:00Z"), "02 Jul 2026", "🔴 an engine with pre-2023 Cairo rules must still get the server's return day");
+  } finally {
+    (Intl as { DateTimeFormat: unknown }).DateTimeFormat = RealDateTimeFormat;
+  }
+  const correctResubmit = codeOnly(read("src/components/direct-orders/direct-order-correct-resubmit.tsx"));
+  assert.match(correctResubmit, /returnComment\.at \? ` · \$\{cairoDate\(returnComment\.at\)\}`/, "🔴 the return's day is printed through cairoDate");
+  assert.doesNotMatch(correctResubmit, /\.toLocale(?:Date|Time)?String\(|Intl\.DateTimeFormat/, "🔴 the correction card must not ask the reader's engine for a date");
+
   // (e) No NEW client component may ask the browser for a 12-hour time. `hour12: true`, an h11/h12
   // hourCycle, or an "en"/"en-US" call with an hour (whose default is 12-hour) all print the AM/PM
   // space that Safari's engine draws as U+202F and Node's as a plain space. A call that only runs

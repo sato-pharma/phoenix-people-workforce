@@ -57,6 +57,20 @@ export type DomRewriterProbe = {
    */
   htmlAttributeNames: readonly string[];
   bodyAttributeNames: readonly string[];
+  /**
+   * Links an iPhone's or iPad's own phone-number detection wrapped around page text. WebKit stamps
+   * every one with `x-apple-data-detectors`, and the app never emits that attribute — its own call
+   * links are plain `tel:` anchors. A direct order prints its pharmacy's 10-digit distributor
+   * customer code ("0001518652"), which reads as a phone number to that detector; the only two #418s
+   * ever recorded on a direct order (an iPhone, 26 and 27 Oct 2026) had no app cause, and until this
+   * the probe could not see a link like that. Optional so an older probe still describes.
+   */
+  appleDataDetectorCount?: number;
+  /**
+   * Addresses Cloudflare's Email Address Obfuscation rewrote (`data-cfemail` / `a.__cf_email__`).
+   * `no-transform` on every page (#6718) ended it; a count here means a page escaped that header.
+   */
+  cloudflareEmailCount?: number;
 };
 
 /**
@@ -105,6 +119,8 @@ export function describeDomRewriters(probe: DomRewriterProbe): string[] {
   if (/\btranslated-(?:ltr|rtl)\b/.test(probe.htmlClassName)) markers.push("google-translate");
   if (probe.hasMicrosoftTranslateAttribute) markers.push("microsoft-translate");
   if (probe.fontElementCount > 0) markers.push(`fontTags=${probe.fontElementCount}`);
+  if ((probe.appleDataDetectorCount ?? 0) > 0) markers.push(`ios-data-detectors=${probe.appleDataDetectorCount}`);
+  if ((probe.cloudflareEmailCount ?? 0) > 0) markers.push(`cloudflare-email=${probe.cloudflareEmailCount}`);
 
   const lang = probe.htmlLang.trim();
   if (lang && lang.toLowerCase() !== SERVER_RENDERED_LANG) markers.push(`lang=${lang}`);

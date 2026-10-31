@@ -86,6 +86,19 @@ function attributeNamesOf(element: Element | null): string[] {
   }
 }
 
+/**
+ * How many elements match, or 0 when the document cannot say — the same tolerance as
+ * `attributeNamesOf`, so one probe that throws never costs the row the rest of its context.
+ */
+function countMatching(selector: string): number {
+  if (typeof document.querySelectorAll !== "function") return 0;
+  try {
+    return document.querySelectorAll(selector).length;
+  } catch {
+    return 0;
+  }
+}
+
 function collectClientContext(): string | null {
   if (typeof window === "undefined" || typeof document === "undefined") return null;
   try {
@@ -113,7 +126,9 @@ function collectClientContext(): string | null {
     // exactly that reason, so this probe is now the only thing that answers the question. Absent
     // on a clean page, so it adds nothing to an ordinary row.
     const domRewriters = describeDomRewriters({
+      appleDataDetectorCount: countMatching("[x-apple-data-detectors]"),
       bodyAttributeNames: attributeNamesOf(document.body),
+      cloudflareEmailCount: countMatching("[data-cfemail], a.__cf_email__"),
       fontElementCount: document.getElementsByTagName("font").length,
       hasMicrosoftTranslateAttribute: document.querySelector("[_msttexthash]") !== null,
       htmlAttributeNames: attributeNamesOf(document.documentElement),

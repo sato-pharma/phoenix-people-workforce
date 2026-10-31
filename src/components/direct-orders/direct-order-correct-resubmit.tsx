@@ -10,6 +10,7 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { cairoDate } from "@/lib/format/cairo-datetime";
 
 /**
  * The requester's answer to a return: correct the order and send it back up the SAME chain.
@@ -152,7 +153,10 @@ export function DirectOrderCorrectResubmit({
           <p className="text-sm font-semibold text-slate-900">“{returnComment.message}”</p>
           <p className="mt-1 text-phx-xs font-bold text-slate-500">
             {returnComment.byName ? `— ${returnComment.byName}` : "— the approver"}
-            {returnComment.at ? ` · ${new Date(returnComment.at).toLocaleDateString("en-GB")}` : ""}
+            {/* The Cairo day, from the shipped offset table. A bare toLocaleDateString printed the
+                server's UTC day and the phone's own: a return sent between midnight and 3 AM Cairo
+                was a day apart, and the requester's page threw React #418. */}
+            {returnComment.at ? ` · ${cairoDate(returnComment.at)}` : ""}
           </p>
         </blockquote>
       ) : (
