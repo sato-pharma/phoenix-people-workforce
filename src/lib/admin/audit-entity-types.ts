@@ -54,6 +54,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   attendance_settlement_correction: true,
   attendance_weekly_digest_run: true,
   auth_session: true,
+  bank_account_letter_export: true,
   business_cards_export: true,
   business_review_export: true,
   business_review_pack: true,
