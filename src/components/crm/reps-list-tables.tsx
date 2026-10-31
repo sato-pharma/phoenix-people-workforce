@@ -38,7 +38,7 @@ import {
   type ConfidenceBand,
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
-import type { ContactSeenAt, RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
+import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
@@ -288,6 +288,7 @@ function matches(row: RepsListContact, needle: string): boolean {
     row.speciality,
     row.region,
     row.address,
+    row.place?.address,
     row.seenAt?.address,
     row.grade,
     row.phone,
@@ -395,8 +396,8 @@ function GroupHeading({
  * the documented cross-platform form — on a phone it hands off to the Maps app, on a desktop it
  * opens the web map. No key, no embed, no third-party script on the page.
  */
-const pinHref = (seenAt: ContactSeenAt): string =>
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${seenAt.lat},${seenAt.lon}`)}`;
+const pinHref = (point: { lat: number; lon: number }): string =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${point.lat},${point.lon}`)}`;
 
 /**
  * The Maps URL for an address we have no fix for — a SEARCH, not a pin.
@@ -769,6 +770,12 @@ function TradeLine({ row }: { row: RepsListContact }) {
  * coordinate — and, only for a contact nobody has ever checked in on, the CRM's own address as a
  * map SEARCH. Never both on one row.
  *
+ * THE VALIDATED PHOTO OUTRANKS THE CHECK-IN (owner, 2026-10-31: "use the validation pin"). A doctor
+ * validated with a live photo is pinned where that photo was taken and dated "validated", because that
+ * is a deliberate capture at his door; the last check-in is used only for a doctor not validated yet.
+ * It is the same precedence his neighbours are found by (`groupContactsByBrick`), so the colour a row
+ * is painted and the map its address opens always agree about where he stands.
+ *
  * EACH SEGMENT IS ITS OWN `<bdi>`, and that is load-bearing, not decoration. 18.2% of these
  * addresses mix Arabic and English in one value (20,313 of 111,912, measured 2026-09-01). Under a
  * single `dir="auto"` the whole string takes its direction from the first strong character, so a
@@ -777,14 +784,16 @@ function TradeLine({ row }: { row: RepsListContact }) {
  * that. Do not collapse this back to one `dir="auto"` string.
  */
 function AddressCell({ locality, row }: { locality: string | null; row: RepsListContact }) {
-  const observed = row.seenAt ?? null;
-  const segments = polishAddress(observed?.address ?? row.address);
+  const place = row.place ?? null;
+  const observed = place ? null : (row.seenAt ?? null);
+  const point = place ?? observed;
+  const segments = polishAddress(point?.address ?? row.address);
 
   // Nothing observed and nothing recorded: 117 contacts company-wide. Said in words, because an
   // em-dash in an address column reads as a rendering fault rather than as a fact about the data.
-  if (!observed && segments.length === 0) return <span className="text-slate-400">No address on record</span>;
+  if (!point && segments.length === 0) return <span className="text-slate-400">No address on record</span>;
 
-  const href = observed ? pinHref(observed) : searchHref(segments.join(", "), locality);
+  const href = point ? pinHref(point) : searchHref(segments.join(", "), locality);
   return (
     <div className="break-words">
       <a className={LINK_CLASS} href={href} rel="noreferrer" target="_blank">
@@ -800,7 +809,9 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
       {/* An observed address without its date is worse than none: "current" reads as today when the
           check-in may be from March. Its absence is also the only thing separating an observation
           from the CRM's own record now that the "Old" label is gone. */}
-      {observed?.at ? (
+      {place?.validatedAt ? (
+        <span className="ml-1.5 text-phx-3xs font-semibold text-slate-400">validated {cairoDay(place.validatedAt)}</span>
+      ) : observed?.at ? (
         <span className="ml-1.5 text-phx-3xs font-semibold text-slate-400">seen {cairoDay(observed.at)}</span>
       ) : null}
       <NearbyLine row={row} />
@@ -1365,7 +1376,8 @@ export function RepsListContacts({
       // match the screen (owner's standing rule). `Last seen` and the coordinate pair are not extra
       // data: they are what the link on screen carries, written out. The pair is what makes the
       // file usable away from the board — it pastes straight into a map, a street name does not.
-      address: polishAddressText(row.seenAt?.address ?? row.address),
+      // The validated photo's point first, else the last check-in's — the screen's own precedence.
+      address: polishAddressText((row.place ?? row.seenAt)?.address ?? row.address),
       area: entry.group.mapped ? (entry.group.areaName ?? "") : "",
       brick: entry.group.mapped ? entry.group.heading : `${entry.group.heading} (not yet mapped to a brick)`,
       // The three judgements go out with the rows. An export must match the screen, and these are
@@ -1384,13 +1396,14 @@ export function RepsListContacts({
       contact_ar: row.nameAr ?? "",
       grade: row.grade ?? "",
       last_seen: row.seenAt?.at ? cairoDay(row.seenAt.at) : "",
+      validated: row.place?.validatedAt ? cairoDay(row.place.validatedAt) : "",
       // The plan's own ask, TO DATE — the denominator the screen shows. Exporting the whole month's
       // ask instead would make every mid-month row look behind.
       last_visit: row.activity?.lastVisitDate ?? "",
       planned_to_date: row.activity ? row.activity.plannedCallsToDate : "",
       list: LIST_LABEL[row.listType],
       locality: row.region ?? "",
-      map: row.seenAt ? `${row.seenAt.lat}, ${row.seenAt.lon}` : "",
+      map: row.place ? `${row.place.lat}, ${row.place.lon}` : row.seenAt ? `${row.seenAt.lat}, ${row.seenAt.lon}` : "",
       nearby: (row.nearby ?? []).map((entry_) => entry_.name).join(", "),
       phone: phoneOf(row) ?? "",
       shared_with: sharedWithCell((row.sharedWith ?? []).map((entry_) => entry_.repName)),
@@ -1612,6 +1625,7 @@ export function RepsListContacts({
             { key: "phone", label: "Phone" },
             { key: "address", label: "Address" },
             { key: "last_seen", label: "Last seen" },
+            { key: "validated", label: "Validated" },
             // Dropped from the file when the read failed, exactly as they are dropped from the
             // screen. An export must match the screen (owner's standing rule), and that includes
             // matching it when a column is not there.

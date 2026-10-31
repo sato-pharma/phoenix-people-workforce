@@ -71,7 +71,23 @@ export function chooseKpiDoctorBricks(
   customers: readonly KpiBrickCustomer[],
   places: readonly KpiBrickPlace[],
 ): Map<number, string | null> {
-  const placeOf = new Map<string, KpiBrickPlace>();
+  const out = new Map<number, string | null>();
+  for (const [contactId, { place }] of chooseValidatedPlaces(customers, places)) {
+    out.set(contactId, place.brick_name?.trim() || null);
+  }
+  return out;
+}
+
+/**
+ * Each contact's validated customer and the ONE active place that stands for him, by the rules above.
+ * The brick chooser reads the place's brick; the Reps List reads its point (`validated-place-points.ts`),
+ * so a doctor is filed in a brick and painted beside his neighbours from the same photo.
+ */
+export function chooseValidatedPlaces<P extends KpiBrickPlace>(
+  customers: readonly KpiBrickCustomer[],
+  places: readonly P[],
+): Map<number, { customer: KpiBrickCustomer; place: P }> {
+  const placeOf = new Map<string, P>();
   for (const place of places) {
     const held = placeOf.get(place.customer_id);
     const hasBrick = Boolean(place.brick_name?.trim());
@@ -93,9 +109,10 @@ export function chooseKpiDoctorBricks(
       (isActive(customer) === isActive(held) && customer.validated_at > (held.validated_at ?? ""));
     if (better) chosen.set(contactId, customer);
   }
-  const out = new Map<number, string | null>();
+  const out = new Map<number, { customer: KpiBrickCustomer; place: P }>();
   for (const [contactId, customer] of chosen) {
-    out.set(contactId, placeOf.get(customer.id)?.brick_name?.trim() || null);
+    const place = placeOf.get(customer.id);
+    if (place) out.set(contactId, { customer, place });
   }
   return out;
 }

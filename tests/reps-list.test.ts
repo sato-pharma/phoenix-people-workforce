@@ -843,6 +843,44 @@ export function runRepsListTests() {
     );
   }
 
+  // ── THE VALIDATION PIN OUTRANKS THE CHECK-IN ─────────────────────────────────────────────────
+  // Owner, 2026-10-31: "use the validation pin and build it". A rep with no iReports360 check-ins read
+  // "No address on record" on every row and was never painted a single neighbour, while her validated
+  // doctors stood on live photos 3 to 19 metres apart. A row now stands where its validated photo was
+  // taken, and on its last check-in only while it is not validated yet.
+  {
+    const validated = (lat: number) => ({ address: null, lat, lon: 30.7, validatedAt: "2026-10-20T08:00:00Z" });
+    const checkedIn = (lat: number) => ({ address: null, at: "2026-09-01T08:00:00Z", lat, lon: 30.7 });
+    const grouped = groupContactsByBrick(
+      [
+        // Two validated doctors 11 m apart with no check-in at all — a new rep's list.
+        { ...row(1, "Amal", "Kom Hamada"), place: validated(30.76), seenAt: null },
+        { ...row(2, "Ahmed", "Kom Hamada"), place: validated(30.7601), seenAt: null },
+        // An old check-in beside them, but the validated photo is 5 km away: the photo wins.
+        { ...row(3, "Basem", "Kom Hamada"), place: validated(30.805), seenAt: checkedIn(30.76005) },
+        // Not validated yet: the check-in still places him, 5 m from Ahmed.
+        { ...row(4, "Dina", "Kom Hamada"), place: null, seenAt: checkedIn(30.76015) },
+      ],
+      index(),
+    );
+    const byId = new Map(grouped.groups.flatMap((group) => group.rows).map((entry) => [entry.contactCrmId, entry]));
+    assert.ok(
+      byId.get(1)?.nearby?.some((entry) => entry.contactCrmId === 2),
+      "a validated doctor with no check-in is painted beside his validated neighbour — the whole point of the validation pin",
+    );
+    assert.equal(
+      byId.get(3)?.nearby ?? null,
+      null,
+      "the validated photo outranks an older check-in: a doctor whose photo stands 5 km away is not anyone's neighbour because a visit once logged him nearby",
+    );
+    assert.ok(
+      byId.get(4)?.nearby?.some((entry) => entry.contactCrmId === 2),
+      "a doctor not validated yet still stands on his check-in, so he is gathered with the validated doctors beside him",
+    );
+    assert.equal(byId.get(1)?.cluster, byId.get(4)?.cluster, "one neighbourhood, one colour, whichever pin placed each member");
+    assert.equal(byId.get(3)?.cluster ?? null, null, "the doctor standing alone carries no colour");
+  }
+
   // ── SHARING IS AN IDENTITY JUDGEMENT, AND A NAME IS NOT AN IDENTITY ──────────────────────────
   // Measured on production 2026-09-01: 69% of same-name cross-rep contact pairs stand over 5 km
   // apart. Matching on the name alone would have painted hundreds of rows violet and told the owner

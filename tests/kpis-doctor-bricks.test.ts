@@ -6,6 +6,7 @@ import {
   type KpiBrickCustomer,
   type KpiBrickPlace,
 } from "../src/lib/crm/kpis-doctor-bricks.ts";
+import { chooseValidatedPlacePoints } from "../src/lib/crm/validated-place-points.ts";
 
 /**
  * The brick each doctor on a rep's Coverage and Frequency list is filed under (owner, 2026-10-29: "the
@@ -121,5 +122,38 @@ export function runKpiDoctorBrickChooserTests() {
       [902, "Maadi"],
     ],
     "the whole read holds only the doctors asked for — never the rest of the company",
+  );
+
+  // The Reps List stands each validated doctor on the SAME place the brick above comes from (owner,
+  // 2026-10-31: "use the validation pin"), so the brick he is counted in and the neighbours he is
+  // painted with come from one photo. Its point, its address and the validation date — nothing else.
+  const located = (overrides: Partial<KpiBrickPlace> & { address?: string | null; lat?: number | null; lon?: number | null }) => ({
+    address: "Kom Hamada, Behira",
+    lat: 30.76,
+    lon: 30.7,
+    ...place(overrides),
+    ...overrides,
+  });
+  const points = chooseValidatedPlacePoints(
+    [customer({ validated_at: "2026-10-20T08:00:00Z" })],
+    [
+      located({ brick_name: "Nasr City", created_at: "2026-10-25T09:00:00Z", lat: 30.9, lon: 30.9 }),
+      located({ brick_name: "Heliopolis", created_at: "2026-10-20T08:00:00Z" }),
+    ],
+  );
+  assert.deepEqual(
+    points.get(501),
+    { address: "Kom Hamada, Behira", lat: 30.76, lon: 30.7, validatedAt: "2026-10-20T08:00:00Z" },
+    "the validation photo's own place is the doctor's point — the earliest, the one his brick is read from — and it carries no accuracy or reading",
+  );
+  assert.equal(
+    chooseValidatedPlacePoints([customer()], [located({ lat: 0, lon: 0 })]).has(501),
+    false,
+    "a point outside Egypt is no point: the row falls back to its check-ins rather than pinning a doctor in the sea",
+  );
+  assert.equal(
+    chooseValidatedPlacePoints([customer({ validated_at: null })], [located({})]).has(501),
+    false,
+    "a doctor not validated yet has no validation pin",
   );
 }

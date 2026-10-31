@@ -65,6 +65,7 @@ import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_CONTACT_ROSTER } from "@/lib/crm/shared-windows";
+import { loadValidatedPlacePoints, type ValidatedPlacePoint } from "@/lib/crm/validated-place-points";
 import {
   CRM_CHECKINS_UNIFIED_VIEW,
   CRM_CONTACT_ASSIGNMENTS_TABLE,
@@ -176,6 +177,13 @@ export type RepsListContact = DoctorListRow & {
   insights?: PhoenixInsight[] | null;
   /** Other contacts in the SAME group standing at effectively the same address. */
   nearby?: NearbyContact[] | null;
+  /**
+   * Where the doctor's VALIDATED live photo stands (owner, 2026-10-31: "use the validation pin"). It
+   * outranks `seenAt` for where the row is — the pin its address opens and the neighbours it is
+   * painted with — because a validation is a deliberate capture at the door and a check-in is wherever
+   * the rep's phone was. Null when the doctor is not validated yet; the row then falls back to `seenAt`.
+   */
+  place?: ValidatedPlacePoint | null;
   seenAt?: ContactSeenAt | null;
   /** Other reps carrying what the evidence says is this same customer. */
   sharedWith?: SharedWith[] | null;
@@ -292,13 +300,15 @@ export function groupContactsByBrick(rows: readonly RepsListContact[], index: Br
     // asked to highlight doctors in one brick who are very near each other; a group already IS one
     // brick (or one unmapped region), so the comparison can never reach across a heading and claim
     // two people are together when the page has just told the reader they are in different places.
+    //
+    // A row stands where its validated photo was taken, else where it was last checked in — the one
+    // precedence its address and pin follow too (`rowPoint` in Phoenix CRM's own List), so the colour a
+    // doctor is painted and the map his address opens can never disagree about where he is.
     const found = findNeighbours(
-      group.rows.map((row) => ({
-        contactCrmId: row.contactCrmId,
-        lat: row.seenAt?.lat ?? null,
-        lon: row.seenAt?.lon ?? null,
-        name: row.name,
-      })),
+      group.rows.map((row) => {
+        const point = row.place ?? row.seenAt ?? null;
+        return { contactCrmId: row.contactCrmId, lat: point?.lat ?? null, lon: point?.lon ?? null, name: row.name };
+      }),
     );
     for (const row of group.rows) row.nearby = found.get(row.contactCrmId) ?? null;
     // Then gather each cluster onto consecutive rows — the owner's follow-up the same day: "make
@@ -478,7 +488,8 @@ export async function loadCheckins(contactIds: readonly number[]): Promise<Map<n
         .from(CRM_CHECKINS_UNIFIED_VIEW)
         .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date, crm_checkin_id")
         // iReports360 check-ins only: these pins reach the rep's own Phoenix CRM List (shared-customers.ts),
-        // and a Phoenix visit's position is never shown on a rep's screen (golden rule #1).
+        // and a Phoenix visit's position is never shown on a rep's screen (golden rule #1). A validated
+        // place's point may be (validated-place-points.ts) — it is where the customer is, not a visit.
         .eq("source", IREPORTS360_VISIT_SOURCE)
         .in("contact_crm_id", chunk)
         .not("lat", "is", null)
@@ -768,6 +779,8 @@ export async function getRepsListForAgent(
   // one the staged reads gave. Each is handled the moment it starts and awaited where it was used.
   const contactBrickMapRead = loadContactBrickMap(contactIds);
   const checkinsRead = loadCheckins(contactIds);
+  // Never throws: a failed read answers an empty map and every row falls back to its check-ins.
+  const placesRead = loadValidatedPlacePoints(contactIds);
   const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead]).then(([byContactId, byRegionName]) => {
     const needed = new Set<string>();
     for (const row of rows) {
@@ -804,12 +817,13 @@ export async function getRepsListForAgent(
   });
   for (const read of [contactBrickMapRead, checkinsRead, metaRead, otherPinsRead]) read.catch(() => undefined);
 
-  const [brickByContactId, brickByRegionName, checkins, roster, otherPins] = await Promise.all([
+  const [brickByContactId, brickByRegionName, checkins, roster, otherPins, placeByContact] = await Promise.all([
     contactBrickMapRead,
     regionBrickMapRead,
     checkinsRead,
     rosterRead,
     otherPinsRead,
+    placesRead,
   ]);
 
   const pins = new Map(otherPins);
@@ -920,6 +934,7 @@ export async function getRepsListForAgent(
       ),
       insights: insightsByContact.get(row.contactCrmId) ?? null,
       nearby: null,
+      place: placeByContact.get(row.contactCrmId) ?? null,
       seenAt: found?.seenAt ?? null,
       sharedWith,
       trade: tradeByContact.get(row.contactCrmId) ?? null,
