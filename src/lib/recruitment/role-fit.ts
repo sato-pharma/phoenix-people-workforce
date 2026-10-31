@@ -242,6 +242,15 @@ function dimensionsFor(family: CandidateRoleFamily | null, facts: CandidateScree
         backgroundDimension(facts, "Education"),
         placeDimension(facts),
       ];
+    case "personnel":
+      // Personnel administration is learned on the job — insurance forms, payroll inputs, the labour
+      // office — so its years floor sits between the office seats and the section head.
+      return [
+        currentRoleDimension(facts, "Personnel / HR role"),
+        yearsDimension("Personnel experience", fact(facts.years), 2),
+        backgroundDimension(facts, "Education"),
+        placeDimension(facts),
+      ];
     case "office_coordinator":
     case "human_resources":
     case "talent_acquisition":

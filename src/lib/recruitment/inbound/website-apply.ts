@@ -84,7 +84,8 @@ export type WebsiteApplyRoleKey =
   | "regulatory_affairs_specialist"
   | "quality_control_analyst"
   | "office_coordinator"
-  | "product_manager";
+  | "product_manager"
+  | "personnel";
 
 export type WebsiteApplyRole = {
   key: WebsiteApplyRoleKey;
@@ -171,6 +172,17 @@ const WEBSITE_APPLY_ROLES: Readonly<Record<WebsiteApplyRoleKey, WebsiteApplyRole
     key: "product_manager",
     roleFamily: "product_manager",
     title: "Product Manager",
+  },
+  // The Personnel Specialist / Senior Personnel Specialist seat (Sheraton, Cairo), added 2026-10-31.
+  // Registered by family only, like every row above: the form is whatever the WhatsApp bot asks the
+  // `personnel` family — the built-in expected salary, then the `pers_*` questions (the first asks
+  // which of the two grades) and the shared ones widened to it. One key covers both grades, so the
+  // careers card titled "Personnel Specialist / Senior Personnel Specialist" routes here on /personnel/.
+  personnel: {
+    jobTitle: "Personnel Specialist",
+    key: "personnel",
+    roleFamily: "personnel",
+    title: "Personnel Specialist / Senior Personnel Specialist",
   },
 };
 

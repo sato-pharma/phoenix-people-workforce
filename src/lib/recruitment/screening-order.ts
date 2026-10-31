@@ -84,6 +84,9 @@ const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
   // is itself the useful fact.
   office_coordinator: "unrelated",
   other: "unrelated",
+  // Personnel Specialist (added 2026-10-31): `unrelated` beside human_resources for the same reason —
+  // a personnel CV speaks to no field-force or pharma read. A title WAS read, so it is not `unknown`.
+  personnel: "unrelated",
   pharmacist: "pharma_adjacent",
   product_manager: "pharma_adjacent",
   sales: "sales",

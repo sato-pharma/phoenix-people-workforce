@@ -30,6 +30,8 @@ export const candidateRoleFamilies = [
   "talent_acquisition",
   "finance",
   "office_coordinator",
+  // Added 2026-10-31 for the Personnel Specialist / Senior Personnel Specialist opening (Sheraton).
+  "personnel",
   "other",
 ] as const;
 
@@ -45,6 +47,7 @@ export const candidateRoleFamilyLabels: Record<CandidateRoleFamily, string> = {
   national_sales_manager: "National Sales Manager",
   office_coordinator: "Office Coordinator",
   other: "Other",
+  personnel: "Personnel Specialist",
   pharmacist: "Pharmacist",
   product_manager: "Product Manager",
   sales: "Sales & Business Development",
@@ -151,13 +154,18 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   // into Human Resources, so a title that names the recruiting work outright ("Talent Acquisition
   // Specialist", "Senior Recruiter", "Recruitment Coordinator") lands here — including one that
   // also says HR ("Talent Acquisition & HR Manager"), because the specific word is the applied-for
-  // job. Payroll and personnel are NOT here: they are HR operations, not recruiting, and stay below.
+  // job. Payroll and personnel are NOT here: they are HR operations, not recruiting — their own family below.
   if (/talent\s+acquisition|\brecruit(er|ment|ing)?\b/.test(t)) return "talent_acquisition";
 
-  // HR before finance: payroll and compensation are HR work here, and several titles carry both
-  // ("Sr. Payroll & Personnel Specialist | HR Operations | Comp & Ben").
+  // Personnel before the generic HR words, added 2026-10-31 for the Personnel Specialist / Senior
+  // Personnel Specialist opening. Payroll and personnel administration are that seat's work, so a
+  // title naming either ("Sr. Payroll & Personnel Specialist | HR Operations | Comp & Ben", "HR &
+  // Payroll Officer") is the applied-for job even when it also says HR — the reasoning that put
+  // Talent Acquisition above. It stays AFTER Talent Acquisition, so "Personnel & Recruitment
+  // Specialist" keeps the recruiting family it had, and after the section-head seat.
+  // HR before finance still holds: payroll and compensation are HR work here, never Finance.
+  if (/\bpersonnel\b|\bpayroll\b/.test(t)) return "personnel";
   if (/\bhr\b|\bhrbp\b|human resource|human resources/.test(t)) return "human_resources";
-  if (/\bpersonnel\b|\bpayroll\b/.test(t)) return "human_resources";
 
   if (/\baccountant\b|\baccounting\b|\baccounts\b|\bfinance\b|\bfinancial\b|\btax\b|\baudit(or)?\b/.test(t)) {
     return "finance";

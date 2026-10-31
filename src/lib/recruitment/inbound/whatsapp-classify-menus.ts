@@ -248,17 +248,23 @@ const ROLE_MENU_ORDER: CandidateRoleFamily[] = [
   // switch back on.
   // Added 2026-09-02 for the Sheraton Office Coordinator opening. It sits with the other head-office
   // seats and above "Other" — which stays last, because it is the answer meaning "none of these" and
-  // offering it early invites it. The list is 9 rows against Metas 10-row cap (Talent Acquisition
+  // offering it early invites it. The list was 9 rows against Metas 10-row cap (Talent Acquisition
   // filled it on 2026-09-22; HR Section Head replaced Finance on 2026-10-06 rather than append; the
-  // Human Resources row was then removed the same day, which freed ONE slot). One more row fits; a
-  // role after that has to displace something rather than append: an eleventh row is a 400 for the
-  // whole message, not merely a crowded list.
+  // Human Resources row was then removed the same day, which freed ONE slot). Personnel took that
+  // slot on 2026-10-31 — see below.
   //
   // This row is what makes the position tappable instead of typed, which matters twice over: the
   // applicant lands in a real family (so the extra questions can be scoped to them), and the job
   // title is spelled by the system rather than by somebody phone keyboard — the folder shelf already
   // carries five spellings of Kafr El-Sheikh from free-typed keys, and this is how that is avoided.
   "office_coordinator",
+  // Personnel Specialist, added 2026-10-31 at the owner's instruction ("add to whatsapp bot") for the
+  // Personnel Specialist / Senior Personnel Specialist opening. It took the ONE free slot, so the
+  // list is now 10 rows — FULL at Meta's cap. The next role has to DISPLACE a row (as HR Section Head
+  // displaced Finance on 2026-10-06), never append: an eleventh row is a 400 for the whole message.
+  // Which of the two grades the applicant wants is the first extra question (`pers_position`), so
+  // one tap files both grades in one family and one tab.
+  "personnel",
   "other",
 ];
 
