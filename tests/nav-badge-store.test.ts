@@ -6,6 +6,7 @@ import {
   BADGE_COUNTS_ENDPOINT,
   BADGE_RETURN_GAP_MS,
 } from "../src/lib/nav-badge-store.ts";
+import { BADGES_GAP_MS } from "../src/lib/session-pulse-store.ts";
 
 // ── Minimal browser-environment mock ─────────────────────────────────────────
 // subscribeNavBadge guards on `typeof window === "undefined"` and uses
@@ -252,6 +253,9 @@ export async function runNavBadgeStoreTests() {
   // not. The interval callbacks are captured so the tick can be fired by hand in either state.
   {
     const realSetInterval = globalThis.setInterval;
+    const realNow = Date.now;
+    let now = 2_000_000;
+    Date.now = () => now;
     const ticks: Array<() => void> = [];
     (globalThis as unknown as Record<string, unknown>)["setInterval"] = (fn: () => void) => {
       ticks.push(fn);
@@ -267,6 +271,8 @@ export async function runNavBadgeStoreTests() {
         const afterBoot: number = fetchCallCount;
         assert.equal(ticks.length, 1, `9: ${src} must start exactly one 30 s poll`);
 
+        // The pulse asks for the badges once a minute (BADGES_GAP_MS); past that, only visibility decides.
+        now += BADGES_GAP_MS;
         mockDocument.visibilityState = "hidden";
         ticks[0]();
         await flush();
@@ -279,6 +285,7 @@ export async function runNavBadgeStoreTests() {
         unsub();
       }
     } finally {
+      Date.now = realNow;
       mockDocument.visibilityState = "visible";
       (globalThis as unknown as Record<string, unknown>)["setInterval"] = realSetInterval;
       _resetNavBadgeChannels();

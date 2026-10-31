@@ -9,7 +9,10 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
  * candidates, the historical leavers, a people lookup and the device register) and the whole
  * contract-renewal dashboard (the directory again, every contract, every open renewal request) —
  * and production, 2026-10-23, measured the batched badge at about 1.6 s a call. For most of the
- * company that work could not change the answer, and this is the proof, step by step:
+ * company that work could not change the answer, and this is the proof, step by step. (Since 31 Oct 2026
+ * the count reads two light loaders instead of the dashboards — listVisibleResignationStatuses and
+ * listVisibleContractRenewalWorkflows, each scoping a viewer line for line as its dashboard does — so
+ * the proof holds unchanged, and the early zero still saves the directory and both table reads.)
  *
  *   1. Both sources scope a reader who is not a COMPANY reader (isCompanyResignationReader /
  *      isCompanyContractReader: scope system or company, or Super Admin, CEO, HR Operations,
@@ -21,7 +24,7 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
  *      a direct report (District Manager, Manager, Regional Manager, National Sales Manager), and
  *      none is District Manager or Manager (the manager match in canSeeHrScopedRecord).
  *   3. Every item those records become carries the record's own employee id (mapResignationItem,
- *      mapContractRenewalItem), which matches the viewer's by the same hrIdsMatch — an equivalence
+ *      mapContractRenewalItem, and residualInboxEntries for the count), which matches the viewer's by the same hrIdsMatch — an equivalence
  *      (canonical-key equality, or equality after the same symbol strip), so it carries across.
  *   4. survivesAwaitingInbox drops every item whose employee is the viewer. Nothing is left.
  *   5. The third source, outstation, is read only for the admin audience of a seat that may approve

@@ -253,6 +253,11 @@ function appendWorkflowNote(
   return existing ? `${existing}\n${entry}` : entry;
 }
 
+/** A workflow record's status: its own, else the lifecycle copy, else submitted. One rule for every read. */
+export function resignationRowStatus(row: Pick<ResignationRow, "status" | "exit_status">): ResignationStatus {
+  return (cleanText(row.status) ?? cleanText(row.exit_status) ?? "submitted") as ResignationStatus;
+}
+
 function mapResignation(row: ResignationRow): ResignationRecord {
   const submittedDate =
     dateOnly(row.submitted_date) ??
@@ -263,7 +268,7 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     dateOnly(row.effective_date) ??
     dateOnly(row.last_working_date) ??
     submittedDate;
-  const status = (cleanText(row.status) ?? cleanText(row.exit_status) ?? "submitted") as ResignationStatus;
+  const status = resignationRowStatus(row);
 
   return {
     id: row.id,
@@ -867,6 +872,45 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
   };
 
   return { employees, payrollCandidates, records, settlementWithheld, summary };
+}
+
+/**
+ * Whose workflow resignations this viewer may see, and the status of each — the sidebar badge's
+ * read (countAwaitingMyActionItems), and nothing more.
+ *
+ * WHY (31 Oct 2026, the owner's "lighter inbox count"). The badge used to read the whole dashboard
+ * above for a number: every column of every resignation, every payroll leaver candidate, every
+ * historical leaver, a people lookup and the device register — about ten Supabase requests on every
+ * badge refresh of every HR, finance and management seat, to count the one or two requests still
+ * waiting. This reads the directory (served from its process-wide cache) and three columns of one
+ * table.
+ *
+ * 🔴 THE SAME SCOPE AS THE DASHBOARD, LINE FOR LINE: a company reader sees every record; anyone
+ * else sees a record only when its employee is in the directory and canSeeEmployee admits them.
+ * tests/badge-counts-viewer-cache.test.ts holds the two bodies to the same lines. The historical
+ * leavers the dashboard adds are completed or cancelled by construction, so no count could ever
+ * include one, and they are not read.
+ */
+export async function listVisibleResignationStatuses(
+  access?: AccessContext,
+): Promise<Array<{ employeeHrId: string; status: ResignationStatus }>> {
+  const supabase = getSupabaseAdmin();
+  const [directory, resignationsResult] = await Promise.all([
+    getEmployeeDirectory(),
+    supabase.from("employee_resignations").select("employee_hr_id, status, exit_status"),
+  ]);
+  if (resignationsResult.error) throw resignationsResult.error;
+
+  const employeesByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+  const scopedAccess = access ?? systemAccessContext;
+  const rows = (resignationsResult.data ?? []) as Array<Pick<ResignationRow, "employee_hr_id" | "status" | "exit_status">>;
+  const visibleRows = isCompanyResignationReader(scopedAccess)
+    ? rows
+    : rows.filter((row) => {
+        const employee = employeesByHrId.get(normalizeHrId(row.employee_hr_id));
+        return employee ? canSeeEmployee(scopedAccess, employee) : false;
+      });
+  return visibleRows.map((row) => ({ employeeHrId: row.employee_hr_id, status: resignationRowStatus(row) }));
 }
 
 /**

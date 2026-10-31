@@ -95,8 +95,20 @@ export function runBadgePollStaysLightTests() {
         "so reading it costs a full read per poll for nothing.",
     );
   }
-  assert.match(count, /residualActionItems\(/, "the count must build items with the list's own builders");
+  // 31 Oct 2026, the owner's "lighter inbox count": the count no longer reads the two whole dashboards
+  // (about ten Supabase requests per badge refresh) — only who is waiting and in which status.
+  for (const dashboard of ["getResignationsDashboardData(", "getContractRenewalDashboardData("]) {
+    assert.ok(!count.includes(dashboard), `countAwaitingMyActionItems reads ${dashboard.slice(0, -1)} — a whole dashboard for a number; read its light loader`);
+  }
+  assert.match(count, /residualInboxEntries\(/, "the count must build its entries with the list's own open-status rules");
   assert.match(count, /survivesAwaitingInbox\(item, access\)/, "the count must apply the list's own filter");
+  // The list and the count decide what is WAITING by the same three rules, so neither can drift.
+  const listBuilder = bodyOf(action, "function residualActionItems(", ACTION) + bodyOf(action, "function mapContractRenewalItem(", ACTION);
+  const countBuilder = bodyOf(action, "function residualInboxEntries(", ACTION);
+  for (const rule of ["isOpenResignation(", "isOpenOutstation(", "isActiveContractRenewal("]) {
+    assert.ok(listBuilder.includes(rule), `the list must decide what waits with ${rule.slice(0, -1)}`);
+    assert.ok(countBuilder.includes(rule), `the count must decide what waits with ${rule.slice(0, -1)}`);
+  }
   const list = bodyOf(action, "export async function getAwaitingMyActionItemsWithHealth(", ACTION);
   assert.match(list, /residualActionItems\(/, "the list must build its residual items with the shared builders");
   assert.match(list, /survivesAwaitingInbox\(item, access\)/, "the list must filter with the shared filter");

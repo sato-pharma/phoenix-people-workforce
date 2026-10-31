@@ -542,15 +542,50 @@ goes alone when the wait ends. A session's idle limit equals its absolute limit
 (`sessionIdleTimeoutSecondsForRole` in `session-token.ts`), so three seconds on its keep-alive cannot end
 one. Pinned by `tests/session-pulse.test.ts` §11.
 
-**What was left alone, and why.** The sidebar badges are still read on every 30 s tick even though their
-per-viewer memory lasts 20 s, so an admin tab never hits it: lengthening either would make a badge staler,
-and that is a decision about freshness, not a repeat. The prefetches themselves stay as the owner set them
-on 1 and 23 Oct.
+**What was left alone, and why.** The prefetches stay as the owner set them on 1 and 23 Oct. The badges'
+freshness was a decision, not a repeat, so it went to the owner — Cut 3 below is his answer.
 
 **How to see that it worked after the deploy.** Count `phx_auth_session_bundle` in the API-gateway log for
 one weekday hour after the deploy and compare it with the same hour before (8,915 between 13:00 and 14:00
 Cairo on Saturday 31 Oct); and count `/api/auth/pulse` requests per phone in Railway's HTTP log — a bare
-POST followed within three seconds by a GET from the same phone should be gone.
+POST followed within three seconds by a GET from the same phone should be gone. Measured after the deploy
+(31 Oct, 15:38–15:48 Cairo): 0.38 login checks per app request against 0.60 before, and 1 bare POST
+followed by the bell in 105 pulse requests against 14 in 49.
+
+### Cut 3 — the sidebar badges once a minute, and a lighter "Other Approvals" count (31 Oct 2026)
+
+Measured on Wednesday 28 Oct (Cairo day): 689,708 Supabase requests, and about 2,743 sidebar badge reads
+costing 50,000–57,000 of them, about 8%. One badge read is eleven domain reads: 35 requests for a Super
+Admin, 22 for the CEO, 23 for Finance, 16–18 for a District Manager, 4 for a Medical Rep. One District
+Manager's open tabs alone made 699 reads that day. The cause: the pulse asked for the badges on every 30 s
+tick, and the server's per-viewer memory of them lasts 20 s, so every tick paid a full read. The owner
+chose both of the following ("Both", 31 Oct).
+
+- **Badges up to a minute old.** `BADGES_GAP_MS` (55 s) in `src/lib/session-pulse-store.ts`: a tick asks for
+  the badges only when they are at least that old, like the bell's `NOTICES_GAP_MS`. Both arrive together
+  when a page opens, so a quiet tab sends one request a minute instead of two. A tab shown again still
+  refreshes them at once (`PULSE_RETURN_GAP_MS`), a badge mounted with nothing cached still asks, and a
+  failed read leaves them due. The server's 20 s memory is unchanged. Pinned by
+  `tests/session-pulse.test.ts` §6, §9 and §12.
+- **A lighter "Other Approvals" count.** `countAwaitingMyActionItems` read the whole resignations dashboard
+  (every column, the payroll leaver candidates, the historical leavers, a people lookup, the device
+  register) and the whole contract-renewal dashboard (every active contract) to count the one or two
+  requests waiting. It now reads `listVisibleResignationStatuses` and `listVisibleContractRenewalWorkflows`:
+  the same scope as the dashboards, line for line, and only who is waiting in which status. The list and
+  the count share the open-status rules (`isOpenResignation`, `isOpenOutstation`,
+  `isActiveContractRenewal`). Pinned by `tests/badge-counts-viewer-cache.test.ts` and
+  `tests/badge-poll-stays-light.test.ts`.
+
+Measured before merging, read-only against production with the directory warm: for six viewers (Super
+Admin, two District Managers, the CEO, the Finance Manager, the National Sales Manager) the old and the new
+count were equal (1, 0, 0, 1, 1, 0) and equal to the inbox list; the count's requests fell from 7 to 2 and
+its time from 0.74–1.37 s to 0.23–0.51 s. For seven viewers the resignation and renewal records each loader
+can see were the same set (83 for the company readers, 0 for the rest).
+
+**How to see that it worked after the deploy.** In the API-gateway log, count a Cairo weekday's
+`employee_resignations` reads with `select=employee_hr_id,status,exit_status` (the new count, one per badge
+read of a seat that can see others' requests) and its `payroll_resignation_candidates` reads (now only the
+resignations page itself); compare the day's total with Wednesday 28 Oct's 689,708.
 
 ## Metrics & alerting — DEAD (nothing pages the owner)
 

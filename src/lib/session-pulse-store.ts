@@ -15,9 +15,9 @@
  *  - One request in flight at a time.
  *  - The interval skips a hidden tab (nobody can see its badges); a tab shown again refetches unless
  *    it fetched inside PULSE_RETURN_GAP_MS.
- *  - A tick asks only for what a subscriber wants: badges while a badge is mounted, notices when a
- *    bell is mounted and its list is at least NOTICES_GAP_MS old, and a request that nobody needs is
- *    not sent at all.
+ *  - A tick asks only for what a subscriber wants: badges when a badge is mounted and its counts are at
+ *    least BADGES_GAP_MS old, notices when a bell is mounted and its list is at least NOTICES_GAP_MS
+ *    old, and a request that nobody needs is not sent at all.
  *  - The heartbeat is a POST, sent when the viewer has been active and the last one is at least
  *    HEARTBEAT_GAP_MS old; every other tick is a read-only GET. Only the POST confirms the session
  *    is still live, so a 401 on it is the sign-out signal.
@@ -34,6 +34,21 @@ export const PULSE_RETURN_GAP_MS = 15_000;
 
 /** The notification list is refreshed on a tick only when it is at least this old (one minute, with slack). */
 export const NOTICES_GAP_MS = 55_000;
+
+/**
+ * The sidebar badge counts are refreshed on a tick only when they are at least this old (one minute,
+ * with slack) — the owner's choice, 31 Oct 2026: "badges up to 1 minute old".
+ *
+ * WHY. Every tick asked for the badges, and the server's per-viewer memory of them lasts 20 s
+ * (badge-counts-cache.ts), so a tab left open paid a full badge read every 30 s: eleven domain reads,
+ * 11–35 Supabase requests a time depending on the seat. Production, Wednesday 28 Oct 2026: about 2,700
+ * badge reads, 50,000–57,000 Supabase requests, about 8% of the day; one District Manager's open tab
+ * alone was 699 reads. Asking once a minute halves that, and a quiet tab sends one request a minute
+ * instead of two: the badges and the bell arrive together when a page opens, so they fall due on the
+ * same tick. A tab shown again still refreshes them at once (PULSE_RETURN_GAP_MS), and a badge mounted
+ * with nothing cached still asks.
+ */
+export const BADGES_GAP_MS = 55_000;
 
 /** The session heartbeat floor — unchanged from the standalone heartbeat it replaces. */
 export const HEARTBEAT_GAP_MS = 60_000;
@@ -89,6 +104,8 @@ const state: {
   lastHeartbeatAt: number;
   /** When notices last arrived; 0 = never. */
   lastNoticesAt: number;
+  /** When the badge counts last arrived; 0 = never. */
+  lastBadgesAt: number;
   /** The viewer has done something since the last heartbeat. */
   activitySinceHeartbeat: boolean;
   /** A subscriber arrived and has no data yet — the next request must include it. */
@@ -110,6 +127,7 @@ const state: {
   lastFetchStartedAt: 0,
   lastHeartbeatAt: 0,
   lastNoticesAt: 0,
+  lastBadgesAt: 0,
   activitySinceHeartbeat: false,
   needBadges: false,
   needNotices: false,
@@ -163,7 +181,8 @@ function pulse(): void {
   }
 
   const now = Date.now();
-  const wantBadges = state.badgeListeners.size > 0 || state.needBadges;
+  const wantBadges =
+    (state.badgeListeners.size > 0 && now - state.lastBadgesAt >= BADGES_GAP_MS) || state.needBadges;
   const wantNotices =
     (state.noticeListeners.size > 0 && now - state.lastNoticesAt >= NOTICES_GAP_MS) || state.needNotices;
   const sendHeartbeat = heartbeatDue(now);
@@ -196,6 +215,7 @@ function pulse(): void {
       const body = (await response.json()) as { badges?: PulseBadges; notices?: PulseNotices } | null;
       if (body?.badges) {
         state.badges = body.badges;
+        state.lastBadgesAt = Date.now();
         const badges = body.badges;
         state.badgeListeners.forEach((listener) => listener(badges));
       }
@@ -245,6 +265,8 @@ function ensureLoop(): void {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       if (Date.now() - state.lastFetchStartedAt < PULSE_RETURN_GAP_MS) return;
+      // A tab shown again refreshes what it shows, however young the counts are by the clock.
+      if (state.badgeListeners.size > 0) state.needBadges = true;
       pulse();
     };
     state.onVisible = onVisible;
@@ -361,6 +383,7 @@ export function _resetSessionPulse(): void {
   state.lastFetchStartedAt = 0;
   state.lastHeartbeatAt = 0;
   state.lastNoticesAt = 0;
+  state.lastBadgesAt = 0;
   state.activitySinceHeartbeat = false;
   state.needBadges = false;
   state.needNotices = false;

@@ -10,7 +10,9 @@ import { sharedReadKey } from "@/lib/cache/shared-read";
  * 27 minutes costing 226 s of server time — about 1.6 s each, eleven domain reads per call — and most
  * of them were the same person asking again within seconds (a second tab, a page change, a tab shown
  * again) for numbers that had not moved. A badge is a nudge, not a ledger: the page it links to always
- * reads live, and a count up to 20 s old is invisible next to a 30 s poll.
+ * reads live, and a count up to 20 s old is invisible next to a 30 s poll. (Since 31 Oct 2026 the pulse
+ * asks for the badges once a minute, BADGES_GAP_MS in session-pulse-store.ts, so this memory now mostly
+ * serves a second tab or a page change; its twenty seconds are unchanged.)
  *
  * THE RULES THAT KEEP IT SAFE.
  *   • NEVER SHARED ACROSS VIEWERS. The key is the viewer's WHOLE access context — HR id, login id,

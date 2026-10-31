@@ -12,8 +12,9 @@
  * The approval badge srcs are additionally BATCHED: they keep their own
  * channels (per-src counts, listeners, and notification-on-increase behavior are
  * unchanged), but read their counts from the SESSION PULSE (session-pulse-store.ts) —
- * the one 30 s request an open tab sends for the badges, the notification bell and the
- * session heartbeat together. Any other `src` keeps the original per-src fetch path.
+ * the one request an open tab sends for the badges, the notification bell and the
+ * session heartbeat together. It ticks every 30 s and asks for the badges once a minute
+ * (BADGES_GAP_MS, 31 Oct 2026). Any other `src` keeps the original per-src fetch path.
  */
 
 import {
@@ -228,8 +229,8 @@ export function subscribeNavBadge(src: string, listener: Listener): () => void {
     if (isNewChannel) {
       if (batch.unsubscribe === null) {
         // The first batched channel joins the pulse; its cached payload, or its first answer, reaches
-        // every channel through applyBatch. The pulse owns the 30 s poll, the in-flight guard and the
-        // 15 s rule for a tab shown again.
+        // every channel through applyBatch. The pulse owns the poll (badges at most a minute old,
+        // BADGES_GAP_MS), the in-flight guard and the 15 s rule for a tab shown again.
         batch.unsubscribe = subscribePulseBadges((badges) => applyBatch(badges));
       } else {
         // A badge mounting later reads its slot from the last answer, or asks for one now.

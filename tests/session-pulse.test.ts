@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  BADGES_GAP_MS,
   HEARTBEAT_GAP_MS,
   HEARTBEAT_GATHER_MS,
   NOTICES_GAP_MS,
@@ -204,6 +205,8 @@ export async function runSessionPulseTests() {
       const unsub = subscribePulseBadges(() => {});
       await flush();
       const afterBoot = calls.length;
+      // The badges are due again, so only the tab's visibility decides.
+      now += BADGES_GAP_MS;
       mockDocument.visibilityState = "hidden";
       ticks[0]();
       await flush();
@@ -216,7 +219,9 @@ export async function runSessionPulseTests() {
       reset();
     }
 
-    // ── 6. Notices are refreshed on a tick only when 55 s old; badges on every tick ───────────────────
+    // ── 6. Badges and notices are each refreshed on a tick only when 55 s old: ONE request a minute ────
+    // Production, Wednesday 28 Oct 2026: a badge read on every 30 s tick was about 2,700 reads and
+    // 50,000-57,000 Supabase requests a day. The owner chose "badges up to 1 minute old" (31 Oct 2026).
     {
       install();
       reset();
@@ -229,12 +234,20 @@ export async function runSessionPulseTests() {
       now += 30_000;
       ticks[0]();
       await flush();
-      assert.equal(calls[1].url, "/api/auth/pulse?badges=1", "6: a tick 30 s after the notices came must ask for the badges only");
+      assert.equal(calls.length, 1, "6: a tick 30 s after the badges and notices came must send nothing at all");
 
       now += 30_000;
       ticks[0]();
       await flush();
-      assert.equal(calls[2].url, "/api/auth/pulse?badges=1&notices=1", "6: a tick 60 s after the notices came must ask for them again");
+      assert.equal(calls[1].url, "/api/auth/pulse?badges=1&notices=1", "6: a tick 60 s after they came must ask for both again, in one request");
+
+      now += 30_000;
+      ticks[0]();
+      await flush();
+      now += 30_000;
+      ticks[0]();
+      await flush();
+      assert.equal(calls.length, 3, "6: a quiet tab with a badge and the bell sends one request a minute, not two");
       assert.ok(NOTICES_GAP_MS <= 60_000 && NOTICES_GAP_MS > 30_000, "6: the notice gap sits between the second and third 30 s tick");
       unsubBadges();
       unsubNotices();
@@ -252,6 +265,7 @@ export async function runSessionPulseTests() {
       await flush();
       assert.equal(calls[0].method, "GET", "7: no activity yet — the first request is a read");
 
+      now += BADGES_GAP_MS;
       notePulseActivity();
       await flush();
       assert.equal(calls.length, 2, "7: activity with no heartbeat on record sends one at once");
@@ -267,7 +281,7 @@ export async function runSessionPulseTests() {
       await flush();
       assert.equal(calls[calls.length - 1].method, "POST", "7: once the floor has passed, the pending activity makes the next tick a POST");
 
-      now += 30_000;
+      now += BADGES_GAP_MS;
       ticks[0]();
       await flush();
       assert.equal(calls[calls.length - 1].method, "GET", "7: with no new activity, the next tick is a read again");
@@ -291,6 +305,7 @@ export async function runSessionPulseTests() {
       const unsubEnded = subscribePulseSessionEnded(() => ended++);
       const unsub = subscribePulseBadges(() => {});
       await flush();
+      now += BADGES_GAP_MS;
       g["fetch"] = () => Promise.reject(new Error("offline"));
       ticks[0]();
       await flush();
@@ -301,7 +316,7 @@ export async function runSessionPulseTests() {
       const before = calls.length;
       ticks[0]();
       await flush();
-      assert.equal(calls.length, before + 1, "8: after a network failure the next tick must still send");
+      assert.equal(calls.length, before + 1, "8: after a network failure the next tick must still send — a failed read leaves the badges due");
       assert.equal(ended, 0, "8: a failed or 503 request must never end the session");
       unsub();
       unsubEnded();
@@ -324,7 +339,7 @@ export async function runSessionPulseTests() {
       now += 1;
       visibilityListeners.forEach((fn) => fn());
       await flush();
-      assert.equal(calls.length, 2, "9: a return 15 s after the last request must recount");
+      assert.equal(calls.length, 2, "9: a return 15 s after the last request must recount, however young the badges are by the one-minute clock");
       unsub();
       assert.equal(visibilityListeners.length, 0, "9: the listener is removed when the last subscriber leaves");
       reset();
@@ -404,6 +419,39 @@ export async function runSessionPulseTests() {
       assert.equal(calls.length, 1, "11: and the 60 s floor still holds after it");
       assert.equal(timeouts.size, 0, "11: with no wait pending");
       unsubEnded();
+      reset();
+    }
+
+    // ── 12. The badges are refreshed on a tick only when they are BADGES_GAP_MS old ────────────────────
+    {
+      install();
+      reset();
+      now = 10_000_000;
+      const got: PulseBadges[] = [];
+      const unsub = subscribePulseBadges((b) => got.push(b));
+      await flush();
+      assert.equal(calls.length, 1);
+
+      now += 30_000;
+      ticks[0]();
+      await flush();
+      assert.equal(calls.length, 1, "12: a tick 30 s after the badges came must not ask for them again");
+
+      now += BADGES_GAP_MS - 30_000 - 1;
+      ticks[0]();
+      await flush();
+      assert.equal(calls.length, 1, "12: nor a tick a moment short of BADGES_GAP_MS");
+
+      now += 1;
+      ticks[0]();
+      await flush();
+      assert.deepEqual(calls[1], { url: "/api/auth/pulse?badges=1", method: "GET" }, "12: a tick BADGES_GAP_MS after they came must ask for them");
+      assert.deepEqual(got, [BADGES, BADGES], "12: and deliver them");
+
+      assert.ok(BADGES_GAP_MS <= 60_000 && BADGES_GAP_MS > 30_000, "12: the badges fall due on the second 30 s tick — at most a minute old, the owner's choice");
+      assert.equal(BADGES_GAP_MS, NOTICES_GAP_MS, "12: the badges and the bell fall due on the same tick, so they share one request");
+      assert.ok(BADGES_GAP_MS < HEARTBEAT_GAP_MS, "12: a heartbeat that falls due finds the badges due too and carries them");
+      unsub();
       reset();
     }
   } finally {
