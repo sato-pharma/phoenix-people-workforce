@@ -7,7 +7,7 @@ import { territoryName } from "@/lib/phoenix-crm/scope";
 import { canEnterMissedRecordOn, canEnterMissedRecords, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadDayRouteSafely, type DayRouteLoad } from "@/lib/phoenix-crm/server/day-route";
 import { loadRepVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-details";
-import { loadVisitDay, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
+import { loadVisitDay, resolveVisitDayAddress, type VisitDayView } from "@/lib/phoenix-crm/server/visits";
 import { loadApprovedLeaveDays } from "@/lib/vacation/approved-leave-days";
 import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -76,6 +76,13 @@ export async function loadPhoenixCrmDayDetail(
   viewer: PhoenixCrmViewer,
   raw: { seatId: unknown; date: unknown; test: unknown },
 ): Promise<PhoenixCrmDayDetail> {
+  // 🔴 LEAVE AND THE VISITS IN FULL START BESIDE THE DAY, NOT AFTER IT (2026-10-31, "fix the slowest five pages").
+  // Both need only the seat, the day and the test flag, and `resolveVisitDayAddress` answers those with no read and
+  // with the same refusal `loadVisitDay` would throw, so nothing is read for a day the viewer may not open. Each
+  // keeps its own catch and its own sentence below, so neither ever rejects while the day is being read.
+  const address = resolveVisitDayAddress(viewer, raw);
+  const leaveRead = readDayLeave(address.seat.occupantHrId, address.date);
+  const visitsInFullRead = readVisitsInFull(viewer, address);
   const loaded = await loadVisitDay(viewer, raw);
   // 🔴 EARLIEST FIRST, WHICH IS NOT HOW THE VISITS TAB ORDERS THEM. That tab is a rep's own day,
   // where the visit he just saved belongs at the top; this page is somebody ELSE reading the day
@@ -97,53 +104,7 @@ export async function loadPhoenixCrmDayDetail(
     })),
   );
 
-  // Leave is HR's, read through HR's own module (a Phoenix CRM service may not touch that table —
-  // `tests/phoenix-crm-boundary`). It is an annotation: losing it must not lose the day, so the
-  // throw that module leaves to its caller is caught here.
-  //
-  // 🔴 AND A FAILED READ IS SAID, NEVER SWALLOWED. It used to be caught and discarded, so a day the
-  // rep was on approved leave read exactly like a day he worked and logged nothing — the page's own
-  // "What else this day was" block simply did not appear. `leaveUnread` is the same sentence the
-  // plan report has carried since 2026-10-01 (`plan-leave.ts` LEAVE_UNREAD_NOTE).
-  let onLeave = false;
-  let leaveUnread = false;
-  const hrId = day.territory.repHrId;
-  if (hrId) {
-    try {
-      const away = await loadApprovedLeaveDays([hrId], { from: day.date, to: day.date });
-      onLeave = away.length > 0;
-    } catch (error) {
-      onLeave = false;
-      leaveUnread = true;
-      logError("Phoenix CRM day page could not read approved leave", {
-        error,
-        labels: { event: "phoenix_crm_day_leave_unread" },
-      });
-    }
-  }
-
-  // The same day, visit by visit, as the record a manager's day page draws (owner, 2026-10-21). Only ever an addition
-  // to the cards below, which still carry the day: a failed read is said, never a reason to lose the page.
-  let visitsInFull: ManagerDayVisit[] = [];
-  let visitsInFullUnread = false;
-  try {
-    visitsInFull = await loadRepVisitDetails({
-      end: day.date,
-      // The off-plan visits still waiting for their approvals are listed too, marked, so a record entered for the rep
-      // (owner, 2026-10-24: "show as waiting") is on the page and not only a count underneath it.
-      includeWaiting: true,
-      isTest: day.isTest,
-      seatIds: [day.territory.seatId],
-      start: day.date,
-      territoryNameOf: (seatId) => {
-        const territorySeat = viewer.org.seats.get(seatId);
-        return territorySeat ? territoryName(territorySeat) : null;
-      },
-    });
-  } catch (error) {
-    visitsInFullUnread = true;
-    logError("Phoenix CRM day page could not read the visits in full", { error, labels: { event: "phoenix_crm_day_visits_in_full_unread" } });
-  }
+  const [{ onLeave, leaveUnread }, { visitsInFull, visitsInFullUnread }] = await Promise.all([leaveRead, visitsInFullRead]);
 
   const seat = viewer.org.seats.get(day.territory.seatId);
   const missedRecords =
@@ -165,6 +126,66 @@ export async function loadPhoenixCrmDayDetail(
     visitsInFull,
     visitsInFullUnread,
   };
+}
+
+/**
+ * Leave is HR's, read through HR's own module (a Phoenix CRM service may not touch that table —
+ * `tests/phoenix-crm-boundary`). It is an annotation: losing it must not lose the day, so the
+ * throw that module leaves to its caller is caught here.
+ *
+ * 🔴 AND A FAILED READ IS SAID, NEVER SWALLOWED. It used to be caught and discarded, so a day the
+ * rep was on approved leave read exactly like a day he worked and logged nothing — the page's own
+ * "What else this day was" block simply did not appear. `leaveUnread` is the same sentence the
+ * plan report has carried since 2026-10-01 (`plan-leave.ts` LEAVE_UNREAD_NOTE).
+ */
+async function readDayLeave(hrId: string | null, date: string): Promise<{ onLeave: boolean; leaveUnread: boolean }> {
+  let onLeave = false;
+  let leaveUnread = false;
+  if (hrId) {
+    try {
+      const away = await loadApprovedLeaveDays([hrId], { from: date, to: date });
+      onLeave = away.length > 0;
+    } catch (error) {
+      onLeave = false;
+      leaveUnread = true;
+      logError("Phoenix CRM day page could not read approved leave", {
+        error,
+        labels: { event: "phoenix_crm_day_leave_unread" },
+      });
+    }
+  }
+  return { onLeave, leaveUnread };
+}
+
+/**
+ * The same day, visit by visit, as the record a manager's day page draws (owner, 2026-10-21). Only ever an addition
+ * to the cards below, which still carry the day: a failed read is said, never a reason to lose the page.
+ */
+async function readVisitsInFull(
+  viewer: PhoenixCrmViewer,
+  address: ReturnType<typeof resolveVisitDayAddress>,
+): Promise<{ visitsInFull: ManagerDayVisit[]; visitsInFullUnread: boolean }> {
+  let visitsInFull: ManagerDayVisit[] = [];
+  let visitsInFullUnread = false;
+  try {
+    visitsInFull = await loadRepVisitDetails({
+      end: address.date,
+      // The off-plan visits still waiting for their approvals are listed too, marked, so a record entered for the rep
+      // (owner, 2026-10-24: "show as waiting") is on the page and not only a count underneath it.
+      includeWaiting: true,
+      isTest: address.isTest,
+      seatIds: [address.seat.seatId],
+      start: address.date,
+      territoryNameOf: (seatId) => {
+        const territorySeat = viewer.org.seats.get(seatId);
+        return territorySeat ? territoryName(territorySeat) : null;
+      },
+    });
+  } catch (error) {
+    visitsInFullUnread = true;
+    logError("Phoenix CRM day page could not read the visits in full", { error, labels: { event: "phoenix_crm_day_visits_in_full_unread" } });
+  }
+  return { visitsInFull, visitsInFullUnread };
 }
 
 /**

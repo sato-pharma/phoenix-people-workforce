@@ -36,7 +36,8 @@ import type { DirectOrderApprovalListItem, DirectOrderReportScope } from "@/lib/
 // returns was produced by the function that already owned that question, with its
 // own `assertPermission` and its own scope tiering intact:
 //
-//   getDirectOrderWorkspaceData        -> awaiting / held / decision history
+//   getDirectOrderWorkspaceData        -> awaiting (asked for alone: held and decision
+//                                         history are drawn nowhere here)
 //   listMyDirectOrders                 -> the caller's own orders
 //   listDirectOrderOperationalPage     -> ONE page of the Orders list, scoped and
 //                                         filtered in the database
@@ -334,8 +335,22 @@ export async function loadDirectOrderWorkspaceView(
         resolveEffectiveOrdersScope({ requested: null, canSeeAllOrders, ownOrderCount: own.length }),
       );
 
-  const [workspace, myOrders, pendingValidations, ordersScope, ordersPage] = await Promise.all([
-    getDirectOrderWorkspaceData(access),
+  // The Finance queue and the four tiles' counts read in the same batch (2026-10-31, "fix the
+  // slowest five pages"): neither needs anything above, and each used to wait for this whole batch
+  // and then for the other. Their own notes are below, where they are used.
+  const [
+    workspace,
+    myOrders,
+    pendingValidations,
+    ordersScope,
+    ordersPage,
+    awaitingFinanceMonth,
+    totals,
+    recentScopePage,
+  ] = await Promise.all([
+    // Only `awaiting` is drawn here — the Needs Action inbox — so held orders and the viewer's
+    // decision history are not read at all.
+    getDirectOrderWorkspaceData(access, { awaitingOnly: true }),
     myOrdersRead,
     needsValidations
       ? listDirectOrderPharmacyValidations(access, { status: "pending" })
@@ -350,6 +365,21 @@ export async function loadDirectOrderWorkspaceView(
           }),
         )
       : Promise.resolve(null),
+    listDirectOrderAwaitingFinanceMonth(access),
+    countDirectOrderWorkspaceTotals(access, currentCairoSalesMonth(options.now)),
+    // Overview's "Recent orders" from the wider scope, read the moment `myOrders` shows there are
+    // none of the viewer's own, rather than after the whole batch.
+    view === "overview" && canSeeAllOrders
+      ? myOrdersRead.then((own) =>
+          own.length === 0
+            ? listDirectOrderOperationalPage(access, {
+                page: 1,
+                pageSize: 5,
+                filters: { scopeFilter: "all" },
+              })
+            : null,
+        )
+      : Promise.resolve(null),
   ]);
 
   // Overview's "Recent orders". The viewer's own five when they have any; otherwise, for a viewer
@@ -362,13 +392,7 @@ export async function loadDirectOrderWorkspaceView(
     view !== "overview"
       ? []
       : recentFromScope
-        ? (
-            await listDirectOrderOperationalPage(access, {
-              page: 1,
-              pageSize: 5,
-              filters: { scopeFilter: "all" },
-            })
-          ).rows
+        ? (recentScopePage?.rows ?? [])
         : ownRecent;
 
   // The Finance queue is its OWN focused read (2026-08-12) — `status = 'approved' AND sales_month
@@ -378,8 +402,8 @@ export async function loadDirectOrderWorkspaceView(
   //
   // The capability gate lives INSIDE listDirectOrderAwaitingFinanceMonth rather than out here, so
   // it cannot be forgotten by a future caller: a queue nobody can clear is how people learn to
-  // ignore queues, and that rule now sits with the query instead of beside it.
-  const awaitingFinanceMonth = await listDirectOrderAwaitingFinanceMonth(access);
+  // ignore queues, and that rule now sits with the query instead of beside it. (`awaitingFinanceMonth`,
+  // read in the batch above.)
 
   const needsAction = buildDirectOrderNeedsAction({
     awaitingMyApproval: workspace.awaiting,
@@ -398,7 +422,7 @@ export async function loadDirectOrderWorkspaceView(
   // printed `0 / 0 / 0 / 0` where Overview printed `0 / 24 / 3 / 3` for the same person (National
   // Sales Manager, 26 Oct 2026) — a false zero, which reads as "nothing in progress". They are four
   // COUNT queries, and if one fails the page fails, as Overview always did, rather than show a zero.
-  const totals = await countDirectOrderWorkspaceTotals(access, currentCairoSalesMonth(options.now));
+  // (`totals`, read in the batch above, on every view.)
   const summary: DirectOrderWorkspaceSummary = {
     needsMyAction: countDirectOrderNeedsAction(needsAction),
     ...totals,

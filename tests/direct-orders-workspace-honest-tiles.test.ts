@@ -75,11 +75,14 @@ export function runDirectOrderWorkspaceHonestTilesTests() {
 
   // ── 1. The loader fetches the totals on every view ───────────────────────────────────────────
   const loader = read("src/lib/direct-orders/workspace-data.ts");
+  // Read inside the loader's one batch since 2026-10-31 ("fix the slowest five pages") — as a bare
+  // element of it, behind no view test, so it is still read on every view.
   assert.match(
     loader,
-    /const totals = await countDirectOrderWorkspaceTotals\(/,
+    /^ {4}countDirectOrderWorkspaceTotals\(access, currentCairoSalesMonth\(options\.now\)\),$/m,
     "the four tiles render above every tab, so the totals are read on every view",
   );
+  assert.match(loader, /^ {4}totals,$/m, "and the batch hands them back as `totals`");
   assert.ok(
     !/inProgress: 0, returned: 0, completedThisMonth: 0/.test(loader),
     "no constant-zero fallback may stand in for a count that was not read",

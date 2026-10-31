@@ -53,7 +53,12 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
   // the two read different things and neither needs the other, so awaiting them in turn made the
   // landing page as slow as both added together. Never rejecting is what makes it safe to leave
   // running when the snapshot fails below.
-  const repTodayPlanPromise = loadRepTodayPlan(access);
+  //
+  // Read for the Medical Rep ONLY (2026-10-31, "fix the slowest five pages"): his is the one landing
+  // that draws the panel — PortalCommandCenter's own "medical rep" test — so every other role was
+  // waiting on a CRM day load and throwing it away.
+  const repTodayPlanPromise =
+    (access.role ?? "").toLowerCase() === "medical rep" ? loadRepTodayPlan(access) : Promise.resolve(null);
   const params = (await searchParams) ?? {};
 
   let snapshot;
@@ -65,11 +70,13 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     // Marketing Manager — his team, region or national figures, rankings, CRM board and inbox fill
     // under their own Suspense, and the identity band and pending actions paint first.
     // streamDvFocus: and the double-visit focus at the foot of a manager's landing, the same way.
+    // landing: and the reads this role's landing never draws are not started at all.
     snapshot = await getPortalHomeSnapshot(access, {
       kpiMonth: one(params.kpiMonth),
       streamRepCards: true,
       streamRoleExtras: true,
       streamDvFocus: true,
+      landing: true,
     });
   } catch (error) {
     logPortalFailure(

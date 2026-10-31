@@ -25,6 +25,7 @@ import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { editAcknowledgedAt, loadPlanEditState } from "@/lib/phoenix-crm/server/plan-edits";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
@@ -86,14 +87,18 @@ export async function loadPlanDayFacts(rows: ReadonlyArray<Row>, isTest: boolean
  */
 async function loadReturnedFrom(planIds: ReadonlyArray<string>): Promise<Map<string, PhoenixCrmPlanStatus | null>> {
   const out = new Map<string, PhoenixCrmPlanStatus | null>();
-  for (const batch of chunk([...planIds], 50)) {
-    const { data, error } = await getSupabaseAdmin()
+  // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
+  // were read one after another.
+  const answers = await mapWithConcurrency(chunk([...planIds], 50), 4, async (batch) =>
+    getSupabaseAdmin()
       .from("phoenix_crm_plan_events")
       .select("plan_id, from_status")
       .in("plan_id", batch)
       .eq("event_type", "returned")
       .order("created_at", { ascending: false })
-      .order("id", { ascending: false });
+      .order("id", { ascending: false }),
+  );
+  for (const { data, error } of answers) {
     throwIfError(error);
     for (const row of (data ?? []) as Row[]) {
       const id = String(row.plan_id);

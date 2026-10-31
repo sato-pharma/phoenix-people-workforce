@@ -63,6 +63,11 @@ export async function getManagerAreaRepOptions(
   const callerHrId = normalizeHrId(access.hrId);
   if (!callerHrId) return [];
 
+  // The rep names start WITH the tree read, not after the walk (2026-10-31, "fix the slowest five
+  // pages"): they come from the shared one-minute copy below and never reject, so a caller who turns
+  // out to manage nobody has only warmed that copy.
+  const empRead = loadReferenceEmployees().catch(() => []);
+
   const supabase = getSupabaseAdmin();
   const { data: treeData, error } = await supabase
     .from("au_v_org_tree")
@@ -113,7 +118,7 @@ export async function getManagerAreaRepOptions(
   // Resolve rep display names from the employee master, through the shared one-minute copy
   // (src/lib/reference/reference-lists.ts) — best-effort as before: a failed read leaves the map
   // empty and each option falls back to the rep's HR id, never breaking the wizard.
-  const empData = await loadReferenceEmployees().catch(() => []);
+  const empData = await empRead;
   const nameByHrId = new Map<string, string>();
   for (const emp of empData) {
     const key = normalizeHrId(emp.hr_id);

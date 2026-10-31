@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { PhoenixCrmModuleChooser } from "@/components/phoenix-crm/module-chooser";
@@ -7,6 +8,7 @@ import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { loadPhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/server/unread-notices";
+import type { PhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/notice-badge-rules";
 import { isPhoenixCrmModuleKey, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import {
   loadPhoenixCrmPage,
@@ -48,13 +50,21 @@ export default async function PhoenixCrmPortalPage({
 
   // The unread notices ride beside the page load: they only decorate the cards, and a failed read is a
   // card without a pulse (null), never a broken chooser.
-  const [load, unread] = await Promise.all([loadPhoenixCrmPage(access), loadPhoenixCrmUnreadByModule(access)]);
+  // 🔴 THE UNREAD NOTICES NO LONGER HOLD THE PAGE (2026-10-31, "fix the slowest five pages"). They only decorate it, and
+  // on every Phoenix CRM open the page waited for whichever of the two reads was slower — usually these. They start beside
+  // the page load, are never awaited by it, and fill in under their own Suspense. The read never rejects (a failed read is
+  // null, a card without a pulse), so it is safe to leave running when the page answers without it.
+  const unreadRead = loadPhoenixCrmUnreadByModule(access);
+  const load = await loadPhoenixCrmPage(access);
 
   if (load.kind === "ready") {
     return (
       <EmployeePortalPageShell badge="CRM" description={phoenixCrmPageDescription(load.overview)} title="Phoenix CRM">
         <CrmPanel title="Phoenix CRM">
-          <PhoenixCrmModuleChooser base={PHOENIX_CRM_PORTAL_PATH} overview={load.overview} unread={unread} />
+          {/* The chooser draws at once with no pulses, and again with them once the unread read is in. */}
+          <Suspense fallback={<PhoenixCrmModuleChooser base={PHOENIX_CRM_PORTAL_PATH} overview={load.overview} unread={null} />}>
+            <ChooserWithUnread load={load} unreadRead={unreadRead} />
+          </Suspense>
         </CrmPanel>
       </EmployeePortalPageShell>
     );
@@ -78,4 +88,16 @@ export default async function PhoenixCrmPortalPage({
       </CrmPanel>
     </EmployeePortalPageShell>
   );
+}
+
+/** The chooser with its new-notice pulses, once the unread read is in. */
+async function ChooserWithUnread({
+  load,
+  unreadRead,
+}: {
+  load: Extract<Awaited<ReturnType<typeof loadPhoenixCrmPage>>, { kind: "ready" }>;
+  unreadRead: Promise<PhoenixCrmUnreadByModule | null>;
+}) {
+  const unread = await unreadRead;
+  return <PhoenixCrmModuleChooser base={PHOENIX_CRM_PORTAL_PATH} overview={load.overview} unread={unread} />;
 }

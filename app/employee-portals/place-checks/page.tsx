@@ -53,23 +53,26 @@ export default async function TeamPlaceChecksPage() {
 
   // Each of these four narrows itself to this viewer's own seats. They are the SAME functions the
   // Super Admin's page calls: one board, one set of reads, and no second copy to drift.
-  const [reviews, validatedRead, reopenedRead, sharedRead] = await Promise.all([
-    loadValidationReviews(viewer),
-    loadValidatedPlaces(viewer),
+  const subjectReads = Promise.all([loadValidationReviews(viewer), loadValidatedPlaces(viewer), loadSharedPlaceBoard(viewer)]);
+  const [[reviews, validatedRead, sharedRead], reopenedRead, [notes, integrity]] = await Promise.all([
+    subjectReads,
     loadReopenedCustomers(viewer),
-    loadSharedPlaceBoard(viewer),
+    // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
+    // page, both keyed by `placeNoteSubjectKey` (owner, 2026-10-13). The evidence read lives in
+    // `server/integrity-board.ts`, which is where a read of the evidence belongs, and is merged in here.
+    // They start the moment the three lists that name the subjects are in, never waiting on the
+    // reopened customers, which name none (2026-10-31, "fix the slowest five pages").
+    subjectReads.then(([reviewsRows, validatedRows, sharedRows]) => {
+      const subjects = {
+        placeIds: [...reviewsRows.rows.map((row) => row.placeId), ...validatedRows.rows.map((row) => row.placeId)],
+        sharedPlaceIds: sharedRows.rows.map((row) => row.sharedPlaceId),
+      };
+      return Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
+    }),
   ]);
   const rows = reviews.rows;
   const validated = validatedRead.rows;
   const sharedPlaces = sharedRead.rows;
-  const subjects = {
-    placeIds: [...rows.map((row) => row.placeId), ...validated.map((row) => row.placeId)],
-    sharedPlaceIds: sharedPlaces.map((row) => row.sharedPlaceId),
-  };
-  // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
-  // page, both keyed by `placeNoteSubjectKey` (owner, 2026-10-13). The evidence read lives in
-  // `server/integrity-board.ts`, which is where a read of the evidence belongs, and is merged in here.
-  const [notes, integrity] = await Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
   const noteIndex = { ...notes, integrity };
   const waiting = rows.filter((row) => row.status === "pending");
   // The cards count what the board draws, as on the Super Admin's page: no test entry, and no building

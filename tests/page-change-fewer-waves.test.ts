@@ -87,4 +87,22 @@ export async function runPageChangeFewerWavesTests(): Promise<void> {
     assertBefore(list, "try {", "await earlyRows", "a missing messages table still degrades to an empty list on the early path too");
     assertBefore(list, "if (filters.length === 0) return { messages: [], unreadCount: 0 };", "await earlyRows", "an identity with no filter still answers empty before any rows are used");
   }
+
+  // ── the rep's day page: leave and the visits in full start beside the day (2026-10-31) ──────────
+  // "fix the slowest five pages": the Phoenix CRM day page waited for the day, THEN for leave, THEN for
+  // the full-visit table — seven waves for reads that needed only the seat and the date.
+  {
+    const detail = functionBody(source("src/lib/phoenix-crm/server/day-detail.ts"), "export async function loadPhoenixCrmDayDetail(");
+    assertBefore(detail, "resolveVisitDayAddress(viewer, raw)", "readDayLeave(", "the day's address is settled first, with no read and the same refusal");
+    for (const early of ["readDayLeave(address.seat.occupantHrId, address.date)", "readVisitsInFull(viewer, address)"]) {
+      assertBefore(detail, early, "await loadVisitDay(viewer, raw)", `HEADLINE: ${early} starts beside the day, never after it`);
+    }
+    assert.match(
+      detail,
+      /await Promise\.all\(\[leaveRead, visitsInFullRead\]\)/,
+      "and both are awaited together once the day is in",
+    );
+    const visits = functionBody(source("src/lib/phoenix-crm/server/visits.ts"), "export async function loadVisitDay(");
+    assert.match(visits, /resolveVisitDayAddress\(viewer, raw\)/, "the visit day clamps its date through the same helper, so the two never disagree on which day");
+  }
 }

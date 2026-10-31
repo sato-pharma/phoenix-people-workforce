@@ -10,6 +10,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import type { OffPlanExemptions, OffPlanRow } from "@/lib/phoenix-crm/offplan-cap-rules";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 const SEATS_PER_READ = 100;
 
@@ -57,12 +58,13 @@ export async function loadExemptVisitIds(visitIds: ReadonlyArray<string>): Promi
   const unique = [...new Set(visitIds)];
   const exempt = new Set<string>();
   try {
-    for (let index = 0; index < unique.length; index += VISITS_PER_EXEMPT_READ) {
-      const { data, error } = await getSupabaseAdmin()
-        .from("phoenix_crm_visits")
-        .select("id")
-        .in("id", unique.slice(index, index + VISITS_PER_EXEMPT_READ))
-        .eq("offplan_exempt", true);
+    // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages").
+    const slices: string[][] = [];
+    for (let index = 0; index < unique.length; index += VISITS_PER_EXEMPT_READ) slices.push(unique.slice(index, index + VISITS_PER_EXEMPT_READ));
+    const answers = await mapWithConcurrency(slices, 4, async (slice) =>
+      getSupabaseAdmin().from("phoenix_crm_visits").select("id").in("id", slice).eq("offplan_exempt", true),
+    );
+    for (const { data, error } of answers) {
       if (error) throw error;
       for (const row of data ?? []) exempt.add(String(row.id));
     }

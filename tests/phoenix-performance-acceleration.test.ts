@@ -321,7 +321,8 @@ function testCommandCenterDoubleVisitFocusStreams() {
   assert.match(snapshot, /dvFocusCard: streamDvFocus \? dvFocusPromise : null,/, "RED the running double-visit read is handed to the page");
   assert.match(
     snapshot,
-    /const dvFocusPromise[^=]*= DV_FOCUS_ROLES\.has\(role\)\s*\?\s*getDoubleVisitPortalFocus\(access\)\.catch\(\(\) => null\)/,
+    // The one extra condition allowed is the landing's own skip (a role whose landing draws no focus card).
+    /const dvFocusPromise[^=]*= DV_FOCUS_ROLES\.has\(role\)(?: && !skippedOnLanding\.dvFocus)?\s*\?\s*getDoubleVisitPortalFocus\(access\)\.catch\(\(\) => null\)/,
     "the streamed read never rejects, so its boundary needs no error fallback",
   );
   assert.match(

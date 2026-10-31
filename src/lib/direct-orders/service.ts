@@ -5769,57 +5769,84 @@ async function loadListDecorations(
   };
 }
 
-export async function getDirectOrderWorkspaceData(access: AccessContext): Promise<DirectOrderWorkspaceData> {
+export async function getDirectOrderWorkspaceData(
+  access: AccessContext,
+  options: {
+    /**
+     * Build `awaiting` alone: `history` and `held` come back empty and are never read. The workspace
+     * page draws only `awaiting` (its Needs Action inbox), so it was reading every held and expired
+     * order and the viewer's whole decision history only to throw them away (2026-10-31, "fix the
+     * slowest five pages").
+     */
+    awaitingOnly?: boolean;
+  } = {},
+): Promise<DirectOrderWorkspaceData> {
   await assertPermission(access, "direct_orders", "read");
   const supabase = getSupabaseAdmin();
+  const awaitingOnly = options.awaitingOnly === true;
 
-  const { data: pendingRows, error: pendingError } = await supabase
-    .from("direct_order_requests")
-    .select("*")
-    .eq("status", "pending_approval")
-    .order("created_at", { ascending: true });
-  if (pendingError) throw pendingError;
-  const pending = ((pendingRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  // The three lists are read TOGETHER (2026-10-31): none needs another's rows, and awaiting them in
+  // turn made the page sit through five round trips before the decorations could start.
+  const pendingRead = (async () => {
+    const { data: pendingRows, error: pendingError } = await supabase
+      .from("direct_order_requests")
+      .select("*")
+      .eq("status", "pending_approval")
+      .order("created_at", { ascending: true });
+    if (pendingError) throw pendingError;
+    return ((pendingRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  })();
 
-  const { data: myStepRows } = await supabase
-    .from("direct_order_approval_steps")
-    .select("request_id")
-    // Both casings on purpose. decided_by_hr_id holds whatever access.hrId was at decision time:
-    // the LOWERCASE comparison key for most rows, but the canonical uppercase form for others (10 of
-    // 223 rows in production on 2026-09-02, all one approver's). A bare .eq on the session key
-    // therefore returned NOTHING for that person rather than something wrong, and an empty decision
-    // history reads as "you have never approved anything" instead of as a bug.
-    .in("decided_by_hr_id", hrIdLookupKeys(access.hrId));
-  const historyIds = Array.from(new Set(((myStepRows ?? []) as Array<{ request_id: string }>).map((r) => r.request_id)));
-  const { data: historyRows } = historyIds.length
-    ? await supabase.from("direct_order_requests").select("*").in("id", historyIds).order("decided_at", { ascending: false })
-    : { data: [] as Array<Record<string, unknown>> };
-  const historyRequests = ((historyRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  const historyRead = awaitingOnly
+    ? Promise.resolve([] as DirectOrderRequest[])
+    : (async () => {
+        const { data: myStepRows } = await supabase
+          .from("direct_order_approval_steps")
+          .select("request_id")
+          // Both casings on purpose. decided_by_hr_id holds whatever access.hrId was at decision time:
+          // the LOWERCASE comparison key for most rows, but the canonical uppercase form for others (10 of
+          // 223 rows in production on 2026-09-02, all one approver's). A bare .eq on the session key
+          // therefore returned NOTHING for that person rather than something wrong, and an empty decision
+          // history reads as "you have never approved anything" instead of as a bug.
+          .in("decided_by_hr_id", hrIdLookupKeys(access.hrId));
+        const historyIds = Array.from(new Set(((myStepRows ?? []) as Array<{ request_id: string }>).map((r) => r.request_id)));
+        const { data: historyRows } = historyIds.length
+          ? await supabase.from("direct_order_requests").select("*").in("id", historyIds).order("decided_at", { ascending: false })
+          : { data: [] as Array<Record<string, unknown>> };
+        return ((historyRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+      })();
 
   // Held/expired requests within the VIEWER'S OWN scope (owner rule, 2026-08-08 — see the
   // DirectOrderWorkspaceData.held doc comment). Same tiering as the report/rep-counters, reused
   // rather than re-derived: `resolveDirectOrderReportScope`/`resolveVisibleRequesterHrIds` are the
   // one definition of "which requesters can this viewer see" this module already has. This is READ
   // visibility only — the Held Desk's own management actions stay Super-Admin-only, untouched.
-  const { data: heldRows } = await supabase
-    .from("direct_order_requests")
-    .select("*")
-    .in("status", ["held", "expired"])
-    .order("held_at", { ascending: true });
-  let heldRequests = ((heldRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
-  const heldScope = resolveDirectOrderReportScope(access);
-  if (heldScope === "own") {
-    const viewer = canonicalHrIdKey(access.hrId ?? "");
-    heldRequests = heldRequests.filter((request) => canonicalHrIdKey(request.requesterHrId) === viewer);
-  } else if (heldScope === "line") {
-    const viewerLine = ((await resolveDirectOrderRequesterLineName(access)) ?? "").trim().toLowerCase();
-    heldRequests = viewerLine
-      ? heldRequests.filter((request) => (request.line ?? "").trim().toLowerCase() === viewerLine)
-      : [];
-  } else if (heldScope === "hierarchy") {
-    const visible = await resolveVisibleRequesterHrIds(access);
-    heldRequests = heldRequests.filter((request) => visible.has(canonicalHrIdKey(request.requesterHrId) ?? ""));
-  }
+  const heldRead = awaitingOnly
+    ? Promise.resolve([] as DirectOrderRequest[])
+    : (async () => {
+        const { data: heldRows } = await supabase
+          .from("direct_order_requests")
+          .select("*")
+          .in("status", ["held", "expired"])
+          .order("held_at", { ascending: true });
+        let heldRequests = ((heldRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+        const heldScope = resolveDirectOrderReportScope(access);
+        if (heldScope === "own") {
+          const viewer = canonicalHrIdKey(access.hrId ?? "");
+          heldRequests = heldRequests.filter((request) => canonicalHrIdKey(request.requesterHrId) === viewer);
+        } else if (heldScope === "line") {
+          const viewerLine = ((await resolveDirectOrderRequesterLineName(access)) ?? "").trim().toLowerCase();
+          heldRequests = viewerLine
+            ? heldRequests.filter((request) => (request.line ?? "").trim().toLowerCase() === viewerLine)
+            : [];
+        } else if (heldScope === "hierarchy") {
+          const visible = await resolveVisibleRequesterHrIds(access);
+          heldRequests = heldRequests.filter((request) => visible.has(canonicalHrIdKey(request.requesterHrId) ?? ""));
+        }
+        return heldRequests;
+      })();
+
+  const [pending, historyRequests, heldRequests] = await Promise.all([pendingRead, historyRead, heldRead]);
 
   const allRequests = [...pending, ...historyRequests, ...heldRequests];
   // Five independent reads — none consumes another's result — batched together instead of run

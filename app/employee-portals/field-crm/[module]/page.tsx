@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { PhoenixCrmNewNotices } from "@/components/phoenix-crm/new-badge";
@@ -10,6 +11,8 @@ import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { loadPhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/server/unread-notices";
+import type { PhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/notice-badge-rules";
+import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 import { phoenixCrmModuleForSlug } from "@/lib/phoenix-crm/modules";
 import {
   loadPhoenixCrmPage,
@@ -27,6 +30,23 @@ export const dynamic = "force-dynamic";
 // generateMetadata FIGHTS it and loses on client navigation: it produced "Phoenix CRM · List" on
 // first paint and "Doctors · Phoenix Workforce" a moment later. The slug is what makes the shared
 // resolver say the right thing, because it names a page from its own segments.
+
+/** The module's new notices, once the unread read is in — streamed, so the page never waits for them. */
+async function ModuleNotices({
+  moduleKey,
+  unreadRead,
+}: {
+  moduleKey: PhoenixCrmModuleKey;
+  unreadRead: Promise<PhoenixCrmUnreadByModule | null>;
+}) {
+  const unread = await unreadRead;
+  return (
+    <>
+      <PhoenixCrmNewNotices entry={unread?.[moduleKey]} />
+      <PhoenixCrmNoticesSeen moduleKey={moduleKey} pending={(unread?.[moduleKey]?.count ?? 0) > 0} />
+    </>
+  );
+}
 
 // ONE Phoenix CRM module, on its own page (owner, 2026-09-30: "a page that has the SPLIT modules").
 // The chooser at /employee-portals/field-crm lists them; this renders the one he picked, at its own
@@ -54,7 +74,12 @@ export default async function PhoenixCrmModulePage({
   }
 
   const label = entry.label;
-  const [load, unread] = await Promise.all([loadPhoenixCrmPage(access), loadPhoenixCrmUnreadByModule(access)]);
+  // 🔴 THE UNREAD NOTICES NO LONGER HOLD THE PAGE (2026-10-31, "fix the slowest five pages"). They only decorate it, and
+  // on every Phoenix CRM open the page waited for whichever of the two reads was slower — usually these. They start beside
+  // the page load, are never awaited by it, and fill in under their own Suspense. The read never rejects (a failed read is
+  // null, a card without a pulse), so it is safe to leave running when the page answers without it.
+  const unreadRead = loadPhoenixCrmUnreadByModule(access);
+  const load = await loadPhoenixCrmPage(access);
   // `?add=visit` / `?add=week` still arrive here from the portal's "+", and the shell reads them.
   void (await searchParams);
 
@@ -78,8 +103,9 @@ export default async function PhoenixCrmModulePage({
             </Link>
           </p>
           {/* What is new for him here (owner, 2026-10-08), cleared once this page is really on his screen. */}
-          <PhoenixCrmNewNotices entry={unread?.[moduleKey]} />
-          <PhoenixCrmNoticesSeen moduleKey={moduleKey} pending={(unread?.[moduleKey]?.count ?? 0) > 0} />
+          <Suspense fallback={null}>
+            <ModuleNotices moduleKey={moduleKey} unreadRead={unreadRead} />
+          </Suspense>
           <PhoenixCrmApp initialOverview={load.overview} initialTab={moduleKey} single surface="portal" />
         </div>
       </EmployeePortalPageShell>

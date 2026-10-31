@@ -1508,13 +1508,31 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   }
 
   const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
-  const [residenceByHrId, pendingReplacementByHrId, photoMap, cvHrIds] = await Promise.all([
+  // The filter dropdowns' option lists and the open vacancies need nothing but the database, so they
+  // are read in THIS batch rather than in a second one after it (2026-10-31, "fix the slowest five
+  // pages"). Both branches below use them.
+  const [
+    residenceByHrId,
+    pendingReplacementByHrId,
+    photoMap,
+    cvHrIds,
+    [departmentOptions, lineOptions, areaOptions, positionOptions, teamOptions, medicalRepVacancies, workforceVacancies],
+  ] = await Promise.all([
     loadResidenceByHrId(employeeHrIds),
     pendingReplacementInRows
       ? Promise.resolve(pendingReplacementFromRows(employeeRows))
       : loadPendingManagerReplacementByHrId(employeeHrIds),
     getEmployeePhotoMap(),
     getEmployeeCvHrIdSet(),
+    Promise.all([
+      loadAllOptions("departments"),
+      loadAllOptions("lines"),
+      loadAllOptions("areas"),
+      loadAllOptions("positions", "title"),
+      loadAllOptions("teams"),
+      getOpenMedicalRepVacancies(),
+      getOpenWorkforceVacancies(),
+    ]),
   ]);
 
   // Check if we got joined data
@@ -1553,24 +1571,13 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       }
     });
 
-    // Still need these for the filter dropdowns, but these are small tables usually
-    const [managerNamesResult, departmentsResult, linesResult, areasResult, positionsResult, teamsResult, medicalRepVacancies, workforceVacancies] = await Promise.all([
-      Promise.resolve(managerNamesFromEmployeeRows(employeeRows)),
-      loadAllOptions("departments"),
-      loadAllOptions("lines"),
-      loadAllOptions("areas"),
-      loadAllOptions("positions", "title"),
-      loadAllOptions("teams"),
-      getOpenMedicalRepVacancies(),
-      getOpenWorkforceVacancies(),
-    ]);
-
-    managerNames = managerNamesResult;
-    departments = departmentsResult;
-    lines = linesResult;
-    areas = areasResult;
-    positions = positionsResult;
-    teams = teamsResult;
+    // The filter dropdowns' lists were read in the batch above.
+    managerNames = managerNamesFromEmployeeRows(employeeRows);
+    departments = departmentOptions;
+    lines = lineOptions;
+    areas = areaOptions;
+    positions = positionOptions;
+    teams = teamOptions;
 
     const employeesData = employeeRows.map((row) => {
       const compensation = compensationByHrId.get(row.hr_id);
@@ -1713,13 +1720,6 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       teamNamesRes,
       managerNamesRes,
       compensationByHrIdRes,
-      departmentsRes,
-      linesRes,
-      areasRes,
-      positionsRes,
-      teamsRes,
-      medicalRepVacancies,
-      workforceVacancies
     ] = await Promise.all([
       loadLookup("departments", uniqueNumberValues(employeeRows, "department_id")),
       loadLookup("lines", uniqueNumberValues(employeeRows, "line_id")),
@@ -1728,13 +1728,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       loadLookup("teams", uniqueNumberValues(employeeRows, "team_id")),
       Promise.resolve(managerNamesFromEmployeeRows(employeeRows)),
       loadCompensationByHrId(uniqueTextValues(employeeRows, "hr_id")),
-      loadAllOptions("departments"),
-      loadAllOptions("lines"),
-      loadAllOptions("areas"),
-      loadAllOptions("positions", "title"),
-      loadAllOptions("teams"),
-      getOpenMedicalRepVacancies(),
-      getOpenWorkforceVacancies(),
+      // The filter dropdowns' lists and the vacancies were read in the batch above.
     ]);
 
     departmentNames = departmentNamesRes;
@@ -1744,11 +1738,11 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     const teamNames = teamNamesRes;
     managerNames = managerNamesRes;
     compensationByHrId = compensationByHrIdRes;
-    departments = departmentsRes;
-    lines = linesRes;
-    areas = areasRes;
-    positions = positionsRes;
-    teams = teamsRes;
+    departments = departmentOptions;
+    lines = lineOptions;
+    areas = areaOptions;
+    positions = positionOptions;
+    teams = teamOptions;
 
     const employeesData = employeeRows.map((row) => {
       const comp = compensationByHrId.get(row.hr_id);

@@ -678,6 +678,39 @@ const STREAM_DV_FOCUS_ROLES = new Set([
   "Group Product Manager",
 ]);
 
+/**
+ * The reads a role's LANDING page never draws, read off the landing components on 2026-10-31 (the
+ * portal home was the slowest page by total waiting time). Each one is still read for the JSON home
+ * route and the Training Manager's page, which take the whole snapshot.
+ *
+ * - payslip: no landing draws it — no payslip on any overview, for any role (portal rules).
+ * - planCount: the District and National Sales Manager's pending band shows leave and excuses only.
+ * - leaveLeft: those two, the Marketing Manager and the PM/GPM landings show the entitlement, not days left.
+ * - earlyBirds: only the four sales and marketing manager landings carry the Early Bird card.
+ * - dvFocus: the Training Manager holds a focus, but her landing (the standard one) never draws it.
+ */
+type LandingSkips = { payslip: boolean; planCount: boolean; leaveLeft: boolean; earlyBirds: boolean; dvFocus: boolean };
+const NO_LANDING_SKIPS: LandingSkips = { payslip: false, planCount: false, leaveLeft: false, earlyBirds: false, dvFocus: false };
+const LANDING_WITHOUT_PLAN_COUNT = new Set(["District Manager", "National Sales Manager"]);
+const LANDING_WITHOUT_LEAVE_LEFT = new Set([
+  "District Manager",
+  "National Sales Manager",
+  "Marketing Manager",
+  "Product Manager",
+  "Group Product Manager",
+]);
+const LANDING_WITH_EARLY_BIRDS = new Set(["District Manager", "National Sales Manager", "Regional Manager", "Marketing Manager"]);
+
+export function landingSkips(role: string): LandingSkips {
+  return {
+    payslip: true,
+    planCount: LANDING_WITHOUT_PLAN_COUNT.has(role),
+    leaveLeft: LANDING_WITHOUT_LEAVE_LEFT.has(role),
+    earlyBirds: !LANDING_WITH_EARLY_BIRDS.has(role),
+    dvFocus: DV_FOCUS_ROLES.has(role) && !STREAM_DV_FOCUS_ROLES.has(role),
+  };
+}
+
 const emptyRoleExtras: RoleSpecificExtras = {
   pmMarketing: null,
   mmOverview: null,
@@ -1134,6 +1167,12 @@ export async function getPortalHomeSnapshot(
      * renders the promise through Suspense may ask; the JSON home route must not.
      */
     streamDvFocus?: boolean;
+    /**
+     * The landing page only: do not start the reads its role's landing never draws — see
+     * `skippedOnLanding` below. Each answers its own empty value, so nothing drawn changes. The JSON home
+     * route and the Training Manager's page read the whole snapshot and must not ask.
+     */
+    landing?: boolean;
   },
 ): Promise<PortalHomeSnapshot> {
   // STARTED, NOT AWAITED (2026-10-01, "slow to transfer between page and page"). Nothing below needs
@@ -1159,6 +1198,9 @@ export async function getPortalHomeSnapshot(
   // And the double-visit focus at the foot of a manager's landing: it walks every double visit since
   // the trend's first month, and nothing above it on the page reads any of it.
   const streamDvFocus = options?.streamDvFocus === true && STREAM_DV_FOCUS_ROLES.has(role);
+  // What this role's LANDING never draws (portal-command-center.tsx and dashboards/*, read 2026-10-31,
+  // "fix the slowest five pages"): the home page waited on these reads and then threw them away.
+  const skippedOnLanding = options?.landing === true ? landingSkips(role) : NO_LANDING_SKIPS;
 
   // Start MR sales query + the role-specific KPI extras immediately so they run in parallel
   // with the batch below. getRoleSpecificExtras never throws — it resolves emptyRoleExtras
@@ -1205,7 +1247,7 @@ export async function getPortalHomeSnapshot(
   const fieldKpisPromise: Promise<MrFieldKpis | null> =
     isMr && hrId ? loadMrFieldKpis(access, hrId, kpiMonth).catch(() => null) : Promise.resolve(null);
   const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
-  const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role)
+  const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role) && !skippedOnLanding.dvFocus
     ? getDoubleVisitPortalFocus(access).catch(() => null)
     : Promise.resolve(null);
   // STARTED HERE WITH THE REST (2026-10-01, "slow to transfer between page and page"). These four
@@ -1218,7 +1260,7 @@ export async function getPortalHomeSnapshot(
   // Not read at all on the streamed rep landing: the Early Bird card is retired from the Medical
   // Rep's page (owner, 2026-09-30, see the note where it was in portal-command-center.tsx), so
   // waiting for it there was pure cost.
-  const earlyBirdStarsPromise: Promise<EarlyBirdsWinnerRecord[]> = streamRepCards
+  const earlyBirdStarsPromise: Promise<EarlyBirdsWinnerRecord[]> = streamRepCards || skippedOnLanding.earlyBirds
     ? Promise.resolve([])
     : getLatestLineEarlyBirds().catch(() => []);
   // Also outside the role branches, and for a stronger reason: the plan module's population does not
@@ -1229,7 +1271,9 @@ export async function getPortalHomeSnapshot(
   // has none.
   const planAdherencePromise = hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null);
   // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
-  const leaveDaysRemainingPromise = hrId ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null) : Promise.resolve(null);
+  const leaveDaysRemainingPromise = hrId && !skippedOnLanding.leaveLeft
+    ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null)
+    : Promise.resolve(null);
   // The CV folders on a sales manager's shelf (owner, 2026-10-16). Started here with the rest; a failed
   // read degrades to no row, because a landing page must never fail over a folder summary.
   const cvFoldersPromise: Promise<ManagerFolderSummary | null> = CV_FOLDER_ROLES.has(role) && hrId
@@ -1290,7 +1334,7 @@ export async function getPortalHomeSnapshot(
   // so no reshaping here — wrapping it in an extra `.then((count) => ({ count }))` would nest the
   // whole object under a `count` key instead of passing it through.
   const managerPlanCountPromise =
-    !isMr && hrId
+    !isMr && hrId && !skippedOnLanding.planCount
       ? wrapPromise(countPlanAwaiting(access))
       : Promise.resolve(null);
 
@@ -1299,7 +1343,7 @@ export async function getPortalHomeSnapshot(
   // pending-counts wave and then run its second read on its own, so every non-rep landing waited on
   // two extra sequential round trips before it could paint. It never rejects: a failed read reads as
   // no payslip, exactly as before.
-  const latestPayslipPromise: Promise<PortalHomeSnapshot["latestPayslip"]> = hrId
+  const latestPayslipPromise: Promise<PortalHomeSnapshot["latestPayslip"]> = hrId && !skippedOnLanding.payslip
     ? (async () => {
         const { data: batch, error: batchError } = await supabase
           .from("salary_batches")

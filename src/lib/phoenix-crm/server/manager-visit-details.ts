@@ -309,30 +309,9 @@ export async function loadManagerRideAlongDetails(
   const isTest = input.isTest ?? false;
   const wanted = new Set(keys);
 
-  const byId = new Map<string, Row>();
-  for (const part of chunk(keys, 100)) {
-    const columns = input.productManagerSlot ? (["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] as const) : (["manager_hr_id", "senior_hr_id"] as const);
-    for (const column of columns) {
-      const rows = await fetchAllRowsKeyset<Row>(
-        () =>
-          getSupabaseAdmin()
-            .from("phoenix_crm_countable_visits_with_history")
-            .select(RIDE_COLUMNS)
-            .eq("is_test", isTest)
-            .gte("visit_date", input.start)
-            .lte("visit_date", input.end)
-            .in(column, part),
-        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      );
-      for (const row of rows) {
-        if (input.territorySeatIds && !input.territorySeatIds.has(String(row.seat_id ?? ""))) continue;
-        byId.set(String(row.id), row);
-      }
-    }
-  }
-  // The visits they went on as a companion past the fixed places, read by the view's own visit id.
-  for (const part of chunk(await loadVisitIdsWithCompanions(keys), 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
+  const columns: readonly string[] = input.productManagerSlot ? ["manager_hr_id", "senior_hr_id", "product_manager_hr_id"] : ["manager_hr_id", "senior_hr_id"];
+  const readView = (column: string, part: string[]) =>
+    fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_countable_visits_with_history")
@@ -340,9 +319,19 @@ export async function loadManagerRideAlongDetails(
           .eq("is_test", isTest)
           .gte("visit_date", input.start)
           .lte("visit_date", input.end)
-          .in("id", part),
+          .in(column, part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
+  // Every column of every chunk, and the visits they went on as a companion past the fixed places (read by the view's
+  // own visit id), are read AT ONCE (2026-10-31, "fix the slowest five pages"): none needs another's rows, and they
+  // used to go one after another. They are merged in the order the loops used, and the final order is
+  // `sortManagerDayVisits`'s, so the answer is the same.
+  const [slotPages, companionPages] = await Promise.all([
+    Promise.all(chunk(keys, 100).flatMap((part) => columns.map((column) => readView(column, part)))),
+    loadVisitIdsWithCompanions(keys).then((ids) => Promise.all(chunk(ids, 100).map((part) => readView("id", part)))),
+  ]);
+  const byId = new Map<string, Row>();
+  for (const rows of [...slotPages, ...companionPages]) {
     for (const row of rows) {
       if (input.territorySeatIds && !input.territorySeatIds.has(String(row.seat_id ?? ""))) continue;
       byId.set(String(row.id), row);
@@ -477,28 +466,35 @@ export async function loadRepVisitDetails(input: RepVisitDetailInput): Promise<M
   const seats = dedupeIds([...(input.seatIds ?? [])]);
   if (reps.length === 0 && seats.length === 0) return [];
 
-  const byId = new Map<string, Row>();
   const reads: Array<{ column: "rep_hr_id" | "seat_id"; keys: string[] }> = [
     { column: "rep_hr_id", keys: reps },
     { column: "seat_id", keys: seats },
   ];
-  for (const { column, keys } of reads) {
-    for (const part of chunk(keys, 100)) {
-      const rows = await fetchAllRowsKeyset<Row>(
-        () =>
-          getSupabaseAdmin()
-            .from("phoenix_crm_countable_visits_with_history")
-            .select(RIDE_COLUMNS)
-            .eq("is_test", isTest)
-            .gte("visit_date", input.start)
-            .lte("visit_date", input.end)
-            .in(column, part),
-        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-      );
-      for (const row of rows) byId.set(String(row.id), row);
-    }
-  }
-  const waiting = input.includeWaiting ? await loadWaitingOffPlanRows({ end: input.end, isTest, repKeys: reps, seatKeys: seats, start: input.start }) : [];
+  // The countable view's chunks and the waiting off-plan visits are read AT ONCE (2026-10-31, "fix the slowest five
+  // pages"): neither needs the other, and the rep's day page waited for one and then the other. Merged in the order the
+  // loops used; the final order is `sortManagerDayVisits`'s.
+  const [pages, waiting] = await Promise.all([
+    Promise.all(
+      reads.flatMap(({ column, keys }) =>
+        chunk(keys, 100).map((part) =>
+          fetchAllRowsKeyset<Row>(
+            () =>
+              getSupabaseAdmin()
+                .from("phoenix_crm_countable_visits_with_history")
+                .select(RIDE_COLUMNS)
+                .eq("is_test", isTest)
+                .gte("visit_date", input.start)
+                .lte("visit_date", input.end)
+                .in(column, part),
+            { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+          ),
+        ),
+      ),
+    ),
+    input.includeWaiting ? loadWaitingOffPlanRows({ end: input.end, isTest, repKeys: reps, seatKeys: seats, start: input.start }) : Promise.resolve([] as Row[]),
+  ]);
+  const byId = new Map<string, Row>();
+  for (const rows of pages) for (const row of rows) byId.set(String(row.id), row);
   if (byId.size === 0 && waiting.length === 0) return [];
 
   const rows = [...byId.values()];
@@ -533,37 +529,40 @@ const WAITING_STATUSES = ["admin_pending", "manager_pending", "sfe_pending"];
  * refused one is never listed here.
  */
 async function loadWaitingOffPlanRows(input: { start: string; end: string; isTest: boolean; repKeys: string[]; seatKeys: string[] }): Promise<Row[]> {
-  const ids = new Set<string>();
   const reads: Array<{ column: "rep_hr_id" | "seat_id"; keys: string[] }> = [
     { column: "rep_hr_id", keys: input.repKeys },
     { column: "seat_id", keys: input.seatKeys },
   ];
-  for (const { column, keys } of reads) {
-    for (const part of chunk(keys, 100)) {
-      const found = await fetchAllRowsKeyset<Row>(
-        () =>
-          getSupabaseAdmin()
-            .from("phoenix_crm_unplanned_visits")
-            .select("visit_id")
-            .eq("is_test", input.isTest)
-            .in("status", WAITING_STATUSES)
-            .gte("visit_date", input.start)
-            .lte("visit_date", input.end)
-            .in(column, part),
-        { cursorColumn: "visit_id", cursorOf: (row) => String(row.visit_id) },
-      );
-      for (const row of found) ids.add(String(row.visit_id));
-    }
-  }
-  const out: Row[] = [];
-  for (const part of chunk([...ids], 100)) {
-    const rows = await fetchAllRowsKeyset<Row>(
-      () => getSupabaseAdmin().from("phoenix_crm_visits").select(WAITING_COLUMNS).in("id", part),
-      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
-    out.push(...rows);
-  }
-  return out;
+  // Each step's chunks are read together, in the order the loops used (2026-10-31).
+  const foundPages = await Promise.all(
+    reads.flatMap(({ column, keys }) =>
+      chunk(keys, 100).map((part) =>
+        fetchAllRowsKeyset<Row>(
+          () =>
+            getSupabaseAdmin()
+              .from("phoenix_crm_unplanned_visits")
+              .select("visit_id")
+              .eq("is_test", input.isTest)
+              .in("status", WAITING_STATUSES)
+              .gte("visit_date", input.start)
+              .lte("visit_date", input.end)
+              .in(column, part),
+          { cursorColumn: "visit_id", cursorOf: (row) => String(row.visit_id) },
+        ),
+      ),
+    ),
+  );
+  const ids = new Set<string>();
+  for (const found of foundPages) for (const row of found) ids.add(String(row.visit_id));
+  const pages = await Promise.all(
+    chunk([...ids], 100).map((part) =>
+      fetchAllRowsKeyset<Row>(
+        () => getSupabaseAdmin().from("phoenix_crm_visits").select(WAITING_COLUMNS).in("id", part),
+        { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+      ),
+    ),
+  );
+  return pages.flat();
 }
 
 /**

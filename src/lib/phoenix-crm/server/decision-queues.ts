@@ -94,9 +94,11 @@ export async function countPhoenixCrmWaiting(
     throwIfError(error);
     return total ?? 0;
   }
+  // The chunks are counted together, not one after another (2026-10-31, "fix the slowest five pages"): a sum
+  // does not care which chunk answered first, and the first failure in chunk order is still the one raised.
+  const parts = await Promise.all(chunk(seatIds, 100).map((part) => count(part)));
   let total = 0;
-  for (const part of chunk(seatIds, 100)) {
-    const { count: partCount, error } = await count(part);
+  for (const { count: partCount, error } of parts) {
     throwIfError(error);
     total += partCount ?? 0;
   }
@@ -129,9 +131,11 @@ export async function countPhoenixCrmUnplannedVisits(
     throwIfError(error);
     return total ?? 0;
   }
+  // The chunks are counted together, not one after another (2026-10-31, "fix the slowest five pages"): a sum
+  // does not care which chunk answered first, and the first failure in chunk order is still the one raised.
+  const parts = await Promise.all(chunk(seatIds, 100).map((part) => count(part)));
   let total = 0;
-  for (const part of chunk(seatIds, 100)) {
-    const { count: partCount, error } = await count(part);
+  for (const { count: partCount, error } of parts) {
     throwIfError(error);
     total += partCount ?? 0;
   }

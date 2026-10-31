@@ -25,6 +25,7 @@ import { callPhoenixCrm, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPlanDayFacts, PLAN_DAY_COLUMNS, PLAN_STATUSES_WITH_SENT_DAYS } from "@/lib/phoenix-crm/server/plan-day-status";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 
 type Row = Record<string, unknown>;
 
@@ -72,13 +73,14 @@ export async function loadDayStartsBySeat(
   const out = new Map<string, string>();
   if (seatIds.length === 0) return out;
   const supabase = getSupabaseAdmin();
-  for (let index = 0; index < seatIds.length; index += SEAT_CHUNK) {
-    const { data, error } = await supabase
-      .from("phoenix_crm_day_starts")
-      .select("seat_id, started_at")
-      .in("seat_id", seatIds.slice(index, index + SEAT_CHUNK))
-      .eq("is_test", isTest)
-      .eq("started_on", date);
+  // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
+  // were read one after another.
+  const slices: string[][] = [];
+  for (let index = 0; index < seatIds.length; index += SEAT_CHUNK) slices.push(seatIds.slice(index, index + SEAT_CHUNK));
+  const answers = await mapWithConcurrency(slices, 4, async (slice) =>
+    supabase.from("phoenix_crm_day_starts").select("seat_id, started_at").in("seat_id", slice).eq("is_test", isTest).eq("started_on", date),
+  );
+  for (const { data, error } of answers) {
     throwIfError(error);
     for (const row of (data ?? []) as Row[]) {
       if (typeof row.started_at === "string") out.set(String(row.seat_id), row.started_at);
