@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [phoenix-hr left Cloudflare (31 Oct)](phoenix-hr-left-cloudflare-for-vodafone-home-wifi.md) — CNAME → railway.app host, unproxied; Vodafone home broadband dropped Cloudflare's addresses. Never re-proxy without him.
 
 
 

@@ -499,6 +499,16 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                       : ""}
                   </p>
                 ) : null}
+                {/* Validated WITH this request's customer — the pairing, not the venue (owner,
+                    2026-10-31). Sentence resolved on the server; amber whenever it is not a yes. */}
+                <p
+                  className={`mt-0.5 text-phx-2xs font-bold ${
+                    pharmacy.customerLink.state === "validated" ? "text-emerald-800" : "text-amber-800"
+                  }`}
+                  dir="auto"
+                >
+                  {pharmacy.customerLink.sentence}
+                </p>
                 {/* The pharmacy's own retained shop front, on the same rule as the customer's. */}
                 {pharmacy.evidencePhotoUrl ? (
                   <ZoomablePhoto

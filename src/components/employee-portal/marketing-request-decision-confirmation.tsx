@@ -337,6 +337,16 @@ export function MarketingRequestDecisionConfirmation({
                   <p className="mt-1 text-phx-xs font-semibold text-slate-500">
                     {pharmacy.distributorName} · vendor code {pharmacy.distributorPharmacyCode} · pharmacy {pharmacy.pharmacyCode}
                   </p>
+                  {/* Validated WITH this request's customer — the pairing, not the venue (owner,
+                      2026-10-31). Sentence resolved on the server; amber whenever it is not a yes. */}
+                  <p
+                    className={`mt-1 text-phx-xs font-bold ${
+                      pharmacy.customerLink.state === "validated" ? "text-emerald-800" : "text-amber-800"
+                    }`}
+                    dir="auto"
+                  >
+                    {pharmacy.customerLink.sentence}
+                  </p>
                   {/* The pharmacy's own shop front. Captured and stored on the same rule as the
                       customer's, so it must be visible on the same rule too — storing evidence no
                       approver can look at is the defect this whole change exists to end. */}

@@ -1881,6 +1881,7 @@ import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chai
 import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
 import { runMarketingApproverCustomerDossierTests } from "./marketing-approver-customer-dossier.test.ts";
 import { runMarketingApproverPharmacyValidationBadgeTests } from "./marketing-approver-pharmacy-validation-badge.test.ts";
+import { runMarketingTargetCustomerLinkTests } from "./marketing-target-customer-link.test.ts";
 import { runValidatedEvidenceBadgeTests } from "./validated-evidence-badge.test.ts";
 import { runMarketingSalesEvidenceAccessTests } from "./marketing-sales-evidence-access.test.ts";
 // Registered beside its marketing siblings rather than appended at the end of the file: every PR
@@ -6776,6 +6777,11 @@ await runTest(
 await runTest(
   "marketing approver target-pharmacy validation badge (loader carries the venue's own validation state; window shows Validated / Not validated per pharmacy; human/system split honoured)",
   runMarketingApproverPharmacyValidationBadgeTests,
+);
+
+await runTest(
+  "marketing approval screens say whether each target pharmacy is validated WITH the request's customer (link, not venue; desk link says so; pending and missing never green)",
+  runMarketingTargetCustomerLinkTests,
 );
 
 await runTest(
