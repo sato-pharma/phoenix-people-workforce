@@ -1,25 +1,28 @@
 /**
- * THE CALLER'S ADDRESS, AS RAILWAY'S EDGE SAW IT (technical audit, 2026-10-23, S-AUTH-05).
+ * THE CALLER'S ADDRESS, AS RAILWAY'S EDGE SAW IT (technical audit 2026-10-23, S-AUTH-05; corrected 2026-10-31).
  *
- * Every rate limit, audit row and log line used the LEFTMOST `X-Forwarded-For` entry. That entry is
- * whatever the caller sent: a proxy appends the address it saw to the RIGHT of any header already
- * there, so a client can put anything it likes on the left — a fresh address per request, and a
- * per-address rate limit never fills. The production site is served by Railway's edge directly
- * (`Server: railway-hikari`, read 2026-10-23; no CDN in front), so the address that edge saw is the
- * rightmost entry that is not one of the platform's own internal hops.
+ * Rate limits, the IP blocklist, sign-in attempts and log lines all key on this address, so a caller must
+ * not be able to choose it. What Railway's edge forwards was CAPTURED on 2026-10-31 (an echo service behind
+ * the same edge, edge `cdg1`, forged headers sent alongside):
  *
- * Read from the right, skip private, loopback, link-local and carrier-grade addresses (an internal
- * proxy hop), and take the first public one. Nothing the caller writes can sit to the right of what
- * the edge appends, so it cannot choose this value. With no public entry (a local run) the rightmost
- * entry, then `X-Real-IP`, stands in.
+ *   X-Forwarded-For: <the address the edge saw>, 79.127.178.81   <- REWRITTEN; a caller's own value is dropped
+ *   X-Real-IP:       <the address the edge saw>                  <- REWRITTEN; a caller's own value is dropped
+ *   CF-Connecting-IP, X-Envoy-External-Address                   <- passed through exactly as the caller sent them
  *
- * BEHIND CLOUDFLARE (2026-10-26). Railway's edge address 69.46.46.36 dropped about one connection in
- * six from Egyptian networks while staging's edge dropped none, so the production domain is proxied
- * through Cloudflare. Then the address Railway's edge sees is a Cloudflare server, and every member of
- * staff on one network would share one rate limit. So when — and only when — that edge-seen address is
- * inside Cloudflare's published ranges, the visitor is Cloudflare's own `CF-Connecting-IP`. A caller
- * that reaches Railway directly cannot use that header: its edge-seen address is not Cloudflare's.
- * The ranges are https://www.cloudflare.com/ips-v4 and /ips-v6, read 2026-10-26.
+ * The rightmost X-Forwarded-For entry is the edge point of presence's OWN address (Datacamp/CDN77 ranges:
+ * 79.127.178.81/.82 Paris, 212.102.36.x Zurich, 152.233.x Amsterdam...). From 23 to 31 Oct this file took
+ * the rightmost public entry, so 70-80% of all sign-ins were recorded as one of two Paris addresses, every
+ * employee shared one sign-in throttle and one API rate limit, and a blocklist entry could not name a visitor.
+ * So the address the edge saw is `X-Real-IP`, which the edge always overwrites.
+ *
+ * BEHIND CLOUDFLARE (2026-10-26). The production domain is proxied through Cloudflare, so the address the
+ * edge saw may be a Cloudflare server. When — and only when — it is inside Cloudflare's published ranges,
+ * the visitor is Cloudflare's own `CF-Connecting-IP`. A caller that reaches Railway directly cannot use that
+ * header: the edge saw the caller's own address, which is not Cloudflare's. The ranges are
+ * https://www.cloudflare.com/ips-v4 and /ips-v6, read 2026-10-26.
+ *
+ * With no `X-Real-IP` (a local run, nothing in front of it) the rightmost public X-Forwarded-For entry, then
+ * the rightmost entry, stands in.
  *
  * Deliberately dependency-free, so the unit tests import it directly.
  */
@@ -97,23 +100,32 @@ export function isCloudflareAddress(value: string): boolean {
   });
 }
 
-/** The caller's address, or null when the request carries none at all. */
-export function clientAddress(request: { headers: Pick<Headers, "get"> }): string | null {
-  const chain = (request.headers.get("x-forwarded-for") ?? "")
+function wellFormed(value: string | null | undefined): string | null {
+  const address = value?.trim().toLowerCase() ?? "";
+  if (v4Number(address.replace(/^::ffff:/, "")) !== null || v6Number(address) !== null) return address;
+  return null;
+}
+
+/** The address Railway's edge saw: its own X-Real-IP, else (no edge in front) the rightmost public hop. */
+function edgeSawAddress(headers: Pick<Headers, "get">): string | null {
+  const realIp = wellFormed(headers.get("x-real-ip"));
+  if (realIp) return realIp;
+  const chain = (headers.get("x-forwarded-for") ?? "")
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
-  let edgeSaw: string | null = null;
   for (let index = chain.length - 1; index >= 0; index -= 1) {
-    if (!isInternalAddress(chain[index])) {
-      edgeSaw = chain[index];
-      break;
-    }
+    if (!isInternalAddress(chain[index])) return chain[index];
   }
+  return chain[chain.length - 1] || null;
+}
+
+/** The caller's address, or null when the request carries none at all. */
+export function clientAddress(request: { headers: Pick<Headers, "get"> }): string | null {
+  const edgeSaw = edgeSawAddress(request.headers);
   if (edgeSaw && isCloudflareAddress(edgeSaw)) {
-    const visitor = request.headers.get("cf-connecting-ip")?.trim().toLowerCase() ?? "";
-    if (v4Number(visitor.replace(/^::ffff:/, "")) !== null || v6Number(visitor) !== null) return visitor;
+    const visitor = wellFormed(request.headers.get("cf-connecting-ip"));
+    if (visitor) return visitor;
   }
-  if (edgeSaw) return edgeSaw;
-  return chain[chain.length - 1] || request.headers.get("x-real-ip")?.trim() || null;
+  return edgeSaw;
 }
