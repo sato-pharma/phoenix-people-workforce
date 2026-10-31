@@ -45,7 +45,7 @@ export async function loadWeekProgress(
   const visitsRead = fetchAllRowsKeyset<Row>(
     () =>
       supabase
-        .from("phoenix_crm_countable_visits")
+        .from("phoenix_crm_countable_visits_with_history")
         .select("id, visit_date, list_type, pharmacy_name")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)

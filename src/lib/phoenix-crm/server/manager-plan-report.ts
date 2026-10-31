@@ -161,7 +161,7 @@ async function loadWithRepDone(
     return fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id, customer_id, visit_date, kind, manager_hr_id, senior_hr_id, product_manager_hr_id")
           .in("seat_id", part)
           .eq("is_test", isTest)

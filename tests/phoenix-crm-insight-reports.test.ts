@@ -1082,7 +1082,7 @@ function runScopeTests(): void {
   assert.doesNotMatch(service, /customer_validated/, "these boards measure nobody, so they do not filter on validation");
   assert.match(raw("src/lib/phoenix-crm/server/insight-reports.ts"), /NO `customer_validated` FILTER — THESE BOARDS MEASURE NOBODY/);
   assert.doesNotMatch(service, /\.from\("phoenix_crm_visits"\)/, "the boards read the countable visits, never every saved one");
-  assert.match(service, /\.from\("phoenix_crm_countable_visits"\)/);
+  assert.match(service, /\.from\("phoenix_crm_countable_visits_with_history"\)/);
 
   // The route serves the four, each through its own loader.
   const route = source("app/api/phoenix-crm/reports/route.ts");

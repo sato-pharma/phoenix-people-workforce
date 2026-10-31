@@ -514,7 +514,7 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
     // Done reads what every KPI reads: the countable visits, validated customers, one world.
     const service = source("src/lib/phoenix-crm/server/double-visit-plans.ts");
     const doneReader = service.slice(service.indexOf("async function loadDoneKeys"), service.indexOf("function storedSlotOf"));
-    assert.ok(doneReader.includes('.from("phoenix_crm_countable_visits")'), "done is read from the countable visits — an off-plan visit counts once approved");
+    assert.ok(doneReader.includes('.from("phoenix_crm_countable_visits_with_history")'), "done is read from the countable visits — an off-plan visit counts once approved");
     assert.ok(doneReader.includes('.eq("customer_validated", true)'), "on validated customers, as the manager report counts them");
     assert.ok(doneReader.includes('.eq("is_test", isTest)'), "in one world");
     assert.equal(doneReader.includes('.from("phoenix_crm_visits")'), false, "never the raw visits");

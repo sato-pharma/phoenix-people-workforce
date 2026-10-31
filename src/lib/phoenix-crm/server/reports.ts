@@ -1249,7 +1249,7 @@ export async function countValidatedVisitsBySeat(
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id")
           .in("seat_id", batch)
           .eq("is_test", reportIncludesTest(viewer, undefined))
@@ -1385,7 +1385,7 @@ async function visitDaysByCustomer(
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
-        .from("phoenix_crm_countable_visits")
+        .from("phoenix_crm_countable_visits_with_history")
         .select("id, customer_id, visit_date, customer_validated")
         .eq("seat_id", seatId)
         .eq("is_test", includeTest)

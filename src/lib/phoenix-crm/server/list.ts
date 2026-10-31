@@ -945,7 +945,7 @@ export async function loadMonthVisitCounts(seatId: string, isTest: boolean, mont
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
-        .from("phoenix_crm_countable_visits")
+        .from("phoenix_crm_countable_visits_with_history")
         .select("id, customer_id")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)

@@ -109,7 +109,7 @@ async function readWorldFacts(seatIds: ReadonlyArray<string>, isTest: boolean, v
       query.eq("status", "active").eq("is_test", isTest),
     ),
     selectByIds<Row>("phoenix_crm_customers", CUSTOMER_COLUMNS, "seat_id", seatIds, (query) => query.eq("status", "active").eq("is_test", isTest)),
-    selectByIds<Row>("phoenix_crm_countable_visits", "id, customer_id, visit_date", "seat_id", seatIds, (query) =>
+    selectByIds<Row>("phoenix_crm_countable_visits_with_history", "id, customer_id, visit_date", "seat_id", seatIds, (query) =>
       query.eq("is_test", isTest).gte("visit_date", monthStart).lte("visit_date", visitDay),
     ),
   ]);

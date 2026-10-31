@@ -259,7 +259,7 @@ async function loadVisitDays(
         getSupabaseAdmin()
           // Named columns, every one read off the live view: PostgREST answers a column that is not
           // there by failing the WHOLE read rather than nulling that one field.
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated")
           .eq("is_test", isTest)
           // NOT filtered here any more. A visit to a customer nobody has validated is work the rep
@@ -485,7 +485,7 @@ async function loadManagerDays(
       fetchAllRowsKeyset<Row>(
         () =>
           getSupabaseAdmin()
-            .from("phoenix_crm_countable_visits")
+            .from("phoenix_crm_countable_visits_with_history")
             .select("id, seat_id, visit_date, list_type, pharmacy_name, customer_validated, kind, manager_hr_id, senior_hr_id, product_manager_hr_id")
             .eq("is_test", isTest)
             .gte("visit_date", bounds.from)
@@ -606,10 +606,10 @@ async function latestWorkedMonth(
 
   const [lastVisit, lastActivity] = await Promise.all([
     newestOf(
-      "phoenix_crm_countable_visits",
+      "phoenix_crm_countable_visits_with_history",
       (part) =>
         getSupabaseAdmin()
-          .from("phoenix_crm_countable_visits")
+          .from("phoenix_crm_countable_visits_with_history")
           .select("seat_id, visit_date")
           .eq("is_test", isTest)
           // Not filtered: this asks WHEN he last worked, so that the calendar reaches that far. A

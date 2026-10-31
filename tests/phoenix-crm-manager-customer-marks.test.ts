@@ -116,7 +116,7 @@ export function runPhoenixCrmManagerCustomerMarksTests(): void {
     /if \(seatIds\.some\(\(seatId\) => !reachById\.has\(seatId\)\)\) throw forbiddenError\(/,
     "a territory outside the ones he plans in refuses the whole read",
   );
-  assert.match(server, /\.from\("phoenix_crm_countable_visits"\)/, "the rep's visits are the countable ones");
+  assert.match(server, /\.from\("phoenix_crm_countable_visits_with_history"\)/, "the rep's visits are the countable ones");
   assert.equal(/\.from\("phoenix_crm_visits"\)/.test(server), false, "never the raw visits table — an unapproved off-plan visit counts nowhere");
   assert.match(server, /if \(hits\.length === 1\) \{/, "a name match lands only on a unique customer — namesakes are real");
   assert.match(server, /countsAsPlannersVisitWithRep\(/, "'with you' is the plan report's own rule");

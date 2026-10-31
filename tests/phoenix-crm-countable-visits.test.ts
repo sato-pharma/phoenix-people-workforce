@@ -171,7 +171,8 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
     const start = list.indexOf("export async function loadMonthVisitCounts");
     assert.notEqual(start, -1, "loadMonthVisitCounts is still there");
     const body = list.slice(start, start + 900);
-    assert.ok(body.includes('.from("phoenix_crm_countable_visits")'), "loadMonthVisitCounts must read the countable view");
+    // The history view since 20261031160000: the countable rule, with the rep's copied iReports360 visits kept.
+    assert.ok(body.includes('.from("phoenix_crm_countable_visits_with_history")'), "loadMonthVisitCounts must read the countable view");
     assert.equal(body.includes('.from("phoenix_crm_visits")'), false, "and never the raw table");
   }
 
@@ -331,7 +332,9 @@ export async function runPhoenixCrmCountableVisitsTests(): Promise<void> {
         if (also === -1) problems.push(`${path}: ${alsoIn} is gone — re-point this pin at whatever replaced it`);
         else body += text.slice(also, text.indexOf("\n}\n", also));
       }
-      const found = [...body.matchAll(/\.from\("phoenix_crm_countable_visits"\)/g)].length;
+      // The calendar and Frequency show history, so they read the history view (20261031160000) — the
+      // same countable rule with the copied iReports360 visits kept. The exceptions board reads the view.
+      const found = [...body.matchAll(/\.from\("phoenix_crm_countable_visits(?:_with_history)?"\)/g)].length;
       const filtered = [...body.matchAll(/\.eq\("customer_validated", true\)/g)].length;
       if (found !== reads) problems.push(`${path}: ${from} reads the countable view ${found} time(s), expected ${reads}`);
       if (mode === "query") {

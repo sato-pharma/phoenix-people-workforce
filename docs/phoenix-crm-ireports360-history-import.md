@@ -14,6 +14,8 @@ and is not part of this import.
 | --- | --- |
 | The marks, the source map, the triggers, the two SQL readers, the view column, the copy function | `supabase/migrations/20261029212200_phoenix_crm_imports_ireports360_history.sql` |
 | The contact refresh skips an imported customer | `supabase/migrations/20261029212300_the_contact_refresh_skips_imported_customers.sql` |
+| The countable view skips the copy at its root; the history view and the four report functions keep it | `supabase/migrations/20261031160000_phoenix_crm_countable_visits_skip_imported_history.sql` |
+| The indexes for the copy function's lowercased rep ids: old visits, seat occupancy, the double-visit partner. A one-seat plan is index scans only; the largest seat's source query (2,345 visits) runs in 224 ms | `supabase/migrations/20261031170000_phoenix_crm_import_history_indexes.sql` |
 | The runner (dry run, then one seat per transaction) | `scripts/phoenix-crm-import-ireports360-history.ts` |
 | The pins | `tests/phoenix-crm-imported-history.test.ts` |
 
@@ -71,7 +73,19 @@ and is not part of this import.
 
 ## Who skips it, and who keeps it
 
-**Every reader that judges, alarms or pays skips a copied visit,** by the mark, in the query:
+**`phoenix_crm_countable_visits` skips a copied visit at its root** (`20261031160000`). Every reader of
+that view skips the copy without naming the mark, so a new reader that forgets it can never count the copy
+as Phoenix work. Counting the history is the reader that has to ask for it by name:
+`phoenix_crm_countable_visits_with_history` is the same view without that one filter, service role only.
+
+- **What changed with the root filter:** the adoption board (`phoenix_crm_seat_visit_firsts`) no longer
+  reads a copied January visit as the seat's first Phoenix visit.
+- **What did not change:** the entry-days cache (`phoenix_crm_rep_entry_days_calc`), `crm_visits_unified` and
+  `crm_checkins_unified` already started at the team's Phoenix start date, which no copied visit reaches.
+- The view keeps its `imported_from_ireports360_at` column, always null now, because a view cannot lose one.
+
+**The readers that also skip it by the mark** — each read the raw table or was written before the root
+filter, and each keeps its own skip:
 
 - `loadPhoenixWorkEvidenceDays`, which feeds deductions, Field Workforce Compliance and the calendar. Those
   days already belong to the iReports360 door, and a copied row would credit a partner the old system never
@@ -103,6 +117,16 @@ already copied, so no visit is counted twice.
 Frequency and the tracking sheet (`server/reports.ts`), and the calendar reports. Copying the history so it
 shows there is the whole point of the import. The test refuses the mark in `reports.ts`.
 
+- The screens that read the raw table keep it as they always did.
+- The screens that read the countable rule read `phoenix_crm_countable_visits_with_history`: `reports.ts`,
+  `team-calendar.ts`, `week-progress.ts`, `list.ts`, `my-map.ts`, `double-visit-plans.ts`,
+  `insight-reports.ts`, `manager-customer-marks.ts`, `manager-plan-report.ts` and
+  `manager-visit-details.ts`.
+- So do the four report functions: `phoenix_crm_report_brick_coverage`, `phoenix_crm_report_coverage`,
+  `phoenix_crm_report_manager_visits` and `phoenix_crm_report_visits_by_day`.
+- `tests/phoenix-crm-imported-history.test.ts` pins all of it: the countable view ends with the filter, the
+  history view equals it without that filter, and the four functions read the history view.
+
 `phoenix_crm_contact_truth_calc` is not touched. It reads only validated customers, and nothing the import
 writes is validated.
 
@@ -113,15 +137,19 @@ node --env-file-if-exists=.env.production.rls.local --experimental-strip-types s
 ```
 
 - **The dry run is the default.** It asks the function for every seat at once, writes nothing, and saves
-  `dry-run.json` to `F:\PHX backup\phoenix-crm-ireports360-history-20261029\`.
+  `dry-run-<Cairo time>.json` to `F:\PHX backup\phoenix-crm-ireports360-history-20261029\`. Every run writes
+  files of its own; an earlier run's record is never overwritten.
 - **`--apply` is a bulk production write.** Announce it in plain words first: production has no PITR. It
   works like this:
-  1. it runs the dry run again;
-  2. it writes one seat per transaction;
-  3. it stops at the first seat where the written count differs from the planned count (rows to write, less
-     the ones that collide with a visit already in Phoenix);
-  4. `applied.json` keeps every seat's answer.
-- `--seat=<seat id>` limits the run to one seat.
+  1. it runs the dry run again, for the list of seats;
+  2. it takes one seat per transaction, on one snapshot: it plans the seat, writes it, and compares the
+     written count with the planned count (rows to write, less the ones that collide with a visit already in
+     Phoenix);
+  3. a seat whose counts differ is rolled back inside its own transaction, and the run stops there; every
+     seat before it stays written;
+  4. `applied-<Cairo time>.json` keeps every seat's answer.
+- `--apply` takes no value: `--apply=false` is refused, never read as an apply.
+- `--seat=<seat id>` limits the run to one seat; a bare `--seat` or `--out` is refused.
 - The function itself refuses an apply that names no seat (`phoenix_crm:import_needs_a_seat`).
 - Each call lifts the pooler's statement timeout to 15 minutes for its own transaction only.
 
@@ -149,4 +177,5 @@ delete from public.phoenix_crm_customers c where c.imported_from_ireports360_at 
 ```
 
 The source map's rows go with their visits, through the foreign key. To roll the schema back, follow the
-`ROLLBACK:` header of each migration. The view keeps its appended column, because a view cannot lose one.
+`ROLLBACK:` header of each migration, newest first. The view keeps its appended column, because a view
+cannot lose one.
