@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ab5fd790-0dde-4d83-b770-150165ef14e7
-  modified: 2026-10-20T01:05:00.000Z
+  modified: 2026-10-31T12:10:20.816Z
 ---
 
 **The server.** Employee laptops are controlled and audited with **MeshCentral**, self-hosted on the
@@ -105,6 +105,15 @@ tunnel it was built through — so only the web UI and installer downloads were 
 🔴 **The agents move only when `cloudflared-mesh` is stopped from an elevated PowerShell (Claude
 cannot — `Access is denied`, `elevated: False`), so NEVER stop it until the next host has proven
 uptime**: stopping it is what would actually take the fleet across, and across to a host that failed.
+
+🔴 **31 Oct 2026 — "cannot login": the failover landed on a DEAD laptop tunnel.** The phone tunnel went down
+11:02Z (14:02 Cairo); the reconciler switched the address to the laptop, but service `cloudflared-mesh`
+was **Stopped** (StartType Automatic — so stopped by hand or crashed), so past the Access PIN every page
+was a Cloudflare **530**. The reconciler's own `laptop verify ... "mz":false` line was the tell and
+nothing alarmed on it. Fixed without elevation: `Start-Process cloudflared.exe tunnel --config
+~/.cloudflared/config.yml --logfile ~/.cloudflared/mesh-tunnel-user.log run` (hidden user process,
+same tunnel id) → `agent.ashx` 3,085 bytes, installer 3,453,840 bytes again. It dies at reboot, when
+the Automatic service takes over. Laptop MeshCentral serves `https://localhost:443` (port 443, not 4430).
 
 **Claude cannot restart a Windows service here** — `Restart-Service` answers "Cannot open <name>
 service", so every service restart is a block the owner pastes into an elevated PowerShell. The

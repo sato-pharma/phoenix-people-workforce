@@ -265,10 +265,11 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     assert.ok(plans.includes("listTypes: dayOff ? [] : planDayListTypes(date),"), "and a day off holds no list");
     // `sharedPlaces` joined the same call on 2026-10-09 (three visits a day inside one polyclinic), so
     // the fingerprint names that line instead of demanding `leave,` be the last one — what it pins is
-    // unchanged: the SAVE check, not only the week builder, is handed the week's leave.
+    // unchanged: the SAVE check, not only the week builder, is handed the week's leave. `liftedVenues`
+    // joined it on 2026-10-31 (four hospitals with no venue cap), so it may follow that line.
     assert.match(
       plans,
-      /holidays,\s*leave,\s*sharedPlaces: planVenues,\s*\}\);\s*if \(!resolved\.ok\) throw validationError\(resolved\.error\);/,
+      /holidays,\s*leave,\s*sharedPlaces: planVenues,\s*(?:liftedVenues,\s*)?\}\);\s*if \(!resolved\.ok\) throw validationError\(resolved\.error\);/,
       "the save check is handed his leave",
     );
     const month = source("src/lib/phoenix-crm/server/monthly-plans.ts");

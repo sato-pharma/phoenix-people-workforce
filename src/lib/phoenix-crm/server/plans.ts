@@ -99,7 +99,7 @@ import {
 import type { SavedWeekBoard } from "@/lib/phoenix-crm/server/monthly-plans";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadOldCrmReviewPlans, type OldCrmReviewPlan } from "@/lib/phoenix-crm/server/old-crm-plan-approval";
-import { loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
+import { loadLiftedVenues, loadSharedPlaceNames } from "@/lib/phoenix-crm/server/shared-places";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import {
   loadPlanActivities,
@@ -738,6 +738,8 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
     // Three visits a day inside one polyclinic (owner, 2026-10-09) — the names only, so the refusal can
     // say "Nile Polyclinic". The COUNT is off the plan's own items, so this read can never widen the cap.
     customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
+    // The venues the owner lifted outright for this seat (2026-10-31): any count on the plan there.
+    loadLiftedVenues(seat.seatId),
   ]);
   reads.catch(() => undefined);
 
@@ -767,7 +769,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
     );
   }
 
-  const [{ customers, placesByCustomer }, holidays, leave, planVenues] = await reads;
+  const [{ customers, placesByCustomer }, holidays, leave, planVenues, liftedVenues] = await reads;
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
     customers.flatMap((row): Array<[string, PlanRuleCustomer]> => {
       const customerId = String(row.id);
@@ -802,6 +804,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
     holidays,
     leave,
     sharedPlaces: planVenues,
+    liftedVenues,
   });
   if (!resolved.ok) throw validationError(resolved.error);
 
@@ -986,10 +989,16 @@ export async function transitionPlan(
       };
       // Whether a day is over is the COUNT alone; the names only word the refusal. So they are read
       // only when there is a refusal to word (2026-10-16 speed audit) — the sentence is the same one.
-      const overVenue =
-        sharedPlanCapRefusal({ ...venueCheck, venues: new Map() }) === null
-          ? null
-          : sharedPlanCapRefusal({ ...venueCheck, venues: await loadSharedPlaceNames(venueCheck.items.map((item) => item.sharedPlaceId)) });
+      // A venue the owner lifted outright (2026-10-31) is never full, on the send as on the save; it can
+      // only take items OUT of the count, so it too is read only when the plain count is over.
+      let overVenue: string | null = null;
+      if (sharedPlanCapRefusal({ ...venueCheck, venues: new Map() }) !== null) {
+        const [liftedVenues, venues] = await Promise.all([
+          loadLiftedVenues(seat.seatId),
+          loadSharedPlaceNames(venueCheck.items.map((item) => item.sharedPlaceId)),
+        ]);
+        overVenue = sharedPlanCapRefusal({ ...venueCheck, venues, liftedVenues });
+      }
       if (overVenue) throw conflictError(overVenue);
     }
   } else if (action === "approve") {

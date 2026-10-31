@@ -7,6 +7,7 @@ import {
   offPlanBlock,
   offPlanExemptionSentence,
 } from "../src/lib/phoenix-crm/offplan-cap-rules.ts";
+import { sharedPlanCapRefusal } from "../src/lib/phoenix-crm/shared-place-rules.ts";
 
 const MIGRATION = "supabase/migrations/20261017150000_phoenix_crm_offplan_exemptions.sql";
 const HOSPITAL = "مستشفي الجوي التخصصي";
@@ -83,6 +84,52 @@ export function runPhoenixCrmOffplanExemptionTests(): void {
   assert.equal(offPlanExemptionSentence(excepted, "manager"), null, "a venue exception is told to the rep only, as before");
 
   runNewHireWindowTests(caps, full);
+  runLiftedVenueTests();
+}
+
+const LIFTED_MIGRATION = "supabase/migrations/20261031170001_phoenix_crm_alex_hospitals_no_cap.sql";
+
+/**
+ * Owner, 2026-10-31, of four hospitals in Saad Salama's district: "make them normally add in their plans any count
+ * in these hospitals and make them log visits planned/unplanned in those hospitals without cap". A row carrying
+ * lifts_venue_cap lifts the venue's own daily number for planned visits too — on the plan's save and send and at
+ * the door — besides the out-of-plan cap every venue row already lifts. The Air Force hospital's row keeps false.
+ */
+function runLiftedVenueTests(): void {
+  const dayLabel = (isoDay: string) => isoDay;
+  const elite = Array.from({ length: 6 }, () => ({ planDate: "2026-11-01", sharedPlaceId: "elite" }));
+  assert.ok(sharedPlanCapRefusal({ items: elite, venues: new Map(), cap: 3, dayLabel }) !== null, "an ordinary venue holds three a day");
+  assert.equal(
+    sharedPlanCapRefusal({ items: elite, venues: new Map(), cap: 3, dayLabel, liftedVenues: new Set(["elite"]) }),
+    null,
+    "🔴 a lifted venue holds any count on the plan",
+  );
+  const withOther = [...elite, ...Array.from({ length: 4 }, () => ({ planDate: "2026-11-01", sharedPlaceId: "other" }))];
+  assert.ok(
+    sharedPlanCapRefusal({ items: withOther, venues: new Map(), cap: 3, dayLabel, liftedVenues: new Set(["elite"]) })?.includes("has 4 visits"),
+    "🔴 every other venue keeps its three, counted without the lifted one",
+  );
+
+  const migration = readFileSync(LIFTED_MIGRATION, "utf8");
+  assert.ok(migration.includes("add column if not exists lifts_venue_cap boolean not null default false"), "false keeps the 2026-10-17 rule");
+  assert.ok(
+    migration.includes("if exists (select 1 from public.phoenix_crm_venue_cap_lifted(new.seat_id) l where l.shared_place_id = v_shared) then\n    return new;"),
+    "the door lets a planned visit in a lifted venue through, before it counts",
+  );
+  assert.ok(migration.includes("and e.lifts_venue_cap") && migration.includes("join public.phoenix_crm_shared_places sp on sp.seat_id = e.seat_id"), "🔴 per seat, and only rows that lift it");
+  assert.ok(migration.includes("'SEAT-CNS-REP-AB3'") && migration.includes("'SEAT-CNS-REP-AB1'"), "Ahmed Ashraf's and Hager Abdelmaged's seats");
+  assert.ok(!migration.includes("'SEAT-CNS-REP-CA2'"), "the Air Force hospital's row is not touched");
+  assert.ok(!migration.includes("update public.phoenix_crm_settings"), "🔴 the settings are never raised");
+  assert.ok(migration.includes("revoke execute on function public.phoenix_crm_venue_cap_lifted(text) from public, anon, authenticated"), "closed to the browser roles");
+
+  const plans = readFileSync("src/lib/phoenix-crm/server/plans.ts", "utf8");
+  assert.ok(plans.includes("loadLiftedVenues(seat.seatId),\n  ]);"), "the save reads the lifted venues beside its other reads");
+  assert.ok(plans.includes("sharedPlaces: planVenues,\n    liftedVenues,"), "and hands them to the plan rules");
+  assert.ok(plans.includes("overVenue = sharedPlanCapRefusal({ ...venueCheck, venues, liftedVenues });"), "🔴 the send counts without them too");
+  const rules = readFileSync("src/lib/phoenix-crm/plan-rules.ts", "utf8");
+  assert.ok(rules.includes("liftedVenues: input.liftedVenues,"), "resolvePlanItems passes them to the venue cap");
+  const loader = readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8");
+  assert.ok(loader.includes('rpc("phoenix_crm_venue_cap_lifted"'), "the plan asks the door's own rule");
 }
 
 const NEW_HIRE_MIGRATION = "supabase/migrations/20261026230001_phoenix_crm_new_hire_offplan_month.sql";

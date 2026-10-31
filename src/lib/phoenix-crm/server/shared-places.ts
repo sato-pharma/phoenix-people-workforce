@@ -202,6 +202,26 @@ export async function loadSharedPlaceNames(
 }
 
 /**
+ * The venues of one seat the owner lifted outright (owner, 2026-10-31: named hospitals — any count on the
+ * plan, planned or unplanned visits without a cap), from `phoenix_crm_venue_cap_lifted`, the same rule the
+ * door's trigger asks. The plan's save and send leave these out of the venue count. A failed read answers
+ * none: the plan then holds the ordinary daily number, which is never a wider door than the database's.
+ */
+export async function loadLiftedVenues(seatId: string): Promise<Set<string>> {
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_venue_cap_lifted", { p_seat: seatId });
+    if (error) throw error;
+    return new Set(((data ?? []) as Array<{ shared_place_id: string }>).map((row) => String(row.shared_place_id)));
+  } catch (error) {
+    logError("Phoenix CRM lifted venues could not be read", {
+      error,
+      labels: { event: "phoenix_crm_lifted_venues_read_failed" },
+    });
+    return new Set();
+  }
+}
+
+/**
  * Which venue each of these PLACES sits in, `placeId → sharedPlaceId`, for places seated in one.
  *
  * The plan's SEND needs exactly this and cannot get it any other way: it re-counts the whole stored

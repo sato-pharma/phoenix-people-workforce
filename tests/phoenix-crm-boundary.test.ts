@@ -1035,6 +1035,10 @@ const LATER_MIGRATIONS = [
   // functions that show history REPLACED with their live bodies reading the history view. It is the latest
   // to replace those four, so it appends at the end.
   "supabase/migrations/20261031160000_phoenix_crm_countable_visits_skip_imported_history.sql",
+  // Four Alex hospitals with no cap at all (owner, 2026-10-31): one column on the exemptions table, one new
+  // function (the venues a seat's rows lift) and the shared-place day cap REPLACED — its earlier definer,
+  // 20261017150000, sits above — so it appends at the end.
+  "supabase/migrations/20261031170001_phoenix_crm_alex_hospitals_no_cap.sql",
 ];
 
 /**
