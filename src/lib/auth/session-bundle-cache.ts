@@ -33,6 +33,24 @@
  *
  * Process-local, bounded, and held on `globalThis` so the page renderer and the route handlers -- which
  * Next may bundle separately -- see the same copy.
+ *
+ * ONE LIVE READ FOR REQUESTS THAT ARRIVE TOGETHER (31 Oct 2026, `shareLiveBundleRead` below). This is
+ * not the copy and changes none of its rules. Opening a portal page makes the sidebar prefetch about
+ * fifteen pages at once, down to their loading screens, and each prefetch renders the portal layout,
+ * whose first line is this session check. Production, 31 Oct 14:51-15:00 Cairo: 861 bundle calls in
+ * under nine minutes, 18% of every Supabase request, and about a quarter of them started while the same
+ * person's previous check was still running. A read-only request that arrives while a LIVE read for the
+ * same session is in flight now waits for that read instead of starting its own:
+ *   - IT IS ONLY EVER A LIVE ANSWER IN FLIGHT. Nothing is kept once the read settles; the next request
+ *     after it starts a new one. A read is joined only while it is under SESSION_BUNDLE_JOIN_MAX_AGE_MS
+ *     old, so the oldest answer a request can receive began at most one second before it arrived.
+ *   - ONLY A READ-ONLY REQUEST SHARES. The callers pass `shareLiveRead` from the same two tests that
+ *     decide the copy -- a GET or HEAD API call, a page render that is not a server action -- so a
+ *     write, a heartbeat, a passkey or a password change always runs its own read.
+ *   - EVERY CHECK STILL RUNS PER REQUEST, on its own deep copy of the rows: expiry, revocation, role,
+ *     version, active and the lifecycle gate are decided against each request's own signed token.
+ *   - A LOGOUT OR FORCED LOGOUT IN THIS PROCESS ENDS THE SHARING at once
+ *     (`forgetRememberedBundlesForSessions`): a request that arrives after it starts a fresh read.
  */
 
 export const SESSION_BUNDLE_STALE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -42,8 +60,14 @@ export const SESSION_BUNDLE_CACHE_MAX_ENTRIES = 500;
 
 type Remembered = { data: Record<string, unknown>; storedAt: number };
 
+/** The oldest live read a request may still join -- longer than any healthy read, far shorter than a timeout and its retry. */
+export const SESSION_BUNDLE_JOIN_MAX_AGE_MS = 1_000;
+
+type LiveRead = { promise: Promise<unknown>; startedAt: number };
+
 const STORE_KEY = Symbol.for("phoenix.sessionBundleCache");
 const BARRIER_KEY = Symbol.for("phoenix.sessionBundleCacheBarrier");
+const LIVE_READS_KEY = Symbol.for("phoenix.sessionBundleLiveReads");
 
 function store(): Map<string, Remembered> {
   const holder = globalThis as unknown as Record<symbol, Map<string, Remembered> | undefined>;
@@ -65,6 +89,15 @@ function barriers(): Map<string, number> {
   if (existing) return existing;
   const created = new Map<string, number>();
   holder[BARRIER_KEY] = created;
+  return created;
+}
+
+function liveReads(): Map<string, LiveRead> {
+  const holder = globalThis as unknown as Record<symbol, Map<string, LiveRead> | undefined>;
+  const existing = holder[LIVE_READS_KEY];
+  if (existing) return existing;
+  const created = new Map<string, LiveRead>();
+  holder[LIVE_READS_KEY] = created;
   return created;
 }
 
@@ -166,8 +199,38 @@ export function forgetRememberedBundle(key: string, observedAt?: number): void {
 }
 
 /**
- * A session was revoked in THIS process (logout, forced logout): its copy goes now, and a read that began
- * before this moment can no longer put it back. Cheap -- at most 500 entries are ever held.
+ * Runs `read` -- the live session read with its one retry -- or, when a read for the same key began under
+ * SESSION_BUNDLE_JOIN_MAX_AGE_MS ago and has not settled, waits for that one instead. `startedAt` is when
+ * the read that answered BEGAN, so the copy's barrier rules see the true age of the answer, and `joined`
+ * says whether this caller shared another's read (the caller then works on its own deep copy). Nothing
+ * outlives the read: the entry is removed the moment it settles, whatever the outcome.
+ */
+export async function shareLiveBundleRead<T>(
+  key: string,
+  read: () => Promise<T>,
+  now: () => number = Date.now,
+): Promise<{ value: T; startedAt: number; joined: boolean }> {
+  const reads = liveReads();
+  const running = reads.get(key);
+  if (running && now() - running.startedAt <= SESSION_BUNDLE_JOIN_MAX_AGE_MS) {
+    return { value: (await running.promise) as T, startedAt: running.startedAt, joined: true };
+  }
+  const startedAt = now();
+  const promise = read();
+  const entry: LiveRead = { promise, startedAt };
+  reads.set(key, entry);
+  try {
+    return { value: await promise, startedAt, joined: false };
+  } finally {
+    // Only the read that is still registered is removed -- never a newer one for the same session.
+    if (reads.get(key) === entry) reads.delete(key);
+  }
+}
+
+/**
+ * A session was revoked in THIS process (logout, forced logout): its copy goes now, a read that began
+ * before this moment can no longer put it back, and a request arriving from now on starts its own live
+ * read instead of joining one already running. Cheap -- at most 500 entries are ever held.
  */
 export function forgetRememberedBundlesForSessions(sessionIds: ReadonlyArray<string>, now: number = Date.now()): void {
   const wanted = new Set(sessionIds.map((id) => String(id ?? "").trim()).filter(Boolean));
@@ -175,6 +238,10 @@ export function forgetRememberedBundlesForSessions(sessionIds: ReadonlyArray<str
   const entries = store();
   for (const key of [...entries.keys()]) {
     if (wanted.has(sessionIdOf(key))) entries.delete(key);
+  }
+  const reads = liveReads();
+  for (const key of [...reads.keys()]) {
+    if (wanted.has(sessionIdOf(key))) reads.delete(key);
   }
   for (const id of wanted) raiseBarrier(id, now);
 }
@@ -205,6 +272,11 @@ export function withRefreshedSessionExpiry(
 export function clearSessionBundleCache(): void {
   store().clear();
   barriers().clear();
+  liveReads().clear();
+}
+
+export function sessionBundleLiveReadCount(): number {
+  return liveReads().size;
 }
 
 export function sessionBundleCacheSize(): number {

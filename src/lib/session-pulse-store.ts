@@ -21,6 +21,8 @@
  *  - The heartbeat is a POST, sent when the viewer has been active and the last one is at least
  *    HEARTBEAT_GAP_MS old; every other tick is a read-only GET. Only the POST confirms the session
  *    is still live, so a 401 on it is the sign-out signal.
+ *  - A heartbeat with nothing else to carry waits up to HEARTBEAT_GATHER_MS for a badge or the bell
+ *    to ride with it, so a page opening sends ONE request, not a bare POST and then a GET.
  *  - SSR-safe: every browser global is guarded before access.
  */
 
@@ -35,6 +37,21 @@ export const NOTICES_GAP_MS = 55_000;
 
 /** The session heartbeat floor — unchanged from the standalone heartbeat it replaces. */
 export const HEARTBEAT_GAP_MS = 60_000;
+
+/**
+ * How long a heartbeat with nothing else to carry waits for a badge or the bell to ride with it.
+ *
+ * WHY (31 Oct 2026). Opening a page mounts the session guard, which reports activity at once, and the
+ * bell a moment later. The guard's report sent the heartbeat straight away with nothing in it, and the
+ * bell, arriving while that POST was in flight, sent its own GET the moment the POST answered: two
+ * session reads for one page opening. Production HTTP logs, 31 Oct 14:51–15:00 Cairo: 14 of the 67
+ * pulse requests were that bare POST, followed 0.4–2.5 s later by the bell's GET from the same phone.
+ * Holding the bare heartbeat lets the bell's request BE the heartbeat. Nothing waits for data: a badge
+ * or the bell is answered as soon as it asks, and only a heartbeat that would have travelled empty
+ * waits. A session's idle limit equals its absolute limit (session-token.ts), so three seconds of
+ * delay on its keep-alive cannot end one.
+ */
+export const HEARTBEAT_GATHER_MS = 3_000;
 
 export const PULSE_ENDPOINT = "/api/auth/pulse";
 
@@ -63,6 +80,9 @@ const state: {
   inFlightNotices: boolean;
   intervalId: ReturnType<typeof setInterval> | null;
   onVisible: (() => void) | null;
+  /** The wait a bare heartbeat is held in (HEARTBEAT_GATHER_MS): none, running, or over and free to go alone. */
+  heartbeatHold: "none" | "holding" | "released";
+  heartbeatHoldTimer: ReturnType<typeof setTimeout> | null;
   /** When the last request STARTED (Date.now()); 0 = never. */
   lastFetchStartedAt: number;
   /** When the last heartbeat POST started; 0 = never. */
@@ -85,6 +105,8 @@ const state: {
   inFlightNotices: false,
   intervalId: null,
   onVisible: null,
+  heartbeatHold: "none",
+  heartbeatHoldTimer: null,
   lastFetchStartedAt: 0,
   lastHeartbeatAt: 0,
   lastNoticesAt: 0,
@@ -107,6 +129,29 @@ function heartbeatDue(now: number): boolean {
   return state.activitySinceHeartbeat && now - state.lastHeartbeatAt >= HEARTBEAT_GAP_MS;
 }
 
+function clearHeartbeatHold(): void {
+  if (state.heartbeatHoldTimer !== null) clearTimeout(state.heartbeatHoldTimer);
+  state.heartbeatHoldTimer = null;
+  state.heartbeatHold = "none";
+}
+
+/**
+ * True while a heartbeat with nothing else to carry must still wait (HEARTBEAT_GATHER_MS). The first
+ * call starts the wait; when it ends the heartbeat is released and goes on its own.
+ */
+function holdBareHeartbeat(): boolean {
+  if (state.heartbeatHold === "released") return false;
+  if (state.heartbeatHold === "none") {
+    state.heartbeatHold = "holding";
+    state.heartbeatHoldTimer = setTimeout(() => {
+      state.heartbeatHoldTimer = null;
+      state.heartbeatHold = "released";
+      pulse();
+    }, HEARTBEAT_GATHER_MS);
+  }
+  return true;
+}
+
 /** One request that carries whatever is wanted right now, or nothing when nothing is. */
 function pulse(): void {
   if (state.inFlight) return;
@@ -123,6 +168,8 @@ function pulse(): void {
     (state.noticeListeners.size > 0 && now - state.lastNoticesAt >= NOTICES_GAP_MS) || state.needNotices;
   const sendHeartbeat = heartbeatDue(now);
   if (!wantBadges && !wantNotices && !sendHeartbeat) return;
+  // A heartbeat that would travel empty waits a moment for a badge or the bell to ride with it.
+  if (sendHeartbeat && !wantBadges && !wantNotices && holdBareHeartbeat()) return;
 
   state.needBadges = false;
   state.needNotices = false;
@@ -132,6 +179,7 @@ function pulse(): void {
   if (sendHeartbeat) {
     state.lastHeartbeatAt = now;
     state.activitySinceHeartbeat = false;
+    clearHeartbeatHold();
   }
 
   const query = [wantBadges ? "badges=1" : "", wantNotices ? "notices=1" : ""].filter(Boolean).join("&");
@@ -206,6 +254,7 @@ function ensureLoop(): void {
 
 function teardownIfIdle(): void {
   if (hasSubscribers()) return;
+  clearHeartbeatHold();
   if (state.intervalId !== null) clearInterval(state.intervalId);
   state.intervalId = null;
   if (state.onVisible && typeof document !== "undefined") {
@@ -266,8 +315,8 @@ export function subscribePulseSessionEnded(listener: SessionListener): () => voi
 
 /**
  * The viewer did something (a click, a key, a focus). Marks the session active so the next request
- * is the heartbeat POST, and sends one at once when the last heartbeat is old enough — the same
- * moment the standalone heartbeat used to fire.
+ * is the heartbeat POST, and sends one when the last heartbeat is old enough — at once when a badge
+ * or the bell rides with it, after HEARTBEAT_GATHER_MS at most when nothing does.
  */
 export function notePulseActivity(): void {
   if (typeof window === "undefined") return;
@@ -292,6 +341,7 @@ export function requestPulseBadges(): void {
 
 /** For test cleanup only — do not call in production code. */
 export function _resetSessionPulse(): void {
+  clearHeartbeatHold();
   if (state.intervalId !== null) clearInterval(state.intervalId);
   state.intervalId = null;
   if (state.onVisible && typeof document !== "undefined") {

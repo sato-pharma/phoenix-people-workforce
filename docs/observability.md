@@ -489,6 +489,69 @@ so it was left for its own change.
 failed; and a Railway log search for `session_verification_served_from_recent_copy` shows whether the login
 fallback was ever used.
 
+## One live login check per burst (31 October 2026)
+
+**The question.** The owner asked whether 673,000 Supabase requests a day was normal, and then to find and
+cut what an open tab repeats. The tab's own clock, the session pulse (`src/lib/session-pulse-store.ts`), turned
+out to be the smaller half.
+
+**What was measured** — production, 31 Oct 2026, 14:51–15:00 Cairo, Railway's HTTP log for the web service
+next to Supabase's API-gateway log for the same window:
+
+| What | Count in the window |
+| --- | --- |
+| Supabase requests, all kinds | 4,789 |
+| `phx_auth_session_bundle` (the login check) | 861, or 18% of them |
+| Page requests to the app | 921: 71 real page loads, 370 prefetch renders (about 2 KB, 125 ms typical), 480 tiny prefetch requests that reach no database |
+| Session pulse requests | 67, from 21 phones |
+
+Opening a portal page makes the sidebar prefetch about fifteen pages, each down to its loading screen
+(`next.config.ts`, "NEVER BUILD A WHOLE PAGE NOBODY TAPPED"). Every one of those prefetch renders runs the
+portal layout, and the layout's first line is the login check. So one page opening was paying about fifteen
+login checks for the same person within a second or two, and the pulse a few more.
+
+**Cut 1 — one live read for read-only requests that arrive together.** `shareLiveBundleRead`
+(`src/lib/auth/session-bundle-cache.ts`) lets a request that cannot change anything wait for the same
+session's LIVE read when one is already in flight, instead of starting its own. This is not the outage copy
+of 18 Oct and changes none of its rules:
+
+- Only a live answer in flight is shared. Nothing is kept once the read settles; the next request after it
+  runs a new one. A read is joined only while it is under one second old (`SESSION_BUNDLE_JOIN_MAX_AGE_MS`),
+  so the oldest answer a request can receive began at most one second before it arrived.
+- Only a read-only request shares: a GET or HEAD API call, or a page render that is not a server action —
+  the same two tests that decide the copy. A write, the heartbeat (which refreshes the idle expiry off its
+  read), the passkey routes and the change-password route always run their own read.
+- Every check still runs per request — expiry, revocation, role, version, active and the lifecycle gate —
+  against that request's own signed token, on its own deep copy of the rows.
+- A logout or forced logout in this process ends the sharing at once: a request that arrives after it starts
+  a fresh read. A rejection audit row is still written once per rejected request.
+
+Measured on the same window, about a quarter to a third of all login checks started while the same person's
+previous check was still running (247 of 902 within 120 ms, 289 within 200 ms). That is the estimate, not a
+promise: it groups requests by phone and address, so the real share per session can only be the same or
+smaller. Pinned by `tests/session-bundle-cache.test.ts` §13.
+
+**Cut 2 — a heartbeat with nothing to carry waits for the bell.** Opening a page mounts the session guard,
+which reports activity at once, and the notification bell a moment later. The pulse sent the guard's
+heartbeat immediately with nothing in it, and the bell, arriving while that POST was in flight, sent its own
+GET the moment the POST answered: two login checks, a rate-limit call and an idle refresh for one page
+opening. In the window, 14 of the 67 pulse requests were that bare POST, followed 0.4–2.5 s later by the
+bell's GET from the same phone. `HEARTBEAT_GATHER_MS` (3 s) now holds only a heartbeat that would travel
+empty, so the bell's request becomes the heartbeat; a badge or the bell is never delayed, and the heartbeat
+goes alone when the wait ends. A session's idle limit equals its absolute limit
+(`sessionIdleTimeoutSecondsForRole` in `session-token.ts`), so three seconds on its keep-alive cannot end
+one. Pinned by `tests/session-pulse.test.ts` §11.
+
+**What was left alone, and why.** The sidebar badges are still read on every 30 s tick even though their
+per-viewer memory lasts 20 s, so an admin tab never hits it: lengthening either would make a badge staler,
+and that is a decision about freshness, not a repeat. The prefetches themselves stay as the owner set them
+on 1 and 23 Oct.
+
+**How to see that it worked after the deploy.** Count `phx_auth_session_bundle` in the API-gateway log for
+one weekday hour after the deploy and compare it with the same hour before (8,915 between 13:00 and 14:00
+Cairo on Saturday 31 Oct); and count `/api/auth/pulse` requests per phone in Railway's HTTP log — a bare
+POST followed within three seconds by a GET from the same phone should be gone.
+
 ## Metrics & alerting — DEAD (nothing pages the owner)
 
 All of the below lived in GCP Cloud Monitoring inside project `phoenix-workforce-498619`. That

@@ -7,6 +7,9 @@ import {
   forgetRememberedBundle,
   forgetRememberedBundlesForSessions,
   mayServeRememberedBundle,
+  SESSION_BUNDLE_JOIN_MAX_AGE_MS,
+  sessionBundleLiveReadCount,
+  shareLiveBundleRead,
   pageRequestMayUseRecentCopy,
   recallRememberedBundle,
   rememberAcceptedBundle,
@@ -43,7 +46,7 @@ function bundle(sessionTag: string) {
   };
 }
 
-export function runSessionBundleCacheTests() {
+export async function runSessionBundleCacheTests() {
   clearSessionBundleCache();
 
   // ── 1 · the age rule: ten minutes, inclusive, and never from the future ──────────────────────────
@@ -138,7 +141,7 @@ export function runSessionBundleCacheTests() {
 
   // ── 9 · the wiring in server.ts: live first, accepted only, same checks, never stored from a copy ─
   const server = read("src/lib/auth/server.ts");
-  const retry = server.indexOf("bundleSettled = await callBundle();\n  }");
+  const retry = server.indexOf("settled = await callBundle();\n    }\n    return settled;");
   const recall = server.indexOf("recallRememberedBundle(bundleCacheKey)");
   assert.ok(retry > 0 && recall > retry, "a copy is consulted only AFTER the live call and its retry both failed");
   assert.equal((server.match(/recallRememberedBundle\(/g) ?? []).length, 1, "exactly one place may serve a copy");
@@ -230,9 +233,9 @@ export function runSessionBundleCacheTests() {
     "an API request that is not a GET or HEAD never accepts the copy",
   );
   assert.equal(
-    (server.match(/\{ allowRecentCopy \}/g) ?? []).length,
+    (server.match(/\{\s*allowRecentCopy,\s*shareLiveRead: allowRecentCopy,?\s*\}/g) ?? []).length,
     2,
-    "both the cookie and the bearer path of the API resolver pass the method rule",
+    "both the cookie and the bearer path of the API resolver pass the method rule -- to the copy and to the shared read alike",
   );
   // A server action is a POST to a PAGE: it reaches resolveAccessContextFromPage, never the API resolver,
   // and used to accept the copy there (code review, 19 Oct 2026 -- a vacation decision under an old role).
@@ -250,8 +253,8 @@ export function runSessionBundleCacheTests() {
     "a form posted before the page's JavaScript loaded has no next-action header, but its body still refuses the copy",
   );
   assert.ok(
-    /resolveSessionAccessContext\(cookieValue, \{\s*allowRecentCopy: pageRequestMayUseRecentCopy\(headerStore\),\s*\}\)/.test(server),
-    "the page resolver applies the server-action rule",
+    /const pageMayShare = pageRequestMayUseRecentCopy\(headerStore\);\s*const sessionContext = await resolveSessionAccessContext\(cookieValue, \{\s*allowRecentCopy: pageMayShare,\s*shareLiveRead: pageMayShare,\s*\}\)/.test(server),
+    "the page resolver applies the server-action rule, to the copy and to the shared read alike",
   );
   for (const route of [
     "app/api/auth/biometric/register/options/route.ts",
@@ -272,6 +275,115 @@ export function runSessionBundleCacheTests() {
     read("src/lib/activity/service.ts").includes("forgetRememberedBundlesForSessions("),
     "a forced logout drops the copy of every session it revoked",
   );
+
+  // ── 13 · ONE LIVE READ FOR REQUESTS THAT ARRIVE TOGETHER (31 Oct 2026) ─────────────────────────────
+  // Opening a portal page prefetches about fifteen pages at once and each one ran this read for the
+  // same person: 861 bundle calls in under nine minutes on production, 31 Oct 14:51-15:00 Cairo. A
+  // read-only request now waits for a LIVE read of the same session already in flight. Pinned here:
+  // nothing outlives the read, only a young read is joined, sessions never share, a logout ends it.
+  {
+    clearSessionBundleCache();
+    const key = sessionBundleCacheKey({ sid: "sid-20", loginId: "ta" });
+    let clock = T0;
+    const now = () => clock;
+    let reads = 0;
+    let release: (value: string) => void = () => {};
+    const slowRead = () => {
+      reads += 1;
+      return new Promise<string>((resolve) => (release = resolve));
+    };
+
+    const first = shareLiveBundleRead(key, slowRead, now);
+    clock += 120;
+    const second = shareLiveBundleRead(key, slowRead, now);
+    assert.equal(reads, 1, "13: a request arriving while the same session's live read is in flight must not start a second read");
+    assert.equal(sessionBundleLiveReadCount(), 1, "13: one read is in flight");
+    release("live answer");
+    const [a, b] = await Promise.all([first, second]);
+    assert.deepEqual(a, { value: "live answer", startedAt: T0, joined: false }, "13: the first request ran the read");
+    assert.deepEqual(
+      b,
+      { value: "live answer", startedAt: T0, joined: true },
+      "13: the second shares its answer, and is told when that read BEGAN so the copy's barrier sees the true age",
+    );
+    assert.equal(sessionBundleLiveReadCount(), 0, "13: nothing is kept once the read settles");
+
+    await shareLiveBundleRead(key, async () => {
+      reads += 1;
+      return "next";
+    }, now);
+    assert.equal(reads, 2, "13: a request after the read settled starts a new live read -- an answer is never reused");
+
+    // A read older than the join limit is not joined: the oldest answer a request can get began at most a second before it.
+    const old = shareLiveBundleRead(key, slowRead, now);
+    const releaseOld = release;
+    clock += SESSION_BUNDLE_JOIN_MAX_AGE_MS + 1;
+    const fresh = shareLiveBundleRead(key, slowRead, now);
+    assert.equal(reads, 4, "13: a read in flight for more than a second is not joined; the request runs its own");
+    release("fresh answer");
+    releaseOld("old answer");
+    assert.equal((await fresh).value, "fresh answer");
+    assert.equal((await old).value, "old answer");
+    assert.equal(sessionBundleLiveReadCount(), 0, "13: the older read finishing never removes the newer one's entry, and both are gone now");
+
+    // Two sessions never share, even for the same person.
+    const other = sessionBundleCacheKey({ sid: "sid-21", loginId: "ta" });
+    const mine = shareLiveBundleRead(key, slowRead, now);
+    const releaseMine = release;
+    const theirs = shareLiveBundleRead(other, slowRead, now);
+    assert.equal(reads, 6, "13: another session -- even the same login in another browser -- runs its own read");
+    release("theirs");
+    releaseMine("mine");
+    assert.equal((await mine).value, "mine");
+    assert.equal((await theirs).value, "theirs");
+
+    // A logout in this process ends the sharing at once: the next request runs its own read.
+    const before = shareLiveBundleRead(key, slowRead, now);
+    const releaseBefore = release;
+    forgetRememberedBundlesForSessions(["sid-20"], clock);
+    const after = shareLiveBundleRead(key, slowRead, now);
+    assert.equal(reads, 8, "13: a request arriving after a logout here never joins a read that began before it");
+    release("after");
+    releaseBefore("before");
+    assert.equal((await after).value, "after");
+    assert.equal((await before).value, "before");
+
+    // A failed read is shared as the failure it is, and is not kept either.
+    const failing = shareLiveBundleRead(key, () => {
+      reads += 1;
+      return Promise.reject(new Error("timeout"));
+    }, now);
+    const joiner = shareLiveBundleRead(key, slowRead, now);
+    await assert.rejects(failing, /timeout/);
+    await assert.rejects(joiner, /timeout/, "13: a request that joined a failed read gets the same failure and handles it itself");
+    assert.equal(sessionBundleLiveReadCount(), 0, "13: a failed read is not kept");
+    assert.equal(reads, 9, "13: the joiner did not run a read of its own");
+
+    // The wiring: only a read-only request shares, a heartbeat never does, and a joiner works on its own copy.
+    assert.ok(
+      server.includes("if (options.shareLiveRead && !options.refreshIdle) {\n    const shared = await shareLiveBundleRead(bundleCacheKey, readLiveBundle);"),
+      "13: resolveSessionState shares only when the caller asked for it, and never on the heartbeat's idle refresh",
+    );
+    assert.ok(
+      server.includes("bundleData = joinedLiveRead ? structuredClone(bundleSettled.value.data) : bundleSettled.value.data;"),
+      "13: a request that shared a read works on its own deep copy of the rows",
+    );
+    assert.equal((server.match(/shareLiveBundleRead\(/g) ?? []).length, 1, "13: exactly one place may share a read");
+    assert.equal(
+      (server.match(/shareLiveRead: /g) ?? []).length,
+      3,
+      "13: exactly the three read resolvers pass it -- the API cookie path, the API bearer path and the page render",
+    );
+    for (const writer of [
+      "src/lib/auth/session-heartbeat.ts",
+      "app/api/auth/biometric/register/options/route.ts",
+      "app/api/auth/biometric/register/verify/route.ts",
+      "app/api/auth/biometric/credentials/route.ts",
+      "app/api/auth/change-password/route.ts",
+    ]) {
+      assert.ok(!read(writer).includes("shareLiveRead"), `13: ${writer} must always run its own live read`);
+    }
+  }
 
   clearSessionBundleCache();
 }
