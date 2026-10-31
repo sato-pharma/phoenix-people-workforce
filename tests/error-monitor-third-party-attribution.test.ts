@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { describeDomRewriters } from "../src/lib/error-monitor/dom-rewriter.ts";
 import { decodeErrorMessage } from "../src/lib/error-monitor/message-decode.ts";
@@ -137,6 +138,21 @@ export function runErrorMonitorThirdPartyAttributionTests() {
     describeDomRewriters({ ...clean, fontElementCount: 12, htmlClassName: "translated-ltr", htmlLang: "ar" }),
     ["google-translate", "fontTags=12", "lang=ar"],
   );
+
+  // The two rewriters that change page TEXT without touching <html> or <body>, so every marker above
+  // stayed clean while they ran: an iPhone's own phone-number detection, which wraps a number such as
+  // a direct order's distributor customer code ("0001518652") in a call link stamped
+  // `x-apple-data-detectors`, and Cloudflare's email rewrite (`data-cfemail`). Both direct-order #418s
+  // (an iPhone, 26 and 27 Oct 2026) came back with no marker at all; the next one says which.
+  assert.deepEqual(describeDomRewriters({ ...clean, appleDataDetectorCount: 2 }), ["ios-data-detectors=2"]);
+  assert.deepEqual(describeDomRewriters({ ...clean, cloudflareEmailCount: 3 }), ["cloudflare-email=3"]);
+  assert.deepEqual(describeDomRewriters({ ...clean, appleDataDetectorCount: 0, cloudflareEmailCount: 0 }), [], "a zero count writes nothing");
+  const reporter = fs.readFileSync(new URL("../src/lib/error-monitor/report-client-error.ts", import.meta.url), "utf8");
+  assert.match(reporter, /appleDataDetectorCount:\s*countMatching\("\[x-apple-data-detectors\]"\)/, "🔴 the reporter must count the links an iPhone's phone-number detection inserted");
+  assert.match(reporter, /cloudflareEmailCount:\s*countMatching\("\[data-cfemail\], a\.__cf_email__"\)/, "🔴 the reporter must count the addresses Cloudflare rewrote");
+  // A document that cannot count (the guard test's stand-in has no querySelectorAll) answers 0 —
+  // it must never throw, or the whole row loses seq, navType and domGuard with it.
+  assert.match(reporter, /function countMatching\(selector: string\): number \{\s*if \(typeof document\.querySelectorAll !== "function"\) return 0;\s*try \{/, "🔴 countMatching must tolerate a document that cannot count");
 
   // ── Foreign attributes on <html>/<body>: the marker that names error #412's mutator ─────────
   // 🔴 WHY THIS EXISTS. #412 is a RECOVERED hydration error — React re-renders the subtree on the
