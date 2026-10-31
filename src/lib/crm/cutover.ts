@@ -7,7 +7,10 @@
  *    The three unified views read it: vendor rows before it, native rows on and after it. Null means
  *    no cutover, and every read returns exactly what it returned before this module existed.
  *  - `vendor_sync_retired_at` — every vendor pull stands down: the live poller's tick, the four cron
- *    routes and the manual sync buttons. It cannot be set without a date.
+ *    routes and the manual sync buttons. It stands alone (20261031150000): with no date it closes the
+ *    vendor API and changes nothing else. Every team already moves on its own start date
+ *    (phoenix-team-starts.ts), and a date would also pick the month decision 18 never charges, which is
+ *    the owner's money decision, never a side effect of closing the API.
  *
  * Nothing in the app ever WRITES the row. Setting either field is a production step the owner approves
  * and that is announced first — docs/crm-cutover-runbook.md.
@@ -28,7 +31,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type CrmCutoverSetting = {
   /** YYYY-MM-DD, or null while iReports360 is still the record. */
   cutoverDate: string | null;
-  /** When vendor pulls were stood down, or null. Never set without a date. */
+  /** When vendor pulls were stood down, or null. Independent of the date. */
   vendorSyncRetiredAt: string | null;
 };
 
@@ -69,8 +72,8 @@ export function isCrmCutoverSchemaMissing(error: unknown): boolean {
   return /PGRST205|42P01/.test(message) || (message.includes(CRM_CUTOVER_TABLE) && /schema cache|does not exist/i.test(message));
 }
 
-/** Pure: a database row onto the setting. A malformed date is treated as no date, and a retirement
- * with no date is ignored, matching the table's own check constraint. */
+/** Pure: a database row onto the setting. A malformed date is treated as no date. A retirement is read
+ * with or without a date — the table stopped requiring one in 20261031150000. */
 export function parseCrmCutoverRow(
   row: { cutover_date?: unknown; vendor_sync_retired_at?: unknown } | null | undefined,
 ): CrmCutoverSetting {
@@ -78,9 +81,7 @@ export function parseCrmCutoverRow(
   const rawDate = typeof row.cutover_date === "string" ? row.cutover_date.slice(0, 10) : "";
   const cutoverDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
   const vendorSyncRetiredAt =
-    cutoverDate && typeof row.vendor_sync_retired_at === "string" && row.vendor_sync_retired_at.trim()
-      ? row.vendor_sync_retired_at
-      : null;
+    typeof row.vendor_sync_retired_at === "string" && row.vendor_sync_retired_at.trim() ? row.vendor_sync_retired_at : null;
   return { cutoverDate, vendorSyncRetiredAt };
 }
 

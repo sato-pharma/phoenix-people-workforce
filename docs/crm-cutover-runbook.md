@@ -19,7 +19,36 @@ point-in-time recovery; the 7 daily backups are the whole recovery story.
 | `cutover_date` set | Every CRM read (visits, check-ins, plan boards, rep doctor lists, rep day, reps list, Visits Report, FWC, probation double visits, deductions) serves vendor rows **before** the date and Phoenix rows **on and after** it — never both for one day. The rep day stops asking the live vendor for days on or after the date. The CRM no-activity deduction is not charged for the calendar month the date falls in (decision 18), and the collection result says so. |
 | `vendor_sync_retired_at` set | The live poller's tick stands down whole (no pulls, no pings). The four cron routes answer `200 {skipped: true, reason: "vendor_sync_retired"}` before their dead-man's switch. The Visits Report backfill, the rep doctor lists Refresh and plan verification answer 409 with a plain message; the Early Birds Sync button is no longer shown, and the admin CRM sync panel says iReports360 was retired on that date and hides its backfill. The heartbeat sweep stops watching the four vendor jobs, reconciliation check 10 (sync freshness) holds, the FWC live snapshot stops warning it is stale, and the first-visit board stops waiting for a vendor sync. The housekeeping timer takes over the probation double-visit capture every 6 hours, and Phoenix double visits (negative ids) are captured. It also takes over the contact master refresh (`crm_contact_master_refresh`) — every 15 minutes, with the visit-and-plan pass once per Cairo day — because its only other callers were the poller and the doctor-lists cron, and without it a doctor a rep adds in Phoenix would never reach the master (re-audit, 2026-10-22). |
 
-The table's check constraint refuses a retirement without a date.
+A retirement no longer needs a date (`20261031150000_crm_cutover_retire_without_date.sql` dropped
+`crm_cutover_retire_needs_date`). With `cutover_date` null, `vendor_sync_retired_at` does everything in
+the row above and nothing else: no read moves, no month is waived, no KPI rule changes.
+
+## Closing iReports360 when every team started on its own date
+
+The single global date was overtaken: since 3 October 2026 each team moves on its own Phoenix start
+(`phoenix_crm_team_starts`, set on Admin → CRM, always a Saturday). Closing the vendor API then
+needs **no cutover date** — steps 2 to 5 below are skipped, and the date (with decision 18's waived
+month, the KPI rule switch and vacation-day requests) stays a separate decision of the owner's.
+
+1. **Nobody is still counted from iReports360.** This must return no row:
+
+   ```sql
+   select agent_hr_id, agent_name, count(*), max(visit_date)
+     from public.crm_visits_unified
+    where source = 'ireports360' and visit_date >= current_date - 14
+    group by 1, 2;
+   ```
+
+   On 31 October 2026 it returned 36 active people (1,732 visits since 18 October). 9 had no Phoenix
+   visit at all (4 medical reps, 3 district managers, 2 national sales managers). The other 27 record in
+   Phoenix too, but still had 135 person-days recorded only in iReports360: Phoenix wins a day only when
+   it has an entry, and district managers keep both apps by the owner's rule. Closing while anyone still
+   records a day only in iReports360 leaves that day empty, and CRM no-activity is charged on it. The
+   Delta (2) training (Thursday 5 November 2026) is what moves the last of them.
+2. **Their last vendor days are pulled.** After the last day anyone recorded in iReports360, wait for one
+   rolling sync that covers it (the poller's 10-day pull), so no visit saved there is left behind.
+3. **Retire vendor sync** — step 6 below, with `cutover_date` left null (announce first).
+4. Steps 7 to 9 below: cron-job.org, Healthchecks, secrets.
 
 ## Who enters what from the cutover date
 
@@ -66,7 +95,8 @@ Check `pg_class`/`pg_proc` for each object, never the migration ledger alone.
    Visits Report, the plan board and one rep day on either side of the date. The **KPI series break**
    is the cutover month: any month-over-month figure crossing it compares two recording systems
    (`crmKpiSeriesBreak` / `monthRangeCrossesCrmSeriesBreak` in `src/lib/crm/cutover.ts`).
-6. **Retire vendor sync** (announce first):
+6. **Retire vendor sync** (announce first). It needs no date — see "Closing iReports360 when every
+   team started on its own date" above:
 
    ```sql
    update public.crm_cutover set vendor_sync_retired_at = now(), updated_by = '<who>', updated_at = now() where id;

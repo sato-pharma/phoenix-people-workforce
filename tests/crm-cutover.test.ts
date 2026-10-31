@@ -74,8 +74,15 @@ function migrationTests() {
   assert.ok(sql.includes("constraint crm_cutover_singleton check (id)"), "the setting is one row");
   assert.ok(
     sql.includes("constraint crm_cutover_retire_needs_date check (vendor_sync_retired_at is null or cutover_date is not null)"),
-    "the vendor cannot be retired before a cutover date exists",
+    "the first migration made a retirement need a cutover date",
   );
+  // ...and 20261031150000 lifted it: closing the vendor API must never pick the month decision 18 waives.
+  const standAlone = sqlCode("supabase/migrations/20261031150000_crm_cutover_retire_without_date.sql");
+  assert.ok(
+    standAlone.includes("alter table public.crm_cutover drop constraint if exists crm_cutover_retire_needs_date;"),
+    "the vendor can be retired with no cutover date",
+  );
+  assert.ok(!/\b(update|insert|delete)\b/i.test(standAlone), "lifting the constraint writes no setting — the owner sets every field");
   assert.ok(sql.includes("alter table public.crm_cutover enable row level security;"), "RLS is on the setting");
   assert.ok(sql.includes("revoke all on table public.crm_cutover from anon, authenticated;"), "the setting is not exposed to the browser roles");
 
@@ -135,10 +142,20 @@ function settingTests() {
     RETIRED,
     "a dated, retired row reads as both",
   );
+  const retiredUndated = parseCrmCutoverRow({ cutover_date: null, vendor_sync_retired_at: "2026-11-07T06:00:00Z" });
   assert.deepEqual(
-    parseCrmCutoverRow({ cutover_date: null, vendor_sync_retired_at: "2026-10-02T06:00:00Z" }),
+    retiredUndated,
+    { cutoverDate: null, vendorSyncRetiredAt: "2026-11-07T06:00:00Z" },
+    "a retirement with no date is read: it closes the vendor API on its own",
+  );
+  assert.equal(vendorSyncStandDownReason(retiredUndated), VENDOR_SYNC_RETIRED_REASON, "an undated retirement stands every vendor pull down");
+  assert.equal(isCrmCutoverMonth(retiredUndated, { month: 11, year: 2026 }), false, "an undated retirement waives no month's CRM no-activity");
+  assert.equal(isOnOrAfterCrmCutover(retiredUndated, "2026-11-07"), false, "an undated retirement moves no read off the team starts");
+  assert.equal(crmKpiSeriesBreak(retiredUndated), null, "an undated retirement breaks no KPI series");
+  assert.deepEqual(
+    parseCrmCutoverRow({ cutover_date: null, vendor_sync_retired_at: "  " }),
     NO_CRM_CUTOVER,
-    "a retirement with no date is ignored, as the table's constraint requires",
+    "a blank retirement is no retirement",
   );
   assert.deepEqual(parseCrmCutoverRow({ cutover_date: "soon" }), NO_CRM_CUTOVER, "a malformed date is no date");
 
