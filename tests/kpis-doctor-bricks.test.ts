@@ -127,8 +127,11 @@ export function runKpiDoctorBrickChooserTests() {
   // The Reps List stands each validated doctor on the SAME place the brick above comes from (owner,
   // 2026-10-31: "use the validation pin"), so the brick he is counted in and the neighbours he is
   // painted with come from one photo. Its point, its address and the validation date — nothing else.
-  const located = (overrides: Partial<KpiBrickPlace> & { address?: string | null; lat?: number | null; lon?: number | null }) => ({
+  const located = (
+    overrides: Partial<KpiBrickPlace> & { address?: string | null; brick_id?: string | null; lat?: number | null; lon?: number | null },
+  ) => ({
     address: "Kom Hamada, Behira",
+    brick_id: null as string | null,
     lat: 30.76,
     lon: 30.7,
     ...place(overrides),
