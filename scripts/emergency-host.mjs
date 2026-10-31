@@ -39,10 +39,19 @@ refuseUnknownFlags({
 
 export const DOMAIN = "phoenix-hr.satopharma.com";
 export const ZONE = "satopharma.com";
-/** What Cloudflare's CNAME holds when Railway serves (docs/deployment.md, "Production Verification"). */
-export const RAILWAY_TARGET = "xok6ir4p.up.railway.app";
+/**
+ * What Cloudflare's CNAME holds when Railway serves (docs/deployment.md, "Production Verification"): the web service's
+ * own railway.app address, unproxied, since 2026-10-31 20:36 Cairo (owner). Vodafone home broadband (AS24835) silently
+ * dropped traffic to Cloudflare's proxy addresses, so a Medical Rep on home wifi could not open Phoenix at all.
+ */
+export const RAILWAY_TARGET = "phoenix-people-workforce-production.up.railway.app";
+/**
+ * The custom domain's own Railway edge target, which the record held until 2026-10-31. Its edge dropped about one in six
+ * Egyptian connections, so it is still RECOGNISED as Railway (a flip away from it is allowed) but never written back.
+ */
+export const LEGACY_RAILWAY_TARGET = "xok6ir4p.up.railway.app";
 /** Railway's own address for the web service — answers whatever the domain points at. */
-export const RAILWAY_DIRECT_URL = "https://phoenix-people-workforce-production.up.railway.app";
+export const RAILWAY_DIRECT_URL = `https://${RAILWAY_TARGET}`;
 export const DEFAULT_FLY_APP = "phoenix-hr-standby";
 export const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
 export const RAILWAY_PROJECT_ID = "dc218ad3-99b7-4aff-be38-953a57524a71";
@@ -103,10 +112,14 @@ export function renderSecrets(variables) {
     .concat("\n");
 }
 
-/** Where the domain points, by its CNAME content. Anything else is a state nobody chose, and nothing flips it. */
+/**
+ * Where the domain points, by its CNAME content. The old edge target reads "railway-legacy": Railway serves, but it is
+ * not the record we keep. Anything else is a state nobody chose, and nothing flips it.
+ */
 export function classifyTarget(content, app = appName()) {
   const c = String(content ?? "").trim().toLowerCase().replace(/\.$/, "");
   if (c === RAILWAY_TARGET) return "railway";
+  if (c === LEGACY_RAILWAY_TARGET) return "railway-legacy";
   if (c === flyTarget(app).toLowerCase()) return "fly";
   return "unknown";
 }
@@ -133,11 +146,14 @@ export function certificateReady(body) {
   );
 }
 
-/** Refuse a flip from a state nobody chose, and a flip to where it already points (that is a no-op, said so). */
+/**
+ * Refuse a flip from a state nobody chose, and a flip to where it already points (that is a no-op, said so). A record
+ * still on the old edge target is a flip on `--to railway`: it is rewritten to RAILWAY_TARGET, never left there.
+ */
 export function planFlip({ current, to }) {
   if (!["fly", "railway"].includes(to)) throw new Error(`--to must be fly or railway, not ${to}`);
   if (current === "unknown") {
-    throw new Error(`${DOMAIN} points at neither Railway (${RAILWAY_TARGET}) nor the standby (${flyTarget()}). Refusing to change a record nobody here set — read it in Cloudflare first.`);
+    throw new Error(`${DOMAIN} points at neither Railway (${RAILWAY_TARGET}, or the old ${LEGACY_RAILWAY_TARGET}) nor the standby (${flyTarget()}). Refusing to change a record nobody here set — read it in Cloudflare first.`);
   }
   return current === to ? "already" : "flip";
 }
