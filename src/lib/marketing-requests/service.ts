@@ -153,6 +153,12 @@ import type {
 } from "@/lib/marketing-requests/types";
 import { resolveMarketingCustomerValidationBadge } from "@/lib/marketing-requests/customer-validation-badge";
 import { crmListFlag, UNPICKED_CRM_DOCTOR, type ResolvedCrmDoctorPick } from "@/lib/marketing-requests/crm-doctor-pick";
+import {
+  resolveTargetCustomerLink,
+  targetCustomerLinkSentence,
+  type TargetCustomerLink,
+  type TargetCustomerLinkRow,
+} from "@/lib/marketing-requests/target-customer-link";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { ValidationBadge } from "@/lib/validation/validation-badge";
 import { decodeVenueTarget, encodeVenueTarget } from "@/lib/marketing-requests/venue-type";
@@ -303,6 +309,12 @@ export type { MarketingDecisionOverlap, MarketingDecisionPharmacy };
  */
 export type MarketingDecisionPharmacyWithValidation = MarketingDecisionPharmacy & {
   validationBadge: ValidationBadge | null;
+  /**
+   * Whether this pharmacy is validated WITH the request's customer — the PAIRING, not the venue
+   * (owner, 2026-10-31). `sentence` is resolved on the server so the screens print one wording and
+   * never import the resolver. See `target-customer-link.ts`.
+   */
+  customerLink: TargetCustomerLink & { sentence: string };
 };
 
 export type MarketingRequestDecisionSummary = {
@@ -4294,9 +4306,29 @@ export async function getMarketingRequestDecisionSummary(
   // human/system rule, so the badge is resolved by the customer resolver — the name of a human
   // validator is looked up in the very directory this summary already loaded (`employeeRows`), and
   // never shown for `system_validated`, where the row's id is the capturing owner, not a reviewer.
+  // The request customer's own links to these pharmacies, for the "Validated with <customer>" line.
+  // Best-effort like the loader: an unreadable link set reads as "No link on file", never a crash.
+  const targetPharmacyIds = [...new Set(requestPharmacyRows.map((row) => row.pharmacy_id).filter((id): id is string => Boolean(id)))];
+  const customerLinkRows: TargetCustomerLinkRow[] = request.customerId && targetPharmacyIds.length > 0
+    ? await supabase
+      .from("marketing_customer_pharmacies")
+      .select("pharmacy_id, distributor_code_id, validation_status, validation_notes")
+      .eq("customer_id", request.customerId)
+      .in("pharmacy_id", targetPharmacyIds)
+      .then(({ data, error }) => (error ? [] : ((data ?? []) as TargetCustomerLinkRow[])))
+    : [];
+  const linkCustomerName = cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name);
+
   const targetPharmaciesWithValidation: MarketingDecisionPharmacyWithValidation[] = targetPharmacies.map(
-    (pharmacy) => ({
+    (pharmacy, index) => ({
       ...pharmacy,
+      customerLink: (() => {
+        const link = resolveTargetCustomerLink(customerLinkRows, {
+          distributorCodeId: requestPharmacyRows[index]?.distributor_code_id ?? null,
+          pharmacyId: pharmacy.pharmacyId,
+        });
+        return { ...link, sentence: targetCustomerLinkSentence(link, linkCustomerName) };
+      })(),
       validationBadge: resolveMarketingCustomerValidationBadge({
         status: pharmacy.validationStatus,
         validatedByName: pharmacy.validatedByHrId
