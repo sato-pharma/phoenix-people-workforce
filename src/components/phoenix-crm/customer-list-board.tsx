@@ -63,7 +63,7 @@ import { planPatternRows } from "@/lib/phoenix-crm/plan-pattern";
 import { LOCATION_CHECKING_PILL, LOCATION_NOT_CONFIRMED_PILL } from "@/lib/phoenix-crm/google-place-rules";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
-import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
+import { brickTintMap, neighbourTint, type BrickTint } from "@/components/phoenix-crm/brick-tints";
 
 /**
  * BRICK COLOUR — the same eight hues, in the same order, as the board (reps-list-tables.tsx) and now
@@ -286,15 +286,9 @@ function cardMetaText(customer: ListCustomer): string {
  * those would make one colour answer two questions. Clusters beyond the fifth wrap round, which is
  * safe because a repeat can only meet its twin with four other blocks in between.
  *
- * The wash lands on the ADDRESS cell and nowhere else: that is the thing being compared.
+ * The wash lands on the ADDRESS cell and nowhere else: that is the thing being compared. The five
+ * hues are NEIGHBOUR_TINTS in brick-tints.ts, one copy shared with the Reps List and the plan day.
  */
-const NEIGHBOUR_TINTS = [
-  { bar: "border-sky-400", fill: "bg-sky-100", ink: "text-sky-800" },
-  { bar: "border-rose-400", fill: "bg-rose-100", ink: "text-rose-800" },
-  { bar: "border-teal-400", fill: "bg-teal-100", ink: "text-teal-800" },
-  { bar: "border-lime-400", fill: "bg-lime-100", ink: "text-lime-800" },
-  { bar: "border-indigo-400", fill: "bg-indigo-100", ink: "text-indigo-800" },
-] as const;
 
 type Neighbourhood = { cluster: number | null; nearby: NearbyContact[] };
 
@@ -353,7 +347,7 @@ function NearbyLine({ neighbourhood }: { neighbourhood: Neighbourhood | null }) 
   if (nearby.length === 0) return null;
   const shown = nearby.slice(0, 3);
   const rest = nearby.length - shown.length;
-  const tint = neighbourhood?.cluster == null ? null : NEIGHBOUR_TINTS[neighbourhood.cluster % NEIGHBOUR_TINTS.length];
+  const tint = neighbourTint(neighbourhood?.cluster);
   return (
     <span className={`mt-0.5 block break-words text-phx-2xs font-semibold ${tint?.ink ?? "text-slate-500"}`} dir="auto">
       {`Also here: ${shown.map((entry) => entry.name).join(", ")}${rest > 0 ? ` and ${rest} more` : ""}`}
@@ -907,7 +901,7 @@ export function CustomerListBoard({
                           const again = captureAgain.has(customer.customerId);
                           const ready = markedForValidating.has(customer.customerId) && !again;
                           const near = neighbourhoods.of.get(customer.customerId) ?? null;
-                          const nearTint = near?.cluster == null ? null : NEIGHBOUR_TINTS[near.cluster % NEIGHBOUR_TINTS.length];
+                          const nearTint = neighbourTint(near?.cluster);
                           return (
                             // 🔴 A CUSTOMER SHARED WITH ANOTHER REP IS HIGHLIGHTED — the old board's
                             // violet, row level, on the owner's instruction of 2026-09-30 ("if a

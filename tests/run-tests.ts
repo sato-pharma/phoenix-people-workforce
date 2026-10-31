@@ -2077,6 +2077,7 @@ import { runPhoenixCrmInsightReportsTests } from "./phoenix-crm-insight-reports.
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
 import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
+import { runPhoenixCrmPlanNeighboursTests } from "./phoenix-crm-plan-neighbours.test.ts";
 import { runPhoenixCrmListEdgeTests } from "./phoenix-crm-list-edges.test.ts";
 import { runPhoenixCrmListSheetHoursTests } from "./phoenix-crm-list-sheet-hours.test.ts";
 import { runPhoenixCrmListTemplateTests } from "./phoenix-crm-list-template.test.ts";
@@ -7898,6 +7899,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's List says when a doctor is USUALLY planned and gathers the ones who stand together (owner, 2026-09-30): the pattern is read off the iReports360 reference plans in Phoenix's own Saturday-start field weeks rather than a second week model, a weekday counts as a pattern only when it happened more than once unless it is all that is known about him, four weeks reads as every week, nothing recorded says so instead of inventing a pattern, the column never counts whether the rep went, and the clustering is the old board's own findNeighbours and clusterRows with its five reserved hues rather than a second copy",
   runPhoenixCrmPlanPatternTests,
+);
+
+await runTest(
+  "Phoenix CRM's plan day wears the Reps List's same-address colours (owner, 2026-10-31: make the same color rule when making their weekly plans): customers within 20 m of each other, or chained so, are one group and every row of it takes the group's colour on the phone card, the desktop row and the day read back, ahead of the placed row's orange; the group moves up to where its first member stood so the rep's own order is kept and nothing is sorted by name, a customer with no place is nobody's neighbour, a group never reaches across a brick heading, the numbering runs on across the bricks so two groups on one list never share a colour, the five hues come from the one shared palette, and no distance figure reaches his plan",
+  runPhoenixCrmPlanNeighboursTests,
 );
 
 await runTest(

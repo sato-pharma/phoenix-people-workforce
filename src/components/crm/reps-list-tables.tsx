@@ -8,6 +8,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { neighbourTint, type NeighbourTint } from "@/components/phoenix-crm/brick-tints";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { useHydrated } from "@/hooks/use-hydrated";
@@ -843,7 +844,11 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
  *
  * On the main list the fill now covers the whole row rather than the address cell (owner,
  * 2026-10-31 — see neighbourhoodRowClass); the plan-day table below still tints its address cell,
- * because its rows are ordered by day and a group's members are not consecutive there.
+ * because its rows are ordered by day and a group's members are not consecutive there. The rep's
+ * own Phoenix CRM plan day wears the whole-row rule too (plan-day-panel.tsx, the same day).
+ *
+ * THE FIVE HUES LIVE IN brick-tints.ts (NEIGHBOUR_TINTS), shared with the Phoenix CRM List and the
+ * plan day; the reasoning for them stays here, where it was first worked out.
  *
  * THE FILL HAS TO CARRY THE HUE ALONE ON DESKTOP, WHICH IS WHY IT IS `100` AND NOT `50`. The first
  * attempt put the colour in a 2px left edge and left the fill at `50`; measured in the browser, the
@@ -862,13 +867,6 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
  * fifth wrap around, which is safe because a repeat can only meet its twin with four other blocks in
  * between — adjacent blocks always differ.
  */
-const NEIGHBOUR_TINTS = [
-  { bar: "border-sky-400", fill: "bg-sky-100", ink: "text-sky-800" },
-  { bar: "border-rose-400", fill: "bg-rose-100", ink: "text-rose-800" },
-  { bar: "border-teal-400", fill: "bg-teal-100", ink: "text-teal-800" },
-  { bar: "border-lime-400", fill: "bg-lime-100", ink: "text-lime-800" },
-  { bar: "border-indigo-400", fill: "bg-indigo-100", ink: "text-indigo-800" },
-] as const;
 
 /**
  * The tint for this row's neighbourhood, or null when it stands alone.
@@ -877,8 +875,7 @@ const NEIGHBOUR_TINTS = [
  * "does this row have a neighbour". The second question has no answer for "which block", so a page
  * asking it can only ever paint one colour.
  */
-const tintFor = (row: RepsListContact): (typeof NEIGHBOUR_TINTS)[number] | null =>
-  row.cluster == null ? null : NEIGHBOUR_TINTS[row.cluster % NEIGHBOUR_TINTS.length];
+const tintFor = (row: RepsListContact): NeighbourTint | null => neighbourTint(row.cluster);
 
 /**
  * The background of a whole contact row: its neighbourhood's colour first, violet second, white last.
@@ -894,7 +891,7 @@ const tintFor = (row: RepsListContact): (typeof NEIGHBOUR_TINTS)[number] | null 
  * The shared signal is not lost: `SharedLine` still prints "Also on another rep's list" under the
  * name in violet ink. Violet stays as the row colour only for a shared customer who stands alone.
  */
-const neighbourhoodRowClass = (tint: (typeof NEIGHBOUR_TINTS)[number] | null, shared: boolean): string => {
+const neighbourhoodRowClass = (tint: NeighbourTint | null, shared: boolean): string => {
   if (tint) return tint.fill;
   return shared ? "bg-violet-50 hover:bg-violet-100" : "bg-white hover:bg-slate-50";
 };

@@ -40,6 +40,13 @@
  * alphabetically (brick-groups.ts), and a brick keeps the same colour it has everywhere else
  * (brick-tints.ts), keyed off the whole list so it never moves as he filters.
  *
+ * Inside a brick, CUSTOMERS AT THE SAME ADDRESS SIT TOGETHER AND WEAR ONE COLOUR (owner, 2026-10-31:
+ * "make the same color rule when making their weekly plans" — the Reps List's rule, the same night).
+ * Within 20 m of each other is one group; the group moves up to where its first member stood and the
+ * rest follow under it, so the day's own order is kept (plan-neighbours.ts). The whole row takes the
+ * group's colour, ahead of the placed row's orange wash; a row that stands alone is as it was. It is
+ * layout, never a measure of him: no distance is written on the row.
+ *
  * "Suggest this day" sits beside "Copy a day" (owner, 2026-09-30). Both arrive as elements built by the
  * week panel, which hands them the board's one way into the draft — this panel only lays them out. On
  * a day the rep cannot change, the suggestion stays on screen, disabled, with its reason.
@@ -49,7 +56,7 @@ import { useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 
 import { countText, dayLabel, dayLabelLong } from "@/components/phoenix-crm/format";
-import type { BrickTint } from "@/components/phoenix-crm/brick-tints";
+import { neighbourTint, type BrickTint, type NeighbourTint } from "@/components/phoenix-crm/brick-tints";
 import { customerMetaText, matchesWords, PENDING_PILL, plannerRowInsight } from "@/components/phoenix-crm/labels";
 import type { CopyReport } from "@/components/phoenix-crm/plan-copy-menu";
 import { PlanFilterBar } from "@/components/phoenix-crm/plan-filter-bar";
@@ -73,6 +80,7 @@ import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import { dayActivityLabel, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { describeDayStarts, startInputValue, startMinuteFromInput, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
 import { filterPlannerCustomers, plannerFilterOptions, type DoctorFilter } from "@/lib/phoenix-crm/plan-filters";
+import { gatherWithinGroups } from "@/lib/phoenix-crm/plan-neighbours";
 import { dayOffNote, dayOffPhrase, type PlanItemDraft } from "@/lib/phoenix-crm/plan-rules";
 import { suggestionCaps, type DayTargets, type GradeTargets } from "@/lib/phoenix-crm/plan-suggest";
 import {
@@ -111,6 +119,9 @@ type TickRow = {
   placeName: string | null;
   /** The place a tick plans him at. */
   placeId: string | null;
+  /** Where that place stands — only to sit him beside the customers at the same address. Null while he is not validated yet. */
+  lat: number | null;
+  lon: number | null;
   /** Brick and address: the saved place's, or iReports360's while he is not validated yet. */
   where: string | null;
   /** Every day and hour he receives — shown, never a condition on the tick. */
@@ -328,7 +339,7 @@ export function PlanDayPanel({
             <p className="text-sm font-medium text-slate-500">No other activity planned.</p>
           )}
         </CrmBlock>
-        <PlannedDayView day={day} idPrefix={idPrefix} only={reviewList} showSpread={showSpread} tints={tints} weekdayName={weekdayName} />
+        <PlannedDayView byId={byId} day={day} idPrefix={idPrefix} only={reviewList} showSpread={showSpread} tints={tints} weekdayName={weekdayName} />
       </div>
     );
   }
@@ -386,6 +397,8 @@ export function PlanDayPanel({
       // A seated customer is shown under the building he receives in, whatever else he has.
       placeName: fit.place?.sharedPlaceName ?? (customer.places.length > 1 && fit.place ? (fit.place.label ?? fit.place.zone ?? `Place ${position + 1}`) : null),
       placeId: fit.placeId,
+      lat: fit.place?.lat ?? null,
+      lon: fit.place?.lon ?? null,
       where: [brick ? `Brick ${brick}` : null, area, address].filter(Boolean).join(" · ") || null,
       timings: timings || NO_HOURS,
       receives: fit.receives,
@@ -454,7 +467,12 @@ export function PlanDayPanel({
   function listBlock(listType: PhoenixCrmDoctorListType, rows: ReadonlyArray<TickRow>, emptyText: string, top?: ReactNode) {
     const cap = listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
     const goal = goalOf(listType);
-    const groups = clusterByBrick(rows, (row) => row.brick, "alphabetical");
+    // Inside each brick, the customers at one address sit together in one colour (plan-neighbours.ts).
+    const { groups, groupOf } = gatherWithinGroups(
+      clusterByBrick(rows, (row) => row.brick, "alphabetical"),
+      (row: TickRow) => ({ lat: row.lat, lon: row.lon, name: row.name }),
+      (row) => row.customerId,
+    );
     const title =
       goal !== null && goal > 0 && goal < cap
         ? `${listType} · ${countText(counts[listType])} of ${countText(goal)} placed (room for ${countText(cap)})`
@@ -474,6 +492,7 @@ export function PlanDayPanel({
           <p className="text-sm font-medium text-slate-500">{emptyText}</p>
         ) : (
           <div className="grid min-w-0 gap-3">
+            <SameAddressKey shown={groupOf.size > 0} />
             {groups.map((group) => {
               const tint = group.key === NO_BRICK_KEY ? NEUTRAL_TINT : (tints.get(group.key) ?? NEUTRAL_TINT);
               const ticked = group.rows.filter((row) => row.placed).length;
@@ -497,7 +516,7 @@ export function PlanDayPanel({
                   ) : null}
                   <CrmCardsOnPhone>
                     {group.rows.map((row) => (
-                      <TickCard key={row.customerId} row={row} {...tickRowProps} />
+                      <TickCard key={row.customerId} row={row} tint={neighbourTint(groupOf.get(row.customerId))} {...tickRowProps} />
                     ))}
                   </CrmCardsOnPhone>
                   <CrmTable columns={["9%", null, "24%", "28%"]}>
@@ -519,7 +538,7 @@ export function PlanDayPanel({
                     </thead>
                     <tbody>
                       {group.rows.map((row) => (
-                        <TickTableRows key={row.customerId} row={row} {...tickRowProps} />
+                        <TickTableRows key={row.customerId} row={row} tint={neighbourTint(groupOf.get(row.customerId))} {...tickRowProps} />
                       ))}
                     </tbody>
                   </CrmTable>
@@ -888,7 +907,25 @@ type TickRowProps = {
   onToggle: (row: TickRow, next: boolean) => void;
   room: Record<PhoenixCrmDoctorListType, number>;
   row: TickRow;
+  /** His same-address group's colour, or null when he stands alone. */
+  tint: NeighbourTint | null;
 };
+
+/**
+ * A row's background: its same-address group's colour first, then the placed row's orange wash. The
+ * group colour wins because it is the one that says which rows belong together; a placed row still
+ * reads as placed by its tick and its "1 AM".
+ */
+function tickRowFill(row: TickRow, tint: NeighbourTint | null): string | undefined {
+  if (tint) return tint.fill;
+  return row.placed ? "bg-orange-50/40" : undefined;
+}
+
+/** One line over a list that has a same-address group, so the colour is never a puzzle. */
+function SameAddressKey({ shown }: { shown: boolean }) {
+  if (!shown) return null;
+  return <p className="break-words text-xs font-semibold leading-5 text-slate-500">Customers in one colour receive at the same address.</p>;
+}
 
 function tickDisabled(row: TickRow, room: Record<PhoenixCrmDoctorListType, number>, locked: boolean): boolean {
   return locked || (!row.placed && room[row.listType] <= 0);
@@ -953,10 +990,10 @@ function UsualLine({ usual }: { usual: string | null }) {
 }
 
 /** A phone's row: the whole row is the tick box's target. */
-function TickCard({ dayName, locked, onToggle, room, row }: TickRowProps) {
+function TickCard({ dayName, locked, onToggle, room, row, tint }: TickRowProps) {
   const disabled = tickDisabled(row, room, locked);
   return (
-    <div className={cn("min-w-0 px-3 py-3", row.placed ? "bg-orange-50/40" : "bg-white")}>
+    <div className={cn("min-w-0 px-3 py-3", tickRowFill(row, tint) ?? "bg-white")}>
       <label className={cn("flex min-w-0 cursor-pointer items-start gap-3", disabled && "cursor-not-allowed")}>
         <input
           aria-label={`Plan ${row.name} on ${dayName}`}
@@ -984,11 +1021,11 @@ function TickCard({ dayName, locked, onToggle, room, row }: TickRowProps) {
 }
 
 /** A desktop row. */
-function TickTableRows({ dayName, idPrefix, locked, onToggle, room, row }: TickRowProps) {
+function TickTableRows({ dayName, idPrefix, locked, onToggle, room, row, tint }: TickRowProps) {
   const disabled = tickDisabled(row, room, locked);
   const tickId = `${idPrefix}-tick-${row.customerId}`;
   return (
-    <tr className={row.placed ? "bg-orange-50/40" : undefined}>
+    <tr className={tickRowFill(row, tint)}>
       <td className={crmTdClassName}>
         <input
           aria-label={`Plan ${row.name} on ${dayName}`}
@@ -1028,6 +1065,7 @@ function TickTableRows({ dayName, idPrefix, locked, onToggle, room, row }: TickR
  * his rep's plan. The saved placements, AM and PM apart, grouped by brick.
  */
 function PlannedDayView({
+  byId,
   day,
   idPrefix,
   only,
@@ -1035,6 +1073,8 @@ function PlannedDayView({
   tints,
   weekdayName,
 }: {
+  /** The planner's customers, to find where each saved place stands. One missing simply stands alone. */
+  byId: ReadonlyMap<string, PlannerCustomer>;
   day: PlanDayView;
   idPrefix: string;
   /** One list alone — a reviewer's step reads AM, then PM (owner, 2026-10-02). Unset: both. */
@@ -1056,10 +1096,19 @@ function PlannedDayView({
     <>
       {sections.map((listType) => {
         const rows = day.items.filter((item) => item.listType === listType);
-        const groups = clusterByBrick(rows, (item) => item.brickName, "alphabetical");
+        // The same-address colours the day wore while he built it.
+        const { groups, groupOf } = gatherWithinGroups(
+          clusterByBrick(rows, (item) => item.brickName, "alphabetical"),
+          (item: PlanDayView["items"][number]) => {
+            const place = byId.get(item.customerId)?.places.find((entry) => entry.placeId === item.placeId);
+            return { lat: place?.lat ?? null, lon: place?.lon ?? null, name: item.name };
+          },
+          (item) => item.customerId,
+        );
         return (
           <CrmBlock className="border-t border-slate-100" key={listType} title={`${listType} · ${countText(rows.length)} planned`}>
             <div className="grid min-w-0 gap-3">
+              <SameAddressKey shown={groupOf.size > 0} />
               {groups.map((group) => {
                 const tint = group.key === NO_BRICK_KEY ? NEUTRAL_TINT : (tints.get(group.key) ?? NEUTRAL_TINT);
                 return (
@@ -1070,7 +1119,7 @@ function PlannedDayView({
                     </div>
                     <CrmCardsOnPhone>
                       {group.rows.map((item) => (
-                        <div className="min-w-0 bg-white px-3 py-3" key={item.customerId}>
+                        <div className={cn("min-w-0 px-3 py-3", neighbourTint(groupOf.get(item.customerId))?.fill ?? "bg-white")} key={item.customerId}>
                           <div className="flex min-w-0 items-start gap-3">
                             <Check aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
                             <div className="min-w-0 flex-1">
@@ -1100,7 +1149,7 @@ function PlannedDayView({
                       </thead>
                       <tbody>
                         {group.rows.map((item) => (
-                          <tr key={`${idPrefix}-${item.customerId}`}>
+                          <tr className={neighbourTint(groupOf.get(item.customerId))?.fill} key={`${idPrefix}-${item.customerId}`}>
                             <td className={crmTdClassName}>
                               <p className="font-black text-slate-950">{item.name}</p>
                               <p className="mt-0.5 text-xs text-slate-500">{item.grade ? `Grade ${item.grade}` : "No grade"}</p>
