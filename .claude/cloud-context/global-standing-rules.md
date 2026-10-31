@@ -81,6 +81,8 @@ the primary by absolute path with no error. Never send parallel subagents into o
   `unarchive_session` then `archive_session` for exactly the ones it lists. Never stop or restart the app yourself
   (only the RAM meter's own automatic restart, whose conditions are never widened).
 - Never watch CI or a deploy in the foreground — background it and report the end.
+- **Sessions compact at about 300k tokens** (owner, 2026-10-31): `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and
+  `autoCompactWindow` are both **333000** in `settings.json` — compaction lands ~33k below the window. Never change it unasked.
 - **Keep `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=true`** in `settings.json` `env` AND as a Windows user variable —
   suggestions are ALWAYS ON (2026-10-12). 🔴 Never report usage as the reason the box is empty; the silent skips
   are in memory note `the-turn-box-took-the-ghost-text`.
@@ -111,7 +113,10 @@ These REPLACE the default summary format (owner, 2026-10-09). The session is fro
 ## Where a rule survives
 
 Auto-memory is one directory per repository. A rule that must outlive the session goes in **this file** (true
-everywhere) or the project's tracked AGENTS.md / CLAUDE.md.
+everywhere) or the project's tracked AGENTS.md / CLAUDE.md. 🔴 `hooks/phoenix-context-anywhere.mjs` (2026-10-31, his
+words: "remember the rules and remember the history") gives a session OUTSIDE the Phoenix folder the Phoenix index
+and rule files, and EVERY session the latest 15 sessions across all folders — never remove it; look there before
+saying you do not remember.
 
 ## 🥇 MODULE MEMORY, and the trimming that is FORBIDDEN (owner, 2026-10-02)
 
