@@ -45,6 +45,21 @@ export const MY_MAP_LAYER_COLOUR: Record<MyMapLayer, string> = { AM: "#d97706", 
 /** "Colour by this month's visits": grey not visited, amber behind its grade, green on it. */
 export const MY_MAP_TIER_COLOUR: Record<CoverageTier, string> = { 0: "#94a3b8", 1: "#d97706", 2: "#15803d" };
 
+/**
+ * Names in Arabic order, the same on the server and on every phone (owner, 2026-10-31: "make all names arabic").
+ *
+ * A bare `localeCompare` sorts by the ENGINE'S own language. Node (en-US) puts the English-written names first
+ * and orders أحمد / احمد and مستشفى / مستشفي one way; a phone set to Arabic orders them the other. The screen's
+ * list is drawn on the server and again on hydrate, so one row apart is React #418 (System Audit,
+ * "/employee-portals/my-map", 28 Oct 2026). 24,008 of the 25,060 customer names are written in Arabic, so these
+ * rules are also the order a reader expects.
+ */
+const ARABIC_NAME_ORDER = new Intl.Collator("ar");
+
+export function compareMyMapNames(left: string, right: string): number {
+  return ARABIC_NAME_ORDER.compare(left, right);
+}
+
 /** What each tier says. A pharmacy has no grade number, so for it a visit is simply a visit. */
 export function myMapTierLabel(tier: CoverageTier, listType: PhoenixCrmListType): string {
   if (tier === 0) return "Not visited this month";
@@ -264,7 +279,7 @@ export function buildMyMapPins(input: {
     .sort(
       (left, right) =>
         (seatIndex.get(left.seatId) ?? 0) - (seatIndex.get(right.seatId) ?? 0) ||
-        String(facts.get(left.customerId)?.name ?? "").localeCompare(String(facts.get(right.customerId)?.name ?? "")) ||
+        compareMyMapNames(String(facts.get(left.customerId)?.name ?? ""), String(facts.get(right.customerId)?.name ?? "")) ||
         left.id.localeCompare(right.id),
     );
 
