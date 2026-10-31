@@ -27,7 +27,8 @@ import vm from "node:vm";
 const SHEETS = [
   {
     file: "../docs/direct-orders-live-sheet.gs",
-    refresh: "function refreshDirectOrders()",
+    // `e` is the time-driven trigger's event; the night pacing reads it (tests/live-sheet-night-pacing).
+    refresh: "function refreshDirectOrders(e)",
     stampWord: "updated",
     // Every early return in the refresh: no token, unreachable, non-200, empty payload.
     minFailurePaths: 4,
@@ -41,7 +42,7 @@ const SHEETS = [
   },
   {
     file: "../docs/marketing-request-live-sheet.gs",
-    refresh: "function refreshMarketingRequests()",
+    refresh: "function refreshMarketingRequests(e)",
     stampWord: "refreshed",
     // As above plus an unparseable payload, which this sheet handles separately.
     minFailurePaths: 5,
@@ -191,19 +192,30 @@ export async function runLiveSheetStaleBannerTests() {
     // successfully is a false alarm — and a false alarm teaches him to ignore the only warning
     // this sheet has. Allowed at most once per file and only directly under a failed tryLock,
     // so it stays a named exception rather than a hiding place for the next silent return.
+    // The overnight timer tick that skips because the feed was read under an hour ago is the other
+    // one (2026-10-31). Nothing failed and the data is as fresh as the pacing intends, so a banner
+    // there would be the same false alarm. Same terms: once per file, directly under the pacing
+    // check, and the pacing suite (tests/live-sheet-night-pacing.test.ts) proves only a timer tick
+    // can take it.
     const silent: string[] = [];
     let announced = 0;
     let lockSkips = 0;
+    let nightSkips = 0;
     for (let i = 0; i < lines.length; i += 1) {
       if (!/^\s*return;/.test(lines[i])) continue;
       const lookback = guardBody(lines, i);
       if (lookback.includes("markFeedStale(")) announced += 1;
       else if (/tryLock\(/.test(lookback)) lockSkips += 1;
+      else if (/nightTimerTickSkips_\(e\)/.test(lookback)) nightSkips += 1;
       else silent.push(lines[i].trim());
     }
     assert.ok(
       lockSkips <= 1,
       `${sheet.file}: only the lock-contention bail-out may return silently — found ${lockSkips}`,
+    );
+    assert.ok(
+      nightSkips <= 1,
+      `${sheet.file}: only one overnight pacing skip may return silently — found ${nightSkips}`,
     );
     assert.deepEqual(
       silent,

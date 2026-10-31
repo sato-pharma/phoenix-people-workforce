@@ -144,6 +144,7 @@ import { runConfigDriftTests } from "./config-drift.test.ts";
 import { runPushEnableHangTests } from "./push-enable-hang.test.ts";
 import { runPushRegisterHrIdGuardTests } from "./push-register-hr-id-guard.test.ts";
 import { runLiveSheetStaleBannerTests } from "./live-sheet-stale-banner.test.ts";
+import { runLiveSheetNightPacingTests } from "./live-sheet-night-pacing.test.ts";
 import { runBrevoKeepaliveTests } from "./brevo-keepalive.test.ts";
 import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.ts";
 import { runHiringPackResidenceAddressTests } from "./hiring-pack-residence-address.test.ts";
@@ -6326,6 +6327,7 @@ await runTest("push enable hang (a blocked browser resolves instantly instead of
 await runTest("push register hr id guard (a session with no employee behind it is skipped, not written as hr_id NULL into a NOT NULL column)", runPushRegisterHrIdGuardTests);
 
 await runTest("live sheet stale banner (no failure path in any of the three Apps Scripts returns silently; the banner names when the data froze, stays quiet while nothing changes, and clears itself on recovery)", runLiveSheetStaleBannerTests);
+await runTest("live sheet night pacing (overnight a Direct Orders or Marketing sheet timer tick fetches once an hour, never sixty times; the daytime timer, a push, a token rotation, Refresh now and installTrigger still fetch at once)", runLiveSheetNightPacingTests);
 
 await runTest("visit contact kind (pharmacy/institution/doctor split is display-only — decision.ts stays pharmacy-blind)", runVisitContactKindTests);
 
