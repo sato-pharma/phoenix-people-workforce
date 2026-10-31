@@ -32,6 +32,24 @@ shard that died quietly turns into a smaller suite reporting success, which is w
 sharding. Every shard still IMPORTS every test file (three set `PHOENIX_AUTH_SECRET` at import
 time), so more shards than CPUs costs more than it buys.
 
+#### The hang watch
+
+🔴 **A test that never ends stops its shard within three minutes and is named — it no longer holds the
+job to its timeout.** On 31 Oct 2026 two pull requests each waited 20 minutes on one `unit` job (runs
+41158200199 and 41160751493): a test in shard 4/4 was waiting on a `globalThis.fetch` an earlier test had
+replaced and never restored, the job hit `timeout-minutes`, and the log named no test. Now, in a sharded
+run, `runTest` prints `PHX_TEST_START <id> <name>` before each test and `PHX_TEST_END <id>` after it (in a
+`finally`, so a failed test ends too, and through the real `process.stdout.write` taken before any test
+runs, so a test that captures stdout cannot silence them). The parent, `scripts/run-tests-sharded-shard.mjs`,
+reads them, hides them from the log, and kills the shard when a test is still running after
+`PHX_TEST_HANG_SECONDS` (default 180 — fifteen times the slowest test) or when the shard goes that long
+without starting a test or exiting. The run then fails with one line naming the test, e.g.
+`shard 4/4 was stopped: "…" was still running after 180s with no result`. **The clock is the parent's, on
+`node:timers` and `node:perf_hooks`:** the hung child is the process whose timers or fetch may be broken,
+so a deadline inside it can be the thing that never fires. The unit job's own `timeout-minutes` (12) is
+only the backstop behind it. Pinned by `tests/run-tests-sharded.test.ts` cases 15–17, including real
+children that hang and one that does not.
+
 ### The suite's slowest test, and the harness that cut it
 
 `tests/unknown-flag-gates.test.ts` probes **every** script that parses argv — 118 of them — with a

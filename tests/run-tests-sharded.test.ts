@@ -20,11 +20,16 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   MAX_SHARDS,
   collectProblems,
   coverageProblems,
+  createHangWatch,
+  hangLimitMs,
+  isTestMarker,
   parsePart,
   parseResult,
   parseSlowest,
@@ -32,6 +37,7 @@ import {
   ranTotal,
   shardCount,
 } from "../scripts/run-tests-sharded-plan.mjs";
+import { runShard } from "../scripts/run-tests-sharded-shard.mjs";
 import { DEFAULT_TEST_MS, KNOWN_SLOW_TESTS_MS, createShardDeal } from "./shard-deal.ts";
 
 /** A shard that exited cleanly having seen `seen` tests and run `ran` of them. */
@@ -39,7 +45,7 @@ function shard(index: number, total: number, seen: number, ran: number) {
   return { index, code: 0, signal: null, out: `PASS something\nPHX_SHARD_RESULT shard=${index}/${total} seen=${seen} ran=${ran}\n` };
 }
 
-export function runRunTestsShardedTests() {
+export async function runRunTestsShardedTests() {
   // ── 1. The happy path, so every refusal below is known to be about its own branch ────────────
   {
     const problems = collectProblems([shard(1, 2, 2253, 1127), shard(2, 2, 2253, 1126)], 2);
@@ -361,5 +367,127 @@ export function runRunTestsShardedTests() {
         `${name} is in KNOWN_SLOW_TESTS_MS but run-tests.ts no longer registers it: its estimate weighs down a shard for a test that is not there`,
       );
     }
+  }
+
+  // ── 15. A shard that HANGS is stopped and named, never waited out (31 Oct 2026) ─────────────────
+  // Two pull requests each held a unit job for its full 20-minute timeout because one test waited for
+  // ever, and the log named nothing. The watch is the parent's: the hung child cannot be trusted to time
+  // itself out, because its own timers or fetch may be what an earlier test broke.
+  {
+    assert.equal(hangLimitMs(undefined), 180_000, "the default limit is 180 s — fifteen times the slowest test, so only a stuck one reaches it");
+    assert.equal(hangLimitMs(""), 180_000);
+    assert.equal(hangLimitMs("2.5"), 2_500);
+    for (const bad of ["0", "-1", "soon"]) {
+      assert.throws(() => hangLimitMs(bad), /PHX_TEST_HANG_SECONDS must be a positive number/, `a limit of ${bad} must be refused, not read as "never"`);
+    }
+
+    const watch = createHangWatch(1_000, 0);
+    assert.equal(watch.check(999), null, "a shard still importing inside the limit is not stuck");
+    assert.deepEqual(watch.check(1_000), { name: null, seconds: 1, running: false }, "a shard that never starts a test is stuck before its first");
+    watch.observe("PHX_TEST_START 7 the slow one", 1_000);
+    assert.equal(watch.check(1_999), null, "a test inside its limit is not stuck");
+    watch.observe("PHX_TEST_END 6", 1_500);
+    assert.deepEqual(
+      watch.check(2_000),
+      { name: "the slow one", seconds: 1, running: true },
+      "a test past its limit is named — and an END for a different id must not have cleared it",
+    );
+    watch.observe("PHX_TEST_END 7", 2_000);
+    assert.equal(watch.check(2_999), null, "a finished test clears the watch");
+    assert.deepEqual(
+      watch.check(3_000),
+      { name: "the slow one", seconds: 1, running: false },
+      "a shard that stops moving after a test names the last one that finished",
+    );
+
+    const stopped = { index: 2, code: 1, signal: "SIGKILL", out: "PASS something\n", hung: { name: "the slow one", seconds: 181, running: true } };
+    const problems = collectProblems([shard(1, 2, 2253, 1127), stopped], 2);
+    assert.equal(problems.length, 1, `a hung shard is ONE problem, named once — got ${JSON.stringify(problems)}`);
+    assert.match(problems[0], /^shard 2\/2 was stopped: "the slow one" was still running after 181s/, "the hang is reported by the test's name, not as a bare kill");
+    assert.doesNotMatch(problems[0], /killed by SIGKILL/, "the kill is the watch's own consequence, never the headline");
+    assert.ok(
+      isTestMarker("PHX_TEST_START 1 x") && isTestMarker("PHX_TEST_END 1") && !isTestMarker("PASS x (1ms)"),
+      "only the two markers are the watch's",
+    );
+  }
+
+  // ── 16. …proven on real children: one stuck inside a test, one that never starts one, one that passes ─
+  // Each fixture also ends ITSELF after 20 s, so a broken watch fails the deadline below instead of
+  // leaving a process behind — and runs from the OS temp folder, not its own, because Windows will not
+  // remove a folder a live process is standing in, and that error would hide the deadline message.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "phx-shard-hang-"));
+    try {
+      const fixture = (file: string, body: string) => {
+        writeFileSync(join(dir, file), `setTimeout(() => process.exit(0), 20_000);\n${body}\n`);
+        return join(dir, file);
+      };
+      const stuck = fixture("stuck.mjs", 'console.log("PHX_TEST_START 3 a test whose request never arrives"); console.log("still waiting");');
+      const quiet = fixture("quiet.mjs", 'console.log("importing");');
+      const healthy = fixture(
+        "healthy.mjs",
+        'console.log("PHX_TEST_START 1 a quick test"); console.log("PASS a quick test (1ms)"); console.log("PHX_TEST_END 1"); ' +
+          'console.log("a line a reader needs"); process.exit(0);',
+      );
+      const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot };
+      const run = (file: string, index: number) => {
+        const sink = { stdout: "", stderr: "" };
+        return runShard({
+          args: [file],
+          cwd: tmpdir(),
+          env,
+          index,
+          total: 3,
+          hangMs: 1_500,
+          pollMs: 100,
+          stdout: { write: (text: string) => (sink.stdout += text) },
+          stderr: { write: (text: string) => (sink.stderr += text) },
+        }).then((value) => ({ ...value, sink }));
+      };
+      const startedAt = performance.now();
+      const all = Promise.all([run(stuck, 1), run(quiet, 2), run(healthy, 3)]);
+      const outcome = await Promise.race([all, sleep(10_000, "deadline", { ref: false })]);
+      assert.notEqual(
+        outcome,
+        "deadline",
+        "runShard did not stop a hung shard within 10 s at a 1.5 s limit — the watch is not watching, so a stuck test holds the CI job to its timeout again",
+      );
+      const [hungResult, quietResult, healthyResult] = await all;
+      const seconds = (performance.now() - startedAt) / 1000;
+      assert.ok(seconds < 10, `the hung shards took ${seconds.toFixed(1)} s to be stopped`);
+
+      assert.equal(hungResult.hung?.name, "a test whose request never arrives", "the shard stuck inside a test must be stopped and that test named");
+      assert.equal(hungResult.hung?.running, true);
+      assert.match(hungResult.sink.stderr, /HUNG "a test whose request never arrives" — still running after \d+s/, "the stop is announced the moment it happens");
+      assert.match(hungResult.sink.stdout, /still waiting/, "the shard's own lines still reach the reader");
+      assert.doesNotMatch(hungResult.sink.stdout, /PHX_TEST_START/, "the watch's markers are never displayed");
+
+      assert.equal(quietResult.hung?.running, false, "a shard that never starts a test is stopped too");
+      assert.equal(quietResult.hung?.name, null);
+      assert.match(collectProblems([quietResult], 3, { first: 2, count: 1 })[0], /went \d+s without starting its first test or exiting/);
+
+      assert.equal(healthyResult.hung, null, "a shard that finishes inside the limit is never stopped");
+      assert.equal(healthyResult.code, 0);
+      assert.equal(healthyResult.sink.stdout, "[shard 3/3] a line a reader needs\n", "PASS lines and markers are hidden, everything else is shown");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ── 17. The suite brackets every test with the markers, and the runner runs each shard under the watch ─
+  {
+    const runner = readFileSync(resolve("tests/run-tests.ts"), "utf8");
+    const declaredAt = runner.indexOf("async function runTest(");
+    const body = runner.slice(declaredAt, runner.indexOf("\n}\n", declaredAt));
+    assert.match(body, /writeWatchMarker\?\.\(`PHX_TEST_START \$\{watchId\} /, "runTest must announce a test before it runs");
+    assert.match(body, /\} finally \{\n\s+writeWatchMarker\?\.\(`PHX_TEST_END \$\{watchId\}\\n`\);/, "runTest must announce the end in a finally, so a FAILED test ends too");
+    assert.match(
+      runner,
+      /const writeWatchMarker = shardSpec \? process\.stdout\.write\.bind\(process\.stdout\) : null;/,
+      "the markers are written through the real stdout taken before any test runs, and only in a sharded run",
+    );
+    const sharded = readFileSync(resolve("scripts/run-tests-sharded.mjs"), "utf8");
+    assert.match(sharded, /const hangMs = hangLimitMs\(process\.env\.PHX_TEST_HANG_SECONDS\);/, "the runner must read its limit");
+    assert.match(sharded, /runShard\(\{ args, cwd: ROOT, env: process\.env, index: first \+ i, total, hangMs \}\)/, "every shard must run under the watch");
   }
 }

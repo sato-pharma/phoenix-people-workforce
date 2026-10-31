@@ -840,7 +840,10 @@ jobs:
   # The unit suite runs on EVERY event, in this job and nowhere else (tests/ci-suite-placement.test.ts).
   unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 12, not 20 (31 Oct 2026): a part takes ~3.3 min, and a test that hangs is stopped and named by the
+    # sharded runner's own hang watch within ~3 min (docs/testing.md, "The hang watch"). This is only the
+    # backstop behind it, so a hang the watch cannot see costs 12 minutes of a pull request, not 20.
+    timeout-minutes: 12
     # This job never writes a cache on any event (owner, 2026-10-26): the Actions service itself refuses a
     # save from it. Pinned by tests/ci-cache-main-only.test.ts.
     cache-mode: read

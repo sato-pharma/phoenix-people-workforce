@@ -89,7 +89,7 @@ export function parseSlowest(output) {
  * slice they were handed and agree with each other. A part cannot prove the whole suite: only
  * {@link coverageProblems}, over every part's record, can.
  *
- * @param {Array<{ index: number, out: string, code?: number, signal?: string|null, spawnError?: Error }>} results
+ * @param {Array<{ index: number, out: string, code?: number, signal?: string|null, spawnError?: Error, hung?: { name: string | null, seconds: number, running: boolean } | null }>} results
  * @param {number} total the GLOBAL shard total every shard was told (parts × shards per part in part mode)
  * @param {{ first: number, count: number }} [window] part mode: the global indices this process owns,
  *   `first..first+count-1`. Omitted means the process owns all of `1..total` and the ran-sum is asked.
@@ -97,7 +97,10 @@ export function parseSlowest(output) {
 export function collectProblems(results, total, window) {
   const problems = [];
   for (const result of results) {
-    if (result.spawnError) problems.push(`shard ${result.index} could not start: ${result.spawnError.message}`);
+    // A hung shard is killed by the watch, so it also carries a signal — the hang is the fact the reader
+    // needs, the signal only its consequence.
+    if (result.hung) problems.push(hangProblem(result.hung, result.index, total));
+    else if (result.spawnError) problems.push(`shard ${result.index} could not start: ${result.spawnError.message}`);
     else if (result.signal) problems.push(`shard ${result.index} was killed by ${result.signal}`);
     else if (result.code !== 0) problems.push(`shard ${result.index} exited ${result.code}`);
   }
@@ -235,4 +238,106 @@ export function coverageProblems(records) {
     );
   }
   return problems;
+}
+
+// ── The hang watch ──────────────────────────────────────────────────────────────────────────────
+//
+// 🔴 A SHARD THAT STOPS MOVING IS STOPPED AND NAMED, NEVER WAITED OUT. On 31 Oct 2026 two pull requests
+// each held a `unit` job for 20 minutes — the job's own `timeout-minutes` — because one test in shard 4
+// waited for ever: an earlier test in the same process had replaced `globalThis.fetch` and never put it
+// back, so the request the later test was counting never arrived. Nothing said which test: this runner
+// hides PASS lines, so the log just stopped, and GitHub reported "The operation was canceled".
+//
+// So in a sharded run `runTest` prints `PHX_TEST_START <id> <name>` before a test and `PHX_TEST_END <id>`
+// after it, passed or failed, and the parent keeps the clock — never the child, because the hung child is
+// the one whose timers or event loop may be the thing that is broken. A test still running past the limit,
+// or a shard that goes that long without starting a test or exiting, is killed and reported by name.
+
+/** Printed by `runTest` before a test in a sharded run: `PHX_TEST_START <id> <name>`. */
+export const TEST_START_MARKER = "PHX_TEST_START ";
+/** Printed by `runTest` after a test in a sharded run, passed or failed: `PHX_TEST_END <id>`. */
+export const TEST_END_MARKER = "PHX_TEST_END ";
+
+/** Whether a line is one of the watch's own markers, which the runner reads and never displays. */
+export function isTestMarker(line) {
+  return line.startsWith(TEST_START_MARKER) || line.startsWith(TEST_END_MARKER);
+}
+
+/**
+ * How long one test may run, and how long a shard may go without starting one, before it is stopped.
+ * 180 s by default — fifteen times the slowest test in the suite (~12 s on CI, tests/shard-deal.ts) and
+ * well above the ~115 s the slowest ever took — so only a test that is stuck reaches it. `PHX_TEST_HANG_SECONDS`
+ * overrides it, for the runner's own test and for a deliberate local investigation.
+ *
+ * @param {string | undefined} raw the raw `PHX_TEST_HANG_SECONDS` value, or undefined
+ */
+export function hangLimitMs(raw) {
+  if (raw === undefined || raw === "") return 180_000;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error(`PHX_TEST_HANG_SECONDS must be a positive number of seconds, got ${raw}`);
+  return Math.round(seconds * 1000);
+}
+
+/**
+ * The watch for one shard. Feed it every line the shard prints with `observe`, and ask `check` on a timer;
+ * `check` returns null while the shard is moving, or what it is stuck on.
+ *
+ * A start replaces whatever was running, and an end clears it only when its id matches, so a marker
+ * arriving late can never clear the wrong test.
+ *
+ * @param {number} limitMs from {@link hangLimitMs}
+ * @param {number} startedAt the clock reading when the shard was spawned (its imports count as quiet time)
+ */
+export function createHangWatch(limitMs, startedAt) {
+  /** @type {{ id: string, name: string, since: number } | null} */
+  let running = null;
+  /** @type {string | null} */
+  let lastFinished = null;
+  let quietSince = startedAt;
+  return {
+    /** @param {string} line @param {number} at */
+    observe(line, at) {
+      const start = /^PHX_TEST_START (\d+) (.*)$/.exec(line);
+      if (start) {
+        running = { id: start[1], name: start[2], since: at };
+        return;
+      }
+      const end = /^PHX_TEST_END (\d+)$/.exec(line);
+      if (end && running?.id === end[1]) {
+        lastFinished = running.name;
+        running = null;
+        quietSince = at;
+      }
+    },
+    /** @param {number} at @returns {{ name: string | null, seconds: number, running: boolean } | null} */
+    check(at) {
+      if (running) {
+        return at - running.since >= limitMs ? { name: running.name, seconds: Math.round((at - running.since) / 1000), running: true } : null;
+      }
+      return at - quietSince >= limitMs ? { name: lastFinished, seconds: Math.round((at - quietSince) / 1000), running: false } : null;
+    },
+  };
+}
+
+/**
+ * The sentence for a shard the watch stopped.
+ *
+ * @param {{ name: string | null, seconds: number, running: boolean }} hung what {@link createHangWatch} returned
+ * @param {number} index
+ * @param {number} total
+ */
+export function hangProblem(hung, index, total) {
+  if (hung.running) {
+    return (
+      `shard ${index}/${total} was stopped: "${hung.name}" was still running after ${hung.seconds}s with no result, ` +
+      `and the tests dealt to that shard after it did not run. A test that never ends is usually waiting on ` +
+      `something an EARLIER test in the same process replaced and never restored (globalThis.fetch, a timer) — ` +
+      `run that shard alone (PHX_TEST_SHARD=${index}/${total}) to find it.`
+    );
+  }
+  const doing = hung.name === null ? "without starting its first test" : `after "${hung.name}" finished without starting another test`;
+  return (
+    `shard ${index}/${total} was stopped: it went ${hung.seconds}s ${doing} or ` +
+    `exiting — something left open (a server, a socket, a timer) is keeping the process alive.`
+  );
 }
