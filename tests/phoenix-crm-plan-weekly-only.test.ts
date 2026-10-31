@@ -256,11 +256,10 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
       "a week's button shows its status, then its own days",
     );
     assert.doesNotMatch(board, /`due \$\{dayLabel\(state\.week\.dueOn\)\}`/, "the due date is not on the week's button");
-    assert.match(board, /view\.weeks\.find\(\(week\) => week\.weekStart === view\.repWeek\)/, "it opens on his week");
     assert.match(
       board,
-      /view\.weeks\.find\(\(week\) => week\.repState === "plan" && week\.overdue\) \?\? view\.weeks\.find\(\(week\) => week\.weekStart === view\.repWeek\)/,
-      "unless a week he may still send is overdue — the week he is in, never sent — which opens first",
+      /repWeekToOpen\(view\.weeks, \{ repWeek: view\.repWeek, cairoToday: view\.cairoToday \}\)/,
+      "it opens on repWeekToOpen — an overdue week, else the week he is in while sent and the coming one not started, else his week",
     );
     assert.doesNotMatch(board, /crmPost<[^>]*>\(\s*"\/api\/phoenix-crm\/monthly-plans"/, "it never posts a month send");
     assert.doesNotMatch(board, /action: "reopen"/, "and never takes a week back");

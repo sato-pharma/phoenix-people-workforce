@@ -27,6 +27,7 @@
  * longer on the list. A copy only fills the draft; nothing here saves or sends.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { fieldWeekStart, weekdayOfIsoDay, weekNumberInMonth } from "@/lib/phoenix-crm/calendar";
 import { dayActivityRank, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import type { CopySourcePlacement, CopyWeek } from "@/lib/phoenix-crm/plan-copy";
@@ -742,6 +743,27 @@ export function firstWeekToPlan<T extends { open: boolean; status: string | null
     weeks.find((week) => week.open) ??
     null
   );
+}
+
+/**
+ * The week the rep's own board opens on. A week he may still send and never sent opens first (owner,
+ * 2026-10-02: it is the one costing him today); then the week he is in, while it is sent or approved, has a
+ * day ahead and the coming week is not started (owner, 2026-10-31 — after the reps' approved weeks were
+ * restored they met an empty coming week and had to look for the week they were working in); else his ONE
+ * week, the coming Saturday's (owner, 2026-10-01). Once he starts the coming week it opens there.
+ */
+export function repWeekToOpen<T extends { weekStart: string; status: string | null; repState: string; overdue: boolean }>(
+  weeks: ReadonlyArray<T>,
+  input: { repWeek: string; cairoToday: string },
+): T | null {
+  const overdue = weeks.find((week) => week.repState === "plan" && week.overdue);
+  if (overdue) return overdue;
+  const coming = weeks.find((week) => week.weekStart === input.repWeek) ?? null;
+  const runningWeek = fieldWeekStart(input.cairoToday);
+  const running = weeks.find((week) => week.weekStart === runningWeek) ?? null;
+  const runningSent = running !== null && (running.status === "submitted" || running.status === "approved");
+  if (runningSent && addDaysIso(runningWeek, 5) >= input.cairoToday && (coming?.status ?? null) === null) return running;
+  return coming;
 }
 
 /** The first day the rep may still change, else the week's first day. */
