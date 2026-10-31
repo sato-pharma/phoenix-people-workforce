@@ -38,7 +38,8 @@ import {
   type ConfidenceBand,
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
-import type { ContactSeenAt, RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
+import type { RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
+import { brickSpreadLine, REPS_LIST_NO_LOCATION, unmappedBrickLabel } from "@/lib/crm/reps-list-labels";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
@@ -288,6 +289,7 @@ function matches(row: RepsListContact, needle: string): boolean {
     row.speciality,
     row.region,
     row.address,
+    row.place?.address,
     row.seenAt?.address,
     row.grade,
     row.phone,
@@ -364,10 +366,15 @@ function GroupHeading({
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900" dir="auto">
           {group.heading}
         </h3>
-        {group.mapped && group.areaName ? (
-          <span className="text-phx-2xs font-semibold text-slate-500">{group.areaName}</span>
+        {/* The brick's area and the area's region, from the sales master (owner, 2026-10-31: "get the
+            brick area and region"). */}
+        {group.mapped && (group.areaName || group.regionName) ? (
+          <span className="text-phx-2xs font-semibold text-slate-500">
+            {[group.areaName, group.regionName].filter(Boolean).join(" · ")}
+          </span>
         ) : null}
-        {group.mapped ? null : (
+        {/* "No location yet" already says it all; a named locality says which step is missing. */}
+        {group.mapped || group.heading === REPS_LIST_NO_LOCATION ? null : (
           <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
             Locality not yet mapped to a brick
           </span>
@@ -395,8 +402,8 @@ function GroupHeading({
  * the documented cross-platform form — on a phone it hands off to the Maps app, on a desktop it
  * opens the web map. No key, no embed, no third-party script on the page.
  */
-const pinHref = (seenAt: ContactSeenAt): string =>
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${seenAt.lat},${seenAt.lon}`)}`;
+const pinHref = (point: { lat: number; lon: number }): string =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${point.lat},${point.lon}`)}`;
 
 /**
  * The Maps URL for an address we have no fix for — a SEARCH, not a pin.
@@ -435,9 +442,9 @@ const LINK_CLASS =
  *
  *  - VIOLET, row level, for a customer shared with another rep. Rare by construction (214 real pairs
  *    company-wide), so it genuinely marks rather than washes.
- *  - SKY, on the address cell only, for contacts standing at the same address inside one brick.
- *    Around 45% of located rows carry it, which is why it is `sky-50` — very nearly white — and why
- *    it never touches the whole row.
+ *  - SKY, for contacts standing at the same address inside one brick — since grown into five
+ *    neighbourhood hues (NEIGHBOUR_TINTS). It started on the address cell only; on 2026-10-31 the
+ *    owner moved it to the WHOLE ROW, and a shared row takes it too (neighbourhoodRowClass).
  *  - EMERALD/AMBER, on the confidence bar and its number only. A bar's WIDTH does the work; the hue
  *    only separates "confirmed" from "doubtful", and the good case is the one that gets no ink.
  *
@@ -769,6 +776,12 @@ function TradeLine({ row }: { row: RepsListContact }) {
  * coordinate — and, only for a contact nobody has ever checked in on, the CRM's own address as a
  * map SEARCH. Never both on one row.
  *
+ * THE VALIDATED PHOTO OUTRANKS THE CHECK-IN (owner, 2026-10-31: "use the validation pin"). A doctor
+ * validated with a live photo is pinned where that photo was taken and dated "validated", because that
+ * is a deliberate capture at his door; the last check-in is used only for a doctor not validated yet.
+ * It is the same precedence his neighbours are found by (`groupContactsByBrick`), so the colour a row
+ * is painted and the map its address opens always agree about where he stands.
+ *
  * EACH SEGMENT IS ITS OWN `<bdi>`, and that is load-bearing, not decoration. 18.2% of these
  * addresses mix Arabic and English in one value (20,313 of 111,912, measured 2026-09-01). Under a
  * single `dir="auto"` the whole string takes its direction from the first strong character, so a
@@ -777,14 +790,16 @@ function TradeLine({ row }: { row: RepsListContact }) {
  * that. Do not collapse this back to one `dir="auto"` string.
  */
 function AddressCell({ locality, row }: { locality: string | null; row: RepsListContact }) {
-  const observed = row.seenAt ?? null;
-  const segments = polishAddress(observed?.address ?? row.address);
+  const place = row.place ?? null;
+  const observed = place ? null : (row.seenAt ?? null);
+  const point = place ?? observed;
+  const segments = polishAddress(point?.address ?? row.address);
 
   // Nothing observed and nothing recorded: 117 contacts company-wide. Said in words, because an
   // em-dash in an address column reads as a rendering fault rather than as a fact about the data.
-  if (!observed && segments.length === 0) return <span className="text-slate-400">No address on record</span>;
+  if (!point && segments.length === 0) return <span className="text-slate-400">No address on record</span>;
 
-  const href = observed ? pinHref(observed) : searchHref(segments.join(", "), locality);
+  const href = point ? pinHref(point) : searchHref(segments.join(", "), locality);
   return (
     <div className="break-words">
       <a className={LINK_CLASS} href={href} rel="noreferrer" target="_blank">
@@ -800,7 +815,9 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
       {/* An observed address without its date is worse than none: "current" reads as today when the
           check-in may be from March. Its absence is also the only thing separating an observation
           from the CRM's own record now that the "Old" label is gone. */}
-      {observed?.at ? (
+      {place?.validatedAt ? (
+        <span className="ml-1.5 text-phx-3xs font-semibold text-slate-400">validated {cairoDay(place.validatedAt)}</span>
+      ) : observed?.at ? (
         <span className="ml-1.5 text-phx-3xs font-semibold text-slate-400">seen {cairoDay(observed.at)}</span>
       ) : null}
       <NearbyLine row={row} />
@@ -823,6 +840,10 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
  * anything heavy repaints half the board. The fill is the `100` step and the sentence naming the
  * neighbours takes the same hue at `800`. Because the clusters now sit on consecutive rows, a fill
  * covers the whole block in one colour and the grouping is DRAWN rather than merely tagged.
+ *
+ * On the main list the fill now covers the whole row rather than the address cell (owner,
+ * 2026-10-31 — see neighbourhoodRowClass); the plan-day table below still tints its address cell,
+ * because its rows are ordered by day and a group's members are not consecutive there.
  *
  * THE FILL HAS TO CARRY THE HUE ALONE ON DESKTOP, WHICH IS WHY IT IS `100` AND NOT `50`. The first
  * attempt put the colour in a 2px left edge and left the fill at `50`; measured in the browser, the
@@ -858,6 +879,25 @@ const NEIGHBOUR_TINTS = [
  */
 const tintFor = (row: RepsListContact): (typeof NEIGHBOUR_TINTS)[number] | null =>
   row.cluster == null ? null : NEIGHBOUR_TINTS[row.cluster % NEIGHBOUR_TINTS.length];
+
+/**
+ * The background of a whole contact row: its neighbourhood's colour first, violet second, white last.
+ *
+ * THE WHOLE ROW, NOT THE ADDRESS CELL — the owner, 2026-10-31, looking at the Phoenix CRM list:
+ * "color all drs near to each other by a group color and if another group near each other then
+ * another color". A fill on one cell out of six did not read as "these doctors are one group"; a fill
+ * on the row does, and because `clusterRows` already puts each group on consecutive rows, every
+ * block is now one solid run of a single colour.
+ *
+ * A SHARED ROW TAKES ITS GROUP'S COLOUR TOO. His word was "all" doctors near each other, and a
+ * violet row in the middle of a blue run broke the block in two — exactly what made it unreadable.
+ * The shared signal is not lost: `SharedLine` still prints "Also on another rep's list" under the
+ * name in violet ink. Violet stays as the row colour only for a shared customer who stands alone.
+ */
+const neighbourhoodRowClass = (tint: (typeof NEIGHBOUR_TINTS)[number] | null, shared: boolean): string => {
+  if (tint) return tint.fill;
+  return shared ? "bg-violet-50 hover:bg-violet-100" : "bg-white hover:bg-slate-50";
+};
 
 /**
  * "Also at this address: Ahmed Samir, Mona Fouad" — the names, not just a count.
@@ -1013,6 +1053,9 @@ function GroupTable({
       renderCard={(row) => (
         <PortalRecordCard
           accent={row.listType === "Pharmacy" ? "sky" : "slate"}
+          // The whole card wears its neighbourhood's colour, the phone half of the row rule in
+          // neighbourhoodRowClass, so a group reads as one run of cards in one colour.
+          className={tintFor(row)?.fill}
           // Grade and phone sit directly under the name, exactly as they do in the desktop cell —
           // the owner's shape, 2026-09-01: "the phone and the grade under the contact name in the
           // same cell". The card is the mobile half of the same instruction, so it reads the same.
@@ -1047,15 +1090,10 @@ function GroupTable({
           <PortalRecordFields
             fields={[
               { label: "Specialty", value: row.speciality ?? "Unspecified" },
-              { label: "Brick", value: group.mapped ? brickCell : `${brickCell} — no brick yet` },
+              { label: "Brick", value: group.mapped ? brickCell : unmappedBrickLabel(brickCell) },
             ]}
           />
-          {/* On a card the neighbourhood is a tinted block with its own left edge, the same
-              colour the desktop column uses, so a rep switching between phone and laptop reads the
-              same grouping rather than learning two languages. */}
-          <div
-            className={`mt-2 text-xs ${tintFor(row) ? `${tintFor(row)?.fill} ${tintFor(row)?.bar} border-l-2 p-2` : ""}`}
-          >
+          <div className="mt-2 text-xs">
             <AddressCell locality={row.region} row={row} />
           </div>
           <div className="mt-2">
@@ -1150,7 +1188,7 @@ function GroupTable({
                 const tint = tintFor(row);
                 return (
                   <tr
-                    className={`align-top ${shared ? "bg-violet-50 hover:bg-violet-100" : "bg-white hover:bg-slate-50"}`}
+                    className={`align-top ${neighbourhoodRowClass(tint, shared)}`}
                     key={`${row.agentCrmId}:${row.contactCrmId}:${row.listType}`}
                   >
                     <td className="px-3 py-2">
@@ -1166,12 +1204,8 @@ function GroupTable({
                     >
                       {brickCell}
                     </td>
-                    {/* The neighbourhood colour lands on the ADDRESS cell and nowhere else — the
-                        owner put it there, and at ~45% of located rows a row-level wash would repaint
-                        half the board. A SHARED ROW KEEPS ITS VIOLET AND LOSES THE NEIGHBOURHOOD
-                        FILL: violet is the rarer signal, so it wins the area; the block is not lost,
-                        because the sentence under the address still names the neighbours in the
-                        block's own hue. Stacking both would give one cell two backgrounds.
+                    {/* The neighbourhood colour is on the WHOLE ROW, set on the <tr> above — see
+                        neighbourhoodRowClass for why it moved off the address cell.
 
                         In Phoenix CRM the address cell moves left, right after the brick, so the
                         neighbourhood wash reads directly beside the block it belongs to and the
@@ -1182,13 +1216,13 @@ function GroupTable({
                         <td className="px-3 py-2">
                           <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
                         </td>
-                        <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                        <td className="px-3 py-2 text-slate-600">
                           <AddressCell locality={row.region} row={row} />
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                        <td className="px-3 py-2 text-slate-600">
                           <AddressCell locality={row.region} row={row} />
                         </td>
                         <td className="px-3 py-2">{rowActions?.(row)}</td>
@@ -1348,9 +1382,10 @@ export function RepsListContacts({
       // match the screen (owner's standing rule). `Last seen` and the coordinate pair are not extra
       // data: they are what the link on screen carries, written out. The pair is what makes the
       // file usable away from the board — it pastes straight into a map, a street name does not.
-      address: polishAddressText(row.seenAt?.address ?? row.address),
+      // The validated photo's point first, else the last check-in's — the screen's own precedence.
+      address: polishAddressText((row.place ?? row.seenAt)?.address ?? row.address),
       area: entry.group.mapped ? (entry.group.areaName ?? "") : "",
-      brick: entry.group.mapped ? entry.group.heading : `${entry.group.heading} (not yet mapped to a brick)`,
+      brick: entry.group.mapped ? entry.group.heading : unmappedBrickLabel(entry.group.heading, "(not yet mapped to a brick)"),
       // The three judgements go out with the rows. An export must match the screen, and these are
       // the columns a manager would actually sort on — "show me every doubtful pin" is the whole
       // point of scoring them. The score is a NUMBER so it sorts; the word beside it says what the
@@ -1367,13 +1402,14 @@ export function RepsListContacts({
       contact_ar: row.nameAr ?? "",
       grade: row.grade ?? "",
       last_seen: row.seenAt?.at ? cairoDay(row.seenAt.at) : "",
+      validated: row.place?.validatedAt ? cairoDay(row.place.validatedAt) : "",
       // The plan's own ask, TO DATE — the denominator the screen shows. Exporting the whole month's
       // ask instead would make every mid-month row look behind.
       last_visit: row.activity?.lastVisitDate ?? "",
       planned_to_date: row.activity ? row.activity.plannedCallsToDate : "",
       list: LIST_LABEL[row.listType],
       locality: row.region ?? "",
-      map: row.seenAt ? `${row.seenAt.lat}, ${row.seenAt.lon}` : "",
+      map: row.place ? `${row.place.lat}, ${row.place.lon}` : row.seenAt ? `${row.seenAt.lat}, ${row.seenAt.lon}` : "",
       nearby: (row.nearby ?? []).map((entry_) => entry_.name).join(", "),
       phone: phoneOf(row) ?? "",
       shared_with: sharedWithCell((row.sharedWith ?? []).map((entry_) => entry_.repName)),
@@ -1397,16 +1433,16 @@ export function RepsListContacts({
   // somewhere this rep has a pharmacy, so counting it on the Pharmacies tab overstates the spread
   // and — worse — the same list feeds the Brick picker, where it becomes a choice that empties the
   // table with no explanation.
-  const brickCount = tabGroups.filter((group) => group.mapped).length;
-  const localityCount = tabGroups.length - brickCount;
-  const bricks = `${brickCount} ${brickCount === 1 ? "brick" : "bricks"}`;
-  const localities = `${localityCount} ${localityCount === 1 ? "locality" : "localities"}`;
-  const spread =
-    localityCount === 0
-      ? bricks
-      : brickCount === 0
-        ? `${localities} awaiting a brick`
-        : `${bricks} and ${localities} awaiting one`;
+  //
+  // "No location yet" is neither a brick nor a locality, and is stated apart — see brickSpreadLine.
+  const spread = brickSpreadLine(
+    held,
+    tabGroups.map((group) => ({
+      count: group.rows.filter((row) => inTab(row, tab)).length,
+      heading: group.heading,
+      mapped: group.mapped,
+    })),
+  );
 
   // The field surface's controls; every other surface keeps its own two classes.
   const labelClass = collapsible ? FIELD_LABEL_CLASS : LABEL_CLASS;
@@ -1476,7 +1512,7 @@ export function RepsListContacts({
               <option value="">All bricks</option>
               {tabGroups.map((group) => (
                 <option key={groupKey(group)} value={groupKey(group)}>
-                  {group.mapped ? group.heading : `${group.heading} — no brick yet`}
+                  {group.mapped ? group.heading : unmappedBrickLabel(group.heading)}
                 </option>
               ))}
             </select>
@@ -1595,6 +1631,7 @@ export function RepsListContacts({
             { key: "phone", label: "Phone" },
             { key: "address", label: "Address" },
             { key: "last_seen", label: "Last seen" },
+            { key: "validated", label: "Validated" },
             // Dropped from the file when the read failed, exactly as they are dropped from the
             // screen. An export must match the screen (owner's standing rule), and that includes
             // matching it when a column is not there.
@@ -1636,7 +1673,7 @@ export function RepsListContacts({
         {totalCount === 0
           ? held
           : shownCount === totalCount
-            ? `${held} across ${spread}`
+            ? spread
             : `${shownCount} of ${totalCount} shown · ${visible.length} of ${tabGroups.length} groups`}
       </p>
 
@@ -1841,7 +1878,7 @@ function PlanDayTable({
   onOpenConfidence: (row: RepsListContact) => void;
   onOpenInsights: (row: RepsListContact) => void;
 }) {
-  const offListBrick = (row: PlanDoctorRow) => row.entry.region?.trim() || "No CRM region recorded";
+  const offListBrick = (row: PlanDoctorRow) => row.entry.region?.trim() || REPS_LIST_NO_LOCATION;
   const speciality = (row: PlanDoctorRow) =>
     row.contact?.contact.speciality?.trim() || row.entry.speciality?.trim() || UNSPECIFIED;
 
@@ -1915,7 +1952,7 @@ function PlanDayTable({
                 { label: "Specialty", value: speciality(row) },
                 {
                   label: "Brick",
-                  value: joined.brick.mapped ? joined.brick.heading : `${joined.brick.heading} — no brick yet`,
+                  value: joined.brick.mapped ? joined.brick.heading : unmappedBrickLabel(joined.brick.heading),
                 },
               ]}
             />

@@ -83,7 +83,7 @@ export async function runEmployee360BrickCoverageTests() {
       { areaCode: "BS1", areaName: "Beni Suef", brickId: "B5", heading: "Beni Suef Center", mapped: true, rows: rows("AM", "AM", "Pharmacy") },
       { areaCode: "GZ3", areaName: null, brickId: "B9", heading: "Imbaba", mapped: true, rows: rows("PM") },
       { areaCode: null, areaName: null, brickId: null, heading: "Wasta", mapped: false, rows: rows("AM", "Pharmacy") },
-      { areaCode: null, areaName: null, brickId: null, heading: "No CRM region recorded", mapped: false, rows: rows("PM") },
+      { areaCode: null, areaName: null, brickId: null, heading: "No location yet", mapped: false, rows: rows("PM") },
     ],
     salesMonths: ["2026-09"],
     salesMonthsFallback: false,

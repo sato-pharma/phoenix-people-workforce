@@ -215,10 +215,11 @@ export function runPortalRepNavigationSpeedTests(): void {
       assertBefore(loader, read, "await getRepContactList(hrId)", `${read} starts before the rep's list is awaited`);
     }
     // 🔴 Each later read chains on its own inputs (2026-10-16): the brick names on the two brick
-    // mappings, the other reps' pins on the roster — never on this rep's check-ins.
+    // mappings and Phoenix CRM's validated places (2026-10-31 — a place's brick needs its name too),
+    // the other reps' pins on the roster — never on this rep's check-ins.
     assert.ok(
-      loader.includes("const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead]).then("),
-      "the brick names start the moment both brick mappings are in",
+      loader.includes("const metaRead = Promise.all([contactBrickMapRead, regionBrickMapRead, placesRead]).then("),
+      "the brick names start the moment both brick mappings and the validated places are in",
     );
     assert.ok(loader.includes("const otherPinsRead = rosterRead.then("), "the other reps' pins start the moment the roster is in");
     assertBefore(loader, "const metaRead = ", "await Promise.all([\n    contactBrickMapRead,", "both start before anything of the second stage is awaited");
