@@ -249,13 +249,33 @@ export function formatStableEnGb(value: Date, options: Intl.DateTimeFormatOption
  * so nothing on screen changes for anyone whose phone already agreed.
  */
 export function cairoDateTime12h(iso: string | null | undefined): string {
+  const parts = cairo12hParts(iso);
+  return parts ? `${parts.monthDay}, ${parts.year}, ${parts.time}` : "-";
+}
+
+/**
+ * "Oct 28, 11:16 AM" — the same 12-hour Cairo form without the year, for a list that only ever shows
+ * recent changes. Access Control drew it with `Intl.DateTimeFormat("en-US", { hour: "2-digit", … })`
+ * on every account row, whose default is the 12-hour clock: the same AM/PM space, so the same #418
+ * on any Apple device (31 Oct 2026). Byte-for-byte what Node 24 printed before.
+ */
+export function cairoMonthDayTime12h(iso: string | null | undefined): string {
+  const parts = cairo12hParts(iso);
+  return parts ? `${parts.monthDay}, ${parts.time}` : "-";
+}
+
+function cairo12hParts(iso: string | null | undefined): { monthDay: string; time: string; year: number } | null {
   const value = parseIsoInstant(iso);
-  if (!value) return "-";
+  if (!value) return null;
   const wall = cairoWallClock(value);
   const hour24 = wall.getUTCHours();
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
   const pad = (n: number) => String(n).padStart(2, "0");
   // en-US says "Sep" where CAIRO_MONTHS says "Sept"; every other name is already three letters, and
   // one month table is the rule (tests/react-418-hydration-safe-text.test.ts).
-  return `${CAIRO_MONTHS[wall.getUTCMonth()].slice(0, 3)} ${pad(wall.getUTCDate())}, ${wall.getUTCFullYear()}, ${pad(hour12)}:${pad(wall.getUTCMinutes())} ${hour24 < 12 ? "AM" : "PM"}`;
+  return {
+    monthDay: `${CAIRO_MONTHS[wall.getUTCMonth()].slice(0, 3)} ${pad(wall.getUTCDate())}`,
+    time: `${pad(hour12)}:${pad(wall.getUTCMinutes())} ${hour24 < 12 ? "AM" : "PM"}`,
+    year: wall.getUTCFullYear(),
+  };
 }
