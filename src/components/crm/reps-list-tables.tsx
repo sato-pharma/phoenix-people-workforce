@@ -435,9 +435,9 @@ const LINK_CLASS =
  *
  *  - VIOLET, row level, for a customer shared with another rep. Rare by construction (214 real pairs
  *    company-wide), so it genuinely marks rather than washes.
- *  - SKY, on the address cell only, for contacts standing at the same address inside one brick.
- *    Around 45% of located rows carry it, which is why it is `sky-50` — very nearly white — and why
- *    it never touches the whole row.
+ *  - SKY, for contacts standing at the same address inside one brick — since grown into five
+ *    neighbourhood hues (NEIGHBOUR_TINTS). It started on the address cell only; on 2026-10-31 the
+ *    owner moved it to the WHOLE ROW, and a shared row takes it too (neighbourhoodRowClass).
  *  - EMERALD/AMBER, on the confidence bar and its number only. A bar's WIDTH does the work; the hue
  *    only separates "confirmed" from "doubtful", and the good case is the one that gets no ink.
  *
@@ -824,6 +824,10 @@ function AddressCell({ locality, row }: { locality: string | null; row: RepsList
  * neighbours takes the same hue at `800`. Because the clusters now sit on consecutive rows, a fill
  * covers the whole block in one colour and the grouping is DRAWN rather than merely tagged.
  *
+ * On the main list the fill now covers the whole row rather than the address cell (owner,
+ * 2026-10-31 — see neighbourhoodRowClass); the plan-day table below still tints its address cell,
+ * because its rows are ordered by day and a group's members are not consecutive there.
+ *
  * THE FILL HAS TO CARRY THE HUE ALONE ON DESKTOP, WHICH IS WHY IT IS `100` AND NOT `50`. The first
  * attempt put the colour in a 2px left edge and left the fill at `50`; measured in the browser, the
  * edge never appeared. `app/globals.css` gives every `.admin-shell th, td` a 1px orange hairline
@@ -858,6 +862,25 @@ const NEIGHBOUR_TINTS = [
  */
 const tintFor = (row: RepsListContact): (typeof NEIGHBOUR_TINTS)[number] | null =>
   row.cluster == null ? null : NEIGHBOUR_TINTS[row.cluster % NEIGHBOUR_TINTS.length];
+
+/**
+ * The background of a whole contact row: its neighbourhood's colour first, violet second, white last.
+ *
+ * THE WHOLE ROW, NOT THE ADDRESS CELL — the owner, 2026-10-31, looking at the Phoenix CRM list:
+ * "color all drs near to each other by a group color and if another group near each other then
+ * another color". A fill on one cell out of six did not read as "these doctors are one group"; a fill
+ * on the row does, and because `clusterRows` already puts each group on consecutive rows, every
+ * block is now one solid run of a single colour.
+ *
+ * A SHARED ROW TAKES ITS GROUP'S COLOUR TOO. His word was "all" doctors near each other, and a
+ * violet row in the middle of a blue run broke the block in two — exactly what made it unreadable.
+ * The shared signal is not lost: `SharedLine` still prints "Also on another rep's list" under the
+ * name in violet ink. Violet stays as the row colour only for a shared customer who stands alone.
+ */
+const neighbourhoodRowClass = (tint: (typeof NEIGHBOUR_TINTS)[number] | null, shared: boolean): string => {
+  if (tint) return tint.fill;
+  return shared ? "bg-violet-50 hover:bg-violet-100" : "bg-white hover:bg-slate-50";
+};
 
 /**
  * "Also at this address: Ahmed Samir, Mona Fouad" — the names, not just a count.
@@ -1013,6 +1036,9 @@ function GroupTable({
       renderCard={(row) => (
         <PortalRecordCard
           accent={row.listType === "Pharmacy" ? "sky" : "slate"}
+          // The whole card wears its neighbourhood's colour, the phone half of the row rule in
+          // neighbourhoodRowClass, so a group reads as one run of cards in one colour.
+          className={tintFor(row)?.fill}
           // Grade and phone sit directly under the name, exactly as they do in the desktop cell —
           // the owner's shape, 2026-09-01: "the phone and the grade under the contact name in the
           // same cell". The card is the mobile half of the same instruction, so it reads the same.
@@ -1050,12 +1076,7 @@ function GroupTable({
               { label: "Brick", value: group.mapped ? brickCell : `${brickCell} — no brick yet` },
             ]}
           />
-          {/* On a card the neighbourhood is a tinted block with its own left edge, the same
-              colour the desktop column uses, so a rep switching between phone and laptop reads the
-              same grouping rather than learning two languages. */}
-          <div
-            className={`mt-2 text-xs ${tintFor(row) ? `${tintFor(row)?.fill} ${tintFor(row)?.bar} border-l-2 p-2` : ""}`}
-          >
+          <div className="mt-2 text-xs">
             <AddressCell locality={row.region} row={row} />
           </div>
           <div className="mt-2">
@@ -1150,7 +1171,7 @@ function GroupTable({
                 const tint = tintFor(row);
                 return (
                   <tr
-                    className={`align-top ${shared ? "bg-violet-50 hover:bg-violet-100" : "bg-white hover:bg-slate-50"}`}
+                    className={`align-top ${neighbourhoodRowClass(tint, shared)}`}
                     key={`${row.agentCrmId}:${row.contactCrmId}:${row.listType}`}
                   >
                     <td className="px-3 py-2">
@@ -1166,12 +1187,8 @@ function GroupTable({
                     >
                       {brickCell}
                     </td>
-                    {/* The neighbourhood colour lands on the ADDRESS cell and nowhere else — the
-                        owner put it there, and at ~45% of located rows a row-level wash would repaint
-                        half the board. A SHARED ROW KEEPS ITS VIOLET AND LOSES THE NEIGHBOURHOOD
-                        FILL: violet is the rarer signal, so it wins the area; the block is not lost,
-                        because the sentence under the address still names the neighbours in the
-                        block's own hue. Stacking both would give one cell two backgrounds.
+                    {/* The neighbourhood colour is on the WHOLE ROW, set on the <tr> above — see
+                        neighbourhoodRowClass for why it moved off the address cell.
 
                         In Phoenix CRM the address cell moves left, right after the brick, so the
                         neighbourhood wash reads directly beside the block it belongs to and the
@@ -1182,13 +1199,13 @@ function GroupTable({
                         <td className="px-3 py-2">
                           <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
                         </td>
-                        <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                        <td className="px-3 py-2 text-slate-600">
                           <AddressCell locality={row.region} row={row} />
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                        <td className="px-3 py-2 text-slate-600">
                           <AddressCell locality={row.region} row={row} />
                         </td>
                         <td className="px-3 py-2">{rowActions?.(row)}</td>
