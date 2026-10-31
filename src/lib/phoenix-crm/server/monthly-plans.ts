@@ -41,12 +41,12 @@ import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import {
   boardLeadingWeek,
+  boardLeadingWeekIsRunning,
   editablePlanDays,
   fieldWeeksOfMonth,
   isIsoDay,
   isMonthKey,
   isRamadanDay,
-  leadingFieldWeekOfMonth,
   monthEndOf,
   monthlyPlanDueOn,
   monthStartOf,
@@ -225,7 +225,7 @@ export type MonthlyDoctorRow = DoctorMonthTally & {
 
 /** What the board calls the week a month opens with and does not own (owner, 2026-10-01). */
 export const LEADING_WEEK_LABEL = "First days";
-/** ...and the running week, when the month of the rep's own week shows it only so it can be reached. */
+/** ...and the week the rep is in, whenever that is the week the board opens with — even when it also holds the month's first days (2026-10-31). */
 export const RUNNING_WEEK_LABEL = "This week";
 
 /** A field-week of the month, with its own status and its days (the derived weekly plan). */
@@ -428,7 +428,7 @@ type MonthlyWeekInputs = {
   today: string;
   /** ONE instant for the whole answer, so every week on it agrees about the deadline. */
   now: Date;
-  /** The leading week is the week the rep is in, not the month's first days (calendar.ts `boardLeadingWeek`). */
+  /** The leading week is the week the rep is in — the month's first days included — so it is "This week" (calendar.ts `boardLeadingWeekIsRunning`). */
   leadingIsRunning: boolean;
   settings: PhoenixCrmViewer["config"]["settings"];
   isRamadan: (isoDay: string) => boolean;
@@ -539,7 +539,7 @@ export async function loadMonthlyPlanner(
   // of every meter below (owner, 2026-10-01; calendar.ts `leadingFieldWeekOfMonth`) — or, on the month
   // of the rep's own week, the week he is in, so its "Ask to edit" stays reachable (`boardLeadingWeek`).
   const leadingWeek = boardLeadingWeek(monthStart, today);
-  const leadingIsRunning = leadingWeek !== null && leadingWeek !== leadingFieldWeekOfMonth(monthStart);
+  const leadingIsRunning = boardLeadingWeekIsRunning(leadingWeek, today);
 
   // 🔴 TWO CHAINS SIDE BY SIDE, NOT THREE WAVES IN A ROW (2026-10-01, "slow to transfer between page
   // and page", Phoenix CRM first) — the weekly planner's own shape, see loadPlanner in plans.ts. The
@@ -850,7 +850,7 @@ async function savedWeekBoard(
   const leadingWeek = boardLeadingWeek(monthStart, today);
   const leading = !weeks.includes(weekStart);
   if (leading && weekStart !== leadingWeek) return null;
-  const leadingIsRunning = leadingWeek !== null && leadingWeek !== leadingFieldWeekOfMonth(monthStart);
+  const leadingIsRunning = boardLeadingWeekIsRunning(leadingWeek, today);
   const decidesWeeks = canReviewTerritory(viewer, seat, isTest) || canReturnTerritoryPlan(viewer, seat, isTest);
 
   // The saved week's row — and, unless it is the leading week, which enters no meter, every other week

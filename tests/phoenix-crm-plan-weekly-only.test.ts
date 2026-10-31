@@ -6,6 +6,7 @@ import { stripComments } from "./support/comment-strip.ts";
 import { addDaysIso } from "../src/lib/crm/dates.ts";
 import {
   boardLeadingWeek,
+  boardLeadingWeekIsRunning,
   fieldWeekStart,
   fieldWeeksOfMonth,
   leadingFieldWeekOfMonth,
@@ -126,6 +127,40 @@ export function runPhoenixCrmPlanWeeklyOnlyTests(): void {
 
     // Only on the month of HIS week: a reviewer browsing another month gets the leading week or nothing.
     assert.equal(boardLeadingWeek("2026-08-01", "2026-10-01"), null, "August, read in October, has nothing leading it");
+  }
+
+  // ── 3b. The week he is in is "This week", and the board stays on a week he has just sent ─────────
+  // (2026-10-31, Alexandria CNS: "submitted weekly plans and got approval on it now they cannot see it".)
+  {
+    // November 2026 starts on a Sunday, so its leading week IS the running week on Saturday 31 October.
+    assert.equal(weekdayOfIsoDay("2026-10-31"), 6, "31 October 2026 is a Saturday");
+    assert.equal(repPlanWeek("2026-10-31"), "2026-11-07", "his board opens on November");
+    assert.equal(boardLeadingWeek("2026-11-01", "2026-10-31"), "2026-10-31", "November opens with the week of 31 October");
+    assert.equal(boardLeadingWeekIsRunning("2026-10-31", "2026-10-31"), true, "the week he is in, sent and approved, is This week — not First days");
+    assert.equal(boardLeadingWeekIsRunning(boardLeadingWeek("2026-11-01", "2026-11-03"), "2026-11-03"), true, "and stays This week all week");
+    // October read by a reviewer on Thursday 24 September: the week of 26 September has not begun.
+    assert.equal(boardLeadingWeekIsRunning(boardLeadingWeek("2026-10-01", "2026-09-24"), "2026-09-24"), false, "read before it begins, the leading week is still First days");
+    assert.equal(boardLeadingWeekIsRunning(boardLeadingWeek("2026-08-01", "2026-07-29"), "2026-07-29"), true, "the running week reached from a Saturday-start month is This week, as before");
+    assert.equal(boardLeadingWeekIsRunning(null, "2026-10-31"), false);
+
+    const planner = source("src/lib/phoenix-crm/server/monthly-plans.ts");
+    assert.equal(
+      planner.match(/const leadingIsRunning = boardLeadingWeekIsRunning\(leadingWeek, today\);/g)?.length ?? 0,
+      2,
+      "the board and the answer to a save both name the running week by the same rule",
+    );
+
+    // The send keeps the board on the week it sent: without it the read after the send moves a board
+    // opened on its default week to the next, empty one.
+    const boardSource = source("src/components/phoenix-crm/plan-board.tsx");
+    const sendStart = boardSource.indexOf("async function sendWeek(state: WeekState) {");
+    const sendWeek = sendStart < 0 ? "" : boardSource.slice(sendStart, boardSource.indexOf("async function askToEdit(", sendStart));
+    assert.ok(sendWeek.length > 0, "sendWeek is found");
+    assert.match(
+      sendWeek,
+      /setWeekStart\(state\.week\.weekStart\);\s*show\(\{ tone: "good", title: `\$\{name\} sent for review`/,
+      "a successful send holds the week it sent",
+    );
   }
 
   // ── 4. The week the owner moved by hand, the same in TypeScript and SQL ─────────────────────────
