@@ -67,6 +67,9 @@ export function offerTitleForRoleTab(tab: WorkspaceRoleTab | null | undefined, b
       return "Talent Acquisition Specialist";
     case "office_coordinator":
       return "Office Coordinator";
+    // Both grades share the tab; the plain grade is the default and the composer can switch it.
+    case "personnel":
+      return "Personnel Specialist";
     default:
       return null;
   }

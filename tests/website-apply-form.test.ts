@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { SavedAudiences } from "../src/lib/recruitment/inbound/whatsapp-question-audience.ts";
-import type { ScreeningQuestion } from "../src/lib/recruitment/inbound/whatsapp-screening-questions.ts";
+import { questionsForRole, type ScreeningQuestion } from "../src/lib/recruitment/inbound/whatsapp-screening-questions.ts";
 import {
   assembleWebsiteApplyForm,
   resolveWebsiteApplyRole,
@@ -89,6 +90,7 @@ export function runWebsiteApplyFormTests() {
     "quality_control_analyst",
     "office_coordinator",
     "product_manager",
+    "personnel",
   ]);
   const ocRole = resolveWebsiteApplyRole("office_coordinator");
   assert.ok(ocRole, "the Office Coordinator position must resolve on the careers form");
@@ -519,4 +521,89 @@ export function runWebsiteApplyFormTests() {
     answers: { ...pmBase.answers, "extra:pm_experience": "" },
   });
   assert.equal(pmSkipped.ok, false, "leaving the gate question blank is refused");
+
+  runPersonnelSpecialistFormTests();
+}
+
+// ── Personnel Specialist / Senior Personnel Specialist (owner, 2026-10-31) ─────────────────────────
+// One careers key for both grades; the first extra question asks which. The questions and audiences
+// below are the rows 20261031194736_ats_personnel_specialist_hiring.sql writes, read back from the file
+// itself so a later edit to the migration cannot leave this fixture describing a different flow.
+function runPersonnelSpecialistFormTests() {
+  const role = resolveWebsiteApplyRole("personnel");
+  assert.ok(role, "the Personnel position must resolve on the careers form");
+  assert.equal(role.roleFamily, "personnel", "it is asked the personnel family's own questions");
+  assert.equal(role.jobTitle, "Personnel Specialist", "the stored job title is what the WhatsApp tap writes");
+  assert.match(role.title, /Senior Personnel Specialist/, "the careers heading names both grades");
+
+  const migration = readFileSync("supabase/migrations/20261031194736_ats_personnel_specialist_hiring.sql", "utf8");
+  const newKeys = ["pers_position", "pers_years", "pers_headcount", "pers_insurance_forms", "pers_payroll_inputs", "pers_labour_office"];
+  for (const key of newKeys) assert.ok(migration.includes(`'${key}'`), `the migration writes ${key}`);
+  assert.ok(migration.includes("array['personnel'], v.button_label, null::jsonb, null::jsonb"),
+    "every new question is scoped to personnel alone, with no show_if and NO end_on — no answer turns anybody away");
+  assert.ok(!/end_on\s*=/.test(migration), "and no statement gives any row an end_on afterwards");
+  const widened = ["oc_ms_office_outlook", "hr_residence_region", "field_age_band", "hr_sheraton_commute", "hrsh_pharma", "hrsh_current_salary", "oc_start_date"];
+  assert.ok(migration.includes(`where question_key in (${widened.map((k) => `'${k}'`).join(", ")})`),
+    "the seven shared questions are widened, never copied (one question, one name)");
+  assert.ok(/where question_key = 'salary'/.test(migration), "the built-in expected salary is switched on for the seat");
+  assert.ok(!/where question_key = '(experience|background)'/.test(migration), "experience and background are not");
+
+  // Production's saved audiences after the migration: salary lists personnel; experience and
+  // background do not (pers_years replaces the generic experience question for this seat).
+  const audiences: SavedAudiences = new Map<string, readonly string[]>([
+    ["area", ["medical_rep", "district_manager", "area_regional_manager", "national_sales_manager", "sales"]],
+    ["background", ["medical_rep", "other", "hr_section_head", "office_coordinator"]],
+    ["experience", ["medical_rep", "district_manager", "office_coordinator", "human_resources", "talent_acquisition"]],
+    ["region", ["medical_rep", "district_manager", "area_regional_manager", "national_sales_manager", "sales"]],
+    ["salary", ["medical_rep", "district_manager", "office_coordinator", "human_resources", "talent_acquisition", "personnel"]],
+  ]);
+  const twoOptions = [
+    { description: null, title: "Yes", value: "yes" },
+    { description: null, title: "No", value: "no" },
+  ];
+  const pq = (questionKey: string, sortOrder: number, families: string[] = ["personnel"]): ScreeningQuestion => ({
+    appliesToRoleFamilies: families,
+    bodyText: `${questionKey}?`,
+    endOn: null,
+    id: questionKey,
+    isActive: true,
+    kind: "tappable",
+    options: twoOptions,
+    questionKey,
+    showIf: null,
+    sortOrder,
+  });
+  const extras: ScreeningQuestion[] = [
+    // Listed out of order on purpose: the live read (listActiveScreeningQuestions) sorts by sort_order
+    // and scopes by family, and that is reproduced below exactly as it does it.
+    pq("oc_start_date", 300, ["office_coordinator", "medical_rep", "personnel"]),
+    pq("pers_labour_office", 94),
+    pq("pers_payroll_inputs", 93),
+    pq("pers_insurance_forms", 92),
+    pq("pers_headcount", 91),
+    pq("pers_years", 90),
+    pq("pers_position", 2),
+    pq("oc_ms_office_outlook", 3, ["office_coordinator", "personnel"]),
+    pq("hr_residence_region", 8, ["human_resources", "talent_acquisition", "personnel"]),
+    pq("field_age_band", 10, ["medical_rep", "office_coordinator", "personnel"]),
+    pq("hr_sheraton_commute", 11, ["human_resources", "talent_acquisition", "personnel"]),
+    pq("hrsh_pharma", 103, ["hr_section_head", "personnel"]),
+    { ...pq("hrsh_current_salary", 106, ["hr_section_head", "personnel"]), kind: "free_text", options: null },
+    // Another seat's question never reaches a Personnel applicant.
+    pq("hr_ats_experience", 12, ["human_resources", "talent_acquisition", "hr_section_head"]),
+  ];
+  const scoped = questionsForRole([...extras].sort((a, b) => a.sortOrder - b.sortOrder), role.roleFamily);
+  const form = assembleWebsiteApplyForm(role, audiences, scoped, AREAS_BY_REGION);
+  assert.deepEqual(
+    form.fields.map((field) => field.key),
+    [
+      "full_name", "email", "phone", "cv", "salary",
+      "extra:pers_position", "extra:oc_ms_office_outlook", "extra:hr_residence_region", "extra:field_age_band",
+      "extra:hr_sheraton_commute", "extra:pers_years", "extra:pers_headcount", "extra:pers_insurance_forms",
+      "extra:pers_payroll_inputs", "extra:pers_labour_office", "extra:hrsh_pharma", "extra:hrsh_current_salary",
+      "extra:oc_start_date",
+    ],
+    "the Personnel seat is asked the expected salary, then its fourteen-question flow in sort order — no experience, no background, nothing from another seat",
+  );
+  assert.ok(form.fields.every((field) => !field.endOn), "no field on this form can end the application");
 }

@@ -61,6 +61,8 @@ const MEDICAL_REP = "33333333-3333-4333-8333-333333333333";
 const TA_PLACED = "44444444-4444-4444-8444-444444444444";
 const DECLARED_TA = "55555555-5555-4555-8555-555555555555";
 const UNPLACED_UNKNOWN = "66666666-6666-4666-8666-666666666666";
+const DECLARED_PERSONNEL = "77777777-7777-4777-8777-777777777777";
+const PERSONNEL_PLACED = "88888888-8888-4888-8888-888888888888";
 
 const PEOPLE: FencePersonRow[] = [
   { ats_candidate_placements: [{ role_tab: "hr_section_head" }], declared_role_family: null, id: HR_PLACED },
@@ -70,6 +72,9 @@ const PEOPLE: FencePersonRow[] = [
   { ats_candidate_placements: [{ role_tab: "medical_rep" }, { role_tab: "talent_acquisition" }], declared_role_family: null, id: TA_PLACED },
   { ats_candidate_placements: null, declared_role_family: "talent_acquisition", id: DECLARED_TA },
   { ats_candidate_placements: null, declared_role_family: null, id: UNPLACED_UNKNOWN },
+  // The Personnel seat (2026-10-31) is an HR seat: hidden by its tap before placing, and by its tab after.
+  { ats_candidate_placements: null, declared_role_family: "personnel", id: DECLARED_PERSONNEL },
+  { ats_candidate_placements: [{ role_tab: "personnel" }], declared_role_family: null, id: PERSONNEL_PLACED },
 ];
 
 function runDecisionTests() {
@@ -84,7 +89,9 @@ function runDecisionTests() {
   assert.ok(hiddenFromTa.has(DECLARED_TA), "a careers-form Talent Acquisition application is hidden before it is placed");
   assert.ok(!hiddenFromTa.has(MEDICAL_REP), "TA sees a Medical Rep applicant");
   assert.ok(!hiddenFromTa.has(UNPLACED_UNKNOWN), "a person whose role is not known yet is not an HR applicant");
-  assert.equal(hiddenFromTa.size, 4);
+  assert.ok(hiddenFromTa.has(DECLARED_PERSONNEL), "TA never sees a Personnel applicant, even before placing");
+  assert.ok(hiddenFromTa.has(PERSONNEL_PLACED), "nor one placed in the Personnel tab");
+  assert.equal(hiddenFromTa.size, 6);
 
   // The same rule, asked one person at a time — the role-tabs contract the SQL filter mirrors.
   assert.equal(personVisibleToViewer(ta, { declaredRoleFamily: null, placementTabs: ["hr_section_head"] }), false);

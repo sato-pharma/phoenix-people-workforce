@@ -37,6 +37,7 @@ const ROLE_MATCHERS: Record<WebsiteApplyRoleKey, RegExp> = {
   medical_representative: /medical.*rep/i,
   national_sales_manager: /national.*sales.*manager/i,
   office_coordinator: /office.*coordinator/i,
+  personnel: /personnel/i,
   product_manager: /product.*manager/i,
   quality_control_analyst: /quality.*control/i,
   regulatory_affairs_specialist: /regulatory.*affairs/i,

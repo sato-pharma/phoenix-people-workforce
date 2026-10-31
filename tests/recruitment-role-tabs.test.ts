@@ -1,4 +1,4 @@
-// Pins src/lib/recruitment/workspace/role-tabs.ts — the eight tabs the owner named on 20 Oct 2026, the
+// Pins src/lib/recruitment/workspace/role-tabs.ts — the tabs the owner named on 20 Oct 2026 (Personnel joined 31 Oct), the
 // bot-family -> tab map that files every applicant from their OWN reply, and who sees which tab.
 //
 // Why each case matters:
@@ -38,6 +38,7 @@ const EXPECTED_MAP: Record<string, string | null> = {
   national_sales_manager: "rm_am_nsm",
   office_coordinator: "office_coordinator",
   other: "other",
+  personnel: "personnel",
   pharmacist: "other",
   product_manager: "product_manager",
   sales: "other",
@@ -52,8 +53,8 @@ export function runRecruitmentRoleTabsTests() {
   // ── The tabs, in his order, each with a label ──
   assert.deepEqual(
     [...workspaceRoleTabs],
-    ["medical_rep", "district_manager", "product_manager", "rm_am_nsm", "hr_section_head", "talent_acquisition", "office_coordinator", "other"],
-    "the eight tabs, in the owner's order",
+    ["medical_rep", "district_manager", "product_manager", "rm_am_nsm", "hr_section_head", "talent_acquisition", "office_coordinator", "personnel", "other"],
+    "the nine tabs, in the owner's order (Personnel added 2026-10-31 with its opening)",
   );
   for (const tab of workspaceRoleTabs) assert.ok(workspaceRoleTabLabels[tab], `${tab} has a label`);
   assert.equal(workspaceRoleTabLabels.rm_am_nsm, "RM/AM + NSM");
@@ -83,7 +84,7 @@ export function runRecruitmentRoleTabsTests() {
   assert.equal(superAdmin.canRead, true);
   assert.equal(superAdmin.canWork, true);
   assert.equal(superAdmin.hidesHrPeople, false);
-  assert.deepEqual(superAdmin.roleTabs, [...workspaceRoleTabs], "the Super Admin sees all eight");
+  assert.deepEqual(superAdmin.roleTabs, [...workspaceRoleTabs], "the Super Admin sees all nine");
 
   const ta = viewerFor("HR Resourcing");
   assert.equal(ta.canRead, true);

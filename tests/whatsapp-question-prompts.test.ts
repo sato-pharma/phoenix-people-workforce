@@ -597,16 +597,18 @@ export async function runWhatsAppQuestionPromptsTests() {
   // rows — full at the ceiling. hr_section_head made it thirteen on 2026-10-06 and took the slot the
   // Finance row held; the Human Resources row was then taken off the menu the same day, so the menu
   // sends nine and `human_resources`, `finance`, `sales` and `pharmacist` are the four still off it.
-  // The pool stays thirteen, because a removed row is still an answer the system understands. A pool
+  // personnel made it fourteen on 2026-10-31 and is OFFERED, so the menu sends ten again — full at the
+  // ceiling — with the same four still off it.
+  // The pool stays fourteen, because a removed row is still an answer the system understands. A pool
   // is allowed to be larger than a list, because a pool is not a message: what is pinned is the
   // count, not the ceiling.
   //
   // What must hold is that the save-time check is the thing standing between an admin and a 400:
-  // switching on all thirteen is refused, and any ten still save.
-  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 3, "thirteen answers exist; one list holds ten");
+  // switching on all fourteen is refused, and any ten still save.
+  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 4, "fourteen answers exist; one list holds ten");
   assert.ok(
     configCheck([], jobAllowed).some((problem) => problem.includes(String(WHATSAPP_LIST_MAX_ROWS))),
-    "switching on all thirteen answers must be refused at save time — the message would 400",
+    "switching on all fourteen answers must be refused at save time — the message would 400",
   );
   assert.deepEqual(
     configCheck([], jobAllowed.slice(0, WHATSAPP_LIST_MAX_ROWS)),
@@ -1029,7 +1031,10 @@ export async function runWhatsAppQuestionPromptsTests() {
           // The fifth and sixth gestures, added 2026-10-03: the button WhatsApp draws under the
           // message and the heading it prints above the answers.
           buttonLabel: "اختر الوظيفة",
-          hiddenOptions: ["human_resources", "pharmacist"],
+          // `personnel` (offered by default since 2026-10-31) is hidden by this admin: naming `sales`
+          // in its place keeps the saved order at ten, and an offered answer left out of the order
+          // would be APPENDED after "other" as an eleventh row.
+          hiddenOptions: ["human_resources", "pharmacist", "personnel"],
           optionLabels: { medical_rep: { description: "Field force", title: "Medical Rep" } },
           optionOrder: [
             "medical_rep",

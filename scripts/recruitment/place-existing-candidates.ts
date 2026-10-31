@@ -102,6 +102,7 @@ function tabLabel(tab: WorkspaceRoleTab | null): string {
     medical_rep: "Medical Rep",
     office_coordinator: "Office Coordinator",
     other: "Other",
+    personnel: "Personnel",
     product_manager: "Product Manager",
     rm_am_nsm: "RM / AM / NSM",
     talent_acquisition: "Talent Acquisition",

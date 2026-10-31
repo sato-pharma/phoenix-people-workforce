@@ -410,9 +410,10 @@ export function runWhatsAppSelfClassificationTests() {
       "hr_section_head",
       "talent_acquisition",
       "office_coordinator",
+      "personnel",
       "other",
     ].map((family) => classifyRowId("job_title", family)),
-    "the role menu must offer exactly the owner's nine roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22, HR Section Head added 2026-10-06 in the slot Finance held, and the Human Resources row removed 2026-10-06 at his instruction)",
+    "the role menu must offer exactly the owner's ten roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22, HR Section Head added 2026-10-06 in the slot Finance held, the Human Resources row removed 2026-10-06 at his instruction, and Personnel Specialist added 2026-10-31 in the last free slot)",
   );
   assert.ok(
     !roleMenu.rows.some((row) => row.id === classifyRowId("job_title", "human_resources")),

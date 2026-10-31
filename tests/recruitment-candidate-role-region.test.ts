@@ -138,10 +138,19 @@ export function runCandidateRoleRegionTests() {
 
   assert.equal(candidateRoleFamily("Product Manager (Respiratory & Anti-Infective)"), "product_manager");
   assert.equal(candidateRoleFamily("Senior HR Generalist"), "human_resources");
-  assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist"), "human_resources",
-    "payroll and personnel are HR work here, not finance");
+  // Personnel splits out of Human Resources (2026-10-31, the Personnel Specialist opening): a title
+  // naming payroll or personnel work is that seat's job, even when it also says HR — and still never
+  // Finance. A title naming the recruiting work keeps Talent Acquisition, which is tested first.
+  assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist"), "personnel",
+    "payroll and personnel are the Personnel seat's work, not finance");
+  assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist | HR Operations | Comp & Ben"), "personnel",
+    "the personnel word wins over a bare HR mention — it is the applied-for job");
+  assert.equal(candidateRoleFamily("HR & Payroll Officer"), "personnel");
+  assert.equal(candidateRoleFamily("Payroll Accountant"), "personnel", "payroll is HR work here, tested before finance");
+  assert.equal(candidateRoleFamily("Personnel & Recruitment Specialist"), "talent_acquisition",
+    "the recruiting word is tested first, so this title keeps the family it had");
   // Talent Acquisition splits out of Human Resources (2026-09-22): a title naming the recruiting
-  // work lands in its own family, while payroll/personnel/bare-HR stay Human Resources.
+  // work lands in its own family, while bare-HR stays Human Resources.
   assert.equal(candidateRoleFamily("Talent Acquisition Specialist"), "talent_acquisition");
   assert.equal(candidateRoleFamily("Senior Recruiter"), "talent_acquisition");
   assert.equal(candidateRoleFamily("Recruitment Coordinator"), "talent_acquisition");
@@ -157,7 +166,7 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRoleFamily("Section Head of Human Resources"), "hr_section_head");
   assert.equal(candidateRoleFamily("HR Manager"), "human_resources", "an HR Manager is not the section-head seat");
   assert.equal(candidateRoleFamily("Head of HR"), "human_resources", "Head of HR keeps the family it had");
-  assert.equal(candidateRoleFamily("Personnel Section Head"), "human_resources", "a personnel section is HR operations");
+  assert.equal(candidateRoleFamily("Personnel Section Head"), "personnel", "a personnel section head is the Personnel family's senior end");
   assert.equal(candidateRoleFamily("Sales Section Head"), "sales", "a section head outside HR is untouched");
   assert.equal(candidateRoleFamily("Senior Tax & Accounts Payable"), "finance");
   assert.equal(candidateRoleFamily("\u0645\u062d\u0627\u0633\u0628 \u0639\u0627\u0645"), "finance", "Arabic accountant");

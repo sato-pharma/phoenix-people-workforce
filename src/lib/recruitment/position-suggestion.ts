@@ -143,7 +143,15 @@ function placeMatchFor(input: SuggestionInput, vacancy: VacancyOption): PlaceMat
 const TITLE_FAMILIES: Array<{ family: string; cv: RegExp; seat: RegExp }> = [
   { cv: /regulator|registration|pharmacovigilance/, family: "regulatory", seat: /regulator/ },
   {
-    cv: /\bhr\b|human resource|recruit|talent|personnel|people operations|people partner/,
+    // The Personnel seat (opened 2026-10-31), tested BEFORE the broad HR family below: that family
+    // claims any CV saying "HR", and its seat pattern reads no personnel title, so a Personnel
+    // requisition would have matched no family at all and a payroll CV would have been told "keep".
+    cv: /personnel|payroll|social insurance/,
+    family: "personnel",
+    seat: /personnel|payroll/,
+  },
+  {
+    cv: /\bhr\b|human resource|recruit|talent|people operations|people partner/,
     family: "talent-acquisition",
     seat: /talent|recruit|human resource/,
   },
