@@ -1,6 +1,8 @@
-// TOTAL YEARS OF EXPERIENCE — HR's field (owner, 2026-10-31: "make the HR the one responsible for
-// filling it"). All the years a person has worked in the role, at Sato and before. The Team Coaching
-// Skills Survey reads it as "Years in Role"; nobody else types it.
+// TOTAL YEARS OF EXPERIENCE (owner, 2026-10-31). All the years a person has worked in the role, at
+// Sato and before. HR fills it on the Employee Master, and — his later word the same evening, "make
+// hr or dm can fill years of experience of the rep" — the team member's own District Manager may fill
+// or correct it on the Team Coaching Skills Survey form, which reads it as "Years in Role". Nobody else
+// types it.
 //
 // Two columns on `employees`: `total_experience_years` (0 to 60, one decimal) and
 // `total_experience_as_of`, the Cairo day the number last changed, stamped by the trigger
@@ -62,7 +64,7 @@ export function totalExperienceFor(
   return key ? byHrId.get(key) ?? null : null;
 }
 
-/** Saves HR's value. The trigger stamps the as-of day. */
+/** Saves the value (HR's, or the District Manager's from the survey). The trigger stamps the as-of day. */
 export async function saveTotalExperienceYears(hrId: string, years: number | null): Promise<void> {
   const { error } = await getSupabaseAdmin()
     .from("employees")
