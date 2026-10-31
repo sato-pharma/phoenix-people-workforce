@@ -57,6 +57,7 @@ import {
   singleVisitHalfOfHour,
   managerPlanStatusLine,
   managerPlanSummaryText,
+  managerPlanOpeningWeek,
   managerPlanWeeks,
   managerWeekPassed,
   managerWeekState,
@@ -74,6 +75,7 @@ import {
   visitPlaceText,
   managerPlanWithYou,
   holdsPlannedDoctors,
+  type ManagerPlanStatus,
 } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
 import {
   MANAGER_VISIT_DETAIL_FIXED_OTHER,
@@ -285,6 +287,16 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // offered too (sent late, stamped late); on the Friday it is gone.
   assert.deepEqual(managerPlanWeeks(FRIDAY), ["2026-10-17"], "on a Friday only the coming week is offered");
   assert.deepEqual(managerPlanWeeks("2026-10-15"), ["2026-10-10", "2026-10-17"], "on the Thursday the week he is in is still offered, beside the coming one");
+  // The week the board opens on (owner, 2026-10-31): the week he is in while it is sent and the coming one
+  // is not started — Saad Salama met an empty coming week on Saturday and could not find his approved one.
+  const SATURDAY = "2026-10-31";
+  const opens = (statuses: Record<string, ManagerPlanStatus>) => managerPlanOpeningWeek(SATURDAY, (week) => statuses[week] ?? null);
+  assert.equal(opens({ "2026-10-31": "approved" }), "2026-10-31", "an approved week he is in, nothing started next: it opens on his week");
+  assert.equal(opens({ "2026-10-31": "submitted" }), "2026-10-31", "a sent week he is in counts as well");
+  assert.equal(opens({ "2026-10-31": "approved", "2026-11-07": "draft" }), "2026-11-07", "once he starts the coming week it opens there");
+  assert.equal(opens({ "2026-10-31": "draft" }), "2026-11-07", "a week he is in that was never sent does not hold the board");
+  assert.equal(opens({}), "2026-11-07", "nothing anywhere: the coming week, as before");
+  assert.equal(managerPlanOpeningWeek(FRIDAY, () => "approved"), "2026-10-17", "on a Friday only the coming week is offered");
   assert.equal(managerWeekState({ weekStart: "2026-10-17", cairoToday: FRIDAY, status: null, editAsked: false }), "plan");
   assert.equal(managerWeekState({ weekStart: "2026-10-17", cairoToday: FRIDAY, status: "submitted", editAsked: false }), "sent");
   assert.equal(managerWeekState({ weekStart: "2026-10-17", cairoToday: FRIDAY, status: "approved", editAsked: true }), "asked");

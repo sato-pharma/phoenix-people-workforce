@@ -45,6 +45,7 @@ import {
   managerPlanStage,
   managerPlanStatusLabel,
   managerPlanStatusLine,
+  managerPlanOpeningWeek,
   managerPlanWeekName,
   managerPlanWeeks,
   isSeatlessPlannerKind,
@@ -932,10 +933,19 @@ export async function loadManagerPlanBoard(
   const isTest = testModeFor(viewer, raw.test);
   const reader = resolveManagerPlanReader(viewer, raw.manager);
   const asked = typeof raw.week === "string" && raw.week.trim() ? raw.week.trim() : null;
-  const weeks = managerPlanWeeks(viewer.cairoToday);
-  const weekStart = asked ?? weeks[weeks.length - 1];
+  const weekStart = asked ?? (await openingWeekFor(viewer, reader.managerHrId, isTest));
   if (!isManagerPlanWeek(weekStart, viewer.cairoToday)) throw validationError("Choose one of the weeks shown. Reload the page.");
   return buildBoard(viewer, isTest, reader, weekStart, raw.scope ?? null);
+}
+
+/** The week a board opens on when the request names none (`managerPlanOpeningWeek`). */
+async function openingWeekFor(viewer: PhoenixCrmViewer, managerHrId: string | null, isTest: boolean): Promise<string> {
+  const weeks = managerPlanWeeks(viewer.cairoToday);
+  if (!managerHrId || weeks.length < 2) return weeks[weeks.length - 1];
+  const statuses = new Map(
+    await Promise.all(weeks.map(async (week) => [week, (await loadWeekPlanRows([managerHrId], week, isTest))[0]?.status ?? null] as const)),
+  );
+  return managerPlanOpeningWeek(viewer.cairoToday, (week) => statuses.get(week) ?? null);
 }
 
 /**
