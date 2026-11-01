@@ -31,7 +31,7 @@
 ## Inbox — new notes land here
 - [Same name on a seat is not the same doctor](same-name-on-a-seat-does-not-prove-the-same-doctor.md) - 759 first-run pairs; never merge by name.
 - [A heredoc can eat a SQL regex's backslash](a-bash-heredoc-can-eat-the-backslash-of-a-sql-regex.md) - 164 instead of 759, no error; use `[[:space:]]+`.
-- [A returning leaver is a new employee](a-returning-leaver-is-a-new-employee.md) - new record and HR ID, old one stays resigned; only a current record's ID or mobile blocks the joining form (fix on codex/returning-leaver-joining-form).
+- [A returning leaver is a new employee](a-returning-leaver-is-a-new-employee.md) - new record and HR ID, old one stays resigned; only a current record's ID or mobile blocks the joining form.
 
 
 

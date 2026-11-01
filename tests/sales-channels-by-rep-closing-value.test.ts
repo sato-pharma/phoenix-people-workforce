@@ -45,8 +45,41 @@ function newestBody(name: string): { body: string; file: string } {
 
 const SRC = readFileSync(path.join(process.cwd(), "src/lib/sales/channels-by-rep.ts"), "utf8");
 
+// Staging, 2026-11-01, the pricing alone over the whole history: 8,043 ms and 29,849,634 rows removed
+// by the two "is not distinct from" that used to join the lookup, 2,365 ms on one concatenated key,
+// the same 70984571.286685 over the same 168,642 rows. Neither enable_nestloop nor a better estimate
+// can help the old shape: that operator cannot hash or merge.
+function assertPriceJoinCanHash(body: string, file: string): void {
+  assert.ok(
+    body.includes("left join period_price pp on pp.pair = r.product_code || '|' || r.invoice_period"),
+    `RED Channels by Rep must join the price lookup on one concatenated key, which can hash (${file})`,
+  );
+  assert.ok(
+    !/pp\.[a-z_]+ is not distinct from/.test(body),
+    `RED Channels by Rep must not join the price lookup with "is not distinct from", which cannot hash (${file})`,
+  );
+  assert.ok(
+    /<> all \(array\( ?select upper\(btrim\(code\)\) from unnest\(coalesce\(p_excluded_product_codes, '\{\}'\)\) code ?\)\)/.test(body),
+    `RED Channels by Rep must test its excluded codes through array( … ), resolved once per call: a bare sublink ran 47,769 times (${file})`,
+  );
+}
+
 export function runSalesChannelsByRepClosingValueTests() {
   const { body, file } = newestBody("phx_sales_channels_by_rep");
+
+  assertPriceJoinCanHash(body, file);
+  const broke = (nextBody: string, expect: RegExp) => {
+    assert.throws(() => assertPriceJoinCanHash(nextBody, file), expect);
+  };
+  broke(
+    body.replace(
+      "on pp.pair = r.product_code || '|' || r.invoice_period",
+      "on pp.product_code is not distinct from r.product_code and pp.invoice_period is not distinct from r.invoice_period",
+    ),
+    /one concatenated key/,
+  );
+  broke(body.replace("where (p_period is null", "where pp.pair is not distinct from r.product_code and (p_period is null"), /must not join the price lookup/);
+  broke(body.replace("<> all (array(", "<> all (("), /through array\( … \)/);
 
   // ── The headline: a distributor row is paid units x factory price, a direct order its own value ──
   //
