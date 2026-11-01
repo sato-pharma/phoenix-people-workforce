@@ -8,6 +8,9 @@ import { owesAWeeklyPlan } from "../src/lib/daily-deductions/no-weekly-plan-sele
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 import { PHOENIX_CRM_EMAIL_EVENT_TYPES, PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES } from "../src/lib/notifications/phoenix-crm-channel-guard.ts";
 import { fieldWeekStart, weekdayOfIsoDay } from "../src/lib/phoenix-crm/calendar.ts";
+import { buildPlanVsActual, type ManagerDayPlan } from "../src/lib/phoenix-crm/manager-day-plan.ts";
+import type { ManagerDayVisit } from "../src/lib/phoenix-crm/manager-visit-detail.ts";
+import type { ManagerSlotKind } from "../src/lib/phoenix-crm/manager-plan-rules.ts";
 import {
   ceoHrIdOf,
   countManagerOutcomes,
@@ -26,6 +29,8 @@ import {
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   isManagerAskLive,
   managerEvidenceKey,
+  managerCustomersOptional,
+  visitsAnsweringAnArea,
   managerVisitWindow,
   dmPlansInPhoenixCrmFor,
   dmSingleVisitCapError,
@@ -715,7 +720,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // The board: a rep whose half emptied stays selectable while his ticks remain, and Mark all needs a customer.
   const board = source("src/components/phoenix-crm/manager-plan-board.tsx");
   const withRepPart = functionBody(board, "function WithRepPart(");
-  assert.match(withRepPart, /const disabled = !canEdit \|\| \(nothingToTick && rep\.seatId !== keptSeatId\);/, "the rep he already ticked customers of stays selectable");
+  assert.match(withRepPart, /const disabled = !canEdit \|\| \(!view\.customersOptional && nothingToTick && rep\.seatId !== keptSeatId\);/, "the rep he already ticked customers of stays selectable");
   assert.match(withRepPart, /\{chosen \|\| dropped\.length > 0 \? \(/, "the dropped customers are shown even when the rep's half is empty");
   assert.match(withRepPart, /disabled=\{tickable\.length === 0\}/, "Mark all is off when the rep has nobody on that half he can tick");
   assert.match(board, /useEffect\(\(\) => \(\) => onHidden\(\), \[\]\);/, "an edit made just before the board leaves the screen is sent on the way out");
@@ -2367,4 +2372,97 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     /check \(module in \('direct_orders', 'marketing_requests', 'manager_plans'\)\)/,
     "the table accepts the week's messages, or every post would fail on its check",
   );
+
+  // Owner, 2026-11-01: "group product manager can optional choose customers or can only choose the area without
+  // custromers also she can optionally plan am and pm"; asked who, "rasha only and nsms".
+  assert.equal(managerCustomersOptional("nsm", false), true, "a national sales manager's customers are optional");
+  assert.equal(managerCustomersOptional("pm", true), true, "the Group Product Manager's customers are optional");
+  assert.equal(managerCustomersOptional("pm", false), false, "a Product Manager still names them");
+  assert.equal(managerCustomersOptional("rsm", false), false, "a regional manager still names them");
+  assert.equal(managerCustomersOptional("dm", false), false, "a district manager still names them");
+  assert.equal(managerCustomersOptional("tm", false), false, "the Training Manager keeps her own rule");
+  assert.equal(managerCustomersOptional("rsm", true), false, "the role is read only for a product manager");
+
+  const optionalRep = { date: "2026-10-17", half: "AM", kind: "with_rep", repSeatId: D11.seatId, customers: [] };
+  const optionalArea = { date: "2026-10-17", half: "AM", kind: "single_visit", areaSeatId: D12.seatId, customers: [] };
+  assert.equal(parseManagerSlotDraft(optionalRep, { customersOptional: true }).ok, true, "the rep alone saves where customers are optional");
+  assert.equal(parseManagerSlotDraft(optionalArea, { customersOptional: true }).ok, true, "the area alone saves where customers are optional");
+  assert.equal(parseManagerSlotDraft(optionalRep, { customersOptional: false }).ok, false, "the rep alone is refused everywhere else");
+  assert.equal(parseManagerSlotDraft(optionalArea).ok, false, "the area alone is refused everywhere else");
+  assert.equal(parseManagerSlotDraft({ ...optionalRep, repSeatId: undefined }, { customersOptional: true }).ok, false, "the rep is never optional");
+  assert.equal(parseManagerSlotDraft({ ...optionalArea, areaSeatId: undefined }, { customersOptional: true }).ok, false, "the area is never optional");
+
+  // AM only or PM only: a morning left empty with its afternoon ahead walks on; the day's last half still says so.
+  const emptyMorning = { dayText: "Wednesday", half: "AM" as const, problem: null, chosenScopeName: "Hany Saad", dayHasAPlan: false };
+  assert.equal(managerNextHold({ ...emptyMorning, leavesTheDay: false }), null, "a plan for the afternoon only meets no warning on the morning");
+  assert.equal(managerNextHold({ ...emptyMorning, half: "PM", leavesTheDay: true })?.once, true, "leaving the whole day empty still warns once");
+  assert.equal(
+    managerNextHold({ ...emptyMorning, problem: "choose the rep", leavesTheDay: false })?.once,
+    false,
+    "an unfinished half is never walked past, whichever half it is",
+  );
+
+  // What each half-day that names no customer is answered by, and counted under.
+  assert.equal(
+    managerEvidenceKey({ kind: "with_rep", repSeatId: "S-1", date: "2026-10-26", customerId: null, managerCustomerId: null, repAlone: true }),
+    "tmrep|S-1|2026-10-26",
+    "the rep alone is one row, one visit of his answers it",
+  );
+  assert.equal(
+    managerEvidenceKey({ kind: "with_rep", repSeatId: "S-1", date: "2026-10-26", customerId: null, managerCustomerId: null }),
+    null,
+    "a with-a-rep customer row with no customer is not evidence",
+  );
+  assert.equal(
+    managerEvidenceKey({ kind: "single_visit", repSeatId: null, date: "2026-10-26", customerId: null, managerCustomerId: null, areaSeatId: "T-1" }),
+    "ownarea|2026-10-26|T-1",
+    "the area alone is one row, keyed by the area",
+  );
+  assert.equal(
+    managerEvidenceKey({ kind: "single_visit", repSeatId: null, date: "2026-10-26", customerId: "c1", managerCustomerId: null, areaSeatId: "T-1" }),
+    "own|2026-10-26|c:c1",
+    "a named customer keeps his own key",
+  );
+
+  const loggedVisits = [
+    { id: "on-the-day", managerHrId: "A-8", visitDate: "2026-10-26", isUnplanned: true },
+    { id: "planned-elsewhere", managerHrId: "A-8", visitDate: "2026-10-26", isUnplanned: false },
+    { id: "another-day", managerHrId: "A-8", visitDate: "2026-10-27", isUnplanned: true },
+    { id: "another-person", managerHrId: "B-155", visitDate: "2026-10-26", isUnplanned: true },
+  ];
+  assert.deepEqual(
+    visitsAnsweringAnArea(loggedVisits, "A-8", "2026-10-26").map((visit) => visit.id),
+    ["on-the-day"],
+    "the area alone is answered by what he logged off the plan that day, nobody else's and no other day's",
+  );
+
+  // The day page agrees with the report: the row is answered by a visit, and no visit reads "Not on the plan" beside it.
+  const dayVisit = (over: Partial<ManagerDayVisit>) => ({ id: "v1", source: "own", kind: "single_visit", planned: false, bucket: "AM", loggedHalf: "AM", customerKey: "c:c1", customerName: "Dr. Mona", withPeople: [], ...over }) as unknown as ManagerDayVisit;
+  const dayPlanOf = (kind: ManagerSlotKind, name: string): ManagerDayPlan => ({
+    sent: true,
+    statusLine: "Sent",
+    halves: [{ half: "AM", kind, kindLabel: "Label", title: "Title", note: null, customers: [{ key: null, name, own: false, flagLabel: null, outcome: "done", outcomeLabel: "Done", place: null }] }],
+  });
+  const areaDay = buildPlanVsActual(dayPlanOf("single_visit", "Nasr City"), [dayVisit({ id: "v1" }), dayVisit({ id: "v2", customerKey: "c:c2", customerName: "Dr. Salma" })]);
+  assert.equal(areaDay.rows.find((row) => row.plan)?.actual?.id, "v1", "the area's row shows the visit that answers it");
+  assert.equal(areaDay.summary.unplanned, 0, "a second customer of the area is not an unplanned visit");
+  assert.deepEqual(areaDay.rows.map((row) => row.outcomeLabel), ["Done", "On the plan"], "and it never reads Not on the plan");
+  const repDay = buildPlanVsActual(dayPlanOf("with_rep", "Ahmed Ali"), [dayVisit({ id: "v3", source: "ride_along", withPeople: [{ name: "Ahmed Ali", role: "Rep" }] })]);
+  assert.equal(repDay.rows.find((row) => row.plan)?.actual?.id, "v3", "the rep's row shows the visit with that rep");
+  assert.equal(repDay.summary.unplanned, 0, "and that visit is not unplanned");
+  const nobodyPlanned = buildPlanVsActual({ ...dayPlanOf("single_visit", "Nasr City"), halves: [] }, [dayVisit({ id: "v4" })]);
+  assert.equal(nobodyPlanned.summary.unplanned, 1, "with no area on the plan, an off-plan visit stays unplanned");
+
+  // The screens and the save carry the option, and it comes from the role, never from the request's body.
+  const optionalBoard = source("src/components/phoenix-crm/manager-plan-board.tsx");
+  assert.match(optionalBoard, /!byRegion && !customersOptional && draft\.customers\.length === 0/, "the board lets the rep go alone");
+  assert.match(optionalBoard, /!customersOptional && draft\.customers\.length === 0\) return "choose at least one customer"/, "the board lets the area go alone");
+  assert.match(optionalBoard, /!view\.customersOptional && nothingToTick/, "a rep with nothing to tick stays pickable where the rep alone is enough");
+  assert.match(optionalBoard, /leavesTheDay: day\.halves\.indexOf\(currentHalf\) === day\.halves\.length - 1/, "Next knows when it leaves the day");
+  assert.match(optionalBoard, /AM and PM are each optional\. Plan one of them or both\./, "the screen says AM and PM are each optional");
+  const optionalPlans = source("src/lib/phoenix-crm/server/manager-plans.ts");
+  assert.match(optionalPlans, /parseManagerSlotDraft\(body, \{ customersOptional: plansCustomersOptional\(viewer, writer\) \}\)/, "the save decides it on the server");
+  assert.match(optionalPlans, /viewer\.role === GROUP_PRODUCT_MANAGER_PLAN_ROLE/, "the role tells the Group Product Manager from a Product Manager");
+  const optionalMigration = readFileSync(join(process.cwd(), "supabase/migrations/20261101132835_phoenix_crm_manager_plan_optional_customers.sql"), "utf8");
+  assert.match(optionalMigration, /not in \('tm', 'nsm', 'pm'\)/, "the database refuses the empty half-day for everyone else");
 }

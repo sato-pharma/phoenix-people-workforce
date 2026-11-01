@@ -67,6 +67,8 @@ import {
   MANAGER_PLAN_REASON_MAX,
   nextManagerPlanStatus,
   parseManagerSlotDraft,
+  managerCustomersOptional,
+  GROUP_PRODUCT_MANAGER_PLAN_ROLE,
   repHalfKey,
   seniorOffersForScope,
   returnStageOfApproved,
@@ -449,6 +451,8 @@ export type ManagerPlanBoardView = {
   activities: Array<{ key: string; label: string }>;
   /** The half-day kinds this planner is offered — With a district manager for everyone but a district manager. */
   slotKinds: Array<{ key: ManagerSlotKind; label: string }>;
+  /** A national sales manager or the Group Product Manager (owner, 2026-11-01): customers optional, and AM and PM said to be. */
+  customersOptional: boolean;
   /**
    * The With a manager or product manager picker (`managerSeniorOffers`): a district manager's from the organogram
    * above HIS seat and his line's product managers; a regional, national or product manager's narrowed to the
@@ -484,13 +488,15 @@ function slotSummary(input: {
   const scope = input.scopeName ? ` · ${input.scopeName}` : "";
   // The Training Manager's With a rep names the rep and the region, never customers (owner, 2026-10-24).
   if (input.kind === "with_rep" && input.regionScoped) return `With ${input.repName ?? "a rep"}${scope}`;
-  if (input.kind === "with_rep") return `With ${input.repName ?? "a rep"} · ${customers}${scope}`;
+  // A half-day may name none where its customers are optional (owner, 2026-11-01), so a count shows only when it names some.
+  const named = input.count > 0 ? ` · ${customers}` : "";
+  if (input.kind === "with_rep") return `With ${input.repName ?? "a rep"}${named}${scope}`;
   if (input.kind === "with_area") return `Area · ${input.areaName ?? "an area"}${scope}`;
   if (input.kind === "with_dm") return managerDmVisitTitle(input.dmName ?? null, input.areaName);
   // The doctors are optional on it (owner, 2026-10-27), so a count shows only when he named some.
   if (input.kind === "with_senior") return `${managerSeniorVisitTitle(input.seniorName ?? null, input.seniorTitle ?? null, input.areaName)}${input.count > 0 ? ` · ${input.count} customer${input.count === 1 ? "" : "s"}` : ""}`;
   if (input.kind === "admin") return input.activityLabel ?? "Admin";
-  return `Single visit · ${input.areaName ?? "an area"} · ${customers}${scope}`;
+  return `Single visit · ${input.areaName ?? "an area"}${named}${scope}`;
 }
 
 /**
@@ -573,6 +579,7 @@ function emptyView(viewer: PhoenixCrmViewer, isTest: boolean, mode: "own" | "pic
     areas: [],
     activities: managerAdminActivities("dm"),
     slotKinds: [...managerSlotKinds("dm")],
+    customersOptional: false,
     seniors: [],
     days: [],
     singleVisitHalvesUsed: null,
@@ -720,6 +727,7 @@ async function buildBoard(
   view.scope = chosen?.key ?? null;
   view.activities = managerAdminActivities(writer.kind);
   view.slotKinds = [...managerSlotKinds(writer.kind)];
+  view.customersOptional = plansCustomersOptional(viewer, writer);
   // The count the save refuses by: the plan's single-visit halves and the visits he has already logged, less
   // those on a date his managers approved — an approved date is paid for by its approval.
   const approvedDates = approvedSingleVisitDates ?? new Set<string>();
@@ -1058,6 +1066,11 @@ async function assertOnTheRepsHalf(input: {
   }
 }
 
+/** Whether this planner's customers are optional. The role tells a Group Product Manager from a Product Manager. */
+function plansCustomersOptional(viewer: Pick<PhoenixCrmViewer, "role">, writer: ManagerPlanWriter): boolean {
+  return managerCustomersOptional(writer.kind, viewer.role === GROUP_PRODUCT_MANAGER_PLAN_ROLE);
+}
+
 /**
  * POST: set, change or clear ONE half-day of his own week. The screen sends the plan version it showed;
  * the database refuses the save when another screen moved the week first. Answers with the board as it
@@ -1068,7 +1081,7 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   const writer = assertManagerPlanWriter(viewer);
   await assertPlansHere(viewer, writer);
   const isTest = testModeFor(viewer, body.test);
-  const parsed = parseManagerSlotDraft(body);
+  const parsed = parseManagerSlotDraft(body, { customersOptional: plansCustomersOptional(viewer, writer) });
   if (!parsed.ok) throw validationError(parsed.error);
   const draft = parsed.value;
 

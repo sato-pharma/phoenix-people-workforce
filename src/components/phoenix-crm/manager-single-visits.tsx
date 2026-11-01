@@ -184,7 +184,12 @@ export function ManagerSingleVisits({ test }: { test: boolean }) {
           ) : null}
 
           <CrmBlock title="Planned for today">
-            {view.planned.length === 0 ? (
+            {view.plannedAreas.map((entry) => (
+              <div className="mb-2" key={entry.half}>
+                <CrmNote tone="info">{`${entry.half}: your plan names ${entry.areaName} without customers. Log each customer you see with Log an unplanned customer below; it counts for this half-day.`}</CrmNote>
+              </div>
+            ))}
+            {view.plannedAreas.length > 0 && view.planned.length === 0 ? null : view.planned.length === 0 ? (
               <CrmEmpty message="No single visit is on your plan for today." title="Nothing planned" />
             ) : (
               <div className="grid min-w-0 gap-2">

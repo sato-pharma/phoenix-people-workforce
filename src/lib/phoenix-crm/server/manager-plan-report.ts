@@ -29,6 +29,7 @@ import {
   managerAdminActivityLabel,
   managerCustomerFlagLabel,
   managerEvidenceKey,
+  visitsAnsweringAnArea,
   managerOutcome,
   managerOutcomeLabel,
   managerPlanStatusLine,
@@ -338,15 +339,34 @@ export async function computeManagerReports(
         daysByDate.set(slot.date, halves);
         continue;
       }
-      if (slot.kind === "with_rep" && slot.scopeRegionCode) {
-        // The Training Manager's With a rep names the rep, never a customer: one visit of his with her that day answers it.
+      if (slot.kind === "single_visit" && (customersBySlot.get(slot.slotId) ?? []).length === 0) {
+        // The area alone (owner, 2026-11-01). A visit to a named customer of another half-day is that half-day's.
+        const answers = visitsAnsweringAnArea(visits, managerHrId, slot.date);
+        for (const visit of answers) plannedKeys.add(`${visit.visitDate}|${visit.customerId ? `c:${visit.customerId}` : `m:${visit.managerCustomerId}`}`);
+        const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done: answers.length > 0, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
+        countRows.push({ outcome, gone: false, evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: null, date: slot.date, customerId: null, managerCustomerId: null, areaSeatId: slot.areaSeatId }) });
+        const halves = daysByDate.get(slot.date) ?? [];
+        halves.push({
+          half: slot.half,
+          kind: slot.kind,
+          kindLabel: managerSlotKindLabel(slot.kind),
+          title: `Single visit · ${slot.areaName ?? "an area"}`,
+          note: slot.note,
+          customers: [{ key: null, name: slot.areaName ?? "An area", own: false, flagLabel: null, outcome, outcomeLabel: managerOutcomeLabel(outcome), place: answers[0]?.placeText ?? null }],
+        });
+        daysByDate.set(slot.date, halves);
+        continue;
+      }
+      if (slot.kind === "with_rep" && (slot.scopeRegionCode || (customersBySlot.get(slot.slotId) ?? []).length === 0)) {
+        // With a rep that names the rep, never a customer — the Training Manager's, or one whose customers were
+        // optional (owner, 2026-11-01): one visit of his naming the planner that day answers it.
         const repName = slot.repHrId ? nameOf(repNames, slot.repHrId) : "a vacant territory";
         const done = Boolean(slot.repSeatId) && (withRepDone.get(managerHrId)?.has(`dmany|${slot.repSeatId}|${slot.date}`) ?? false);
         const outcome = managerOutcome({ kind: slot.kind, date: slot.date, done, cairoToday: viewer.cairoToday, visitDay: viewer.visitDay });
         countRows.push({
           outcome,
           gone: false,
-          evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: slot.repSeatId, date: slot.date, customerId: null, managerCustomerId: null, trainingManager: true }),
+          evidenceKey: managerEvidenceKey({ kind: slot.kind, repSeatId: slot.repSeatId, date: slot.date, customerId: null, managerCustomerId: null, repAlone: true }),
         });
         const halves = daysByDate.get(slot.date) ?? [];
         halves.push({

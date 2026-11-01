@@ -185,11 +185,11 @@ function plansARegion(view: ManagerPlanBoardView | null): boolean {
 }
 
 /** What a half-day still lacks before it can be saved, or null when it can. */
-function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion = false): string | null {
+function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion = false, customersOptional = false): string | null {
   if (choosesDistrict && namesADistrict(draft.kind) && !draft.scope) return byRegion ? "choose the region" : "choose the district manager";
   if (draft.kind === "with_rep") {
     if (!draft.repSeatId) return "choose the rep you go with";
-    if (!byRegion && draft.customers.length === 0) return "tick at least one of the rep's customers";
+    if (!byRegion && !customersOptional && draft.customers.length === 0) return "tick at least one of the rep's customers";
   }
   if (draft.kind === "with_area" && !draft.areaSeatId) return "choose the area";
   if (draft.kind === "with_dm") {
@@ -204,7 +204,7 @@ function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion = fal
   if (draft.kind === "admin" && !draft.activityType) return "choose the activity";
   if (draft.kind === "single_visit") {
     if (!draft.areaSeatId) return "choose the area";
-    if (draft.customers.length === 0) return "choose at least one customer";
+    if (!customersOptional && draft.customers.length === 0) return "choose at least one customer";
   }
   if (draft.customers.length > MANAGER_SLOT_CUSTOMER_MAX) return `keep it to ${MANAGER_SLOT_CUSTOMER_MAX} customers`;
   return null;
@@ -349,7 +349,7 @@ export function ManagerPlanBoard({
 
   /** What a half-day on the page still lacks. A cleared one lacks nothing. */
   function problemOf(waiting: HalfDraft): string | null {
-    return waiting.kind === null ? null : draftProblem(waiting, choosesDistrict, byRegion);
+    return waiting.kind === null ? null : draftProblem(waiting, choosesDistrict, byRegion, view?.customersOptional === true);
   }
 
   const waitingProblems: WaitingProblem[] = Object.entries(drafts).flatMap(([waitingKey, waiting]) => {
@@ -635,6 +635,7 @@ export function ManagerPlanBoard({
       problem: problemOf(draft),
       chosenScopeName: chosenScope ? (view?.scopes.find((entry) => entry.key === chosenScope)?.name ?? null) : null,
       dayHasAPlan: day.halves.some((entry) => draftOf(day, entry).kind !== null),
+      leavesTheDay: day.halves.indexOf(currentHalf) === day.halves.length - 1,
     });
   }
 
@@ -781,6 +782,7 @@ export function ManagerPlanBoard({
           {step === 2 ? (
             <DayStep
               days={days}
+              anyHalfIsEnough={view.customersOptional}
               drafts={drafts}
               onDay={openDay}
               problemOf={problemOf}
@@ -873,13 +875,22 @@ function dayNote(day: ManagerBoardDay, drafts: Record<string, HalfDraft>, proble
     .join(" · ");
 }
 
+/** Whether a day reads as finished on the day list: both its halves, or one where AM and PM are each optional. */
+function dayIsPlanned(day: ManagerBoardDay, anyHalfIsEnough: boolean): boolean {
+  const planned = (half: ManagerHalf) => day.slots.some((slot) => slot.half === half && slot.kind);
+  return day.halves.length > 0 && (anyHalfIsEnough ? day.halves.some(planned) : day.halves.every(planned));
+}
+
 function DayStep({
+  anyHalfIsEnough,
   days,
   drafts,
   onDay,
   problemOf,
   selected,
 }: {
+  /** AM and PM are each optional for this planner, so one half planned finishes the day. */
+  anyHalfIsEnough: boolean;
   days: ManagerBoardDay[];
   drafts: Record<string, HalfDraft>;
   onDay: (date: string) => void;
@@ -894,7 +905,7 @@ function DayStep({
     label: day.passed && day.date !== selected ? <span className="text-slate-400">{day.dateText}</span> : day.dateText,
     note: day.passed ? `Passed · ${dayNote(day, drafts, problemOf)}` : dayNote(day, drafts, problemOf),
     disabled: day.halves.length === 0,
-    tone: day.halves.length > 0 && day.halves.every((half) => day.slots.some((slot) => slot.half === half && slot.kind)) ? "good" : undefined,
+    tone: dayIsPlanned(day, anyHalfIsEnough) ? "good" : undefined,
   }));
   return <CrmChoice columns={2} label="Day" onChange={onDay} options={options} value={selected} />;
 }
@@ -1136,6 +1147,9 @@ function HalfStep({
         </div>
       ) : null}
       {day.halves.length > 1 ? <CrmChoice columns={2} label="Half-day" onChange={onHalf} options={halfOptions} value={half} /> : null}
+      {canEdit && view.customersOptional && day.halves.length > 1 ? (
+        <p className="break-words text-xs font-semibold leading-5 text-slate-500">AM and PM are each optional. Plan one of them or both.</p>
+      ) : null}
       {!canEdit ? (
         <CrmNote tone="neutral">{view.canWrite ? "This day has passed, or is not open to change." : "This week is sent. Ask to edit it from Send."}</CrmNote>
       ) : null}
@@ -1238,7 +1252,8 @@ function WithRepPart({
           ? plural(repHalf.customers.length, "customer", "customers")
           : null;
     const nothingToTick = rep.weekState === "no_plan" || !repHalf || !repHalf.customers.some((customer) => customer.customerId);
-    const disabled = !canEdit || (nothingToTick && rep.seatId !== keptSeatId);
+    // Where customers are optional (owner, 2026-11-01) the rep alone is enough, so a rep with nothing to tick is still offered.
+    const disabled = !canEdit || (!view.customersOptional && nothingToTick && rep.seatId !== keptSeatId);
     return {
       value: rep.seatId,
       label: rep.name,
@@ -1307,11 +1322,14 @@ function WithRepPart({
           ) : null}
         </div>
       ) : null}
+      {draft.repSeatId && view.customersOptional && !chosen && dropped.length === 0 ? (
+        <p className="break-words text-xs font-semibold leading-5 text-slate-500">This rep has no customers planned this half. The rep alone is enough to save it.</p>
+      ) : null}
       {chosen || dropped.length > 0 ? (
         <div className="grid min-w-0 gap-3 border border-slate-200 p-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-black text-slate-900">
-              {`${countText(draft.customers.length)} of ${plural(tickable.length + dropped.length, "customer", "customers")} ticked`}
+              {`${view.customersOptional ? "Customers (optional) · " : ""}${countText(draft.customers.length)} of ${plural(tickable.length + dropped.length, "customer", "customers")} ticked`}
               {chosen?.weekState === "not_sent" ? (
                 <CrmPill className="ml-2" tone="warn">
                   Not sent
@@ -1955,7 +1973,7 @@ function SingleVisitPart({
         </div>
       ) : draft.areaSeatId ? (
         <div className="grid min-w-0 gap-4 border border-slate-200 p-3">
-          <p className="text-sm font-black text-slate-900">{`${plural(draft.customers.length, "customer", "customers")} chosen`}</p>
+          <p className="text-sm font-black text-slate-900">{`${view.customersOptional ? "Customers (optional) · " : ""}${plural(draft.customers.length, "customer", "customers")} chosen`}</p>
           {draft.customers.length > 0 ? (
             <div className="flex min-w-0 flex-wrap gap-1.5">
               {draft.customers.map((customer) => (
@@ -2215,7 +2233,11 @@ function SendStep({
         {offRepDay > 0 ? ` · ${plural(offRepDay, "customer is", "customers are")} not on the rep's sent day` : ""}
       </p>
       {plan?.state === "plan" && view.canWrite && emptyHalves.length > 0 ? (
-        <CrmNote tone="warn">{`Nothing planned yet on ${emptyHalves.join(", ")}. You can still send it; those half-days go empty.`}</CrmNote>
+        view.customersOptional ? (
+          <CrmNote tone="neutral">{`Left empty: ${emptyHalves.join(", ")}. AM and PM are each optional, so you can send it as it is.`}</CrmNote>
+        ) : (
+          <CrmNote tone="warn">{`Nothing planned yet on ${emptyHalves.join(", ")}. You can still send it; those half-days go empty.`}</CrmNote>
+        )
       ) : null}
       {waitingProblems.length > 0 ? (
         <CrmNote tone="warn">{`${waitingProblems.map((entry) => `${entry.dayText} ${entry.half}`).join(", ")} ${waitingProblems.length === 1 ? "is" : "are"} not saved. Finish or clear ${waitingProblems.length === 1 ? "it" : "them"} before you send.`}</CrmNote>

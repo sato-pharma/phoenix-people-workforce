@@ -240,6 +240,8 @@ export type ManagerTodayView = {
   planned: ManagerTodayCustomer[];
   /** What he logged today that was not planned — shown apart. */
   unplanned: ManagerTodayCustomer[];
+  /** Today's single visits that name the area alone (owner, 2026-11-01): each customer is logged from "Log an unplanned customer". */
+  plannedAreas: Array<{ half: "AM" | "PM"; areaName: string }>;
   /** His own list, for "Log an unplanned customer" — each with whether its area is vacant today. */
   ownList: ManagerTodayOwnCustomer[];
   /** The areas he plans in, by name — a vacant one marked — to log an unplanned visit from an area's list. */
@@ -372,6 +374,13 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     })
     .sort((left, right) => String(left.half).localeCompare(String(right.half)) || left.name.localeCompare(right.name));
 
+  // `slots` holds the half-days with planned doctors, whose doctors are optional on a With my manager half-day anyway:
+  // what is left, with none named, is a single visit that names the area alone.
+  const plannedAreas = slots
+    .filter((slot) => slot.kind !== "with_senior" && !slotCustomers.some((row) => row.slotId === slot.slotId))
+    .map((slot) => ({ half: slot.half, areaName: slot.areaName ?? "an area" }))
+    .sort((left, right) => left.half.localeCompare(right.half));
+
   const unplanned = unplannedVisits.map((visit): ManagerTodayCustomer => {
     const rep = visit.customerId ? repCustomers.get(visit.customerId) : undefined;
     const own = visit.managerCustomerId ? ownById.get(visit.managerCustomerId) : undefined;
@@ -400,6 +409,7 @@ export async function loadManagerToday(viewer: PhoenixCrmViewer, raw: { test: un
     visitDay: day,
     planned,
     unplanned,
+    plannedAreas,
     ownList: ownList
       .filter((customer) => customer.status === "active")
       .map((customer) => ({ ...customer, vacant: isVacantTerritory(viewer.org.seats.get(customer.areaSeatId ?? "")) })),
