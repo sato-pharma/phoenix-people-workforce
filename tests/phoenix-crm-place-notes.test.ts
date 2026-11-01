@@ -636,10 +636,26 @@ function checkAManagersPayloadCarriesNoDecider(): void {
   assert.match(functionBody(notes, "tellDecisionComment"), /repVisible: true/, "and the decision's comment is still written where the manager reads it");
 }
 
+/**
+ * The older comments were copied once (owner, 2026-11-01), and what he left out stays out: a replay of the
+ * file must not hand a rep the system's own line, a clean-up line, a bare dash or another employee's name.
+ */
+function checkOlderCommentsCopyLeavesOutWhatHeChose(): void {
+  const copy = read("supabase/migrations/20261101130000_phoenix_crm_older_decision_comments_reach_rep.sql");
+  assert.match(copy, /o\.author_hr_id <> 'SYSTEM'/, "the system's own line is not a decider's comment");
+  assert.match(copy, /o\.body <> '-'/, "a bare dash says nothing");
+  assert.match(copy, /o\.body not ilike '%Ebtissam Alaa%'/, "a rep reads a role, never another employee's name");
+  assert.match(copy, /o\.body not like 'Duplicate of the same building%'/, "the owner left the clean-up lines out");
+  assert.match(copy, /v_expected constant int := 51;/, "and it refuses to add more than the 51 his answer covers");
+  assert.match(copy, /'system_admin', o\.body, true, o\.decided_at/, "each one reads as the decider's, visible, at the time of the decision");
+  assert.doesNotMatch(copy, /^\s*(update|delete)\s/im, "and the file only adds rows, outside its written rollback");
+}
+
 export function runPhoenixCrmPlaceNotesTests(): void {
   checkRepWording();
   checkDecisionCommentReachesTheRep();
   checkAManagersPayloadCarriesNoDecider();
+  checkOlderCommentsCopyLeavesOutWhatHeChose();
   checkTeamScope();
   checkHeDecidesNothing();
   checkVisibilityIsChosen();

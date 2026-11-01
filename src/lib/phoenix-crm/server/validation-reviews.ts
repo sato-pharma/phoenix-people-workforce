@@ -451,9 +451,9 @@ export type ValidationReviewRow = {
   /** The raw instant, for the reads and filters that compare it. `decidedAtText` is for the screen. */
   decidedAt: string | null;
   /**
-   * What the decider wrote. 🔴 Null for a viewer who decides nothing: one written before 2026-11-01 was
-   * written under "never shown to the rep" and stays private; a newer one reaches a manager as a place
-   * note, by role (`tellDecisionComment`), never through this field.
+   * What the decider wrote. 🔴 Null for a viewer who decides nothing: a comment reaches a manager as a
+   * place note, by role (`tellDecisionComment`, and for the older ones the copy of 2026-11-01), never
+   * through this field.
    */
   decisionNote: string | null;
   /**
