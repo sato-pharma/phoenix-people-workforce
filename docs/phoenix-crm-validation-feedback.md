@@ -710,6 +710,12 @@ so he can go through them fast.
   them. A polyclinic sorts by the best advice among its building and its seated customers. The rank is
   taken from the notes as the review opened, like the list itself, so nothing moves under his finger.
 - **It decides nothing.** The buttons are his; the rep's own read of notes never selects the column.
+- **It never reaches a manager (fixed 2026-11-01).** Until then every one of these notes went to the
+  district manager's browser and was drawn on their Place checks tab, with the administrator's name, and
+  the Visit Report's "Place notes" column printed them too. One manager's board carried 11 on 1 November,
+  and 22 of one rep's report rows carried them for the Super Admin. `placeNoteReachesManager` now holds them
+  back on the server, on both screens: a manager gets their own notes and any note the rep may read, and
+  `advice` is not read for their board at all. The deciders' page is unchanged.
 
 Pinned by section 7 of `tests/place-review-deck.test.ts`; each of its eight rules was broken and seen to
 fire.

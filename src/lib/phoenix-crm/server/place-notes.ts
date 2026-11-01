@@ -40,6 +40,7 @@ import {
   parsePlaceNoteSubjectKind,
   parsePlaceRecommendation,
   placeNoteAuthorLabel,
+  placeNoteReachesManager,
   placeNoteRepAuthorText,
   placeNoteSubjectKey,
   PLACE_NOTE_MAX_LENGTH,
@@ -124,6 +125,10 @@ export const EMPTY_PLACE_NOTE_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}
  * It reads by id through `selectByIds`, never a bare `.in()`: the validated-in-use section alone goes
  * past 600 rows on production, and a 400-id `.in()` has already overflowed the response headers on
  * this very page (`UND_ERR_HEADERS_OVERFLOW`, 2026-10-07).
+ *
+ * 🔴 ON A MANAGER'S BOARD THE ADMINISTRATOR'S PRIVATE NOTES ARE DROPPED HERE, ON THE SERVER, BECAUSE A
+ * FIELD A BROWSER RECEIVES COUNTS AS SHOWN (`placeNoteReachesManager`), and the `advice` verdict is not
+ * even read for that board. Only the two Place checks pages call this, and a test pins which is which.
  */
 export async function loadPlaceNoteIndex(
   input: {
@@ -139,15 +144,16 @@ export async function loadPlaceNoteIndex(
   if (placeIds.length === 0 && sharedPlaceIds.length === 0) return EMPTY_PLACE_NOTE_INDEX;
 
   const noteColumns = "id, place_id, shared_place_id, author_hr_id, author_source, body, rep_visible, created_at, advice";
+  const columnsToRead = options.managerBoard ? noteColumns.replace(", advice", "") : noteColumns;
   const recColumns = "id, place_id, shared_place_id, manager_hr_id, recommendation, updated_at";
   const [placeNotes, venueNotes, placeRecs, venueRecs] = await Promise.all([
-    selectByIds<Row>("phoenix_crm_place_notes", noteColumns, "place_id", placeIds),
-    selectByIds<Row>("phoenix_crm_place_notes", noteColumns, "shared_place_id", sharedPlaceIds),
+    selectByIds<Row>("phoenix_crm_place_notes", columnsToRead, "place_id", placeIds),
+    selectByIds<Row>("phoenix_crm_place_notes", columnsToRead, "shared_place_id", sharedPlaceIds),
     selectByIds<Row>("phoenix_crm_place_recommendations", recColumns, "place_id", placeIds),
     selectByIds<Row>("phoenix_crm_place_recommendations", recColumns, "shared_place_id", sharedPlaceIds),
   ]);
 
-  const noteRows = [...placeNotes, ...venueNotes];
+  const noteRows = [...placeNotes, ...venueNotes].filter((row) => !options.managerBoard || placeNoteReachesManager(row.author_source, row.rep_visible));
   const recRows = [...placeRecs, ...venueRecs];
   const names = await loadPeopleNames([
     ...noteRows.map((row) => text(row.author_hr_id)),
