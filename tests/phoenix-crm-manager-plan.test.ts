@@ -301,6 +301,11 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(opens({ "2026-10-31": "approved", "2026-11-07": "draft" }), "2026-11-07", "once he starts the coming week it opens there");
   assert.equal(opens({ "2026-10-31": "draft" }), "2026-11-07", "a week he is in that was never sent does not hold the board");
   assert.equal(opens({}), "2026-11-07", "nothing anywhere: the coming week, as before");
+  // A returned week opens first (owner, 2026-11-01): "What to change" and the conversation are on it and nowhere else.
+  assert.equal(opens({ "2026-10-31": "returned" }), "2026-10-31", "a returned week he is in opens first, nothing started next");
+  assert.equal(opens({ "2026-10-31": "returned", "2026-11-07": "draft" }), "2026-10-31", "and it still opens first with the coming week started");
+  assert.equal(opens({ "2026-10-31": "approved", "2026-11-07": "returned" }), "2026-11-07", "a returned coming week opens as well");
+  assert.equal(managerPlanOpeningWeek(FRIDAY, () => "returned"), "2026-10-17", "a week with no day left is not offered, returned or not");
   assert.equal(managerPlanOpeningWeek(FRIDAY, () => "approved"), "2026-10-17", "on a Friday only the coming week is offered");
   assert.equal(managerWeekState({ weekStart: "2026-10-17", cairoToday: FRIDAY, status: null, editAsked: false }), "plan");
   assert.equal(managerWeekState({ weekStart: "2026-10-17", cairoToday: FRIDAY, status: "submitted", editAsked: false }), "sent");

@@ -748,6 +748,9 @@ export function managerPlanWeeks(cairoToday: string): string[] {
  * The week his board opens on when he names none: the coming week — unless the week he is in is sent and the
  * coming one is not started (owner, 2026-10-31: Saad Salama opened Plan on Saturday, met an empty coming
  * week and could not find the approved week he was working in). Once he starts the coming week it opens there.
+ *
+ * 🔴 A week he is in that was RETURNED opens first, even with the coming week started (owner, 2026-11-01: "open
+ * a returned week first"): "What to change" and the week's conversation are on that week and nowhere else.
  */
 export function managerPlanOpeningWeek(
   cairoToday: string,
@@ -756,6 +759,7 @@ export function managerPlanOpeningWeek(
   const weeks = managerPlanWeeks(cairoToday);
   const coming = weeks[weeks.length - 1];
   const thisWeek = weeks.length > 1 ? weeks[0] : null;
+  if (thisWeek && statusOf(thisWeek) === "returned") return thisWeek;
   if (thisWeek && isManagerPlanSent(statusOf(thisWeek)) && statusOf(coming) === null) return thisWeek;
   return coming;
 }
