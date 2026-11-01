@@ -89,6 +89,14 @@ export function cairoClock(iso: string | null | undefined): string {
   return formatClockMinute(wall.getUTCHours() * 60 + wall.getUTCMinutes());
 }
 
+/** "18:30" in Cairo — the 24-hour form, for a time printed beside a long date. */
+export function cairoClock24(iso: string | null | undefined): string {
+  const value = instantOf(iso);
+  if (!value) return "—";
+  const wall = cairoWallClock(value);
+  return `${String(wall.getUTCHours()).padStart(2, "0")}:${String(wall.getUTCMinutes()).padStart(2, "0")}`;
+}
+
 /** The Cairo calendar day of an instant, "2026-09-16". */
 export function cairoDayOf(iso: string | null | undefined): string | null {
   const value = instantOf(iso);

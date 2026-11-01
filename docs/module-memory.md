@@ -100,7 +100,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm` — Phoenix CRM (the reps' own CRM) | `src/lib/phoenix-crm/**` and 4 more |
 | `phoenix-crm-approvals` — Phoenix CRM — lists, validation, plans and approvals | `src/lib/phoenix-crm/{adoption-rules,approval-nudge-rules,customer-list-grouping,entry-rules,list-request-rules,list-row-facts,list-sheet-hours,list-template-rules,monthly-plan-rules,offplan-day,pharmacy-call-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,unplanned-rules,validate-next}.ts` and 4 more |
 | `phoenix-crm-week-plan` — Phoenix CRM — the rep's weekly plan, its review and asking to edit it | `src/lib/phoenix-crm/{monthly-plan-rules,plan-board-answer,plan-edit-rules,plan-review-rules,plan-rules,approval-nudge-rules}.ts` and 4 more |
-| `phoenix-crm-boards` — Phoenix CRM — the silent detectors, the touch trail and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-archive,touch-trail-reader}.ts` and 16 more |
+| `phoenix-crm-boards` — Phoenix CRM — the silent detectors and the SFE's boards | `src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules}.ts` and 12 more |
 | `phoenix-crm-visit-report` — Phoenix CRM — the Visit Report generator | `src/lib/phoenix-crm/{visit-report-*,server/visit-report*}.ts` and 4 more |
 | `phoenix-crm-refused-readings` — Phoenix CRM — the refusals a capture leaves behind | `src/lib/phoenix-crm/refused-readings-rules.ts` and 6 more |
 | `phoenix-crm-requests` — Phoenix CRM — how a request answers the screen | `src/components/phoenix-crm/api.ts` and 10 more |
@@ -149,6 +149,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `platform-design-tokens` — Platform — design tokens, the form kit and the square-edge look | `src/components/ui/{form-kit,form-tokens,brand-tokens}*` and 3 more |
 | `platform-observability` — Platform — structured logging, Sentry and the audit trail's own persistence | `src/lib/observability/**` and 13 more |
 | `database` — Database, migrations and Supabase | `supabase/**` and 2 more |
+| `database-migrations` — Database — migrations, their ledger and the routes that apply them | `supabase/migrations/**` and 7 more |
 | `engineering` — Engineering — CI, tests, scripts and deploys | `.github/**` and 7 more |
 | `engineering-tests` — Engineering — tests, and what makes a result evidence | `tests/support/**` and 2 more |
 | `engineering-deploys` — Engineering — Railway deploys and what is actually serving | `Dockerfile` and 15 more |

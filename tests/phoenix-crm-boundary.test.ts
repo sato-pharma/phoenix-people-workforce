@@ -441,16 +441,10 @@ const ROUTE_GATES: RouteGate[] = [
   post("recording/admin/review", "approve"),
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.
   { route: "location", method: "POST", action: "create", audit: "access-read", auditRequired: false },
-  // The touch trail (owner, 2026-10-03: "anything touches him, automatically saved"). `read`, and
-  // deliberately not `create`: a rep who may OPEN the module is a rep whose taps belong in its trail,
-  // and a `create` gate would have left every manager who only reads the module untraced. Classified
-  // as a mutation because it does write rows, but not REQUIRED — this route IS the record, so an
-  // audit entry per flush would be a second copy of the same fact every few seconds per rep.
-  { route: "touch-trail", method: "POST", action: "read", audit: "mutation", auditRequired: false },
   // A permission the BROWSER blocked, reported by the browser itself (owner, 2026-10-13: "record a
-  // browser-blocked permission so it reaches the refused-readings board"). The touch trail's gate
-  // exactly: `read`, because a rep who may OPEN the module is a rep whose blocked camera belongs on
-  // the board that exists to help him, and a `create` gate would miss every manager entering for one.
+  // browser-blocked permission so it reaches the refused-readings board"). `read`, because a rep who
+  // may OPEN the module is a rep whose blocked camera belongs on the board that exists to help him,
+  // and a `create` gate would miss every manager entering for one.
   // A mutation, since it writes a row, but never REQUIRED in the audit — the row IS the record, and
   // an audit entry beside it would be a second copy of the same fact.
   { route: "refused-readings", method: "POST", action: "read", audit: "mutation", auditRequired: false },
@@ -891,7 +885,9 @@ const LATER_MIGRATIONS = [
   // table and NOTHING else — no function, no column, no view, and it replaces nothing — so it appends
   // safely at the end and cannot disturb the replacement ordering above. It is the module's SECOND
   // deliberately UNKEYED table, for the same reason as the refused readings two entries up: nine
-  // identical presses are nine rows, and the repetition is the evidence.
+  // identical presses are nine rows, and the repetition is the evidence. THE TRAIL WAS RETIRED on
+  // 2026-11-01 (owner: "retire and delete all its traces"): 20261101203000_retire_phoenix_crm_touch_trail.sql drops the table and
+  // adds nothing this scan can see, so it is deliberately NOT listed; this entry stays as history.
   "supabase/migrations/20261003221224_phoenix_crm_touch_trail.sql",
   // One lock for a new pharmacy (review of #5263, 2026-10-04). It REPLACES phoenix_crm_save_visit
   // (20261003202903's body, the new-pharmacy branch re-checked under phoenix_crm_add_pharmacy's lock) and
@@ -1319,19 +1315,15 @@ function runMigrationTests() {
     // file that could quietly file a recording where the photos are read from.
     // The visit recording (2026-10-16) is a third kind again — the whole conversation, kept for the
     // Super Admin — so it has a bucket of its own and one file that opens it.
-    // The touch trail archive (2026-10-27) holds touches older than 30 days — the Super Admin's alone,
-    // like the trail itself — in a bucket of its own, opened by the one job that writes it.
     // An Interviews day's CVs (2026-10-29) are a candidate's own papers — a fourth kind, a bucket of its
     // own, and one file that opens it.
     const bucketFor = file.endsWith("/voice-notes.ts")
       ? "PHOENIX_CRM_VOICE_BUCKET"
       : file.endsWith("/visit-recordings.ts")
         ? "PHOENIX_CRM_RECORDING_BUCKET"
-        : file.endsWith("/touch-trail-archive.ts")
-          ? "TOUCH_TRAIL_ARCHIVE_BUCKET"
-          : file.endsWith("/interview-cvs.ts")
-            ? "PHOENIX_CRM_INTERVIEW_CV_BUCKET"
-            : "PHOENIX_CRM_PHOTO_BUCKET";
+        : file.endsWith("/interview-cvs.ts")
+          ? "PHOENIX_CRM_INTERVIEW_CV_BUCKET"
+          : "PHOENIX_CRM_PHOTO_BUCKET";
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
       assert.equal(match[1].trim(), bucketFor, `${file} opens a bucket other than the one it owns`);
     }

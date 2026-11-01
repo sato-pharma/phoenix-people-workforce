@@ -187,7 +187,6 @@ export const DELETE_PLAN: readonly Step[] = [
   { table: "phoenix_crm_customers", by: "flag", where: "is_test" },
 
   // Free-standing: nothing references these, so they go last and in any order.
-  { table: "phoenix_crm_touch_trail", by: "flag", where: "is_test" },
   { table: "phoenix_crm_photo_uploads", by: "flag", where: "is_test" },
   { table: "phoenix_crm_voice_uploads", by: "flag", where: "is_test" },
   { table: "phoenix_crm_visit_recordings", by: "flag", where: "is_test" },

@@ -749,7 +749,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   // It cost Sherif Medhat two field days (production, 2026-10-12). With no venue in the picker
   // `chosen` stays null, so the AM/PM step and the timetable camera are never rendered and
   // "Save the customer" refuses with SEATED_PLACE_NO_SESSION — a question that is not on the screen.
-  // His touch trail holds nine taps on Save against that one alert; he photographed the same
+  // His touch trail (since retired) held nine taps on Save against that one alert; he photographed the same
   // building 11 times believing each save had been lost, and nobody in the company was seated in a
   // polyclinic for two days.
   //

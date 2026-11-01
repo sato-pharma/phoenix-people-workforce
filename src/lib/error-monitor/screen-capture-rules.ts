@@ -56,7 +56,6 @@ export const SCREEN_CAPTURE_SKIP_LIST: ReadonlyArray<{ match: "prefix" | "exact"
   { match: "suffix", path: "/pending-count", why: "Sidebar badge counts, polled by every page" },
   { match: "suffix", path: "/needs-action-count", why: "Sidebar badge counts, polled by every page" },
   { match: "suffix", path: "/unbooked-count", why: "Sidebar badge counts, polled by every page" },
-  { match: "prefix", path: "/api/phoenix-crm/touch-trail", why: "Phoenix CRM's background touch-trail beacon" },
   { match: "prefix", path: "/api/health", why: "Health check" },
   { match: "prefix", path: "/api/healthz", why: "Health check" },
   { match: "prefix", path: "/api/readyz", why: "Health check" },

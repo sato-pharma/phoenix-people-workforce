@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * the Super Admin downloads and deletes recordings at any time.
  *
  * 🔴 THE SUPER ADMIN'S ALONE — `canManageVisitRecording`, on the page and inside every service it calls.
- * The redirect rather than a message is the touch trail's shape: a page that does not describe itself to
+ * The redirect rather than a message is deliberate: a page that does not describe itself to
  * somebody who may not read it.
  */
 export default async function PhoenixCrmVisitRecordingPage() {

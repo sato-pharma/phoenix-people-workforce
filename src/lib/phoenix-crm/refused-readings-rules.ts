@@ -139,8 +139,8 @@ export type BlockedPermissionReport = {
  * Read one report off the wire.
  *
  * Bounded and total: a body that is not this shape answers null and the route files nothing. The
- * SEAT is the only free text it accepts, at the touch trail's own 120 characters — the rep is the
- * SESSION's, never the body's, exactly as the trail does it.
+ * SEAT is the only free text it accepts, at 120 characters — the rep is the SESSION's, never the
+ * body's.
  */
 export function parseBlockedPermissionReport(raw: unknown): BlockedPermissionReport | null {
   if (!raw || typeof raw !== "object") return null;

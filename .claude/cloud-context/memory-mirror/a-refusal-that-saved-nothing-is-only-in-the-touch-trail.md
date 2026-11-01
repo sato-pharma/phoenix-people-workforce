@@ -1,12 +1,19 @@
 ---
 name: a-refusal-that-saved-nothing-is-only-in-the-touch-trail
-description: "\"a rep is blocked and the system will not let her through\" is answered from phoenix_crm_touch_trail, because a refusal that wrote nothing leaves no row anywhere else — the refusal MESSAGE itself appears as a press's element_label, which names the exact gate"
+description: "RETIRED 2026-11-01 — the trail is gone; a refusal that saved nothing is found on the refused-readings board (/admin/phoenix-crm/refused-readings). History: \"a rep is blocked and the system will not let her through\" was answered from phoenix_crm_touch_trail, because a refusal that wrote nothing leaves no row anywhere else — the refusal MESSAGE itself appears as a press's element_label, which names the exact gate"
 metadata:
   node_type: memory
   type: project
   originSessionId: d96338c4-b2ab-41ed-aa4e-ed85e9af64ce
-  modified: 2026-10-05T09:56:59.658Z
+  modified: 2026-11-01T18:57:13.501Z
 ---
+
+**RETIRED, 1 November 2026** (owner: "retire and delete all its traces"). `phoenix_crm_touch_trail`, its
+collector, reader page, route and nightly archive are gone (branch `codex/retire-touch-trail`; the table is
+dropped by `20261101203000_retire_phoenix_crm_touch_trail.sql`). A refusal that saved nothing is found on the
+refused-readings board now — `/admin/phoenix-crm/refused-readings`, fed since 13 October by the
+browser-blocked permission route — not in any trail. Everything below is the method as it stood on
+5 October and is kept as history.
 
 Measured 2026-10-05, diagnosing Aya Ibrahim (B-7) blocked on validating مستوصف صدر باجور.
 

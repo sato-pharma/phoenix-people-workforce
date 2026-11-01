@@ -121,7 +121,7 @@ export function runPhoenixCrmBrowserNameTests(): void {
   // so the component raising it is the only thing that can name the browser, and for four screens
   // nothing did. Norhan Gamal (AI-0025) read "Location is blocked for your browser" on her iPhone at
   // 10:59:01 and 11:10:15 Cairo on 12 October 2026, and three times on 10 October; the touch trail
-  // holds 42 of that sentence and 30 of the camera's, across four reps, between 4 and 12 October. She
+  // (since retired) held 42 of that sentence and 30 of the camera's, across four reps, between 4 and 12 October. She
   // has never saved a place, a visit or a venue. Naming it at the render rather than at each
   // `setError` is deliberate: a message added to one of these later is named without being wired.
   for (const [file, shown] of [

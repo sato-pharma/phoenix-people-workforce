@@ -269,7 +269,7 @@ export async function signVisitRecording(viewer: PhoenixCrmViewer, rawVisitId: u
 
 // ── The Super Admin's page ─────────────────────────────────────────────────────────────────────
 
-/** The Super Admin, and never a test account — the same gate as the touch trail. */
+/** The Super Admin, and never a test account. */
 export function canManageVisitRecording(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
 }

@@ -387,7 +387,7 @@ export function runPhoenixCrmRefusedReadingsTests() {
   // location or the camera there is no reading, no request and no door — so there was no row, and the
   // board that exists to find a stuck rep could not see the commonest way to be stuck. Norhan Gamal's
   // iPhone answered PERMISSION_DENIED five times across 10 and 12 October 2026; this table held ZERO
-  // rows for her seat, and the only trace anywhere was the touch trail, which keeps the message only
+  // rows for her seat, and the only trace anywhere was the touch trail (since retired), which kept the message only
   // if the rep happens to press it (42 location and 30 camera messages, four reps, 4-12 October).
   //
   // The two rules at the top of this file still hold, and the third is INVERTED on purpose: the rep
@@ -412,7 +412,7 @@ export function runPhoenixCrmRefusedReadingsTests() {
   assert.equal(
     parseBlockedPermissionReport({ permission: "camera", subjectKind: "visit", seatId: "s".repeat(400) })?.seatId?.length,
     120,
-    "the seat is bounded at the touch trail's own 120 characters, so a hostile body cannot widen the column",
+    "the seat is bounded at 120 characters, so a hostile body cannot widen the column",
   );
   for (const key of ["repHrId", "rep_hr_id", "hrId"]) {
     const report = parseBlockedPermissionReport({ permission: "camera", subjectKind: "place", [key]: "B-999" }) as Record<string, unknown> | null;
@@ -442,7 +442,7 @@ export function runPhoenixCrmRefusedReadingsTests() {
   // The route: always 204, the rep from the session, the body only able to ADD the test flag.
   const blockedRoute = stripComments(readFileSync("app/api/phoenix-crm/refused-readings/route.ts", "utf8"));
   assert.ok(blockedRoute.includes("assertSameOriginMutation(request)"), "CSRF first, before anything is read");
-  assert.ok(blockedRoute.includes('assertPermission(access, "phoenix_crm", "read")'), "and the module's own read permission — the same gate the touch trail asks for");
+  assert.ok(blockedRoute.includes('assertPermission(access, "phoenix_crm", "read")'), "and the module's own read permission — the gate every Phoenix CRM read asks for");
   assert.ok(blockedRoute.includes("personKey(access.hrId)"), "🔴 the rep comes from the SESSION");
   assert.doesNotMatch(blockedRoute, /repHrId: report\.|report\.repHrId/, "and never from the body");
   assert.ok(blockedRoute.includes("Boolean(access.testPersona) || report.test"), "a test persona's blocked camera is a test row whatever the browser says");

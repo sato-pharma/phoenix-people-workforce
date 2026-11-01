@@ -1,23 +1,15 @@
-import { PhoenixCrmTouchTrail } from "@/components/phoenix-crm/touch-trail-collector";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { RetiredTouchTrailCleanup } from "@/components/phoenix-crm/retired-touch-trail-cleanup";
 
-// The admin twin of `app/employee-portals/field-crm/layout.tsx`: the same touch trail over the
-// manager's and Super Admin's side of Phoenix CRM, mounted once for the whole subtree.
-//
-// IT COVERS THIS SIDE TOO ON PURPOSE. A manager entering a visit for a rep, or a Super Admin working
-// a validation review, is a pair of hands on the module exactly as a rep is — and `actor_hr_id` is
-// resolved from the session, so a row always says WHOSE hands rather than whose work it was about.
-// Both incidents of 3 Oct were diagnosed from the rep's side; the next one may not be.
-//
-// Renders nothing, changes nothing, and deleting it turns the trail off for the admin side alone.
-//
-// `viewerHrId` is whose taps a held batch is (owner-scoped.ts): the access read is React-cached, so
-// a page below that reads it too reuses the same answer rather than adding a second read.
-export default async function AdminFieldCrmLayout({ children }: { children: React.ReactNode }) {
-  const access = await resolveAccessContextFromPage();
+// The admin twin of `app/employee-portals/field-crm/layout.tsx`. It used to mount the Phoenix CRM
+// touch trail over the manager's and Super Admin's side of the module; the trail was RETIRED on the
+// owner's word on 1 November 2026 ("retire and delete all its traces"), and what is left is the same
+// one-release cleanup of the trail's old browser queue. Renders nothing, changes nothing. Delete this
+// layout, its portal twin and `RetiredTouchTrailCleanup` in the release after this one ships
+// (tests/admin-group-has-no-portal-shell.test.ts lists this layout by name — drop it there too).
+export default function AdminFieldCrmLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <PhoenixCrmTouchTrail viewerHrId={access.hrId} />
+      <RetiredTouchTrailCleanup />
       {children}
     </>
   );

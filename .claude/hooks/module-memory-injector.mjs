@@ -157,7 +157,7 @@ export function modulesFor(input, lib, projectDir) {
   if (/^mcp__supabase/.test(tool)) {
     const sql = String(ti.query || ti.sql || ti.name || '');
     for (const m of MODULES) if (tableMatches(sql, m)) found.add(m.id);
-    if (/apply_migration/.test(tool)) found.add('database');
+    if (/apply_migration/.test(tool)) { found.add('database'); found.add('database-migrations'); }
     return { touched: [...found], inject: true };
   }
   return { touched: [], inject: false };
