@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { permissionMatrix, phoenixRoles, type PhoenixRole } from "../src/lib/auth/permissions.ts";
 import {
@@ -135,6 +135,59 @@ function runThePersonRatedNeverSeesIt() {
   }
 }
 
+// YEARS OF EXPERIENCE (owner, 2026-10-31: "make hr or dm can fill years of experience of the rep").
+// HR fills it on the Employee Master; the team member's own District Manager may fill or correct it
+// on the survey form. The District Manager's write sits behind the own-team check, and the survey
+// service is the only code outside the employee record's own module that writes it.
+function runTheDistrictManagerFillsYears() {
+  const service = stripComments(readFileSync(new URL("../src/lib/coaching/skills-survey/service.ts", import.meta.url), "utf8"));
+  const start = service.indexOf("export async function saveSkillsSurvey(");
+  assert.ok(start >= 0, "saveSkillsSurvey must exist in the survey service");
+  const end = service.indexOf("\nexport ", start + 1);
+  const save = service.slice(start, end < 0 ? undefined : end);
+  const ownTeamCheck = save.indexOf("canRateSkillsSurveyMember(access, member)");
+  const yearsWrite = save.indexOf("saveTotalExperienceYears(");
+  assert.ok(ownTeamCheck >= 0, "saveSkillsSurvey must check the team member is the District Manager's own");
+  assert.ok(yearsWrite >= 0, "the District Manager's years must be saved to the team member's record");
+  assert.ok(
+    yearsWrite > ownTeamCheck,
+    "the District Manager writes a team member's years only after the check that the team member is his own",
+  );
+  assert.match(save, /years_in_role: yearsInRole/, "the survey keeps the years the District Manager just saved");
+
+  const route = stripComments(readFileSync(new URL("../app/api/coaching/skills-survey/route.ts", import.meta.url), "utf8"));
+  assert.match(route, /totalExperienceYears: body\.totalExperienceYears/,"the save route passes the typed years to the service");
+
+  const form = stripComments(
+    readFileSync(new URL("../src/components/coaching/skills-survey/skills-survey-form.tsx", import.meta.url), "utf8"),
+  );
+  assert.match(
+    form,
+    /totalExperienceYears: typedYears !== initialYears \? typedYears : undefined/,
+    "the form sends the years only when the District Manager changed them, so an untouched box never restarts HR's as-of day",
+  );
+  assert.match(form, /form\.canEdit \? \([\s\S]{0,400}?<FormField/,"only the District Manager who may rate this survey gets the box");
+
+  const writers: string[] = [];
+  const walk = (dir: URL) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, dir);
+      if (entry.isDirectory()) walk(child);
+      else if (/\.tsx?$/.test(entry.name) && /saveTotalExperienceYears\(/.test(stripComments(readFileSync(child, "utf8")))) {
+        writers.push(decodeURIComponent(child.pathname).replace(/^.*?\/(src|app)\//, "$1/"));
+      }
+    }
+  };
+  walk(new URL("../src/", import.meta.url));
+  walk(new URL("../app/", import.meta.url));
+  assert.deepEqual(
+    writers.sort(),
+    ["src/lib/coaching/skills-survey/service.ts", "src/lib/employees/total-experience.ts"],
+    "only the survey save (and the helper itself) writes years through saveTotalExperienceYears",
+  );
+}
+
 function runTheRepIsNeverTold() {
   for (const path of [
     "../src/lib/coaching/skills-survey/service.ts",
@@ -183,5 +236,6 @@ export function runCoachingSkillsSurveyAccessTests() {
   runWhoReads();
   runThePersonRatedNeverSeesIt();
   runTheRepIsNeverTold();
+  runTheDistrictManagerFillsYears();
   runSettingsAndPermissions();
 }

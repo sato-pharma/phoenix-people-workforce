@@ -20,13 +20,16 @@ import {
   FieldLabel,
   FormActions,
   FormBlockHeader,
+  FormField,
   FormWizard,
   RatingScale,
   type FormWizardStep,
   phxButtonAccentClassName,
   phxButtonGhostClassName,
   phxButtonPrimaryClassName,
+  phxFieldClassName,
   phxFieldGridClassName,
+  phxFieldInvalidClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-kit";
 import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
@@ -48,9 +51,11 @@ import {
   skillsSurveyRatingScale,
   skillsSurveyRatingScaleHeading,
   skillsSurveyTitle,
+  skillsSurveyYearsEditHint,
   skillsSurveyYearsInRoleHint,
   skillsSurveyYearsNotFilled,
 } from "@/lib/coaching/skills-survey/vocabulary";
+import { parseTotalExperienceYears, totalExperienceMaxYears } from "@/lib/employees/total-experience-rules";
 import { cn } from "@/lib/utils";
 
 import { PerformanceLevelText, formatSurveyDate } from "./skills-survey-parts";
@@ -157,7 +162,17 @@ function RatingScaleKey() {
   );
 }
 
-function StepAbout({ form }: { form: SkillsSurveyMemberForm }) {
+function StepAbout({
+  form,
+  yearsText,
+  yearsError,
+  onYearsChange,
+}: {
+  form: SkillsSurveyMemberForm;
+  yearsText: string;
+  yearsError: string | null;
+  onYearsChange: (next: string) => void;
+}) {
   const date = form.survey?.surveyDate ?? form.today;
   return (
     <div className="space-y-6">
@@ -169,17 +184,41 @@ function StepAbout({ form }: { form: SkillsSurveyMemberForm }) {
           label={skillsSurveyFieldLabels.date}
           value={`${formatSurveyDate(date)} · ${skillsSurveyQuarterLabel(form.quarter.year, form.quarter.quarter)}`}
         />
-        <ReadOnlyField
-          label={skillsSurveyFieldLabels.yearsInRole}
-          value={
-            form.yearsInRole === null ? (
-              <span className="font-semibold text-amber-800">{skillsSurveyYearsNotFilled}</span>
-            ) : (
-              <span className="tabular-nums">{form.yearsInRole.toFixed(1)}</span>
-            )
-          }
-          hint={skillsSurveyYearsInRoleHint}
-        />
+        {form.canEdit ? (
+          // The District Manager fills or corrects it here; HR fills the same field on the Employee
+          // Master (owner, 2026-10-31: "make hr or dm can fill years of experience of the rep").
+          <FormField
+            error={yearsError}
+            hint={skillsSurveyYearsEditHint}
+            htmlFor="skills-survey-years"
+            label={skillsSurveyFieldLabels.yearsInRole}
+          >
+            <input
+              className={cn(phxFieldClassName, "tabular-nums", yearsError && phxFieldInvalidClassName)}
+              id="skills-survey-years"
+              inputMode="decimal"
+              max={totalExperienceMaxYears}
+              min={0}
+              onChange={(event) => onYearsChange(event.target.value)}
+              placeholder={skillsSurveyYearsNotFilled}
+              step={0.1}
+              type="number"
+              value={yearsText}
+            />
+          </FormField>
+        ) : (
+          <ReadOnlyField
+            label={skillsSurveyFieldLabels.yearsInRole}
+            value={
+              form.yearsInRole === null ? (
+                <span className="font-semibold text-amber-800">{skillsSurveyYearsNotFilled}</span>
+              ) : (
+                <span className="tabular-nums">{form.yearsInRole.toFixed(1)}</span>
+              )
+            }
+            hint={skillsSurveyYearsInRoleHint}
+          />
+        )}
       </div>
 
       <div className="border border-slate-200">
@@ -287,6 +326,8 @@ export function SkillsSurveyForm({
   const [step, setStep] = useState(1);
   const [scores, setScores] = useState<SkillsSurveyScores>(() => ({ ...(form.survey?.scores ?? {}) }));
   const [priorities, setPriorities] = useState(form.survey?.developmentPriorities ?? "");
+  const initialYears = form.yearsInRole === null ? "" : form.yearsInRole.toFixed(1);
+  const [yearsText, setYearsText] = useState(initialYears);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -297,7 +338,16 @@ export function SkillsSurveyForm({
     [scores, skills],
   );
   const average = capabilityAverage(shownScores);
-  const card = scoreSkillsSurveyEntry({ scores: shownScores, yearsInRole: form.yearsInRole }, form.config.settings);
+  // The typed years feed the live Overall score; empty or unreadable falls back to the record's figure.
+  const yearsCheck = useMemo(() => {
+    try {
+      return { error: null, value: parseTotalExperienceYears(yearsText) };
+    } catch (cause) {
+      return { error: cause instanceof Error ? cause.message : "Check the years of experience.", value: null };
+    }
+  }, [yearsText]);
+  const liveYears = readOnly || yearsCheck.value === null ? form.yearsInRole : yearsCheck.value;
+  const card = scoreSkillsSurveyEntry({ scores: shownScores, yearsInRole: liveYears }, form.config.settings);
   const ratedCount = Object.keys(shownScores).length;
 
   const setScore = useCallback((key: string, value: number | null) => {
@@ -315,11 +365,17 @@ export function SkillsSurveyForm({
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    if (yearsCheck.error) {
+      setError(yearsCheck.error);
+      setStep(1);
+      return;
+    }
     if (ratedCount === 0) {
       setError("Rate at least one skill. A survey with every skill on Not observed has no average.");
       setStep(2);
       return;
     }
+    const typedYears = yearsText.trim();
     setError(null);
     setSubmitting(true);
     try {
@@ -329,6 +385,8 @@ export function SkillsSurveyForm({
           memberHrId: form.member.hrId,
           quarter: form.quarter.quarter,
           scores: shownScores,
+          // Sent only when the District Manager changed it, so an untouched box never restarts HR's as-of day.
+          totalExperienceYears: typedYears !== initialYears ? typedYears : undefined,
           year: form.quarter.year,
         }),
         headers: { "Content-Type": "application/json" },
@@ -343,7 +401,7 @@ export function SkillsSurveyForm({
     } finally {
       setSubmitting(false);
     }
-  }, [form.member.hrId, form.quarter, priorities, ratedCount, router, shownScores]);
+  }, [form.member.hrId, form.quarter, initialYears, priorities, ratedCount, router, shownScores, yearsCheck.error, yearsText]);
 
   if (saved) {
     return (
@@ -462,7 +520,9 @@ export function SkillsSurveyForm({
         submitting={submitting}
         title={variant === "admin" ? skillsSurveyTitle : undefined}
       >
-        {step === 1 && <StepAbout form={form} />}
+        {step === 1 && (
+          <StepAbout form={form} onYearsChange={setYearsText} yearsError={yearsCheck.error} yearsText={yearsText} />
+        )}
         {step === 2 && (
           <div className="space-y-4">
             <RatingScaleKey />
