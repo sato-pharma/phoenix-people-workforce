@@ -76,6 +76,29 @@ function deviceInfo(record: RawRecord): RawRecord {
   return {};
 }
 
+/**
+ * The launcher version the tablet is RUNNING, out of its reported app list — not the enrolment target.
+ *
+ * The agent reports the packages it carries in `info.applications`; the launcher sits there under
+ * `com.hmdm.launcher` with whatever version it is actually on. That is the honest answer to "is this
+ * tablet up to date", where the record's top-level `launcherVersion` is only the version the server
+ * WANTS it on (read `agentVersion`'s note). The package literal is `HEADWIND_AGENT_PACKAGE` from
+ * `apps.ts`, written out here rather than imported because `apps.ts` imports this module and a value
+ * cycle is not worth risking for one short, build-invariant string (its own note pins it to the
+ * agent's `applicationId`).
+ */
+function runningLauncherVersion(info: RawRecord): string | null {
+  const list = info.applications;
+  if (!Array.isArray(list)) return null;
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as RawRecord;
+    const pkg = pickString(record, ["pkg", "packageName", "package", "id"]);
+    if (pkg === "com.hmdm.launcher") return pickString(record, ["version", "versionName", "versionCode"]);
+  }
+  return null;
+}
+
 /** An epoch-ms or ISO timestamp as ISO, or null. Headwind sends `lastUpdate` in milliseconds. */
 function isoTime(record: RawRecord, keys: readonly string[]): string | null {
   const ms = pickNumber(record, keys);
@@ -116,6 +139,15 @@ export type HeadwindDevice = {
   batteryCharging: boolean | null;
   /** The Headwind agent's own version — a tablet far behind the fleet is worth seeing. */
   agentVersion: string | null;
+  /**
+   * The launcher version the tablet is ACTUALLY running, read from its reported app list.
+   *
+   * 🔴 THIS IS NOT `agentVersion`. `agentVersion` comes from the record's top-level `launcherVersion`,
+   * which is the version the server WANTS the tablet on (the enrolment/target field) — it read 6.48
+   * for a tablet that went silent before 6.48 shipped. The running version is in `info.applications`
+   * under `com.hmdm.launcher`, and can be older than the target until the tablet checks in and updates.
+   */
+  launcherVersion: string | null;
   lastContactAt: string | null;
   /** Position from the tablet's own last report, where location is switched on for it. */
   latitude: number | null;
@@ -179,6 +211,7 @@ function normalizeDevice(record: RawRecord, configurationNames: Map<string, stri
     info,
     isAndroid: true,
     lastContactAt: isoTime(record, ["lastUpdate", "lastContact", "lastSeen"]),
+    launcherVersion: runningLauncherVersion(info),
     latitude: latitude ?? pickNumber(location, ["lat", "latitude"]),
     locatedAt: isoTime(location, ["ts", "time", "timestamp"]) ?? isoTime(info, ["locationTs"]),
     longitude: longitude ?? pickNumber(location, ["lon", "lng", "longitude"]),
