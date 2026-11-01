@@ -98,7 +98,7 @@ export function ChannelsByRepTab() {
   const table = useSortableTable<ChannelsByRepRow>(rows, {
     columns: [
       { key: "label", accessor: (row) => row.label, type: "string" },
-      { key: "lineCode", accessor: (row) => row.lineCode, type: "string" },
+      { key: "lineName", accessor: (row) => row.lineName, type: "string" },
       { key: "areaName", accessor: (row) => row.areaName ?? row.areaCode, type: "string" },
       { key: "hospitalValue", accessor: (row) => row.hospitalValue, type: "number" },
       { key: "storeValue", accessor: (row) => row.storeValue, type: "number" },
@@ -106,7 +106,7 @@ export function ChannelsByRepTab() {
       { key: "totalValue", accessor: (row) => row.totalValue, type: "number" },
     ],
     initialSort: { dir: "desc", key: "totalValue" },
-    searchAccessors: [(row) => row.label, (row) => row.areaName, (row) => row.lineCode],
+    searchAccessors: [(row) => row.label, (row) => row.areaName, (row) => row.lineName],
   });
 
   // Locked while a read runs, like the Monthly Source Dashboard's month select: leaving a whole-history
@@ -260,7 +260,7 @@ export function ChannelsByRepTab() {
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
                 <SortableTh className="break-words text-xs tracking-[0.12em]" label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="label" variant="dark" />
-                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="lineCode" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="lineName" variant="dark" />
                 <SortableTh className="break-words text-xs tracking-[0.12em]" label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" variant="dark" />
                 <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Hospitals" onSort={table.toggleSort} sort={table.sort} sortKey="hospitalValue" variant="dark" />
                 <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Stores" onSort={table.toggleSort} sort={table.sort} sortKey="storeValue" variant="dark" />
@@ -298,7 +298,7 @@ export function ChannelsByRepTab() {
                         {row.label}
                       </span>
                     </td>
-                    <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.lineCode ?? "—"}</td>
+                    <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.lineName ?? "—"}</td>
                     <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.areaName ?? row.areaCode ?? "—"}</td>
                     <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatCurrency(row.hospitalValue)}</td>
                     <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatCurrency(row.storeValue)}</td>
@@ -340,7 +340,7 @@ export function ChannelsByRepTab() {
                 ) : null}
               </div>
               <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
-                {(row.lineCode ?? "—") + " · " + (row.areaName ?? row.areaCode ?? "—")}
+                {(row.lineName ?? "—") + " · " + (row.areaName ?? row.areaCode ?? "—")}
               </p>
               <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <div>

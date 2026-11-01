@@ -8,6 +8,7 @@ import {
 } from "@/lib/sales/customer-channel";
 import { customerChannelSqlRule } from "@/lib/sales/customer-channel-sql-rule";
 import { latestPublishedClosingPeriod } from "@/lib/sales/monthly-closing-publication";
+import { lineName } from "@/lib/sales/monthly-targets";
 import { listMonthlyClosingPeriods } from "@/lib/sales/monthly-distributor-import";
 import { CHANNELS_BY_REP_WHOLE_HISTORY, latestNonFuturePeriod } from "@/lib/sales/periods";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -46,6 +47,8 @@ export type ChannelsByRepRow = {
   /** What to show in the name column. Always human-readable, never a code or an hr_id. */
   label: string;
   lineCode: string | null;
+  /** The line as a reader knows it ("Anti Infective"), never the code. Null when the row has no line. */
+  lineName: string | null;
   pharmacyCustomers: number;
   pharmacyValue: number;
   repHrId: string | null;
@@ -156,6 +159,7 @@ export function mapChannelsByRepRow(raw: Record<string, unknown>): ChannelsByRep
     hospitalCustomers: num(raw.hospital_customers),
     hospitalValue: num(raw.hospital_value),
     lineCode: text(raw.line_code),
+    lineName: lineName(text(raw.line_code)) || null,
     pharmacyCustomers: num(raw.pharmacy_customers),
     pharmacyValue: num(raw.pharmacy_value),
     repHrId,
