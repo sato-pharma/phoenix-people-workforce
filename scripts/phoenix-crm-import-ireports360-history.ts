@@ -19,8 +19,10 @@
  * the marks in the migration's header. It runs the dry run again for the seat list, then ONE seat per
  * transaction: inside that transaction it plans the seat, writes it, and throws if the written count is
  * not the planned count, so a mismatching seat is rolled back and the run stops there.
- * applied-<Cairo time>.json keeps every seat's answer. A second --apply writes nothing: every old visit
- * already copied is in phoenix_crm_imported_visit_sources. --apply takes no value: --apply=false is refused.
+ * applied-<Cairo time>.json keeps every seat's answer. A second --apply never writes an old visit twice: every
+ * one already copied is in phoenix_crm_imported_visit_sources. It CAN still write: an old visit a changed rule
+ * brings in, a seat or team new since the last run, a doctor with a new link. Read the dry run first: what
+ * it will write is rows_to_write less conflicts_skipped. --apply takes no value: --apply=false is refused.
  *
  * Usage:
  *   node --env-file-if-exists=.env.production.rls.local --experimental-strip-types \
@@ -47,7 +49,7 @@ type Answer = {
   applied: boolean;
   seat: string | null;
   seats: SeatAnswer[];
-  totals: Omit<SeatAnswer, "seat_id"> & { seats: number };
+  totals: Omit<SeatAnswer, "seat_id"> & { seats: number; partners_dropped: number; conflicts_without_a_line: number };
 };
 
 const DATE = "20261029";
@@ -138,8 +140,9 @@ async function dryRun(sql: postgres.Sql, seat: string | null): Promise<Answer> {
   }) as Promise<Answer>;
 }
 
-// What a seat must write: every row the dry run plans, less the ones that would collide with a visit
-// already in Phoenix (the function skips those and says so).
+// What a seat must write: every row the dry run plans, less its conflicts: a visit already in Phoenix on that
+// customer and day, and the later of two reps' visits to one customer on one day. The function skips both
+// and says so.
 const plannedOf = (seat: SeatAnswer): number => seat.rows_to_write - seat.conflicts_skipped;
 
 // Thrown INSIDE the seat's transaction, so the seat is rolled back rather than left written.

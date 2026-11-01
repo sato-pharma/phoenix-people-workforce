@@ -122,12 +122,12 @@ export function runPhoenixCrmVisitDetailEditTests(): void {
   // ── 2. Whose visit it is ──────────────────────────────────────────────────────────────────────
   {
     assert.deepEqual(
-      visitDetailEditable({ repHrId: "AI-0025", linkedFromVisitId: null, actorHrId: "ai-0025" }),
+      visitDetailEditable({ repHrId: "AI-0025", linkedFromVisitId: null, actorHrId: "ai-0025", importedAt: null }),
       { editable: true },
       "his own visit, however the two ids are cased",
     );
     assert.deepEqual(
-      visitDetailEditable({ repHrId: "AI-0026", linkedFromVisitId: null, actorHrId: "AI-0025" }),
+      visitDetailEditable({ repHrId: "AI-0026", linkedFromVisitId: null, actorHrId: "AI-0025", importedAt: null }),
       { editable: false, reason: VISIT_DETAIL_FIXED_OTHER_REP },
       "another rep's visit stays as they recorded it",
     );
@@ -137,13 +137,13 @@ export function runPhoenixCrmVisitDetailEditTests(): void {
       "a visit copied from the old system is history, even on his own seat",
     );
     assert.deepEqual(
-      visitDetailEditable({ repHrId: null, linkedFromVisitId: null, actorHrId: "B-10" }),
+      visitDetailEditable({ repHrId: null, linkedFromVisitId: null, actorHrId: "B-10", importedAt: null }),
       { editable: false, reason: VISIT_DETAIL_FIXED_NO_REP },
       "a manager's own single visit carries no rep, so it has no rep's detail to write up",
     );
     // The pharmacy visit a doctor's visit filed is part of that one submission.
     assert.deepEqual(
-      visitDetailEditable({ repHrId: "AI-0025", linkedFromVisitId: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", actorHrId: "AI-0025" }),
+      visitDetailEditable({ repHrId: "AI-0025", linkedFromVisitId: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", actorHrId: "AI-0025", importedAt: null }),
       { editable: false, reason: VISIT_DETAIL_FIXED_LINKED },
       "and the linked pharmacy visit sends him to the visit it came from",
     );

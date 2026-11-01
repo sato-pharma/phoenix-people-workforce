@@ -122,7 +122,7 @@ export function visitDetailEditable(visit: {
   linkedFromVisitId: string | null;
   actorHrId: string;
   /** `imported_from_ireports360_at`: a visit copied from the old system is history, never his to write up. */
-  importedAt?: string | null;
+  importedAt: string | null;
 }): { editable: true } | { editable: false; reason: string } {
   if (visit.importedAt) return { editable: false, reason: VISIT_DETAIL_FIXED_HISTORY };
   if (visit.linkedFromVisitId) return { editable: false, reason: VISIT_DETAIL_FIXED_LINKED };

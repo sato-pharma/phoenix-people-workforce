@@ -2012,6 +2012,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // visits and 3,520 imported customers read unchanged. The ledger's newest row was 20261031195143, and ZERO rows
   // carry this version or name.
   "20261101101900_phoenix_crm_import_history_review_fixes.sql",
+  // THE IREPORTS360 HISTORY COPY'S SECOND REVIEW FIXES — applied to PRODUCTION on 1 Nov 2026 at about 11:15 Cairo,
+  // through scripts/apply-sql-file.mjs (PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of AGENTS.md §8:
+  // the Supabase MCP's apply_migration declined this body's sibling an hour earlier, it holding the same
+  // `drop table pg_temp.…`. The route writes no ledger row, hence this entry. It replaces one function and changes no row.
+  //
+  // Read live on ozucdzovmcqvepbozvqf right after the apply. Verified by digest, not by presence:
+  // md5(pg_proc.prosrc) for phoenix_crm_import_ireports360_history is 50db0b5f985784e0d2764716ff324f91 (was
+  // ec18318767a6bde56ed1ed4bd1ea22ea), the md5 of this file's own dollar-quoted body. prosecdef true, proconfig
+  // {search_path=public}, proacl {postgres=X/postgres,service_role=X/postgres}. 69,046 imported visits, 3,520 imported
+  // customers and 69,127 source rows read unchanged. The ledger's newest row was 20261031195143, and ZERO rows carry
+  // this version or name.
+  "20261101111500_phoenix_crm_import_history_second_review_fixes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
