@@ -38,7 +38,26 @@ const PAIR_KEYED = new Set([
   "phx_exec_customers",
   "phx_exec_distributor_product",
   "phx_customer_directory",
+  // Channels by Rep joined with two "is not distinct from", which cannot hash at all, so the whole
+  // history threw away 29,849,634 rows on staging whatever the planner believed (8,043 ms, 2,365 ms
+  // on this key, 2026-11-01). Production holds no NULL and no "|" in either column.
+  "phx_sales_channels_by_rep",
 ]);
+
+/**
+ * Measured 2026-11-01 under plan_cache_mode = force_generic_plan. The function really is handed a
+ * nested loop over its price lookup, and the join CAN hash, so the switch rescues it.
+ * Market awareness, 1 product and 2 months on staging: 2,270 ms against 279 ms. At its widest
+ * parameters the unfixed plan took staging down; fixed it answers in 2,054 ms.
+ */
+const NESTLOOP_OFF = new Set(["phx_customer_directory", "phx_market_awareness_tracking"]);
+
+/**
+ * The same switch measured SLOWER, ms without it against ms with it on staging: corrections
+ * 2,530 / 5,652, area pharmacies 216 / 633. Their plans already hash, so it only takes the
+ * good nested loops away. It is a fix for a measured plan, never a blanket setting.
+ */
+const NESTLOOP_HARMS = new Set(["phx_closing_corrections", "phx_territory_area_pharmacies"]);
 
 /** Functions whose direct arm must keep taking the STORED direct value, never a resolved price. */
 const DIRECT_ARMS: Record<string, string> = {
@@ -216,6 +235,20 @@ function assertHoistedShape(qualifiedName: string, definition: Definition): void
     );
   }
 
+  // ── 5b. THE PLANNER SWITCH SITS ONLY WHERE IT WAS MEASURED TO HELP.
+  if (NESTLOOP_OFF.has(name)) {
+    assert.ok(
+      header.includes("set enable_nestloop to 'off'"),
+      `RED ${where} must keep enable_nestloop off: planned with its parameters unknown it walks the whole price list per row`,
+    );
+  }
+  if (NESTLOOP_HARMS.has(name)) {
+    assert.ok(
+      !header.includes("enable_nestloop"),
+      `RED ${where} must not carry enable_nestloop: measured slower with it, because its plan already hashes`,
+    );
+  }
+
   // ── 6. THE DIRECT ARM STILL TAKES THE STORED VALUE. A hoist must never start pricing a direct row.
   const directArm = DIRECT_ARMS[name];
   if (directArm) {
@@ -338,6 +371,36 @@ export function runSalesReadsPriceEachPairOnceTests() {
   // (g) the service_role grant lost
   broke((d) => ({ ...d, tail: d.tail.replace(/grant execute on function[^;]*;/g, "") }), /must grant execute to service_role/);
 
+  // (g2) the switch dropped from market awareness, whose unfixed plan took staging down
+  assert.throws(
+    () => {
+      const ma = lastDefinition("phx_market_awareness_tracking");
+      assertHoistedShape("phx_market_awareness_tracking", { ...ma, header: ma.header.replace(/set enable_nestloop to 'off'\s*/i, "") });
+    },
+    /must keep enable_nestloop off/,
+    "the dropped-switch break test did not fire",
+  );
+
+  // (g3) the switch spread to a function it was measured to slow down
+  assert.throws(
+    () => {
+      const cc = lastDefinition("phx_closing_corrections");
+      assertHoistedShape("phx_closing_corrections", { ...cc, header: `${cc.header} set enable_nestloop to 'off' ` });
+    },
+    /must not carry enable_nestloop/,
+    "the blanket-switch break test did not fire",
+  );
+
+  // (g4) the concatenation dropped from Channels by Rep, back to a join that cannot hash
+  assert.throws(
+    () => {
+      const cr = lastDefinition("phx_sales_channels_by_rep");
+      assertHoistedShape("phx_sales_channels_by_rep", { ...cr, body: cr.body.split("|| '|' ||").join("||") });
+    },
+    /single concatenated key/,
+    "the Channels by Rep pair-key break test did not fire",
+  );
+
   // (h) the brick drill-down — the one au-schema read — priced per row again, exactly as it was
   //     before 2026-10-31
   const brick = lastDefinition("au.f_sales_brick_detail");
@@ -365,5 +428,5 @@ export function runSalesReadsPriceEachPairOnceTests() {
     "the au brick drill-down search_path break test did not fire",
   );
 
-  console.log(`sales reads price each pair once: ${FUNCTIONS.length} functions, 14 break tests passed`);
+  console.log(`sales reads price each pair once: ${FUNCTIONS.length} functions, 17 break tests passed`);
 }
