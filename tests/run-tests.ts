@@ -2933,6 +2933,7 @@ import { runSamePharmacyCrossUseFlagTests } from "./same-pharmacy-cross-use-flag
 import { runSickLeaveReachesHrApprovalsTests } from "./sick-leave-reaches-hr-approvals.test.ts";
 import { runRollupExecBufferTests } from "./rollup-exec-buffer.test.ts";
 import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold.test.ts";
+import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11638,6 +11639,8 @@ await runTest(
 );
 
 await runTest("Pedia Sharkia 1 and 2: off the organogram, counted to Hany Saad from October, published months unmoved", runPediaSharkiaHanySaadHoldTests);
+
+await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

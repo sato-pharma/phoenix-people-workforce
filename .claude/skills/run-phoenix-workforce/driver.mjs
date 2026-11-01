@@ -24,9 +24,15 @@
  *   waitfor <text>   wait (up to 120 s) until <text> is visible
  *   wait <ms>        sleep
  *
- * Exit code 1 if any step fails; console errors and failed requests are printed at the end.
- * The dev server reads .env.local, which is PRODUCTION Supabase — a click that saves, sends,
- * approves or deletes does it for real. Read-only steps (go/shot/text/overflow/eval) are safe.
+ * Exit code 1 if any step fails; console errors, failed requests and every write the driver stopped
+ * are printed at the end.
+ *
+ * The dev server reads .env.local, which is PRODUCTION Supabase, so a page opened as a real person
+ * (--hrId) can write under that person's name without a single click: a page's mount effects, its
+ * autosaves and the beacons of a closing page. So the browser sends GET and nothing else, on every
+ * step and with no way to turn it off. A stopped fetch or beacon is answered as a success, so the page
+ * carries on: "Saved" on a driven page means nothing was saved. This cannot stop what a page's own
+ * server render writes during a GET; see "What it cannot stop" in SKILL.md.
  */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -72,7 +78,68 @@ const context = await browser.newContext({
   viewport: { width: opts.width, height: opts.width < 768 ? 812 : 900 },
   isMobile: opts.width < 768,
   hasTouch: opts.width < 768,
+  // Playwright's routing cannot see a request a service worker makes, and OneSignal registers one.
+  serviceWorkers: "block",
 });
+
+// Two layers, because each misses what the other catches. context.route sees every request the
+// network stack is asked for (XHR, a form post, a worker), but a sendBeacon or keepalive fetch from a
+// closing page still reached the server past it (1 Nov 2026). The page-side stubs stop those before
+// they become requests at all, and cannot see an XHR or a form post.
+const writesStopped = [];
+const recordStoppedWrite = (how, method, url) => {
+  const target = new URL(url, opts.base);
+  const where = target.origin === new URL(opts.base).origin ? `${target.pathname}${target.search}` : target.href;
+  writesStopped.push(`${method} ${where} (${how})`);
+};
+// The page keeps its own list in the tab's sessionStorage: a Playwright binding called from a closing
+// page never came back (the pagehide writes were stopped but went unlisted), and storage is written
+// at once and outlives the navigation. Collected at the end of the run.
+const STOPPED_KEY = "__phxDriverWritesStopped";
+const collectStoppedWrites = async () => {
+  for (const frame of page.frames()) {
+    const read = frame.evaluate((key) => {
+      const held = sessionStorage.getItem(key);
+      sessionStorage.removeItem(key);
+      return held;
+    }, STOPPED_KEY);
+    const held = await Promise.race([read, new Promise((done) => setTimeout(done, 5_000, null))]).catch(() => null);
+    for (const [how, method, url] of JSON.parse(held ?? "[]")) recordStoppedWrite(how, method, url);
+  }
+};
+await context.addInitScript((key) => {
+  const report = (how, method, url) => {
+    try {
+      const held = JSON.parse(sessionStorage.getItem(key) ?? "[]");
+      held.push([how, method, new URL(String(url), location.href).href]);
+      sessionStorage.setItem(key, JSON.stringify(held));
+    } catch {
+      // No storage in this frame (a sandboxed one): the write is still stopped, it just goes unlisted.
+    }
+  };
+  const realFetch = window.fetch;
+  window.fetch = function fetch(input, init) {
+    const method = String(init?.method ?? input?.method ?? "GET").toUpperCase();
+    if (method === "GET") return realFetch.call(this, input, init);
+    report("fetch", method, input?.url ?? input);
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+  Navigator.prototype.sendBeacon = function sendBeacon(url) {
+    report("beacon", "POST", url);
+    return true;
+  };
+}, STOPPED_KEY);
+await context.route("**/*", (route) => {
+  const request = route.request();
+  if (request.method() === "GET") return route.continue();
+  recordStoppedWrite(request.resourceType(), request.method(), request.url());
+  // Aborting a form post navigates the tab to Chrome's error page, which has no sessionStorage, so the
+  // page's own list was lost and later steps read the error page. A 204 never reaches the server either,
+  // and a browser stays on the page it is on.
+  if (request.isNavigationRequest()) return route.fulfill({ status: 204 });
+  return route.abort("blockedbyclient");
+});
+
 const page = await context.newPage();
 const consoleErrors = [];
 const failedRequests = [];
@@ -193,6 +260,11 @@ try {
 } finally {
   if (consoleErrors.length) console.log(`console errors (${consoleErrors.length}):\n  ${consoleErrors.slice(0, 10).join("\n  ")}`);
   if (failedRequests.length) console.log(`5xx responses (${failedRequests.length}):\n  ${failedRequests.slice(0, 10).join("\n  ")}`);
+  // After a `go` the outgoing page runs its pagehide handlers only once the next page has loaded (their
+  // beacons reached a recording server after the next page's GET), so give them time to be listed.
+  await page.waitForTimeout(2_000).catch(() => {});
+  await collectStoppedWrites();
   await browser.close();
+  console.log(`writes stopped (${writesStopped.length})${writesStopped.length ? `:\n  ${writesStopped.join("\n  ")}` : ""}`);
 }
 process.exit(failed ? 1 : 0);
