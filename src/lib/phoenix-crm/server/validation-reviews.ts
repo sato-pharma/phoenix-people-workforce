@@ -445,10 +445,16 @@ export type ValidationReviewRow = {
   refusalLabel: string | null;
   query: string | null;
   listings: Array<GoogleListing & { distanceMeters: number }>;
+  /** Who decided it. 🔴 Null for a viewer who decides nothing: a field a browser receives counts as shown (owner, 2026-10-13). */
   decidedByName: string | null;
   decidedAtText: string | null;
   /** The raw instant, for the reads and filters that compare it. `decidedAtText` is for the screen. */
   decidedAt: string | null;
+  /**
+   * What the decider wrote. 🔴 Null for a viewer who decides nothing: a comment reaches a manager as a
+   * place note, by role (`tellDecisionComment`, and for the older ones the copy of 2026-11-01), never
+   * through this field.
+   */
   decisionNote: string | null;
   /**
    * Whether this rejection can still be taken back (owner, 2026-10-03: "add the option to approve
@@ -523,6 +529,7 @@ export async function loadValidationReviews(
   } = {},
 ): Promise<ValidationBoardRead<ValidationReviewRow>> {
   const seats = placeChecksSeatScope(viewer);
+  const decides = canDecideValidationReviews(viewer);
   const since = new Date(Date.now() - DECIDED_SHOWN_DAYS * 86_400_000).toISOString();
   const rejectedSince = new Date(Date.now() - REJECTED_SHOWN_DAYS * 86_400_000).toISOString();
   const read = await readEveryPage<Row>(
@@ -655,10 +662,10 @@ export async function loadValidationReviews(
       listings: listingsOf(google, point),
       // The system approves a held signboard itself once a reading confirms the customer (2026-10-17,
       // server/signboard-holds.ts), as the actor SYSTEM — a word no person carries, shown as a word.
-      decidedByName: deciderLabel(names, text(row.decided_by_hr_id)),
+      decidedByName: decides ? deciderLabel(names, text(row.decided_by_hr_id)) : null,
       decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
       decidedAt: text(row.decided_at),
-      decisionNote: text(row.decision_note),
+      decisionNote: decides ? text(row.decision_note) : null,
       // One review row per place (the UNIQUE index), so this row IS the place's whole story: a
       // rejection can be taken back while the place it retired is still retired, and since
       // 2026-10-15 an APPROVAL can be taken back while the place it approved is still active.
@@ -838,7 +845,8 @@ export type ValidatedPlaceRow = {
   reviewed: boolean;
   /**
    * Who approved this place and when, from its one review row (owner, 2026-10-20). Null for a place
-   * nobody has decided, and for a decision that predates the record.
+   * nobody has decided, and for a decision that predates the record. 🔴 The name is also null for a
+   * viewer who decides nothing; the time stays, because the board's outcome filters read it.
    */
   decidedByName: string | null;
   decidedAtText: string | null;
@@ -909,6 +917,7 @@ export type ValidatedPlaceRow = {
  */
 export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ValidatedPlaceRow>> {
   const seats = placeChecksSeatScope(viewer);
+  const decides = canDecideValidationReviews(viewer);
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()
@@ -1002,7 +1011,7 @@ export async function loadValidatedPlaces(viewer: PhoenixCrmViewer): Promise<Val
         visits: visitsByPlace.get(String(row.id)) ?? 0,
         otherPlaces: Math.max((placesByCustomer.get(String(row.customer_id)) ?? 1) - 1, 0),
         reviewed: reviewed.has(String(row.id)),
-        decidedByName: deciderLabel(names, text(approvals.get(String(row.id))?.decided_by_hr_id)),
+        decidedByName: decides ? deciderLabel(names, text(approvals.get(String(row.id))?.decided_by_hr_id)) : null,
         decidedAtText: text(approvals.get(String(row.id))?.decided_at)
           ? formatPhoenixDateTime(String(approvals.get(String(row.id))?.decided_at))
           : null,
@@ -1232,7 +1241,10 @@ export type ReopenedCustomerRow = {
   waitingHours: number;
   /** What was wrong with the photo, as chosen — null for a refusal that predates the reason. */
   reasonLabel: string | null;
-  /** Who refused it and when (owner, 2026-10-20) — null when the refusal predates the record. */
+  /**
+   * Who refused it and when (owner, 2026-10-20) — null when the refusal predates the record. 🔴 The name
+   * is also null for a viewer who decides nothing.
+   */
   refusedByName: string | null;
   refusedAtText: string | null;
   /**
@@ -1259,6 +1271,7 @@ export type ReopenedCustomerRow = {
  */
 export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<ValidationBoardRead<ReopenedCustomerRow>> {
   const seats = placeChecksSeatScope(viewer);
+  const decides = canDecideValidationReviews(viewer);
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()
@@ -1327,7 +1340,7 @@ export async function loadReopenedCustomers(viewer: PhoenixCrmViewer): Promise<V
       reopenedAtText: formatPhoenixDateTime(reopenedAt),
       waitingHours: Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now - at) / 3_600_000)),
       reasonLabel: validationRefusalLabel(review ? text(review.refusal_reason) : (venue?.refusalReason ?? null)),
-      refusedByName: deciderLabel(names, review ? text(review.decided_by_hr_id) : (venue?.decidedByHrId ?? null)),
+      refusedByName: decides ? deciderLabel(names, review ? text(review.decided_by_hr_id) : (venue?.decidedByHrId ?? null)) : null,
       refusedAtText: refusedAt ? formatPhoenixDateTime(refusedAt) : null,
       sharedPlaceName: venue?.sharedPlaceName ?? null,
       sharedPlaceId: venue?.sharedPlaceId ?? null,

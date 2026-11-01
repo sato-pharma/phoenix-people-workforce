@@ -15,6 +15,7 @@ import {
   placeRecommendationLabel,
   PLACE_NOTE_MAX_LENGTH,
 } from "../src/lib/phoenix-crm/place-note-rules.ts";
+import { decidedByMatches } from "../src/lib/phoenix-crm/validation-review-filters.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
@@ -574,9 +575,87 @@ function checkDecisionCommentReachesTheRep(): void {
   assert.doesNotMatch(read("src/lib/phoenix-crm/validation-feedback.ts"), /never shown to the rep|the rep reads only/);
 }
 
+// ── A manager's payload carries no decider (found 2026-11-01) ───────────────────────────────────────
+
+function checkAManagersPayloadCarriesNoDecider(): void {
+  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  const buildings = read("src/lib/phoenix-crm/server/shared-places.ts");
+  const evidence = read("src/lib/phoenix-crm/server/integrity-board.ts");
+
+  // 🔴 EVERY decider field a row loader writes starts with the same test, so a manager's browser never
+  // receives it. The sweep reads each loader's own object literals: a field added later without the test
+  // fires here, where naming today's lines one by one would not.
+  const loaders = [
+    ["loadValidationReviews", reviews, ["decidedByName", "decisionNote"]],
+    ["loadValidatedPlaces", reviews, ["decidedByName"]],
+    ["loadReopenedCustomers", reviews, ["refusedByName"]],
+    ["loadSharedPlaceBoard", buildings, ["decidedByName", "decisionNote", "byName"]],
+  ] as const;
+  for (const [name, source, fields] of loaders) {
+    const body = functionBody(source, name);
+    assert.match(body, /const decides = canDecideValidationReviews\(viewer\);/, `${name} asks the one predicate that decides who may read a decider`);
+    const written = [...body.matchAll(/\b(decidedByName|refusedByName|decisionNote|byName): ([^\n]*)/g)];
+    assert.deepEqual(written.map((match) => match[1]).sort(), [...fields].sort(), `${name} writes exactly these decider fields`);
+    for (const [line, field, value] of written) {
+      assert.match(value, /^decides(?: \?| &&)/, `${name} sends ${field} to a viewer who decides nothing: ${line}`);
+      assert.match(value, /: null,$/, `and the other answer is null: ${line}`);
+    }
+  }
+
+  // The time stays on every row: the Settled display prints it and the outcome filters read it.
+  assert.match(functionBody(reviews, "loadValidationReviews"), /decidedAtText: text\(row\.decided_at\) \?/, "a manager keeps when a place was settled");
+  assert.match(functionBody(buildings, "loadSharedPlaceBoard"), /decidedAtText: text\(row\.decided_at\) \?/, "and when a building was");
+  // A null name must not empty a manager's lists: they have no decider box, so nothing is ever chosen.
+  assert.equal(decidedByMatches(null, ""), true, "a row with no decider name still passes when nobody is chosen");
+
+  // The one line of this table a manager's screen really drew: the closed case keeps its status, never its closer.
+  const integrity = functionBody(evidence, "loadPlaceCheckIntegrity");
+  assert.match(integrity, /const decides = canDecideValidationReviews\(viewer\);/, "the evidence read asks the same predicate");
+  assert.match(
+    integrity,
+    /settledText: settlement\s*\? `\$\{decides \? `Settled by \$\{settlement\.byName\}` : "Settled"\} · \$\{formatPhoenixDateTime\(settlement\.at\)\}`/,
+    "a manager reads that a case is closed, and only a decider reads who closed it",
+  );
+  assert.equal([...integrity.matchAll(/settlement\.byName/g)].length, 1, "and the closer's name appears nowhere else in this read");
+
+  // The deciders keep all of it: their page admits nobody else, so `decides` is true for every row it reads.
+  const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
+  assert.match(company, /if \(!viewer \|\| !canDecideValidationReviews\(viewer\)\) redirect\("\/admin"\)/, "the deciders' page gates on the same predicate");
+  assert.match(company, /loadValidationReviews\(viewer, \{ everyDecision: true \}\)/, "and reads through the same loaders");
+  const board = read("src/components/phoenix-crm/validation-reviews-board.tsx");
+  assert.match(board, /row\.decidedByName\),\s*\.\.\.validated\.map\(\(row\) => row\.decidedByName\),\s*\.\.\.reopened\.map\(\(row\) => row\.refusedByName\)/, "its Decided by box still lists them");
+
+  // 🔴 A COMMENT WRITTEN WITH A DECISION STILL REACHES THE MANAGER (owner, 2026-11-01). It travels as a place
+  // note, through its own table, so holding back `decision_note` does not touch it.
+  const page = read("app/employee-portals/place-checks/page.tsx");
+  assert.match(page, /loadPlaceNoteIndex\(subjects, \{ managerBoard: true \}\)/, "the manager's page still reads the place notes");
+  assert.match(page, /noteIndex=\{noteIndex\}/, "and hands them to the board");
+  const notes = read("src/lib/phoenix-crm/server/place-notes.ts");
+  assert.ok(!notes.includes("decision_note"), "and neither the note read nor the note write goes through the old private column");
+  assert.ok(!functionBody(notes, "loadPlaceNoteIndex").includes("canDecideValidationReviews"), "and the decider test never narrows the notes");
+  assert.match(functionBody(notes, "tellDecisionComment"), /repVisible: true/, "and the decision's comment is still written where the manager reads it");
+}
+
+/**
+ * The older comments were copied once (owner, 2026-11-01), and what he left out stays out: a replay of the
+ * file must not hand a rep the system's own line, a clean-up line, a bare dash or another employee's name.
+ */
+function checkOlderCommentsCopyLeavesOutWhatHeChose(): void {
+  const copy = read("supabase/migrations/20261101130000_phoenix_crm_older_decision_comments_reach_rep.sql");
+  assert.match(copy, /o\.author_hr_id <> 'SYSTEM'/, "the system's own line is not a decider's comment");
+  assert.match(copy, /o\.body <> '-'/, "a bare dash says nothing");
+  assert.match(copy, /o\.body not ilike '%Ebtissam Alaa%'/, "a rep reads a role, never another employee's name");
+  assert.match(copy, /o\.body not like 'Duplicate of the same building%'/, "the owner left the clean-up lines out");
+  assert.match(copy, /v_expected constant int := 51;/, "and it refuses to add more than the 51 his answer covers");
+  assert.match(copy, /'system_admin', o\.body, true, o\.decided_at/, "each one reads as the decider's, visible, at the time of the decision");
+  assert.doesNotMatch(copy, /^\s*(update|delete)\s/im, "and the file only adds rows, outside its written rollback");
+}
+
 export function runPhoenixCrmPlaceNotesTests(): void {
   checkRepWording();
   checkDecisionCommentReachesTheRep();
+  checkAManagersPayloadCarriesNoDecider();
+  checkOlderCommentsCopyLeavesOutWhatHeChose();
   checkTeamScope();
   checkHeDecidesNothing();
   checkVisibilityIsChosen();

@@ -157,7 +157,10 @@ export type PlaceCheckIntegrityView = {
   deviceText: string | null;
   /** When the system noticed, in Cairo time, with the accuracy it reported if it reported one. */
   noticedText: string;
-  /** Null unless the Super Admin has already closed it — so a manager never reads a settled case as standing. */
+  /**
+   * Null unless the Super Admin has already closed it — so a manager never reads a settled case as
+   * standing. The deciders read who closed it; a manager reads that it is closed, and when.
+   */
   settledText: string | null;
 };
 

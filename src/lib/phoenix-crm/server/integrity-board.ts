@@ -96,7 +96,7 @@ import {
   type PhoenixCrmIntegrityFlag,
   type StoredSignboardVerdict,
 } from "@/lib/phoenix-crm/location-integrity";
-import { placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canDecideValidationReviews, placeChecksSeatScope, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { selectByIds, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
@@ -1632,6 +1632,7 @@ export async function loadPlaceCheckIntegrity(
   input: { placeIds: ReadonlyArray<string>; sharedPlaceIds: ReadonlyArray<string> },
 ): Promise<PlaceCheckIntegrityIndex> {
   const seats = placeChecksSeatScope(viewer);
+  const decides = canDecideValidationReviews(viewer);
   const ids = [...new Set([...input.placeIds, ...input.sharedPlaceIds].filter((id) => isUuid(id)))];
   if (ids.length === 0) return {};
 
@@ -1664,7 +1665,10 @@ export async function loadPlaceCheckIntegrity(
       deviceText: row.device_mocked === true ? "The phone reported a mock location" : null,
       noticedText: accuracy === null ? `Noticed ${noticedAt}` : `Noticed ${noticedAt} · the phone reported ${Math.round(accuracy)} m of accuracy`,
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
-      settledText: settlement ? `Settled by ${settlement.byName} · ${formatPhoenixDateTime(settlement.at)}` : null,
+      // A manager still reads that the case is closed, and never who closed it (owner, 2026-10-13).
+      settledText: settlement
+        ? `${decides ? `Settled by ${settlement.byName}` : "Settled"} · ${formatPhoenixDateTime(settlement.at)}`
+        : null,
       sourceLabel: integritySourceLabel(source),
       strong: row.strong === true,
     };

@@ -564,6 +564,7 @@ export type SharedPlaceBoardRow = SharedPlaceRow & {
   pin: SharedPlaceReading | null;
   signboard: { verdict: string; reason: string | null; signText: string | null; note: string | null } | null;
   decidedAtText: string | null;
+  /** 🔴 Null for a viewer who decides nothing, with `decisionNote`: a field a browser receives counts as shown. */
   decidedByName: string | null;
   decisionNote: string | null;
   /**
@@ -571,8 +572,10 @@ export type SharedPlaceBoardRow = SharedPlaceRow & {
    * himself, as an exception (owner, 2026-10-18, City clinic: "make the place validated, and make those
    * doctors validated by the admin as an exception for this polyclinic and show this"). A marker for the
    * screen ONLY — nothing validates a customer off it, so one seated there later is still held for him.
+   * 🔴 `byName` is null for a viewer who decides nothing; the marker itself stays, because a manager's
+   * board still says the building has no timetable.
    */
-  timetableExempt: { atText: string; byName: string } | null;
+  timetableExempt: { atText: string; byName: string | null } | null;
   /**
    * Whether this venue's REJECTION can still be taken back (owner, 2026-10-15: "make me able to
    * approve validation after rejection") — the same pair of tests the database makes: still retired,
@@ -609,6 +612,7 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
   // null is the whole company (the Super Admin), a seat list is one district manager's own team
   // (owner, 2026-10-13). It THROWS for anybody else — see `placeChecksSeatScope`.
   const seats = placeChecksSeatScope(viewer);
+  const decides = canDecideValidationReviews(viewer);
   const read = await readEveryPage<Row>(
     () => {
       const query = getSupabaseAdmin()
@@ -663,12 +667,12 @@ export async function loadSharedPlaceBoard(viewer: PhoenixCrmViewer): Promise<{ 
         pin: readingOf(row.pin_lat, row.pin_lon, row.pin_accuracy_meters),
         signboard: signboardOf(row.signboard_check),
         decidedAtText: text(row.decided_at) ? formatPhoenixDateTime(String(row.decided_at)) : null,
-        decidedByName: text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "The administrator") : null,
-        decisionNote: text(row.decision_note),
+        decidedByName: decides && text(row.decided_by_hr_id) ? nameOf(names, text(row.decided_by_hr_id), "The administrator") : null,
+        decisionNote: decides ? text(row.decision_note) : null,
         timetableExempt: text(row.timetable_exempt_at)
           ? {
               atText: formatPhoenixDateTime(String(row.timetable_exempt_at)),
-              byName: nameOf(names, text(row.timetable_exempt_by_hr_id), "The administrator"),
+              byName: decides ? nameOf(names, text(row.timetable_exempt_by_hr_id), "The administrator") : null,
             }
           : null,
         // The same pair of tests the database makes, so the control appears exactly where it works.
