@@ -111,13 +111,24 @@ seat, among its real ones:
 The same seat's dry run with 440 customers and 2,000 links took 1.4 seconds.
 
 **What the rules above do not change:** the review's fixes of 2026-11-01 apply to the next run. The first run's
-rows stand as written until the owner decides otherwise, because repairing them is a bulk production change:
+rows were read one by one with the owner, who chose what to repair on 2026-11-01:
 
-| What the first run wrote | Rows |
-| --- | --- |
-| A terminated training manager's visits, filed as `double` | 218 |
-| Imported pharmacies filed on the AM or PM list | 138 |
-| Archive rows for the catch-all contact 100000 | 5, with 6 visits |
+| What the first run wrote | Rows | What happened |
+| --- | --- | --- |
+| A terminated training manager's visits, filed as `double` | 218 | Re-filed as `product_manager`, at 11:44 Cairo |
+| Imported pharmacies filed on the AM or PM list | 138, with 612 visits | Moved to the Pharmacy list, each visit carrying the pharmacy's name, at 11:44 Cairo |
+| Archive rows for the catch-all contact 100000 | 5, with 6 visits | Left: taking them out means permanently deleting production rows |
+| Archive doctors with the same name as a doctor the rep added | 7 pairs, 29 visits | Left: moving a visit needs someone to confirm it is one doctor |
+| Archive doctors with the same name as another old contact on the rep's list | 752 pairs, 4,513 visits | Left, and never merged by name: 4,237 names are shared by more than one old contact |
+
+The repair is `supabase/migrations/20261101120000_phoenix_crm_first_run_rows_repair.sql`. It updated 968 rows and
+deleted none. The schema `phoenix_crm_backup_20261101` holds those rows as they were, and the file carries the
+rollback. The training manager held no seat on any of those days and their login role is Training Manager, so the
+rule above files all 218 as `product_manager`.
+
+A customer on the Pharmacy list counts as validated, so the 612 visits now read `customer_validated = true` in
+`phoenix_crm_countable_visits_with_history` and show under Pharmacies on the history screens that read it, such as
+the team calendar. Before the repair they were on doctors' lists and unvalidated.
 
 ## The marks
 
