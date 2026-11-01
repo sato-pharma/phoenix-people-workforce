@@ -104,6 +104,7 @@ export const VISIT_DETAIL_FIXED_NO_REP = "This visit has no rep on it, so its de
 export const VISIT_DETAIL_FIXED_OTHER_REP = "This visit is another rep's, so its detail stays as they recorded it.";
 export const VISIT_DETAIL_FIXED_LINKED =
   "This pharmacy visit came from the visit that named it. Add the detail on that visit.";
+export const VISIT_DETAIL_FIXED_HISTORY = "This visit came from the old system's history, so its detail stays as it was recorded.";
 
 /**
  * Whether the rep may fill in this visit's detail, and if not, why — in one sentence.
@@ -120,7 +121,10 @@ export function visitDetailEditable(visit: {
   repHrId: string | null;
   linkedFromVisitId: string | null;
   actorHrId: string;
+  /** `imported_from_ireports360_at`: a visit copied from the old system is history, never his to write up. */
+  importedAt?: string | null;
 }): { editable: true } | { editable: false; reason: string } {
+  if (visit.importedAt) return { editable: false, reason: VISIT_DETAIL_FIXED_HISTORY };
   if (visit.linkedFromVisitId) return { editable: false, reason: VISIT_DETAIL_FIXED_LINKED };
   const rep = (visit.repHrId ?? "").trim().toUpperCase();
   if (!rep) return { editable: false, reason: VISIT_DETAIL_FIXED_NO_REP };
