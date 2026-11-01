@@ -10,7 +10,7 @@
  * look matches the rest of the admin shell (slate borders, square corners, 9px micro-labels).
  */
 
-import { BatteryLow, MapPin, Monitor, Tablet, UserPlus, Wifi } from "lucide-react";
+import { BatteryLow, CheckCircle2, MapPin, Monitor, Tablet, UserPlus, Wifi } from "lucide-react";
 
 import { AdminStatCard } from "@/components/admin/admin-design-system";
 import { summarizeFleet } from "@/lib/devices/headwind/dashboard";
@@ -21,7 +21,7 @@ export function TabletFleetOverview({ rows, registerError }: { rows: RepHeadwind
   const iconClass = "h-4 w-4";
   return (
     <section className="space-y-2">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
         <AdminStatCard
           description="Managed by the company server"
           icon={<Tablet className={iconClass} aria-hidden />}
@@ -29,6 +29,14 @@ export function TabletFleetOverview({ rows, registerError }: { rows: RepHeadwind
           size="compact"
           tone="blue"
           value={summary.total}
+        />
+        <AdminStatCard
+          description="Every setup step done"
+          icon={<CheckCircle2 className={iconClass} aria-hidden />}
+          label="Fully set up"
+          size="compact"
+          tone="emerald"
+          value={`${summary.fullySetUp} / ${summary.total}`}
         />
         <AdminStatCard
           description="Checked in within the last day"

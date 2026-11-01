@@ -27,12 +27,13 @@
  * get cards. Nothing truncates — every line wraps. The factory reset asks twice before it fires.
  */
 
-import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, MapPin, Monitor, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useDisarmAfterWindow } from "@/components/devices/headwind-panel-kit";
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
+import { fleetLauncherTarget, tabletSetupReadiness, type TabletReadiness } from "@/lib/devices/headwind/dashboard";
 import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
@@ -110,6 +111,7 @@ type FleetRow = {
   batteryLevel: number | null;
   batteryCharging: boolean | null;
   agentVersion: string | null;
+  launcherVersion: string | null;
   lastContactAt: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -118,6 +120,8 @@ type FleetRow = {
   assetTag: string | null;
   holderName: string | null;
   holderJobTitle: string | null;
+  simNumber: string | null;
+  lineNumber: string | null;
   registerDeviceId: string | null;
   registerStatus: DeviceStatus | null;
   assignmentId: string | null;
@@ -411,6 +415,9 @@ export function HeadwindFleet() {
   }, []);
 
   const rows = data?.rows ?? [];
+  // The newest launcher the fleet runs, computed once so every row's "launcher current?" chip is
+  // measured against the same bar rather than re-derived per row.
+  const launcherTarget = fleetLauncherTarget(rows);
   const commands = data?.commands ?? [];
   const pendingCommands = commands.filter((command) => !command.ready);
 
@@ -549,6 +556,7 @@ export function HeadwindFleet() {
                     onScreen={openScreen}
                     onToggle={toggleOpen}
                     open={tableLayout && openDeviceNumber === row.deviceNumber}
+                    readiness={tabletSetupReadiness(row, { launcherTarget })}
                     remoteScreenReady={data?.remoteScreenReady ?? false}
                     assignable={data?.assignable ?? []}
                     row={row}
@@ -578,6 +586,7 @@ export function HeadwindFleet() {
                 onScreen={openScreen}
                 onToggle={toggleOpen}
                 open={!tableLayout && openDeviceNumber === row.deviceNumber}
+                readiness={tabletSetupReadiness(row, { launcherTarget })}
                 remoteScreenReady={data?.remoteScreenReady ?? false}
                 assignable={data?.assignable ?? []}
                 row={row}
@@ -602,6 +611,8 @@ type BlockProps = {
   notice?: string;
   error?: string;
   location?: string;
+  /** How far this tablet's one-time provisioning has got — drives the Setup chips. */
+  readiness: TabletReadiness;
   /** This tablet's deep panel is showing — its reads are mounted. */
   open: boolean;
   onCommand: (row: FleetRow, command: string, destructive: boolean) => void;
@@ -669,7 +680,28 @@ function HolderCell({ row }: { row: FleetRow }) {
   );
 }
 
-function StatusCell({ row, location }: { row: FleetRow; location?: string }) {
+/**
+ * One provisioning step's chip — a tick when done, a cross when still to do.
+ *
+ * 🔴 COLOUR IS NEVER THE ONLY SIGNAL: the tick/cross glyph and the label both carry the state, so it
+ * reads the same to someone who cannot tell emerald from amber. Square border, no rounded corners.
+ */
+function SetupChip({ done, label }: { done: boolean; label: string }) {
+  return (
+    <span
+      className={
+        done
+          ? "inline-flex items-center gap-1 border border-emerald-600 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800"
+          : "inline-flex items-center gap-1 border border-amber-500 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-900"
+      }
+    >
+      {done ? <Check className="h-3 w-3 shrink-0" aria-hidden /> : <X className="h-3 w-3 shrink-0" aria-hidden />}
+      {label}
+    </span>
+  );
+}
+
+function StatusCell({ row, location, readiness }: { row: FleetRow; location?: string; readiness: TabletReadiness }) {
   return (
     <>
       <div className="flex flex-wrap gap-1">
@@ -692,6 +724,15 @@ function StatusCell({ row, location }: { row: FleetRow; location?: string }) {
             {row.configurationName}
           </span>
         ) : null}
+      </div>
+      {/* The one-time setup each tablet needs before it is reachable on its own. Wraps, never scrolls. */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <span className={MICRO_LABEL}>Setup</span>
+        <SetupChip done={readiness.inCustody} label="In custody" />
+        <SetupChip done={readiness.simRecorded} label="SIM" />
+        <SetupChip done={readiness.screenIdReported} label="Screen" />
+        <SetupChip done={readiness.locationReported} label="Location" />
+        <SetupChip done={readiness.launcherCurrent} label={row.launcherVersion ? `Launcher ${row.launcherVersion}` : "Launcher"} />
       </div>
       <p className="mt-1 break-words text-[11px] font-semibold text-slate-500">
         {row.lastContactAt ? `Last seen ${cairoDateTime(row.lastContactAt)}` : "Not heard from yet"}
@@ -854,7 +895,7 @@ function FleetRowBlock(props: BlockProps) {
           <HolderCell row={row} />
         </div>
         <div className="border-t border-slate-100 pt-2">
-          <StatusCell location={location} row={row} />
+          <StatusCell location={location} readiness={props.readiness} row={row} />
         </div>
         <div className="border-t border-slate-100 pt-2">
           <FleetActions {...props} />
@@ -893,7 +934,7 @@ function FleetRowBlock(props: BlockProps) {
           <HolderCell row={row} />
         </td>
         <td className="px-3 py-3">
-          <StatusCell location={location} row={row} />
+          <StatusCell location={location} readiness={props.readiness} row={row} />
         </td>
         <td className="min-w-0 px-3 py-3">
           <FleetActions {...props} />

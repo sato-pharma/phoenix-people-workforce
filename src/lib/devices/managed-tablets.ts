@@ -99,7 +99,20 @@ export async function listEnterpriseDevices(
 
 export type RegisterTablet = Pick<
   CompanyDevice,
-  "id" | "assetTag" | "category" | "manufacturer" | "model" | "serialNumber" | "imei" | "status" | "holderName" | "holderJobTitle"
+  | "id"
+  | "assetTag"
+  | "category"
+  | "manufacturer"
+  | "model"
+  | "serialNumber"
+  | "imei"
+  | "status"
+  | "holderName"
+  | "holderJobTitle"
+  // Carried so the fleet view can tell a tablet that has a SIM recorded (stays online on its own) from
+  // one that depends on a rep connecting Wi-Fi. `getDeviceRegisterData` already selects and maps both.
+  | "simNumber"
+  | "lineNumber"
 >;
 
 export type RegisterMatch = {

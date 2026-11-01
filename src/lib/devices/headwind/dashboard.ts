@@ -32,7 +32,94 @@ export type FleetSummary = {
   lowBattery: number;
   /** Managed by the server but not confirmed into the custody register yet. */
   notInRegister: number;
+  /** Every provisioning step done — in custody, SIM recorded, screen ID, a location fix, launcher current. */
+  fullySetUp: number;
 };
+
+/**
+ * How far one tablet's PROVISIONING has got — the one-time setup that makes it reachable on its own.
+ *
+ * Each flag is a step the owner drives a tablet through before it is "fully set up"; `ready` is all
+ * five together. `online` and `batteryLevel` are deliberately NOT here — a finished tablet can be
+ * briefly off or flat, and calling that "not set up" would send someone chasing a step already done.
+ */
+export type TabletReadiness = {
+  /** Confirmed into the custody register (a person added it) — `!unregistered`. */
+  inCustody: boolean;
+  /** A SIM or line is recorded, so the tablet stays online on its own and never waits for a rep's Wi-Fi. */
+  simRecorded: boolean;
+  /** A RustDesk screen ID has been reported, so the screen can be viewed remotely. */
+  screenIdReported: boolean;
+  /** The tablet has reported at least one position (0/0 is nulled upstream, so a fix here is real). */
+  locationReported: boolean;
+  /** Running the newest launcher the fleet reports, or no target to compare against yet. */
+  launcherCurrent: boolean;
+  /** All five provisioning steps above are done. */
+  ready: boolean;
+};
+
+/**
+ * A launcher version string as one comparable number, or null when there is nothing to parse.
+ *
+ * 🔴 WHY NOT STRING COMPARE. These are `6.<build>` versions, so 6.39 is newer than 6.9 (build 39 beats
+ * build 9) — but "6.39" < "6.9" as strings, which would call the newer tablet behind. The version is
+ * split into its numeric segments and each weighted by position, so the order comes out 6.48 > 6.39 >
+ * 6.9. A large per-segment base keeps the segments from colliding; launcher builds never approach it.
+ * The running version comes from the tablet's app list, not the server's target field (see `devices.ts`
+ * `runningLauncherVersion`), so the comparison is honest.
+ */
+export function launcherRank(version: string | null): number | null {
+  if (!version) return null;
+  const segments = version.split(/[^0-9]+/).filter((part) => part.length > 0);
+  if (segments.length === 0) return null;
+  const BASE = 1_000_000;
+  let rank = 0;
+  for (let index = 0; index < 3; index += 1) {
+    const value = index < segments.length ? Number(segments[index]) : 0;
+    if (!Number.isFinite(value)) return null;
+    rank = rank * BASE + Math.min(value, BASE - 1);
+  }
+  return rank;
+}
+
+/**
+ * The newest launcher the fleet is on, as a rank — the target every tablet is measured against.
+ *
+ * Self-maintaining on purpose: "current" means "level with the newest tablet in the fleet", so no
+ * hard-coded version constant can go stale as the launcher is updated. Null when no tablet reports a
+ * version — then no tablet is flagged behind, because there is nothing to be behind.
+ */
+export function fleetLauncherTarget(rows: readonly RepHeadwindRow[]): number | null {
+  let target: number | null = null;
+  for (const row of rows) {
+    const rank = launcherRank(row.launcherVersion);
+    if (rank !== null && (target === null || rank > target)) target = rank;
+  }
+  return target;
+}
+
+/** One tablet's provisioning state. `launcherTarget` defaults to the whole fleet's newest if omitted elsewhere. */
+export function tabletSetupReadiness(
+  row: RepHeadwindRow,
+  opts: { launcherTarget?: number | null } = {},
+): TabletReadiness {
+  const launcherTarget = opts.launcherTarget ?? null;
+  const myRank = launcherRank(row.launcherVersion);
+  const inCustody = !row.unregistered;
+  const simRecorded = Boolean(row.simNumber || row.lineNumber);
+  const screenIdReported = Boolean(row.rustDeskId);
+  const locationReported = Number.isFinite(row.latitude) && Number.isFinite(row.longitude);
+  // No target, or this tablet has not reported a version, cannot be read as "behind" — it reads current.
+  const launcherCurrent = launcherTarget === null || myRank === null || myRank >= launcherTarget;
+  return {
+    inCustody,
+    launcherCurrent,
+    locationReported,
+    ready: inCustody && simRecorded && screenIdReported && locationReported && launcherCurrent,
+    screenIdReported,
+    simRecorded,
+  };
+}
 
 /** One marker on the map — a tablet's last-known position, or one stop on a single tablet's trail. */
 export type MapPoint = {
@@ -63,6 +150,10 @@ export function summarizeFleet(rows: readonly RepHeadwindRow[], now: number = Da
   let screenReady = 0;
   let lowBattery = 0;
   let notInRegister = 0;
+  let fullySetUp = 0;
+  // The target is the fleet's own newest launcher, so each tablet's "current?" is measured once against
+  // the same bar — computed here, before the loop, rather than re-derived per row.
+  const launcherTarget = fleetLauncherTarget(rows);
   for (const row of rows) {
     if (row.lastContactAt) {
       const seen = Date.parse(row.lastContactAt);
@@ -74,8 +165,9 @@ export function summarizeFleet(rows: readonly RepHeadwindRow[], now: number = Da
       lowBattery += 1;
     }
     if (row.unregistered) notInRegister += 1;
+    if (tabletSetupReadiness(row, { launcherTarget }).ready) fullySetUp += 1;
   }
-  return { lowBattery, notInRegister, online, reportingLocation, screenReady, total: rows.length };
+  return { fullySetUp, lowBattery, notInRegister, online, reportingLocation, screenReady, total: rows.length };
 }
 
 /** One marker per tablet that has reported a position — labelled with its asset tag, holder in the tooltip. */
