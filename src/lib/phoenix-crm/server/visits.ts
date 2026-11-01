@@ -857,6 +857,9 @@ export async function loadSeatPharmacies(seatId: string, isTest: boolean): Promi
       .eq("seat_id", seatId)
       .eq("is_test", isTest)
       .not("pharmacy_name", "is", null)
+      // A name on a copied visit is the old system's. Offered here, picking it would file a new pending
+      // pharmacy (loadListedPharmacies hides the imported one) and use up the 50 below on old names.
+      .is("imported_from_ireports360_at", null)
       .order("captured_at", { ascending: false })
       .limit(500),
     loadListedPharmacies(seatId, isTest),

@@ -17,6 +17,7 @@ and is not part of this import.
 | The countable view skips the copy at its root; the history view and the four report functions keep it | `supabase/migrations/20261031160000_phoenix_crm_countable_visits_skip_imported_history.sql` |
 | The indexes for the copy function's lowercased rep ids: old visits, seat occupancy, the double-visit partner. A one-seat plan is index scans only; the largest seat's source query (2,345 visits) runs in 224 ms | `supabase/migrations/20261031170000_phoenix_crm_import_history_indexes.sql` |
 | The review's fixes (2026-11-01): the copy's rules below, the entry-days trigger skips a copied visit, a copied visit's detail cannot be written up | `supabase/migrations/20261101101900_phoenix_crm_import_history_review_fixes.sql` |
+| The second review's fixes (2026-11-01): the catch-all is left out, a partner is judged by the seat of the visit's day, his own customer beats an Archive copy, the links are indexed, two new counters | `supabase/migrations/20261101111500_phoenix_crm_import_history_second_review_fixes.sql` |
 | The runner (dry run, then one seat per transaction) | `scripts/phoenix-crm-import-ireports360-history.ts` |
 | The pins | `tests/phoenix-crm-imported-history.test.ts` |
 
@@ -44,12 +45,17 @@ and is not part of this import.
 - **The visit time** comes from the old visit and is stored as `captured_at`. iReports360 writes Cairo
   wall-clock time but labels it UTC, so the import uses the combined door's own conversion. If the time is
   missing, or falls on another day, the visit reads 12:00 Cairo.
-- **A double visit keeps its partner, judged by app role** (`app_auth_users.role`, an active login first, never
-  a test persona), the same list the visit form offers. With no login, his job title stands in for the role.
-  - A product manager, group product manager or training manager, and the marketing manager on CNS, goes in as
-    `kind = 'product_manager'`.
-  - A district, regional or national sales manager goes in as `kind = 'double'`.
-  - Anyone else, a peer rep for example, is no partner: the visit is `single`.
+- **A double visit keeps its partner, judged as he was on the visit's day.**
+  - In a manager's seat that day (district, acting district, regional or national): `kind = 'double'`, whatever
+    he is now.
+  - In only other seats that day, a rep's for example: no partner, and the visit is `single`, even if he was
+    promoted since.
+  - In no seat that day, which is where product and training managers always land because they hold none: his app
+    role today (`app_auth_users.role`, an active login first, never a test persona), the same list the visit form
+    offers. With no login, his job title stands in for the role. A product manager, group product manager or
+    training manager, and the marketing manager on CNS, goes in as `kind = 'product_manager'`; a district,
+    regional or national sales manager as `kind = 'double'`; anyone else is no partner.
+  - **A partner named and not filed is counted**, in the totals' `partners_dropped`, for the rows still to write.
 - **The seat is the rep's current seat.** A visit is copied only if he held this seat that day (*"donot add
   visits here or here"*).
   - Mostafa Saied's 1,259 visits on the Anti-Infective seat stay in the old history only, and so does a day he
@@ -60,6 +66,11 @@ and is not part of this import.
   day. The second visit's note is appended to the first, and both old ids map to the one row.
   - **Two reps on one seat who saw one doctor on one day are not merged.** The earlier visit is written. The
     later one stays unmapped and counted as a conflict, so the List's old-system line keeps counting it.
+    A seat holds one open occupant today (the unique index `occupancy_open_span`, on production too), so one run
+    cannot reach this; a rehearsal on staging reached it only with that index dropped inside the transaction.
+  - **That line is read by the customer's reference id, so it does not cover a doctor found only through a
+    link.** A visit left unmapped on him, for this reason or because a Phoenix visit already holds that day,
+    shows on no screen. The totals' `conflicts_without_a_line` counts these, so a dry run says so first.
 - **The doctor:** the seat's own customer for that doctor, matched by reference id first and then by a
   confirmed identity link (`customer_identity_links`), whatever that customer's status. A doctor the rep added
   himself has only a Phoenix-only id, so the link is the one thing that can name him. Production holds no such
@@ -72,13 +83,32 @@ and is not part of this import.
   - **A campaign visit names nobody.** It is filed under a numbered "Campaign visit N" holder on the seat: the
     Nth campaign visit of that day and list goes on holder N. A holder is `campaign_visit_holder = true`. It
     is never on the List, the Archive or the identity candidates, and it never reaches `crm_contacts`.
-  - **The catch-all contact 100000 names nobody either,** so it takes the holder path, as contact 0 does.
+  - **The catch-all contact 100000 is left out of the copy.** It names nobody, its 2026 visits are all planned
+    ones and not campaign visits, and every check-in, coverage or territory figure leaves it out.
 - **A copied visit is history, so the rep cannot write it up.** `visitDetailEditable` and
   `phoenix_crm_edit_visit_detail` (`phoenix_crm:visit_is_history`) both refuse it: a pharmacy named on one would
   file an unmarked visit dated before his start.
 - **A pharmacy the import put in the Archive is not one he dropped.** `loadListedPharmacies` leaves it out, so
   it never refuses Add a pharmacy and never leaves a named pharmacy unfiled. Restored, it loses the mark and is
-  listed again.
+  listed again. `loadSeatPharmacies` also skips a name typed on a copied visit, so the form never offers a
+  pharmacy that only the old system knew.
+
+**How these rules were run:** on 2026-11-01, on staging, inside a transaction that raised at the end, so nothing
+stayed (staging read back with no fixture left and the index in place). The fixtures were 11 old visits on one
+seat, among its real ones:
+
+| Fixture | Result |
+| --- | --- |
+| Catch-all contact 100000 | not copied |
+| Partner in a rep's seat that day, District Manager today | `single`, and `partners_dropped` 1 |
+| Partner in a district manager's seat that day, a rep today | `double`, with him as the manager |
+| Partner in no seat that day, District Manager today | `double` |
+| Product manager, and the marketing manager on CNS | `product_manager` |
+| Doctor with both an Archive copy and a confirmed link to the rep's own customer | filed on the rep's own customer |
+| Two reps, one doctor with a reference id, one day | earlier visit copied; the later one unmapped and on the old-system line |
+| Two reps, one doctor found through a link, one day | earlier visit copied; the later one unmapped, and `conflicts_without_a_line` 1 |
+
+The same seat's dry run with 440 customers and 2,000 links took 1.4 seconds.
 
 **What the rules above do not change:** the review's fixes of 2026-11-01 apply to the next run. The first run's
 rows stand as written until the owner decides otherwise, because repairing them is a bulk production change:
@@ -96,7 +126,7 @@ rows stand as written until the owner decides otherwise, because repairing them 
 | `phoenix_crm_visits.imported_from_ireports360_at` | every copied visit | the time of the run that wrote it |
 | `phoenix_crm_customers.imported_from_ireports360_at` | every Archive doctor and holder the import made | the same; **cleared when the rep restores the doctor from the Archive**, by the trigger `phoenix_crm_customers_clear_import_mark` |
 | `phoenix_crm_customers.campaign_visit_holder` | every "Campaign visit N" holder | not a doctor |
-| `phoenix_crm_imported_visit_sources` | one row per old `crm_visit_id` | the Phoenix visit it became; the idempotency key, so a second run writes nothing |
+| `phoenix_crm_imported_visit_sources` | one row per old `crm_visit_id` | the Phoenix visit it became; the idempotency key, so a second run never writes an old visit twice |
 
 ## Who skips it, and who keeps it
 
@@ -184,7 +214,8 @@ node --env-file-if-exists=.env.production.rls.local --experimental-strip-types s
 ## Checks after the apply
 
 - On every seat, the written count equals the planned count.
-- A second `--apply` writes 0.
+- A second `--apply` straight after writes 0. Later it can write: a changed rule, a new seat or team, or a new
+  link can bring in an old visit the last run left out. The dry run says how many first.
 - These are unchanged from before the apply:
   - `crm_visits_unified` counts per rep and month;
   - the entry-days cache;
