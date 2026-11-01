@@ -1055,7 +1055,7 @@ export function runPharmacySearchTests() {
       // A row with no distributor names nobody, and `not.in` alone would silently drop it.
       assert.deepEqual(
         visibleDistributorRows(fakeQuery(), viewer).applied,
-        ["distributor_code.is.null,distributor_code.not.in.(QM)"],
+        ['distributor_code.is.null,distributor_code.not.in.("QM")'],
         `${viewer.role}: the read must leave El Qema's rows out at the query`,
       );
 

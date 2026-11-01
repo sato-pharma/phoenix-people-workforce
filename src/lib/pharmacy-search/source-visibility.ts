@@ -20,12 +20,13 @@ import {
   MASKED_SOURCE_DISTRIBUTORS,
   type SourceMaskViewer,
 } from "@/lib/sales/closing-source-mask";
+import { quotedInList } from "@/lib/supabase/search-filter";
 
 import type { TerritoryReference } from "./reference";
 import type { PharmacyDistributorCode } from "./types";
 
 /** Answers null where a code may be blank: a row with no distributor names nobody, so it stays. */
-const HIDDEN_DISTRIBUTOR_FILTER = `distributor_code.is.null,distributor_code.not.in.(${[...MASKED_SOURCE_DISTRIBUTORS].join(",")})`;
+const HIDDEN_DISTRIBUTOR_FILTER = `distributor_code.is.null,distributor_code.not.in.(${quotedInList([...MASKED_SOURCE_DISTRIBUTORS])})`;
 
 /** Apply to every read of a table with a `distributor_code`, before its limit. */
 export function visibleDistributorRows<Q extends { or(filters: string): Q }>(
