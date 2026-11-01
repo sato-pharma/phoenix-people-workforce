@@ -93,6 +93,11 @@ export type ManagerDayVisit = {
   /** A ride-along whose customer is not validated yet counts in no figure, exactly as on the rep's own row. */
   awaitingValidation: boolean;
   /**
+   * `visitIsArchiveHistory`: also `awaitingValidation`, so in no figure, but copied from the old system to a customer in
+   * the Archive, so it reads as history and is waiting for nobody.
+   */
+  archiveHistory?: boolean;
+  /**
    * A visit that was not on the plan and is still waiting for its approvals (the manager, then the SFE): listed and
    * marked, and in no figure until approved. Only a rep's day reads these (`loadRepVisitDetails` with `includeWaiting`).
    */
@@ -234,10 +239,12 @@ export type ManagerDayFigures = {
   pm: number;
   pharmacies: number;
   awaitingValidation: number;
+  /** The held-out visits that wait for nobody: copied history on a customer in the Archive (`archiveHistoryNote`). */
+  archiveHistory: number;
 };
 
 export function managerDayFigures(visits: readonly ManagerDayVisit[]): ManagerDayFigures {
-  const figures: ManagerDayFigures = { am: 0, awaitingValidation: 0, chains: 0, doubles: 0, ownSingle: 0, ownWithSenior: 0, pharmacies: 0, pm: 0, productManagerVisits: 0, singles: 0 };
+  const figures: ManagerDayFigures = { am: 0, archiveHistory: 0, awaitingValidation: 0, chains: 0, doubles: 0, ownSingle: 0, ownWithSenior: 0, pharmacies: 0, pm: 0, productManagerVisits: 0, singles: 0 };
   const pharmacyNames = new Set<string>();
   for (const visit of visits) {
     if (visit.source === "own" && visit.kind === "with_senior") figures.ownWithSenior += 1;
@@ -248,7 +255,8 @@ export function managerDayFigures(visits: readonly ManagerDayVisit[]): ManagerDa
     else figures.singles += 1;
 
     if (visit.awaitingValidation) {
-      figures.awaitingValidation += 1;
+      if (visit.archiveHistory) figures.archiveHistory += 1;
+      else figures.awaitingValidation += 1;
       continue;
     }
     // Every visit by the customer's list — through the golden rule's own helper, so a pharmacy is never filed among the

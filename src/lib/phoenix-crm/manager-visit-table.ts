@@ -108,6 +108,16 @@ export function planActualRowWords(row: PlanVsActualRow): PlanActualRowWords {
   };
 }
 
+/**
+ * Whether the row may print its half-day. A pharmacy has no half of its own, so its half is the clock it was logged at,
+ * and a visit copied from the old system has no clock: `halfOfVisit` still files it so the rows sort, but nothing prints
+ * that filing as if anybody had seen the time.
+ */
+export function planActualRowHasHalf(row: Pick<PlanVsActualRow, "actual" | "plan">): boolean {
+  const visit = row.actual;
+  return Boolean(row.plan) || !visit || visit.bucket === "AM" || visit.bucket === "PM" || visit.loggedHalf !== null;
+}
+
 /** The words a visit's own plan flag reads in Phoenix CRM (owner, 2026-10-29: "planned / unplanned"). */
 export const VISIT_PLANNED_LABEL = "Planned";
 export const VISIT_UNPLANNED_LABEL = "Unplanned";

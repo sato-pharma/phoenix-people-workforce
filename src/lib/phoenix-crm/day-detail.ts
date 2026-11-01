@@ -42,6 +42,10 @@ export type DayDetailVisit = {
   countsInKpi: boolean;
   /** Whether its customer has been validated and admitted to the list. */
   customerValidated: boolean;
+  /** Copied from the old system: `capturedAt` is a midnight nobody saw, so no pharmacy line reads it as a clock. */
+  copiedFromOldSystem?: boolean;
+  /** `visitIsArchiveHistory`: in no figure, and not waiting on anybody. */
+  archiveHistory?: boolean;
 };
 
 export type DayDetailPharmacy = {
@@ -56,6 +60,8 @@ export type DayDetailPharmacy = {
    * page has the raw instants, so the field is renamed here to say what it really holds and the
    * screen formats it. Passing an instant under the name `firstAt` would have been a silent lie
    * that renders as a UTC timestamp on a screen whose every other time is Cairo.
+   *
+   * Empty for a pharmacy first named on a visit copied from the old system, which has no clock to give.
    */
   firstCapturedAt: string;
   /**
@@ -77,12 +83,14 @@ export type DayDetailCounts = {
   awaitingValidation: number;
   /** Off-plan visits still waiting for the manager and then SFE: in no figure either, and not refused. */
   awaitingApproval: number;
+  /** Copied history on a customer in the Archive: in no figure, and waiting for nobody (`archiveHistoryNote`). */
+  archiveHistory: number;
 };
 
 function asToday(entries: readonly DayDetailVisit[]): TodayVisit[] {
   return entries.map((visit) => ({
     customerId: visit.customerId,
-    doneAt: visit.capturedAt,
+    doneAt: visit.copiedFromOldSystem ? "" : visit.capturedAt,
     listType: parseListType(visit.listType),
     name: visit.customerName,
     pharmacyName: visit.pharmacyName ?? null,
@@ -95,11 +103,14 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
 
   let awaitingValidation = 0;
   let awaitingApproval = 0;
+  let archiveHistory = 0;
   for (const visit of visits) {
     if (visit.countsInKpi) continue;
     // Why it is not counted, in the order the predicate asks: validation first, because a visit
-    // whose customer is unvalidated is held back whatever its approval says.
-    if (!visit.customerValidated) awaitingValidation += 1;
+    // whose customer is unvalidated is held back whatever its approval says. A copied visit to a
+    // customer in the Archive is the one unvalidated visit that is waiting for nobody.
+    if (visit.archiveHistory) archiveHistory += 1;
+    else if (!visit.customerValidated) awaitingValidation += 1;
     else awaitingApproval += 1;
   }
 
@@ -123,5 +134,5 @@ export function dayDetailCounts(visits: readonly DayDetailVisit[]): DayDetailCou
     name: entry.name,
   }));
   counts.pharmacies = pharmacies.filter((entry) => entry.counted).length;
-  return { awaitingApproval, awaitingValidation, counts, pharmacies };
+  return { archiveHistory, awaitingApproval, awaitingValidation, counts, pharmacies };
 }

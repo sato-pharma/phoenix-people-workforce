@@ -127,8 +127,20 @@ rollback. The training manager held no seat on any of those days and their login
 rule above files all 218 as `product_manager`.
 
 A customer on the Pharmacy list counts as validated, so the 612 visits now read `customer_validated = true` in
-`phoenix_crm_countable_visits_with_history` and show under Pharmacies on the history screens that read it, such as
-the team calendar. Before the repair they were on doctors' lists and unvalidated.
+`phoenix_crm_countable_visits_with_history`. Before the repair they were on doctors' lists and unvalidated.
+
+## On a day page
+
+Until 1 November 2026 the day page asked `validated_at` alone, so copied and real pharmacy visits read Pharmacies 0
+and "waiting for their customers to be validated", although a pharmacy needs no validation. It now asks what the view
+asks (`customerCountsAsValidated`).
+
+- A copied visit has no clock: its `captured_at` is that day's midnight in Cairo. A day page prints "No time recorded",
+  and a copied pharmacy row prints no half-day.
+- A copied visit to a customer in the Archive (`status = 'dropped'`, not validated) reads "Old-system history"
+  (`visitIsArchiveHistory`): 23,587 visits on 1 November 2026. It stays outside every figure.
+- A copied visit to a customer still pending, about 17,000 visits, still reads as waiting, because that customer can
+  still be validated.
 
 ## The marks
 
