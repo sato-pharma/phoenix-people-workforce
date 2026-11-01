@@ -849,3 +849,5 @@ A manager's week can now hold a conversation between him and the people on its a
 **The legacy Plans-tab form** has its own thread and is untouched.
 
 **The migration.** `20261101114105_record_conversation_manager_plans.sql` adds `manager_plans` to the table's module check. Pinned by the conversation section of `tests/phoenix-crm-manager-plan.test.ts`.
+
+**A returned week opens first (owner, 2026-11-01).** The Plan tab used to open a returned week on the empty coming week, because a returned week does not count as sent, so the manager saw neither "What to change" nor the "Open conversation" bar until they switched week. `managerPlanOpeningWeek` now opens a returned week they are in first, even with the coming week started. A returned week whose days have all passed is no longer offered on the tab; it is read from the Approvals Hub.
