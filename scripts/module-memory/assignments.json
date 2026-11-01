@@ -145,6 +145,7 @@
   "a-responsive-primitive-test-proves-layout-not-content": "platform",
   "a-restart-wipes-table-stats-and-index-only-scans-fall-back-to-the-heap": "database",
   "a-returned-direct-order-has-no-reassign-and-no-close-button": "direct-orders",
+  "a-returning-leaver-is-a-new-employee": "recruitment",
   "a-reused-branch-name-finds-the-old-merged-pr": "git-worktrees",
   "a-rev-colon-dot-path-reads-as-absent-on-main": "git-worktrees",
   "a-role-count-of-zero-can-mean-mis-roled-not-missing": "platform",

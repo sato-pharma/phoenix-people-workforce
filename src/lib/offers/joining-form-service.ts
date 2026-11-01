@@ -5,6 +5,7 @@ import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import {
   getEmployeeDirectoryRows,
+  isActiveLifecycleStatus,
   upsertEmployee,
   type EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
@@ -377,18 +378,23 @@ type ExistingHire = { kind: "none" } | { kind: "found"; reason: string } | { kin
  *
  * The same email tells him to press Accept while HR may already have hired him through Add
  * Employee from this offer — a door that never sets `offers.employee_hr_id` and does not require a
- * national ID. So the match is wider than the ID: the national ID or the mobile on any record, or a
- * record made SINCE THE OFFER WENT OUT whose name is his. A read that fails is "unknown" and blocks
- * the submit — a duplicate employee is paid, a delayed one is not.
+ * national ID. So the match is wider than the ID: the national ID or the mobile on a CURRENT record,
+ * or a record made SINCE THE OFFER WENT OUT whose name is his. A read that fails is "unknown" and
+ * blocks the submit — a duplicate employee is paid, a delayed one is not.
+ *
+ * A record whose employment has ended does not count (owner, 2026-11-01): someone who resigned and
+ * returns on a new offer is a NEW employee with a new record, and the old one stays as it is.
+ * employees has no unique index on either column, so one person can hold several records, which is
+ * why the read below takes no limit: with limit(1) a leaver's row could hide a current employee's.
  */
-async function findExistingHire(
-  offer: OfferRecord,
+export async function findExistingHire(
+  offer: Pick<OfferRecord, "candidateName" | "sentAt">,
   answers: { fullName: string; mobileNumber: string; nationalId: string },
+  db: ReturnType<typeof getSupabaseAdmin> = getSupabaseAdmin(),
 ): Promise<ExistingHire> {
-  const db = getSupabaseAdmin();
   const identity = await db
     .from("employees")
-    .select("hr_id")
+    .select("hr_id,employment_status")
     // Both values are typed by the CANDIDATE into the joining form, so they are the widest untrusted
     // input any `.or(...)` in this repo receives: a comma or a parenthesis in either one used to end
     // its arm early, and the duplicate-hire check then asked PostgREST a question nobody wrote —
@@ -399,11 +405,11 @@ async function findExistingHire(
         quotedOrClause("national_id", "eq", answers.nationalId),
         quotedOrClause("mobile_number", "eq", answers.mobileNumber),
       ].join(","),
-    )
-    .limit(1);
+    );
   if (identity.error) return { kind: "unknown" };
-  if ((identity.data ?? []).length > 0) {
-    return { kind: "found", reason: "the national ID or mobile typed is already on the Employee Master." };
+  const holders = (identity.data ?? []) as Array<{ employment_status: string | null }>;
+  if (holders.some((row) => isActiveLifecycleStatus(row.employment_status))) {
+    return { kind: "found", reason: "the national ID or mobile typed is on a current Employee Master record." };
   }
   const since = offer.sentAt ?? new Date(Date.now() - 120 * 86_400_000).toISOString();
   const recent = await db.from("employees").select("hr_id,full_name").gte("created_at", since).limit(500);
@@ -414,6 +420,21 @@ async function findExistingHire(
     }
   }
   return { kind: "none" };
+}
+
+/**
+ * The record this submit's own write left behind, when a later step of that write threw. Asked by the
+ * HR ID minted for it, never by the national ID alone: a returning leaver's old record holds the same
+ * ID, and the offer would be stamped with it. The national ID stays in the filter so that an HR ID
+ * taken by somebody else in the same moment is not mistaken for his.
+ */
+export async function findRecordJustWritten(
+  hrId: string,
+  nationalId: string,
+  db: ReturnType<typeof getSupabaseAdmin> = getSupabaseAdmin(),
+): Promise<string> {
+  const written = await db.from("employees").select("hr_id").eq("hr_id", hrId).eq("national_id", nationalId).limit(1);
+  return String((written.data?.[0] as { hr_id?: string } | undefined)?.hr_id ?? "").trim();
 }
 
 /** One uploaded national ID photo, as the route read it off the request. */
@@ -629,19 +650,20 @@ export async function submitJoiningForm(
   };
 
   let hrId = "";
+  let mintedHrId = "";
   let hireError: Error | null = null;
   try {
+    mintedHrId = await generateNextHrIdForLine(seat?.lineId ?? null);
     // "joining-form" as the login, so the salary audit trail names the door instead of reading
     // "unattributed" (an out-of-band write in that log's own vocabulary).
-    const rows = await upsertEmployee(employee, { actorHrId: null, actorLoginId: "joining-form" });
+    const rows = await upsertEmployee({ ...employee, hrId: mintedHrId }, { actorHrId: null, actorLoginId: "joining-form" });
     hrId = String(rows[0]?.hr_id ?? "").trim();
     if (!hrId) throw new Error("The employee record was written but returned no HR ID.");
   } catch (error) {
     hireError = error instanceof Error ? error : new Error(String(error));
     // upsertEmployee writes the row FIRST, then the residence, the vacancy and ownership. A throw in
     // those later steps leaves a real record — carry on with it rather than tell HR it does not exist.
-    const written = await db.from("employees").select("hr_id").eq("national_id", value.nationalId).limit(1);
-    const found = String((written.data?.[0] as { hr_id?: string } | undefined)?.hr_id ?? "").trim();
+    const found = mintedHrId ? await findRecordJustWritten(mintedHrId, value.nationalId, db) : "";
     if (found) {
       hrId = found;
       logError("The joining form's record was written but a later step failed — continuing with it", {

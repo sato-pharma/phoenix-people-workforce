@@ -93,9 +93,26 @@ of living and the fuel allowance is fixed per title. And the pay mode is also fi
 
 ## What blocks a submit
 
-- A joiner already on the Employee Master: the national ID or mobile on any record, or the same name
-  on a record created since the offer went out (Add Employee never stamps the offer, so the ID alone
-  is not enough). A failed read blocks rather than passes.
+- A joiner already on the Employee Master: the national ID or mobile on a current record, or the same
+  name on a record created since the offer went out (Add Employee never stamps the offer, so the ID
+  alone is not enough). A failed read blocks rather than passes.
+- 🔴 **A record whose employment has ended does not count** (owner, 2026-11-01). Someone who resigned
+  and returns on a new offer is a new employee with a new record and HR ID; the old record stays
+  resigned and keeps its history. "Current" is `isActiveLifecycleStatus` (active, on leave, or no
+  status at all), so `resigned`, `terminated`, `inactive` and `declined_offer` no longer block on the
+  ID or mobile. The same-name check does not look at status: a record made since the offer went out
+  still blocks, which is what stops a second record for a leaver HR already re-hired through Add
+  Employee with the ID left blank.
+- `employees` has no unique index on `national_id` or `mobile_number`, so one person can hold several
+  records. The ID and mobile read takes no limit, because `limit(1)` could return a leaver's row and
+  hide a current employee's. If a step after the write throws, the record is found again by the HR ID
+  minted for this submit and the national ID together, never by the national ID alone, which could
+  stamp the offer with the old record.
+- The rest of the system reads `employees` by HR ID, so a second record with the same ID or mobile
+  changes nothing there. The employee import (`app/api/imports/employees/confirm/route.ts`) upserts on
+  `hr_id` and only writes the national ID as a value; checked 2026-11-01, along with the database's
+  functions and triggers, none of which match on either column. The WhatsApp inbox's link picker
+  matches by phone and offers both records for a person to choose between.
 - An offer with no readable start date: the page says "Your start date is being confirmed" and the
   submit is refused, and HR is told.
 - 🔴 **No offer is SENT without a start date** (owner, 2026-10-08). One went out without one that
