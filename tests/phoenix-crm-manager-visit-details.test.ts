@@ -531,7 +531,7 @@ function everyonesVisitsInFull(): void {
       ["Not on the plan", null],
     ],
   );
-  assert.match(table, /if \(!row\.plan\) return <HalfChip half=\{row\.half\} \/>;/, "a row nobody planned holds its half in the plan column, and nothing more");
+  assert.match(table, /if \(!row\.plan\) return planActualRowHasHalf\(row\) \? <HalfChip half=\{row\.half\} \/> : <Muted>—<\/Muted>;/, "a row nobody planned holds its half in the plan column, and nothing more");
 
   // A ride-along or a rep's day carries no manager plan: its visits are drawn ALONE, each Planned or Unplanned by its
   // own flag — the very flag the month tile counts. Owner, 2026-10-29: 6 Oct's tile said "7 planned · 1 unplanned"

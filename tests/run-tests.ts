@@ -1975,6 +1975,7 @@ import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharm
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runPhoenixCrmAddPathNameRowTests } from "./phoenix-crm-add-path-name-row.test.ts";
+import { runPhoenixCrmDayPageCopiedVisitsTests } from "./phoenix-crm-day-page-copied-visits.test.ts";
 import { runPhoenixCrmImportedHistoryTests } from "./phoenix-crm-imported-history.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmAdminDayPageTests } from "./phoenix-crm-admin-day-page.test.ts";
@@ -7239,6 +7240,7 @@ await runTest(
   "imported iReports360 history is history: every reader that judges, alarms or pays skips a copied visit by its mark (work evidence, the first-visit gate, the third-visit rule, the roster sweep, ranks, exceptions, the visit-lifecycle detector), a customer the import made opens no territory and is not on the list the rep built, a Campaign visit holder is on neither the List, the Archive nor the identity candidates, the digest, the List line, the countable view, the name-row trigger and the contact refresh each hold the condition in their newest definer, and the history screens keep it",
   runPhoenixCrmImportedHistoryTests,
 );
+await runTest("the day page: a pharmacy needs no validation, a copied visit has no clock, and a copied visit to a customer in the Archive reads as history", runPhoenixCrmDayPageCopiedVisitsTests);
 
 await runTest(
   "Phoenix CRM calendar (the field week is Saturday to Wednesday plus a Thursday morning for accounts, never Friday; a passed day is fixed; Ramadan is the pinned Umm al-Qura table, re-derived from Intl so a hand-edited year cannot ship, and the Super Admin's moved year replaces only that year)",

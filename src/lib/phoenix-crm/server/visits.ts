@@ -135,6 +135,7 @@ import { loadLineProductManagers, raiseVisitAskFromVisit, visitAskSavedNote } fr
 import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
+  customerCountsAsValidated,
   isUnplannedKind,
   isUnplannedVisitStatus,
   outOfListVisitNote,
@@ -144,6 +145,7 @@ import {
   unplannedVisitRepNote,
   unplannedVisitStatusLabel,
   visitCountsInKpi,
+  visitIsArchiveHistory,
   type UnplannedKind,
   type UnplannedVisitStatus,
 } from "@/lib/phoenix-crm/unplanned-rules";
@@ -260,11 +262,19 @@ export type VisitRow = {
   /** Which way the visit was off the plan, if it was: out of plan, or out of list. */
   unplannedKind: UnplannedKind | null;
   /**
-   * Whether the visit's customer has been validated and admitted to the list. False is NORMAL on a
+   * Whether the visit's customer counts as validated (`customerCountsAsValidated`: a pharmacy needs no
+   * validation) and so is admitted to the list. False is NORMAL on a
    * team that has just started — 0 of Delta (1)'s 1,551 carried-over customers were validated the
    * day before it began — and the visit is saved and real either way.
    */
   customerValidated: boolean;
+  /**
+   * Copied from the old system's history (`imported_from_ireports360_at`). It carries its day and no clock: its
+   * `capturedAt` is that day's midnight in Cairo, which nobody saw, so a screen prints no time for it.
+   */
+  copiedFromOldSystem: boolean;
+  /** `visitIsArchiveHistory`: copied, to a customer in the Archive. In no figure, and waiting for nobody. */
+  archiveHistory: boolean;
   /**
    * 🔴 Whether this visit is inside a KPI figure — `visitCountsInKpi`, the TypeScript twin of
    * `phoenix_crm_countable_visits` and its `customer_validated` column. A screen reading the RAW
@@ -322,9 +332,9 @@ const VISIT_COLUMNS =
   "detail_comment, detail_edited_at, linked_from_visit_id, imported_from_ireports360_at, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
-  // `validated_at` is the other half of "does this count" (`visitCountsInKpi`): the approval half is
+  // `validated_at` and `list_type` are the other half of "does this count" (`visitCountsInKpi`): the approval half is
   // the embedded `unplanned` row, and a reader of the raw table has to ask for both by name.
-  "customer:phoenix_crm_customers!customer_id(name, status, validated_at), " +
+  "customer:phoenix_crm_customers!customer_id(name, status, validated_at, list_type), " +
   // Everyone on the visit, in its order (2026-10-27) — the card names those past the fixed places.
   "companions:phoenix_crm_visit_companions(hr_id, position), " +
   // `manager_decided_at` is read for the REP's own sentence, not for a manager's screen: `sfe_pending`
@@ -446,7 +456,9 @@ function mapVisitRow(
   };
   const unplannedKind = row.is_unplanned === true ? (isUnplannedKind(row.unplanned_kind) ? row.unplanned_kind : "out_of_plan") : null;
   const unplannedApproval = unplannedKind === "out_of_plan" ? visitUnplanned(row) : null;
-  const customerValidated = textOrNull(record(row.customer).validated_at) !== null;
+  const customerRow = record(row.customer);
+  const customerValidated = customerCountsAsValidated({ validatedAt: textOrNull(customerRow.validated_at), listType: customerRow.list_type });
+  const importedAt = textOrNull(row.imported_from_ireports360_at);
   const enteredByAdmin = isEnteredForRep({ enteredBy: row.entered_by_hr_id, rep: row.rep_hr_id, manager: row.manager_hr_id, senior: row.senior_hr_id });
   return {
     visitId: String(row.id),
@@ -489,6 +501,8 @@ function mapVisitRow(
     unplanned: unplannedApproval,
     unplannedKind,
     customerValidated,
+    copiedFromOldSystem: importedAt !== null,
+    archiveHistory: visitIsArchiveHistory({ importedAt, customerStatus: textOrNull(customerRow.status), customerValidated }),
     countsInKpi: visitCountsInKpi({
       isUnplanned: row.is_unplanned === true,
       unplannedKind,
@@ -509,7 +523,7 @@ function mapVisitRow(
         repHrId: textOrNull(row.rep_hr_id),
         linkedFromVisitId: textOrNull(row.linked_from_visit_id),
         actorHrId: options.actorHrId,
-        importedAt: textOrNull(row.imported_from_ireports360_at),
+        importedAt,
       }).editable,
   };
 }

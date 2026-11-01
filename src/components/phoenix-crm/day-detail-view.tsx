@@ -23,6 +23,7 @@ import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { DAY_START_READ_LABEL, dayStartReadLine } from "@/lib/phoenix-crm/day-start-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
+import { ARCHIVE_HISTORY_LABEL, archiveHistoryNote, COPIED_VISIT_NO_TIME } from "@/lib/phoenix-crm/unplanned-rules";
 // Through `view-types`, never `server/day-detail`: a component may not import server code, and an
 // `import type` counts — the boundary test caught exactly this on the first run.
 import type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/view-types";
@@ -46,12 +47,12 @@ import type { PhoenixCrmDayDetail } from "@/lib/phoenix-crm/view-types";
  * leaf, and the way back is the tab the reader came from.
  */
 
-function timeOf(visit: { capturedAt: string }): string {
-  return cairoClock(visit.capturedAt);
+function timeOf(visit: { capturedAt: string; copiedFromOldSystem: boolean }): string {
+  return visit.copiedFromOldSystem ? COPIED_VISIT_NO_TIME : cairoClock(visit.capturedAt);
 }
 
 export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
-  const { awaitingApproval, awaitingValidation, counts, dayActivity, dayStart, onLeave, pharmacies, territory, visits } = view;
+  const { archiveHistory, awaitingApproval, awaitingValidation, counts, dayActivity, dayStart, onLeave, pharmacies, territory, visits } = view;
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -97,6 +98,12 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                   ? "1 off-plan visit is waiting for a decision, so it is in none of the figures above."
                   : `${awaitingApproval} off-plan visits are waiting for a decision, so they are in none of the figures above.`}
               </p>
+            </CrmNote>
+          ) : null}
+          {/* Said apart from "not scored yet": nobody validates a customer in the Archive, so these wait for nothing. */}
+          {archiveHistoryNote(archiveHistory) ? (
+            <CrmNote title="History from the old system" tone="info">
+              <p>{archiveHistoryNote(archiveHistory)}</p>
             </CrmNote>
           ) : null}
           {view.isTest ? (
@@ -192,13 +199,14 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                   status={
                     <span className="flex min-w-0 flex-wrap gap-1.5">
                       {visit.unplanned ? <CrmPill tone="warn">{visit.unplanned.statusLabel}</CrmPill> : null}
-                      {visit.outOfList ? <CrmPill tone="warn">{visit.outOfList.label}</CrmPill> : null}
+                      {visit.outOfList && !visit.archiveHistory ? <CrmPill tone="warn">{visit.outOfList.label}</CrmPill> : null}
+                      {visit.archiveHistory ? <CrmPill tone="neutral">{ARCHIVE_HISTORY_LABEL} — the customer is in the Archive</CrmPill> : null}
                       {/* 🔴 The row's own answer to the question the headline figures ask, so a
                           reader counting the cards can see which ones the numbers above are made of.
                           It is a fact about the LIST — the customer has not been admitted yet — and
                           never a mark against the rep. An out-of-list visit already says it in its
                           own words above, so it is not said twice. */}
-                      {!visit.customerValidated && !visit.outOfList ? (
+                      {!visit.customerValidated && !visit.outOfList && !visit.archiveHistory ? (
                         <CrmPill tone="neutral">Not scored yet — the customer is not validated</CrmPill>
                       ) : null}
                       {visit.clockOff ? <CrmPill tone="warn">The phone&apos;s clock was off</CrmPill> : null}
@@ -322,7 +330,7 @@ export function DayDetailView({ view }: { view: PhoenixCrmDayDetail }) {
                   <span className="font-black text-slate-800" dir="auto">
                     {pharmacy.name}
                   </span>
-                  {` · from ${cairoClock(pharmacy.firstCapturedAt)}`}
+                  {pharmacy.firstCapturedAt ? ` · from ${cairoClock(pharmacy.firstCapturedAt)}` : ""}
                   {/* Visited in its own right, it was named on no doctor's visit (owner, 2026-10-03). */}
                   {pharmacy.fromCustomers.length > 0 ? ` · on the visit to ${pharmacy.fromCustomers.join(", ")}` : " · a pharmacy visit"}
                   {pharmacy.counted ? "" : " · not in the figure above yet"}
