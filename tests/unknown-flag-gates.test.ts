@@ -145,6 +145,7 @@ const PINNED = [
   "scripts/module-memory/proof.mjs",
   "scripts/needs-you.mjs",
   "scripts/new-session.mjs",
+  "scripts/normalize-employee-photos.ts",
   "scripts/phase19-fixture-cleanup-smoke.ts",
   "scripts/pin-coverage-report.mjs",
   "scripts/post-deploy-errors.mjs",

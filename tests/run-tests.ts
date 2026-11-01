@@ -1575,6 +1575,7 @@ import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
 import { runClientBundleServerLeakTests } from "./client-bundle-server-leak.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
+import { runEmployeePhotoNormalizeTests } from "./employee-photo-normalize.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runDirectOrderSearchShortProbeFastPathTests } from "./direct-order-search-short-probe-fast-path.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
@@ -6143,6 +6144,7 @@ await runTest("HR shell mobile tables (closure scan from the HR sidebar: every w
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
 await runTest("client bundle boundary (no \"use client\" module reaches node:crypto or the service-role client — the leak that made the Direct Orders new-request page 500 the whole dev server)", runClientBundleServerLeakTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
+await runTest("employee photo portrait cut (a phone screenshot's black letterbox bars are stripped and the stored picture is the identity card's 0.785 ratio, a white studio backdrop is NOT a bar and the air above the head stays, EXIF orientation is honoured first, a transparent PNG flattens to white never black, nothing is enlarged and the stored width is capped, unreadable or tiny bytes are null so the original is stored)", runEmployeePhotoNormalizeTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest(
   "direct orders customer search answers a one- or two-character probe from the short-key index: the probe length, its alphabet and the "

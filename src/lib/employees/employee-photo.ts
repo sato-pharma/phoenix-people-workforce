@@ -6,6 +6,11 @@
 // streams via the service-role client). Resolution order anywhere a photo is
 // shown is: uploaded photo -> bundled static photo -> initials (caller-handled).
 //
+// THE STORED OBJECT IS THE PORTRAIT. Every upload — self-service, HR's, the joining
+// form's — passes through `normalizeEmployeePhoto` (photo-normalize.ts) before it is
+// stored: upright, letterbox bars stripped, cut to the identity card's 0.785 : 1 frame.
+// The frames that draw it never crop a black bar again (owner, 2026-11-01).
+//
 // The cached photo map lets any server surface decide "does this HR ID have an
 // uploaded photo?" with a single small query (mirrors the role-override cache).
 //
@@ -20,6 +25,7 @@ import crypto from "node:crypto";
 
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import { normalizeEmployeePhoto } from "@/lib/employees/photo-normalize";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -203,10 +209,17 @@ export async function uploadEmployeePhoto(
   if (lookupError) throw new Error(`Unable to load employee: ${lookupError.message}`);
   if (!existing) throw new Error(`Employee ${hrId} was not found.`);
 
-  const path = `${normalized}/${crypto.randomUUID()}.${extensionForContentType(contentType)}`;
+  // The portrait cut is best-effort: bytes sharp cannot read are stored as they were sent, so a
+  // photo is never refused for what the cut cannot do.
+  const portrait = await normalizeEmployeePhoto(bytes);
+  const stored = portrait
+    ? { bytes: portrait.bytes, contentType: portrait.contentType }
+    : { bytes, contentType };
+
+  const path = `${normalized}/${crypto.randomUUID()}.${extensionForContentType(stored.contentType)}`;
   const { error: uploadError } = await supabase.storage
     .from(EMPLOYEE_PHOTOS_BUCKET)
-    .upload(path, bytes, { cacheControl: "31536000", contentType, upsert: false });
+    .upload(path, stored.bytes, { cacheControl: "31536000", contentType: stored.contentType, upsert: false });
   if (uploadError) throw new Error(`Unable to store photo: ${uploadError.message}`);
 
   const { error: updateError } = await supabase
