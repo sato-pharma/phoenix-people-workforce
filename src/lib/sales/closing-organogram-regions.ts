@@ -837,7 +837,7 @@ export async function loadRegionManagerNames(lineCode: string | null | undefined
     const supabase = getSupabaseAdmin();
     const [mapResult, treeResult, regionResult] = await Promise.all([
       supabase.from("au_v_line_area_map").select("operational_region_code,dm_seat_id").eq("line_code", code),
-      supabase.from("au_v_org_tree").select("seat_id,occupant_hr_id").eq("line_code", code),
+      supabase.from("au_v_org_tree_sales").select("seat_id,occupant_hr_id").eq("line_code", code),
       supabase.from("au_v_regions").select("region_code,region_name"),
     ]);
     if (mapResult.error || treeResult.error || regionResult.error) return names;

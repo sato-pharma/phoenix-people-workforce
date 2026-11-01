@@ -2,6 +2,7 @@ import { normalizeLineName } from "@/lib/auth/permissions";
 import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
 import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isRegionalManagerHeldDistrict, isRepSeatHeldOffOrganogram } from "@/lib/org/sales-only-seats";
 import { ORG_SEAT_TITLE, type OrgSeatTier } from "@/lib/org/seat-titles";
 import {
   buildHeadOfficeOrganogramRows,
@@ -153,6 +154,10 @@ export function buildSeatTreeRows(
   // node). Centralised so manager resolution can climb past a dropped seat.
   const isDropped = (s: AuTreeRow): boolean => {
     if (s.is_other_pseudo_dm) return true; // "Others" holds no people
+    // A past picture reads every seat that was alive, is_active or not, so the sales-only seat is
+    // refused here too: it carries a Regional Manager's HR id and would draw him a second time.
+    if (isRegionalManagerHeldDistrict(s.seat_id)) return true;
+    if (isRepSeatHeldOffOrganogram(s.seat_id, asOfMonth)) return true; // hiring postponed (owner, 2026-11-01)
     if (
       s.seat_tier === "REP" &&
       s.occupant_hr_id &&

@@ -25,6 +25,7 @@ import { evenSplitKey, loadEvenSplitCustomerKeys } from "@/lib/sales/even-split-
 import { resolveMedicalRepSosAreaCodes } from "@/lib/sales/medical-rep-area-scope";
 import { loadSalesReferenceData, type SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { areaCodesForMonth } from "@/lib/org/sales-only-seats";
 import { loadProductPeriodPrices, type ProductPeriodPrices } from "@/lib/sales/product-period-price";
 import { rowIsInRegionScope, rowMatchesRegionFilter } from "@/lib/sales/sos-region-basis";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -967,7 +968,7 @@ export async function loadMonthlyClosingDetails(
     substituteMainStores ? [...withoutMaskedSourceRows(credited, access), ...mainStores] : merged,
     {
       allowedRegionCodes,
-      allowedAreaCodes: scope.allowedAreaCodes,
+      allowedAreaCodes: areaCodesForMonth(scope.allowedAreaCodes, scope.allowedEarlierMonthAreas, period),
       allowedClosingAreaCodes: repClosingAreaCodes,
       allowedProductCodes: scope.allowedProductCodes,
       dropConfidential: !confidentialIncluded,

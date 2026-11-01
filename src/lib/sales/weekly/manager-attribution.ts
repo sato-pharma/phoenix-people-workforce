@@ -116,7 +116,7 @@ export async function loadWeeklyManagerIndex(): Promise<WeeklyManagerIndex> {
 
   const [treeResult, regionsResult, employeesResult, areaMapResult] = await Promise.all([
     supabase
-      .from("au_v_org_tree")
+      .from("au_v_org_tree_sales")
       .select("seat_id, seat_tier, line_code, region_code, seat_label, occupant_hr_id, is_vacant, parent_seat_id"),
     supabase.from("au_v_regions").select("region_code, region_name"),
     supabase.from("employees").select("hr_id, full_name, nickname"),

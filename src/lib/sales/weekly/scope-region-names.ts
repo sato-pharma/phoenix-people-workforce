@@ -55,7 +55,7 @@ export async function loadWeeklyScopeRegionNames(
   try {
     // Inside the try: a missing service key throws here, and that too must leave the line readable.
     const supabase: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = client ?? getSupabaseAdmin();
-    const { data, error } = await supabase.from("au_v_org_tree").select("region_code,region_name");
+    const { data, error } = await supabase.from("au_v_org_tree_sales").select("region_code,region_name");
     if (error) return new Map();
     return selectWeeklyScopeRegionNames((data ?? []) as WeeklyScopeRegionRow[]);
   } catch {

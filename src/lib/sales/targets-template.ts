@@ -91,7 +91,7 @@ export type TargetTemplateArea = { areaCode: string; areaName: string; regionCod
 export type TargetTemplateProduct = { productCode: string; productName: string; factoryPrice: number | null };
 
 const REGION_LABELS: Record<string, string> = {
-  AB: "Alex-BHR", CA: "Cairo", D1: "Delta 1", D2: "Delta 2", GZ: "Giza", UE: "Upper Egypt", OT: "Others",
+  AB: "Alex-BHR", CA: "Cairo", D1: "Delta 1", D2: "Delta 2", GZ: "Giza", SH: "Sharkia", UE: "Upper Egypt", OT: "Others",
 };
 
 /**

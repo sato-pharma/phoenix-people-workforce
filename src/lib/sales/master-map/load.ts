@@ -177,7 +177,7 @@ async function loadOrganogram(): Promise<Organogram> {
     const seats = new Map<string, { hrId: string; pseudo: boolean }>();
     if (seatIds.length > 0) {
       const { data: seatRows, error: seatError } = await supabase
-        .from("au_v_org_tree")
+        .from("au_v_org_tree_sales")
         .select("seat_id,occupant_hr_id,is_other_pseudo_dm")
         .in("seat_id", seatIds)
         .limit(ORGANOGRAM_ROW_CAP);

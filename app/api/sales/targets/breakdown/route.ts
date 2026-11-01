@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     if (!period || !line || !area) {
       return NextResponse.json({ success: false, error: "period, line and area are required." }, { status: 400 });
     }
-    await assertTargetsAreaInScope(access, area, line);
+    await assertTargetsAreaInScope(access, area, line, period);
 
     const [rows, trend] = await Promise.all([
       loadSourceBreakdownDetail(period, line, area, product ?? ""),

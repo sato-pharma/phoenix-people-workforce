@@ -98,6 +98,7 @@ export const PERFORMANCE_REVIEW_REGIONS: Array<{
   { chip: "FF5F4E8F", regionCode: "D1", regionName: "Delta (1)", tint: "FFF3EFF8" },
   { chip: "FF9C4A63", regionCode: "D2", regionName: "Delta (2)", tint: "FFFCEFF2" },
   { chip: "FF2F7D7A", regionCode: "D3", regionName: "Delta (3)", tint: "FFEAF4F3" },
+  { chip: "FF7A6A3A", regionCode: "SH", regionName: "Sharkia", tint: "FFF5F2E8" },
   { chip: "FFA07A1E", regionCode: "UE", regionName: "Upper Egypt", tint: "FFFDF6E7" },
   { chip: "FF68757E", regionCode: "OT", regionName: "Others", tint: "FFEFF1F3" },
 ];

@@ -9048,3 +9048,63 @@ the snapshot's wait, and never re-add a hover or touch prefetch to make a page "
 
 **Pinned by** `tests/portal-link-prefetch.test.ts`, `tests/portal-rep-navigation-speed.test.ts`,
 `tests/phoenix-crm-reference-mint-throttle.test.ts` and `tests/page-change-fewer-waves.test.ts`.
+
+## Pedia Sharkia 1 and 2: off the chart, counted to Hany Saad from October — owner, 2026-11-01
+
+> "in pedia organogram hide sharkia 1 and 2 we wiull potpond hiring now in them so hide from organogram
+> and in salaes for sahar el galad count what should be countet to her and move the sharkia 1 and 2 to be
+> counted in hany saad totales"
+
+Asked which month it starts, he chose **October 2026**. July, August and September stay as published.
+
+**Why a new seat.** Who an area counts to is `au.line_area_map.dm_seat_id` and nothing else, and the
+closing groups by `operational_region_code`, so Delta (2)'s subtotal only drops Sharkia if Sharkia has a
+region of its own. `au.enforce_lam_region` requires the seat's region to equal the map row's, and the
+Regional Sales Manager's seat has no region. So: region `SH`, and district seat `SEAT-PED-DM-SH` under his
+regional seat, occupied by him. A vacant seat was rejected: every regional roll-up and Employee 360 skip a
+row with no district manager, so nothing would reach his totals.
+
+**Why the tree does not show it.** The seat is `is_active = false, sales_only = true`. `au.v_org_tree`
+filters `is_active`, so the organogram, recruitment folders, Phoenix CRM, field absence and seat transfer
+go on seeing him as one regional seat with no change to any of them. `public.au_v_org_tree_sales` is that
+tree plus the sales-only seats, read only by the sales reads that follow the money.
+`public.au_f_org_tree_as_of` ignores `is_active`, which is why the chart also refuses the seat in code.
+
+**What the screens do.**
+
+- The live chart and the rep "out of N" drop both rep seats. A past picture before October still draws them.
+- Hany's totals, the closing's region table and the district performance tables carry `SH`, so the money foots.
+- He is not a district manager: no place on the rankings, the spotlight's DM kind or the DM count.
+
+**What did not move, on purpose.**
+
+- The rep seats' parent stays `SEAT-PED-DM-D2`. `parent_seat_id` is not dated, so repointing it would redraw
+  past pictures and move recruitment and Phoenix CRM, which he did not ask for.
+- The open vacancies stay open in recruitment and the flat vacancy list.
+- CNS and Anti Infective keep Sharkia exactly where it is.
+- `SH` is not an Upper Egypt code and not Others, so the city split and El Qema's divisor do not read it.
+
+**Consequences worth knowing.**
+
+- Sahar still answers for Sharkia in July, August and September, because a published month is never changed
+  and that semester figure feeds what a manager is paid. Seat area scope reads current map rows, so
+  `AREAS_KEPT_FOR_EARLIER_MONTHS` in `src/lib/org/sales-only-seats.ts` keeps both areas in her bound for months
+  before October, and only for her seat: her closing, Sales vs Target, team performance and Targets all follow the
+  month. The old sales dashboard's per-person view is the one exception: it reads several months at once and
+  pushes the area list into the database, so it omits Sharkia for her past months. It decides no pay.
+- Sharkia's team now gets the target-upload email through Hany, where it went through Sahar's team before.
+- The weekly nameless-branch fallback for Delta (2) now spreads over 4 Pedia areas, not 6. The total is unchanged.
+
+**The proof, on production, in a transaction that rolled back (2026-11-01).** October: Delta (2) 4 areas,
+target EGP 712,962.00; Sharkia 2 areas, target EGP 297,067.50, to Hany Saad. September still resolves to Delta (2) with 6 areas.
+
+**The order on production is two files, and it is the point.** The code before this change reads `au_v_org_tree`,
+which does not hold the new seat, so moving the map first would drop both areas from Hany AND Sahar until the new
+revision serves. So `20261101190532_au_v_org_tree_sales.sql` (column and view, no row changes) goes on before the
+merge, and `20261101190533_pedia_sharkia_to_hany_saad_from_october.sql` (the move) goes on after `/api/healthz`
+serves the merged revision.
+
+**To resume hiring.** Take the seats out of `REP_SEATS_HELD_OFF_THE_ORGANOGRAM` in `src/lib/org/sales-only-seats.ts` and write a dated pair back onto
+`SEAT-PED-DM-D2`. **If Hany leaves,** a new Regional Manager does not inherit the seat by himself: occupy it.
+
+**Pinned by** `tests/pedia-sharkia-hany-saad-hold.test.ts`.

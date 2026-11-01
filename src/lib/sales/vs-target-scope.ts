@@ -24,6 +24,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSalesScope } from "@/lib/auth/permissions";
+import { areaInBoundForMonth } from "@/lib/org/sales-only-seats";
 import { resolveSalesAccessScope, resolveSalesGeographyBound, type SalesAccessScope } from "@/lib/sales/access-scope";
 import { isAreaBoundSalesScope, salesLineCodeForOfficialLine } from "@/lib/sales/portal-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
@@ -39,7 +40,7 @@ import type { BrickSalesRow } from "@/lib/sales/vs-target";
 export type VsTargetBound =
   | { kind: "company" }
   | { kind: "line"; lineCodes: Set<string> }
-  | { kind: "areas"; areaCodes: Set<string>; lineCodes: Set<string> | null }
+  | { kind: "areas"; areaCodes: Set<string>; lineCodes: Set<string> | null; earlierMonthAreas?: Map<string, string> }
   | { kind: "self"; hrId: string }
   | { kind: "none" };
 
@@ -112,6 +113,7 @@ export function vsTargetBoundFromSalesScope(
       kind: "areas",
       areaCodes: new Set(Array.from(geography.areaCodes).map(normalizeAreaCode)),
       lineCodes: lineCodes && lineCodes.size > 0 ? lineCodes : null,
+      ...(scope.allowedEarlierMonthAreas ? { earlierMonthAreas: scope.allowedEarlierMonthAreas } : {}),
     };
   }
 
@@ -150,7 +152,7 @@ export function filterRowsForBound(rows: AchievementRow[], bound: VsTargetBound)
         // A row with no area (the direct-at-region and "Other" buckets) cannot be
         // attributed to this viewer's areas, so it is not theirs to see.
         const areaCode = normalizeAreaCode(row.areaCode);
-        return Boolean(areaCode) && bound.areaCodes.has(areaCode);
+        return Boolean(areaCode) && areaInBoundForMonth(areaCode, row.period, bound.areaCodes, bound.earlierMonthAreas);
       });
   }
 }
@@ -170,7 +172,7 @@ export function filterBricksForBound(rows: BrickSalesRow[], bound: VsTargetBound
       return rows.filter((row) => {
         if (bound.lineCodes && (row.lineCode == null || !bound.lineCodes.has(row.lineCode))) return false;
         const areaCode = normalizeAreaCode(row.areaCode);
-        return Boolean(areaCode) && bound.areaCodes.has(areaCode);
+        return Boolean(areaCode) && areaInBoundForMonth(areaCode, row.period, bound.areaCodes, bound.earlierMonthAreas);
       });
   }
 }

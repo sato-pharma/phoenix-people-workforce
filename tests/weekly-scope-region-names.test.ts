@@ -46,7 +46,7 @@ const ORG_ROWS: WeeklyScopeRegionRow[] = [
   { region_code: "UE-2", region_name: "Upper Egypt 2" },
 ];
 
-const orgClient = () => fakeSupabaseClient({ au_v_org_tree: ORG_ROWS.map((row) => ({ ...row })) });
+const orgClient = () => fakeSupabaseClient({ au_v_org_tree_sales: ORG_ROWS.map((row) => ({ ...row })) });
 
 function territory(line: string, regionCodes: string[] | null): WeeklyAccessScope {
   return {
@@ -131,7 +131,7 @@ export async function runWeeklyScopeRegionNamesTests() {
   const failures: Array<{ label: string; client: unknown }> = [
     {
       label: "answers an error",
-      client: fakeSupabaseClient({ au_v_org_tree: ORG_ROWS }, { failOn: { au_v_org_tree: "permission denied for view au_v_org_tree" } }),
+      client: fakeSupabaseClient({ au_v_org_tree_sales: ORG_ROWS }, { failOn: { au_v_org_tree_sales: "permission denied for view au_v_org_tree_sales" } }),
     },
     {
       label: "throws",
@@ -169,7 +169,7 @@ export async function runWeeklyScopeRegionNamesTests() {
   // Only a viewer bound to exactly one region costs an organogram read; every other line names no region.
   const oneRegion = countingClient(orgClient());
   assert.equal((await loadWeeklyScopeRegionNames(ue1, oneRegion.client as never)).get("UE-1"), "Upper Egypt 1");
-  assert.deepEqual(oneRegion.reads, ["au_v_org_tree"], "a one-region viewer reads the organogram exactly once");
+  assert.deepEqual(oneRegion.reads, ["au_v_org_tree_sales"], "a one-region viewer reads the organogram exactly once");
 
   const noRead: Array<{ label: string; scope: WeeklyAccessScope; role: PhoenixRole; weeklySales: string; detailAndStock: string }> = [
     {

@@ -298,7 +298,7 @@ export async function loadFieldForceSeatIndex(): Promise<FieldForceSeatIndex> {
   try {
     const [treeResult, employeesResult, lineAreaResult] = await Promise.all([
       supabase
-        .from("au_v_org_tree")
+        .from("au_v_org_tree_sales")
         .select(
           "seat_id,seat_tier,line_code,line_name,region_code,region_name,area_code,area_name,occupant_hr_id,is_vacant,is_other_pseudo_dm,parent_seat_id",
         ),

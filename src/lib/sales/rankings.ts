@@ -42,6 +42,7 @@
 import { periodLabel, windowLabel } from "@/lib/business-review/period-format";
 import type { RepEstablishment } from "@/lib/employee-portal/rep-establishment";
 import { buildManagerChain, matchesManagerFilter } from "@/lib/org/manager-filter";
+import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { lineName } from "@/lib/sales/monthly-targets";
 import { isRowPublished, rollupByDm, type VsTargetNode } from "@/lib/sales/vs-target";
@@ -559,6 +560,8 @@ function districtManagerBoard(options: {
     return source.filter((row) => {
       if (!months.has(row.period) || !isRowPublished(row, options.publishedKeys)) return false;
       if (!row.lineCode || (options.lines.size > 0 && !options.lines.has(row.lineCode))) return false;
+      // A district a Regional Manager holds himself counts to him; he does not stand on this board.
+      if (isRegionalManagerHeldDistrict(row.dmSeatId)) return false;
       const key = rankingHrKey(row.dmHrId);
       if (!key) return false;
       return !options.active || options.active.has(key);

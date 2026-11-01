@@ -320,7 +320,7 @@ async function loadManagers(db: Db, seatIds: readonly string[]): Promise<FieldLi
   try {
     const rows: { seat_id: string | null; occupant_hr_id: string | null }[] = [];
     for (const part of chunks(seats)) {
-      const { data, error } = await db.from("au_v_org_tree").select("seat_id, occupant_hr_id").in("seat_id", part);
+      const { data, error } = await db.from("au_v_org_tree_sales").select("seat_id, occupant_hr_id").in("seat_id", part);
       if (error) throw error;
       rows.push(...((data ?? []) as typeof rows));
     }

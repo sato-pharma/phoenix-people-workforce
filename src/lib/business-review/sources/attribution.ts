@@ -23,6 +23,7 @@
 // (`placedFromLiveTree`) and the coverage tab says so rather than pretending otherwise.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 
 /** HR ids arrive in mixed case from three different systems. Every map in this module is keyed
@@ -144,7 +145,9 @@ export async function buildAttributionMap(
     remember(row.repHrId, row.period, placement);
     // A district manager places on their own district, never on one of its areas — attaching a
     // DM's own expense to whichever area happened to sort first would invent a territory cost.
-    remember(row.dmHrId, row.period, { ...placement, areaCode: null });
+    // A district a Regional Manager holds himself is not where his expense lands: it would put all of
+    // it on two vacant areas, so he keeps the placement his regional seat gives him.
+    if (!isRegionalManagerHeldDistrict(row.dmSeatId)) remember(row.dmHrId, row.period, { ...placement, areaCode: null });
   }
   for (const months of monthsByPerson.values()) months.sort();
 

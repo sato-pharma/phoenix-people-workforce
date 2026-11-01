@@ -193,6 +193,11 @@ export type SalesAccessScope = {
    */
   allowedAreaFactRegionCodes: Set<string> | null;
   /**
+   * Areas the viewer's seat answers for only in months before the one named, beside `allowedAreaCodes`
+   * (src/lib/org/sales-only-seats.ts). Absent for almost everyone.
+   */
+  allowedEarlierMonthAreas?: Map<string, string>;
+  /**
    * Per-user product-code allowlist (from product_scope_override). When set, only rows whose
    * productCode is in this set are visible. null = no product-code restriction (line scope only).
    * Empty set = sees nothing.
@@ -216,7 +221,7 @@ type ComputeScopeInput = {
    * Seat-derived area scope for a District / Regional Manager (see ./seat-area-scope.ts). null when
    * the role isn't seat-scoped or the seat map couldn't answer — the region-name bound then stands.
    */
-  seatAreaScope?: { areaCodes: Set<string>; factRegionCodes: Set<string> } | null;
+  seatAreaScope?: { areaCodes: Set<string>; factRegionCodes: Set<string>; earlierMonthAreas?: Map<string, string> } | null;
 };
 
 /**
@@ -348,6 +353,7 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
     allowedAreaNames: null,
     allowedAreaCodes,
     allowedAreaFactRegionCodes,
+    ...(seatAreaScope?.earlierMonthAreas ? { allowedEarlierMonthAreas: seatAreaScope.earlierMonthAreas } : {}),
     allowedProductCodes,
   };
 }

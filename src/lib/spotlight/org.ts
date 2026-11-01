@@ -9,6 +9,7 @@
 // every code all come out of the same 133 rows. Reading a rep-only slice is the mistake this file
 // exists to avoid repeating.
 
+import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { hrKey, type OrgPerson, type OrgSeat, type SpotlightOrg } from "./rank";
@@ -55,7 +56,7 @@ async function selectAll(table: string, columns: string): Promise<Record<string,
 export async function loadSpotlightOrg(): Promise<SpotlightOrgIndex> {
   const [seatRows, peopleRows] = await Promise.all([
     selectAll(
-      "au_v_org_tree",
+      "au_v_org_tree_sales",
       "seat_id, parent_seat_id, seat_tier, line_code, line_name, region_code, region_name, area_code, area_name, occupant_hr_id, is_vacant, seat_display_label",
     ),
     selectAll("employees", "hr_id, full_name, name_ar, job_title"),
@@ -162,7 +163,9 @@ export function facetsFrom(index: SpotlightOrgIndex): SpotlightFacets {
     }
 
     const person = seat.occupantHrId ? index.people.get(hrKey(seat.occupantHrId)) : null;
-    if (person && seat.tier !== "CEO") {
+    // A district a Regional Manager holds himself is still a region to filter by, but he is already
+    // listed from his regional seat, and rank.ts answers nothing for him as a district manager.
+    if (person && seat.tier !== "CEO" && !isRegionalManagerHeldDistrict(seat.seatId)) {
       people.push({
         hrId: person.hrId,
         name: person.fullName,

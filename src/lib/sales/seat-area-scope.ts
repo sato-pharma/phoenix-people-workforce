@@ -1,5 +1,6 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { areasKeptForEarlierMonths } from "@/lib/org/sales-only-seats";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +38,8 @@ export type SeatAreaScope = {
    * belong to a different manager, so it must always be combined with the `areaCodes` filter.
    */
   factRegionCodes: Set<string>;
+  /** Areas these seats answer for only in months before the one named (src/lib/org/sales-only-seats.ts). */
+  earlierMonthAreas?: Map<string, string>;
 };
 
 /**
@@ -89,7 +92,8 @@ async function loadSeatAreaInputs(): Promise<{
 }> {
   const supabase = getSupabaseAdmin();
   const [seatRows, areaRows, canonicalRows] = await Promise.all([
-    supabase.from("au_v_org_tree").select("seat_id,seat_tier,line_code,path,occupant_hr_id"),
+    // The sales tree: a district a Regional Manager holds himself is under his seat like any other.
+    supabase.from("au_v_org_tree_sales").select("seat_id,seat_tier,line_code,path,occupant_hr_id"),
     // Current rows only: superseded (line, area, dm_seat) mappings must not widen or
     // contaminate a manager's area set after a re-map. Matches region-resolver.ts's policy.
     supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id").is("effective_to", null),
@@ -201,7 +205,8 @@ export function computeSeatAreaScope(input: {
     if (region) factRegionCodes.add(region.trim().toUpperCase());
   }
 
-  return { areaCodes, factRegionCodes };
+  const earlierMonthAreas = areasKeptForEarlierMonths(dmSeatIds);
+  return earlierMonthAreas.size > 0 ? { areaCodes, factRegionCodes, earlierMonthAreas } : { areaCodes, factRegionCodes };
 }
 
 /**

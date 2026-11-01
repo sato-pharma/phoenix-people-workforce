@@ -660,6 +660,7 @@ export const REGION_NAMES: Record<string, string> = {
   D2: "Delta 2",
   GZ: "Giza",
   OT: "Others",
+  SH: "Sharkia",
   UE: "Upper Egypt",
   "UE-1": "Upper Egypt 1",
   "UE-2": "Upper Egypt 2",

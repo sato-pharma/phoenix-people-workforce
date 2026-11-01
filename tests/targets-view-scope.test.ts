@@ -193,7 +193,7 @@ export function runTargetsViewScopeTests() {
   // cross-territory enumeration hole via ?area=.
   const breakdown = readFileSync("app/api/sales/targets/breakdown/route.ts", "utf8");
   assert.match(breakdown, /assertPermission\(access, "sales", "read"\)/);
-  assert.match(breakdown, /assertTargetsAreaInScope\(access, area, line\)/, "the relaxed breakdown read MUST enforce area AND line scope");
+  assert.match(breakdown, /assertTargetsAreaInScope\(access, area, line, period\)/, "the relaxed breakdown read MUST enforce area AND line scope");
 
   // The admin page keeps the write permission only as the canEdit signal, not as the view gate.
   const adminPage = readFileSync("app/(admin)/sales/targets/page.tsx", "utf8");

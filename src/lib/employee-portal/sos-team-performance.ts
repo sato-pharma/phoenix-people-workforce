@@ -41,6 +41,7 @@ import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import { logError } from "@/lib/observability/log";
+import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import { creditDmRowsByTenure, creditRepRowsByTenure, loadSeatTenure, type SeatTenure } from "@/lib/sales/seat-tenure-credit";
 import {
   loadSalesSeatTree,
@@ -517,6 +518,19 @@ function headlineTotals(rows: AchievementRow[]): {
   };
 }
 
+/**
+ * How many district managers a list stands for. A Regional Manager holding a district himself has a row
+ * so his money foots to the header, but he is not one more district manager on the count above it.
+ */
+export function districtManagerCount(dsms: ReadonlyArray<{ hrId: string }>, rows: readonly AchievementRow[]): number {
+  const regional = new Set(
+    rows
+      .filter((row) => isRegionalManagerHeldDistrict(row.dmSeatId) && row.dmHrId)
+      .map((row) => String(row.dmHrId).trim().toUpperCase()),
+  );
+  return dsms.filter((dsm) => !regional.has(dsm.hrId.trim().toUpperCase())).length;
+}
+
 // ── NSM portal views ──────────────────────────────────────────────────────────
 
 /**
@@ -558,7 +572,7 @@ export async function buildNsmDsmPerformanceFromSos(
     ),
     periods: activePeriods,
     lineAchievementPercent: totals.achievementPercent,
-    dsmCount: dsms.length,
+    dsmCount: districtManagerCount(dsms, board),
     lineTotalSales: totals.sales,
     lineTotalTarget: totals.target,
     unattributedSales,
@@ -723,7 +737,7 @@ export async function buildCompanyDsmPerformanceFromSos(
         }),
         periods: activePeriods,
         lineAchievementPercent: totals.achievementPercent,
-        dsmCount: dsms.length,
+        dsmCount: districtManagerCount(dsms, lineBoard),
         lineTotalSales: totals.sales,
         lineTotalTarget: totals.target,
         unattributedSales: lineUnattributed.unattributedSales,
@@ -811,7 +825,7 @@ export async function buildRmRegionalPerformanceFromSos(
     topReps,
     periods: activePeriods,
     regionAchievementPercent: region.achievementPercent,
-    dsmCount: dsms.length,
+    dsmCount: districtManagerCount(dsms, used),
     regionTotalSales: region.sales,
     regionTotalTarget: region.target,
     unattributedSales,
