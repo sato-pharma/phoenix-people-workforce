@@ -1,6 +1,11 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import {
+  canRevealClosingSource,
+  MASKED_SOURCE_DISTRIBUTORS,
+  withoutMaskedSourceRows,
+} from "@/lib/sales/closing-source-mask";
+import {
   classifyCustomerChannel,
   matchedChannelKeywords,
   storeOverrideReason,
@@ -13,11 +18,39 @@ import {
 } from "@/lib/sales/monthly-distributor-import";
 
 // Confidential products (LA003/LA004/SS001) are stripped server-side inside the RPC for any
-// caller who is not CEO / Super Admin (src/lib/sales/access-scope.ts). Every route calling into
-// this module already gates the whole Customer Directory to Super Admin, so this is
-// defense-in-depth: a future looser route gate still cannot leak the restricted products.
+// caller who is not CEO / Super Admin (src/lib/sales/access-scope.ts). Super Admin and SFE Manager
+// both reach this module, so this is what keeps those products from the SFE Manager.
 function excludeCodesFor(role: PhoenixRole): string[] {
   return canViewRestrictedProducts(role) ? [] : [...RESTRICTED_PRODUCT_CODES];
+}
+
+// El Qema's customers leave the Customer Directory for everyone but Super Admin (owner, 2026-11-01:
+// remove its rows, as the closing details do). The rows go, never a blank name, because a blank row
+// still shows how much money has no owner. The system context carries role Super Admin, so the role
+// answers this on its own.
+function sourceViewer(role: PhoenixRole) {
+  return { role, scope: "company" } as const;
+}
+
+export function directoryHidesDistributor(distributorCode: string, role: PhoenixRole): boolean {
+  return (
+    !canRevealClosingSource(sourceViewer(role)) &&
+    MASKED_SOURCE_DISTRIBUTORS.has(distributorCode.trim().toUpperCase())
+  );
+}
+
+export function directoryRowsForRole(rows: CustomerDirectoryRow[], role: PhoenixRole): CustomerDirectoryRow[] {
+  return [...withoutMaskedSourceRows(rows, sourceViewer(role))];
+}
+
+export function directoryOptionsForRole(
+  options: CustomerDirectoryFilterOptions,
+  role: PhoenixRole,
+): CustomerDirectoryFilterOptions {
+  return {
+    ...options,
+    distributors: options.distributors.filter((option) => !directoryHidesDistributor(option.code, role)),
+  };
 }
 
 // Customer Directory — customers derived from the uploaded distributor sales rows.
@@ -357,7 +390,7 @@ async function queryDirectoryRows(
   if (error) throw error;
   const rows = (data ?? []) as DirectoryRpcRow[];
 
-  const mapped = mapDirectoryRowsToNames(rows, maps);
+  const mapped = directoryRowsForRole(mapDirectoryRowsToNames(rows, maps), role);
   const searched = applyDirectorySearch(mapped, filters.search).filter(
     (row) => !filters.channel || row.channel === filters.channel,
   );
@@ -401,7 +434,7 @@ export async function loadCustomerDirectoryInitialData(
   const { maps, options } = await loadNameMaps();
   const rows = await queryDirectoryRows(filters, maps, role);
   return {
-    options,
+    options: directoryOptionsForRole(options, role),
     result: {
       customers: rows.slice(0, DIRECTORY_RESULT_LIMIT),
       truncated: rows.length > DIRECTORY_RESULT_LIMIT,
@@ -450,6 +483,8 @@ export async function loadCustomerSales(
   },
   role: PhoenixRole,
 ): Promise<CustomerSalesDetail | null> {
+  if (directoryHidesDistributor(input.distributorCode, role)) return null;
+
   const { maps } = await loadNameMaps();
   const supabase = getSupabaseAdmin();
   const result = await supabase.rpc("phx_customer_sales", {

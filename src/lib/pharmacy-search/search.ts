@@ -18,9 +18,11 @@
  */
 
 import { normalizeArabicPharmacyName, removeStopWords } from "@/lib/pharmacy-master/pharmacy-matching";
+import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
+import { visibleDistributorRows, visibleTerritoryReference } from "./source-visibility";
 import { PHOENIX_PROFILE_ID_PREFIX, type PharmacySearchHit, type PharmacySearchMatchKind } from "./types";
 
 /** Hard cap on rows returned to the browser. Deep paging is not what a search box is for. */
@@ -246,7 +248,7 @@ function registryHits(
 }
 
 /** Read the active registry and its distributor codes. Two plain selects, no embedding. */
-async function loadRegistryPharmacies(): Promise<RegistryPharmacy[]> {
+async function loadRegistryPharmacies(viewer: SourceMaskViewer): Promise<RegistryPharmacy[]> {
   const supabase = getSupabaseAdmin();
 
   const [pharmacies, codes] = await Promise.all([
@@ -255,10 +257,10 @@ async function loadRegistryPharmacies(): Promise<RegistryPharmacy[]> {
       .select(REGISTRY_COLUMNS)
       .eq("active", true)
       .limit(REGISTRY_FETCH_LIMIT),
-    supabase
-      .from("direct_order_pharmacy_distributor_codes")
-      .select("pharmacy_id, distributor_code, customer_code")
-      .limit(REGISTRY_FETCH_LIMIT),
+    visibleDistributorRows(
+      supabase.from("direct_order_pharmacy_distributor_codes").select("pharmacy_id, distributor_code, customer_code"),
+      viewer,
+    ).limit(REGISTRY_FETCH_LIMIT),
   ]);
 
   if (pharmacies.error) throw new Error(`Phoenix pharmacy registry search failed: ${pharmacies.error.message}`);
@@ -426,7 +428,7 @@ function rankHits(hits: PharmacySearchHit[], normalizedQuery: string): PharmacyS
  * Returns `isEmpty: true` rather than throwing when nothing matches — "not in the database" is a
  * legitimate answer here and the caller offers the Google lookup on the back of it.
  */
-export async function searchPharmacies(rawQuery: string): Promise<PharmacySearchResult> {
+export async function searchPharmacies(rawQuery: string, viewer: SourceMaskViewer): Promise<PharmacySearchResult> {
   const query = rawQuery.trim();
   const safe = sanitizeForOrFilter(query);
 
@@ -435,7 +437,7 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
   }
 
   const supabase = getSupabaseAdmin();
-  const reference = await getTerritoryReference();
+  const reference = visibleTerritoryReference(await getTerritoryReference(), viewer);
 
   // Which distributor, if any, is the person naming? Matched against our 20 distributors before
   // anything else, because "Ibn Sina" as a query means "show me Ibn Sina's pharmacies", not
@@ -452,10 +454,10 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
   const branches: Array<PromiseLike<{ kind: PharmacySearchMatchKind; rows: CustomerMapRow[] }>> = [];
 
   branches.push(
-    supabase
-      .from("source_of_sales_customer_map")
-      .select(CUSTOMER_MAP_COLUMNS)
-      .ilike("customer_name", like)
+    visibleDistributorRows(
+      supabase.from("source_of_sales_customer_map").select(CUSTOMER_MAP_COLUMNS).ilike("customer_name", like),
+      viewer,
+    )
       .limit(BRANCH_FETCH_LIMIT)
       .then(({ data, error }) => {
         if (error) throw new Error(`Pharmacy name search failed: ${error.message}`);
@@ -465,10 +467,10 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
 
   if (looksLikeCode(safe)) {
     branches.push(
-      supabase
-        .from("source_of_sales_customer_map")
-        .select(CUSTOMER_MAP_COLUMNS)
-        .ilike("customer_code", `%${safe}%`)
+      visibleDistributorRows(
+        supabase.from("source_of_sales_customer_map").select(CUSTOMER_MAP_COLUMNS).ilike("customer_code", `%${safe}%`),
+        viewer,
+      )
         .limit(BRANCH_FETCH_LIMIT)
         .then(({ data, error }) => {
           if (error) throw new Error(`Customer code search failed: ${error.message}`);
@@ -479,10 +481,10 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
 
   if (matchedDistributor) {
     branches.push(
-      supabase
-        .from("source_of_sales_customer_map")
-        .select(CUSTOMER_MAP_COLUMNS)
-        .eq("distributor_code", matchedDistributor[0])
+      visibleDistributorRows(
+        supabase.from("source_of_sales_customer_map").select(CUSTOMER_MAP_COLUMNS).eq("distributor_code", matchedDistributor[0]),
+        viewer,
+      )
         .order("customer_name")
         .limit(BRANCH_FETCH_LIMIT)
         .then(({ data, error }) => {
@@ -494,10 +496,10 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
     // Only worth scanning addresses when the query is not a code and not a distributor — it is
     // the weakest signal and would otherwise drown a good name match.
     branches.push(
-      supabase
-        .from("source_of_sales_customer_map")
-        .select(CUSTOMER_MAP_COLUMNS)
-        .ilike("address", like)
+      visibleDistributorRows(
+        supabase.from("source_of_sales_customer_map").select(CUSTOMER_MAP_COLUMNS).ilike("address", like),
+        viewer,
+      )
         .limit(BRANCH_FETCH_LIMIT)
         .then(({ data, error }) => {
           if (error) throw new Error(`Address search failed: ${error.message}`);
@@ -509,7 +511,7 @@ export async function searchPharmacies(rawQuery: string): Promise<PharmacySearch
   // The fourth branch. Read alongside the directory ones rather than after them: it is a
   // different table and answers a different half of the question, so making it wait would add its
   // latency to every search instead of hiding it behind the three that already run.
-  const [settled, registry] = await Promise.all([Promise.all(branches), loadRegistryPharmacies()]);
+  const [settled, registry] = await Promise.all([Promise.all(branches), loadRegistryPharmacies(viewer)]);
 
   const seenRowKeys = new Set<string>();
   const directoryHits: PharmacySearchHit[] = [];

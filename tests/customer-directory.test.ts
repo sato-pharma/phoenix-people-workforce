@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   applyDirectorySearch,
+  directoryHidesDistributor,
+  directoryOptionsForRole,
+  directoryRowsForRole,
   mapDirectoryRowsToNames,
   rollUpCustomerSales,
   type CustomerDirectoryRow,
@@ -9,6 +13,38 @@ import {
 } from "../src/lib/sales/customer-directory.ts";
 
 export function runCustomerDirectoryTests() {
+  // El Qema leaves the directory for everyone but Super Admin (owner, 2026-11-01): its rows and its
+  // filter option go, and its detail page answers as if the customer did not exist.
+  for (const code of ["QM", "qm", " QM "]) {
+    assert.equal(directoryHidesDistributor(code, "SFE Manager"), true, `SFE Manager must not reach "${code}"`);
+    assert.equal(directoryHidesDistributor(code, "Super Admin"), false, `Super Admin keeps "${code}"`);
+  }
+  assert.equal(directoryHidesDistributor("IS", "SFE Manager"), false, "only El Qema is hidden");
+
+  const qemaRows = [{ distributorCode: "QM" }, { distributorCode: "IS" }] as Parameters<typeof directoryRowsForRole>[0];
+  assert.deepEqual(directoryRowsForRole(qemaRows, "SFE Manager").map((row) => row.distributorCode), ["IS"]);
+  assert.deepEqual(directoryRowsForRole(qemaRows, "Super Admin").map((row) => row.distributorCode), ["QM", "IS"]);
+
+  const qemaOptions = {
+    areas: [],
+    bricks: [],
+    distributors: [{ code: "QM", label: "El Qema (QM)" }, { code: "IS", label: "Ibn Sina (IS)" }],
+    periods: [],
+    regions: [],
+  };
+  assert.deepEqual(directoryOptionsForRole(qemaOptions, "SFE Manager").distributors.map((option) => option.code), ["IS"]);
+  assert.deepEqual(directoryOptionsForRole(qemaOptions, "Super Admin").distributors.map((option) => option.code), ["QM", "IS"]);
+
+  // The helpers above are only worth anything if the three doors out of this module call them.
+  const directorySource = readFileSync("src/lib/sales/customer-directory.ts", "utf8");
+  for (const [door, needle] of [
+    ["the list, channel and export read", "directoryRowsForRole(mapDirectoryRowsToNames(rows, maps), role)"],
+    ["the page's filter options", "options: directoryOptionsForRole(options, role)"],
+    ["the customer detail", "if (directoryHidesDistributor(input.distributorCode, role)) return null;"],
+  ] as const) {
+    assert.ok(directorySource.includes(needle), `${door} must drop El Qema for a viewer who may not see it`);
+  }
+
   // mapDirectoryRowsToNames: codes → names, fallback to code when missing.
   const maps = {
     areaName: new Map([["A1", "Heliopolis"]]),

@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     }
 
     const notes = typeof body?.notes === "string" ? body.notes.slice(0, MAX_NOTES_LENGTH) : null;
-    const profile = await loadExternalPharmacyProfile({ includeGoogleHospitals: false, placeId });
+    const profile = await loadExternalPharmacyProfile({ includeGoogleHospitals: false, placeId, viewer: access });
 
     return NextResponse.json(await saveDiscoveredPharmacy({ access, notes, profile }));
   } catch (error) {
