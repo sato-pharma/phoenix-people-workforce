@@ -851,3 +851,19 @@ A manager's week can now hold a conversation between him and the people on its a
 **The migration.** `20261101114105_record_conversation_manager_plans.sql` adds `manager_plans` to the table's module check. Pinned by the conversation section of `tests/phoenix-crm-manager-plan.test.ts`.
 
 **A returned week opens first (owner, 2026-11-01).** The Plan tab used to open a returned week on the empty coming week, because a returned week does not count as sent, so the manager saw neither "What to change" nor the "Open conversation" bar until they switched week. `managerPlanOpeningWeek` now opens a returned week they are in first, even with the coming week started. A returned week whose days have all passed is no longer offered on the tab; it is read from the Approvals Hub.
+
+## Optional customers, and AM or PM alone (owner, 2026-11-01)
+
+The owner: "group product manager can optional choose customers or can only choose the area without custromers also she can optionally plan am and pm she can am only or pm only". Asked who gets it: "rasha only and nsms".
+
+**Who.** A national sales manager and the holder of the Group Product Manager role (`managerCustomersOptional`). A Product Manager, a regional manager and a district manager still name customers. The Training Manager's own rule is untouched.
+
+**How the Group Product Manager is told apart.** Both product manager roles plan as `pm`, so the database cannot tell them apart: it lets `nsm`, `pm` and `tm` save an empty half-day, and the save decides from `viewer.role` in `plansCustomersOptional`. The body of the request is never asked. The database still refuses a regional or district manager.
+
+**With a rep, the rep alone.** Any rep of the chosen district can be picked, including one with no plan that half. The row is the rep, and one visit of the rep naming the planner that day answers it, the same evidence as the Training Manager's rep row (`dmany`, keyed `tmrep`).
+
+**Single visit, the area alone.** The row is the area (`ownarea`). Any customer she logs that day with "Log an unplanned customer" answers it, and those visits stop being unplanned on the report and the day page (`visitsAnsweringAnArea`, `buildPlanVsActual`). It is by the day, not the half, as With a district manager is. Today's screen names the area and says how to log.
+
+**AM only or PM only.** Send already accepted this: the database refuses only a week with no half-days at all. Three things changed on the screen. Next no longer warns on an empty morning with its afternoon still ahead (this one applies to every planner, `managerNextHold`'s `leavesTheDay`). The day list turns green on one half planned. The optional planners see a line saying each half is optional and a neutral note at Send in place of the warning.
+
+**The migration.** `20261101132835_phoenix_crm_manager_plan_optional_customers.sql` restates the save with that one condition changed. Pinned by the last section of `tests/phoenix-crm-manager-plan.test.ts`.

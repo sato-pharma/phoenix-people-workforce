@@ -108,13 +108,24 @@ export function buildPlanVsActual(
     const byKey = customer.key
       ? visits.find((visit) => !used.has(visit.id) && sourceFits(kind, visit) && visit.customerKey === customer.key)
       : undefined;
+    // A half-day that names no customer (owner, 2026-11-01): its row is the rep, answered by a visit with that rep,
+    // or the area, answered by a visit he logged off the plan.
+    const noCustomer = customer.key
+      ? undefined
+      : kind === "with_rep"
+        ? visits.find((visit) => !used.has(visit.id) && sourceFits(kind, visit) && visit.withPeople.some((person) => nameKey(person.name) === nameKey(customer.name)))
+        : kind === "single_visit"
+          ? visits.find((visit) => !used.has(visit.id) && sourceFits(kind, visit) && !visit.planned)
+          : undefined;
     const found =
-      byKey ?? (customer.key ? undefined : visits.find((visit) => !used.has(visit.id) && sourceFits(kind, visit) && nameKey(visit.customerName) === nameKey(customer.name)));
+      byKey ?? noCustomer ?? (customer.key ? undefined : visits.find((visit) => !used.has(visit.id) && sourceFits(kind, visit) && nameKey(visit.customerName) === nameKey(customer.name)));
     if (found) used.add(found.id);
     return found ?? null;
   };
 
   const halves = sent && plan ? [...plan.halves].sort((left, right) => left.half.localeCompare(right.half)) : [];
+  // A single visit naming the area alone: every visit he logged off the plan that day is on it, as the report counts it.
+  const areaAlone = halves.some((half) => half.kind === "single_visit" && half.customers.some((customer) => customer.key === null));
   for (const half of halves) {
     if (half.customers.length === 0) {
       rows.push({
@@ -166,6 +177,10 @@ export function buildPlanVsActual(
         outcomeLabel: visit.planned ? "On the plan" : "Not on the plan",
         plan: null,
       });
+      continue;
+    }
+    if (areaAlone && sourceFits("single_visit", visit) && !visit.planned) {
+      rows.push({ actual: visit, half: halfOfVisit(visit), id: `visit:${visit.id}`, outcome: "done", outcomeLabel: "On the plan", plan: null });
       continue;
     }
     summary.unplanned += sent ? 1 : 0;

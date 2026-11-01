@@ -454,6 +454,32 @@ export function isSeatlessPlannerKind(kind: ManagerPlannerKind | null | undefine
 /** The app roles that plan as a product manager — Rasha Sabry (Group Product Manager) and Ahmed SharafEldeen. */
 export const PRODUCT_MANAGER_PLAN_ROLES: ReadonlySet<string> = new Set(["Product Manager", "Group Product Manager"]);
 
+/** The one of those two roles whose customers are optional — Rasha Sabry (owner, 2026-11-01). */
+export const GROUP_PRODUCT_MANAGER_PLAN_ROLE = "Group Product Manager";
+
+/**
+ * 🔴 WHO MAY PLAN A HALF-DAY WITH NO CUSTOMERS (owner, 2026-11-01: "group product manager can optional choose
+ * customers or can only choose the area without custromers"; asked who, "rasha only and nsms"): a national sales
+ * manager and the Group Product Manager, With a rep (the rep alone) and Single visit (the area alone). A Product
+ * Manager, a regional manager and a district manager still name them. The Training Manager's With a rep never names
+ * any, by her own rule.
+ */
+export function managerCustomersOptional(kind: ManagerPlannerKind, groupProductManager: boolean): boolean {
+  return kind === "nsm" || (kind === "pm" && groupProductManager);
+}
+
+/**
+ * The visits that answer a single visit naming the area alone: whatever he logged off the plan that day. By the day,
+ * not the half, as With a district manager is: one visit answers it, and each is a planned visit, never an unplanned one.
+ */
+export function visitsAnsweringAnArea<Visit extends { managerHrId: string; visitDate: string; isUnplanned: boolean }>(
+  visits: ReadonlyArray<Visit>,
+  managerHrId: string,
+  date: string,
+): Visit[] {
+  return visits.filter((visit) => visit.managerHrId === managerHrId && visit.visitDate === date && visit.isUnplanned);
+}
+
 /** The app role that plans as the Training Manager — Salma Labib (owner, 2026-10-24). */
 export const TRAINING_MANAGER_PLAN_ROLES: ReadonlySet<string> = new Set(["Training Manager"]);
 
@@ -788,11 +814,16 @@ export function managerNextHold(input: {
   chosenScopeName: string | null;
   /** Any half of the day holds a choice, saved or on the page. */
   dayHasAPlan: boolean;
+  /**
+   * Next goes on to another day from here. On a morning with its afternoon still ahead it says nothing about an
+   * empty day, or a plan for the afternoon only meets a warning first (owner, 2026-11-01: "she can am only or pm only").
+   */
+  leavesTheDay?: boolean;
 }): { message: string; once: boolean } | null {
   if (input.problem) {
     return { once: false, message: `${input.dayText} ${input.half} is not saved yet: ${input.problem}. Finish it, or press Clear this half-day to leave it empty.` };
   }
-  if (input.chosenScopeName && !input.dayHasAPlan) {
+  if (input.chosenScopeName && !input.dayHasAPlan && input.leavesTheDay !== false) {
     return {
       once: true,
       message: `You chose ${input.chosenScopeName} for ${input.dayText}, but not what you do. Nothing of this day is saved yet. Choose it under What you do, or press Next again to leave it empty.`,
@@ -863,8 +894,9 @@ function textOf(value: unknown): string | null {
  * The body of one half-day save, read strictly. Each kind carries its own fields and nothing else:
  * with a rep names the rep's seat and at least one of his customers; admin names one of the seven
  * activities and no customer; a single visit names an area of his district and at least one customer.
+ * `customersOptional` lets a with-a-rep or single-visit half-day name none (`managerCustomersOptional`).
  */
-export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSlotDraft> {
+export function parseManagerSlotDraft(raw: unknown, options: { customersOptional?: boolean } = {}): ManagerRuleResult<ManagerSlotDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const date = body.date;
   if (!isIsoDay(date)) return { ok: false, error: "Choose a day of the week." };
@@ -934,7 +966,7 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
   if (scopeRegionCode) return { ok: false, error: "Only With a rep and An area are planned in a region." };
   if (kind === "with_rep") {
     if (!repSeatId) return { ok: false, error: "Choose the rep you go with." };
-    if (customers.length === 0) return { ok: false, error: "Tick at least one of the rep's customers, or Mark all." };
+    if (customers.length === 0 && !options.customersOptional) return { ok: false, error: "Tick at least one of the rep's customers, or Mark all." };
     if (customers.some((entry) => "managerCustomerId" in entry)) return { ok: false, error: "With a rep, the customers are the rep's own." };
     return { ok: true, value: { ...draft, repSeatId, scopeDmSeatId, scopeLineCode, customers } };
   }
@@ -960,7 +992,7 @@ export function parseManagerSlotDraft(raw: unknown): ManagerRuleResult<ManagerSl
     return { ok: true, value: { ...draft, areaSeatIds, seniorHrId, scopeDmSeatId, scopeLineCode, customers } };
   }
   if (!areaSeatId) return { ok: false, error: "Choose the area." };
-  if (customers.length === 0) return { ok: false, error: "Choose at least one customer for the single visit." };
+  if (customers.length === 0 && !options.customersOptional) return { ok: false, error: "Choose at least one customer for the single visit." };
   return { ok: true, value: { ...draft, areaSeatId, scopeDmSeatId, scopeLineCode, customers } };
 }
 
@@ -1541,20 +1573,22 @@ export function managerEvidenceKey(input: {
   managerCustomerId: string | null;
   /** With a district manager: the area the row is about. One chain visit in it answers it on both halves of the day. */
   areaSeatId?: string | null;
-  /** The Training Manager's row: her With a rep names no customer. */
-  trainingManager?: boolean;
+  /** A With a rep row that names no customer: the Training Manager's, or one whose customers were optional. */
+  repAlone?: boolean;
 }): string | null {
   if (input.kind === "with_rep") {
     if (input.repSeatId && input.customerId) return `rep|${input.repSeatId}|${input.date}|${input.customerId}`;
-    // The Training Manager's With a rep names the rep alone: one visit of his with her that day answers it.
-    return input.repSeatId && input.trainingManager ? `tmrep|${input.repSeatId}|${input.date}` : null;
+    // A With a rep that names the rep alone: one visit of his naming the planner that day answers it.
+    return input.repSeatId && input.repAlone ? `tmrep|${input.repSeatId}|${input.date}` : null;
   }
   if (input.kind === "with_area") return input.areaSeatId ? `area|${input.date}|${input.areaSeatId}` : null;
   if (input.kind === "with_dm") return input.areaSeatId ? `dm|${input.date}|${input.areaSeatId}` : null;
   if (input.kind === "with_senior") return input.areaSeatId ? `sr|${input.date}|${input.areaSeatId}` : null;
   if (input.kind === "single_visit") {
     if (input.customerId) return `own|${input.date}|c:${input.customerId}`;
-    return input.managerCustomerId ? `own|${input.date}|m:${input.managerCustomerId}` : null;
+    if (input.managerCustomerId) return `own|${input.date}|m:${input.managerCustomerId}`;
+    // A single visit that names the area alone (owner, 2026-11-01).
+    return input.areaSeatId ? `ownarea|${input.date}|${input.areaSeatId}` : null;
   }
   return null;
 }

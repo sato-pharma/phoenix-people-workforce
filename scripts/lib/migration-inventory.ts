@@ -2024,6 +2024,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // customers and 69,127 source rows read unchanged. The ledger's newest row was 20261031195143, and ZERO rows carry
   // this version or name.
   "20261101111500_phoenix_crm_import_history_second_review_fixes.sql",
+
+  // Applied 1 Nov 2026 to staging and then production through scripts/apply-sql-file.mjs, the standing route, because
+  // the save's body holds a `delete`, which the MCP declines. The route writes no ledger row, hence this entry. It
+  // replaces one function and changes no row.
+  //
+  // Read live on cifwmndunmlxjhyjugxa and ozucdzovmcqvepbozvqf right after each apply. Verified by digest, not by
+  // presence: md5(pg_proc.prosrc) for phoenix_crm_save_manager_plan_slot is 191b87d3f7859f20a1d49cacd375d43e on both
+  // (was 12517968b9e92d3dd440aa6caab49bee on both), the md5 of this file's own dollar-quoted body. prosecdef true,
+  // proacl {postgres=X/postgres,service_role=X/postgres}. A rolled-back probe on staging saved an empty half-day as
+  // nsm and pm, and read manager_plan_slot_empty as rsm and dm.
+  "20261101132835_phoenix_crm_manager_plan_optional_customers.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
