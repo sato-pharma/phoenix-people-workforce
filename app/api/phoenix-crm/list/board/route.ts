@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { startServerTimer } from "@/lib/http/server-timing";
 import { getMyListBoard } from "@/lib/crm/reps-list-board";
 import { readTestFlag, resolvePhoenixCrmViewer, territoryForRead } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
@@ -27,10 +28,12 @@ export const dynamic = "force-dynamic";
 // made. The seat's occupant and name are all the board needs, and they are exactly what that load's
 // `describeTerritory` answered (`repHrId: seat.occupantHrId`, `name: territoryName(seat)`).
 export async function GET(request: Request) {
+  const timer = startServerTimer("crm_list_board");
   try {
     const access = await resolveAccessContext(request);
+    timer.lap("access");
     await assertPermission(access, "phoenix_crm", "read");
-    const viewer = await resolvePhoenixCrmViewer(access);
+    const viewer = await timer.measure("viewer", () => resolvePhoenixCrmViewer(access));
     const search = searchOf(request);
 
     // The seat gate. It throws for a seat outside the viewer's reach, so nothing below can widen it.
@@ -39,15 +42,17 @@ export async function GET(request: Request) {
 
     // A vacant territory has no rep and therefore no contact list of its own.
     if (!repHrId) {
-      return NextResponse.json({ board: null, success: true });
+      return NextResponse.json({ board: null, success: true }, { headers: timer.headers() });
     }
 
-    const board = await getMyListBoard({
-      params: { month: search.get("month") ?? undefined },
-      scope: { agentHrIds: [repHrId], kind: "agents", label: territoryName(seat) },
-    });
+    const board = await timer.measure("load", () =>
+      getMyListBoard({
+        params: { month: search.get("month") ?? undefined },
+        scope: { agentHrIds: [repHrId], kind: "agents", label: territoryName(seat) },
+      }),
+    );
 
-    return NextResponse.json({ board, success: true });
+    return NextResponse.json({ board, success: true }, { headers: timer.headers() });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not load the contact list.");
   }

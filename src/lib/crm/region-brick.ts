@@ -9,6 +9,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
+import { refreshSharedRegionBrickMap } from "@/lib/crm/shared-windows";
 import {
   buildBrickNameIndex,
   suggestBrickForCrmRegion,
@@ -674,6 +675,8 @@ export async function setCrmRegionBrickResolution(input: {
     { onConflict: "crm_region_id" },
   );
   if (upsertError) throw new Error(upsertError.message);
+  // The Reps List groups by this map from a shared copy (src/lib/crm/reps-list.ts); the next open sees the mapping.
+  refreshSharedRegionBrickMap("crm region mapping saved");
 
   return { areaId: resolvedAreaId, brickId: resolvedBrickId, regionId: resolvedRegionId };
 }
@@ -798,6 +801,8 @@ export async function bulkImportCrmRegionBrickMappings(input: {
     if (error) throw new Error(error.message);
     mapped += chunk.filter((c) => c.status === "mapped").length;
   }
+
+  if (upserts.length > 0) refreshSharedRegionBrickMap("crm region mappings imported");
 
   return { blockedRows, ignored, mapped, skipped, totalRead: input.rows.length };
 }

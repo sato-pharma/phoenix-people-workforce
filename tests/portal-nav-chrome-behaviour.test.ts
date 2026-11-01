@@ -45,7 +45,9 @@ import { stripComments } from "./support/comment-strip.ts";
  *   9. The sidebar's Direct Orders row never carried the `direct-orders-needs-action` badge its seed
  *      row and its phone tab both had (#2020 wired it everywhere but the hand-built portal row).
  *  10. The messages envelope loaded only when opened, so its badge was blank until then, and nothing
- *      ever marked a message read, so once a count appeared it never went down.
+ *      ever marked a message read, so once a count appeared it never went down. (Since 1 Nov 2026 the
+ *      badge's count rides the session pulse — read in the same statement as the bell's notices — so
+ *      the mount-time fetch of the whole list, a request on every page view, is gone.)
  *  11. The bell's module filter printed codes: "phoenix crm", "crm account setup".
  *
  * Source shape is read with comments stripped, so the prose explaining a removal cannot satisfy or
@@ -248,8 +250,18 @@ export function runPortalNavChromeBehaviourTests() {
   const messages = stripComments(readFileSync(MESSAGES, "utf8"));
   assert.match(
     messages,
-    /useEffect\(\(\) => \{\s*const timeoutId = window\.setTimeout\(\(\) => void loadMessages\(\), 0\);\s*return \(\) => window\.clearTimeout\(timeoutId\);\s*\}, \[loadMessages\]\);/,
-    "Messages must load once on mount, so the envelope badge counts unread messages before the panel is opened.",
+    /subscribePulseNotices\(\(notices\) => \{\s*if \(typeof notices\.unreadMessages === "number"\) \{\s*setUnreadCount\(notices\.unreadMessages\);\s*return;\s*\}/,
+    "The envelope badge takes its unread count from the session pulse, so it counts unread messages before the panel is opened — with no request of its own.",
+  );
+  assert.match(
+    messages,
+    /if \(fetchedOnce\.current\) return;\s*fetchedOnce\.current = true;\s*void loadMessages\(\);/,
+    "A pulse that cannot say (no count) makes the menu fetch its list once, as it did before.",
+  );
+  assert.doesNotMatch(
+    messages,
+    /window\.setTimeout\(\(\) => void loadMessages\(\), 0\)/,
+    "No fetch of the whole list on mount for one number — it cost a request, and a session read, on every page view.",
   );
   assert.match(
     messages,

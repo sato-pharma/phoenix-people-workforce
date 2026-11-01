@@ -28,7 +28,43 @@ export function refreshSharedCrmWindows(reason: string): void {
  */
 export const CRM_CONTACT_ROSTER = "crm:contact-roster";
 
-/** Drops the shared roster copy — called by every app path that applies a doctor-list change. */
+/**
+ * The KPI panel's open assignments (`loadPanelRows`, src/lib/crm/rep-kpi-reports-data.ts): every open
+ * `crm_contact_assignments` row — the roster's own table and filter, read for the AM · PM denominators
+ * instead of the names. 14,440 rows on 1 Nov 2026, fetched as fifteen parallel OFFSET pages on every KPI
+ * open — the heaviest statement on the database that day (5,488 pages, 154 s). Shared ONLY by a caller
+ * that opts in with `reuseRecentWindow` (the display boards); the system audit reads it live.
+ */
+export const CRM_OPEN_ASSIGNMENTS = "crm:open-assignments";
+
+/**
+ * Drops the shared roster copy — called by every app path that applies a doctor-list change. The KPI
+ * panel's copy goes with it: the same table, the same open-period filter, so a list change is visible on
+ * the KPI boards at once too.
+ */
 export function refreshSharedContactRoster(reason: string): void {
   bumpSharedReadGeneration(CRM_CONTACT_ROSTER, reason);
+  bumpSharedReadGeneration(CRM_OPEN_ASSIGNMENTS, reason);
+}
+
+/**
+ * The Reps List's two whole-table reads that take nothing from the rep (1 Nov 2026, the speed root cause —
+ * about 450 ms a request at Supabase's edge whatever the SQL costs, so the request count is the lever):
+ * the mapped CRM region -> brick map (`loadRegionBrickMap`, src/lib/crm/reps-list.ts; 324 mapped rows) and
+ * the trade counterparties (`loadTradeCounterparties`, src/lib/crm/contact-trade.ts; six whole-table reads
+ * of the direct-order venues and marketing customers Phoenix has done business with). Both were read again
+ * on every board open, by every viewer; each is now a shared copy (60 s), dropped at once by the app write
+ * that changes it. Display reads both — the group headings and two counts beside a contact.
+ */
+export const CRM_REGION_BRICK_MAP = "crm:region-brick-map";
+export const CRM_TRADE_COUNTERPARTIES = "crm:trade-counterparties";
+
+/** Drops the shared region -> brick map — called by the two writes that map a CRM region to a brick. */
+export function refreshSharedRegionBrickMap(reason: string): void {
+  bumpSharedReadGeneration(CRM_REGION_BRICK_MAP, reason);
+}
+
+/** Drops the shared trade counterparties — called when a direct order or marketing request is submitted or decided. */
+export function refreshSharedTradeCounterparties(reason: string): void {
+  bumpSharedReadGeneration(CRM_TRADE_COUNTERPARTIES, reason);
 }

@@ -189,24 +189,22 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       );
     }
     const metrics = requested == null ? defaultSelectionFor("rep") : narrowSelection(requested, "rep");
-    // Where his money came from — his bricks, his customers, his channel. A separate customer-grain
-    // read, loaded only for him and narrowed to his own areas; a failed read drops that one panel and
-    // leaves the rest of his page correct.
-    let repConcentration: ConcentrationFacts | null = null;
-    try {
-      // His own line only: `byLine` for that line is all this reads (2026-10-01, speed).
-      const detail = await loadReviewConcentration({ coverage, viewer: access, lines: [scope.line] });
-      repConcentration = concentrationForAreas(
-        detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [],
-        mine.areas.map((a) => a.areaCode),
-      );
-    } catch {
-      repConcentration = null;
-    }
+    // His concentration and his name are independent, so they go together (1 Nov 2026).
     // His own name, taken from the review's people rows (the session's AccessContext carries none),
     // so his page and the pack he exports read as HIS and he feels seen (owner, 2026-09-30). A rep
     // those rows do not hold is asked of `employees` — never headed with her HR id (`reviewRepName`).
-    const repName = await reviewRepName({ fallback: scope.viewerName, hrId: scope.hrId, people: repDs.people });
+    const [repConcentration, repName] = await Promise.all([
+      // Where his money came from — his bricks, his customers, his channel. A separate customer-grain
+      // read, loaded only for him and narrowed to his own areas; a failed read drops that one panel and
+      // leaves the rest of his page correct. His own line only: `byLine` for that line is all this
+      // reads (2026-10-01, speed).
+      loadReviewConcentration({ coverage, viewer: access, lines: [scope.line] }).then(
+        (detail): ConcentrationFacts | null =>
+          concentrationForAreas(detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [], mine.areas.map((a) => a.areaCode)),
+        (): ConcentrationFacts | null => null,
+      ),
+      reviewRepName({ fallback: scope.viewerName, hrId: scope.hrId, people: repDs.people }),
+    ]);
     return shell(
       <RepBusinessReview
         areas={mine.areas.map(withAreaBand)}

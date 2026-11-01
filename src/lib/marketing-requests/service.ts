@@ -26,6 +26,7 @@ import { invalidateFinanceDashboardCache } from "@/lib/dashboard/invalidation";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
 import { parseCrmContactCode } from "@/lib/crm/contact-code";
+import { refreshSharedTradeCounterparties } from "@/lib/crm/shared-windows";
 // The one definition of "this link was inferred, not field-validated". Imported rather than
 // re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
 // into disagreeing about which links the backfill wrote.
@@ -4548,6 +4549,8 @@ export async function decideMarketingRequestWorkflow(
   request = mapRequest(rpcData.request);
   // The finance landing counts requests awaiting a step and approved spend; the decision is saved.
   invalidateFinanceDashboardCache("marketing request step decided");
+  // The Reps List's trade counts (src/lib/crm/contact-trade.ts) count a live request from now on.
+  refreshSharedTradeCounterparties("marketing request step decided");
 
   // Every notice below goes out AFTER the reply (afterResponse, 2026-10-23 slow-buttons audit): the
   // decision is saved by now, so the approver who pressed the button never waits for the notice to the
@@ -8546,6 +8549,7 @@ export async function createMarketingRequestDraft(
       }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
     });
 
+    refreshSharedTradeCounterparties("marketing request submitted");
     pingMarketingRequestSheet("request_submitted");
     return draftDetail;
   } catch (error) {

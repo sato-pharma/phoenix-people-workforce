@@ -8,7 +8,7 @@ import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
 import { getCookieValue } from "@/lib/auth/session";
 import { heartbeatResponse, heartbeatSessionToken, runSessionHeartbeat } from "@/lib/auth/session-heartbeat";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { listInAppNotificationsForViewer } from "@/lib/notifications/in-app";
+import { listInAppNoticeBundleForViewer } from "@/lib/notifications/in-app";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,11 +68,16 @@ async function badgesFor(access: AccessContext, startedAt: number) {
  * same request carries the session fields the client signs out on, so a broken notification read
  * must not turn the whole pulse into a 500. It asks for the service's default count, which is what
  * the bell's own endpoint asks for.
+ *
+ * Since 1 Nov 2026 the same read also carries `unreadMessages` — the envelope's unread count — so
+ * the messages menu no longer fetches /api/messages on every page view to draw its badge. Null when
+ * the count could not be read (the bundle RPC is missing), and the menu then fetches once itself.
  */
 async function noticesFor(access: AccessContext) {
   try {
-    if (!access.loginId && !access.hrId) return { data: [], success: true };
-    return { data: await listInAppNotificationsForViewer(access), success: true };
+    if (!access.loginId && !access.hrId) return { data: [], success: true, unreadMessages: null };
+    const bundle = await listInAppNoticeBundleForViewer(access);
+    return { data: bundle.notices, success: true, unreadMessages: bundle.unreadMessages };
   } catch (error) {
     console.error("/api/auth/pulse notices failed", error);
     return {

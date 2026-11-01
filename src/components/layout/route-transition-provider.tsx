@@ -13,6 +13,7 @@ import {
 import { usePathname, useSearchParams } from "next/navigation";
 
 import { ActivityTracker } from "@/components/activity/activity-tracker";
+import { reportSoftNavigation } from "@/components/layout/page-timing-beacon";
 import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import {
   ROUTE_STALL_DEADLINE_MS,
@@ -77,6 +78,11 @@ export function RouteTransitionProvider({ children }: { children: ReactNode }) {
   // Counts intents, so a prevented click that then announced a real route (every portal rail link
   // does exactly that) is not mistaken for one that navigated nowhere.
   const intentSeqRef = useRef(0);
+  // When the tap that started the navigation in flight happened (performance.now()), so its arrival
+  // can be measured and queued for the timing beacon as a soft navigation (page-timing-beacon.tsx).
+  // Null when nothing is in flight, and cleared by the deadline: nine seconds and no page is not a
+  // measurement.
+  const softStartedAtRef = useRef<number | null>(null);
   // Set only by the deadline below, which the route arriving cancels — so it means "nine seconds
   // and the page never came", never "the page was slow".
   const [stalledHref, setStalledHref] = useState<string | null>(null);
@@ -97,6 +103,11 @@ export function RouteTransitionProvider({ children }: { children: ReactNode }) {
     wantedHrefRef.current = null;
     setStalled(false);
     setStalledHref(null);
+    // From the tap to here, the new page rendering: the soft navigation's duration, for the beacon.
+    if (softStartedAtRef.current !== null) {
+      reportSoftNavigation(pathname, performance.now() - softStartedAtRef.current);
+      softStartedAtRef.current = null;
+    }
   }
 
   function startTransition(href?: string) {
@@ -112,12 +123,14 @@ export function RouteTransitionProvider({ children }: { children: ReactNode }) {
     fromUrlRef.current = `${window.location.pathname}${window.location.search}`;
     eligibleRef.current = true;
     intentSeqRef.current += 1;
+    softStartedAtRef.current = performance.now();
     setStalled(false);
     setStalledHref(null);
     setPending(true);
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     timeoutRef.current = window.setTimeout(() => {
       setPending(false);
+      softStartedAtRef.current = null;
       // Nine seconds without the route key changing: the router's own fetch died, silently, and
       // taking the progress bar away is all that used to happen here.
       if (!eligibleRef.current) return;
@@ -163,7 +176,11 @@ export function RouteTransitionProvider({ children }: { children: ReactNode }) {
       // which is what every portal rail link does after preventing its own default.
       const seqAtClick = intentSeqRef.current;
       window.setTimeout(() => {
-        if (event.defaultPrevented && intentSeqRef.current === seqAtClick) eligibleRef.current = false;
+        if (event.defaultPrevented && intentSeqRef.current === seqAtClick) {
+          eligibleRef.current = false;
+          // A panel opened; no page is coming, so there is no soft navigation to measure.
+          softStartedAtRef.current = null;
+        }
       }, 0);
     }
 

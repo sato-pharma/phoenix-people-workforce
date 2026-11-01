@@ -70,7 +70,7 @@ import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
 import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
-import { CRM_CONTACT_ROSTER } from "@/lib/crm/shared-windows";
+import { CRM_CONTACT_ROSTER, CRM_REGION_BRICK_MAP } from "@/lib/crm/shared-windows";
 import { REPS_LIST_NO_LOCATION } from "@/lib/crm/reps-list-labels";
 import { loadPhoenixContactPlaces, type PhoenixContactPlaces, type ValidatedPlacePoint } from "@/lib/crm/validated-place-points";
 import {
@@ -411,9 +411,30 @@ export function groupContactsByBrick(rows: readonly RepsListContact[], index: Br
   };
 }
 
-/** Every mapped CRM region -> brick. Small (105 mapped rows in production) but paged anyway. */
+/** One mapped CRM region -> brick row of the shared copy, keyed as `normalizeRegionKey` keys it. */
+export type RegionBrickRow = { brickId: string; key: string };
+
+const REGION_BRICK_MAP_LIMITS = { maxEntries: 1, maxRowsTotal: 10_000 };
+
+/**
+ * Every mapped CRM region -> brick. Small (324 mapped rows on 1 Nov 2026) and the same for every rep, yet it
+ * was read again on every board open — so since 1 Nov 2026 (the speed root cause: ~450 ms a request at
+ * Supabase's edge, whatever the SQL costs) it is a shared in-process copy, 60 s, dropped at once by the two
+ * app writes that change it (`refreshSharedRegionBrickMap`, src/lib/crm/region-brick.ts). The first mapping
+ * seen for a key wins, exactly as the paged read folded it.
+ */
 async function loadRegionBrickMap(): Promise<Map<string, string>> {
+  const { rows } = await getOrLoadShared(CRM_REGION_BRICK_MAP, "mapped", readRegionBrickMap, REGION_BRICK_MAP_LIMITS);
   const map = new Map<string, string>();
+  for (const row of rows ?? []) {
+    if (!map.has(row.key)) map.set(row.key, row.brickId);
+  }
+  return map;
+}
+
+/** null = the mapping table is absent here (never stored), which the board reads as an empty map. */
+async function readRegionBrickMap(): Promise<RegionBrickRow[] | null> {
+  const rows: RegionBrickRow[] = [];
   const supabase = getSupabaseAdmin();
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
@@ -426,15 +447,15 @@ async function loadRegionBrickMap(): Promise<Map<string, string>> {
     if (error) {
       // Before the mapping migration ships this table is absent; an empty map is the correct answer
       // and every contact then groups under its CRM region, which is a readable board.
-      if (isCrmSchemaMissingError(error)) return map;
+      if (isCrmSchemaMissingError(error)) return null;
       throw new Error(`Could not read region brick mappings: ${error.message}`);
     }
-    const rows = (data ?? []) as Array<{ brick_id: string | null; crm_region_name: string | null }>;
-    for (const row of rows) {
+    const page = (data ?? []) as Array<{ brick_id: string | null; crm_region_name: string | null }>;
+    for (const row of page) {
       const key = normalizeRegionKey(row.crm_region_name);
-      if (key && row.brick_id && !map.has(key)) map.set(key, row.brick_id);
+      if (key && row.brick_id) rows.push({ brickId: row.brick_id, key });
     }
-    if (rows.length < PAGE_SIZE) return map;
+    if (page.length < PAGE_SIZE) return rows;
   }
 }
 
@@ -501,8 +522,52 @@ async function loadRegionNames(regionCodes: readonly string[]): Promise<Map<stri
   return names;
 }
 
-/** Brick display metadata for the ids actually in play. Names are what the page renders. */
+const BRICK_META_RPC = "phx_crm_brick_meta";
+
+/** One brick as the function returns it: [brick_id, brick_name, area_code, area_name, region_name]. */
+export type BrickMetaTuple = [string, string | null, string | null, string | null, string | null];
+
+/** The function's tuple as the metadata the page renders, trimmed as the page walk trimmed it. Pure; exported for its test. */
+export function brickMetaFromTuple(tuple: BrickMetaTuple): [string, BrickMeta] {
+  const [brickId, name, areaCode, areaName, regionName] = tuple;
+  return [
+    String(brickId),
+    {
+      areaCode: areaCode ?? null,
+      areaName: (areaName ?? "").trim() || null,
+      name: (name ?? "").trim(),
+      regionName: (regionName ?? "").trim() || null,
+    },
+  ];
+}
+
+/**
+ * Brick display metadata for the ids actually in play. Names are what the page renders.
+ *
+ * ONE statement since 1 Nov 2026 (the speed root cause): `phx_crm_brick_meta` joins each brick to its area
+ * and its region in the database and answers every id at once, where the page walk below asked for the
+ * bricks, then their areas, then those areas' regions — three waves of chunked reads, each request ~450 ms
+ * at Supabase's edge for a few milliseconds of SQL. The walk stays only for a database the function has not
+ * reached (PGRST202): the same rows, the same names, the same fall-through from the area's region code to
+ * the brick's own. A retired brick is left out by both, so a historically-correct mapping still names itself.
+ */
 async function loadBrickMeta(brickIds: readonly string[]): Promise<Map<string, BrickMeta>> {
+  const meta = new Map<string, BrickMeta>();
+  if (brickIds.length === 0) return meta;
+  const { data, error } = await getSupabaseAdmin().rpc(BRICK_META_RPC, { p_brick_ids: [...new Set(brickIds)] });
+  if (error) {
+    if (isMissingCrmRpcError(error)) return loadBrickMetaByPages(brickIds);
+    throw new Error(`Could not read brick names: ${error.message}`);
+  }
+  for (const tuple of (Array.isArray(data) ? data : []) as BrickMetaTuple[]) {
+    const [brickId, entry] = brickMetaFromTuple(tuple);
+    if (!meta.has(brickId)) meta.set(brickId, entry);
+  }
+  return meta;
+}
+
+/** The pre-function read, kept only for a database that has not got `phx_crm_brick_meta` yet. */
+async function loadBrickMetaByPages(brickIds: readonly string[]): Promise<Map<string, BrickMeta>> {
   const meta = new Map<string, BrickMeta>();
   // The brick's own region code, used only when its area names none.
   const brickRegion = new Map<string, string | null>();
@@ -550,8 +615,14 @@ async function loadBrickMeta(brickIds: readonly string[]): Promise<Map<string, B
  * The most recent check-in per contact — the "current address", as observed rather than recorded.
  *
  * Ordered newest-first and kept on FIRST SIGHT of each contact, so what lands is the latest fix.
- * Chunked at `IN_CHUNK` for the same reason every other `.in()` here is: PostgREST returns zero
- * rows and no error for a long list, which reads exactly like "nobody has ever visited these".
+ *
+ * ONE statement since 1 Nov 2026 (the speed root cause): `phx_crm_contact_checkins` answers every
+ * contact's iReports360 check-ins with a pin, newest first, in one request, where the page walk
+ * (`loadCheckinsByPages`, kept for a database the function has not reached — PGRST202) walks each chunk
+ * of `IN_CHUNK` contacts through the union view by keyset: two to six chunks for one list, each request
+ * ~450 ms at Supabase's edge for a few milliseconds of SQL. The walk is chunked for the same reason every
+ * other `.in()` here is — PostgREST returns zero rows and no error for a long list, which reads exactly
+ * like "nobody has ever visited these" — and both answer through the same `foldCheckinRows`.
  *
  * A check-in with no coordinates is skipped outright. The whole point of this column is that the
  * address is CLICKABLE to a real pin, and an address with no pin behind it promises a map it
@@ -571,10 +642,66 @@ type CheckinRow = {
   lon: number;
 };
 
+const CONTACT_CHECKINS_RPC = "phx_crm_contact_checkins";
+
+/** One check-in as the function returns it, newest first: [contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date]. */
+export type CheckinTuple = [number, number | null, string | null, number, number, string | null, string | null];
+
+/** The function's tuple as the row the page walk read. Pure; exported for its test. */
+export function checkinRowFromTuple(tuple: CheckinTuple): Omit<CheckinRow, "crm_checkin_id"> {
+  const [contactCrmId, agentCrmId, agentHrId, lat, lon, address, checkDate] = tuple;
+  return {
+    address,
+    agent_crm_id: agentCrmId == null ? null : Number(agentCrmId),
+    agent_hr_id: agentHrId,
+    check_date: checkDate,
+    contact_crm_id: Number(contactCrmId),
+    lat: Number(lat),
+    lon: Number(lon),
+  };
+}
+
 export async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, ContactCheckins>> {
-  const byContact = new Map<number, ContactCheckins>();
-  const supabase = getSupabaseAdmin();
   const ids = [...new Set(contactIds)];
+  if (ids.length === 0) return new Map();
+  const { data, error } = await getSupabaseAdmin().rpc(CONTACT_CHECKINS_RPC, { p_contact_ids: ids });
+  if (error) {
+    if (isMissingCrmRpcError(error)) return loadCheckinsByPages(ids);
+    // The board is about the contact list; a missing or unreadable check-in table costs the
+    // observed address and nothing else, so it degrades to the CRM address rather than 500ing.
+    if (isCrmSchemaMissingError(error)) return new Map();
+    throw new Error(`Could not read contact check-ins: ${error.message}`);
+  }
+  return foldCheckinRows(((Array.isArray(data) ? data : []) as CheckinTuple[]).map(checkinRowFromTuple));
+}
+
+/** Newest first in, so the FIRST row seen for a contact is the pin the board shows. Pure; exported for its test. */
+export function foldCheckinRows(rows: ReadonlyArray<Omit<CheckinRow, "crm_checkin_id">>): Map<number, ContactCheckins> {
+  const byContact = new Map<number, ContactCheckins>();
+  for (const row of rows) {
+    // Keyed like the roster, so a rep with no CRM account counts as an observer and a partner.
+    const point: CheckinPoint = {
+      at: row.check_date,
+      lat: row.lat,
+      lon: row.lon,
+      repKey: repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id),
+    };
+    const existing = byContact.get(row.contact_crm_id);
+    if (existing) {
+      existing.points.push(point);
+      continue;
+    }
+    byContact.set(row.contact_crm_id, {
+      points: [point],
+      seenAt: { address: row.address?.trim() || null, at: row.check_date, lat: row.lat, lon: row.lon },
+    });
+  }
+  return byContact;
+}
+
+/** The pre-function read, kept only for a database that has not got `phx_crm_contact_checkins` yet. */
+async function loadCheckinsByPages(ids: readonly number[]): Promise<Map<number, ContactCheckins>> {
+  const supabase = getSupabaseAdmin();
   // One chunk's pages, in order. A failed page hands back the pages before it WITH its error rather
   // than throwing, so the fold below meets the error exactly where the old serial loop did.
   //
@@ -616,32 +743,21 @@ export async function loadCheckins(contactIds: readonly number[]): Promise<Map<n
     }
   };
   const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, readChunk);
-  for (const { error, rows } of answers) {
-    for (const row of rows) {
-      // Keyed like the roster, so a rep with no CRM account counts as an observer and a partner.
-      const point: CheckinPoint = {
-        at: row.check_date,
-        lat: row.lat,
-        lon: row.lon,
-        repKey: repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id),
-      };
-      const existing = byContact.get(row.contact_crm_id);
-      if (existing) {
-        existing.points.push(point);
-        continue;
-      }
-      // Newest first, so the FIRST row seen for a contact is the pin the board shows.
-      byContact.set(row.contact_crm_id, {
-        points: [point],
-        seenAt: { address: row.address?.trim() || null, at: row.check_date, lat: row.lat, lon: row.lon },
-      });
-    }
+  const rows: CheckinRow[] = [];
+  let failure: { message: string } | null = null;
+  for (const { error, rows: chunkRows } of answers) {
+    rows.push(...chunkRows);
     if (error) {
-      // The board is about the contact list; a missing or unreadable check-in table costs the
-      // observed address and nothing else, so it degrades to the CRM address rather than 500ing.
-      if (isCrmSchemaMissingError(error)) return byContact;
-      throw new Error(`Could not read contact check-ins: ${error.message}`);
+      failure = error;
+      break;
     }
+  }
+  const byContact = foldCheckinRows(rows);
+  if (failure) {
+    // The board is about the contact list; a missing or unreadable check-in table costs the
+    // observed address and nothing else, so it degrades to the CRM address rather than 500ing.
+    if (isCrmSchemaMissingError(failure)) return byContact;
+    throw new Error(`Could not read contact check-ins: ${failure.message}`);
   }
   return byContact;
 }

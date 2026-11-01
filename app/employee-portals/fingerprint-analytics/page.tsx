@@ -29,42 +29,42 @@ export default async function FingerprintAnalyticsPage() {
   const dateTo = currentCairoDateOnlyIso();
   const dateFrom = addDaysToDateOnly(dateTo, -30) ?? dateTo;
 
+  // THE THREE READS GO TOGETHER (1 Nov 2026, the speed root cause): the punches, the policy the person
+  // is judged by and a manager's reports are independent, and each keeps the failure path it had.
   let initialData = null;
   let initialError: string | null = null;
-  try {
-    initialData = await getEmployeeAttendanceData(hrId, dateFrom, dateTo, { includeNoRecordDays: true });
-  } catch (error) {
-    initialError = error instanceof Error ? error.message : "Attendance data failed to load.";
-  }
-
-  // The policy the signed-in employee is actually judged by. Null — and the card is
-  // simply not rendered — for anyone not subject to fingerprint tracking, so nobody is
-  // shown a deduction rule that is never applied to them.
-  const policyExplainer = await loadAttendancePolicyExplainer(hrId);
-
-  // Managers may also view their reports' reports — a manager seat his whole subtree, the same
-  // people the per-person API admits (loadAttendancePickerReports; owner, 2026-10-20). The first
-  // target is always the signed-in user; reports are appended only when they exist.
-  let directReports: Awaited<ReturnType<typeof loadAttendancePickerReports>> = [];
-  try {
-    directReports = await loadAttendancePickerReports(access);
-  } catch (error) {
-    // Not a banner, and deliberately: the attendance read above already surfaces its own failure
-    // through `initialError`, and this one only costs the manager the OTHER names in his picker —
-    // his own report still loads. What it must not be is SILENT, which is what it was: a manager
-    // with six reports saw a picker holding one entry and no reason why. Logged the way every other
-    // best-effort read in this directory is, so the failure exists somewhere a person can read it.
-    logPortalFailure(
-      {
-        route: "/employee-portals/fingerprint-analytics",
-        module: "attendance-direct-reports",
-        role: access.role,
-        hrId,
-      },
-      error,
-    );
-    directReports = [];
-  }
+  const [attendanceLoad, policyExplainer, directReports] = await Promise.all([
+    getEmployeeAttendanceData(hrId, dateFrom, dateTo, { includeNoRecordDays: true }).then(
+      (data) => ({ data, error: null as string | null }),
+      (error: unknown) => ({ data: null, error: error instanceof Error ? error.message : "Attendance data failed to load." }),
+    ),
+    // The policy the signed-in employee is actually judged by. Null — and the card is
+    // simply not rendered — for anyone not subject to fingerprint tracking, so nobody is
+    // shown a deduction rule that is never applied to them.
+    loadAttendancePolicyExplainer(hrId),
+    // Managers may also view their reports' reports — a manager seat his whole subtree, the same
+    // people the per-person API admits (loadAttendancePickerReports; owner, 2026-10-20). The first
+    // target is always the signed-in user; reports are appended only when they exist.
+    loadAttendancePickerReports(access).catch((error: unknown) => {
+      // Not a banner, and deliberately: the attendance read beside it surfaces its own failure
+      // through `initialError`, and this one only costs the manager the OTHER names in his picker —
+      // his own report still loads. What it must not be is SILENT, which is what it was: a manager
+      // with six reports saw a picker holding one entry and no reason why. Logged the way every other
+      // best-effort read in this directory is, so the failure exists somewhere a person can read it.
+      logPortalFailure(
+        {
+          route: "/employee-portals/fingerprint-analytics",
+          module: "attendance-direct-reports",
+          role: access.role,
+          hrId,
+        },
+        error,
+      );
+      return [] as Awaited<ReturnType<typeof loadAttendancePickerReports>>;
+    }),
+  ]);
+  initialData = attendanceLoad.data;
+  initialError = attendanceLoad.error;
   const targets: FingerprintTarget[] = [
     { hrId, label: "My report", sublabel: "You", isSelf: true },
     ...directReports.map((report) => ({

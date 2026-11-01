@@ -425,8 +425,10 @@ async function runEmployee360RegionalManagerReportTests() {
     // field-manager gate names his family and both reads stand behind it.
     const sharedGate =
       /const isFieldManager =[^;]*roleCategory === "regional-manager"/.test(source) &&
-      /isFieldManager\s*\?\s*startSection\(\(\) => getEmployee360TeamLifecycle\(/.test(source) &&
-      /isFieldManager\s*\?\s*startSection\(\(\) =>\s*getEmployee360TeamHealth\(/.test(source);
+      // …or, since 1 Nov 2026 (the speed root cause), the portal page's five sections settle in ONE
+      // wave and each manager section is `settled(isFieldManager ? getEmployee360…(` — same gate.
+      /isFieldManager\s*\?\s*(?:startSection\(\(\) =>\s*)?getEmployee360TeamLifecycle\(/.test(source) &&
+      /isFieldManager\s*\?\s*(?:startSection\(\(\) =>\s*)?getEmployee360TeamHealth\(/.test(source);
     assert.ok(gates === 2 || (gates === 1 && sharedGate), `${page} loads Team Health and Team Compliance for a Regional Manager`);
   }
 }

@@ -2046,6 +2046,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // proacl {postgres=X/postgres,service_role=X/postgres}. A rolled-back probe on staging saved an empty half-day as
   // nsm and pm, and read manager_plan_slot_empty as rsm and dm.
   "20261101132835_phoenix_crm_manager_plan_optional_customers.sql",
+
+  // THE TOUCH TRAIL IS RETIRED (owner, 1 Nov 2026: "retire and delete all its traces"; "drop the touch trail table") —
+  // applied to PRODUCTION at 22:27 Cairo and to staging at 22:28 Cairo, 1 Nov 2026, through scripts/apply-sql-file.mjs
+  // (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of AGENTS.md §8: apply_migration
+  // declined the drop, and staging-migrate run 41345379965 had failed the file's first version on Supabase's
+  // STATEMENT-level trigger storage.protect_delete() ("Direct deletion from storage tables is not allowed"), so the
+  // bucket delete left the file and the empty bucket was deleted through the Storage API instead (HTTP 200 on both
+  // projects, 22:25 Cairo). The route writes no ledger row, hence this entry. This is a DROP, so presence IS the proof:
+  //
+  // Read live right after each apply — ozucdzovmcqvepbozvqf: to_regclass('public.phoenix_crm_touch_trail') null, 0
+  // indexes, 0 archive policies, 0 bucket rows, pg_database_size 3,636,833,427 bytes (was 4,925,787,283 — the trail
+  // held 1,289,035,776); the last row had been written at 20:18:56Z, before #6760 went live at 20:19Z, and no session
+  // touched the table. cifwmndunmlxjhyjugxa: to_regclass null, 0 policies, 0 bucket rows. ZERO ledger rows on either
+  // project carry this version or name.
+  "20261101203000_retire_phoenix_crm_touch_trail.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -86,7 +86,8 @@ export function runRouteNavigationStallRetryTests(): void {
     "a URL that did move means the page went somewhere — never a notice over it",
   );
   assert.ok(
-    provider.includes("if (event.defaultPrevented && intentSeqRef.current === seqAtClick) eligibleRef.current = false;"),
+    // A block since 1 Nov 2026: the same re-read also forgets the soft-navigation start (Layer E).
+    /if \(event\.defaultPrevented && intentSeqRef\.current === seqAtClick\) \{?\s*eligibleRef\.current = false;/.test(provider),
     "defaultPrevented must be re-read AFTER the event, because this listener is in the capture phase",
   );
   assert.ok(

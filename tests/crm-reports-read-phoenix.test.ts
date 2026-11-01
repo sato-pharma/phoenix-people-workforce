@@ -34,7 +34,10 @@ export function runCrmReportsReadPhoenixTests() {
   // ── C8 · the KPI panel reads the open assignments ─────────────────────────────────────────────
   {
     const source = readFileSync("src/lib/crm/rep-kpi-reports-data.ts", "utf8");
-    const loader = block(source, "export async function loadPanelRows()");
+    // Since 1 Nov 2026 the panel reads ONE function first (tests/phoenix-crm-board-reads.test.ts); this
+    // page walk is the fallback for a database without it, and it still reads the open assignments only.
+    assert.ok(source.includes("rpc(OPEN_ASSIGNMENTS_RPC)"), "the panel asks phx_crm_open_assignments first");
+    const loader = block(source, "async function readPanelRowsByPages()");
     assert.equal(
       count(loader, ".from(CRM_CONTACT_ASSIGNMENTS_TABLE)"),
       2,

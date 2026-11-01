@@ -8,7 +8,7 @@ import {
   PAGE_TIMING_MAX_NAMES,
   admitPageTimingName,
   normalisePagePath,
-  sanitizePageTiming,
+  sanitizePageTimings,
 } from "../src/lib/observability/page-timing-intake.ts";
 import { drainTimings } from "../src/lib/observability/timings.ts";
 
@@ -18,10 +18,11 @@ import { drainTimings } from "../src/lib/observability/timings.ts";
 //
 //   A. A rep-scoped page never reads the whole company through the CRM door.
 //   B. No new OFFSET walk over a unified CRM view (the keyset reader is the pattern).
-//   C. The portal shell's data stays ONE parallel wave: no new sequential await in front of the page.
+//   C. The portal shell's data stays ONE parallel wave: no new sequential await in front of the page —
+//      and since 1 Nov 2026 the shell's own data function and five portal pages hold their wave too.
 //   D. No new direct read of lines / areas / departments beside the cached reference-list accessor.
 //   E. Server-Timing carries durations only, and sits on the slow CRM and badge routes.
-//   F. The browser timing beacon records a page SHAPE and two numbers, nothing identifying.
+//   F. The browser timing beacon records a page SHAPE, a kind, a device class and durations, nothing identifying.
 //
 // Every ratchet is a baseline map that may only fall. Each pin is handed a broken copy and must fire.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,6 +133,63 @@ export function shellAwaits(source: string): string[] {
 
 export const SHELL_AWAITS_BASELINE = ["assertPermission", "Promise.all", "locksPromise", "headers", "cookies"];
 
+/**
+ * Layer B of the speed root cause (1 Nov 2026): the five portal pages that used to queue their reads one
+ * after the other, with the awaits each is allowed, in order. A page that grows a sequential await fails;
+ * a page that loses one rewrites its line here so the gain is kept.
+ */
+export const PAGE_AWAITS_BASELINE: Record<string, string[]> = {
+  "app/employee-portals/business-review/page.tsx": [
+    "resolveAuthenticatedPageAccess",
+    "searchParams",
+    "loadReviewPortalScope",
+    "Promise.all",
+    "loadReviewConcentration",
+    "loadReviewConcentration",
+  ],
+  "app/employee-portals/employee-360/page.tsx": [
+    "getEmployeeDirectoryRows",
+    "resolveEmployee",
+    "resolveAuthenticatedPageAccess",
+    "assertPermission",
+    "searchParams",
+    "getEmployeeDirectoryRows",
+    "getEmployeeDirectoryRows",
+    "resolveEmployee",
+    "Promise.all",
+    "Promise.all",
+    "Promise.all",
+  ],
+  "app/employee-portals/fingerprint-analytics/page.tsx": ["resolveAccessContextFromPage", "canAccess", "Promise.all"],
+  "app/employee-portals/interview-calendar/page.tsx": [
+    "resolveAccessContextFromPage",
+    "searchParams",
+    "resolveInterviewCalendarRole",
+    "Promise.all",
+  ],
+  "app/employee-portals/milestones/page.tsx": ["resolveAccessContextFromPage", "Promise.all"],
+};
+
+/** The reads the shell's data function starts in its FIRST wave (src/lib/employee-portal/service.ts). */
+export const SHELL_DATA_FIRST_WAVE = [
+  "resolvePortalCurrentUser(",
+  "getEmployeeDirectory(",
+  "personalMailboxConnected(",
+  "resolveDirectManagerName(expectedHrId)",
+  "uploadedEmployeePhotoUrl(expectedHrId)",
+];
+
+/** The text of the first `Promise.all([ … ])` after the named declaration, or null when there is none. */
+export function firstWaveOf(source: string, declaration: string): string | null {
+  const text = code(source);
+  const start = text.indexOf(declaration);
+  if (start < 0) return null;
+  const wave = text.indexOf("Promise.all([", start);
+  if (wave < 0) return null;
+  const end = text.indexOf("]);", wave);
+  return end < 0 ? null : text.slice(wave, end);
+}
+
 // ── D. Reference-list reads that bypass the cache ────────────────────────────────────────────────
 
 const REFERENCE_READ =
@@ -186,6 +244,10 @@ export const TIMED_ROUTES = [
   { file: "app/api/phoenix-crm/today/route.ts", label: "crm_today" },
   { file: "app/api/phoenix-crm/visits/route.ts", label: "crm_visits" },
   { file: "app/api/phoenix-crm/plans/route.ts", label: "crm_plans" },
+  // 1 Nov 2026 (the speed root cause): the List, the board and Add Visit — the three the rep opens most.
+  { file: "app/api/phoenix-crm/list/route.ts", label: "crm_list" },
+  { file: "app/api/phoenix-crm/list/board/route.ts", label: "crm_list_board" },
+  { file: "app/api/phoenix-crm/visits/form/route.ts", label: "crm_visit_form" },
 ];
 
 /** What a timed route is missing. */
@@ -253,6 +315,36 @@ export async function runPerformancePhase3Tests() {
   assert.notDeepEqual(shellAwaits(brokenShell), SHELL_AWAITS_BASELINE, "broken copy must fire: a new sequential await in the shell");
   assert.equal((code(shell).match(/Promise\.all\(/g) ?? []).length, 1, "the shell has exactly one Promise.all");
 
+  // Layer B (1 Nov 2026): the shell's DATA is one wave too, and the five pages stop queueing their reads.
+  const shellData = read("src/lib/employee-portal/service.ts");
+  const shellWave = firstWaveOf(shellData, "export const getEmployeePortalShellData");
+  assert.ok(shellWave, "getEmployeePortalShellData starts with a Promise.all wave");
+  for (const readName of SHELL_DATA_FIRST_WAVE) {
+    assert.ok(shellWave.includes(readName), `the shell data's first wave starts ${readName}`);
+  }
+  assert.ok(
+    code(shellData).includes("? [expectedManager, expectedPhotoUrl]"),
+    "the manager and photo read in the first wave are USED when the session's person is the viewer",
+  );
+  const brokenShellData = shellData.replace("expectedHrId ? resolveDirectManagerName(expectedHrId) : Promise.resolve(null),", "");
+  assert.notEqual(brokenShellData, shellData, "broken copy did not change the shell data source");
+  const brokenWave = firstWaveOf(brokenShellData, "export const getEmployeePortalShellData");
+  assert.ok(brokenWave && !brokenWave.includes("resolveDirectManagerName(expectedHrId)"), "broken copy must fire: the manager's name dropped out of the wave");
+
+  const mapping = code(read("src/lib/attendance/device-user-mapping.ts"));
+  assert.ok(mapping.includes("unstable_cache(") && mapping.includes("tags: [DEVICE_MAPPING_CACHE_TAG]"), "the device-mapping read is remembered under its bare tag");
+  const saveStart = mapping.indexOf("export async function saveAttendanceDeviceUserMapping");
+  assert.ok(saveStart > 0 && mapping.indexOf("invalidateDeviceMappingCache(", saveStart) > saveStart, "saving a device mapping busts the tag");
+  assert.ok(code(read("src/lib/dashboard/invalidation.ts")).includes("export const DEVICE_MAPPING_CACHE_TAG"), "the device-mapping tag is declared beside the other bare tags");
+
+  for (const [page, awaits] of Object.entries(PAGE_AWAITS_BASELINE)) {
+    assert.deepEqual(shellAwaits(read(page)), awaits, `${page} awaits exactly its baseline — a new sequential await goes inside the wave, a lost one lowers the baseline`);
+  }
+  const milestones = read("app/employee-portals/milestones/page.tsx");
+  const brokenMilestones = milestones.replace("await Promise.all(", "await loadSomethingFirst(); await Promise.all(");
+  assert.notEqual(brokenMilestones, milestones, "broken copy did not change the milestones page");
+  assert.notDeepEqual(shellAwaits(brokenMilestones), PAGE_AWAITS_BASELINE["app/employee-portals/milestones/page.tsx"], "broken copy must fire: a new await in front of a page's wave");
+
   // ── D ───────────────────────────────────────────────────────────────────────────────────────────
   const references = referenceReadCounts(scanned);
   assert.deepEqual(ratchetExceeded(references, REFERENCE_READ_BASELINE), [], "no new direct read of lines / areas / departments (use src/lib/reference/reference-lists.ts)");
@@ -282,7 +374,8 @@ export async function runPerformancePhase3Tests() {
   for (const { file, label } of TIMED_ROUTES) {
     const source = read(file);
     assert.deepEqual(timedRouteMissing(source, label), [], `${file} sends Server-Timing`);
-    assert.ok(timedRouteMissing(source.replace(", { headers: timer.headers() }", ""), label).length > 0, `${file}: broken copy must fire without the header`);
+    // EVERY header, not the first: a route that answers JSON twice (the board's vacant territory) must fire too.
+    assert.ok(timedRouteMissing(source.split(", { headers: timer.headers() }").join(""), label).length > 0, `${file}: broken copy must fire without the header`);
     assert.ok(timedRouteMissing(source.replace(`startServerTimer("${label}")`, "null"), label).length > 0, `${file}: broken copy must fire without the timer`);
   }
   const badge = code(read("app/api/approvals/badge-counts/route.ts"));
@@ -297,12 +390,12 @@ export async function runPerformancePhase3Tests() {
   assert.equal(normalisePagePath("/employee-portals/Omar Gawish"), null, "a segment with spaces is refused");
   assert.equal(normalisePagePath("https://evil.example/employee-portals"), null, "an absolute URL is refused");
   assert.deepEqual(
-    sanitizePageTiming({ path: "/employee-portals", fcp: 812.4, lcp: 1503, hrId: "B-10", name: "Omar" }),
-    { path: "/employee-portals", firstContentMs: 812, largestContentMs: 1503 },
-    "unknown fields such as an id or a name are dropped",
+    sanitizePageTimings({ path: "/employee-portals", fcp: 812.4, lcp: 1503, hrId: "B-10", name: "Omar" }),
+    [{ device: "unknown", kind: "hard", metrics: { fcp: 812, lcp: 1503 }, path: "/employee-portals" }],
+    "unknown fields such as an id or a name are dropped (the first beacon's shape is still read; tests/page-timings.test.ts has the rest)",
   );
-  assert.equal(sanitizePageTiming({ path: "/employee-portals", fcp: -5, lcp: 9_999_999 }), null, "negative and absurd numbers are dropped");
-  assert.equal(sanitizePageTiming({ path: "/employee-portals" }), null, "a beacon with no number is dropped");
+  assert.deepEqual(sanitizePageTimings({ path: "/employee-portals", fcp: -5, lcp: 9_999_999 }), [], "negative and absurd numbers are dropped");
+  assert.deepEqual(sanitizePageTimings({ path: "/employee-portals" }), [], "a beacon with no number is dropped");
   const known = new Set<string>();
   for (let i = 0; i < PAGE_TIMING_MAX_NAMES; i += 1) assert.ok(admitPageTimingName(known, `/admin/p${i}`), "names below the cap are admitted");
   assert.equal(admitPageTimingName(known, "/admin/one-too-many"), false, "a new name over the cap is refused");

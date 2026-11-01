@@ -31,6 +31,8 @@ import { Topbar } from "@/components/layout/topbar";
 import { SeatViewBanner } from "@/components/layout/seat-view-banner";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
+import { resolvePushIdentity } from "@/lib/notifications/push-identity";
+import { personalMailboxConnected } from "@/lib/personal-mailbox/service";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
 import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
 import { PATH_HEADER, SHELL_HEADER, hrNamespaceRedirectTarget } from "@/lib/navigation/shell-headers";
@@ -127,7 +129,9 @@ export async function AppShell({
   // Neither needs the other's answer, and both were awaited one after the other on every admin page
   // render — two Atlantic round trips where one will do. The layout read still never throws, so
   // running it alongside changes nothing about what renders when either is slow or missing.
-  const [{ layout: personalLayout }, viewer] = await Promise.all([
+  // The mailbox connection and the push identity ride the same wave (1 Nov 2026): the shell's HTML
+  // carries both, so the envelope and the OneSignal provider ask the server for neither on a page view.
+  const [{ layout: personalLayout }, viewer, mailboxConnected, pushHrId] = await Promise.all([
     loadEffectiveLayout(layoutOwnerKey(access)),
     showTopbar
       ? resolveViewerIdentityFromPage(access)
@@ -136,6 +140,8 @@ export async function AppShell({
           initials: "US",
           roleLabel: displayTitleForAccount(access.hrId, access.role),
         }),
+    personalMailboxConnected(access),
+    resolvePushIdentity(access),
   ]);
   // The `/hr` namespace decides the shell, and it decides it HERE rather than in the route-group
   // layout so that EVERY AppShell render honours it — including the handful of dual-mode pages
@@ -184,7 +190,7 @@ export async function AppShell({
       <ModuleLockProvider lockedModuleKeys={lockedModuleKeys}>
       <div className={`min-h-screen text-phx-ink ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-phx-paper"}`}>
         <SessionSecurityGuard />
-        <OneSignalProvider />
+        <OneSignalProvider pushHrId={pushHrId} />
         {/* Suspense because DocumentTitleSync reads useSearchParams. Names the tab on
             in-app navigation only — the FIRST paint is named by generateMetadata in
             app/(admin)/layout.tsx, through the same resolver. */}
@@ -235,6 +241,7 @@ export async function AppShell({
                   {showTopbar && (
                     <Topbar
                       currentRole={access.role}
+                      mailboxConnected={mailboxConnected}
                       navigationMode={resolvedNavigationMode}
                       permissionLookup={permissionLookup}
                       personalLayout={personalLayout}

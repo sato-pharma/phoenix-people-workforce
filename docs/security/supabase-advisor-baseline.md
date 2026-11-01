@@ -150,7 +150,20 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (275 as of 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (277 as of 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 275 to 277 on 2026-11-01 — the page timings, and a 1 Nov pre-image.** Production read 277 on
+2 Nov 2026; the two that join are, by oid, the newest two. `public.page_timings` (oid 580441,
+`20261101233000`), the hourly summaries the web process writes from the browser timing beacon: a page
+shape, an hour, a kind (hard load or tap), a device class and milliseconds — no person, login, address
+or user agent has a column. Created on purpose with row security on, no policy and no browser grant,
+so only the service role reaches it (`phx_page_timings_record` writes, `phx_page_timings_summary`
+reads, both `security definer` and revoked from `PUBLIC`, `anon` and `authenticated`).
+`au.bak_20261101_pedia_sharkia_line_area_map` (oid 578491) is the 1 Nov pre-image of the Pedia Sharkia
+line-area map, taken by `20261101190533` (PR 6754) before Pedia Sharkia 1 and 2 moved to Hany Saad from October: row security on, no policy, no browser grant.
+Like the `au.bak_20261015*` pre-images counted on 2026-10-23 it sits in a standing schema, so it stays
+in this count until it is dropped by hand. Re-proved live the same day: 0 of all 277 grant `anon`,
+`authenticated` or `PUBLIC` anything.
 
 **Raised 274 to 275 on 2026-10-30 — the iReports360 history source map.** Production read
 **275**. The 1 that joined is, by oid, the newest: `public.phoenix_crm_imported_visit_sources`

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { noticeIsDue } from "../src/lib/notifications/due-today.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * A reminder written ahead of time stays off the bell until its day.
@@ -18,6 +18,11 @@ function code(path: string): string {
   return stripComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
 }
 
+/** SQL with its `--` and block comments removed, so a fence written in a comment never counts. */
+function sql(path: string): string {
+  return stripSqlComments(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"));
+}
+
 function countOf(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
@@ -31,19 +36,34 @@ export function runNotificationFutureRemindersHiddenTests() {
   assert.equal(noticeIsDue({ scheduled_for: "2026-09-30" }, today), true, "a past notice stays on the bell");
   assert.equal(noticeIsDue({ scheduled_for: "2026-10-24T00:00:00+00:00" }, today), true, "a timestamp is read by its date");
 
-  // ── The bell: all three reads fenced in SQL, and the rows checked again after ─────────────────
+  // ── The bell: fenced in SQL on both of its roads, and the rows checked again after ────────────
+  // Since 1 Nov 2026 the bell is one RPC (phx_in_app_notices); each of its three arms is fenced at
+  // p_today in the function's own SQL. A database the migration has not reached falls back to the
+  // three PostgREST reads, each fenced at today as before.
   const inApp = code("src/lib/notifications/in-app.ts");
-  const bellStart = inApp.indexOf("export async function listInAppNotificationsForViewer(");
+  const bellStart = inApp.indexOf("export async function listInAppNoticeBundleForViewer(");
   const bellEnd = inApp.indexOf("export async function", bellStart + 1);
-  assert.ok(bellStart >= 0 && bellEnd > bellStart, "the bell's list function is found");
+  assert.ok(bellStart >= 0 && bellEnd > bellStart, "the bell's bundle function is found");
   const bell = inApp.slice(bellStart, bellEnd);
-  assert.equal(
-    countOf(bell, `.lte("scheduled_for", today)`),
-    3,
-    "each of the bell's three notification_events reads is fenced at today, or future reminders fill its limit",
-  );
-  assert.equal(countOf(bell, "noticeIsDue(row, today)"), 1, "the bell checks each row again after its query");
   assert.match(bell, /const today = todayInCairo\(\)/, "the bell's day is the Cairo day, never the server's UTC day");
+  assert.match(bell, /p_today: today,/, "the RPC is handed the Cairo day, so its SQL fences every arm at it");
+  assert.equal(countOf(bell, "noticeIsDue(row, today)"), 1, "the bell checks each row again after its query");
+
+  const legacyStart = inApp.indexOf("async function legacyNoticeReads(");
+  const legacyEnd = inApp.indexOf("export async function", legacyStart + 1);
+  assert.ok(legacyStart >= 0 && legacyEnd > legacyStart, "the bell's PostgREST fallback is found");
+  assert.equal(
+    countOf(inApp.slice(legacyStart, legacyEnd), `.lte("scheduled_for", today)`),
+    3,
+    "each of the fallback's three notification_events reads is fenced at today, or future reminders fill its limit",
+  );
+
+  const rpc = sql("supabase/migrations/20261101230000_phx_in_app_notices.sql");
+  assert.equal(
+    countOf(rpc, "e.scheduled_for <= p_today"),
+    3,
+    "each of the RPC's three arms (own, named, the flooded seat's other kinds) is fenced at p_today in SQL",
+  );
 
   // ── The module badges count the same rows the bell shows ─────────────────────────────────────
   const unread = code("src/lib/notifications/unread.ts");

@@ -173,11 +173,13 @@ export function runPortalRepNavigationSpeedTests(): void {
   {
     const chunked: Array<[string, string]> = [
       ["src/lib/crm/reps-list.ts", "async function loadContactBrickMap("],
-      ["src/lib/crm/reps-list.ts", "export async function loadCheckins("],
+      // Since 1 Nov 2026 the check-ins and the brick names each come from ONE function
+      // (tests/phoenix-crm-board-reads.test.ts); these walks are the fallback, still a few chunks at a time.
+      ["src/lib/crm/reps-list.ts", "async function loadCheckinsByPages("],
       ["src/lib/crm/reps-list.ts", "export async function loadPinsFor("],
       // The brick and area names behind the board's group headings (2026-10-16).
       ["src/lib/crm/reps-list.ts", "async function loadAreaNames("],
-      ["src/lib/crm/reps-list.ts", "async function loadBrickMeta("],
+      ["src/lib/crm/reps-list.ts", "async function loadBrickMetaByPages("],
       // Since 2026-10-16 these two are gathered in the database, with the page walk kept for a database
       // the function has not reached — both halves read their chunks a few at a time.
       ["src/lib/crm/shared-customers.ts", "async function loadPlanDatesCounted("],
@@ -192,9 +194,9 @@ export function runPortalRepNavigationSpeedTests(): void {
     }
 
     // The check-ins page by KEYSET on their own total order, never by OFFSET over the union view.
-    const checkins = functionBody(source("src/lib/crm/reps-list.ts"), "export async function loadCheckins(");
-    assert.doesNotMatch(checkins, /\.range\(/, "loadCheckins never pages by OFFSET");
-    assert.match(checkins, /\.limit\(PAGE_SIZE\)/, "loadCheckins pages a thousand at a time");
+    const checkins = functionBody(source("src/lib/crm/reps-list.ts"), "async function loadCheckinsByPages(");
+    assert.doesNotMatch(checkins, /\.range\(/, "the check-in walk never pages by OFFSET");
+    assert.match(checkins, /\.limit\(PAGE_SIZE\)/, "the check-in walk pages a thousand at a time");
     assert.ok(
       checkins.includes('query.or(`check_date.lt."${after.at}",and(check_date.eq."${after.at}",crm_checkin_id.lt.${after.id})`)'),
       "each page starts strictly after the last row of the one before, on the order the walk reads in",

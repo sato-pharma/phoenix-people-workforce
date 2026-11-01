@@ -78,6 +78,8 @@ import { runNotificationLinksResolveTests } from "./notification-links-resolve.t
 import { runNavPanelPositionTests } from "./nav-panel-position.test.ts";
 import { runNotificationBellPolishTests } from "./notification-bell-polish.test.ts";
 import { runNotificationFutureRemindersHiddenTests } from "./notification-future-reminders-hidden.test.ts";
+import { runShellChatterTests } from "./shell-chatter.test.ts";
+import { runPageTimingsTests } from "./page-timings.test.ts";
 import { runNavigationHubCardCatalogTests } from "./navigation-hub-card-catalog.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
@@ -2933,6 +2935,7 @@ import { runSamePharmacyCrossUseFlagTests } from "./same-pharmacy-cross-use-flag
 import { runSickLeaveReachesHrApprovalsTests } from "./sick-leave-reaches-hr-approvals.test.ts";
 import { runRollupExecBufferTests } from "./rollup-exec-buffer.test.ts";
 import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold.test.ts";
+import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5010,6 +5013,14 @@ await runTest("outstation car evidence validation", runOutstationCarEvidenceVali
 await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("a draft or offline queue on a shared device is restored and sent only for its own person", runBrowserStorageOwnerScopedTests);
+await runTest(
+  "the shell stops chattering: the bell is one RPC after the session, the pulse carries the envelope's count, the shell's HTML carries mailbox and push state, page views go in one batch",
+  runShellChatterTests,
+);
+await runTest(
+  "record everything, and nobody: the beacon's hard loads, taps and device class reach page_timings by the hour, with no person's column and the owner's 30-day retention",
+  runPageTimingsTests,
+);
 await runTest("a cache never keeps a failed read, a write expires the screen it moves, and a private file is kept no longer than its link", runCacheAuditFixesTests);
 await runTest("every download says never keep me, a degraded answer is served once and never kept, and browser storage never takes a page down", runCacheAuditP3Tests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
@@ -11639,6 +11650,10 @@ await runTest(
 );
 
 await runTest("Pedia Sharkia 1 and 2: off the organogram, counted to Hany Saad from October, published months unmoved", runPediaSharkiaHanySaadHoldTests);
+await runTest(
+  "Phoenix CRM board reads in one statement (1 Nov 2026, the speed root cause — each request ~450 ms at Supabase's edge for 2-7 ms of SQL): the KPI panel's open assignments, the Reps List's brick names and its contacts' check-ins each come from one function, with the page walk kept only for a database without it; the region -> brick map and the trade counterparties are shared copies the writes drop; the List and Add Visit mint through the planners' throttle; the unvalidated counts read four chunks at a time; the three routes answer with Server-Timing",
+  runPhoenixCrmBoardReadsTests,
+);
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

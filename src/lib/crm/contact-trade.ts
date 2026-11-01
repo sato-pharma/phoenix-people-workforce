@@ -105,6 +105,8 @@
 import { parseCrmContactCode } from "@/lib/crm/contact-code";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { loadReferenceAreas, type ReferenceArea } from "@/lib/reference/reference-lists";
+import { getOrLoadShared } from "@/lib/cache/shared-read";
+import { CRM_TRADE_COUNTERPARTIES } from "@/lib/crm/shared-windows";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -323,7 +325,23 @@ async function loadDeclaredVenueContacts(): Promise<Map<string, number>> {
   return byPharmacyId;
 }
 
+const TRADE_COUNTERPARTIES_LIMITS = { maxEntries: 1, maxRowsTotal: 20_000 };
+
+/**
+ * Every counterparty Phoenix has traded with, from a shared in-process copy (60 s) since 1 Nov 2026 — the
+ * speed root cause: the six whole-table reads below (297 direct-order venues and 137 marketing customers
+ * that day) ran again on every Reps List and My List open, for every viewer, each request ~450 ms at
+ * Supabase's edge for a few milliseconds of SQL. A direct order or marketing request submitted or decided
+ * in this process drops the copy at once (`refreshSharedTradeCounterparties`, src/lib/crm/shared-windows.ts);
+ * one on another process is caught by the copy's lifetime. A DISPLAY read — the two counts beside a
+ * contact — and nothing that decides money, an approval or a notification.
+ */
 export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
+  const { rows } = await getOrLoadShared(CRM_TRADE_COUNTERPARTIES, "all", readTradeCounterparties, TRADE_COUNTERPARTIES_LIMITS);
+  return rows ?? [];
+}
+
+async function readTradeCounterparties(): Promise<TradeCounterparty[]> {
   const supabase = getSupabaseAdmin();
   const parties: TradeCounterparty[] = [];
 

@@ -4,24 +4,30 @@
 --
 --  Owner, 1 November 2026, during the speed root-cause work: "retire and delete all its traces". The
 --  trail (owner, 2026-10-03) saved every tap in Phoenix CRM. On 1 November it held 2,834,233 rows and
---  1,224 MB — 26 % of the 4,690 MB production database — had been written 4,557 times since 14:03 that
---  day and read never, and every screen change and every 30 s of an open tab cost one more request on
---  a saturated database host.
+--  1,229 MB — 26 % of the 4,926 MB production database — had been written 69,207 times since the 14:03
+--  restart that day and read never, and every screen change and every 30 s of an open tab cost one
+--  more request on a saturated database host.
 --
---  THIS DROPS THE TABLE AND REMOVES THE ARCHIVE BUCKET. Nothing depends on the table: no function, view,
---  trigger, foreign key or pg_cron job (checked on production, 2026-11-01); its RLS policy and six
---  indexes go with it. The archive bucket (20261027175121) has never held a file: its first night was
---  due on 2 November, and its cron-job.org job is already deleted.
+--  THIS DROPS THE TABLE AND THE ARCHIVE POLICY. Nothing depends on the table: no function, view,
+--  trigger, foreign key or pg_cron job (checked on production, 2026-11-01 22:20 Cairo); its RLS policy
+--  and six indexes go with it. The archive bucket (20261027175121) never held a file: its first night
+--  was due on 2 November, and its cron-job.org job is already deleted.
 --
---  ORDER OF OPERATIONS, deliberately: the CODE that wrote the table ships first (route, collector,
---  reader, archive job, all in the same PR), and this runs on production by hand only once that code is
---  LIVE (/api/healthz revision), off-hours, with the day's backup confirmed — production has no
---  point-in-time recovery, so the daily backup is the one copy of the trail left.
+--  THE BUCKET IS NOT DELETED HERE. Supabase guards `storage.buckets` with a STATEMENT-level trigger
+--  (`protect_buckets_delete` → `storage.protect_delete()`) that raises 42501 "Direct deletion from
+--  storage tables is not allowed. Use the Storage API instead." on every `delete`, even one matching
+--  no row — this file's first version carried that delete and was refused on staging (staging-migrate
+--  run 41345379965) and on production (22:23 Cairo, rolled back whole). The empty bucket was deleted
+--  through the Storage API (`DELETE /storage/v1/bucket/phoenix-crm-touch-trail-archive`, HTTP 200
+--  "Successfully deleted") on production and on staging at 22:25 Cairo, 1 November 2026, and this
+--  file drops only what SQL may drop.
 --
---  FAIL-CLOSED ON THE BUCKET: `delete from storage.buckets` is refused by the objects foreign key while
---  any file exists, and that failure rolls back the whole transaction — the table drop included.
+--  ORDER OF OPERATIONS, deliberately: the CODE that wrote the table shipped first (#6760, live on
+--  production at 22:19 Cairo; the last row was written 22:18:56), and this ran on production by hand
+--  once that code was live, off-hours, with the day's backup confirmed — production has no
+--  point-in-time recovery, so the 05:35 Cairo backup of 1 November is the one copy of the trail left.
 --
---  ROLLBACK  Restore the table from the day's backup (there is no other copy); 20261003221224 recreates
+--  ROLLBACK  Restore the table from that backup (there is no other copy); 20261003221224 recreates
 --            an empty one, and 20261027175121 recreates the bucket and its policy.
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -34,9 +40,6 @@ do $retire$
 begin
   if to_regclass('storage.objects') is not null then
     execute 'drop policy if exists phoenix_crm_touch_trail_archive_service_role on storage.objects';
-  end if;
-  if to_regclass('storage.buckets') is not null then
-    delete from storage.buckets where id = 'phoenix-crm-touch-trail-archive';
   end if;
 end
 $retire$;

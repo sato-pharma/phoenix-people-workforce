@@ -898,7 +898,7 @@ function RowNavBadge({ navBadge }: { navBadge?: EmployeePortalNavItem["navBadge"
  * admin top bar's own bell/messages are untouched (they pass no `embedded`). Both stay mounted while
  * the dropdown is closed (hidden), so each keeps polling and the badge stays live without opening it.
  */
-function EmployeePortalInbox() {
+function EmployeePortalInbox({ mailboxConnected }: { mailboxConnected: boolean }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"notifications" | "messages">("notifications");
   const [notifUnread, setNotifUnread] = useState(0);
@@ -971,7 +971,7 @@ function EmployeePortalInbox() {
             <InAppNotificationsBell embedded isAdminMode={false} onClose={close} onUnreadChange={setNotifUnread} />
           </div>
           <div className={tab === "messages" ? "" : "hidden"}>
-            <InternalMessagesMenu embedded isAdminMode={false} onUnreadChange={setMessageUnread} />
+            <InternalMessagesMenu embedded isAdminMode={false} mailboxConnected={mailboxConnected} onUnreadChange={setMessageUnread} />
           </div>
         </div>
       </div>
@@ -1523,7 +1523,7 @@ export function EmployeePortalTopNav({
   return (
     <>
       {disableSessionGuard ? null : <SessionSecurityGuard />}
-      <OneSignalProvider />
+      <OneSignalProvider pushHrId={data.pushHrId} />
       <header
         className={`fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl ${
           focusMode ? "hidden" : ""
@@ -1714,7 +1714,7 @@ export function EmployeePortalTopNav({
               than three floating buttons. */}
           <div className={`flex shrink-0 items-center border border-slate-200 bg-white [&>*:not(:first-child)]:border-l [&>*]:border-slate-200 ${adminSoftDepthClassName}`}>
             <DisplayScaleControl isAdminMode={false} />
-            <EmployeePortalInbox />
+            <EmployeePortalInbox mailboxConnected={data.mailboxConnected} />
           </div>
           <div className="relative flex shrink-0" ref={userMenuRef}>
             <button

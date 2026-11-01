@@ -62,14 +62,26 @@ export function askForDesktopMailAlerts(): void {
 
 export function usePersonalMailboxAlerts({
   canOpenEmail,
+  enabled,
   onOpenEmail,
 }: {
   /** Whether "Open" can show the email right now (the envelope is drawn on this page). */
   canOpenEmail: () => boolean;
+  /**
+   * Whether this person has a mailbox connected, as the shell's render already knows it (1 Nov 2026).
+   * `false` asks nothing — no first check, no poll, no re-check on return — until the panel reports
+   * a connection (PERSONAL_MAILBOX_CHANGED_EVENT), which arms the check for the rest of the page's
+   * life. `true` or `undefined` polls as before. The check used to run on every page view for
+   * everyone, five reads deep, only to learn that most people have nothing connected.
+   */
+  enabled?: boolean;
   onOpenEmail: (uid: number) => void;
 }): { unread: number | null } {
   const [unread, setUnread] = useState<number | null>(null);
   const [generation, setGeneration] = useState(0);
+  // Armed by the shell (enabled is not false) or by a connection made on this page (the CHANGED event).
+  const [armedByPage, setArmedByPage] = useState(false);
+  const armed = armedByPage || enabled !== false;
   const callbacks = useRef({ canOpenEmail, onOpenEmail });
   const memoryBaseline = useRef<MailAlertBaseline | null>(null);
 
@@ -78,7 +90,11 @@ export function usePersonalMailboxAlerts({
   }, [canOpenEmail, onOpenEmail]);
 
   useEffect(() => {
-    const onChanged = () => setGeneration((current) => current + 1);
+    const onChanged = () => {
+      // A connection made (or dropped) on this page: the next check decides, whatever the shell said.
+      setArmedByPage(true);
+      setGeneration((current) => current + 1);
+    };
     const onRead = () => setUnread((current) => (current !== null && current > 0 ? current - 1 : current));
     window.addEventListener(PERSONAL_MAILBOX_CHANGED_EVENT, onChanged);
     window.addEventListener(PERSONAL_MAILBOX_READ_EVENT, onRead);
@@ -89,6 +105,7 @@ export function usePersonalMailboxAlerts({
   }, []);
 
   useEffect(() => {
+    if (!armed) return;
     let stopped = false;
     let checking = false;
     let lastCheckAt = 0;
@@ -162,7 +179,7 @@ export function usePersonalMailboxAlerts({
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [generation]);
+  }, [armed, generation]);
 
   return { unread };
 }

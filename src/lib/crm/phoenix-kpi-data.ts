@@ -156,7 +156,7 @@ export async function loadPhoenixRepKpis(input: {
   const reuseRecentWindow = input.reuseRecentWindow === true;
   const hasWindow = input.window.dateTo >= input.month.start;
   const [panelRows, holidays] = await Promise.all([
-    loadPanelRows(),
+    loadPanelRows({ reuseRecentWindow }),
     loadCallRateHolidays(input.month.start, input.month.end),
   ]);
   const narrowed = input.narrowToScope

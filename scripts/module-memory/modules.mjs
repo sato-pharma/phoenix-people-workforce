@@ -603,6 +603,27 @@ export const MODULES = [
     keywords: ["exceptions board", "working day", "call rate denominator", "brick coverage", "plan vs actual", "tracking sheet", "reports workbook", "report catalogue", "report guide", "daily digest figures"],
     tables: [],
   },
+  // 🔴 SPLIT, 2 Nov 2026, FOR THE POINTER AGAIN: `phoenix-crm` stood at 33 rules and 3,964 bytes of the 4,000
+  // margin `tests/module-memory.test.ts` holds, so the speed root cause's one rule (the List and Add Visit mint
+  // through the planners' throttle) would have reddened `validate`. The reference list is one family — which
+  // customers a rep's seat carries by right, how a doctor he adds himself is found and named, and when the mint
+  // that keeps the list current runs — so its two rules move here with the new one. `phoenix-crm` keeps every
+  // glob it had, so a list file loads the pair and nothing that used to arrive stops arriving.
+  // Account: `docs/module-memory.md`, "Limits".
+  {
+    id: "phoenix-crm-reference-list",
+    title: "Phoenix CRM — the reference list: the seat's customers and the mint that keeps them current",
+    scope: "Which customers a rep's seat carries by right (phoenix_crm_seat_reference), how a doctor he added himself is matched and named, and when the reference mint runs — the List, Add Visit and the planners through the five-minute throttle, missed records every time.",
+    globs: [
+      "src/lib/phoenix-crm/server/{list,visits,missed-records}.ts",
+      "app/api/phoenix-crm/list/route.ts",
+      "app/api/phoenix-crm/visits/form/**",
+      "supabase/migrations/*{seat_reference,add_path,name_row}*",
+      "tests/phoenix-crm-{add-path-name-row,board-reads,doctor-once,reference-mint-throttle}*",
+    ],
+    keywords: ["reference list", "reference customers", "seat reference", "reference mint", "ensureReferenceCustomers", "doctor already on list", "territory list"],
+    tables: ["phoenix_crm_seat_reference"],
+  },
   // 🔴 SPLIT, 2026-10-12, FOR THE SAME REASON AS THE FOUR ABOVE — but this time the pointer was pushed over
   // by SHORTENING rules, not by adding one. The ten longest rule bullets in the repo were split at their own
   // clause boundaries so the 1,200-byte gate has real headroom again (52 long of 538 → 42 of 559, against a
@@ -648,6 +669,29 @@ export const MODULES = [
     ],
     keywords: ["phoenix ranks", "rep ranks", "leaderboard", "ireports360", "ireports", "call rate", "reps list", "reps plans", "double visit", "doctor list", "coverage", "frequency", "kpis board", "crm sync", "visit type", "doctor list changes", "drop a doctor", "contact list"],
     tables: ["crm_", "ireports", "visit"],
+  },
+  // 🔴 SPLIT, 2 Nov 2026, THE THIRD TIME `crm` HAS HIT THE POINTER MARGIN: the two board-read rules of the speed
+  // root cause took its injected pointer from 3,849 to 4,152 bytes against the 4,000 `tests/module-memory.test.ts`
+  // holds. HOW A BOARD READS is the clean cut — the minute-old shared copies (the contact roster, the open
+  // assignments, the region → brick map, the trade counterparties), who may opt into one, the writes that drop
+  // them, and the SQL functions that answer a board read in one statement — and none of it is read while editing
+  // a call rate or a scoring rule. `crm` KEEPS EVERY GLOB IT HAD, so a board file loads the pair and nothing
+  // that used to arrive stops arriving. The direct-order and marketing services load it too: they are two of
+  // the writes that drop a copy. Account: `docs/module-memory.md`, "Limits".
+  {
+    id: "crm-board-reads",
+    title: "Field CRM — how a board reads: the shared minute-old copies and the one-statement functions",
+    scope: "The shared copies the Reps List, My List and the KPI boards read (the contact roster, the open assignments, the region → brick map, the trade counterparties), who may opt into a minute-old copy, the writes that drop one, and the SQL functions that answer a board read in one statement instead of a wave of chunks.",
+    globs: [
+      "src/lib/crm/{shared-windows,reps-list,reps-list-board,contact-trade,rep-kpi-reports-data,region-brick}.ts",
+      "src/lib/cache/shared-read.ts",
+      "src/lib/direct-orders/service.ts",
+      "src/lib/marketing-requests/service.ts",
+      "tests/{shared-read-cache,reps-list,phoenix-crm-board-reads,crm-reports-read-phoenix}*",
+      "supabase/migrations/*{crm_contact_roster,phx_crm_board_reads}*",
+    ],
+    keywords: ["shared window", "shared read cache", "getOrLoadShared", "reuseRecentWindow", "contact roster", "open assignments", "trade counterparties", "region brick map", "board read", "one statement", "check-in pins"],
+    tables: ["crm_contact_assignments"],
   },
   // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` RECORDS, AND THE SECOND TIME `crm` HAS
   // HIT IT: its injected pointer measured 4,054 bytes against the 4,000-byte margin

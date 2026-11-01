@@ -332,14 +332,14 @@ export function runPortalGodmodeChromeTests() {
   );
   assert.doesNotMatch(quickActionsLib, /method: "POST"|method: "PATCH"|fetch\(/i, "the shared action list only names destinations — it never acts");
   assert.doesNotMatch(layout, /"\/employee-portals\/direct-orders\/new"/, "quick-action hrefs stay OUT of the layout — the phone-bar guard reads every href literal here");
-  assert.match(topNav, /\[&>\*:not\(:first-child\)\]:border-l[\s\S]*?<DisplayScaleControl isAdminMode=\{false\} \/>\s*<EmployeePortalInbox \/>/, "zoom and the unified inbox are one bordered cluster with dividers");
+  assert.match(topNav, /\[&>\*:not\(:first-child\)\]:border-l[\s\S]*?<DisplayScaleControl isAdminMode=\{false\} \/>\s*<EmployeePortalInbox mailboxConnected=\{data\.mailboxConnected\} \/>/, "zoom and the unified inbox are one bordered cluster with dividers; the inbox is told what the shell's render already knows about the mailbox");
 
   // The unified inbox (item 2): notifications + messages behind ONE bell with two tabs, reusing the
   // shared components in their embedded mode. It only navigates/marks-read via those components; it
   // never fetches or mutates on its own.
   const inbox = componentBody(layout, "EmployeePortalInbox");
   assert.match(inbox, /<InAppNotificationsBell embedded isAdminMode=\{false\} onClose=\{close\} onUnreadChange=\{setNotifUnread\} \/>/, "the inbox embeds the shared notifications feed");
-  assert.match(inbox, /<InternalMessagesMenu embedded isAdminMode=\{false\} onUnreadChange=\{setMessageUnread\} \/>/, "the inbox embeds the shared messages feed");
+  assert.match(inbox, /<InternalMessagesMenu embedded isAdminMode=\{false\} mailboxConnected=\{mailboxConnected\} onUnreadChange=\{setMessageUnread\} \/>/, "the inbox embeds the shared messages feed, handing it the mailbox state");
   assert.match(inbox, /const total = notifUnread \+ messageUnread;/, "the trigger badge is the combined unread count");
   assert.match(inbox, /: "hidden"/, "both feeds stay mounted while closed so the badge stays live");
   assert.doesNotMatch(inbox, /fetch\(|method: "(POST|PATCH)"/i, "the inbox wrapper adds no data logic of its own — the embedded feeds own it");
@@ -351,7 +351,7 @@ export function runPortalGodmodeChromeTests() {
   assert.match(messagesSrc, /embedded = false/, "the messages menu's embedded mode is opt-in — admin keeps the standalone menu");
   const adminTopbar = readFileSync("src/components/layout/topbar.tsx", "utf8");
   assert.match(adminTopbar, /<InAppNotificationsBell isAdminMode=\{isAdminMode\} \/>/, "the admin top bar still uses the standalone bell, unchanged");
-  assert.match(adminTopbar, /<InternalMessagesMenu isAdminMode=\{isAdminMode\} \/>/, "the admin top bar still uses the standalone messages menu, unchanged");
+  assert.match(adminTopbar, /<InternalMessagesMenu isAdminMode=\{isAdminMode\} mailboxConnected=\{mailboxConnected\} \/>/, "the admin top bar still uses the standalone messages menu, told whether a mailbox is connected");
 
   // ── The phone (owner, 2026-09-29: "bring godmode to the phone") ─────────────────────────────
   // A search button opens the command bar below the width where the search box appears.

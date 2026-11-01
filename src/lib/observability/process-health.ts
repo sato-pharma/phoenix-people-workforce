@@ -249,6 +249,12 @@ export function startProcessHealthReporter(): void {
         });
         void reportStallToSentry(alert);
       }
+      // The ended hours' page timings go to the page_timings table — one RPC per web process once an
+      // hour (page-timing-flush.ts). A dynamic import keeps the Supabase client out of this module's own
+      // graph; a refused write is logged there and tried again on the next tick.
+      void import("@/lib/observability/page-timing-flush")
+        .then((flush) => flush.flushPageTimings())
+        .catch((error) => logWarning("page timings flush failed", { error, labels: { event: "page_timings_flush_failed" } }));
     } catch (error) {
       logWarning("process health report failed", { error, labels: { event: "process_health_failed" } });
     } finally {
