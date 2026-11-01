@@ -23,6 +23,7 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **THE CUSTOMER DIRECTORY HAS SIX GATES AND THE SFE MANAGER MUST PASS ALL OF THEM** (2026-11-01). His 2026-08-05 access opened the page and the export only, so the page loaded on its own loader and his first filter answered "restricted to the admin account". The list, channel and detail routes and the detail page now carry the same clause. Pinned by `tests/sfe-manager-nav-dead-links.test.ts`.
 🔴 **`sales-closing.md` IS ALSO LOADED whenever you are here** — its broad `src/lib/sales/*` glob sees
 every file this module covers. That is deliberate: the closing's golden rules (the published month is
 the only sales truth, never correct an announced month, no distributor's bonus is ever counted, the

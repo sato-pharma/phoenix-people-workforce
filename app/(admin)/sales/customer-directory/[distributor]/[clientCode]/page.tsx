@@ -22,7 +22,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }
-  if (access.role !== "Super Admin" && access.scope !== "system") {
+  // Every row of the directory links here, so this admits whoever the directory admits.
+  if (access.role !== "Super Admin" && access.role !== "SFE Manager" && access.scope !== "system") {
     redirect(resolveLandingPathForRole(access.role));
   }
 
