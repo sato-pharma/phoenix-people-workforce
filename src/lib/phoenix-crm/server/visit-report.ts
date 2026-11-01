@@ -37,6 +37,7 @@
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { placeNoteReachesManager } from "@/lib/phoenix-crm/place-note-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { canReadVisitReport, isLocationBlind, readsLocationDetail, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { dedupeIds, IN_ID_CHUNK, selectByIds, seatScoped, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -566,7 +567,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   const [sharedPlaces, notes, recommendations, reviews, unplannedRows, provenanceRows, editRows, askRows] = await Promise.all([
     needsShared ? selectByIds<Row>("phoenix_crm_shared_places", "id, name", "id", sharedIds, byIds) : Promise.resolve<Row[]>([]),
     needsNotes
-      ? selectByIds<Row>("phoenix_crm_place_notes", "id, place_id, body, created_at", "place_id", placeFilterIds, byIds)
+      ? selectByIds<Row>("phoenix_crm_place_notes", "id, place_id, author_source, rep_visible, body, created_at", "place_id", placeFilterIds, byIds)
       : Promise.resolve<Row[]>([]),
     needsRecs
       ? selectByIds<Row>("phoenix_crm_place_recommendations", "id, place_id, recommendation, created_at", "place_id", placeFilterIds, byIds)
@@ -702,7 +703,10 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
 
   // ── Lookups ──
   const sharedById = new Map(sharedPlaces.map((row) => [String(row.id), row]));
-  const notesByPlace = groupBy(notes.sort(byTime("created_at", "oldest")), (row) => idOf(row.place_id));
+  // 🔴 "Place notes" is a manager-sight column, and the administrator's private notes are not (owner,
+  // 2026-10-13). They are dropped here, so they reach neither this manager's screen nor the workbook.
+  const readableNotes = visitReportTierOf(viewer) === "manager" ? notes.filter((row) => placeNoteReachesManager(row.author_source, row.rep_visible)) : notes;
+  const notesByPlace = groupBy(readableNotes.sort(byTime("created_at", "oldest")), (row) => idOf(row.place_id));
   const recsByPlace = groupBy(recommendations.sort(byTime("created_at", "oldest")), (row) => idOf(row.place_id));
   const reviewByPlace = new Map<string, Row>();
   for (const review of reviews.sort(byTime("created_at", "newest"))) {

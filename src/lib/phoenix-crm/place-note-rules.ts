@@ -67,6 +67,20 @@ export function placeNoteRepAuthorText(source: PlaceNoteSource): string {
   return source === "system_admin" ? "From the System Administrator" : "From your manager";
 }
 
+/**
+ * Whether a manager below the deciders may receive this note (owner, 2026-10-13: the manager's screen
+ * does not show that the final call is the administrator's).
+ *
+ * A manager's own note always, hidden from the rep or not. A System Administrator's note only when the
+ * rep may read it too, which every comment written with a decision is. The administrator's private
+ * notes, the 63 by-eye notes of 2026-10-19 among them, stay on the server. Anything unrecognised is
+ * refused: this is the one line between a private note and a manager's browser.
+ */
+export function placeNoteReachesManager(authorSource: unknown, repVisible: unknown): boolean {
+  const source = parsePlaceNoteSource(authorSource);
+  return source === "manager" || (source === "system_admin" && repVisible === true);
+}
+
 /** How the two boards label a note's author to a reader who may see every note. */
 export function placeNoteAuthorLabel(source: PlaceNoteSource, name: string | null): string {
   const role = source === "system_admin" ? "System Administrator" : "District Manager";

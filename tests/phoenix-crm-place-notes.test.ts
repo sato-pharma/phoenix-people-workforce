@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   decisionNoteIsAComment,
@@ -7,12 +9,14 @@ import {
   parsePlaceNoteSubjectKind,
   parsePlaceRecommendation,
   placeNoteAuthorLabel,
+  placeNoteReachesManager,
   placeNoteRepAuthorText,
   placeNoteSubjectKey,
   placeRecommendationLabel,
   PLACE_NOTE_MAX_LENGTH,
 } from "../src/lib/phoenix-crm/place-note-rules.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 /**
  * Phoenix CRM — a district manager's own Place checks tab: the comment, the visibility choice and the
@@ -355,6 +359,63 @@ function checkWriteGate(): void {
   }
 }
 
+// ── 6b · The administrator's private notes stay off a manager's screen ─────────────────────────
+
+/** Every .ts/.tsx file under a folder, repo-relative with forward slashes. */
+function sourceFilesUnder(folder: string, out: string[] = []): string[] {
+  const absolute = fileURLToPath(new URL(folder, ROOT));
+  for (const name of cachedReaddir(absolute)) {
+    if (cachedIsDirectory(join(absolute, name))) sourceFilesUnder(`${folder}/${name}`, out);
+    else if (/\.tsx?$/.test(name)) out.push(`${folder}/${name}`);
+  }
+  return out;
+}
+
+function checkPrivateAdminNotesStayOffAManagersScreen(): void {
+  // The rule itself, called for real. Production on 2026-11-01 held 63 notes, every one the first shape.
+  assert.equal(placeNoteReachesManager("system_admin", false), false, "the administrator's hidden note never reaches a manager");
+  assert.equal(placeNoteReachesManager("system_admin", true), true, "a comment written with a decision is rep-visible and MUST reach the manager (owner, 2026-11-01)");
+  assert.equal(placeNoteReachesManager("manager", false), true, "a manager's own hidden note stays visible to them");
+  assert.equal(placeNoteReachesManager("manager", true), true, "and so does one the rep can read");
+  // Fail closed: a value this build does not recognise is never handed to a manager.
+  assert.equal(placeNoteReachesManager("system_admin", null), false);
+  assert.equal(placeNoteReachesManager("system_admin", "true"), false);
+  assert.equal(placeNoteReachesManager("sfe", true), false);
+  assert.equal(placeNoteReachesManager(undefined, true), false);
+
+  // 🔴 ON THE SERVER: the rows are dropped before names are looked up or anything is returned.
+  const load = functionBody(read("src/lib/phoenix-crm/server/place-notes.ts"), "loadPlaceNoteIndex");
+  const filtered = load.search(/\.filter\(\(row\) => !options\.managerBoard \|\| placeNoteReachesManager\(row\.author_source, row\.rep_visible\)\)/);
+  assert.ok(filtered > -1, "the manager's board filters the note rows through the one rule");
+  assert.ok(filtered < load.indexOf("loadPeopleNames("), "before any writer's name is looked up");
+  assert.match(load, /const columnsToRead = options\.managerBoard \? noteColumns\.replace\(", advice", ""\) : noteColumns;/, "and the administrator's advice verdict is not even read for that board");
+  assert.equal([...load.matchAll(/selectByIds<Row>\("phoenix_crm_place_notes", columnsToRead,/g)].length, 2, "on either of the two note reads");
+
+  // The option defaults to the company view, so WHO CALLS IT is the safety. Exactly two pages do.
+  const callers = [...sourceFilesUnder("app"), ...sourceFilesUnder("src")]
+    .filter((path) => cachedReadFile(fileURLToPath(new URL(path, ROOT))).includes("loadPlaceNoteIndex(") && read(path).includes("loadPlaceNoteIndex("))
+    .sort();
+  assert.deepEqual(
+    callers,
+    ["app/(admin)/admin/field-crm/validation-reviews/page.tsx", "app/employee-portals/place-checks/page.tsx", "src/lib/phoenix-crm/server/place-notes.ts"],
+    "a new caller of the note index must choose its audience here",
+  );
+  assert.match(read("app/employee-portals/place-checks/page.tsx"), /loadPlaceNoteIndex\(subjects, \{ managerBoard: true \}\)/, "the manager's page asks for the manager's view");
+  const company = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
+  assert.match(company, /loadPlaceNoteIndex\(subjects\)/, "the deciders' page keeps every note");
+  assert.ok(!company.includes("managerBoard"), "and never narrows it: the one-by-one review sorts on these notes");
+
+  // The Visit Report's "Place notes" column is a second door to the same table.
+  const report = read("src/lib/phoenix-crm/server/visit-report.ts");
+  assert.match(report, /"phoenix_crm_place_notes", "[^"]*author_source, rep_visible[^"]*"/, "the report reads who wrote each note and who may read it");
+  assert.match(
+    report,
+    /const readableNotes = visitReportTierOf\(viewer\) === "manager" \? notes\.filter\(\(row\) => placeNoteReachesManager\(row\.author_source, row\.rep_visible\)\) : notes;/,
+    "a manager's report drops the private notes, and the deciders' report keeps them",
+  );
+  assert.match(report, /const notesByPlace = groupBy\(readableNotes\./, "and the column is built from what is left");
+}
+
 // ── 7 · The tab itself ─────────────────────────────────────────────────────────────────────────
 
 function checkTheTab(): void {
@@ -523,4 +584,5 @@ export function runPhoenixCrmPlaceNotesTests(): void {
   checkWriteGate();
   checkTheTab();
   checkDeviceEvidence();
+  checkPrivateAdminNotesStayOffAManagersScreen();
 }
