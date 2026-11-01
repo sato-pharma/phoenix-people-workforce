@@ -3,6 +3,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 
 import { adminPanelClassName, adminPanelHeaderClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { ManagerPlanDecisionActions } from "@/components/approvals-hub/manager-plan-decision-actions";
+import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import type {
   ManagerHubDetail,
   ManagerHubPlanDetail,
@@ -240,6 +241,10 @@ function PlanDetail({ detail, backHref, plannerHref }: { detail: ManagerHubPlanD
               backHref={backHref}
             />
           ) : null}
+
+          {/* The week's conversation, open at any status once it has been sent (owner, 2026-11-01). The same
+              thread the manager opens on his plan board. */}
+          {detail.conversation ? <RecordConversationThread base={detail.conversation.url} key={detail.planId} note={detail.conversation.note} /> : null}
         </div>
 
         <WeekDays detail={detail} />

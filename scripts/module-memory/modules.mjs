@@ -461,6 +461,24 @@ export const MODULES = [
     keywords: ["with a district manager", "with my manager", "visit with dm", "with the regional manager", "with the product manager", "ride-along half-day"],
     tables: [],
   },
+  // 🔴 SPLIT, 2026-11-01, WHEN `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN A FOURTH TIME: the conversation on
+  // a manager's week measured its injected pointer at 4,159 bytes against the 4,000 margin
+  // `tests/module-memory.test.ts` holds. The thread is its own read, route and notice; the board and the hub page still
+  // match `phoenix-crm-manager-plan`'s globs, so a file here loads the pair.
+  {
+    id: "phoenix-crm-manager-plan-conversation",
+    title: "Phoenix CRM — the conversation on a manager's week",
+    scope: "The thread on a manager's weekly plan: open from its first send, shown behind a button on his board and under the decision in the Approvals Hub, read and written by whoever opens that week, and told to the people on its approval in-app, by Telegram and on the phone, never by email.",
+    globs: [
+      "src/lib/phoenix-crm/server/manager-plan-conversation.ts",
+      "app/api/phoenix-crm/manager-plans/conversation/**",
+      "src/components/phoenix-crm/manager-plan-board.tsx",
+      "src/components/approvals-hub/manager-plan-request-detail.tsx",
+      "supabase/migrations/*record_conversation_manager_plans*",
+    ],
+    keywords: ["conversation on the weekly plan", "manager plan conversation", "weekly plan conversation", "conversation on a manager's week"],
+    tables: [],
+  },
   // 🔴 SPLIT, 2026-10-24, WHEN `phoenix-crm-manager-plan` CROSSED THE POINTER MARGIN A THIRD TIME: the Training
   // Manager's week (three rules at once) measured its injected pointer at 4,238 bytes against the 4,000 margin
   // `tests/module-memory.test.ts` holds. Her kind, her region scopes and her companion visits are one family and

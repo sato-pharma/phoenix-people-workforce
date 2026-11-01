@@ -24,24 +24,26 @@ import {
   isManagerAskLive,
   isSingleVisitDayAskLive,
   managerAskStage,
+  managerPlanConversationOpen,
+  managerPlanConversationView,
   managerPlannerTitle,
   managerPlanStage,
   managerPlanStatusLabel,
   nextManagerPlanStatus,
   returnStageOfApproved,
   singleVisitDayAskStatusLabel,
+  type ManagerPlanConversationView,
   type ManagerPlanStage,
   type ManagerPlanStatus,
   type SingleVisitDayAskStatus,
 } from "@/lib/phoenix-crm/manager-plan-rules";
-import { personKey } from "@/lib/phoenix-crm/scope";
 import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadManagerCustomerRow } from "@/lib/phoenix-crm/server/manager-customers";
 import {
   managerAskDeciderRole,
   managerPlanDeciderRole,
   managerPlanWriterFor,
-  readsManagerPlanOf,
+  mayOpenManagerRecord,
   type ManagerPlanDeciderRole,
 } from "@/lib/phoenix-crm/server/manager-plan-reach";
 import { loadEditAskRow, loadEditAsks, loadManagerPlanRow, type ManagerEditAskRow, type ManagerPlanRow } from "@/lib/phoenix-crm/server/manager-plan-rows";
@@ -104,6 +106,8 @@ export type ManagerHubPlanDetail = {
   /** The ask to edit this page was opened for, or the one waiting on the week. */
   ask: ManagerHubAsk | null;
   isOwner: boolean;
+  /** The week's conversation; null until the week has been sent (owner, 2026-11-01). */
+  conversation: ManagerPlanConversationView | null;
 };
 
 export type ManagerHubRemovalDetail = {
@@ -166,11 +170,6 @@ const NOT_FOUND: ManagerHubDetail = { kind: "not_found" };
 
 function at(value: string | null): string | null {
   return value ? formatPhoenixDateTime(value) : null;
-}
-
-function mayOpen(viewer: PhoenixCrmViewer, managerHrId: string, approverHrIds: ReadonlyArray<string | null>): boolean {
-  if (readsManagerPlanOf(viewer, managerHrId)) return true;
-  return approverHrIds.some((hrId) => hrId !== null && personKey(hrId) === viewer.hrId);
 }
 
 function who(names: PeopleNames, hrId: string | null, role: string | null, fallback: string): string {
@@ -302,7 +301,7 @@ function editAskStatusLabel(ask: ManagerEditAskRow, names: PeopleNames): string 
 async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId: string | null): Promise<ManagerHubDetail> {
   const asks = await loadEditAsks([plan.planId]);
   const ask = (askId ? asks.find((entry) => entry.requestId === askId) : asks.find((entry) => isManagerAskLive(entry.status, plan.status))) ?? null;
-  if (!mayOpen(viewer, plan.managerHrId, [plan.firstApproverHrId, plan.secondApproverHrId, ask?.approverHrId ?? null, ask?.secondApproverHrId ?? null])) return NOT_FOUND;
+  if (!mayOpenManagerRecord(viewer, plan.managerHrId, [plan.firstApproverHrId, plan.secondApproverHrId, ask?.approverHrId ?? null, ask?.secondApproverHrId ?? null])) return NOT_FOUND;
 
   const [board, names] = await Promise.all([
     loadManagerPlanBoardFor(viewer, plan.managerHrId, plan.weekStart, plan.isTest),
@@ -366,13 +365,22 @@ async function planDetail(viewer: PhoenixCrmViewer, plan: ManagerPlanRow, askId:
         }
       : null,
     isOwner: plan.managerHrId === viewer.hrId,
+    conversation: managerPlanConversationOpen(plan)
+      ? managerPlanConversationView({
+          planId: plan.planId,
+          isTest: plan.isTest,
+          managerName: nameOf(names, plan.managerHrId),
+          approverNames: [plan.firstApproverHrId, plan.secondApproverHrId].map((hrId) => (hrId ? nameOf(names, hrId) : null)),
+          self: plan.managerHrId === viewer.hrId,
+        })
+      : null,
   };
 }
 
 async function removalDetail(viewer: PhoenixCrmViewer, id: string): Promise<ManagerHubDetail> {
   const row = await loadManagerCustomerRow(id);
   if (!row || row.isTest !== viewer.isTestPersona) return NOT_FOUND;
-  if (!mayOpen(viewer, row.managerHrId, [row.approverHrId, row.secondApproverHrId])) return NOT_FOUND;
+  if (!mayOpenManagerRecord(viewer, row.managerHrId, [row.approverHrId, row.secondApproverHrId])) return NOT_FOUND;
   const names = await loadPeopleNames([row.managerHrId, row.approverHrId, row.secondApproverHrId, row.firstDecidedByHrId, row.decidedByHrId]);
   // A refusal puts the customer back to active; its decision stamp tells it from one never asked.
   const refused = row.status === "active" && row.decidedAt !== null;
@@ -447,7 +455,7 @@ async function singleVisitDayDetail(viewer: PhoenixCrmViewer, id: string): Promi
   const ask = await loadSingleVisitDayAskRow(id);
   if (!ask) return null;
   if (ask.isTest !== viewer.isTestPersona) return NOT_FOUND;
-  if (!mayOpen(viewer, ask.managerHrId, [ask.approverHrId, ask.secondApproverHrId])) return NOT_FOUND;
+  if (!mayOpenManagerRecord(viewer, ask.managerHrId, [ask.approverHrId, ask.secondApproverHrId])) return NOT_FOUND;
   const input = { managerHrId: ask.managerHrId, weekStart: ask.weekStart, isTest: ask.isTest };
   const [names, used, approvedDates] = await Promise.all([
     loadPeopleNames([ask.managerHrId, ask.approverHrId, ask.secondApproverHrId, ask.firstDecidedByHrId, ask.decidedByHrId]),

@@ -443,7 +443,8 @@ export type ManagerPlanNotice = {
     | "single_visit_day_waiting"
     | "single_visit_day_decided"
     | "single_visit_day_expired"
-    | "with_you";
+    | "with_you"
+    | "conversation";
   recipientHrId: string;
   managerHrId: string;
   /** Who took the step — null for the system (an expired ask). */
@@ -471,6 +472,8 @@ export type ManagerPlanNotice = {
    * or product manager he goes with (owner, 2026-10-24: "calendar + notice"), in date order.
    */
   withYou?: ReadonlyArray<{ date: string; half: "AM" | "PM"; areaName: string | null }>;
+  /** `conversation`: the message's own id, so the second message is never swallowed as a repeat of the first. */
+  messageId?: string;
 };
 
 /** The planning calendar a picked manager opens to see the half-days planned with him. */
@@ -648,6 +651,20 @@ export function managerPlanDeliveries(notice: ManagerPlanNotice, names: PeopleNa
         },
       ];
     }
+    // A message in the week's conversation (owner, 2026-11-01), in full and never clipped. Everyone lands on
+    // the week's own page in the Approvals Hub, which holds the thread: his board opens on another week.
+    case "conversation":
+      return [
+        {
+          ...base,
+          ...toHub,
+          idempotencyKey: `${managerPlanNoticeKeyPrefix(notice.recordId)}conversation:${notice.messageId ?? "none"}:${personKey(notice.recipientHrId) ?? notice.recipientHrId}`,
+          eventType: "manager_plan_conversation",
+          title: personKey(notice.recipientHrId) === personKey(notice.managerHrId) ? "New message on your weekly plan" : `New message on ${manager}'s weekly plan`,
+          message: `${actor} wrote about ${week}: "${bidiIsolate(notice.note ?? "")}"`,
+          metadata: planMeta,
+        },
+      ];
     case "single_visit_day_expired":
       return [
         {

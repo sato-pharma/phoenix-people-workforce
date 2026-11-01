@@ -1063,6 +1063,57 @@ export function isManagerAskLive(askStatus: unknown, planStatus: ManagerPlanStat
   return (askStatus === "pending" || askStatus === "first_approved") && isManagerPlanSent(planStatus ?? null);
 }
 
+// ── The week's conversation (owner, 2026-11-01) ─────────────────────────────────────────────────
+
+/**
+ * Open once the week has gone out, at every status after that. Before its first send nobody is on its
+ * approval, and the board promises "Nothing reaches your manager until you press Send". `submitted_at` is the
+ * test because a reopen keeps it, so a thread never disappears while its week is back in draft.
+ */
+export function managerPlanConversationOpen(plan: { submittedAt: string | null }): boolean {
+  return plan.submittedAt !== null;
+}
+
+export type ManagerPlanConversationView = { url: string; note: string };
+
+/** Where the thread reads and posts, and whose names it says. The same on his board and in the Approvals Hub. */
+export function managerPlanConversationView(input: {
+  planId: string;
+  isTest: boolean;
+  managerName: string;
+  approverNames: ReadonlyArray<string | null>;
+  /** The reader is the manager himself: his own screen says "You", never his own name. */
+  self: boolean;
+}): ManagerPlanConversationView {
+  const people = [input.self ? "You" : input.managerName, ...input.approverNames.filter((name): name is string => Boolean(name))];
+  const list = people.length > 1 ? `${people.slice(0, -1).join(", ")} and ${people[people.length - 1]}` : people[0];
+  const verb = people.length > 1 || input.self ? "are" : "is";
+  return {
+    url: `/api/phoenix-crm/manager-plans/conversation?plan=${encodeURIComponent(input.planId)}${input.isTest ? "&test=true" : ""}`,
+    note: `${list} ${verb} told of every message in-app, by Telegram and on the phone. Anyone who can open this week can read it and reply.`,
+  };
+}
+
+/**
+ * Who is told of a message: the manager, everyone on the week's approval, and everyone who has already
+ * written, so someone who joined in keeps hearing. Never the person who wrote it. One entry per person, however
+ * many of those he is.
+ */
+export function managerPlanConversationAudience(input: {
+  managerHrId: string;
+  approverHrIds: ReadonlyArray<string | null>;
+  authorHrIds: ReadonlyArray<string | null>;
+  actorHrId: string;
+}): string[] {
+  const actor = personKey(input.actorHrId);
+  const people = new Set<string>();
+  for (const hrId of [input.managerHrId, ...input.approverHrIds, ...input.authorHrIds]) {
+    const key = personKey(hrId);
+    if (key && key !== actor) people.add(key);
+  }
+  return [...people];
+}
+
 /** The person a week waits on, or null when it waits on nobody (a draft is his own, approved is closed). */
 export function managerPlanWaitingOn(input: {
   status: ManagerPlanStatus | null;

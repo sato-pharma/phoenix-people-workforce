@@ -211,6 +211,16 @@ export function readsManagerPlanOf(viewer: PhoenixCrmViewer, managerHrId: string
   return reach.managers.some((entry) => entry.hrId === key);
 }
 
+/**
+ * Who may open one of his records in the Approvals Hub, and its conversation: whoever reads that manager's
+ * plan (he himself, the managers above him, SFE, the CEO and the Super Admin), plus the approvers stored on
+ * it — the CEO and the Marketing Manager open a regional, national or product manager's week this way.
+ */
+export function mayOpenManagerRecord(viewer: PhoenixCrmViewer, managerHrId: string, approverHrIds: ReadonlyArray<string | null>): boolean {
+  if (readsManagerPlanOf(viewer, managerHrId)) return true;
+  return approverHrIds.some((hrId) => hrId !== null && personKey(hrId) === viewer.hrId);
+}
+
 export type ManagerPlanReader = ManagerPlanReach & {
   /** Whose plan is read; null in "pick" mode until one is chosen. */
   managerHrId: string | null;
