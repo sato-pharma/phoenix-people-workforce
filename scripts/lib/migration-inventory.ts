@@ -1500,6 +1500,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // keys, 0 mismatches — the Saginko override (SA001, 111.15 through 2026-09, 170.52 from 2026-10)
   // included, on both sides of its boundary.
   // Pinned by tests/sales-reads-price-each-pair-once.test.ts.
+  //
+  // STAGING, 2026-11-01. This entry is project-agnostic, so it had silenced the same file missing on
+  // cifwmndunmlxjhyjugxa for nine days: pre-image md5(prosrc) f6d6dcdc70364bd47244c714e954ec74, length
+  // 5,748, equal to 20261023070100's own body. The staging MCP declined the file too, so it went the
+  // same route. After: bb821585b3d85b661f020a3d5a8ab243, length 6,065, equal to this file's body and to
+  // production, with prosecdef, proconfig and the ACL as above. No schema_migrations row on either
+  // project. Run on staging inside a transaction that always rolled back: batches
+  // d8c7bcd2-e4a2-4a31-a88a-3360330bfce8 (17,223 rows) and 17ef39fa-aee8-4662-908d-5420c7e9836a (15,913)
+  // gave every number identical to the stored rows; 20 rows each differ in folded_name alone, older
+  // rows holding the ﻻ ligature (135 on staging, 0 on production) that phx_fold_customer_name now folds.
+  // Staging holds no SA001 sales from 2026-10, so the Saginko boundary rests on production's proof.
   "20261023171200_phx_refresh_sos_channel_rollup_prices_each_product_once.sql",
 
   // 2026-10-23. phx_marketing_roi_customer_dashboard resolves p_exclude_codes ONCE per call instead
