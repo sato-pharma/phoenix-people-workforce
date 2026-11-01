@@ -57,8 +57,13 @@ export const skillsSurveyFieldLabels = {
 export const skillsSurveyDevelopmentPrioritiesHint =
   "What should this team member work on first? The thing that has the most impact on the business.";
 
-export const skillsSurveyYearsInRoleHint = "Years of experience in the role, at Sato and before. Filled by HR.";
-export const skillsSurveyYearsNotFilled = "Not filled by HR yet";
+// Years of experience: HR fills it on the Employee Master, or the team member's own District Manager
+// on this form (owner, 2026-10-31: "make hr or dm can fill years of experience of the rep").
+export const skillsSurveyYearsInRoleHint =
+  "Years of experience in the role, at Sato and before. Filled by HR or by the District Manager.";
+export const skillsSurveyYearsEditHint =
+  "Years of experience in the role, at Sato and before, for example 2 or 0.5. HR or you can fill it; saving the survey saves it to the team member's record.";
+export const skillsSurveyYearsNotFilled = "Not filled yet";
 
 /** The Skills sheet. */
 export const skillsSurveySkillsLabels = {

@@ -7,7 +7,12 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { assertNotTestAccount } from "@/lib/auth/test-persona";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { readTotalExperienceByHrId, totalExperienceFor } from "@/lib/employees/total-experience";
+import {
+  parseTotalExperienceYears,
+  readTotalExperienceByHrId,
+  saveTotalExperienceYears,
+  totalExperienceFor,
+} from "@/lib/employees/total-experience";
 import { hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -410,6 +415,12 @@ export type SkillsSurveySaveInput = {
   /** The quarter the form was opened in — a form left open past the quarter's end is refused. */
   year?: number | null;
   quarter?: number | null;
+  /**
+   * The team member's total years of experience, typed by his District Manager on the form (owner,
+   * 2026-10-31: "make hr or dm can fill years of experience of the rep"). Left out or empty keeps
+   * the value on his record as it is.
+   */
+  totalExperienceYears?: unknown;
 };
 
 const developmentPrioritiesMaxLength = 2000;
@@ -445,6 +456,25 @@ export async function saveSkillsSurvey(access: AccessContext, input: SkillsSurve
     throw new SkillsSurveyError(`Keep the development priorities under ${developmentPrioritiesMaxLength} characters.`);
   }
 
+  // Years of experience is ONE field on the employee record: HR fills it on the Employee Master, and
+  // the team member's own District Manager may fill or correct it here — only after the check above
+  // that this is his team member. Writing it restarts its as-of day (the database trigger), so HR,
+  // the next survey and the Ranking all read the new figure. An unchanged figure writes nothing.
+  let yearsInRole = yearsForMember(experience, member.hrId, today);
+  const typedYears = input.totalExperienceYears;
+  if (typedYears !== undefined && typedYears !== null && String(typedYears).trim() !== "") {
+    let entered: number | null;
+    try {
+      entered = parseTotalExperienceYears(typedYears);
+    } catch (cause) {
+      throw new SkillsSurveyError(cause instanceof Error ? cause.message : "Check the years of experience.");
+    }
+    if (entered !== null && entered !== yearsInRole) {
+      await saveTotalExperienceYears(member.hrId, entered);
+      yearsInRole = entered;
+    }
+  }
+
   const supabase = getSupabaseAdmin();
   const existingResult = await supabase
     .from("coaching_skills_surveys")
@@ -478,7 +508,7 @@ export async function saveSkillsSurvey(access: AccessContext, input: SkillsSurve
     team_id: member.teamId,
     updated_at: new Date().toISOString(),
     updated_by: actor,
-    years_in_role: yearsForMember(experience, member.hrId, today),
+    years_in_role: yearsInRole,
   };
 
   const saved = existing

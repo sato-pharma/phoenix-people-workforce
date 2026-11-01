@@ -56,6 +56,7 @@ export async function POST(request: Request) {
       memberHrId: body.memberHrId.trim(),
       quarter: typeof body.quarter === "number" ? body.quarter : null,
       scores: body.scores,
+      totalExperienceYears: body.totalExperienceYears,
       year: typeof body.year === "number" ? body.year : null,
     });
     return NextResponse.json({ data: survey, message: "Survey saved." });
