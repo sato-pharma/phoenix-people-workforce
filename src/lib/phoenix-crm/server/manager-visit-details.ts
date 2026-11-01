@@ -13,6 +13,7 @@ import { countsAsPlannersVisitWithRep, parseManagerSeniorVisit, singleVisitHalfO
 import { parseListType, PHARMACY_LIST_TYPE } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
+import { visitIsArchiveHistory } from "@/lib/phoenix-crm/unplanned-rules";
 import { cairoHourOf } from "@/lib/phoenix-crm/server/manager-single-visit-cap";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadVisitCompanionIds, loadVisitIdsWithCompanions } from "@/lib/phoenix-crm/server/visit-companions";
@@ -53,9 +54,9 @@ const OWN_COLUMNS =
   "id, manager_hr_id, is_unplanned, visit_date, half, customer_id, manager_customer_id, products, comment, lat, captured_at, created_at, in_vacant_territory, address, area_name, brick_name, entered_by_hr_id, plan_slot_id";
 
 const RIDE_COLUMNS =
-  "id, seat_id, visit_date, captured_at, created_at, customer_id, place_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, products, comment, pharmacy_name, is_unplanned, lat, customer_validated";
+  "id, seat_id, visit_date, captured_at, created_at, customer_id, place_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, product_manager_hr_id, products, comment, pharmacy_name, is_unplanned, lat, customer_validated, imported_from_ireports360_at";
 
-type CustomerFacts = { name: string; speciality: string | null; grade: string | null; listType: string | null; seatId: string | null };
+type CustomerFacts = { name: string; status: string | null; speciality: string | null; grade: string | null; listType: string | null; seatId: string | null };
 type PlaceFacts = { label: string | null; address: string | null; brickName: string | null; areaName: string | null };
 type OwnCustomerFacts = { name: string; speciality: string | null; grade: string | null; areaName: string | null; address: string | null; brickName: string | null };
 
@@ -84,7 +85,7 @@ async function loadCustomers(ids: string[]): Promise<Map<string, CustomerFacts>>
   const out = new Map<string, CustomerFacts>();
   const rows = await readChunks(ids, (part) =>
     fetchAllRowsKeyset<Row>(
-      () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, list_type, name, speciality, grade").in("id", part),
+      () => getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, list_type, name, speciality, grade, status").in("id", part),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   );
@@ -95,6 +96,7 @@ async function loadCustomers(ids: string[]): Promise<Map<string, CustomerFacts>>
       name: textOrNull(row.name) ?? "Customer",
       seatId: textOrNull(row.seat_id),
       speciality: textOrNull(row.speciality),
+      status: textOrNull(row.status),
     });
   }
   return out;
@@ -399,7 +401,10 @@ function countableVisitRecord(
 ): ManagerDayVisit | null {
   const date = cleanDay(row.visit_date);
   if (!date) return null;
-  const loggedAt = textOrNull(row.captured_at) ?? textOrNull(row.created_at);
+  // 🔴 A visit copied from the old system has its day and no clock: `captured_at` is that day's midnight in Cairo and
+  // `created_at` the hour the copy ran, so neither is a time anybody saw, and the clock and its half both stay empty.
+  const importedAt = textOrNull(row.imported_from_ireports360_at);
+  const loggedAt = importedAt ? null : (textOrNull(row.captured_at) ?? textOrNull(row.created_at));
   const customerId = textOrNull(row.customer_id) ?? "";
   const customer = facts.customers.get(customerId);
   const place = facts.places.byId.get(textOrNull(row.place_id) ?? "") ?? facts.places.byCustomer.get(customerId);
@@ -408,6 +413,7 @@ function countableVisitRecord(
   return {
     address: place?.address ?? null,
     areaName: place?.areaName ?? null,
+    archiveHistory: visitIsArchiveHistory({ importedAt, customerStatus: customer?.status ?? null, customerValidated: row.customer_validated === true }),
     awaitingValidation: row.customer_validated !== true,
     brickName: place?.brickName ?? null,
     bucket: listType,

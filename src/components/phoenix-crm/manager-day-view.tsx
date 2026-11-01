@@ -7,6 +7,7 @@ import { awaitingValidationNote } from "@/lib/crm/call-rate";
 import { adminDeleteTargetOfManagerDayVisit } from "@/lib/phoenix-crm/admin-delete-rules";
 import { buildPlanVsActual } from "@/lib/phoenix-crm/manager-day-plan";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
+import { archiveHistoryNote } from "@/lib/phoenix-crm/unplanned-rules";
 // Through `view-types`, never `server/manager-day-detail`: a component may not import server code.
 import type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/view-types";
 
@@ -27,6 +28,7 @@ import type { PhoenixCrmManagerDayDetail } from "@/lib/phoenix-crm/view-types";
 export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
   const { figures, manager, visits } = view;
   const waiting = awaitingValidationNote({ awaitingValidation: figures.awaitingValidation });
+  const history = archiveHistoryNote(figures.archiveHistory);
   const { rows, summary } = buildPlanVsActual(view.plan, visits);
 
   return (
@@ -56,6 +58,11 @@ export function ManagerDayView({ view }: { view: PhoenixCrmManagerDayDetail }) {
           {waiting ? (
             <CrmNote title="Some of this day is not scored yet" tone="info">
               <p>{waiting}</p>
+            </CrmNote>
+          ) : null}
+          {history ? (
+            <CrmNote title="History from the old system" tone="info">
+              <p>{history}</p>
             </CrmNote>
           ) : null}
           {view.onLeave ? (

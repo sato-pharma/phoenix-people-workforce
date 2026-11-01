@@ -30,6 +30,7 @@
 // The one import this file has, and it is still no I/O: `personKey` is the comparison rule for two hr
 // ids across Phoenix CRM, and `scope.ts` is a pure module (it reads `hrIdForStorage` and a type).
 // Needed by `reviewerWasOnTheVisit` below, where a raw `===` would miss on case and padding alone.
+import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { personKey } from "@/lib/phoenix-crm/scope";
 
 /** What the rep picks on the first step of Add Visit, before he picks the doctor. */
@@ -263,7 +264,7 @@ export function visitCountsInKpi(input: {
   unplannedKind: UnplannedKind | null;
   /** The off-plan approval's own status, where there is one. */
   unplannedStatus: UnplannedVisitStatus | null;
-  /** `phoenix_crm_customers.validated_at is not null` for the visited customer. */
+  /** `customerCountsAsValidated` for the visited customer. */
   customerValidated: boolean;
 }): boolean {
   if (!input.customerValidated) return false;
@@ -290,6 +291,41 @@ export function kpiHoldBackOf(input: Parameters<typeof visitCountsInKpi>[0]): Kp
   if (visitCountsInKpi(input)) return null;
   if (!input.customerValidated) return "validation";
   return input.unplannedStatus === "refused" ? "refused" : "approval";
+}
+
+/**
+ * 🔴 WHETHER A VISIT'S CUSTOMER COUNTS AS VALIDATED — `customer_validated` in `phoenix_crm_countable_visits`, asked the
+ * way that view asks it, for a screen reading the raw tables. A pharmacy needs no validation (owner, 2026-10-03), so its
+ * list answers for it: asking `validated_at` alone read every pharmacy visit on the day page as waiting for a validation
+ * that never comes, at Pharmacies 0, while the calendar cell that opens the page counted it.
+ */
+export function customerCountsAsValidated(customer: { validatedAt: string | null; listType: unknown }): boolean {
+  return customer.validatedAt !== null || isPharmacyListType(customer.listType);
+}
+
+/**
+ * 🔴 A VISIT COPIED FROM THE OLD SYSTEM TO A CUSTOMER IN THE ARCHIVE IS HISTORY, AND WAITS FOR NOBODY (owner, 2026-11-01:
+ * "fix the day page for pharmacies and copied visits"). Nobody validates a customer in the Archive, yet 23,587 such visits
+ * read "waiting for its customer to be validated". It stays outside every figure; only the reason it gives changes. A
+ * customer still on the list, or one the rep restores from the Archive, can still be validated, so a copied visit to that
+ * customer really is waiting and keeps saying so.
+ */
+export function visitIsArchiveHistory(input: { importedAt: string | null; customerStatus: string | null; customerValidated: boolean }): boolean {
+  return input.importedAt !== null && !input.customerValidated && input.customerStatus === "dropped";
+}
+
+/** The mark a row carries for `visitIsArchiveHistory`. */
+export const ARCHIVE_HISTORY_LABEL = "Old-system history";
+
+/** Said where a visit copied from the old system would print a clock: its stored time is a midnight nobody saw. */
+export const COPIED_VISIT_NO_TIME = "No time recorded";
+
+/** The sentence a day page prints beside `awaitingValidationNote`, or null when no visit is `visitIsArchiveHistory`. */
+export function archiveHistoryNote(count: number): string | null {
+  if (count <= 0) return null;
+  return count === 1
+    ? "1 visit copied from the old system, to a customer in the Archive. It stays here as history and is in none of the figures above."
+    : `${count} visits copied from the old system, to customers in the Archive. They stay here as history and are in none of the figures above.`;
 }
 
 export type UnplannedReasonResult = { ok: true; value: string | null } | { ok: false; error: string };

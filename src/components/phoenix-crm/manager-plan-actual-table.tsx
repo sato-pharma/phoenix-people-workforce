@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 import { CrmNote, CrmStat, CrmStatGrid, CrmTable } from "@/components/phoenix-crm/ui";
 import { buildPlanVsActual, type ManagerDayPlan, type PlanRowOutcome, type PlanVsActualRow, type PlanVsActualSummary } from "@/lib/phoenix-crm/manager-day-plan";
 import { managerVisitAreaLines, managerVisitClock, managerVisitCustomerType, type ManagerDayVisit } from "@/lib/phoenix-crm/manager-visit-detail";
-import { planActualRowWords, planActualSaysNoPlan, visitsOnlyRows } from "@/lib/phoenix-crm/manager-visit-table";
+import { planActualRowHasHalf, planActualRowWords, planActualSaysNoPlan, visitsOnlyRows } from "@/lib/phoenix-crm/manager-visit-table";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
+import { ARCHIVE_HISTORY_LABEL, COPIED_VISIT_NO_TIME } from "@/lib/phoenix-crm/unplanned-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -89,7 +90,7 @@ function HalfChip({ half }: { half: string }) {
 
 /** The half-day, then what was planned for it: who with, which customer, the note. A row nobody planned holds its half only. */
 function PlanCell({ row }: { row: PlanVsActualRow }) {
-  if (!row.plan) return <HalfChip half={row.half} />;
+  if (!row.plan) return planActualRowHasHalf(row) ? <HalfChip half={row.half} /> : <Muted>—</Muted>;
   const { plan } = row;
   return (
     <div className="grid min-w-0 gap-1.5">
@@ -141,7 +142,7 @@ function StatusCell({ row, visitsOnly = false }: { row: PlanVsActualRow; visitsO
     <div className="grid min-w-0 gap-1.5">
       {words.verdict || visit ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          {visitsOnly ? <HalfChip half={row.half} /> : null}
+          {visitsOnly && planActualRowHasHalf(row) ? <HalfChip half={row.half} /> : null}
           {words.verdict ? <Chip className={OUTCOME_STYLES[row.outcome].chip}>{words.verdict}</Chip> : null}
           {visit && !visitsOnly ? <Chip className={KIND_STYLES[visit.kind]}>{visit.kindLabel}</Chip> : null}
           {visit?.enteredByAdmin ? <Chip className="border-slate-300 bg-white text-slate-700">{MISSED_RECORD_MARK}</Chip> : null}
@@ -160,7 +161,7 @@ function StatusCell({ row, visitsOnly = false }: { row: PlanVsActualRow; visitsO
             <div className="flex flex-wrap gap-1.5">
               {words.listChip ? <Chip className="border-slate-200 bg-white text-slate-600">{words.listChip}</Chip> : null}
               {visit.awaitingApproval ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Waiting for approval — not counted yet</Chip> : null}
-              {visit.awaitingValidation ? <Chip className="border-slate-200 bg-white text-slate-600">Not scored yet</Chip> : null}
+              {visit.awaitingValidation ? <Chip className="border-slate-200 bg-white text-slate-600">{visit.archiveHistory ? ARCHIVE_HISTORY_LABEL : "Not scored yet"}</Chip> : null}
               {visit.inVacantTerritory ? <Chip className="border-amber-200 bg-amber-50 text-amber-800">Vacant area</Chip> : null}
             </div>
           ) : null}
@@ -244,7 +245,11 @@ function AddressTimeCell({ row }: { row: PlanVsActualRow }) {
         </Muted>
       ) : null}
       {words.locationNote ? <Muted>{words.locationNote}</Muted> : null}
-      <p className="text-base font-black tabular-nums leading-6 tracking-tight text-slate-950">{managerVisitClock(visit.loggedAt)}</p>
+      {visit.loggedAt ? (
+        <p className="text-base font-black tabular-nums leading-6 tracking-tight text-slate-950">{managerVisitClock(visit.loggedAt)}</p>
+      ) : (
+        <Muted>{COPIED_VISIT_NO_TIME}</Muted>
+      )}
     </div>
   );
 }

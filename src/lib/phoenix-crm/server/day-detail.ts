@@ -92,9 +92,11 @@ export async function loadPhoenixCrmDayDetail(
   // 🔴 THE SAME BASIS AS THE CALENDAR CELL THAT OPENED THIS PAGE. `countsInKpi` is the row's own
   // answer (`visitCountsInKpi`), so the headline here equals the grid's figure; the list below keeps
   // every visit with its status, and what is held back is said in words rather than dropped.
-  const { awaitingApproval, awaitingValidation, counts, pharmacies } = dayDetailCounts(
+  const { archiveHistory, awaitingApproval, awaitingValidation, counts, pharmacies } = dayDetailCounts(
     day.visits.map((visit) => ({
+      archiveHistory: visit.archiveHistory,
       capturedAt: visit.capturedAt,
+      copiedFromOldSystem: visit.copiedFromOldSystem,
       countsInKpi: visit.countsInKpi,
       customerId: visit.customerId,
       customerName: visit.customerName,
@@ -114,6 +116,7 @@ export async function loadPhoenixCrmDayDetail(
 
   return {
     ...day,
+    archiveHistory,
     awaitingApproval,
     awaitingValidation,
     counts,
