@@ -11,6 +11,7 @@ import {
   VISIT_DETAIL_COMMENT_MAX,
   VISIT_DETAIL_EDIT_AGAIN,
   VISIT_DETAIL_EDIT_PROMPT,
+  VISIT_DETAIL_FIXED_HISTORY,
   VISIT_DETAIL_FIXED_LINKED,
   VISIT_DETAIL_FIXED_NO_REP,
   VISIT_DETAIL_FIXED_OTHER_REP,
@@ -129,6 +130,11 @@ export function runPhoenixCrmVisitDetailEditTests(): void {
       visitDetailEditable({ repHrId: "AI-0026", linkedFromVisitId: null, actorHrId: "AI-0025" }),
       { editable: false, reason: VISIT_DETAIL_FIXED_OTHER_REP },
       "another rep's visit stays as they recorded it",
+    );
+    assert.deepEqual(
+      visitDetailEditable({ repHrId: "AI-0025", linkedFromVisitId: null, actorHrId: "AI-0025", importedAt: "2026-10-30T00:07:00Z" }),
+      { editable: false, reason: VISIT_DETAIL_FIXED_HISTORY },
+      "a visit copied from the old system is history, even on his own seat",
     );
     assert.deepEqual(
       visitDetailEditable({ repHrId: null, linkedFromVisitId: null, actorHrId: "B-10" }),

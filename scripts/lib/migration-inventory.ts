@@ -1997,6 +1997,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // {postgres=X/postgres,service_role=X/postgres}. No earlier file defines the function, so there is no pre-image.
   // The ledger's newest row was 20261031195143, and ZERO rows carry this version or name.
   "20261031210456_coaching_skills_survey.sql",
+  // THE IREPORTS360 HISTORY COPY'S REVIEW FIXES — applied to PRODUCTION on 1 Nov 2026 at about 10:25 Cairo, through
+  // scripts/apply-sql-file.mjs (PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of AGENTS.md §8: the
+  // Supabase MCP's apply_migration answered {"status":"declined"}, the import's body holding `drop table pg_temp.…`.
+  // The route writes no ledger row, hence this entry. It replaces three functions and changes no row.
+  //
+  // Read live on ozucdzovmcqvepbozvqf right after the apply. Verified by digest, not by presence: md5(pg_proc.prosrc)
+  // equals the md5 of this file's own dollar-quoted body for all three — phoenix_crm_import_ireports360_history
+  // ec18318767a6bde56ed1ed4bd1ea22ea (was e80f79bd027e8d2e6e51fbf88005e4a9), phoenix_crm_rep_entry_days_on_visit
+  // b43e2c6328eca662c5c5ede6ec3c09f6 (was 9c9b19c5285cb6bd1676401218ab650b), phoenix_crm_edit_visit_detail
+  // b1d012f2948d4d3eb2ed44d88d8cb35a (was 0d1f0ab13e759d9ec0448c302b733681). Each is prosecdef true, proconfig
+  // {search_path=public}, proacl {postgres=X/postgres,service_role=X/postgres}. A one-seat dry run answered 2 in scope,
+  // 2 already imported, 0 to write; the edit refused a copied visit with phoenix_crm:visit_is_history; 69,046 imported
+  // visits and 3,520 imported customers read unchanged. The ledger's newest row was 20261031195143, and ZERO rows
+  // carry this version or name.
+  "20261101101900_phoenix_crm_import_history_review_fixes.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

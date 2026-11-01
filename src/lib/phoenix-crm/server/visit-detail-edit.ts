@@ -93,7 +93,7 @@ export type SavedVisitDetail = {
  * because it is never asked for. Add a column here only after asking whether the rep may see it.
  */
 const VISIT_COLUMNS =
-  "id, seat_id, is_test, visit_date, captured_at, list_type, rep_hr_id, linked_from_visit_id, " +
+  "id, seat_id, is_test, visit_date, captured_at, list_type, rep_hr_id, linked_from_visit_id, imported_from_ireports360_at, " +
   "comment, detail_comment, detail_edited_at, pharmacy_name, product_availability, samples_given, " +
   "next_step, next_step_on, objection, objection_note, customer:phoenix_crm_customers!customer_id(name)";
 
@@ -138,6 +138,7 @@ export async function loadVisitDetailForm(
     repHrId: textOrNull(visit.rep_hr_id),
     linkedFromVisitId: textOrNull(visit.linked_from_visit_id),
     actorHrId: viewer.hrId,
+    importedAt: textOrNull(visit.imported_from_ireports360_at),
   });
   const pharmacy = pharmacyNameAddable({
     listType: String(visit.list_type ?? ""),
@@ -190,6 +191,7 @@ export async function saveVisitDetail(viewer: PhoenixCrmViewer, raw: unknown): P
     repHrId: textOrNull(visit.rep_hr_id),
     linkedFromVisitId: textOrNull(visit.linked_from_visit_id),
     actorHrId: viewer.hrId,
+    importedAt: textOrNull(visit.imported_from_ireports360_at),
   });
   if (!editable.editable) throw validationError(editable.reason);
 

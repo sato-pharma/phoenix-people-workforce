@@ -16,6 +16,7 @@ and is not part of this import.
 | The contact refresh skips an imported customer | `supabase/migrations/20261029212300_the_contact_refresh_skips_imported_customers.sql` |
 | The countable view skips the copy at its root; the history view and the four report functions keep it | `supabase/migrations/20261031160000_phoenix_crm_countable_visits_skip_imported_history.sql` |
 | The indexes for the copy function's lowercased rep ids: old visits, seat occupancy, the double-visit partner. A one-seat plan is index scans only; the largest seat's source query (2,345 visits) runs in 224 ms | `supabase/migrations/20261031170000_phoenix_crm_import_history_indexes.sql` |
+| The review's fixes (2026-11-01): the copy's rules below, the entry-days trigger skips a copied visit, a copied visit's detail cannot be written up | `supabase/migrations/20261101101900_phoenix_crm_import_history_review_fixes.sql` |
 | The runner (dry run, then one seat per transaction) | `scripts/phoenix-crm-import-ireports360-history.ts` |
 | The pins | `tests/phoenix-crm-imported-history.test.ts` |
 
@@ -43,24 +44,50 @@ and is not part of this import.
 - **The visit time** comes from the old visit and is stored as `captured_at`. iReports360 writes Cairo
   wall-clock time but labels it UTC, so the import uses the combined door's own conversion. If the time is
   missing, or falls on another day, the visit reads 12:00 Cairo.
-- **A double visit keeps its partner.** A product manager goes in as `kind = 'product_manager'`; any other
-  partner goes in as `kind = 'double'`.
-- **The seat is the rep's current seat.** A visit he made on a different seat is not copied (*"donot add
+- **A double visit keeps its partner, judged by app role** (`app_auth_users.role`, an active login first, never
+  a test persona), the same list the visit form offers. With no login, his job title stands in for the role.
+  - A product manager, group product manager or training manager, and the marketing manager on CNS, goes in as
+    `kind = 'product_manager'`.
+  - A district, regional or national sales manager goes in as `kind = 'double'`.
+  - Anyone else, a peer rep for example, is no partner: the visit is `single`.
+- **The seat is the rep's current seat.** A visit is copied only if he held this seat that day (*"donot add
   visits here or here"*).
-  - Mostafa Saied's 1,259 visits on the Anti-Infective seat stay in the old history only.
+  - Mostafa Saied's 1,259 visits on the Anti-Infective seat stay in the old history only, and so does a day he
+    spent on a manager's seat.
   - A rep who held the same seat earlier keeps those visits.
-  - A rep who had no seat yet keeps his campaign visits from the days before he joined; they go on his
-    current seat.
-- **Two old visits to one doctor on one day become one row,** because Phoenix allows one visit a day. The
-  second visit's note is appended to the first, and both old ids map to the one row.
-- **The doctor:** the seat's own customer for that doctor, matched by reference id first and then by own id,
-  whatever that customer's status.
+  - A rep who held no seat at all that day keeps only his campaign visits; they go on his current seat.
+- **Two old visits by one rep to one doctor on one day become one row,** because Phoenix allows one visit a
+  day. The second visit's note is appended to the first, and both old ids map to the one row.
+  - **Two reps on one seat who saw one doctor on one day are not merged.** The earlier visit is written. The
+    later one stays unmapped and counted as a conflict, so the List's old-system line keeps counting it.
+- **The doctor:** the seat's own customer for that doctor, matched by reference id first and then by a
+  confirmed identity link (`customer_identity_links`), whatever that customer's status. A doctor the rep added
+  himself has only a Phoenix-only id, so the link is the one thing that can name him. Production holds no such
+  link yet (0 on 2026-11-01), so today this finds nobody extra.
   - **A doctor Phoenix does not have goes to the rep's Archive** (*"Add to Archive"*). The import creates him
     as `dropped`, with archive reason `imported_history`, and he reads *"Visited in the old system, not on
     your Phoenix list"*. The active list does not change.
+  - **An Archive customer whose speciality is pharmacy is a pharmacy,** list type `Pharmacy`, whatever the
+    assignment rows or the AM/PM majority say.
   - **A campaign visit names nobody.** It is filed under a numbered "Campaign visit N" holder on the seat: the
     Nth campaign visit of that day and list goes on holder N. A holder is `campaign_visit_holder = true`. It
     is never on the List, the Archive or the identity candidates, and it never reaches `crm_contacts`.
+  - **The catch-all contact 100000 names nobody either,** so it takes the holder path, as contact 0 does.
+- **A copied visit is history, so the rep cannot write it up.** `visitDetailEditable` and
+  `phoenix_crm_edit_visit_detail` (`phoenix_crm:visit_is_history`) both refuse it: a pharmacy named on one would
+  file an unmarked visit dated before his start.
+- **A pharmacy the import put in the Archive is not one he dropped.** `loadListedPharmacies` leaves it out, so
+  it never refuses Add a pharmacy and never leaves a named pharmacy unfiled. Restored, it loses the mark and is
+  listed again.
+
+**What the rules above do not change:** the review's fixes of 2026-11-01 apply to the next run. The first run's
+rows stand as written until the owner decides otherwise, because repairing them is a bulk production change:
+
+| What the first run wrote | Rows |
+| --- | --- |
+| A terminated training manager's visits, filed as `double` | 218 |
+| Imported pharmacies filed on the AM or PM list | 138 |
+| Archive rows for the catch-all contact 100000 | 5, with 6 visits |
 
 ## The marks
 
@@ -81,7 +108,8 @@ as Phoenix work. Counting the history is the reader that has to ask for it by na
 - **What changed with the root filter:** the adoption board (`phoenix_crm_seat_visit_firsts`) no longer
   reads a copied January visit as the seat's first Phoenix visit.
 - **What did not change:** the entry-days cache (`phoenix_crm_rep_entry_days_calc`), `crm_visits_unified` and
-  `crm_checkins_unified` already started at the team's Phoenix start date, which no copied visit reaches.
+  `crm_checkins_unified` already started at the team's Phoenix start date, which no copied visit reaches. For
+  the same reason the trigger `phoenix_crm_rep_entry_days_on_visit` skips a copied visit (`20261101101900`).
 - The view keeps its `imported_from_ireports360_at` column, always null now, because a view cannot lose one.
 
 **The readers that also skip it by the mark** — each read the raw table or was written before the root
