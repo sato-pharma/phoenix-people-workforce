@@ -333,7 +333,7 @@ export function runRecruitmentManagerCvFoldersTests(): void {
     assert.ok(snapshot.includes('new Set(["District Manager", "Regional Manager", "National Sales Manager"])'), "the row is for the three sales-manager seats");
     for (const centre of ["dsm", "rm", "nsm"]) {
       const source = read(`../src/components/employee-portal/dashboards/${centre}-command-center.tsx`);
-      assert.ok(source.includes("<ManagerCvFoldersRow summary={snapshot.cvFolders} />"), `the ${centre} overview carries the CV folders row`);
+      assert.ok(source.includes("<AwaitCard value={snapshot.cvFolders}>{(summary) => <ManagerCvFoldersRow summary={summary} />}</AwaitCard>"), `the ${centre} overview carries the CV folders row`);
     }
     const row = read("../src/components/employee-portal/dashboards/manager-cv-folders-row.tsx");
     assert.ok(row.includes("if (!summary || summary.totalFolders === 0) return null;"), "a manager with no shelf sees no row at all");

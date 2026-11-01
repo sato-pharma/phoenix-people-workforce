@@ -22,6 +22,14 @@ export function roleExtrasOf(snapshot: PortalHomeSnapshot): Promise<PortalHomeRo
   });
 }
 
+/**
+ * Waits for one card's own read and draws the card — always inside its own Suspense. On the landing the
+ * value is still running; on the Training Manager's page, which reads the whole snapshot, it is already in.
+ */
+export async function AwaitCard<V>({ value, children }: { value: V; children: (resolved: Awaited<V>) => React.ReactNode }) {
+  return <>{children(await value)}</>;
+}
+
 /** Waits for the role extras and draws one section from them — always inside its own Suspense. */
 export async function AwaitRoleExtras({
   extras,

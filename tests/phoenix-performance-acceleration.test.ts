@@ -351,6 +351,42 @@ function testCommandCenterDoubleVisitFocusStreams() {
   );
 }
 
+// "fix the portal home slow opens" (2026-11-01): plan adherence, the interviews, the CV folders and the Early
+// Birds held every landing, and his day held the rep's. None of them changes a figure, so nothing on a screen
+// can catch one of these awaits coming back; the page just gets slow again.
+function testLandingCardsDoNotHoldThePage() {
+  const snapshot = read("src/lib/employee-portal/home-snapshot.ts");
+  assert.match(snapshot, /const streamLandingCards = options\?\.streamLandingCards === true;/, "the cards stream only when the caller asks");
+  for (const [field, promise, empty] of [
+    ["earlyBirdStars", "earlyBirdStarsPromise", "\\[\\]"],
+    ["planAdherence", "planAdherencePromise", "null"],
+    ["myInterviews", "myInterviewsPromise", "\\[\\]"],
+    ["cvFolders", "cvFoldersPromise", "null"],
+  ]) {
+    assert.match(snapshot, new RegExp(`streamLandingCards \\? Promise\\.resolve\\(${empty}\\) : ${promise},`), `RED the snapshot no longer waits for ${field} when it streams`);
+    assert.match(snapshot, new RegExp(`${field}: streamLandingCards \\? ${promise} : ${field},`), `RED the running ${field} read is handed to the page`);
+    assert.match(snapshot, new RegExp(`const ${promise}[^;]*\\.catch\\(\\(\\) => [^)]*\\)`), `${field} never rejects, so its boundary needs no error fallback`);
+  }
+  const page = read("app/employee-portals/page.tsx");
+  assert.match(page, /getPortalHomeSnapshot\(access, \{[^}]*streamLandingCards: true,[^}]*\}\)/, "RED the landing page asks for the cards streamed");
+  assert.doesNotMatch(read("app/api/employee-portals/home/route.ts"), /streamLandingCards/, "the JSON route never asks: a promise serializes to {}");
+  assert.doesNotMatch(read("app/employee-portals/training-manager/page.tsx"), /streamLandingCards/, "and neither does the Training Manager's page, which reads the whole snapshot");
+
+  const centre = read("src/components/employee-portal/portal-command-center.tsx");
+  assert.match(centre, /<Suspense fallback=\{null\}>\s*<BandPlanAdherence adherence=\{planAdherence\} \/>\s*<\/Suspense>/, "RED plan adherence fills under its own Suspense, with no empty square before it");
+  assert.match(centre, /<Suspense fallback=\{null\}>\s*<BandInterviews interviews=\{myInterviews\} \/>\s*<\/Suspense>/, "RED and the interviews under theirs");
+  for (const file of [
+    "src/components/employee-portal/dashboards/dsm-command-center.tsx",
+    "src/components/employee-portal/dashboards/nsm-command-center.tsx",
+    "src/components/employee-portal/dashboards/rm-command-center.tsx",
+    "src/components/employee-portal/dashboards/marketing-manager-command-center.tsx",
+  ]) {
+    const source = read(file);
+    assert.match(source, /<Suspense fallback=\{null\}>\s*<AwaitCard value=\{earlyBirdStars\}>/, `RED ${file}: the Early Birds fill under their own Suspense`);
+    if (!file.includes("marketing")) assert.match(source, /<Suspense fallback=\{null\}>\s*<AwaitCard value=\{snapshot\.cvFolders\}>/, `RED ${file}: the CV folders fill under their own Suspense`);
+  }
+}
+
 function testOrganogramStartsItsReadsTogether() {
   const source = read("src/lib/reports/organogram-au-source.ts");
   const body = functionBody(source, "buildOrganogramSeatReport");
@@ -383,6 +419,7 @@ export async function runPhoenixPerformanceAccelerationTests() {
   testCrmPlanAndCalendar();
   testCommandCenterCompliance();
   testCommandCenterDoubleVisitFocusStreams();
+  testLandingCardsDoNotHoldThePage();
   testBusinessReview();
   testOrganogramStartsItsReadsTogether();
   testCrmVisitFormAndSave();

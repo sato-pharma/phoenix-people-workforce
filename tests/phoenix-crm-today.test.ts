@@ -254,13 +254,14 @@ export function runPhoenixCrmTodayTests(): void {
   // still has to reach Team first, which is what this keeps.
   {
     const app = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/phoenix-crm-app.tsx", import.meta.url), "utf8"));
-    const start = app.indexOf("function openingTab(");
+    const rules = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/opening-tab.ts", import.meta.url), "utf8"));
+    const start = rules.indexOf("function openingTab(");
     assert.notEqual(start, -1);
-    const body = app.slice(start, start + 800);
+    const body = rules.slice(start, start + 800);
     assert.notEqual(body.indexOf('decisions > 0) return "team"'), -1, "the Team branch is still there");
     assert.ok(!body.includes('return "today"'), "and nothing opens on Today any more");
 
-    const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
+    const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(rules)?.[1] ?? "";
     // NINE since the CNS daily forecast became its own tab on his word (2026-10-01), after the team
     // calendar (2026-09-30) — Today left and neither of them is Today creeping back. TEN since the Super
     // Admin's own Test accounts tab (owner, 2026-10-22). TAB_COLUMNS carries a 10 rule.
@@ -447,7 +448,10 @@ export function runPhoenixCrmTodayTests(): void {
     // The landing page's own rules: no empty square, and nothing that judges him.
     assert.ok(panel.includes("if (!plan) return null;"), "no day, no panel — never the empty square he has sworn at");
     // The COLUMN goes with it: a 1fr grid track holding nothing is that same empty square.
-    assert.ok(centre.includes('${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}'), "and the two-column split collapses when there is no day");
+    // Since 2026-11-01 his day fills under Suspense, so the condition moved into the CSS: the split
+    // holds only while the row has a child marked as the day's column.
+    assert.ok(centre.includes("@3xl:has-[>[data-rep-day]]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"), "and the two-column split collapses when there is no day");
+    assert.ok(/async function RepDayColumn[\s\S]{0,160}if \(!day\) return null;/.test(centre), "a day that answers null removes the column, marker and all");
     // 🔴 THE FOUR KPI TILES STACK 2x2 WHENEVER THE DAY IS BESIDE THEM, AND THE CONDITION IS THE DAY,
     //    NEVER A WIDTH. He asked for this stack twice on 2026-09-30 — the second time because the
     //    first fix leant on `@3xl:grid-cols-4` and a container query, which was MEASURED not to hold:
@@ -456,8 +460,12 @@ export function runPhoenixCrmTodayTests(): void {
     //    left column finished 143px short of the day. Re-introducing any width query here puts the
     //    asymmetry back on the one screen he actually works on.
     assert.ok(
-      centre.includes('${repTodayPlan ? "grid-cols-2" : "grid-cols-2 @3xl:grid-cols-4"}'),
+      centre.includes('"grid grid-cols-2 gap-2 @3xl:grid-cols-4 group-has-[>[data-rep-day]]/rep-day:grid-cols-2"'),
       "the KPI tiles are 2x2 whenever there is a day beside them, and four across only when there is not",
+    );
+    assert.ok(
+      !/@[\w-]+:group-has-\[>\[data-rep-day\]\]/.test(centre),
+      "the 2x2 override carries no width query — the condition is the day, never a width",
     );
     assert.ok(
       !centre.includes('"grid grid-cols-2 gap-2 @3xl:grid-cols-4"'),
@@ -514,7 +522,8 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(loader.includes('timeZone: "UTC",'), "the day label is formatted as UTC — it is a calendar day, not an instant");
 
     // It is wired in, for the rep and through the one switch.
-    assert.ok(centre.includes("<RepTodayPlanPanel plan={repTodayPlan} />"), "the rep's landing page draws it");
+    assert.ok(centre.includes("<RepDayColumn plan={repTodayPlan} />"), "the rep's landing page draws it");
+    assert.ok(centre.includes("<RepTodayPlanPanel plan={day} />"), "through the panel");
     const home = source("app/employee-portals/page.tsx");
     // Loaded BESIDE the home snapshot, not after it (2026-10-01, "slow to transfer between page and
     // page"): started first, awaited once the snapshot is in. It never rejects, which is what makes
@@ -529,7 +538,13 @@ export function runPhoenixCrmTodayTests(): void {
     const snapshot = home.indexOf("snapshot = await getPortalHomeSnapshot(access");
     assert.ok(started !== -1, "and the page loads it");
     assert.ok(snapshot !== -1 && started < snapshot, "starting it before the home snapshot is awaited, so the two run together");
-    assert.ok(home.includes("const repTodayPlan = await repTodayPlanPromise;"), "and waiting for it only after");
+    // 🔴 AND NEVER WAITING FOR IT AT ALL (2026-11-01, "fix the portal home slow opens"): his day is the
+    // slowest read on the landing, so an await here holds the rep's whole page behind one panel.
+    assert.ok(!home.includes("await repTodayPlanPromise"), "the page never waits for his day");
+    assert.ok(home.includes("repTodayPlan={repTodayPlanPromise}"), "it hands the read over still running");
+    const suspended = centre.indexOf("<RepDayColumn plan={repTodayPlan} />");
+    assert.ok(centre.lastIndexOf("<Suspense", suspended) > centre.lastIndexOf("</Suspense>", suspended), "and his day fills under its own Suspense");
+    assert.ok(/data-rep-day="">\s*<RepPanelLoading title="Your day" \/>/.test(centre), "marked as the day's column while it loads, so the row keeps its shape");
   }
 
   // ── AM · PM · PHARMACIES — the rule the third chip prints ───────────────────────────────────────

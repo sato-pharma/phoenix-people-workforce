@@ -1276,11 +1276,11 @@ function runWiringTests() {
   assert.match(domainSrc2, /export async function listMyUpcomingInterviews\(/, "the domain lists a person's own upcoming interviews");
   assert.match(domainSrc2, /export async function listInterviewsForCalendarFeed\(/, "the domain lists a person's interviews for the .ics feed");
   const snapshot = stripComments(read("src/lib/employee-portal/home-snapshot.ts"));
-  assert.match(snapshot, /myInterviews: PortalMyInterview\[\]/, "the portal snapshot carries the person's own interviews");
+  assert.match(snapshot, /myInterviews: Streamed<PortalMyInterview\[\]>/, "the portal snapshot carries the person's own interviews");
   assert.match(snapshot, /loadMyUpcomingInterviews\(access\)/, "the snapshot computes them");
   const band = stripComments(read("src/components/employee-portal/portal-command-center.tsx"));
   assert.match(band, /<MyInterviewsCard interviews=\{myInterviews\} \/>/, "the identity band renders the My interviews card");
-  assert.match(band, /myInterviews: PortalMyInterview\[\];/, "the band takes myInterviews as a required prop (no landing surface can drop it)");
+  assert.match(band, /myInterviews: Streamed<PortalMyInterview\[\]>;/, "the band takes myInterviews as a required prop (no landing surface can drop it)");
   for (const file of [
     "src/components/employee-portal/portal-command-center.tsx",
     "src/components/employee-portal/dashboards/rm-command-center.tsx",
