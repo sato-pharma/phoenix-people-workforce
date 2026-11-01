@@ -41,6 +41,8 @@ import {
   managerCustomerFlagLabel,
   managerAskStage,
   managerDayHalves,
+  managerPlanConversationOpen,
+  managerPlanConversationView,
   managerPlannerTitle,
   managerPlanStage,
   managerPlanStatusLabel,
@@ -70,6 +72,7 @@ import {
   returnStageOfApproved,
   type ManagerCustomerFlag,
   type ManagerHalf,
+  type ManagerPlanConversationView,
   type ManagerPlannerKind,
   type ManagerPlanScope,
   type ManagerPlanStage,
@@ -415,6 +418,8 @@ export type ManagerBoardPlan = {
   secondApproverName: string | null;
   /** HR acknowledged the approved week by itself — a regional, national or product manager's only. */
   hrAcknowledged: boolean;
+  /** The week's conversation; null until the week has been sent (owner, 2026-11-01). */
+  conversation: ManagerPlanConversationView | null;
 };
 
 export type ManagerPlanBoardView = {
@@ -768,6 +773,16 @@ async function buildBoard(
     firstApproverName: firstApprover ? nameOf(names, firstApprover) : null,
     secondApproverName: secondApprover ? nameOf(names, secondApprover) : null,
     hrAcknowledged: plan?.hrAcknowledgedAt != null,
+    conversation:
+      plan && managerPlanConversationOpen(plan)
+        ? managerPlanConversationView({
+            planId: plan.planId,
+            isTest,
+            managerName: nameOf(names, managerHrId),
+            approverNames: [plan.firstApproverHrId ? nameOf(names, plan.firstApproverHrId) : null, plan.secondApproverHrId ? nameOf(names, plan.secondApproverHrId) : null],
+            self: managerHrId === viewer.hrId,
+          })
+        : null,
   };
 
   view.reps = team
@@ -1273,7 +1288,7 @@ function noticeSeat(viewer: Pick<PhoenixCrmViewer, "org">, plan: Pick<ManagerPla
   return plan.plannerKind === "dm" ? managerPlanSeatOf(viewer, plan.managerHrId) : seniorPlanSeatOf(viewer, plan.managerHrId);
 }
 
-async function tellManagerPlan(viewer: Pick<PhoenixCrmViewer, "org">, plan: ManagerPlanRow, notice: Omit<ManagerPlanNotice, "kind" | "seat" | "managerHrId" | "weekStart" | "planId" | "plannerKind">, isTest: boolean): Promise<void> {
+export async function tellManagerPlan(viewer: Pick<PhoenixCrmViewer, "org">, plan: ManagerPlanRow, notice: Omit<ManagerPlanNotice, "kind" | "seat" | "managerHrId" | "weekStart" | "planId" | "plannerKind">, isTest: boolean): Promise<void> {
   const seat = noticeSeat(viewer, plan);
   if (!seat && !isSeatlessPlannerKind(plan.plannerKind)) return;
   await notifyPhoenixCrm(

@@ -109,6 +109,7 @@ const EVENT_TYPES = [
   "manager_single_visit_day_decided",
   "manager_single_visit_day_expired",
   "manager_plan_with_you",
+  "manager_plan_conversation",
   // Every type that once emailed — now ordinary: never email, the phone allowed.
   ...FORMERLY_EMAILED_EVENT_TYPES,
 ];

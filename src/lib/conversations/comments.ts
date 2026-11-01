@@ -18,7 +18,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export const RECORD_CONVERSATION_MAX_LENGTH = 2000;
 
 /** The record types a conversation can hang off. Matches the table's `module` CHECK constraint. */
-export type ConversationModule = "direct_orders" | "marketing_requests";
+export type ConversationModule = "direct_orders" | "marketing_requests" | "manager_plans";
 
 export type RecordConversationComment = {
   authorHrId: string | null;

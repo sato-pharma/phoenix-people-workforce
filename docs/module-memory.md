@@ -107,6 +107,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 12 more |
 | `phoenix-crm-manager-customer-marks` — Phoenix CRM — the marks on each customer of a manager's plan board | `src/lib/phoenix-crm/manager-customer-marks-rules.ts` and 4 more |
 | `phoenix-crm-manager-ride-alongs` — Phoenix CRM — a manager's half-day with another manager | `src/lib/phoenix-crm/manager-plan-rules.ts` and 12 more |
+| `phoenix-crm-manager-plan-conversation` — Phoenix CRM — the conversation on a manager's week | `src/lib/phoenix-crm/server/manager-plan-conversation.ts` and 4 more |
 | `phoenix-crm-manager-plan-training-manager` — Phoenix CRM — the Training Manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 6 more |
 | `phoenix-crm-validation` — Phoenix CRM — validating a place: the signboard, the refusal, the merge | `src/lib/phoenix-crm/{signboard-rules,schedule-rules,shared-place-rules,shared-place-groups,place-match-groups,validation-feedback,duplicate-merge-rules,validation-review-filters,place-photo-size,photo-reading-rules}.ts` and 8 more |
 | `phoenix-crm-place-checks` — Phoenix CRM — the Place checks page: groups, the same-place comparison and the decisions | `src/lib/phoenix-crm/{shared-place-groups,place-match-groups,customer-match-groups,validation-review-filters}.ts` and 15 more |

@@ -321,6 +321,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("manager-plans/customers/removal", "read"),
   post("manager-plans/customers/removal/decide", "read"),
   // His ask for a second or third day of single visits (owner, 2026-10-20).
+  // The week's conversation (owner, 2026-11-01): read at the door, narrowed in the service to whoever opens that week.
+  get("manager-plans/conversation"),
+  post("manager-plans/conversation", "read"),
   get("manager-plans/single-visit-days"),
   post("manager-plans/single-visit-days", "read"),
   post("manager-plans/single-visit-days/decide", "read"),

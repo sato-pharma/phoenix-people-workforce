@@ -73,6 +73,9 @@ import {
   parseManagerSlotDraft,
   vacantVisitPlaceError,
   visitPlaceText,
+  managerPlanConversationAudience,
+  managerPlanConversationOpen,
+  managerPlanConversationView,
   managerPlanWithYou,
   holdsPlannedDoctors,
   type ManagerPlanStatus,
@@ -106,6 +109,7 @@ import {
   managerPlanDeciderRole,
   managerPlanReach,
   managerTeamSeats,
+  mayOpenManagerRecord,
   readsManagerPlanOf,
   resolveManagerPlanReader,
 } from "../src/lib/phoenix-crm/server/manager-plan-reach.ts";
@@ -569,7 +573,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("manager_plan_edit_expired"), "the expired ask goes in-app and by Telegram only");
   const policy = source("src/lib/notifications/policy.ts");
   const managerPolicies = policy.split("\n").filter((line) => /"phoenix_crm\.manager_(plan|list)_[a-z_]+":/.test(line));
-  assert.equal(managerPolicies.length, 10, "ten manager-plan notices are registered");
+  assert.equal(managerPolicies.length, 11, "eleven manager-plan notices are registered");
   for (const line of managerPolicies) assert.equal(line.includes("\"email\""), false, `never email: ${line.trim().slice(0, 60)}`);
   const inApp = source("src/lib/notifications/in-app.ts");
   for (const key of ["manager_plan_waiting", "manager_plan_edit_waiting", "manager_list_removal_waiting"]) {
@@ -1138,15 +1142,15 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
   const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
-  // The seventeenth: the marks on each doctor he plans with, a GET (owner, 2026-10-23).
-  assert.equal(routeFiles.length, 17, "the seventeen manager-plan routes");
+  // The seventeenth: the marks on each doctor he plans with, a GET (owner, 2026-10-23). The eighteenth: the week's conversation, a GET and a POST (owner, 2026-11-01).
+  assert.equal(routeFiles.length, 18, "the eighteen manager-plan routes");
   for (const file of routeFiles) {
     const text = source(file);
     assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 22, "twenty-two declarations across the seventeen routes");
+  assert.equal(registry.length, 24, "twenty-four declarations across the eighteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // 🔴 `read` at the door makes the SERVICE the gate: a Medical Rep holds `read` too. So each of the ten
@@ -1186,6 +1190,8 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     // His ask for a second or third day of single visits (owner, 2026-10-20).
     { route: "/api/phoenix-crm/manager-plans/single-visit-days", service: "askSingleVisitDay", file: dayAsksFile, gate: [writerGate, /writer\.kind !== "dm"/] },
     { route: "/api/phoenix-crm/manager-plans/single-visit-days/decide", service: "decideSingleVisitDay", file: dayAsksFile, gate: [/managerAskDeciderRole\(viewer/] },
+    // The week's conversation (owner, 2026-11-01): whoever opens that week in the Approvals Hub, nobody else.
+    { route: "/api/phoenix-crm/manager-plans/conversation", service: "postManagerPlanConversation", file: "src/lib/phoenix-crm/server/manager-plan-conversation.ts", gate: [/openConversationWeek\(viewer/] },
   ];
   const registeredPosts = accessRegistry
     .filter((entry) => entry.pattern.startsWith("/api/phoenix-crm/manager-plans") && entry.methods.includes("POST"))
@@ -2232,4 +2238,81 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // Calendars name the person: the district manager's own line and the planning calendar read "With Hany Saad".
   assert.equal(managerHalfDayText({ kind: "with_senior", activityLabel: null, areaName: "Alex Center" }, null, "Hany Saad"), "With Hany Saad · Alex Center");
   assert.equal(managerHalfDayText({ kind: "with_senior", activityLabel: null, areaName: "Alex Center" }, null), "With a manager or product manager · Alex Center");
+
+  // ── The week's conversation (owner, 2026-11-01) ───────────────────────────────────────────────
+
+  // It opens at the first send and stays open: a reopened week keeps `submitted_at`, so the thread never vanishes.
+  assert.equal(managerPlanConversationOpen({ submittedAt: null }), false, "a week never sent has nobody on its approval, so no conversation");
+  assert.equal(managerPlanConversationOpen({ submittedAt: "2026-10-30T08:00:00.000Z" }), true, "once sent it is open, at any status after that");
+
+  // The people in the approval window read and reply; the rule is the hub's own, so the two cannot disagree.
+  assert.equal(mayOpenManagerRecord(rep, "B-12", []), false, "a rep never reads a manager's conversation");
+  assert.equal(mayOpenManagerRecord(otherDm, "B-12", ["PD-0001"]), false, "nor another district manager who is not on its approval");
+  assert.equal(mayOpenManagerRecord(otherDm, "B-12", ["B-76"]), true, "the approver stored on the week does, wherever he sits");
+  assert.equal(mayOpenManagerRecord(hany, "PD-0040", []), true, "the manager above him does");
+  assert.equal(mayOpenManagerRecord(dm, "B-12", []), true, "and so does the manager himself");
+
+  // Who is told: the manager, the approval, and anyone who has already written; never the writer, never twice.
+  assert.deepEqual(
+    managerPlanConversationAudience({ managerHrId: "PD-0012", approverHrIds: ["PD-0001", null, "PD-0001", "A-8"], authorHrIds: ["B-10", "PD-0012", null], actorHrId: "A-8" }),
+    ["PD-0012", "PD-0001", "B-10"],
+    "one notice per person, the manager first and the writer left out",
+  );
+  assert.deepEqual(
+    managerPlanConversationAudience({ managerHrId: "PD-0012", approverHrIds: ["PD-0001"], authorHrIds: [], actorHrId: "PD-0012" }),
+    ["PD-0001"],
+    "the manager writing tells his approver and not himself",
+  );
+
+  // The thread names the people it tells, on both screens.
+  const conversationOnBoard = managerPlanConversationView({ planId: UUID_B, isTest: false, managerName: "Mohamed Alaa", approverNames: ["Hany Saad", null], self: true });
+  assert.equal(conversationOnBoard.url, `/api/phoenix-crm/manager-plans/conversation?plan=${UUID_B}`, "the plan travels in the address the thread reads and posts to");
+  assert.match(conversationOnBoard.note, /^You and Hany Saad are told of every message in-app, by Telegram and on the phone\./, "his own screen says You");
+  assert.doesNotMatch(conversationOnBoard.note, /email/i, "and never promises an email");
+  const conversationInHub = managerPlanConversationView({ planId: UUID_B, isTest: true, managerName: "Mohamed Alaa", approverNames: ["Hany Saad", "Ali Mohamed Ali"], self: false });
+  assert.ok(conversationInHub.url.endsWith("&test=true"), "a test week stays a test week");
+  assert.match(conversationInHub.note, /^Mohamed Alaa, Hany Saad and Ali Mohamed Ali are told/, "an approver reads every name");
+  assert.match(managerPlanConversationView({ planId: UUID_B, isTest: false, managerName: "Mohamed Alaa", approverNames: [], self: false }).note, /^Mohamed Alaa is told/, "one person reads as one");
+
+  // The notice: its own event type, the message in full, and every message its own notice.
+  const conversationNotice = {
+    kind: "manager_plan" as const,
+    seat: PDM,
+    managerHrId: "PD-0012",
+    recordId: UUID_A,
+    planId: UUID_B,
+    weekStart: "2026-10-31",
+    customerName: null,
+    byAdministrator: false,
+    step: "conversation" as const,
+    recipientHrId: "PD-0012",
+    actorHrId: "PD-0001",
+    version: null,
+    note: "Move Tuesday to the afternoon",
+    messageId: "message-1",
+  };
+  const [toManager] = managerPlanDeliveries(conversationNotice, withYouNames);
+  assert.ok(toManager, "the manager is told");
+  assert.equal(toManager.eventType, "manager_plan_conversation");
+  assert.deepEqual(toManager.recipients, ["PD-0012"]);
+  assert.equal(toManager.title, "New message on your weekly plan", "the manager reads it as his own week");
+  assert.ok(toManager.message.includes("Move Tuesday to the afternoon"), "the message is in the notice in full");
+  assert.ok(!PHOENIX_CRM_EMAIL_EVENT_TYPES.includes("manager_plan_conversation"), "it never emails, as no Phoenix CRM notice of his week does");
+  assert.ok(!PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("manager_plan_conversation"), "and it reaches the phone, as the note on the thread promises");
+  const [toApprover] = managerPlanDeliveries({ ...conversationNotice, recipientHrId: "PD-0001" }, withYouNames);
+  assert.equal(toApprover?.title, "New message on Mohamed Alaa's weekly plan", "an approver is told whose week it is");
+  assert.equal(toApprover?.path, toManager.path, "both land on the one page holding the thread");
+  assert.notEqual(toApprover?.idempotencyKey, toManager.idempotencyKey, "two people are two notices");
+  const [second] = managerPlanDeliveries({ ...conversationNotice, messageId: "message-2" }, withYouNames);
+  assert.notEqual(second?.idempotencyKey, toManager.idempotencyKey, "a second message is never swallowed as a repeat of the first");
+
+  // The thread stands on both screens, closed behind its button on his board and open beside the decision.
+  assert.match(source("src/components/phoenix-crm/manager-plan-board.tsx"), /<RecordConversationThread base=\{plan\.conversation\.url\}[^>]*startClosed/, "his board opens it from a button");
+  assert.match(source("src/components/approvals-hub/manager-plan-request-detail.tsx"), /<RecordConversationThread\b/, "the approval window shows it");
+  assert.doesNotMatch(source("src/lib/phoenix-crm/server/manager-plan-conversation.ts"), /conversations\/notify/, "never the shared notifier, which emails the thread");
+  assert.match(
+    readFileSync(join(process.cwd(), "supabase/migrations/20261101114105_record_conversation_manager_plans.sql"), "utf8"),
+    /check \(module in \('direct_orders', 'marketing_requests', 'manager_plans'\)\)/,
+    "the table accepts the week's messages, or every post would fail on its check",
+  );
 }

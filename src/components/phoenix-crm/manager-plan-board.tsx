@@ -41,6 +41,7 @@
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 
+import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import { AdminDelete } from "@/components/phoenix-crm/admin-delete";
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { countText, plural } from "@/components/phoenix-crm/format";
@@ -638,6 +639,12 @@ export function ManagerPlanBoard({
               <span className="mt-1 block">Only {days.find((entry) => entry.date === plan.returnedDay)?.dateText ?? plan.returnedDay} is open to change.</span>
             ) : null}
           </CrmNote>
+          {/* The week's conversation (owner, 2026-11-01): the same thread its approvers read in the Approvals Hub. */}
+          {plan.conversation ? (
+            <div className="mt-3">
+              <RecordConversationThread base={plan.conversation.url} key={plan.planId} note={plan.conversation.note} startClosed />
+            </div>
+          ) : null}
           {view.adminDeletes && plan.planId ? (
             <div className="mt-3">
               <AdminDelete

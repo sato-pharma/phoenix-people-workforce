@@ -827,3 +827,25 @@ companion read *"Product or training manager"*.
 no-seat check to `tm`, adds `scope_region_code` with its check, adds `with_area` to the slot kinds and
 the district-manager check, and replaces `phoenix_crm_save_manager_plan_slot`. Pinned by
 `tests/phoenix-crm-training-manager-plan.test.ts`.
+
+## The week's conversation (owner, 2026-11-01)
+
+> *"in new managers weekly plan i want an option to open conversation and people in approval window visible to it today the weekly plan have no conversation"*
+
+A manager's week can now hold a conversation between him and the people on its approval.
+
+**Where it shows.** On his Phoenix CRM board under the week's note, closed behind an "Open conversation" button with the message count. In the Approvals Hub page of that week it is open, under the decision buttons. Both read the same thread.
+
+**When it opens.** At the first send, and it stays open at every status after that. `submitted_at` is the test because a reopen keeps it, so the thread never disappears while a week is back in draft. Before the first send there is no thread, because the board promises that nothing reaches his manager until he presses Send.
+
+**Who reads and replies.** Whoever opens that week in the hub (`mayOpenManagerRecord`): the manager, the managers above him, SFE, the CEO, the Super Admin, and any approver stored on the week or on one of its asks to edit. A rep never does. Anyone else gets "not found", never a hint that the week exists.
+
+**Who is told of a message.** The manager, the stored approvers, whoever decided, the approvers of a live ask to edit, and anyone who has already written, minus the writer, once each (`managerPlanConversationAudience`). The notice is `manager_plan_conversation`, in-app, by Telegram and to the phone, carries the message in full and opens the week's hub page. Every message has its own key, so a second one is never swallowed as a repeat.
+
+**No email.** It goes through `tellManagerPlan`, not `src/lib/conversations/notify.ts`, because that one mails the thread and the district manager's plan emails nobody (`PHOENIX_CRM_EMAIL_EVENT_TYPES`).
+
+**The route.** `/api/phoenix-crm/manager-plans/conversation`, GET and POST, behind `phoenix_crm` `read` and narrowed in the service by `openConversationWeek`. The plan and the test flag are in the query string because the thread component posts to the same address it reads.
+
+**The legacy Plans-tab form** has its own thread and is untouched.
+
+**The migration.** `20261101114105_record_conversation_manager_plans.sql` adds `manager_plans` to the table's module check. Pinned by the conversation section of `tests/phoenix-crm-manager-plan.test.ts`.
