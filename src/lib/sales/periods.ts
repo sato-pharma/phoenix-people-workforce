@@ -76,6 +76,9 @@ export function periodDayIso(period: string, day: number): string {
   return `${period}-${String(day).padStart(2, "0")}`;
 }
 
+/** What the Channels by Rep tab sends to ask for every month. Here so the tab and its server agree. */
+export const CHANNELS_BY_REP_WHOLE_HISTORY = "all";
+
 /** Human label: "2026-04" → "April 2026" (distinct from format.ts periodLabel(year, month)). */
 export function periodProseLabel(period: string | null): string {
   if (!period) return "All time";

@@ -64,8 +64,97 @@ function assertPriceJoinCanHash(body: string, file: string): void {
   );
 }
 
+// A CTE named once is inlined, and its expression is copied into every place that reads the column.
+// `rp.channel` is read by six FILTERs, so the classifier ran six times a row: 140,538 calls for 23,423
+// rows in one month, 32.9 s of 34.1 s (staging, 2026-11-01). Rows equal on these six columns are one
+// row to the classifier and the seat join, so each group is classified once. Drop a column from the
+// GROUP BY and two different answers are merged into one, which is why the whole list is pinned.
+const CLASSIFIED_GROUP =
+  "from rows_in_scope t group by t.client_name, t.client_code, t.distributor_code, t.invoice_period, t.official_line, t.area_code";
+
+function assertClassifiedOnce(body: string, file: string): void {
+  assert.ok(
+    body.includes("tagged as materialized ("),
+    `RED Channels by Rep must keep its classifying CTE MATERIALIZED, or the call is copied into all six FILTERs (${file})`,
+  );
+  assert.ok(
+    body.includes("from grouped t cross join rule"),
+    `RED Channels by Rep must classify the grouped rows, not every import row (${file})`,
+  );
+  assert.ok(
+    body.includes(CLASSIFIED_GROUP),
+    `RED Channels by Rep must group on every column the classifier and the seat join read (${file})`,
+  );
+  assert.equal(
+    body.split("public.phx_customer_channel(").length - 1,
+    1,
+    `RED Channels by Rep must name the classifier exactly once (${file})`,
+  );
+}
+
+// phx_squash_customer_name is replace(fold(name), ' ', ''), so calling it re-folded a name the
+// classifier had just folded: half of what a call cost. The search_path is written out because it
+// came from an ALTER (20260929215727), so a CREATE OR REPLACE without it silently removes it.
+function assertClassifierFoldsOnce(definition: string, file: string): void {
+  assert.ok(
+    definition.includes("v_squashed text := replace(v_spaced, ' ', '')"),
+    `RED phx_customer_channel must squash the name it already folded (${file})`,
+  );
+  assert.equal(
+    definition.split("phx_fold_customer_name(").length - 1,
+    1,
+    `RED phx_customer_channel must fold each name once (${file})`,
+  );
+  assert.ok(
+    !definition.includes("phx_squash_customer_name("),
+    `RED phx_customer_channel must not fold the name a second time through phx_squash_customer_name (${file})`,
+  );
+  assert.ok(
+    definition.includes("set search_path to 'public', 'pg_temp'"),
+    `RED phx_customer_channel must keep its pinned search_path (${file})`,
+  );
+}
+
+/** Everything from the CREATE up to the closing $function$, lower-cased and on one line. */
+function newestDefinition(name: string): { definition: string; file: string } {
+  const { file } = newestBody(name);
+  const sql = stripSqlComments(readFileSync(path.join(MIGRATIONS, file), "utf8"));
+  const start = sql.search(new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${name}\\s*\\(`, "i"));
+  const open = sql.indexOf("$function$", start);
+  const close = sql.indexOf("$function$", open + "$function$".length);
+  return { definition: sql.slice(start, close).toLowerCase().replace(/\s+/g, " "), file };
+}
+
 export function runSalesChannelsByRepClosingValueTests() {
   const { body, file } = newestBody("phx_sales_channels_by_rep");
+
+  assertClassifiedOnce(body, file);
+  const brokeOnce = (nextBody: string, expect: RegExp) => {
+    assert.throws(() => assertClassifiedOnce(nextBody, file), expect);
+  };
+  brokeOnce(body.replace("tagged as materialized (", "tagged as ("), /keep its classifying CTE MATERIALIZED/);
+  brokeOnce(body.replace("from grouped t cross join rule", "from rows_in_scope t cross join rule"), /classify the grouped rows/);
+  brokeOnce(body.replace(CLASSIFIED_GROUP, CLASSIFIED_GROUP.replace("t.invoice_period, ", "")), /every column the classifier/);
+  brokeOnce(`${body} public.phx_customer_channel(`, /name the classifier exactly once/);
+
+  const classifier = newestDefinition("phx_customer_channel");
+  assertClassifierFoldsOnce(classifier.definition, classifier.file);
+  const brokeFold = (nextDefinition: string, expect: RegExp) => {
+    assert.throws(() => assertClassifierFoldsOnce(nextDefinition, classifier.file), expect);
+  };
+  brokeFold(
+    classifier.definition.replace("v_squashed text := replace(v_spaced, ' ', '')", "v_squashed text := public.phx_squash_customer_name(p_client_name)"),
+    /squash the name it already folded/,
+  );
+  brokeFold(`${classifier.definition} public.phx_fold_customer_name(p_client_name)`, /fold each name once/);
+  brokeFold(`${classifier.definition} public.phx_squash_customer_name(p_client_name)`, /through phx_squash_customer_name/);
+  brokeFold(classifier.definition.replace("set search_path to 'public', 'pg_temp'", ""), /keep its pinned search_path/);
+
+  // Above what the whole history takes, so its answer reaches the tab before the client gives up.
+  assert.ok(
+    SRC.includes("getSupabaseAdmin({ requestTimeoutMs: CHANNELS_BY_REP_REQUEST_TIMEOUT_MS })"),
+    "Channels by Rep must read through its own request budget: the default 15 s is shorter than the whole history takes",
+  );
 
   assertPriceJoinCanHash(body, file);
   const broke = (nextBody: string, expect: RegExp) => {

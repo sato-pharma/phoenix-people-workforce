@@ -9086,12 +9086,14 @@ tree plus the sales-only seats, read only by the sales reads that follow the mon
 
 **Consequences worth knowing.**
 
-- Sahar still answers for Sharkia in July, August and September, because a published month is never changed
-  and that semester figure feeds what a manager is paid. Seat area scope reads current map rows, so
-  `AREAS_KEPT_FOR_EARLIER_MONTHS` in `src/lib/org/sales-only-seats.ts` keeps both areas in her bound for months
-  before October, and only for her seat: her closing, Sales vs Target, team performance and Targets all follow the
-  month. The old sales dashboard's per-person view is the one exception: it reads several months at once and
-  pushes the area list into the database, so it omits Sharkia for her past months. It decides no pay.
+- The Delta (2) seat keeps Sharkia in July, August and September, because a published month is never changed.
+  Those months were not Sahar's. She was hired on 2026-10-24; the seat was held by Ahmed Mohamed Ahmed Mohamed
+  Heikal until 2026-08-01 and by Ahmed Elsayed Ahmed Ibrahim from 2026-08-08 to 2026-10-01. The engine names a
+  seat's CURRENT holder on past months, so they read under her name; never quote that as who ran them. Seat area
+  scope reads current map rows, so `AREAS_KEPT_FOR_EARLIER_MONTHS` in `src/lib/org/sales-only-seats.ts` keeps both
+  areas in that seat's bound for months before October, and only for that seat: the closing, Sales vs Target, team
+  performance and Targets all follow the month. The old sales dashboard's per-person view is the one exception: it
+  reads several months at once and pushes the area list into the database, so it omits Sharkia for those months.
 - Sharkia's team now gets the target-upload email through Hany, where it went through Sahar's team before.
 - The weekly nameless-branch fallback for Delta (2) now spreads over 4 Pedia areas, not 6. The total is unchanged.
 
