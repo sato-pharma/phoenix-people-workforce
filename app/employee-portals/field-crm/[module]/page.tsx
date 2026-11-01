@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { CrmFirstReadProvider } from "@/components/phoenix-crm/first-read";
 import { PhoenixCrmNewNotices } from "@/components/phoenix-crm/new-badge";
 import { PhoenixCrmNoticesSeen } from "@/components/phoenix-crm/notices-seen";
 import { PhoenixCrmApp } from "@/components/phoenix-crm/phoenix-crm-app";
@@ -10,6 +11,7 @@ import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { startPhoenixCrmFirstRead } from "@/lib/phoenix-crm/server/first-read";
 import { loadPhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/server/unread-notices";
 import type { PhoenixCrmUnreadByModule } from "@/lib/phoenix-crm/notice-badge-rules";
 import type { PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
@@ -93,6 +95,8 @@ export default async function PhoenixCrmModulePage({
         </EmployeePortalPageShell>
       );
     }
+    // The tab's first read, started now and never awaited: it rides in this page's stream (first-read.ts).
+    const firstRead = await startPhoenixCrmFirstRead(access, load.overview, moduleKey, "portal");
     return (
       <EmployeePortalPageShell badge="CRM" description={`Phoenix CRM · ${label}`} title={label}>
         <div className="grid min-w-0 gap-3">
@@ -106,7 +110,9 @@ export default async function PhoenixCrmModulePage({
           <Suspense fallback={null}>
             <ModuleNotices moduleKey={moduleKey} unreadRead={unreadRead} />
           </Suspense>
-          <PhoenixCrmApp initialOverview={load.overview} initialTab={moduleKey} single surface="portal" />
+          <CrmFirstReadProvider firstRead={firstRead}>
+            <PhoenixCrmApp initialOverview={load.overview} initialTab={moduleKey} single surface="portal" />
+          </CrmFirstReadProvider>
         </div>
       </EmployeePortalPageShell>
     );

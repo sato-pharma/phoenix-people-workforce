@@ -263,7 +263,7 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.deepEqual([...sent].sort(), [...EVENT_TYPES, ...EMAILING_EVENT_TYPES].sort(), "the notices this test checks are exactly the notices the module sends");
 
     // Every notice opens a tab the page really has, on a page that exists.
-    const app = readFileSync("src/components/phoenix-crm/phoenix-crm-app.tsx", "utf8");
+    const app = readFileSync("src/lib/phoenix-crm/opening-tab.ts", "utf8");
     const tabList = /const TAB_ORDER[^=]*=\s*\[([^\]]+)\]/.exec(app);
     assert.ok(tabList, "the Phoenix CRM app declares its tabs in TAB_ORDER");
     const tabs = new Set([...tabList[1].matchAll(/"([a-z]+)"/g)].map((match) => match[1]));

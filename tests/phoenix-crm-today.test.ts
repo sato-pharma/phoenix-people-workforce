@@ -254,13 +254,14 @@ export function runPhoenixCrmTodayTests(): void {
   // still has to reach Team first, which is what this keeps.
   {
     const app = stripCommentsCompact(readFileSync(new URL("../src/components/phoenix-crm/phoenix-crm-app.tsx", import.meta.url), "utf8"));
-    const start = app.indexOf("function openingTab(");
+    const rules = stripCommentsCompact(readFileSync(new URL("../src/lib/phoenix-crm/opening-tab.ts", import.meta.url), "utf8"));
+    const start = rules.indexOf("function openingTab(");
     assert.notEqual(start, -1);
-    const body = app.slice(start, start + 800);
+    const body = rules.slice(start, start + 800);
     assert.notEqual(body.indexOf('decisions > 0) return "team"'), -1, "the Team branch is still there");
     assert.ok(!body.includes('return "today"'), "and nothing opens on Today any more");
 
-    const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
+    const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(rules)?.[1] ?? "";
     // NINE since the CNS daily forecast became its own tab on his word (2026-10-01), after the team
     // calendar (2026-09-30) — Today left and neither of them is Today creeping back. TEN since the Super
     // Admin's own Test accounts tab (owner, 2026-10-22). TAB_COLUMNS carries a 10 rule.

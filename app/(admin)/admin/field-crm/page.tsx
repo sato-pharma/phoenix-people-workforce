@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 import { ClipboardList } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { CrmFirstReadProvider } from "@/components/phoenix-crm/first-read";
 import { PhoenixCrmApp } from "@/components/phoenix-crm/phoenix-crm-app";
 import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logError } from "@/lib/observability/log";
+import { startPhoenixCrmFirstRead } from "@/lib/phoenix-crm/server/first-read";
 import {
   loadPhoenixCrmPage,
   PHOENIX_CRM_ADMIN_PATH,
@@ -45,10 +47,14 @@ export default async function AdminPhoenixCrmFieldPage({
   const load = await loadPhoenixCrmPage(access);
 
   if (load.kind === "ready") {
+    // The opening tab's first read, started now and never awaited: it rides in this page's stream (first-read.ts).
+    const firstRead = await startPhoenixCrmFirstRead(access, load.overview, tab, "admin");
     return (
       <div className="space-y-5">
         <AdminPageHero description={phoenixCrmPageDescription(load.overview)} eyebrow="CRM" icon={HERO_ICON} title="Phoenix CRM" />
-        <PhoenixCrmApp initialOverview={load.overview} initialTab={tab} surface="admin" />
+        <CrmFirstReadProvider firstRead={firstRead}>
+          <PhoenixCrmApp initialOverview={load.overview} initialTab={tab} surface="admin" />
+        </CrmFirstReadProvider>
       </div>
     );
   }
