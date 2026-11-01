@@ -69,6 +69,7 @@ import {
 import {
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   dmSingleVisitLimitLine,
+  managerNextHold,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
   MANAGER_SLOT_CUSTOMER_MAX,
@@ -258,6 +259,9 @@ function savesNothing(date: string, half: ManagerHalf, draft: HalfDraft, slot: M
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved" } | { kind: "failed"; message: string };
 
+/** A half-day on the page that cannot be saved yet, and what it still lacks. */
+type WaitingProblem = { date: string; half: ManagerHalf; dayText: string; problem: string };
+
 const REP_WEEK: Record<ManagerBoardRepHalf["weekState"], { label: string; tone: PillTone }> = {
   sent: { label: "Sent", tone: "good" },
   not_sent: { label: "Not sent", tone: "warn" },
@@ -297,6 +301,13 @@ export function ManagerPlanBoard({
   const [dayScopes, setDayScopes] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const saving = useRef(false);
+  // 🔴 A TIMER THAT FIRES DURING A SAVE IS OWED ANOTHER TRY. It returned quietly, and an edit to the half-day on
+  // its way changed nothing the timer watches when that save finished, so it sat on "Saving soon…" for ever.
+  const missedSave = useRef(false);
+  const [saveNudge, setSaveNudge] = useState(0);
+  // Next stopped on this half-day, and the day whose empty half he has been told about once.
+  const [nextHeldAt, setNextHeldAt] = useState<string | null>(null);
+  const [nextWarnedDay, setNextWarnedDay] = useState<string | null>(null);
   // 🔴 A SAVE WHOSE ANSWER NEVER CAME BACK MAY STILL HAVE LANDED (production, 24 Oct 2026: Osama Mohamed's
   // phone lost two answers in ten minutes). Each landed save moves the week's version, so the next save,
   // sent with the version the screen still held, was refused as "changed on another screen" — raised
@@ -312,6 +323,13 @@ export function ManagerPlanBoard({
   useEffect(() => {
     scopeRef.current = scopeKey;
   }, [scopeKey]);
+  // 🔴 A READ STILL ON ITS WAY LANDS AFTER A SAVE'S ANSWER AND OVERWRITES IT, older than the save: the half-day
+  // reads empty on the page, and the next save is refused as "changed on another screen". While one is on its way
+  // the board reads again rather than taking the answer, as the rep's board does.
+  const readOnItsWay = useRef(false);
+  useEffect(() => {
+    readOnItsWay.current = board.loading;
+  }, [board.loading]);
 
   const pending = Object.keys(drafts);
   useEffect(() => {
@@ -328,6 +346,30 @@ export function ManagerPlanBoard({
   const key = day ? halfKey(day.date, currentHalf) : null;
   const draft = key ? (drafts[key] ?? draftFromSlot(slot)) : draftFromSlot(undefined);
   const canEdit = Boolean(view?.canWrite && day?.editable);
+
+  /** What a half-day on the page still lacks. A cleared one lacks nothing. */
+  function problemOf(waiting: HalfDraft): string | null {
+    return waiting.kind === null ? null : draftProblem(waiting, choosesDistrict, byRegion);
+  }
+
+  const waitingProblems: WaitingProblem[] = Object.entries(drafts).flatMap(([waitingKey, waiting]) => {
+    const problem = problemOf(waiting);
+    if (!problem) return [];
+    const [waitingDate, waitingHalf] = waitingKey.split("|") as [string, ManagerHalf];
+    return [{ date: waitingDate, half: waitingHalf, dayText: days.find((entry) => entry.date === waitingDate)?.dateText ?? waitingDate, problem }];
+  });
+
+  // A reload or a closed tab cannot take a half-day that cannot be saved, or one whose save failed.
+  const unsavedWork = waitingProblems.length > 0 || saveState.kind === "failed";
+  useEffect(() => {
+    if (!unsavedWork) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [unsavedWork]);
 
   function draftOf(target: ManagerBoardDay, targetHalf: ManagerHalf): HalfDraft {
     return drafts[halfKey(target.date, targetHalf)] ?? draftFromSlot(target.slots.find((entry) => entry.half === targetHalf));
@@ -398,7 +440,10 @@ export function ManagerPlanBoard({
 
   /** Saves every half-day that can be saved, one at a time; the rest wait and say why. */
   async function saveWaiting(options: { keepalive?: boolean } = {}): Promise<boolean> {
-    if (saving.current) return false;
+    if (saving.current) {
+      missedSave.current = true;
+      return false;
+    }
     saving.current = true;
     let allSaved = true;
     try {
@@ -409,7 +454,7 @@ export function ManagerPlanBoard({
           const fresh = await crmGet<ManagerPlanBoardView>(crmUrl(BOARD, { week: shown?.weekStart ?? week, scope: scopeRef.current, test }), "board");
           versionUnknown.current = false;
           viewRef.current = fresh;
-          if (fresh.weekStart === shown?.weekStart && (fresh.scope ?? null) === (scopeRef.current ?? null)) board.replace(fresh);
+          if (fresh.weekStart === shown?.weekStart && (fresh.scope ?? null) === (scopeRef.current ?? null) && !readOnItsWay.current) board.replace(fresh);
           else board.reload();
         } catch (failure) {
           setSaveState({ kind: "failed", message: messageOf(failure) });
@@ -454,7 +499,7 @@ export function ManagerPlanBoard({
           }
           viewRef.current = next;
           // The answer is in the scope on screen; if he moved to another while it saved, read that one.
-          if ((next.scope ?? null) === (scopeRef.current ?? null)) board.replace(next);
+          if ((next.scope ?? null) === (scopeRef.current ?? null) && !readOnItsWay.current) board.replace(next);
           else board.reload();
           setDrafts((previous) => {
             if (!previous[waitingKey] || !sameDraft(previous[waitingKey], waiting)) return previous;
@@ -467,7 +512,8 @@ export function ManagerPlanBoard({
             versionUnknown.current = true;
             continue;
           }
-          setSaveState({ kind: "failed", message: messageOf(failure) });
+          const failedDay = viewRef.current?.days.find((entry) => entry.date === waitingDate)?.dateText ?? waitingDate;
+          setSaveState({ kind: "failed", message: `${failedDay} ${waitingHalf}: ${messageOf(failure)}` });
           const code = errorCodeOf(failure);
           if (code !== null && MAY_HAVE_SAVED.has(code)) versionUnknown.current = true;
           // Another screen moved the week first: read it again, and his edit stays on the page.
@@ -479,6 +525,10 @@ export function ManagerPlanBoard({
       return allSaved;
     } finally {
       saving.current = false;
+      if (missedSave.current) {
+        missedSave.current = false;
+        setSaveNudge((current) => current + 1);
+      }
     }
   }
 
@@ -489,17 +539,26 @@ export function ManagerPlanBoard({
     if (Object.keys(drafts).length === 0) return;
     const timer = window.setTimeout(() => onSaveTimer(), PLAN_AUTOSAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [drafts]);
+  }, [drafts, saveNudge]);
 
   const onHidden = useEffectEvent(() => {
     if (Object.keys(drafts).length > 0) void saveWaiting({ keepalive: true });
   });
   useEffect(() => {
+    // Back in sight or back online, what is still waiting is tried again, a save that failed included.
+    function tryAgain() {
+      setSaveNudge((current) => current + 1);
+    }
     function onVisibility() {
       if (document.visibilityState === "hidden") onHidden();
+      else tryAgain();
     }
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", tryAgain);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", tryAgain);
+    };
   }, []);
   // The board leaving the screen — Nosiba Salah switching "My territory · My district", a tab change —
   // clears the autosave timer with it, so an edit made inside its 1.5 s would be lost. It is sent on the
@@ -507,6 +566,11 @@ export function ManagerPlanBoard({
   useEffect(() => () => onHidden(), []);
 
   function chooseWeek(next: string) {
+    // Pressing the week already on screen is only a way forward: nothing he chose goes with it.
+    if (next === view?.weekStart) {
+      setStep(2);
+      return;
+    }
     if (Object.keys(drafts).length > 0) void saveWaiting();
     setWeek(next);
     setDate(null);
@@ -524,20 +588,13 @@ export function ManagerPlanBoard({
   }
 
   const plan = view.plan;
-  const waitingProblems = Object.entries(drafts).flatMap(([waitingKey, waiting]) => {
-    const problem = waiting.kind === null ? null : draftProblem(waiting, choosesDistrict, byRegion);
-    if (!problem) return [];
-    const [waitingDate, waitingHalf] = waitingKey.split("|");
-    const dayText = days.find((entry) => entry.date === waitingDate)?.dateText ?? waitingDate;
-    return [`${dayText} ${waitingHalf}: ${problem}`];
-  });
   const statusText =
     saveState.kind === "saving"
       ? "Saving…"
       : saveState.kind === "failed"
         ? `Not saved — ${saveState.message}`
         : waitingProblems.length > 0
-          ? `Not saved yet — ${waitingProblems[0]}`
+          ? `Not saved yet — ${waitingProblems[0].dayText} ${waitingProblems[0].half}: ${waitingProblems[0].problem}`
           : pending.length > 0
             ? "Saving soon…"
             : saveState.kind === "saved"
@@ -559,6 +616,28 @@ export function ManagerPlanBoard({
     if (nextDay) showScope(halfScopeOf(nextDay, firstHalf));
   }
 
+  /** The half-day named on Send as not saved yet, opened to finish it. */
+  function openHalf(next: string, nextHalf: ManagerHalf) {
+    const nextDay = days.find((entry) => entry.date === next);
+    setDate(next);
+    setHalf(nextHalf);
+    setStep(3);
+    if (nextDay) showScope(halfScopeOf(nextDay, nextHalf));
+  }
+
+  /** What stops Next on the half-day on screen, or null when it may walk on. */
+  function nextHold() {
+    if (!day || !canEdit) return null;
+    const chosenScope = dayScopes[day.date];
+    return managerNextHold({
+      dayText: day.dateText,
+      half: currentHalf,
+      problem: problemOf(draft),
+      chosenScopeName: chosenScope ? (view?.scopes.find((entry) => entry.key === chosenScope)?.name ?? null) : null,
+      dayHasAPlan: day.halves.some((entry) => draftOf(day, entry).kind !== null),
+    });
+  }
+
   // 🔴 NEXT WALKS THE WEEK, NOT THE STEPS (owner walk, 2026-10-28) — on "What I do" it went straight to Send
   // after one half-day, so planning Saturday to Thursday was six trips back to the day list. It goes AM →
   // PM → the next day he can still plan, and only then to Send. A day already passed, or one he cannot
@@ -568,6 +647,16 @@ export function ManagerPlanBoard({
       goStep(step + 1);
       return;
     }
+    // 🔴 AND NEVER PAST A HALF-DAY THAT IS NOT SAVED. It stops and says why, right above the button; a half-day
+    // that can be saved goes now, not 1.5 seconds later, and a save that failed is tried again.
+    const hold = nextHold();
+    if (hold && !(hold.once && nextWarnedDay === day.date)) {
+      setNextHeldAt(key);
+      if (hold.once) setNextWarnedDay(day.date);
+      return;
+    }
+    setNextHeldAt(null);
+    if (Object.keys(drafts).length > 0) void saveWaiting();
     const halfIndex = day.halves.indexOf(currentHalf);
     const laterHalf = day.halves[halfIndex + 1];
     if (laterHalf && (!view?.canWrite || day.editable)) {
@@ -676,6 +765,11 @@ export function ManagerPlanBoard({
           footer={
             <CrmStepFooter back={step > 1 ? () => goStep(step - 1) : null}>
               {statusText ? <span className="self-center text-xs font-bold text-slate-500">{statusText}</span> : null}
+              {saveState.kind === "failed" ? (
+                <CrmButton onClick={() => void saveWaiting()} size="sm">
+                  Try again
+                </CrmButton>
+              ) : null}
               {step < STEPS.length ? <CrmStepNext disabled={step >= 2 && day === null} onClick={goNext} /> : null}
             </CrmStepFooter>
           }
@@ -689,6 +783,7 @@ export function ManagerPlanBoard({
               days={days}
               drafts={drafts}
               onDay={openDay}
+              problemOf={problemOf}
               selected={day?.date ?? null}
             />
           ) : null}
@@ -701,6 +796,7 @@ export function ManagerPlanBoard({
               draft={draft}
               half={currentHalf}
               idPrefix={idPrefix}
+              nextHoldMessage={nextHeldAt === key ? (nextHold()?.message ?? null) : null}
               onDayScope={chooseDayScope}
               onDraft={edit}
               onHalf={(next) => {
@@ -724,6 +820,8 @@ export function ManagerPlanBoard({
                 onChanged?.();
               }}
               latestPlan={() => viewRef.current?.plan ?? null}
+              onOpenHalf={openHalf}
+              problemOf={problemOf}
               saveWaiting={saveWaiting}
               test={test}
               view={view}
@@ -762,13 +860,14 @@ function WeekStep({ onWeek, view }: { onWeek: (week: string) => void; view: Mana
 
 // ── Step 2 · the day ────────────────────────────────────────────────────────────────────────────
 
-function dayNote(day: ManagerBoardDay, drafts: Record<string, HalfDraft>): string {
+function dayNote(day: ManagerBoardDay, drafts: Record<string, HalfDraft>, problemOf: (waiting: HalfDraft) => string | null): string {
   if (day.holiday) return `${day.holiday} · no plan`;
   if (day.halves.length === 0) return "No field day";
   return day.halves
     .map((half) => {
       const waiting = drafts[halfKey(day.date, half)];
-      const summary = waiting ? "Not saved yet" : (day.slots.find((slot) => slot.half === half)?.summary ?? "Nothing planned");
+      const problem = waiting ? problemOf(waiting) : null;
+      const summary = problem ? `Not saved: ${problem}` : waiting ? "Not saved yet" : (day.slots.find((slot) => slot.half === half)?.summary ?? "Nothing planned");
       return `${half}: ${summary}`;
     })
     .join(" · ");
@@ -778,11 +877,13 @@ function DayStep({
   days,
   drafts,
   onDay,
+  problemOf,
   selected,
 }: {
   days: ManagerBoardDay[];
   drafts: Record<string, HalfDraft>;
   onDay: (date: string) => void;
+  problemOf: (waiting: HalfDraft) => string | null;
   selected: string | null;
 }) {
   if (days.length === 0) return <CrmEmpty message="This week has no field days." title="No days to plan" />;
@@ -791,7 +892,7 @@ function DayStep({
   const options: Array<CrmChoiceOption<string>> = days.map((day) => ({
     value: day.date,
     label: day.passed && day.date !== selected ? <span className="text-slate-400">{day.dateText}</span> : day.dateText,
-    note: day.passed ? `Passed · ${dayNote(day, drafts)}` : dayNote(day, drafts),
+    note: day.passed ? `Passed · ${dayNote(day, drafts, problemOf)}` : dayNote(day, drafts, problemOf),
     disabled: day.halves.length === 0,
     tone: day.halves.length > 0 && day.halves.every((half) => day.slots.some((slot) => slot.half === half && slot.kind)) ? "good" : undefined,
   }));
@@ -962,6 +1063,7 @@ function HalfStep({
   draft,
   half,
   idPrefix,
+  nextHoldMessage,
   onDayScope,
   onDraft,
   onHalf,
@@ -980,6 +1082,8 @@ function HalfStep({
   draft: HalfDraft;
   half: ManagerHalf;
   idPrefix: string;
+  /** Why Next stopped here, said right above it. */
+  nextHoldMessage: string | null;
   onDayScope: (key: string) => void;
   onDraft: (next: HalfDraft) => void;
   onHalf: (half: ManagerHalf) => void;
@@ -1082,6 +1186,7 @@ function HalfStep({
           </CrmButton>
         </div>
       ) : null}
+      {nextHoldMessage ? <CrmNote tone="warn">{nextHoldMessage}</CrmNote> : null}
     </div>
   );
 }
@@ -1969,6 +2074,8 @@ function SendStep({
   idPrefix,
   latestPlan,
   onChanged,
+  onOpenHalf,
+  problemOf,
   saveWaiting,
   test,
   view,
@@ -1980,10 +2087,13 @@ function SendStep({
   /** The week as the last save or read left it — newer than `view` the moment Send saves what was waiting. */
   latestPlan: () => ManagerPlanBoardView["plan"];
   onChanged: () => void;
+  /** Opens a half-day that is not saved yet, to finish it. */
+  onOpenHalf: (date: string, half: ManagerHalf) => void;
+  problemOf: (waiting: HalfDraft) => string | null;
   saveWaiting: () => Promise<boolean>;
   test: boolean;
   view: ManagerPlanBoardView;
-  waitingProblems: string[];
+  waitingProblems: WaitingProblem[];
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1996,8 +2106,12 @@ function SendStep({
   // A passed day is history, never a gap to fill: the count is of the days still to come (owner walk,
   // 2026-10-28: "2 of 11 planned" on a Tuesday counted Saturday to Monday against him).
   const comingDays = days.filter((day) => !day.passed);
-  const isPlanned = (day: ManagerBoardDay, half: ManagerHalf) =>
-    Boolean(drafts[halfKey(day.date, half)]) || day.slots.some((slot) => slot.half === half && slot.kind);
+  // A half-day on the page counts once it can be saved: a choice still missing something goes nowhere.
+  const isPlanned = (day: ManagerBoardDay, half: ManagerHalf) => {
+    const waiting = drafts[halfKey(day.date, half)];
+    if (waiting) return waiting.kind !== null && !problemOf(waiting);
+    return day.slots.some((slot) => slot.half === half && slot.kind);
+  };
   const planned = comingDays.reduce((sum, day) => sum + day.halves.filter((half) => isPlanned(day, half)).length, 0);
   const fieldHalves = comingDays.reduce((sum, day) => sum + day.halves.length, 0);
   const emptyHalves = comingDays.flatMap((day) => (day.editable ? day.halves.filter((half) => !isPlanned(day, half)).map((half) => `${day.dateText} ${half}`) : []));
@@ -2011,7 +2125,7 @@ function SendStep({
     setError(null);
     try {
       if (Object.keys(drafts).length > 0 && !(await saveWaiting())) {
-        setError(waitingProblems[0] ? `Finish or clear ${waitingProblems[0]} first.` : "A half-day could not be saved. Try again.");
+        setError(waitingProblems[0] ? `Finish or clear ${waitingProblems[0].dayText} ${waitingProblems[0].half} first: ${waitingProblems[0].problem}.` : "A half-day could not be saved. Try again.");
         setBusy(false);
         return;
       }
@@ -2064,11 +2178,19 @@ function SendStep({
                 const slot = day.slots.find((entry) => entry.half === half);
                 const waiting = drafts[halfKey(day.date, half)];
                 const flags = slot?.customers.filter((customer) => customer.flag) ?? [];
+                const problem = waiting ? problemOf(waiting) : null;
                 return (
                   <div className="grid min-w-0 gap-0.5 px-3 py-2" key={half}>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                       <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{half}</span>
-                      <span className="min-w-0 break-words text-sm font-bold text-slate-900">{waiting ? "Not saved yet" : (slot?.summary ?? "Nothing planned")}</span>
+                      <span className={`min-w-0 break-words text-sm font-bold ${problem ? "text-amber-800" : "text-slate-900"}`}>
+                        {problem ? `Not saved: ${problem}` : waiting ? "Not saved yet" : (slot?.summary ?? "Nothing planned")}
+                      </span>
+                      {problem ? (
+                        <CrmButton onClick={() => onOpenHalf(day.date, half)} size="sm">
+                          Finish it
+                        </CrmButton>
+                      ) : null}
                       {flags.length > 0 ? <CrmPill tone="warn">{`${countText(flags.length)} not on the rep's day`}</CrmPill> : null}
                     </div>
                     {/* What he is sending, by name: a count alone made him open every day to check it. */}
@@ -2095,6 +2217,9 @@ function SendStep({
       {plan?.state === "plan" && view.canWrite && emptyHalves.length > 0 ? (
         <CrmNote tone="warn">{`Nothing planned yet on ${emptyHalves.join(", ")}. You can still send it; those half-days go empty.`}</CrmNote>
       ) : null}
+      {waitingProblems.length > 0 ? (
+        <CrmNote tone="warn">{`${waitingProblems.map((entry) => `${entry.dayText} ${entry.half}`).join(", ")} ${waitingProblems.length === 1 ? "is" : "are"} not saved. Finish or clear ${waitingProblems.length === 1 ? "it" : "them"} before you send.`}</CrmNote>
+      ) : null}
       {route ? (
         <p className="text-xs font-semibold leading-5 text-slate-500">
           {`It goes to ${route}.${hrAcknowledges ? " Once it is approved, HR acknowledges it automatically." : ""}`}
@@ -2118,7 +2243,7 @@ function SendStep({
           </CrmNote>
         ) : (
           <div>
-            <CrmButton disabled={planned === 0 && Object.keys(drafts).length === 0} onClick={() => setConfirming(true)} variant="primary">
+            <CrmButton disabled={waitingProblems.length > 0 || (planned === 0 && Object.keys(drafts).length === 0)} onClick={() => setConfirming(true)} variant="primary">
               {sendWord}
             </CrmButton>
           </div>
