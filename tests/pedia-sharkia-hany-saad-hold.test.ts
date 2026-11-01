@@ -202,7 +202,7 @@ export function runPediaSharkiaHanySaadHoldTests() {
   assert.deepEqual(districtRegionCodesHeldBy("PD-0100", seats), [], "a rep's seat names no district region");
   assert.deepEqual(districtRegionCodesHeldBy(null, seats), [], "no identity holds nothing, never everything");
 
-  // ── Sahar's July to September, the number that decides a manager's pay among them ────────────
+  // ── The Delta (2) seat's July to September, published and never changed ──────────────────────
   const scope = computeSeatAreaScope({
     viewerHrId: SAHAR,
     seats: [
@@ -217,8 +217,8 @@ export function runPediaSharkiaHanySaadHoldTests() {
     ],
     factRegionByAreaCode: new Map(),
   });
-  assert.deepEqual([...(scope?.areaCodes ?? [])], ["D21"], "from October her bound holds only what is hers");
-  assert.deepEqual(scope?.earlierMonthAreas?.get("D24"), "2026-10", "she still answers for Sharkia 1 before October");
+  assert.deepEqual([...(scope?.areaCodes ?? [])], ["D21"], "from October the seat's bound holds only what is its own");
+  assert.deepEqual(scope?.earlierMonthAreas?.get("D24"), "2026-10", "the seat still answers for Sharkia 1 before October");
   const saharSalesScope = computeSalesAccessScope({
     role: "District Manager",
     businessScope: "TEAM",
@@ -275,7 +275,7 @@ export function runPediaSharkiaHanySaadHoldTests() {
   assert.deepEqual(
     [...(areaCodesForMonth(new Set(["D21"]), sahar.earlierMonthAreas, "2026-09") ?? [])].sort(),
     ["D21", "D24", "D25"],
-    "a September matrix keeps Sharkia in her closing",
+    "a September matrix keeps Sharkia in the seat's closing",
   );
   assert.deepEqual([...(areaCodesForMonth(new Set(["D21"]), sahar.earlierMonthAreas, "2026-10") ?? [])], ["D21"]);
   assert.equal(

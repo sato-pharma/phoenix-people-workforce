@@ -4,9 +4,11 @@ import { AlertTriangle, HeartPulse, Loader2, Pill, Store, UserX } from "lucide-r
 import { useEffect, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SortableTh, TableNoResults, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
+import { CHANNELS_BY_REP_WHOLE_HISTORY, periodProseLabel } from "@/lib/sales/periods";
 import { cn } from "@/lib/utils";
 import type { ChannelsByRepResult, ChannelsByRepRow } from "@/lib/sales/channels-by-rep";
 
@@ -49,6 +51,11 @@ export function ChannelsByRepTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Null until someone picks: the server then answers with the newest published closing.
+  const [chosenPeriod, setChosenPeriod] = useState<string | null>(null);
+  // Outlives `result`, which is cleared on every load, so the picker stays on screen through one.
+  const [availablePeriods, setAvailablePeriods] = useState<string[]>([]);
+  const [shownPeriod, setShownPeriod] = useState<string | null>(null);
 
   // Same shape as CustomersChannelTab: the async work is declared inside the effect behind an
   // `alive` guard so an unmount mid-flight cannot write state, and a retry re-runs it via
@@ -62,12 +69,16 @@ export function ChannelsByRepTab() {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch("/api/sales/channels-by-rep", { cache: "no-store" });
+        const query = chosenPeriod ? `?period=${encodeURIComponent(chosenPeriod)}` : "";
+        const response = await fetch(`/api/sales/channels-by-rep${query}`, { cache: "no-store" });
         const text = await response.text();
         if (!alive) return;
         const payload: ChannelsResponse = text ? JSON.parse(text) : { success: response.ok };
-        if (payload.success && payload.data) setResult(payload.data);
-        else setError(payload.error ?? "Failed to load Channels by Rep.");
+        if (payload.success && payload.data) {
+          setResult(payload.data);
+          setAvailablePeriods(payload.data.availablePeriods);
+          setShownPeriod(payload.data.period);
+        } else setError(payload.error ?? "Failed to load Channels by Rep.");
       } catch (caught) {
         if (!alive) return;
         setError(caught instanceof Error ? caught.message : "Failed to load Channels by Rep.");
@@ -80,7 +91,7 @@ export function ChannelsByRepTab() {
     return () => {
       alive = false;
     };
-  }, [refreshKey]);
+  }, [chosenPeriod, refreshKey]);
 
   const rows: ChannelsByRepRow[] = result?.rows ?? [];
 
@@ -98,28 +109,58 @@ export function ChannelsByRepTab() {
     searchAccessors: [(row) => row.label, (row) => row.areaName, (row) => row.lineCode],
   });
 
+  // Locked while a read runs, like the Monthly Source Dashboard's month select: leaving a whole-history
+  // read does not stop it on the database, so changing month mid-load would stack a second query on it.
+  const monthPicker =
+    availablePeriods.length > 0 ? (
+      <div className="w-full sm:w-72">
+        <SearchableSelect
+          aria-label="Month"
+          className="px-3"
+          disabled={isLoading}
+          onChange={(event) => setChosenPeriod(event.target.value)}
+          value={chosenPeriod ?? shownPeriod ?? CHANNELS_BY_REP_WHOLE_HISTORY}
+        >
+          {availablePeriods.map((period) => (
+            <option key={period} value={period}>
+              {periodProseLabel(period)}
+            </option>
+          ))}
+          <option value={CHANNELS_BY_REP_WHOLE_HISTORY}>Whole history (about 30 seconds)</option>
+        </SearchableSelect>
+      </div>
+    ) : null;
+
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 py-10 text-sm text-slate-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading Channels by Rep…
+      <div className="space-y-5">
+        {monthPicker}
+        <div className="flex items-center gap-2 py-10 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {chosenPeriod === CHANNELS_BY_REP_WHOLE_HISTORY
+            ? "Loading the whole history. This takes about 30 seconds."
+            : "Loading Channels by Rep…"}
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <AdminCallout tone="danger">
-        <p className="font-black">Channels by Rep could not load</p>
-        <p>{error}</p>
-        <button
-          className="mt-2 border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
-          onClick={() => setRefreshKey((key) => key + 1)}
-          type="button"
-        >
-          Try again
-        </button>
-      </AdminCallout>
+      <div className="space-y-5">
+        {monthPicker}
+        <AdminCallout tone="danger">
+          <p className="font-black">Channels by Rep could not load</p>
+          <p>{error}</p>
+          <button
+            className="mt-2 border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
+            onClick={() => setRefreshKey((key) => key + 1)}
+            type="button"
+          >
+            Try again
+          </button>
+        </AdminCallout>
+      </div>
     );
   }
 
@@ -127,9 +168,14 @@ export function ChannelsByRepTab() {
 
   const { totals } = result;
   const columnCount = 7;
+  const noSalesMessage = result.period
+    ? `No sales in ${periodProseLabel(result.period)}.`
+    : "No sales in the uploaded data.";
 
   return (
     <div className="space-y-5">
+      {monthPicker}
+
       {/* Say it before the numbers are read, not in a footnote underneath them. */}
       {!result.restrictedProductsIncluded ? (
         <AdminCallout tone="warning">
@@ -227,7 +273,7 @@ export function ChannelsByRepTab() {
                 rows.length === 0 ? (
                   <tr>
                     <td className="px-3 py-6 text-center text-slate-400" colSpan={columnCount}>
-                      No sales in the uploaded data.
+                      {noSalesMessage}
                     </td>
                   </tr>
                 ) : (
@@ -269,7 +315,7 @@ export function ChannelsByRepTab() {
       <div className="space-y-2 md:hidden">
         {table.rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">
-            {rows.length === 0 ? "No sales in the uploaded data." : "No reps match this filter."}
+            {rows.length === 0 ? noSalesMessage : "No reps match this filter."}
           </p>
         ) : (
           table.rows.map((row) => (

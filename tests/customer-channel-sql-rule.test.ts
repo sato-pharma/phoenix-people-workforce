@@ -24,7 +24,7 @@ import { customerChannelSqlRule } from "../src/lib/sales/customer-channel-sql-ru
  */
 
 const MIGRATION = readFileSync(
-  new URL("../supabase/migrations/20260907170000_one_channel_rule_in_sql.sql", import.meta.url),
+  new URL("../supabase/migrations/20261101195934_phx_sales_channels_by_rep_classifies_each_customer_once.sql", import.meta.url),
   "utf8",
 );
 const CHANNELS_BY_REP = readFileSync(

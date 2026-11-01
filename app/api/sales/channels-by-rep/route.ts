@@ -15,6 +15,9 @@ export const dynamic = "force-dynamic";
 // `reveal` is a REQUEST, not a decision. loadChannelsByRep runs it past canViewRestrictedProducts,
 // so a non-CEO passing ?reveal=1 changes nothing. Keeping the resolution server-side is the whole
 // point: those three products are 81.5% of sales value, and this is the query that would leak them.
+//
+// `period` is a month, or `all` for the whole history. Without it the read covers the newest published
+// closing, so only a request that names the whole history pays for it (resolveChannelsByRepPeriod).
 
 export async function GET(request: Request) {
   try {

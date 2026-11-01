@@ -24,8 +24,9 @@ export function isRegionalManagerHeldDistrict(seatId: string | null | undefined)
 
 /**
  * Areas a district still answers for in the months before they left it. A manager's area bound is read
- * from the CURRENT map, so without this Sahar El Gallad's July to September, her semester figure among
- * them, would lose Sharkia against his ruling that those months stay as published. Named by seat rather
+ * from the CURRENT map, so without this the Delta (2) seat's July to September would lose Sharkia against
+ * his ruling that those months stay as published. They were not its holder's months: Sahar El Gallad was
+ * hired on 2026-10-24, and the engine names a seat's current holder on past months. Named by seat rather
  * than read from every closed map row because earlier moves have always read this way, and changing that
  * would restate other managers' figures, which nobody asked for.
  */

@@ -7,6 +7,9 @@ import {
   STORE_NAME_KEYWORDS,
 } from "@/lib/sales/customer-channel";
 import { customerChannelSqlRule } from "@/lib/sales/customer-channel-sql-rule";
+import { latestPublishedClosingPeriod } from "@/lib/sales/monthly-closing-publication";
+import { listMonthlyClosingPeriods } from "@/lib/sales/monthly-distributor-import";
+import { CHANNELS_BY_REP_WHOLE_HISTORY, latestNonFuturePeriod } from "@/lib/sales/periods";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 
@@ -62,6 +65,9 @@ export type ChannelsByRepTotals = {
 };
 
 export type ChannelsByRepResult = {
+  /** Every month the picker offers, newest first. */
+  availablePeriods: string[];
+  /** The month these figures cover; null means the whole history. */
   period: string | null;
   /** False means the restricted products were stripped, so every figure excludes them. */
   restrictedProductsIncluded: boolean;
@@ -70,6 +76,11 @@ export type ChannelsByRepResult = {
 };
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
+
+// The whole history, which the tab offers as a choice, took 30.2 s on production on 2026-11-01 with the
+// restricted products stripped. At the default 15s that read shows an error while the query runs on
+// with nobody waiting for it. One month is 3 to 9 s.
+const CHANNELS_BY_REP_REQUEST_TIMEOUT_MS = 50_000;
 
 function num(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);
@@ -171,17 +182,40 @@ export function totalsFor(rows: readonly ChannelsByRepRow[]): ChannelsByRepTotal
   );
 }
 
+/**
+ * Which month a request reads; null is the whole history, and only asking for it by name gets it.
+ *
+ * With no month asked for, the tab opens on the newest published closing, the newest month the business
+ * considers finished. Never simply the newest month uploaded: on 2026-11-01 production's 2026-11 held
+ * one row and 2026-10 held 55, against 43,390 in 2026-09.
+ */
+export function resolveChannelsByRepPeriod(input: {
+  available: readonly string[];
+  latestPublished: string | null;
+  requested: string | null | undefined;
+}): string | null {
+  if (input.requested === CHANNELS_BY_REP_WHOLE_HISTORY) return null;
+  if (typeof input.requested === "string" && PERIOD_RE.test(input.requested)) return input.requested;
+  return input.latestPublished ?? latestNonFuturePeriod(input.available) ?? input.available[0] ?? null;
+}
+
 export async function loadChannelsByRep(options: {
   period?: string | null;
   revealRestricted?: boolean;
   role: PhoenixRole;
 }): Promise<ChannelsByRepResult> {
-  const period =
-    typeof options.period === "string" && PERIOD_RE.test(options.period) ? options.period : null;
+  const [available, latestPublished] = await Promise.all([
+    listMonthlyClosingPeriods(),
+    latestPublishedClosingPeriod(),
+  ]);
+  const period = resolveChannelsByRepPeriod({ available, latestPublished, requested: options.period });
+  const availablePeriods = [...new Set([...available, ...(period ? [period] : [])])].sort((left, right) =>
+    right.localeCompare(left),
+  );
   const excluded = excludedProductCodes(options.role, options.revealRestricted === true);
   const stems = channelStems();
 
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: CHANNELS_BY_REP_REQUEST_TIMEOUT_MS });
   const { data, error } = await supabase.rpc("phx_sales_channels_by_rep", {
     p_excluded_product_codes: excluded,
     p_hospital_stems: stems.hospital,
@@ -204,6 +238,7 @@ export async function loadChannelsByRep(options: {
 
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapChannelsByRepRow);
   return {
+    availablePeriods,
     period,
     restrictedProductsIncluded: excluded.length === 0,
     rows,

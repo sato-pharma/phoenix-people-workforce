@@ -5,8 +5,10 @@ import {
   excludedProductCodes,
   labelFor,
   mapChannelsByRepRow,
+  resolveChannelsByRepPeriod,
   totalsFor,
 } from "../src/lib/sales/channels-by-rep.ts";
+import { CHANNELS_BY_REP_WHOLE_HISTORY } from "../src/lib/sales/periods.ts";
 import {
   HOSPITAL_NAME_KEYWORDS,
   normalizeCustomerName,
@@ -99,4 +101,35 @@ export async function runSalesChannelsByRepTests() {
   assert.equal(totals.pharmacyValue, 70);
   assert.equal(totals.hospitalValue, 10);
   assert.equal(totals.storeValue, 20);
+
+  // ── which month a request reads ─────────────────────────────────────────────────────────────
+  // The shape of production on 2026-11-01: the two newest months hold 1 and 55 rows. The whole history
+  // takes about 30 s, so it must be asked for by name; nothing else may fall through to it.
+  const available = ["2026-11", "2026-10", "2026-09", "2026-08"];
+  const resolve = (requested: string | null | undefined, latestPublished: string | null = "2026-09") =>
+    resolveChannelsByRepPeriod({ available, latestPublished, requested });
+
+  assert.equal(resolve(null), "2026-09", "the tab opens on the newest published closing");
+  assert.equal(resolve(undefined), "2026-09", "no month asked for is the same as null");
+  assert.equal(resolve("2026-08"), "2026-08", "a month that was picked is the month read");
+  assert.equal(resolve(CHANNELS_BY_REP_WHOLE_HISTORY), null, "the whole history, asked for by name");
+  assert.equal(resolve("not-a-month"), "2026-09", "a malformed month must never become the whole history");
+  assert.equal(resolve(""), "2026-09", "an empty month must never become the whole history");
+
+  // Nothing published: the newest month that has started, never one a direct order booked ahead.
+  assert.equal(
+    resolveChannelsByRepPeriod({ available: ["2999-01", "2026-09"], latestPublished: null, requested: null }),
+    "2026-09",
+    "with nothing published, the newest month that has started",
+  );
+  assert.equal(
+    resolveChannelsByRepPeriod({ available: ["2999-01"], latestPublished: null, requested: null }),
+    "2999-01",
+    "only future months: still one month, not the whole history",
+  );
+  assert.equal(
+    resolveChannelsByRepPeriod({ available: [], latestPublished: null, requested: null }),
+    null,
+    "no months at all is the one other way to reach null, and there is nothing for it to read",
+  );
 }
