@@ -11,9 +11,30 @@ has) signs in through `GET /api/dev-auth?role=…`, then runs steps — `go`, `c
 `overflow`, `text`, `waitfor`, `eval`. Paths below are relative to the repo root (or your
 `_wt-<task>` worktree). Verified on the owner's Windows laptop, Git Bash, Node 24.15, 2026-10-20.
 
-🔴 **`.env.local` is PRODUCTION Supabase.** Every page reads live payroll and sales data, and a
-click on save / send / approve / delete does it for real. `go`, `shot`, `text`, `overflow` and
-`eval` are read-only; `click` only on navigation (sidebar links, tabs).
+🔴 **`.env.local` is PRODUCTION Supabase, so opening a page is not automatically read-only.** Every
+page reads live payroll and sales data. Signed in as a real person (`--hrId`), a page writes under
+that person's name with no click at all: its mount effects, its autosaves and the beacons of a
+closing page. Opening a Phoenix CRM module clears their "new" badge, and opening an empty planner
+day saves a draft plan.
+
+**So the driver's browser sends GET and nothing else, on every step, and no flag turns that off.**
+It aborts every non-GET request (a form post gets an empty 204 so the page stays where it is) and
+replaces `navigator.sendBeacon` and non-GET `fetch` inside the page, because a beacon or keepalive
+call from a closing page got past request routing alone. Every write it stopped is listed at the end
+of the run, as `writes stopped (N)`.
+
+- **A stopped fetch or beacon is answered as a success (204), so the screen can lie.** "Saved" on a
+  driven page means nothing was saved. To prove a save works, use a test, or staging.
+- **Use `click` for navigation (sidebar links, tabs).** A save, send or approve click is stopped too,
+  so it proves nothing about that action.
+- 🔴 **What it cannot stop: a write made by the SERVER while answering a GET.** The browser only asks
+  for the page; the server does the writing. Reading a customer list mints that territory's
+  carried-over customers (`phoenix_crm_ensure_reference_customers`), and some GET routes leave a row
+  behind, such as a CV opened or a pack printed (`SEAT_VIEW_REFUSED_READS` in
+  `src/lib/auth/seat-view.ts`, which names them). `writes stopped (0)` therefore does not prove that
+  nothing was written. Prefer a role-only sign-in when you do not need a real person.
+- A driver run from a checkout older than this rule has none of this. Check that the end of the
+  run prints the `writes stopped` line.
 
 ## Prerequisites
 
@@ -72,8 +93,9 @@ overflow @375px ok [{"sel":"main","scrollWidth":351,"clientWidth":351},{"sel":"b
 - Options: `--role`, `--hrId` (sign in as that person), `--width` (375 = phone, with touch),
   `--base`, `--out`. Steps: `go <path>`, `click <exact text>`, `fill <label> <value>`,
   `waitfor <text>`, `shot <name>`, `text`, `overflow`, `eval <js>`, `wait <ms>`.
-- Exit 1 on a failed step or on horizontal scroll (`overflow`). Console errors and 5xx responses
-  print at the end.
+- Exit 1 on a failed step or on horizontal scroll (`overflow`). Console errors, 5xx responses and
+  `writes stopped (N)` print at the end. A stopped write does not fail the run. A page that reads
+  its data through a POST shows that data as empty, and its POST is in that list.
 - Landing pages: Super Admin `/admin`, HR Operations / HR Resourcing
   `/hr/admin/hr-command-center`, portal roles (Medical Rep, District Manager, …)
   `/employee-portals`, SFE Manager `/admin/sfe-command-center` — see `src/lib/auth/landing.ts`.
@@ -152,5 +174,6 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 | `no browser could start` (Playwright's build, Edge and Chrome all failed) | `npx playwright install chromium` from the primary, never from a worktree |
 | `ERR_CONNECTION_RESET` / `REFUSED` on every step | the server died or is restarting; `curl` healthz, restart it in the background |
 | screenshot is a grey skeleton | add `waitfor "<text on the loaded page>"` before `shot` |
+| a block reads empty, a console error says an unexpected response came from the server, or `ERR_BLOCKED_BY_CLIENT` | its POST was stopped: look for it under `writes stopped`, and do not read it as a defect |
 | `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `--hrId` |
 | background launcher task "failed, exit 127" after you stopped it | expected — that is the kill, not a crash |

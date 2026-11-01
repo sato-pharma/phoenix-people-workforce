@@ -33,7 +33,11 @@
 - [A heredoc can eat a SQL regex's backslash](a-bash-heredoc-can-eat-the-backslash-of-a-sql-regex.md) - 164 instead of 759, no error; use `[[:space:]]+`.
 - [A returning leaver is a new employee](a-returning-leaver-is-a-new-employee.md) - new record and HR ID, old one stays resigned; only a current record's ID or mobile blocks the joining form.
 - [Channels by Rep whole history took staging down](channels-by-rep-whole-history-took-staging-down.md) - nothing excluded, 7 min 45 s in; never rerun it, compare the pricing step by month.
+- [Opening a CRM page as a real person writes production](opening-a-crm-page-as-a-real-person-writes-production.md) - clears their "new" badge; `context.route` misses beacons.
+- [railway logs with no deployment id reads only the current one](railway-logs-without-a-deployment-id-reads-only-the-current-one.md) - an earlier window returns 0 rows and no error.
 - [Delta (2) July to September were not Sahar's months](delta-2-july-to-september-were-not-sahars-months.md) - the engine names the seat's current holder on past months; the wording fix rides PR 6759.
+- [Staging declines destructive SQL too](staging-declines-destructive-sql-too.md) - a no-op drop came back declined while a select passed; use apply-sql-file.mjs, and a decline is not flagged as an error.
+- [A family video is a full-screen film](a-family-video-is-a-full-screen-film-not-a-paper-slideshow.md) - the paper-print slideshow scored 2/10; full-bleed motion, a real song and his own voice, and polish his wording unasked.
 
 
 
