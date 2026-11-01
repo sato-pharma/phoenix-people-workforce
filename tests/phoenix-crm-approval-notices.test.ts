@@ -113,7 +113,7 @@ export function runPhoenixCrmApprovalNoticeTests() {
     // `waitingCount` is the number on the Team tab, and `testWaitingCount` the number on the Super
     // Admin's own Test accounts tab (owner, 2026-10-22). The first two once left it out.
     assert.equal(
-      (app.match(/waitingForYou\.offPlanVisits/g) ?? []).length,
+      (`${app}${source("src/lib/phoenix-crm/opening-tab.ts")}`.match(/waitingForYou\.offPlanVisits/g) ?? []).length,
       3,
       "the opening-tab decision, the Team tab's count and the Test accounts tab's count all take it",
     );

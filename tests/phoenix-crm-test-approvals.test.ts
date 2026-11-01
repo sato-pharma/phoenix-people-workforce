@@ -248,7 +248,7 @@ export async function runPhoenixCrmTestApprovalTests(): Promise<void> {
     const overview = source("src/lib/phoenix-crm/server/overview.ts");
     assert.match(overview, /testAccounts: decidesTestWorld\(viewer\),/, "offered to exactly who its routes admit");
     const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
-    assert.match(app, /"settings", "testAccounts"\]/, "last in the tab bar");
+    assert.match(source("src/lib/phoenix-crm/opening-tab.ts"), /"settings", "testAccounts"\]/, "last in the tab bar");
     assert.match(app, /testAccounts: PHOENIX_CRM_TEST_TAB_LABEL,/, "labelled from the one constant");
     assert.match(app, /10: "grid-cols-2 sm:grid-cols-5"/, "ten tabs fit the screen without shrinking the type");
     assert.match(app, /key === "testAccounts"\s*\?\s*testWaitingCount/, "its badge counts the test world's waiting items");
