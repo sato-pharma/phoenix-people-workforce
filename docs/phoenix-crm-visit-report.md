@@ -33,6 +33,10 @@ Account behind the one-line cue in `.claude/rules/phoenix-crm-boards.md` (owner,
 - `mockDevice` is the one `superAdmin`-sight field. `resolveVisitReportSelection` drops it, and
   `loadVisitReportEvidence` never queries a position case or selects `device_mocked` for the SFE Manager, so
   it is ABSENT from his answer, not blank.
+- **A district manager keeps "Validation decided by" and "Validation note or refusal reason"** (owner, 2026-11-01).
+  Asked directly after Place checks stopped sending a manager the decider's name, he answered "Keep it" for the name
+  and, for the note, that the rep's manager can see the decider's comment. This is the one place a manager can read
+  who decided. Do not take it for a leak and remove it without his word.
 
 ## One loader, one truth
 

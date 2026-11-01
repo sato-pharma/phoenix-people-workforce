@@ -508,7 +508,7 @@ export function runPhoenixCrmSharedPlaceGroupsTests(): void {
 
   const reviewsSource = read("src/lib/phoenix-crm/server/validation-reviews.ts");
   assert.ok(reviewsSource.includes('"id, place_id, status, decided_by_hr_id, decided_at"'), "🔴 the in-use read asks each place's review who decided it and when");
-  assert.ok(reviewsSource.includes("refusedByName: deciderLabel("), "🔴 the reopened read names who refused");
+  assert.ok(reviewsSource.includes("refusedByName: decides ? deciderLabel("), "🔴 the reopened read names who refused, to the deciders");
   assert.ok(serverPlaces.includes("refusal_reason, decided_by_hr_id, decided_at"), "and a rejected building's own decider, for the customers it reopened");
   assert.match(read("src/components/phoenix-crm/validated-place-list.tsx"), /mode === "team" \? null : decisionStamp\("Approved"/, "🔴 only the company board says who approved a place in use");
   assert.match(read("src/components/phoenix-crm/reopened-customer-list.tsx"), /mode === "team" \? null : decisionStamp\("Refused"/, "🔴 only the company board says who refused a waiting customer");
