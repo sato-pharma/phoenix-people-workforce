@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { createPlaceCheckReread, PLACE_CHECK_REREAD_QUIET_MS } from "../src/components/phoenix-crm/place-check-reread.ts";
 
 import {
   adviceOnSubject,
@@ -262,7 +263,64 @@ export function runPlaceReviewDeckTests(): void {
   }
   {
     const hook = stripComments(read("src/components/phoenix-crm/place-check-done.tsx"));
-    assert.match(functionBody(hook, "usePlaceCheckDone"), /scope\?\.done\(scope\.item, outcome\);\s*router\.refresh\(\);/, "outside the review the hook is exactly the old router.refresh()");
+    assert.match(functionBody(hook, "usePlaceCheckDone"), /scope\?\.done\(scope\.item, outcome\);\s*placeCheckReread\.ask\(\(\) => router\.refresh\(\)\);/, "outside the review the hook still re-reads the page, through the one shared wait");
+    assert.doesNotMatch(functionBody(hook, "usePlaceCheckDone"), /^\s*router\.refresh\(\);/m, "never a re-read of its own beside it");
+  }
+
+  // ── 4a · One re-read for a run of decisions (2026-11-01, "fix the portal home slow opens"): each one
+  // rebuilt the module's heaviest page, and every read in the company slowed while the builds overlapped ──
+  {
+    // A clock the test turns by hand.
+    let now = 0;
+    const timers = new Map<number, { at: number; run: () => void }>();
+    let nextHandle = 0;
+    const clock = {
+      clear: (handle: number) => void timers.delete(handle),
+      set: (run: () => void, ms: number) => {
+        nextHandle += 1;
+        timers.set(nextHandle, { at: now + ms, run });
+        return nextHandle;
+      },
+    };
+    const advanceTo = (time: number) => {
+      for (;;) {
+        const due = [...timers.entries()].filter(([, timer]) => timer.at <= time).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        now = due[1].at;
+        timers.delete(due[0]);
+        due[1].run();
+      }
+      now = time;
+    };
+
+    // The fourteen approvals of 10:45 to 10:50 Cairo on Sunday 1 Nov 2026, in seconds, as production logged them.
+    const pressed = [7, 19, 46, 58, 63, 74, 88, 106, 133, 145, 180, 195, 248, 273];
+    let reads = 0;
+    const reread = createPlaceCheckReread<number>(clock);
+    for (const second of pressed) {
+      advanceTo(second * 1000);
+      reread.ask(() => {
+        reads += 1;
+      });
+    }
+    assert.equal(reads, 2, "only the two pauses over the quiet time read the page while he works");
+    advanceTo(273_000 + PLACE_CHECK_REREAD_QUIET_MS);
+    assert.equal(reads, 3, "and the last decision is always read, once the quiet time has passed: three builds for fourteen decisions, not fourteen");
+    advanceTo(600_000);
+    assert.equal(reads, 3, "and nothing more arrives afterwards");
+
+    reread.ask(() => {
+      reads += 1;
+    });
+    reread.flush();
+    assert.equal(reads, 4, "leaving the one-by-one review reads at once");
+    advanceTo(1_200_000);
+    assert.equal(reads, 4, "and the wait it replaced never fires as well");
+    reread.flush();
+    assert.equal(reads, 4, "with nothing waiting, leaving the review reads nothing");
+
+    const button = stripComments(read("src/components/place-review-deck/review-deck-button.tsx"));
+    assert.match(functionBody(button, "PlaceReviewDeckButton"), /placeCheckReread\.flush\(\);/, "the review's close hands the board its fresh rows");
   }
 
   // ── 4b · A saved decision releases its button at once (owner, 2026-10-24: "when i press approve its

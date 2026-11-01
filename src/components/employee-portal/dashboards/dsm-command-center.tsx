@@ -33,7 +33,7 @@ import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
-import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
+import { AwaitCard, AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import { MyMapSnapshotCard } from "@/components/employee-portal/dashboards/my-map-snapshot-card";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import {
@@ -134,7 +134,9 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
 
-      <ManagerCvFoldersRow summary={snapshot.cvFolders} />
+      <Suspense fallback={null}>
+        <AwaitCard value={snapshot.cvFolders}>{(summary) => <ManagerCvFoldersRow summary={summary} />}</AwaitCard>
+      </Suspense>
 
       <Suspense fallback={<MmSectionSkeleton title="District Performance" />}>
         <AwaitRoleExtras extras={extras}>{({ dsmTeam }) => <DistrictPerformanceCard dsmTeam={dsmTeam} />}</AwaitRoleExtras>
@@ -169,7 +171,9 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         </AwaitRoleExtras>
       </Suspense>
 
-      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
+      <Suspense fallback={null}>
+        <AwaitCard value={earlyBirdStars}>{(stars) => <EarlyBirdOfTheFortnightCard stars={stars} />}</AwaitCard>
+      </Suspense>
 
       <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
         <AwaitRoleExtras extras={extras}>

@@ -295,8 +295,8 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
 
   // ── 4. An admin account opens on the company, never on one rep's entry screen ──────────────────
   {
-    const app = code("src/components/phoenix-crm/phoenix-crm-app.tsx");
-    const opening = app.slice(app.indexOf("function openingTab("), app.indexOf("function territoriesFor("));
+    const rules = code("src/lib/phoenix-crm/opening-tab.ts");
+    const opening = rules.slice(rules.indexOf("function openingTab("), rules.indexOf("function territoriesFor("));
     assert.ok(opening.length > 0, "openingTab is where the landing tab is decided");
     assert.match(opening, /surface === "admin" && !viewer\.isRep/, "the admin landing is decided by the surface, never by the role alone");
     assert.match(opening, /if \(tabs\.team\) return "team";/, "he lands on the whole company");
@@ -305,6 +305,7 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
 
     // The territory picker: 74 seats are typed into, not scrolled, and the LINE is in the option
     // itself because the combo box flattens optgroup.
+    const app = code("src/components/phoenix-crm/phoenix-crm-app.tsx");
     const picker = app.slice(app.indexOf("function territoryPicker("), app.indexOf("function questionNote("));
     assert.ok(picker.length > 0, "territoryPicker is the module's own territory dropdown");
     assert.match(picker, /const combo = surface === "admin";/, "the picker knows which surface it is on");

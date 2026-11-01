@@ -382,6 +382,9 @@ export type PortalMyInterview = {
   zoomJoinUrl: string | null;
 };
 
+/** A landing card's read: still running when the page asked for it to be streamed, in hand otherwise. */
+export type Streamed<T> = T | Promise<T>;
+
 export type PortalHomeSnapshot = {
   shell: EmployeePortalShellData;
   role: string;
@@ -391,11 +394,11 @@ export type PortalHomeSnapshot = {
    * an empty box, so it appears only for people who actually have an interview coming up. This is
    * what makes the calendar relevant on the home page daily (owner, 2026-09-26).
    */
-  myInterviews: PortalMyInterview[];
+  myInterviews: Streamed<PortalMyInterview[]>;
   /** This fortnight's stars, one per line, shown as a compact card on every audience's landing
    * page. Empty until the first fortnight is confirmed — the card renders nothing rather than an
    * empty box. */
-  earlyBirdStars: EarlyBirdsWinnerRecord[];
+  earlyBirdStars: Streamed<EarlyBirdsWinnerRecord[]>;
   pendingVacationCount: number;
   pendingExcuseCount: number;
   /**
@@ -412,7 +415,7 @@ export type PortalHomeSnapshot = {
    * managers only (20 people on production; no medical rep has ever submitted one). A card reading
    * "no score" on hundreds of dashboards would be noise, so there is no card at all.
    */
-  planAdherence: PortalPlanAdherence | null;
+  planAdherence: Streamed<PortalPlanAdherence | null>;
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
   /**
@@ -584,7 +587,7 @@ export type PortalHomeSnapshot = {
    * many of the CVs in them are still unopened (owner, 2026-10-16). Null for anybody who holds no
    * shelf, so the overview row is absent rather than reading "0 folders".
    */
-  cvFolders?: ManagerFolderSummary | null;
+  cvFolders?: Streamed<ManagerFolderSummary | null>;
   /**
    * Medical Rep only, and only when the page asked for it (`streamRepCards`): the four slow reads of
    * the rep's landing, handed over STILL RUNNING so the page can paint at once and fill each card the
@@ -1168,6 +1171,15 @@ export async function getPortalHomeSnapshot(
      */
     streamDvFocus?: boolean;
     /**
+     * Every role's landing: hand plan adherence, the person's own interviews, the CV folders and the
+     * Early Birds back still running, in their own fields, instead of holding the page for the slowest of
+     * them (2026-11-01, "fix the portal home slow opens": plan adherence alone held a manager's landing
+     * longer than his identity card and every count together). The same rule as `streamRepCards` — only a
+     * caller that renders them through Suspense may ask; the JSON home route must not, since a promise
+     * serializes to `{}`.
+     */
+    streamLandingCards?: boolean;
+    /**
      * The landing page only: do not start the reads its role's landing never draws — see
      * `skippedOnLanding` below. Each answers its own empty value, so nothing drawn changes. The JSON home
      * route and the Training Manager's page read the whole snapshot and must not ask.
@@ -1198,6 +1210,8 @@ export async function getPortalHomeSnapshot(
   // And the double-visit focus at the foot of a manager's landing: it walks every double visit since
   // the trend's first month, and nothing above it on the page reads any of it.
   const streamDvFocus = options?.streamDvFocus === true && STREAM_DV_FOCUS_ROLES.has(role);
+  // And the four cards any landing may draw, none of which anything above them on the page reads.
+  const streamLandingCards = options?.streamLandingCards === true;
   // What this role's LANDING never draws (portal-command-center.tsx and dashboards/*, read 2026-10-31,
   // "fix the slowest five pages"): the home page waited on these reads and then threw them away.
   const skippedOnLanding = options?.landing === true ? landingSkips(role) : NO_LANDING_SKIPS;
@@ -1466,24 +1480,26 @@ export async function getPortalHomeSnapshot(
       streamRoleExtras ? Promise.resolve(emptyRoleExtras) : roleExtrasPromise,
       // Streamed: the double-visit focus rides on dvFocusCard, so the page does not wait for it here.
       streamDvFocus ? Promise.resolve(null) : dvFocusPromise,
-      earlyBirdStarsPromise,
-      planAdherencePromise,
+      // Streamed: these four ride on their own fields below, so the page does not wait for them here.
+      // Each one catches its own failure, which is what makes it safe to hand over running.
+      streamLandingCards ? Promise.resolve([]) : earlyBirdStarsPromise,
+      streamLandingCards ? Promise.resolve(null) : planAdherencePromise,
       // Streamed: the leave left rides on repCards.record, so the page does not wait for it here.
       repCards ? Promise.resolve(null) : leaveDaysRemainingPromise,
-      myInterviewsPromise,
-      cvFoldersPromise,
+      streamLandingCards ? Promise.resolve([]) : myInterviewsPromise,
+      streamLandingCards ? Promise.resolve(null) : cvFoldersPromise,
       latestPayslipPromise,
     ]);
 
   return {
     shell,
     role,
-    myInterviews,
-    earlyBirdStars,
+    myInterviews: streamLandingCards ? myInterviewsPromise : myInterviews,
+    earlyBirdStars: streamLandingCards ? earlyBirdStarsPromise : earlyBirdStars,
     pendingVacationCount,
     pendingExcuseCount,
     pendingCountsAvailable,
-    planAdherence,
+    planAdherence: streamLandingCards ? planAdherencePromise : planAdherence,
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
     leaveDaysRemaining,
@@ -1500,7 +1516,7 @@ export async function getPortalHomeSnapshot(
     plansAwaitingManagerApproval,
     plansCountAvailable,
     dvFocus,
-    cvFolders,
+    cvFolders: streamLandingCards ? cvFoldersPromise : cvFolders,
     repCards,
     roleCards: streamRoleExtras ? roleExtrasPromise : null,
     dvFocusCard: streamDvFocus ? dvFocusPromise : null,

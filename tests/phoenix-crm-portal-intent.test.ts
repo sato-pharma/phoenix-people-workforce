@@ -57,7 +57,7 @@ export function runPhoenixCrmPortalIntentTests(): void {
   );
 
   const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
-  const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(app)?.[1] ?? "";
+  const order = /const TAB_ORDER: readonly TabKey\[\] = \[([^\]]+)\]/.exec(source("src/lib/phoenix-crm/opening-tab.ts"))?.[1] ?? "";
   for (const tab of ["visits", "plan"]) {
     assert.ok(order.includes(`"${tab}"`), `the page has a "${tab}" tab for the link to open`);
   }

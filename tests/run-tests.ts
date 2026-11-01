@@ -2061,6 +2061,7 @@ import { runPhoenixCrmPlanNeverBlockedTests } from "./phoenix-crm-plan-never-blo
 import { runPhoenixCrmPlanPendingVacationTests } from "./phoenix-crm-plan-pending-vacation.test.ts";
 import { runPhoenixCrmTapToRetryTests } from "./phoenix-crm-tap-to-retry.test.ts";
 import { runRouteNavigationStallRetryTests } from "./route-navigation-stall-retry.test.ts";
+import { runPhoenixCrmFirstReadTests } from "./phoenix-crm-first-read.test.ts";
 import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test.ts";
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
@@ -7818,6 +7819,11 @@ await runTest(
 await runTest(
   "Phoenix CRM split modules (owner, 2026-09-30, given priority): the sidebar opens a CHOOSER and never a module, each module is its own page with its own address, ?tab= and ?add= are forwarded not dropped, a module he may not open is a sentence not a 404, and the module list cannot drift from the overview's tab flags",
   runPhoenixCrmSplitModulesTests,
+);
+
+await runTest(
+  "Phoenix CRM first read (2026-11-01): the page starts the read its tab is about to ask for, on the route's own call and the tab's own address, and Back or a refresh never redraws it",
+  runPhoenixCrmFirstReadTests,
 );
 
 await runTest(

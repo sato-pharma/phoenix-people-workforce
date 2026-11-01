@@ -15,6 +15,7 @@ import { useState } from "react";
 import { GalleryHorizontalEnd } from "lucide-react";
 
 import { PlaceReviewDeck, writeReviewParam } from "@/components/place-review-deck/review-deck";
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { CrmButton } from "@/components/phoenix-crm/ui";
 import { deckStartOfBoardView, type DeckKind, type DeckTab, type PlaceReviewDeckInput } from "@/lib/place-review-deck/slides";
 
@@ -30,6 +31,9 @@ export function PlaceReviewDeckButton({ input, openOn }: { input: PlaceReviewDec
   const close = () => {
     setStart(null);
     writeReviewParam(null);
+    // The board's rows draw no saved outcome for what was decided on a slide, so he must not come back to them
+    // still offering Approve while the re-read waits for a pause.
+    placeCheckReread.flush();
   };
 
   return (

@@ -57,6 +57,10 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
   // Read for the Medical Rep ONLY (2026-10-31, "fix the slowest five pages"): his is the one landing
   // that draws the panel — PortalCommandCenter's own "medical rep" test — so every other role was
   // waiting on a CRM day load and throwing it away.
+  //
+  // 🔴 HANDED TO THE PAGE STILL RUNNING, AND NEVER AWAITED HERE (2026-11-01, "fix the portal home slow
+  // opens"): it is the slowest read on the landing, so awaiting it held the rep's whole page behind one
+  // panel. It fills under its own Suspense in the rep's command center.
   const repTodayPlanPromise =
     (access.role ?? "").toLowerCase() === "medical rep" ? loadRepTodayPlan(access) : Promise.resolve(null);
   const params = (await searchParams) ?? {};
@@ -70,12 +74,15 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     // Marketing Manager — his team, region or national figures, rankings, CRM board and inbox fill
     // under their own Suspense, and the identity band and pending actions paint first.
     // streamDvFocus: and the double-visit focus at the foot of a manager's landing, the same way.
+    // streamLandingCards: and plan adherence, his own interviews, the CV folders and the Early Birds,
+    // on every role's landing (2026-11-01, "fix the portal home slow opens").
     // landing: and the reads this role's landing never draws are not started at all.
     snapshot = await getPortalHomeSnapshot(access, {
       kpiMonth: one(params.kpiMonth),
       streamRepCards: true,
       streamRoleExtras: true,
       streamDvFocus: true,
+      streamLandingCards: true,
       landing: true,
     });
   } catch (error) {
@@ -91,7 +98,5 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     );
   }
 
-  const repTodayPlan = await repTodayPlanPromise;
-
-  return <PortalCommandCenter access={access} repTodayPlan={repTodayPlan} snapshot={snapshot} />;
+  return <PortalCommandCenter access={access} repTodayPlan={repTodayPlanPromise} snapshot={snapshot} />;
 }

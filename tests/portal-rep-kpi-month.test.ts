@@ -126,7 +126,7 @@ export function runPortalRepKpiMonthTests() {
     `${PAGE}: the month rides in the URL so every change re-runs the page's access gates server-side`,
   );
   assert.ok(
-    /getPortalHomeSnapshot\(access,\s*\{\s*kpiMonth: one\(params\.kpiMonth\)(,\s*streamRepCards: true)?(,\s*streamRoleExtras: true)?(,\s*streamDvFocus: true)?(,\s*landing: true)?,?\s*\}\)/.test(page),
+    /getPortalHomeSnapshot\(access,\s*\{\s*kpiMonth: one\(params\.kpiMonth\)(,\s*streamRepCards: true)?(,\s*streamRoleExtras: true)?(,\s*streamDvFocus: true)?(,\s*streamLandingCards: true)?(,\s*landing: true)?,?\s*\}\)/.test(page),
     `${PAGE}: ?kpiMonth must reach the snapshot, first value only`,
   );
 

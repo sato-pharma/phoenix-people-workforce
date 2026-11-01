@@ -380,7 +380,7 @@ export function runPlanAdherenceTests(): void {
   assert.match(detail, /<PlanAdherenceReport score=\{detail\.adherence\}/, "the plan page shows the breakdown");
 
   // 3. The overview dashboard, and its click-through.
-  assert.match(snapshot, /planAdherence: PortalPlanAdherence \| null;/, "the portal snapshot carries the score");
+  assert.match(snapshot, /planAdherence: Streamed<PortalPlanAdherence \| null>;/, "the portal snapshot carries the score");
   assert.match(commandCenter, /<PlanAdherenceDashboardCard/, "the dashboard renders the card");
   assert.match(
     commandCenter,

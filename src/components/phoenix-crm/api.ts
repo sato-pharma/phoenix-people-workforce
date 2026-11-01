@@ -12,6 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useCrmFirstRead } from "@/components/phoenix-crm/first-read";
+import { firstReadFor, firstReadSpent, readFirst } from "@/lib/phoenix-crm/first-read";
+
 export class CrmRequestError extends Error {
   readonly code: string;
   readonly status: number;
@@ -94,16 +97,7 @@ export function crmDelete<T>(url: string, key: string): Promise<T> {
   return request<T>(url, { method: "DELETE" }, key, "Phoenix could not delete this. Try again.");
 }
 
-/** A GET path with its query. Empty, null and false values are left out (a flag is on only when sent). */
-export function crmUrl(path: string, params: Record<string, string | number | boolean | null | undefined> = {}): string {
-  const search = new URLSearchParams();
-  for (const [name, value] of Object.entries(params)) {
-    if (value === null || value === undefined || value === "" || value === false) continue;
-    search.set(name, value === true ? "true" : String(value));
-  }
-  const query = search.toString();
-  return query ? `${path}?${query}` : path;
-}
+export { crmUrl } from "@/lib/phoenix-crm/crm-url";
 
 export function messageOf(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -168,6 +162,7 @@ type LoadState<T> = { data: T | null; error: string | null; tag: string | null; 
  * keeps the last answer on screen until the new one arrives.
  */
 export function useCrmGet<T>(url: string | null, key: string): CrmResource<T> {
+  const firstRead = useCrmFirstRead();
   const [nonce, setNonce] = useState(0);
   const [state, setState] = useState<LoadState<T>>({ data: null, error: null, tag: null, url: null });
 
@@ -192,13 +187,22 @@ export function useCrmGet<T>(url: string | null, key: string): CrmResource<T> {
     // So only our own cleanup may swallow the rejection; every other abort surfaces as a load error
     // with a Retry, like any other failed read.
     let superseded = false;
-    crmGet<T>(url, key, controller.signal).then(
+    const readItself = () => crmGet<T>(url, key, controller.signal);
+    // The page may already have started this very read (src/lib/phoenix-crm/first-read.ts). A reload never
+    // takes it: that one is asking for newer data than the page had.
+    const handedOver = nonce === 0 ? firstReadFor(firstRead, url, key) : null;
+    const landed = () => {
+      if (handedOver) firstReadSpent(handedOver);
+    };
+    (handedOver ? readFirst<T>(handedOver, readItself) : readItself()).then(
       (data) => {
         if (superseded) return;
+        landed();
         setState({ data, error: null, tag, url });
       },
       (error: unknown) => {
         if (superseded) return;
+        landed();
         setState((current) => ({ data: current.url === url ? current.data : null, error: messageOf(error), tag, url }));
       },
     );
@@ -206,7 +210,7 @@ export function useCrmGet<T>(url: string | null, key: string): CrmResource<T> {
       superseded = true;
       controller.abort();
     };
-  }, [key, nonce, url]);
+  }, [firstRead, key, nonce, url]);
 
   const reload = useCallback(() => setNonce((value) => value + 1), []);
   const replace = useCallback((next: T) => setState((current) => ({ ...current, data: next, error: null })), []);

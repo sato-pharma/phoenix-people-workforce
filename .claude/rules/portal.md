@@ -23,6 +23,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **THE LANDING NEVER WAITS FOR A CARD** (2026-11-01, "fix the portal home slow opens"). Plan adherence, the person's own interviews, the CV folders and the Early Birds ride running on their own snapshot fields (`streamLandingCards`, `Streamed<T>`), and a rep's day on `repTodayPlanPromise`; each fills in under its own Suspense. Only a caller that renders them through Suspense may ask: the JSON home route and the Training Manager's page must not, because a promise serializes to `{}`. Each read catches its own failure, which is what makes it safe to hand over running.
+
 - 🔴 **THE NSM TEAM CALENDAR'S SQUARE PRINTS AM · PM · PHARMACIES APART, AND A MANAGER'S DAY CARRIES EVERY RECORD THAT IS HIS** (owner, 2026-10-23). The engine attaches `ownVisitSplit` and `rideAlongSplit` per VISITS day (`splitBucketOf` → `visitCountBucket`, a campaign or admin row in none); the portal service hangs a manager's own Phoenix CRM single visits on his cells as `managerOwnSplit` (through `loadManagerOwnVisitDays`, best-effort). `portalDaySplit` prints his own calls, a pure ride-along day the split of the visits he joined (fuchsia stays the DV marker), and a day of only his own Phoenix visits reads as worked, never the rose "No activity". Display only — never a status, severity or deduction candidate. Pinned by `tests/nsm-team-calendar.test.ts`.
 
 ### Owner rules (moved from AGENTS.md §4)

@@ -102,7 +102,7 @@ function runRouteTests() {
 function runTabTests() {
   const app = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
 
-  const order = /const TAB_ORDER[^=]*=\s*\[([^\]]+)\]/.exec(app);
+  const order = /const TAB_ORDER[^=]*=\s*\[([^\]]+)\]/.exec(source("src/lib/phoenix-crm/opening-tab.ts"));
   assert.ok(order, "the page declares its tabs in TAB_ORDER");
   const tabs = [...order[1].matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
   assert.ok(tabs.includes("doctors"), "Doctors is one of the page's tabs");
