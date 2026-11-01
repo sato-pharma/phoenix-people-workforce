@@ -380,6 +380,21 @@ function testManagerOwnVisits() {
     "the rep's row holds the rep's own two visits and none of the manager's",
   );
 
+  // A product manager's row wears the title on her HR record (owner, 2026-11-01), never the plain word.
+  const PRODUCT = "A-9303";
+  const productVisit: CountedVisit = { bucket: "AM", creditKeys: [PRODUCT], date: "2026-10-19", own: false, time: "10:00" };
+  const tierOf = (jobTitle: string | null) => {
+    const line = buildFieldLines(
+      fieldInput([productVisit], {
+        directory: new Map([[PRODUCT, { areaName: null, jobTitle, lineName: null, managerName: null, name: "Test Product Manager" }]]),
+        productManagerKeys: new Set([PRODUCT]),
+      }),
+    ).find((row) => row.hrId === PRODUCT);
+    return line && line.metrics.kind === "field" ? line.metrics.tierLabel : undefined;
+  };
+  assert.equal(tierOf("Group Product Manager"), "Group Product Manager", "the Group Product Manager reads as herself on the report");
+  assert.equal(tierOf(null), "Product manager", "and with no title on record the plain word stands");
+
   const off = buildFieldLines(fieldInput([...own, ...repVisits], { managerOwnVisitsCountInOwnRow: false }));
   assert.equal(off.find((line) => line.hrId === MANAGER), undefined, "switched off, his own visits make no row");
   const repOff = off.find((line) => line.hrId === REP);

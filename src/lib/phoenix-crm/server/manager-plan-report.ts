@@ -526,7 +526,7 @@ export async function loadManagerPlanReport(
           .map((entry) => ({
             hrId: entry.hrId,
             name: nameOf(names, entry.hrId),
-            place: managerPlace(entry.seat, entry.kind),
+            place: managerPlace(entry.seat, entry.kind, entry.jobTitle),
             summaryText: reports.get(entry.hrId)?.summaryText ?? managerPlanSummaryText({ planned: 0, done: 0, notDone: 0, unplanned: 0 }),
           }))
           .sort(
@@ -535,7 +535,7 @@ export async function loadManagerPlanReport(
           )
       : null,
     manager: chosen
-      ? { hrId: chosen, name: nameOf(names, chosen), place: managerPlace(writers.get(chosen)?.seat ?? null, writers.get(chosen)?.kind ?? "dm") }
+      ? { hrId: chosen, name: nameOf(names, chosen), place: managerPlace(writers.get(chosen)?.seat ?? null, writers.get(chosen)?.kind ?? "dm", writers.get(chosen)?.jobTitle) }
       : null,
     report: chosen ? (reports.get(personKey(chosen) ?? chosen) ?? null) : null,
   };

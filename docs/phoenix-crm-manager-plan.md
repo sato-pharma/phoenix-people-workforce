@@ -449,6 +449,24 @@ product manager keeps filing the legacy form, so his attendance still reads that
 Migration `20261017213000` (staging and production, 17 Oct). Pinned in section 10 of
 `tests/phoenix-crm-manager-plan.test.ts`.
 
+## A product manager's title comes from the HR record (2026-11-01)
+
+His words: *"in phoenix crm plan the title shown for rasha sabry is produyctr manager and she is group productr
+manager fixn trhis and update her title everywhere in system"*.
+
+Every stored title was already right when this was read on production: `employees.job_title`, her login and access
+profile, 9 salary records, 21 HR operations report lines and 17 legacy plan headers all read Group Product Manager. The wrong word was printed by code: `managerPlannerTitle("pm")` answered "Product
+manager" for both holders of the `pm` kind, and the HR operations field report had the same word as a literal.
+
+`readRoleRoster` now reads `employees.job_title`, `managerPlanWriterFor` carries it as `jobTitle`, and the plan board,
+the pickers, Manager's own list, the actual-versus-planned report and the Approvals Hub detail print it. "Product
+manager" stays only as the fallback for a planner no longer on the roster, or with no title on record.
+
+Deliberately not changed: the visit kind "Product manager visit" and its report column, which name a kind of visit
+rather than a person; the "Product managers" heading over a picker; `employees.crm_username`, which is the old CRM's
+login key; the coverage tally's "product manager" test in `crm/sfe-doctor-coverage.ts`, which the owner's ruling of
+27 Aug 2026 keeps away from the Group Product Manager.
+
 ## A vacant area: named, its list the previous rep's, and a visit there says where (2026-10-19)
 
 His words, in chat on 19 Oct 2026: *"when a manager is planning or doing single visits make the vacant

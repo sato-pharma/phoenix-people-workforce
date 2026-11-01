@@ -643,7 +643,7 @@ function scopeChoices(
 async function buildBoard(
   viewer: PhoenixCrmViewer,
   isTest: boolean,
-  reader: { mode: "own" | "pick"; canWrite: boolean; managers: Array<{ hrId: string; kind: ManagerPlannerKind; seat: OrgSeat | null }>; managerHrId: string | null },
+  reader: { mode: "own" | "pick"; canWrite: boolean; managers: Array<{ hrId: string; kind: ManagerPlannerKind; seat: OrgSeat | null; jobTitle?: string | null }>; managerHrId: string | null },
   weekStart: string,
   scopeParam: unknown = null,
 ): Promise<ManagerPlanBoardView> {
@@ -651,7 +651,7 @@ async function buildBoard(
   const pickNames = reader.mode === "pick" ? await loadPeopleNames(reader.managers.map((entry) => entry.hrId)) : new Map<string, string>();
   if (reader.mode === "pick") {
     view.managers = reader.managers
-      .map((entry) => ({ hrId: entry.hrId, name: nameOf(pickNames, entry.hrId), place: managerPlace(entry.seat, entry.kind) }))
+      .map((entry) => ({ hrId: entry.hrId, name: nameOf(pickNames, entry.hrId), place: managerPlace(entry.seat, entry.kind, entry.jobTitle) }))
       .sort((left, right) => left.place.localeCompare(right.place) || left.name.localeCompare(right.name));
   }
   const managerHrId = reader.managerHrId;
@@ -719,7 +719,7 @@ async function buildBoard(
     ...slots.map((slot) => slot.seniorVisit?.seniorHrId),
     ...seniorOffers.map((offer) => offer.hrId),
   ]);
-  view.writer = { kind: writer.kind, title: managerPlannerTitle(writer.kind) };
+  view.writer = { kind: writer.kind, title: managerPlannerTitle(writer.kind, writer.jobTitle) };
   // A regional, national or product manager sees the people of the district he chose (owner, 2026-10-25).
   const seniorsHere = writer.kind === "dm" ? seniorOffers : chosen?.dmSeatId ? seniorOffersForScope(seniorOffers, chosen) : [];
   view.seniors = seniorsHere.map((offer) => ({ ...offer, name: nameOf(names, offer.hrId) }));
@@ -743,7 +743,7 @@ async function buildBoard(
   const canWrite = reader.mode === "own" && reader.canWrite && managerHrId === viewer.hrId;
 
   view.canWrite = canWrite && state === "plan";
-  view.manager = { hrId: managerHrId, name: nameOf(names, managerHrId), place: managerPlace(writer.seat, writer.kind) };
+  view.manager = { hrId: managerHrId, name: nameOf(names, managerHrId), place: managerPlace(writer.seat, writer.kind, writer.jobTitle) };
   const firstApprover = plan && plan.status !== "draft" ? plan.firstApproverHrId : approvers.firstHrId;
   const secondApprover = plan && plan.status !== "draft" ? plan.secondApproverHrId : approvers.secondHrId;
   view.plan = {

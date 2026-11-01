@@ -52,7 +52,7 @@ export const MANAGER_PLAN_NOT_FOR_YOU =
   "A manager's weekly plan is read by that manager, the managers above, SFE, the CEO and the Super Admin.";
 
 /** A manager the viewer may read, with the seat his plan is filed on — none for a product manager. */
-export type ReachableManager = { hrId: string; kind: ManagerPlannerKind; seat: OrgSeat | null };
+export type ReachableManager = { hrId: string; kind: ManagerPlannerKind; seat: OrgSeat | null; jobTitle?: string | null };
 
 /**
  * "own" — his own plan, as its writer; "pick" — any of `managers`, chosen on screen. A writer who also
@@ -68,14 +68,14 @@ export type ManagerPlanReach = {
 };
 
 /** "Delta (1) · Anti Infective" — where a manager's seat is, never its code. A product manager's: his title. */
-export function managerPlace(seat: OrgSeat | null, kind: ManagerPlannerKind = "dm"): string {
-  if (!seat) return kind === "dm" ? "District" : managerPlannerTitle(kind);
+export function managerPlace(seat: OrgSeat | null, kind: ManagerPlannerKind = "dm", jobTitle?: string | null): string {
+  if (!seat) return kind === "dm" ? "District" : managerPlannerTitle(kind, jobTitle);
   const place = [seat.regionName ?? seat.areaName ?? seat.seatLabel ?? (kind === "dm" ? "District" : null), seat.lineName].filter(Boolean).join(" · ");
   return kind === "dm" ? place || "District" : [managerPlannerTitle(kind), place].filter(Boolean).join(" · ");
 }
 
 /** A viewer built by hand (a test, a script) may carry no roster; the server always does. */
-function productManagersOf(viewer: Pick<PhoenixCrmViewer, "productManagers">): ReadonlyArray<ProductManagerPlanner> {
+function productManagersOf(viewer: Partial<Pick<PhoenixCrmViewer, "productManagers">>): ReadonlyArray<ProductManagerPlanner> {
   return Array.isArray(viewer.productManagers) ? viewer.productManagers : [];
 }
 
@@ -86,10 +86,12 @@ function trainingManagersOf(viewer: Partial<Pick<PhoenixCrmViewer, "trainingMana
 
 /** The viewer's own writer: what he plans as, or null. */
 export function managerPlanWriter(
-  viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "plansAsProductManager"> & Partial<Pick<PhoenixCrmViewer, "plansAsTrainingManager">>,
+  viewer: Pick<PhoenixCrmViewer, "org" | "hrId" | "plansAsProductManager"> & Partial<Pick<PhoenixCrmViewer, "plansAsTrainingManager" | "productManagers">>,
 ): ManagerPlanWriter | null {
+  const own = personKey(viewer.hrId);
   return managerPlanWriterOf(viewer.org, viewer.hrId, {
     productManager: viewer.plansAsProductManager === true,
+    productManagerTitle: productManagersOf(viewer).find((entry) => entry.hrId === own)?.jobTitle ?? null,
     trainingManager: viewer.plansAsTrainingManager === true,
   });
 }
@@ -101,8 +103,10 @@ export function managerPlanWriterFor(
 ): ManagerPlanWriter | null {
   const key = personKey(hrId);
   if (!key) return null;
+  const productManager = productManagersOf(viewer).find((entry) => entry.hrId === key);
   return managerPlanWriterOf(viewer.org, key, {
-    productManager: productManagersOf(viewer).some((entry) => entry.hrId === key),
+    productManager: productManager !== undefined,
+    productManagerTitle: productManager?.jobTitle ?? null,
     trainingManager: trainingManagersOf(viewer).some((entry) => entry.hrId === key),
   });
 }
@@ -118,7 +122,7 @@ export function managerPlanSeatOf(viewer: Pick<PhoenixCrmViewer, "org">, hrId: s
 }
 
 function reachable(writer: ManagerPlanWriter): ReachableManager {
-  return { hrId: writer.hrId, kind: writer.kind, seat: writer.seat };
+  return { hrId: writer.hrId, kind: writer.kind, seat: writer.seat, jobTitle: writer.jobTitle ?? null };
 }
 
 /** The seat-holding writers of the company: every district manager, then every regional and national sales manager. */

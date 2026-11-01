@@ -245,7 +245,7 @@ export async function loadManagerOwnList(viewer: PhoenixCrmViewer, raw: { manage
   const pickNames = choices ? await loadPeopleNames(choices.map((entry) => entry.hrId)) : new Map<string, string>();
   const managers = choices
     ? choices
-        .map((entry) => ({ hrId: entry.hrId, name: nameOf(pickNames, entry.hrId), place: managerPlace(entry.seat, entry.kind) }))
+        .map((entry) => ({ hrId: entry.hrId, name: nameOf(pickNames, entry.hrId), place: managerPlace(entry.seat, entry.kind, entry.jobTitle) }))
         .sort(
           (left, right) =>
             Number(right.hrId === selfHrId) - Number(left.hrId === selfHrId) || left.place.localeCompare(right.place) || left.name.localeCompare(right.name),
