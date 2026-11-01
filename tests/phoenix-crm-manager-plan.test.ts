@@ -2486,6 +2486,8 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   const optionalBoard = source("src/components/phoenix-crm/manager-plan-board.tsx");
   assert.match(optionalBoard, /!byRegion && !customersOptional && draft\.customers\.length === 0/, "the board lets the rep go alone");
   assert.match(optionalBoard, /!customersOptional && draft\.customers\.length === 0\) return "choose at least one customer"/, "the board lets the area go alone");
+  assert.match(optionalBoard, /const problem = draftProblem\(waiting, choosesADistrict\(viewRef\.current\), plansARegion\(viewRef\.current\), viewRef\.current\?\.customersOptional === true\)/, "the save loop asks with the same option as the screen, or the half-day reads Saving soon and never goes");
+  assert.match(optionalBoard, /function draftProblem\(draft: HalfDraft, choosesDistrict: boolean, byRegion: boolean, customersOptional: boolean\)/, "no caller of the check can leave the option out");
   assert.match(optionalBoard, /!view\.customersOptional && nothingToTick/, "a rep with nothing to tick stays pickable where the rep alone is enough");
   assert.match(optionalBoard, /leavesTheDay: day\.halves\.indexOf\(currentHalf\) === day\.halves\.length - 1/, "Next knows when it leaves the day");
   assert.match(optionalBoard, /AM and PM are each optional\. Plan one of them or both\./, "the screen says AM and PM are each optional");
