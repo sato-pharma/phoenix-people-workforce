@@ -46,6 +46,20 @@ WITHOUT CAP"* — of the four hospitals in Saad Salama's district (CNS, Alex-BHR
 - Migration `20261031170001_phoenix_crm_alex_hospitals_no_cap.sql`, which stops itself unless every hospital
   account is still on its seat. Pinned by `tests/phoenix-crm-offplan-exemption.test.ts` (`runLiftedVenueTests`).
 
+## One Qalubeya polyclinic with no cap (owner, 2026-11-01)
+
+*"MAKE الراعى الصالح POLYCLICNIC FOR MOHAMED SALEM QALUBEYA PEDIA BE ABLE TO SUBMIT DRS IN THIS POLYCLINIC AS NEEDED
+DONOT FOLLOW THE CAP IN THIS POLYCLINIC ONLY"* — Mohamed Ahmed Mohamed Hassan Salem (`SEAT-PED-REP-D11`), polyclinic
+**مستشفي الراعي الصالح**. He had reached three visits there that day with four doctors seated.
+
+- One key-only row, key `الراعي الصالح`, `lifts_venue_cap = true`: the same doors as the four hospitals above, no
+  new code. It reaches this seat's one venue; the migration stops itself if the key ever reaches two.
+- **Not reached:** his other venue (مستشفي كنيسه العذراء, still three), and the CNS rep's venues of the same name in
+  Qalubeya, which are on `SEAT-CNS-REP-D11`. **What stays** is the same list as above: approval, one visit per
+  customer per day, the 5 and 15 day caps, the hold on an unvalidated customer.
+- Migration `20261101162433_phoenix_crm_al_raee_polyclinic_no_cap.sql`. Pinned by
+  `tests/phoenix-crm-offplan-exemption.test.ts` (`runLiftedVenueTests`). To end it, set `ended_at` on the row.
+
 ## A new hire's first month (owner, 2026-10-26)
 
 *"Aya Mamdouh is a new hire — make her able to submit unplanned visits during her first hiring month with no cap, only

@@ -88,6 +88,7 @@ export function runPhoenixCrmOffplanExemptionTests(): void {
 }
 
 const LIFTED_MIGRATION = "supabase/migrations/20261031170001_phoenix_crm_alex_hospitals_no_cap.sql";
+const AL_RAEE_MIGRATION = "supabase/migrations/20261101162433_phoenix_crm_al_raee_polyclinic_no_cap.sql";
 
 /**
  * Owner, 2026-10-31, of four hospitals in Saad Salama's district: "make them normally add in their plans any count
@@ -130,6 +131,14 @@ function runLiftedVenueTests(): void {
   assert.ok(rules.includes("liftedVenues: input.liftedVenues,"), "resolvePlanItems passes them to the venue cap");
   const loader = readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8");
   assert.ok(loader.includes('rpc("phoenix_crm_venue_cap_lifted"'), "the plan asks the door's own rule");
+
+  // Owner, 2026-11-01: one Qalubeya polyclinic on Mohamed Salem's Pedia seat, "THIS POLYCLINIC ONLY". A row, never a
+  // setting, and on his seat alone — the CNS rep's venues of the same name sit on SEAT-CNS-REP-D11 and keep their three.
+  const alRaee = readFileSync(AL_RAEE_MIGRATION, "utf8").replace(/^--.*$/gm, "");
+  assert.ok(alRaee.includes("'SEAT-PED-REP-D11'") && !alRaee.includes("'SEAT-CNS-REP-D11'"), "🔴 his seat, and no other");
+  assert.ok(alRaee.includes("public.phoenix_crm_fold_name('الراعي الصالح')"), "the key names this polyclinic, folded like the venue's name");
+  assert.ok(!alRaee.includes("update public.phoenix_crm_settings"), "🔴 the settings are never raised");
+  assert.ok(alRaee.includes("raise exception"), "🔴 the migration stops itself if the key reaches a second venue");
 }
 
 const NEW_HIRE_MIGRATION = "supabase/migrations/20261026230001_phoenix_crm_new_hire_offplan_month.sql";
