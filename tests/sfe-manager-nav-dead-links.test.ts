@@ -164,6 +164,23 @@ export function runSfeManagerNavDeadLinksTests() {
     "Customer Directory's export route must explicitly admit SFE Manager, mirroring the page gate.",
   );
 
+  // (6b) The rest of the workspace must mirror it too. The page and the export admitted him on
+  // 2026-08-05 and these four did not, so the page opened and his first filter answered "restricted
+  // to the admin account" (refused 403, 2026-11-01 16:00 Cairo). The list and channel routes feed the
+  // workspace; every row links to the detail page, which reads the detail route.
+  for (const gatedFile of [
+    "app/api/sales/customer-directory/route.ts",
+    "app/api/sales/customer-directory/by-channel/route.ts",
+    "app/api/sales/customer-directory/[distributor]/[clientCode]/route.ts",
+    "app/(admin)/sales/customer-directory/[distributor]/[clientCode]/page.tsx",
+  ]) {
+    assert.match(
+      readFileSync(gatedFile, "utf8"),
+      /access.role !== "Super Admin" && access.role !== "SFE Manager" && access.scope !== "system"/,
+      `${gatedFile} must admit SFE Manager and nobody wider, mirroring the Customer Directory page gate.`,
+    );
+  }
+
   // (7) Monthly Closing's export route must mirror the page's carve-out too -- fixed 2026-08-05.
   // SFE Manager sees the full company-wide matrix in the workspace, so his download must be the
   // SAME full workbook, not the scoped "Details" fallback built for District/Regional/National

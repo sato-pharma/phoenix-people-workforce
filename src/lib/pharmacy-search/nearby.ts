@@ -17,9 +17,11 @@
 
 import { classifyCrmContactSpeciality, isHospitalSpeciality } from "@/lib/crm/contact-taxonomy";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
+import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { boundingBox, haversineKm, isUsablePoint, roundKm, type Point } from "./geo";
+import { visibleDistributorRows } from "./source-visibility";
 import type { NearbyDoctor, NearbyHospital } from "./types";
 
 export const DEFAULT_RADIUS_KM = 2;
@@ -231,7 +233,7 @@ export async function findNearbyContacts(
  * `external.ts`, and only when the reader asks for it.
  */
 export async function findKnownHospitals(
-  options: { brickId: string | null; centre: Point | null; radiusKm?: number },
+  options: { brickId: string | null; centre: Point | null; radiusKm?: number; viewer: SourceMaskViewer },
 ): Promise<NearbyHospital[]> {
   const supabase = getSupabaseAdmin();
   const radiusKm = options.radiusKm ?? DEFAULT_RADIUS_KM;
@@ -272,11 +274,10 @@ export async function findKnownHospitals(
   }
 
   if (options.brickId) {
-    const { data, error } = await supabase
-      .from("source_of_sales_customer_map")
-      .select("customer_name, address, brick_id")
-      .eq("brick_id", options.brickId)
-      .limit(1000);
+    const { data, error } = await visibleDistributorRows(
+      supabase.from("source_of_sales_customer_map").select("customer_name, address, brick_id").eq("brick_id", options.brickId),
+      options.viewer,
+    ).limit(1000);
 
     if (error) throw new Error(`Brick hospital lookup failed: ${error.message}`);
 

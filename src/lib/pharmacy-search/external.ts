@@ -20,6 +20,7 @@ import {
   hasGoogleServerKey,
   type PlaceSuggestion,
 } from "@/lib/google-maps/server";
+import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 
 import { haversineKm, roundKm } from "./geo";
 import { googleMapsUrlFor, snapToNearestBrick } from "./locate";
@@ -63,6 +64,7 @@ export async function loadExternalPharmacyProfile(options: {
   includeGoogleHospitals?: boolean;
   placeId: string;
   radiusKm?: number;
+  viewer: SourceMaskViewer;
 }): Promise<PharmacyProfile> {
   if (!hasGoogleServerKey()) throw new GoogleLookupUnavailableError();
 
@@ -78,7 +80,7 @@ export async function loadExternalPharmacyProfile(options: {
   const [snap, contacts, knownHospitals] = await Promise.all([
     snapToNearestBrick(centre),
     findNearbyContacts(centre, radiusKm),
-    findKnownHospitals({ brickId: null, centre, radiusKm }),
+    findKnownHospitals({ brickId: null, centre, radiusKm, viewer: options.viewer }),
   ]);
   const nearbyDoctors = contacts.doctors;
 

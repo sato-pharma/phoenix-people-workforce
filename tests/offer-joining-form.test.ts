@@ -13,13 +13,63 @@ import { stripComments } from "./support/comment-strip.ts";
  * acceptance — it creates his Employee Master record, seated in the AU organogram, through the same
  * chain HR's Add Employee runs.
  *
- * PURE: the suite runs with production credentials, so this file calls only modules that do no I/O
- * and reads the rest as source. Each section names the failure it stops.
+ * PURE: the suite runs with production credentials, so this file calls only modules that do no I/O,
+ * hands the two service reads it calls a fake database, and reads the rest as source. Each section
+ * names the failure it stops.
  */
 
 const root = process.cwd();
 const code = (relative: string) => stripComments(readFileSync(path.join(root, relative), "utf8"));
 const flat = (relative: string) => code(relative).replace(/\s+/g, " ");
+
+/**
+ * A stand-in for `db.from("employees")` that behaves like PostgREST where these checks depend on it:
+ * rows come back in the order given, `limit` cuts them, and only the selected columns come back, so a
+ * read that forgets `employment_status` or keeps `limit(1)` fails here as it would on production.
+ */
+function fakeEmployeesDb(rows: Array<Record<string, unknown>>, failing?: "identity" | "recent") {
+  const orFilters: string[] = [];
+  const from = () => {
+    let columns: string[] = [];
+    let cut: number | null = null;
+    let kept = [...rows];
+    let isFailing = false;
+    const builder = {
+      eq(column: string, value: unknown) {
+        kept = kept.filter((row) => row[column] === value);
+        return builder;
+      },
+      gte(column: string, value: string) {
+        if (failing === "recent") isFailing = true;
+        kept = kept.filter((row) => String(row[column]) >= value);
+        return builder;
+      },
+      limit(count: number) {
+        cut = count;
+        return builder;
+      },
+      or(filter: string) {
+        orFilters.push(filter);
+        if (failing === "identity") isFailing = true;
+        kept = kept.filter(
+          (row) => filter.includes(`national_id.eq."${String(row.national_id)}"`) || filter.includes(`mobile_number.eq."${String(row.mobile_number)}"`),
+        );
+        return builder;
+      },
+      select(list: string) {
+        columns = list.split(",");
+        return builder;
+      },
+      then(resolve: (value: { data: unknown; error: unknown }) => void) {
+        if (isFailing) return resolve({ data: null, error: { message: "read failed" } });
+        const shown = (cut === null ? kept : kept.slice(0, cut)).map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])));
+        return resolve({ data: shown, error: null });
+      },
+    };
+    return builder;
+  };
+  return { from, orFilters };
+}
 
 export async function runOfferJoiningFormTests() {
   const previousSecret = process.env.PHOENIX_AUTH_SECRET;
@@ -257,7 +307,7 @@ async function run() {
   assert.match(flatService, /if \(!draft\.hireDate\) \{ await announceJoiningFormBlocked\(/, "the submit refuses and tells HR");
 
   // 10. 🔴 A JOINER HR ALREADY HIRED IS NOT HIRED TWICE — Add Employee never stamps the offer, so the
-  //     check is the national ID or mobile on any record, or the name on a record made since sending.
+  //     check is the national ID or mobile on a current record, or the name on a record made since sending.
   assert.match(flatService, /\.or\( \[ quotedOrClause\("national_id", "eq", answers\.nationalId\), quotedOrClause\("mobile_number", "eq", answers\.mobileNumber\), \]\.join\(","\), \)/, "ID or mobile on file");
   assert.match(flatService, /\.gte\("created_at", since\)/, "records made since the offer went out");
   assert.match(flatService, /if \(existing\.kind === "unknown"\) \{ return \{ message: "We could not complete/, "a failed read blocks, never passes");
@@ -266,6 +316,61 @@ async function run() {
   assert.equal(form.sameJoinerName("منى أحمد حسن", "منى أحمد"), true, "Arabic names match too");
   assert.equal(form.sameJoinerName("Mona Ahmed", "Mona Hassan"), false, "a different second name is someone else");
   assert.equal(form.sameJoinerName("Mona", "Mona Ahmed"), false, "one word is never enough");
+
+  // 10b. 🔴 A RETURNING LEAVER IS A NEW EMPLOYEE (owner, 2026-11-01) — a record whose employment has
+  //      ended does not block, and a current one still does however the rows happen to come back.
+  const joiningService = await import("../src/lib/offers/joining-form-service.ts");
+  const nationalId = "29001011234567";
+  const mobileNumber = "01012345678";
+  const answers = { fullName: "Ahmed Helal", mobileNumber, nationalId };
+  const offerSent = { candidateName: "Ahmed Helal", sentAt: "2026-10-20T10:00:00.000Z" };
+  const onFile = (hrId: string, status: string | null, over: Record<string, unknown> = {}) => ({
+    created_at: "2023-03-04T10:00:00.000Z",
+    employment_status: status,
+    full_name: "Someone Else",
+    hr_id: hrId,
+    mobile_number: "01000000000",
+    national_id: "29900000000000",
+    ...over,
+  });
+  const leaver = (hrId: string, status: string) => onFile(hrId, status, { full_name: "Ahmed Helal", mobile_number: mobileNumber, national_id: nationalId });
+  const hire = (rows: Array<Record<string, unknown>>, failing?: "identity" | "recent") =>
+    joiningService.findExistingHire(offerSent, answers, fakeEmployeesDb(rows, failing) as never);
+
+  for (const status of ["resigned", "terminated", "inactive", "declined_offer"]) {
+    assert.deepEqual(await hire([leaver("B-3", status)]), { kind: "none" }, `a ${status} record's ID and mobile do not block`);
+  }
+  assert.deepEqual(await hire([onFile("B-3", "resigned", { national_id: nationalId })]), { kind: "none" }, "nor its national ID alone");
+  assert.deepEqual(await hire([onFile("B-3", "resigned", { mobile_number: mobileNumber })]), { kind: "none" }, "nor its mobile alone");
+  for (const status of ["active", "on_leave", null]) {
+    assert.equal((await hire([onFile("A-1", status, { national_id: nationalId })])).kind, "found", `a current record (${status}) blocks on the ID`);
+    assert.equal((await hire([onFile("A-1", status, { mobile_number: mobileNumber })])).kind, "found", `a current record (${status}) blocks on the mobile`);
+  }
+  assert.equal(
+    (await hire([leaver("B-3", "resigned"), onFile("A-1", "active", { national_id: nationalId })])).kind,
+    "found",
+    "the leaver's row coming back first never hides the current employee behind it",
+  );
+  const rehired = await hire([leaver("B-3", "resigned"), onFile("CN-0013", "active", { created_at: "2026-11-01T10:00:00.000Z", full_name: "Ahmed Helal" })]);
+  assert.match(rehired.kind === "found" ? rehired.reason : "", /record with this candidate's name was created after the offer/, "the same-name check still catches a re-hire whose ID was left blank");
+  assert.equal(
+    (await hire([onFile("B-9", "resigned", { created_at: "2026-11-01T10:00:00.000Z", full_name: "Ahmed Helal" })])).kind,
+    "found",
+    "and it does not look at status",
+  );
+  assert.deepEqual(await hire([], "identity"), { kind: "unknown" }, "a failed ID and mobile read blocks");
+  assert.deepEqual(await hire([leaver("B-3", "resigned")], "recent"), { kind: "unknown" }, "a failed same-name read blocks");
+  const quoted = fakeEmployeesDb([]);
+  await joiningService.findExistingHire(offerSent, { ...answers, nationalId: "1,mobile_number.neq.0" }, quoted as never);
+  assert.equal(quoted.orFilters[0], `national_id.eq."1,mobile_number.neq.0",mobile_number.eq."${mobileNumber}"`, "both values stay quoted");
+
+  // 10c. 🔴 A PARTLY WRITTEN HIRE IS THE RECORD JUST WRITTEN, NEVER THE LEAVER'S OLD ONE.
+  const partly = [leaver("B-3", "resigned"), onFile("CN-0014", "active", { national_id: nationalId })];
+  assert.equal(await joiningService.findRecordJustWritten("CN-0014", nationalId, fakeEmployeesDb(partly) as never), "CN-0014", "the row this submit wrote");
+  assert.equal(await joiningService.findRecordJustWritten("CN-0015", nationalId, fakeEmployeesDb(partly) as never), "", "no row was written: nothing is found, not the old record");
+  assert.equal(await joiningService.findRecordJustWritten("A-1", nationalId, fakeEmployeesDb([onFile("A-1", "active")]) as never), "", "an HR ID somebody else took is not his");
+  assert.match(flatService, /upsertEmployee\(\{ \.\.\.employee, hrId: mintedHrId \}/, "the write carries the HR ID the fallback asks by");
+  assert.match(flatService, /const found = mintedHrId \? await findRecordJustWritten\(mintedHrId, value\.nationalId, db\) : "";/, "and the fallback asks by it");
 
   // 11. 🔴 HR IS TOLD WHEN THE RECORD HAS NO SEAT — a non-sales offer sent without one.
   const alert = await import("../src/lib/offers/accepted-offer-alert.ts");

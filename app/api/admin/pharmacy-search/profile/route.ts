@@ -26,13 +26,16 @@ export async function GET(request: Request) {
 
     const params = new URL(request.url).searchParams;
     return NextResponse.json(
-      await loadPharmacyProfile({
-        customerCode: params.get("code"),
-        distributorCode: params.get("distributor"),
-        name: params.get("name"),
-        phoenixPharmacyCode: params.get("phoenix"),
-        radiusKm: parseRadius(params.get("radius")),
-      }),
+      await loadPharmacyProfile(
+        {
+          customerCode: params.get("code"),
+          distributorCode: params.get("distributor"),
+          name: params.get("name"),
+          phoenixPharmacyCode: params.get("phoenix"),
+          radiusKm: parseRadius(params.get("radius")),
+        },
+        access,
+      ),
     );
   } catch (error) {
     const { code, message, status } = pharmacySearchApiError(error);

@@ -47,6 +47,9 @@ import {
   legacyStyleApprovers,
   managerAdminActivities,
   managerDayHalves,
+  managerPlanDaysLabel,
+  managerWeekDays,
+  managerWorksSaturday,
   managerOutcome,
   managerOwnVisitClosed,
   managerPlanApprovers,
@@ -322,14 +325,37 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(managerWeekState({ weekStart: "2026-10-24", cairoToday: FRIDAY, status: null, editAsked: false }), "closed", "never a week after the coming one");
 
   // The field day's halves: Saturday to Wednesday AM and PM, Thursday a morning, never a Friday, a holiday nothing.
-  assert.deepEqual(managerDayHalves("2026-10-17", null), ["AM", "PM"], "Saturday holds a morning and an evening");
-  assert.deepEqual(managerDayHalves("2026-10-22", null), ["AM"], "Thursday holds a morning only");
-  assert.deepEqual(managerDayHalves("2026-10-23", null), [], "Friday holds nothing");
-  assert.deepEqual(managerDayHalves("2026-10-18", "Armed Forces Day"), [], "a public holiday holds nothing");
-  assert.equal(isManagerDayOpen({ date: "2026-10-23", cairoToday: FRIDAY, returnedDay: null, holiday: null }), false, "a Friday is never open");
-  assert.equal(isManagerDayOpen({ date: "2026-10-15", cairoToday: FRIDAY, returnedDay: null, holiday: null }), false, "a day that has passed is never open");
-  assert.equal(isManagerDayOpen({ date: "2026-10-19", cairoToday: FRIDAY, returnedDay: "2026-10-20", holiday: null }), false, "while one day is returned, only that day opens");
-  assert.equal(isManagerDayOpen({ date: "2026-10-20", cairoToday: FRIDAY, returnedDay: "2026-10-20", holiday: null }), true);
+  assert.deepEqual(managerDayHalves("2026-10-17", null, "dm"), ["AM", "PM"], "Saturday holds a morning and an evening");
+  assert.deepEqual(managerDayHalves("2026-10-22", null, "dm"), ["AM"], "Thursday holds a morning only");
+  assert.deepEqual(managerDayHalves("2026-10-23", null, "dm"), [], "Friday holds nothing");
+  assert.deepEqual(managerDayHalves("2026-10-18", "Armed Forces Day", "dm"), [], "a public holiday holds nothing");
+
+  // A product manager, the Group Product Manager included, and the Training Manager work Sunday to Thursday (owner, 2026-11-01).
+  for (const kind of ["pm", "tm"] as const) {
+    assert.equal(managerWorksSaturday(kind), false, `${kind} does not work Saturday`);
+    assert.deepEqual(managerDayHalves("2026-10-17", null, kind), [], `Saturday holds nothing for ${kind}`);
+    assert.deepEqual(managerDayHalves("2026-10-18", null, kind), ["AM", "PM"], `Sunday is a full day for ${kind}`);
+    assert.deepEqual(managerDayHalves("2026-10-22", null, kind), ["AM"], `Thursday stays a morning for ${kind}, by his choice`);
+    assert.deepEqual(managerDayHalves("2026-10-23", null, kind), [], `Friday holds nothing for ${kind}`);
+    assert.deepEqual(managerWeekDays("2026-10-17", kind), ["2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22"], `${kind}'s week is Sunday to Thursday`);
+    assert.equal(isManagerDayOpen({ kind, date: "2026-10-17", cairoToday: FRIDAY, returnedDay: null, holiday: null }), false, `Saturday is never open for ${kind}`);
+    assert.equal(managerPlanDaysLabel(kind), "Sunday to Thursday", `the Day step says so for ${kind}`);
+  }
+  for (const kind of ["dm", "rsm", "nsm"] as const) {
+    assert.equal(managerWorksSaturday(kind), true, `${kind} keeps Saturday`);
+    assert.deepEqual(managerDayHalves("2026-10-17", null, kind), ["AM", "PM"], `Saturday stays on ${kind}'s plan`);
+    assert.deepEqual(managerWeekDays("2026-10-17", kind), ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22"], `${kind}'s week is Saturday to Thursday`);
+    assert.equal(isManagerDayOpen({ kind, date: "2026-10-17", cairoToday: FRIDAY, returnedDay: null, holiday: null }), true, `Saturday is open for ${kind}`);
+    assert.equal(managerPlanDaysLabel(kind), "Saturday to Thursday", `the Day step says so for ${kind}`);
+  }
+  const workingDaysServer = source("src/lib/phoenix-crm/server/manager-plans.ts");
+  assert.match(workingDaysServer, /view\.days = managerWeekDays\(weekStart, writer\.kind\)/, "the board shows the planner's own days");
+  assert.match(workingDaysServer, /managerDayHalves\(draft\.date, holidays\.get\(draft\.date\) \?\? null, writer\.kind\)/, "the save refuses a day the planner does not work, whatever the screen sent");
+  assert.match(source("src/components/phoenix-crm/manager-plan-board.tsx"), /description: managerPlanDaysLabel\(view\.writer\?\.kind \?\? null\)/, "the Day step names the planner's own days");
+  assert.equal(isManagerDayOpen({ kind: "dm", date: "2026-10-23", cairoToday: FRIDAY, returnedDay: null, holiday: null }), false, "a Friday is never open");
+  assert.equal(isManagerDayOpen({ kind: "dm", date: "2026-10-15", cairoToday: FRIDAY, returnedDay: null, holiday: null }), false, "a day that has passed is never open");
+  assert.equal(isManagerDayOpen({ kind: "dm", date: "2026-10-19", cairoToday: FRIDAY, returnedDay: "2026-10-20", holiday: null }), false, "while one day is returned, only that day opens");
+  assert.equal(isManagerDayOpen({ kind: "dm", date: "2026-10-20", cairoToday: FRIDAY, returnedDay: "2026-10-20", holiday: null }), true);
 
   // The three kinds, read strictly: each carries its own fields and nothing else.
   const withRep = parseManagerSlotDraft({ date: "2026-10-17", half: "AM", kind: "with_rep", repSeatId: D11.seatId, customers: [{ customerId: UUID_A }, { customerId: UUID_A }] });

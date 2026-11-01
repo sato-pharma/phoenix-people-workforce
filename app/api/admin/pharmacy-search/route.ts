@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     await assertPharmacySearchAccess(access);
 
     const query = new URL(request.url).searchParams.get("q") ?? "";
-    return NextResponse.json(await searchPharmacies(query));
+    return NextResponse.json(await searchPharmacies(query, access));
   } catch (error) {
     const { code, message, status } = pharmacySearchApiError(error);
     return NextResponse.json({ error: code, message }, { status });

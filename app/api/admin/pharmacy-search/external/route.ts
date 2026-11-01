@@ -38,6 +38,7 @@ export async function GET(request: Request) {
         await loadExternalPharmacyProfile({
           placeId,
           radiusKm: parseRadius(params.get("radius")),
+          viewer: access,
         }),
       );
     }

@@ -70,6 +70,7 @@ import {
   DM_SINGLE_VISIT_HALF_DAYS_MAX,
   dmSingleVisitLimitLine,
   managerNextHold,
+  managerPlanDaysLabel,
   MANAGER_PLAN_NOTE_MAX,
   MANAGER_PLAN_REASON_MAX,
   MANAGER_SLOT_CUSTOMER_MAX,
@@ -777,7 +778,7 @@ export function ManagerPlanBoard({
           }
           onJump={goStep}
           step={step}
-          steps={STEPS}
+          steps={STEPS.map((entry) => (entry.label === "Day" ? { ...entry, description: managerPlanDaysLabel(view.writer?.kind ?? null) } : entry))}
         >
           {step === 1 ? <WeekStep onWeek={chooseWeek} view={view} /> : null}
           {step === 2 ? (
