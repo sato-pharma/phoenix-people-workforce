@@ -117,7 +117,7 @@ export function runPhoenixCrmApprovalNoticeTests() {
       3,
       "the opening-tab decision, the Team tab's count and the Test accounts tab's count all take it",
     );
-    assert.match(app, /if \(tabs\.team && !viewer\.isRep && decisions > 0\) return "team";/, "the opening tab still reads `decisions`");
+    assert.match(source("src/lib/phoenix-crm/opening-tab.ts"), /if \(tabs\.team && !viewer\.isRep && decisions > 0\) return "team";/, "the opening tab still reads `decisions`");
     // The one sum that was always right: inside Team, the sentence that names what waits.
     const team = source("src/components/phoenix-crm/team-tab.tsx");
     assert.match(team, /unplanned: summary\.unplannedWaitingForYou,/, "teamWaitingLine named it correctly all along");
