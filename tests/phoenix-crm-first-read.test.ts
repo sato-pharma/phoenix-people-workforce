@@ -251,7 +251,7 @@ function testThePagesAndTheHook() {
   assert.ok(hook.includes("[firstRead, key, nonce, url]"), "the effect's own list");
   assert.equal((hook.match(/landed\(\);/g) ?? []).length, 2, "RED a read that landed, answer or failure, is spent");
 
-  const provider = code("src/components/phoenix-crm/first-read.tsx");
+  const provider = code("src/components/phoenix-crm/first-read.ts");
   assert.match(provider, /const \[held\] = useState\(firstRead\);/, "RED held from the first render, so a refresh cannot run the screen's effect again");
 }
 
