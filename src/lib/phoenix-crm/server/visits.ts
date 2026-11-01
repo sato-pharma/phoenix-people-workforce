@@ -317,8 +317,9 @@ const VISIT_COLUMNS =
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
   // The rep's own second account, written afterwards, and when he last changed the detail (owner,
   // 2026-10-15). `linked_from_visit_id` is read for one reason only: the pharmacy visit a doctor's
-  // visit filed has no detail of its own to fill in, so its card offers nothing.
-  "detail_comment, detail_edited_at, linked_from_visit_id, " +
+  // visit filed has no detail of its own to fill in, so its card offers nothing, and nor does a visit
+  // copied from the old system, which is history.
+  "detail_comment, detail_edited_at, linked_from_visit_id, imported_from_ireports360_at, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
   // `validated_at` is the other half of "does this count" (`visitCountsInKpi`): the approval half is
@@ -508,6 +509,7 @@ function mapVisitRow(
         repHrId: textOrNull(row.rep_hr_id),
         linkedFromVisitId: textOrNull(row.linked_from_visit_id),
         actorHrId: options.actorHrId,
+        importedAt: textOrNull(row.imported_from_ireports360_at),
       }).editable,
   };
 }

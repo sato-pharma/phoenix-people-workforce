@@ -161,7 +161,6 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/day-route.ts",
     "src/lib/phoenix-crm/server/double-visit-plans.ts",
     "src/lib/phoenix-crm/server/integrity-board.ts",
-    "src/lib/phoenix-crm/server/list.ts",
     "src/lib/phoenix-crm/server/location-integrity.ts",
     "src/lib/phoenix-crm/server/manager-customer-marks.ts",
     "src/lib/phoenix-crm/server/manager-plan-report.ts",
@@ -179,7 +178,6 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/team.ts",
     "src/lib/phoenix-crm/server/unplanned.ts",
     "src/lib/phoenix-crm/server/validation-reviews.ts",
-    "src/lib/phoenix-crm/server/visit-detail-edit.ts",
     "src/lib/phoenix-crm/server/visit-edit.ts",
     "src/lib/phoenix-crm/server/visit-locations.ts",
     "src/lib/phoenix-crm/server/visit-recordings.ts",
@@ -218,6 +216,11 @@ export function runPhoenixCrmImportedHistoryTests() {
       path: "src/lib/phoenix-crm/server/insight-reports.ts",
       declaration: "async function capacityLists(",
       why: "a customer the import made opens no territory",
+    },
+    {
+      path: "src/lib/phoenix-crm/server/list.ts",
+      declaration: "export async function loadListedPharmacies(",
+      why: "a pharmacy the import put in the Archive must not refuse Add a pharmacy, or leave a named pharmacy unfiled",
     },
   ];
   for (const { path, declaration, why } of customerReaders) {
@@ -310,19 +313,38 @@ export function runPhoenixCrmImportedHistoryTests() {
 
   // ── 3. The triggers ─────────────────────────────────────────────────────────
   {
-    const { sql } = newestDefiner(/create or replace trigger phoenix_crm_customers_write_contact_name_row\b/, "the contact-name trigger");
+    const { file, sql } = newestDefiner(/create or replace trigger phoenix_crm_customers_write_contact_name_row\b/, "the contact-name trigger");
+    assert.ok(file >= IMPORT_MIGRATION, `the contact-name trigger's newest definer (${file}) predates the import`);
     assert.match(
       sqlObject(sql, "create or replace trigger phoenix_crm_customers_write_contact_name_row"),
       /when \( new\.reference_contact_crm_id is null and not new\.is_test and new\.status in \('active', 'pending', 'dropped'\) and not new\.campaign_visit_holder \)/,
       "no \"Campaign visit N\" ever reaches crm_contacts",
     );
-    const migration = stripSqlComments(read(IMPORT_MIGRATION)).replace(/\s+/g, " ");
+    const trigger = newestDefiner(/create or replace trigger phoenix_crm_customers_clear_import_mark\b/, "the clear-mark trigger");
     assert.match(
-      migration,
+      sqlObject(trigger.sql, "create or replace trigger phoenix_crm_customers_clear_import_mark"),
       /create or replace trigger phoenix_crm_customers_clear_import_mark before update of status on public\.phoenix_crm_customers for each row when \(old\.imported_from_ireports360_at is not null\)/,
       "a doctor restored from the Archive is an ordinary customer again",
     );
-    assert.match(migration, /if old\.status = 'dropped' and new\.status <> 'dropped' and not new\.campaign_visit_holder then new\.imported_from_ireports360_at := null;/);
+    const clearMark = newestDefiner(/create or replace function public\.phoenix_crm_customers_clear_import_mark\(/, "the clear-mark function");
+    assert.match(
+      sqlObject(clearMark.sql, "create or replace function public.phoenix_crm_customers_clear_import_mark("),
+      /if old\.status = 'dropped' and new\.status <> 'dropped' and not new\.campaign_visit_holder then new\.imported_from_ireports360_at := null;/,
+    );
+  }
+  {
+    const { sql } = newestDefiner(/create or replace function public\.phoenix_crm_rep_entry_days_on_visit\(/, "the entry-days trigger function");
+    const fn = sqlObject(sql, "create or replace function public.phoenix_crm_rep_entry_days_on_visit(");
+    assert.match(fn, /if old\.imported_from_ireports360_at is null then perform public\.phoenix_crm_rep_entry_days_touch\(old\./, "a copied visit can never be an entry day, so removing one recomputes nothing");
+    assert.match(fn, /if new\.imported_from_ireports360_at is null then perform public\.phoenix_crm_rep_entry_days_touch\(new\./, "and copying ~69,000 visits touches the cache not once");
+  }
+  {
+    const { sql } = newestDefiner(/create or replace function public\.phoenix_crm_edit_visit_detail\(/, "the rep's write-up");
+    assert.match(
+      sqlObject(sql, "create or replace function public.phoenix_crm_edit_visit_detail("),
+      /if v_visit\.imported_from_ireports360_at is not null then raise exception 'phoenix_crm:visit_is_history';/,
+      "a pharmacy named on a copied visit would file an unmarked visit dated before the rep's start",
+    );
   }
 
   // ── 4. The contact refresh writes no list row and no name for an imported customer ──
@@ -338,7 +360,8 @@ export function runPhoenixCrmImportedHistoryTests() {
 
   // ── 5. The copy itself ──────────────────────────────────────────────────────
   {
-    const migration = stripSqlComments(read(IMPORT_MIGRATION)).replace(/\s+/g, " ");
+    const definer = newestDefiner(/create or replace function public\.phoenix_crm_import_ireports360_history\(/, "phoenix_crm_import_ireports360_history");
+    const migration = definer.sql.replace(/\s+/g, " ");
     const copy = sqlObject(migration, "create or replace function public.phoenix_crm_import_ireports360_history(");
     assert.match(copy, /security definer set search_path to 'public'/);
     assert.match(copy, /if p_apply and v_seat is null then raise exception 'phoenix_crm:import_needs_a_seat'/, "a write is one seat at a time");
@@ -347,6 +370,22 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.match(copy, /on conflict \(crm_visit_id\) do nothing/, "a second run writes nothing");
     assert.match(migration, /revoke execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean\) from public, anon, authenticated;/);
     assert.match(migration, /grant execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean\) to service_role;/);
-    assert.match(migration, /alter table public\.phoenix_crm_imported_visit_sources enable row level security; revoke all on table public\.phoenix_crm_imported_visit_sources from public, anon, authenticated;/);
+    assert.match(
+      stripSqlComments(read(IMPORT_MIGRATION)).replace(/\s+/g, " "),
+      /alter table public\.phoenix_crm_imported_visit_sources enable row level security; revoke all on table public\.phoenix_crm_imported_visit_sources from public, anon, authenticated;/,
+    );
+
+    // The rules of the copy, each from the review of 2026-10-31.
+    assert.match(copy, /cu\.id in \(select l\.customer_id from phx_import_links l where l\.contact_crm_id = iv\.contact_crm_id\)/, "a doctor the rep added himself is found through his identity link");
+    assert.doesNotMatch(copy, /own_contact_crm_id/, "an own id sits in a reserved band, so that arm could never match");
+    assert.doesNotMatch(copy, /job_title ilike/, "the partner's kind is his app role, never a match on his title");
+    assert.match(copy, /when who\.role in \('Product Manager', 'Group Product Manager', 'Training Manager'\) then 'product_manager'/, "a training manager files as a product manager does, never as a double");
+    assert.match(copy, /when who\.role in \('District Manager', 'Regional Manager', 'National Sales Manager'\) then 'double'/, "only a manager is a double, so a peer rep is no partner");
+    assert.equal(count(copy, "nullif(nullif(iv.contact_crm_id, 0), 100000)"), 2, "the catch-all contact is nobody, in the source row and in the customer lookup alike");
+    assert.match(copy, /\) = 'pharmacy' then 'Pharmacy' else coalesce\(own_list\.list_type, any_list\.list_type, a\.majority_list\) end as list_type/, "a pharmacy is never filed as a doctor");
+    assert.match(copy, /group by k\.seat_id, k\.grp, k\.visit_date, k\.rep_hr_id;/, "two reps on one seat are never merged under one name");
+    assert.match(copy, /and \(e\.captured_at, e\.rep_hr_id\) < \(r\.captured_at, r\.rep_hr_id\)/, "and the later one stays unmapped, on the List's old-system line");
+    assert.match(copy, /iv\.visit_type = -8 and not exists \(/, "a day with no seat keeps only its campaign visits");
+    assert.doesNotMatch(copy, /o\.seat_id <> c\.seat_id/, "a visit is kept for holding THIS seat, not for not holding another");
   }
 }

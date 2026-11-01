@@ -216,6 +216,7 @@ const REFUSALS: Record<string, Refusal> = {
     status: 409,
     message: "This pharmacy visit came from the visit that named it. Add the detail on that visit.",
   },
+  visit_is_history: { status: 409, message: "This visit came from the old system's history, so its detail stays as it was recorded. Reload the page." },
   pharmacy_name_fixed: {
     status: 409,
     message: "The pharmacy you named stays as you recorded it. You can still change what it has. Reload the page.",

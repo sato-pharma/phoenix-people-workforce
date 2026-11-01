@@ -978,7 +978,10 @@ export async function loadListedPharmacies(seatId: string, isTest: boolean): Pro
         .select("id, name, status")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)
-        .eq("list_type", PHARMACY_LIST_TYPE),
+        .eq("list_type", PHARMACY_LIST_TYPE)
+        // A pharmacy the history import put in the Archive is not one he dropped: it must not refuse his
+        // Add a pharmacy, or leave a named pharmacy unfiled. Restored, it loses the mark and is listed.
+        .is("imported_from_ireports360_at", null),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   return rows.map((row) => ({ customerId: String(row.id), name: String(row.name ?? ""), status: String(row.status ?? "") }));
