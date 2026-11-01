@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
 import { archiveReasonLabel } from "../src/lib/phoenix-crm/list-request-rules.ts";
+import {
+  VISIT_ASK_MARKETING_MANAGER_LINE_CODES,
+  VISIT_ASK_MARKETING_MANAGER_ROLE,
+  VISIT_ASK_PRODUCT_MANAGER_ROLES,
+  VISIT_ASK_TRAINING_MANAGER_ROLE,
+} from "../src/lib/phoenix-crm/visit-ask-rules.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,13 +58,15 @@ function body(path: string, declaration: string): string {
 
 const count = (text: string, needle: string): number => text.split(needle).length - 1;
 
-/** The NEWEST migration whose comment-stripped text matches, oldest-first by name, with that text. */
-function newestDefiner(pattern: RegExp, what: string): { file: string; sql: string } {
-  const names = readdirSync(new URL("../supabase/migrations/", import.meta.url))
+const migrationNames = (): string[] =>
+  readdirSync(new URL("../supabase/migrations/", import.meta.url))
     .filter((name) => name.endsWith(".sql"))
     .sort();
+
+/** The NEWEST migration whose comment-stripped text matches, oldest-first by name, with that text. */
+function newestDefiner(pattern: RegExp, what: string): { file: string; sql: string } {
   let found: { file: string; sql: string } | null = null;
-  for (const name of names) {
+  for (const name of migrationNames()) {
     const sql = stripSqlComments(read(`supabase/migrations/${name}`));
     if (pattern.test(sql)) found = { file: `supabase/migrations/${name}`, sql };
   }
@@ -102,6 +110,12 @@ export function runPhoenixCrmImportedHistoryTests() {
       why: "the third-visit rule — counted, it refuses a visit he has every right to make",
     },
     {
+      path: "src/lib/phoenix-crm/server/visits.ts",
+      declaration: "export async function loadSeatPharmacies(",
+      skips: 1,
+      why: "a name on a copied visit is offered, and picking it files a new pending pharmacy while the imported one keeps the history",
+    },
+    {
       path: "src/lib/phoenix-crm/server/silent-detectors.ts",
       declaration: "async function runRosterAndCadence(",
       skips: 1,
@@ -143,68 +157,79 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.equal(count(code, SKIP_VISIT), skips, `${path}: ${declaration} must skip a copied iReports360 visit ${skips} time(s) — ${why}`);
   }
 
-  // ── 1b. THE RATCHET: every file that reads the visits is classified ─────────
-  // The owner asked for the history "as if it is a complete data", so most screens count it — but a file
-  // that starts reading phoenix_crm_visits or phoenix_crm_countable_visits must say which kind it is: it
-  // names the mark, or it is listed here as a reader that counts the history on purpose. Listed
-  // 2026-10-31 from every reader that did not name the mark. A new reader fails by name until someone
-  // decides; a listed file that stops reading the visits, or starts skipping the copy, must leave the list.
-  // Since 20261031160000 phoenix_crm_countable_visits skips the copy itself; a history screen reads
-  // phoenix_crm_countable_visits_with_history, which counts here as a reader of the visits.
-  const countsHistory = new Set([
-    "src/lib/customer-identity/server/reads.ts",
-    "src/lib/phoenix-crm/server/behaviour.ts",
-    "src/lib/phoenix-crm/server/call-prep.ts",
-    "src/lib/phoenix-crm/server/commitments.ts",
-    "src/lib/phoenix-crm/server/customer-timeline.ts",
-    "src/lib/phoenix-crm/server/daily-plan-report.ts",
-    "src/lib/phoenix-crm/server/day-route.ts",
-    "src/lib/phoenix-crm/server/double-visit-plans.ts",
-    "src/lib/phoenix-crm/server/integrity-board.ts",
-    "src/lib/phoenix-crm/server/location-integrity.ts",
-    "src/lib/phoenix-crm/server/manager-customer-marks.ts",
-    "src/lib/phoenix-crm/server/manager-plan-report.ts",
-    "src/lib/phoenix-crm/server/manager-visit-details.ts",
-    "src/lib/phoenix-crm/server/master-list.ts",
-    "src/lib/phoenix-crm/server/missed-records.ts",
-    "src/lib/phoenix-crm/server/my-map.ts",
-    "src/lib/phoenix-crm/server/named-pharmacies.ts",
-    "src/lib/phoenix-crm/server/offplan-cap.ts",
-    "src/lib/phoenix-crm/server/offplan-day.ts",
-    "src/lib/phoenix-crm/server/plan-insight.ts",
-    "src/lib/phoenix-crm/server/refused-readings-board.ts",
-    "src/lib/phoenix-crm/server/reports.ts",
-    "src/lib/phoenix-crm/server/team-calendar.ts",
-    "src/lib/phoenix-crm/server/team.ts",
-    "src/lib/phoenix-crm/server/unplanned.ts",
-    "src/lib/phoenix-crm/server/validation-reviews.ts",
-    "src/lib/phoenix-crm/server/visit-edit.ts",
-    "src/lib/phoenix-crm/server/visit-locations.ts",
-    "src/lib/phoenix-crm/server/visit-recordings.ts",
-    "src/lib/phoenix-crm/server/visit-report.ts",
-    "src/lib/phoenix-crm/server/visit-rollup.ts",
-    "src/lib/phoenix-crm/server/week-progress.ts",
-    "src/lib/system-audit/detectors/visit-lifecycle-expected.ts",
-  ]);
+  // ── 1b. THE RATCHET: every read of the visits is counted, per file ───────────
+  // The owner asked for the history "as if it is a complete data", so most screens count it — but a new read
+  // of phoenix_crm_visits or phoenix_crm_countable_visits_with_history must say which kind it is: it names the
+  // mark in its own statement, or the number below goes up by hand, on purpose. Counted per READ and never per
+  // file: a file with one filter, or one column naming the mark, used to pass every other read beside it,
+  // which is how the pharmacy picker in visits.ts went unseen. A number is what stands today, not a verdict on
+  // each read. phoenix_crm_countable_visits is not counted: since 20261031160000 it skips the copy itself.
+  const unmarkedReadsToday: Record<string, number> = {
+    "src/lib/crm/phoenix-work-evidence.ts": 1,
+    "src/lib/customer-identity/server/reads.ts": 2,
+    "src/lib/phoenix-crm/server/behaviour.ts": 1,
+    "src/lib/phoenix-crm/server/call-prep.ts": 1,
+    "src/lib/phoenix-crm/server/commitments.ts": 1,
+    "src/lib/phoenix-crm/server/customer-timeline.ts": 1,
+    "src/lib/phoenix-crm/server/daily-plan-report.ts": 1,
+    "src/lib/phoenix-crm/server/day-route.ts": 2,
+    "src/lib/phoenix-crm/server/double-visit-plans.ts": 1,
+    "src/lib/phoenix-crm/server/insight-reports.ts": 1,
+    "src/lib/phoenix-crm/server/integrity-board.ts": 3,
+    "src/lib/phoenix-crm/server/list.ts": 2,
+    "src/lib/phoenix-crm/server/location-integrity.ts": 2,
+    "src/lib/phoenix-crm/server/manager-customer-marks.ts": 1,
+    "src/lib/phoenix-crm/server/manager-plan-report.ts": 1,
+    "src/lib/phoenix-crm/server/manager-visit-details.ts": 3,
+    "src/lib/phoenix-crm/server/master-list.ts": 1,
+    "src/lib/phoenix-crm/server/missed-records.ts": 1,
+    "src/lib/phoenix-crm/server/my-map.ts": 1,
+    "src/lib/phoenix-crm/server/named-pharmacies.ts": 1,
+    "src/lib/phoenix-crm/server/offplan-cap.ts": 2,
+    "src/lib/phoenix-crm/server/offplan-day.ts": 2,
+    "src/lib/phoenix-crm/server/plan-insight.ts": 1,
+    "src/lib/phoenix-crm/server/refused-readings-board.ts": 1,
+    "src/lib/phoenix-crm/server/reports.ts": 3,
+    "src/lib/phoenix-crm/server/silent-detectors.ts": 1,
+    "src/lib/phoenix-crm/server/team-calendar.ts": 4,
+    "src/lib/phoenix-crm/server/team.ts": 1,
+    "src/lib/phoenix-crm/server/unplanned.ts": 2,
+    "src/lib/phoenix-crm/server/validation-reviews.ts": 1,
+    "src/lib/phoenix-crm/server/visit-detail-edit.ts": 1,
+    "src/lib/phoenix-crm/server/visit-edit.ts": 1,
+    "src/lib/phoenix-crm/server/visit-locations.ts": 1,
+    "src/lib/phoenix-crm/server/visit-recordings.ts": 3,
+    "src/lib/phoenix-crm/server/visit-report.ts": 3,
+    "src/lib/phoenix-crm/server/visit-rollup.ts": 1,
+    "src/lib/phoenix-crm/server/visits.ts": 2,
+    "src/lib/phoenix-crm/server/week-progress.ts": 1,
+    "src/lib/system-audit/detectors/visit-lifecycle.ts": 15,
+  };
   const sources = (dir: string): string[] =>
     readdirSync(new URL(`../${dir}/`, import.meta.url), { withFileTypes: true }).flatMap((entry) => {
       const child = `${dir}/${entry.name}`;
       if (entry.isDirectory()) return sources(child);
       return /\.tsx?$/.test(entry.name) ? [child] : [];
     });
-  const readers = new Map<string, boolean>();
+  // One read runs from its mention of the source to the next mention or the end of its statement.
+  const unmarkedReads = (code: string): number => {
+    const mentions = [...code.matchAll(/\bphoenix_crm_(?:visits|countable_visits_with_history)\b/g)].map((match) => match.index);
+    return mentions.filter((at, index) => {
+      const semicolon = code.indexOf(";", at);
+      const end = Math.min(mentions[index + 1] ?? code.length, semicolon === -1 ? code.length : semicolon);
+      return !code.slice(at, end).includes("imported_from_ireports360_at");
+    }).length;
+  };
+  const unmarkedNow: Record<string, number> = {};
   for (const file of [...sources("src"), ...sources("app")]) {
-    const code = stripComments(read(file));
-    if (/\bphoenix_crm_(?:countable_)?visits(?:_with_history)?\b/.test(code)) readers.set(file, code.includes("imported_from_ireports360_at"));
+    const found = unmarkedReads(stripComments(read(file)));
+    if (found > 0) unmarkedNow[file] = found;
   }
-  const unclassified = [...readers].filter(([file, skips]) => !skips && !countsHistory.has(file)).map(([file]) => file);
   assert.deepEqual(
-    unclassified,
-    [],
-    "a new reader of the Phoenix CRM visits: skip a copied iReports360 visit by its mark (anything that judges, alarms or pays), or add the file to countsHistory above if it counts the history on purpose",
+    unmarkedNow,
+    unmarkedReadsToday,
+    "a read of the Phoenix CRM visits changed: a new one skips a copied iReports360 visit by its mark in its own statement (anything that judges, alarms or pays), or raises its file's number above if it counts the history on purpose; a read that left or now names the mark lowers it",
   );
-  const stale = [...countsHistory].filter((file) => readers.get(file) !== false);
-  assert.deepEqual(stale, [], "these files no longer read the visits without the mark — take them off countsHistory");
 
   const customerReaders: Array<{ path: string; declaration: string; why: string }> = [
     {
@@ -340,11 +365,16 @@ export function runPhoenixCrmImportedHistoryTests() {
   }
   {
     const { sql } = newestDefiner(/create or replace function public\.phoenix_crm_edit_visit_detail\(/, "the rep's write-up");
+    const fn = sqlObject(sql, "create or replace function public.phoenix_crm_edit_visit_detail(");
     assert.match(
-      sqlObject(sql, "create or replace function public.phoenix_crm_edit_visit_detail("),
+      fn,
       /if v_visit\.imported_from_ireports360_at is not null then raise exception 'phoenix_crm:visit_is_history';/,
       "a pharmacy named on a copied visit would file an unmarked visit dated before the rep's start",
     );
+    for (const write of ["insert into public.phoenix_crm_visit_edits", "update public.phoenix_crm_visits"]) {
+      const at = fn.indexOf(write);
+      assert.ok(at !== -1 && fn.indexOf("'phoenix_crm:visit_is_history'") < at, `the refusal must come before ${write}: below it, the write is already done`);
+    }
   }
 
   // ── 4. The contact refresh writes no list row and no name for an imported customer ──
@@ -367,21 +397,37 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.match(copy, /if p_apply and v_seat is null then raise exception 'phoenix_crm:import_needs_a_seat'/, "a write is one seat at a time");
     assert.match(copy, /'admin', v_now from phx_import_rows r where not r\.conflict/, "every copied row is the admin shape and carries the mark");
     assert.match(copy, /on conflict \(seat_id, customer_id, visit_date, is_test\) do nothing/, "a visit already in Phoenix is never overwritten");
-    assert.match(copy, /on conflict \(crm_visit_id\) do nothing/, "a second run writes nothing");
+    assert.match(copy, /on conflict \(crm_visit_id\) do nothing/, "a second run never writes an old visit twice");
     assert.match(migration, /revoke execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean\) from public, anon, authenticated;/);
     assert.match(migration, /grant execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean\) to service_role;/);
     assert.match(
       stripSqlComments(read(IMPORT_MIGRATION)).replace(/\s+/g, " "),
       /alter table public\.phoenix_crm_imported_visit_sources enable row level security; revoke all on table public\.phoenix_crm_imported_visit_sources from public, anon, authenticated;/,
     );
+    // The first migration closes it; any migration, then or since, could open it again.
+    for (const name of migrationNames()) {
+      const sql = stripSqlComments(read(`supabase/migrations/${name}`)).replace(/\s+/g, " ");
+      assert.doesNotMatch(sql, /grant [^;]*\bon (?:table )?public\.phoenix_crm_imported_visit_sources\b[^;]*\bto\b[^;]*\b(?:public|anon|authenticated)\b/i, `${name}: the source map is the service role's alone`);
+      assert.doesNotMatch(sql, /alter table public\.phoenix_crm_imported_visit_sources (?:disable|no force) row level security/i, `${name}: the source map stays behind row level security`);
+      assert.doesNotMatch(sql, /create policy [^;]*\bon public\.phoenix_crm_imported_visit_sources\b/i, `${name}: the source map carries no policy`);
+    }
 
     // The rules of the copy, each from the review of 2026-10-31.
-    assert.match(copy, /cu\.id in \(select l\.customer_id from phx_import_links l where l\.contact_crm_id = iv\.contact_crm_id\)/, "a doctor the rep added himself is found through his identity link");
+    assert.match(copy, /or exists \(select 1 from phx_import_links l where l\.contact_crm_id = contact\.id and l\.customer_id = cu\.id\)/, "a doctor the rep added himself is found through his identity link");
+    assert.match(copy, /create index on phx_import_links \(contact_crm_id, customer_id\); analyze phx_import_links;/, "and that link is looked up, never scanned, for every customer of the seat on every old visit");
+    assert.match(copy, /order by \(cu\.imported_from_ireports360_at is null\) desc, \(cu\.reference_contact_crm_id is not distinct from contact\.id\) desc,/, "his own customer beats an Archive copy an earlier run made");
     assert.doesNotMatch(copy, /own_contact_crm_id/, "an own id sits in a reserved band, so that arm could never match");
     assert.doesNotMatch(copy, /job_title ilike/, "the partner's kind is his app role, never a match on his title");
-    assert.match(copy, /when who\.role in \('Product Manager', 'Group Product Manager', 'Training Manager'\) then 'product_manager'/, "a training manager files as a product manager does, never as a double");
+    const sqlList = (roles: readonly string[]): string => roles.map((role) => `'${role}'`).join(", ");
+    assert.ok(copy.includes(`when who.role in (${sqlList([...VISIT_ASK_PRODUCT_MANAGER_ROLES, VISIT_ASK_TRAINING_MANAGER_ROLE])}) then 'product_manager'`), "a training manager files as a product manager does, never as a double, by the visit form's own role names");
+    assert.ok(copy.includes(`when who.role = '${VISIT_ASK_MARKETING_MANAGER_ROLE}' and lower(c.line_code) = '${[...VISIT_ASK_MARKETING_MANAGER_LINE_CODES].join()}' then 'product_manager'`), "the marketing manager on the visit form's own lines only");
+    assert.match(copy, /case when that_day\.in_manager_seat then 'double' when that_day\.seated then null when who\.role in/, "the seat of the visit's day decides, and today's role is only for a day with no seat");
+    assert.match(copy, /split_part\(o\.seat_id, '-', 3\) in \('DM', 'ADM', 'RSM', 'NSM'\)/, "an acting district manager's seat is a manager's seat");
+    assert.match(copy, /'partners_dropped', \(select count\(\*\) from phx_import_keyed where partner_dropped\)/, "a dry run says how many partners the copy would not file");
+    assert.match(copy, /where r\.conflict and cu\.reference_contact_crm_id is null and not cu\.campaign_visit_holder/, "and how many unmapped visits sit on a doctor no old-system line covers");
     assert.match(copy, /when who\.role in \('District Manager', 'Regional Manager', 'National Sales Manager'\) then 'double'/, "only a manager is a double, so a peer rep is no partner");
-    assert.equal(count(copy, "nullif(nullif(iv.contact_crm_id, 0), 100000)"), 2, "the catch-all contact is nobody, in the source row and in the customer lookup alike");
+    assert.equal(count(copy, "nullif(iv.contact_crm_id, 0)"), 1, "no contact is one value, read once by the source row and the customer lookup alike");
+    assert.match(copy, /and iv\.contact_crm_id is distinct from 100000/, "the catch-all contact is not copied: it names nobody, and its visits are not campaign visits");
     assert.match(copy, /\) = 'pharmacy' then 'Pharmacy' else coalesce\(own_list\.list_type, any_list\.list_type, a\.majority_list\) end as list_type/, "a pharmacy is never filed as a doctor");
     assert.match(copy, /group by k\.seat_id, k\.grp, k\.visit_date, k\.rep_hr_id;/, "two reps on one seat are never merged under one name");
     assert.match(copy, /and \(e\.captured_at, e\.rep_hr_id\) < \(r\.captured_at, r\.rep_hr_id\)/, "and the later one stays unmapped, on the List's old-system line");
