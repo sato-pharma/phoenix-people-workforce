@@ -44,7 +44,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
-import { fieldWeekDays, fieldWeekStart, isIsoDay, planDayListTypes, repPlanWeek, VISIT_DAY_CUTOFF_HOURS } from "@/lib/phoenix-crm/calendar";
+import { fieldWeekDays, fieldWeekStart, isIsoDay, planDayListTypes, repPlanWeek, VISIT_DAY_CUTOFF_HOURS, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES, type PhoenixCrmDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { countsAsManagersDoubleVisit, DOUBLE_VISIT_PLANNER_TIERS } from "@/lib/phoenix-crm/double-visit-plan-rules";
 import { isUuid, PLAN_NEVER_PLANNED_TEXT } from "@/lib/phoenix-crm/plan-rules";
@@ -257,7 +257,7 @@ export function singleVisitDayAskError(input: {
   }
   if (input.date < input.cairoToday) return "This day has passed. Choose today or a later day.";
   if (input.holiday) return `${input.holiday} is a public holiday, so it holds no plan.`;
-  if (managerDayHalves(input.date, null).length === 0) return "Choose a field day — Saturday to Thursday.";
+  if (managerDayHalves(input.date, null, "dm").length === 0) return "Choose a field day — Saturday to Thursday.";
   if (input.heldDates.has(input.date)) return "This day is already asked for. Its answer shows below.";
   const sameWeek = [...input.heldDates].filter((date) => fieldWeekStart(date) === fieldWeekStart(input.date)).length;
   if (sameWeek >= DM_SINGLE_VISIT_EXTRA_DAYS_MAX) {
@@ -838,9 +838,24 @@ export function managerNextHold(input: {
   return null;
 }
 
-/** The halves a day holds: none on a public holiday or a Friday, the morning on a Thursday. */
-export function managerDayHalves(isoDay: string, holiday: string | null | undefined): ManagerHalf[] {
+/**
+ * 🔴 A product manager (the Group Product Manager is one) and the Training Manager work Sunday to Thursday, so
+ * Saturday is not on their plan (owner, 2026-11-01). Thursday stays a morning for them too, by his choice. A week
+ * is still keyed by its Saturday, and every other planner keeps Saturday.
+ */
+export function managerWorksSaturday(kind: ManagerPlannerKind): boolean {
+  return kind !== "pm" && kind !== "tm";
+}
+
+/** "Sunday to Thursday" or "Saturday to Thursday": what the board's Day step says. */
+export function managerPlanDaysLabel(kind: ManagerPlannerKind | null): string {
+  return kind && !managerWorksSaturday(kind) ? "Sunday to Thursday" : "Saturday to Thursday";
+}
+
+/** The halves a day holds: none on a public holiday, a Friday or a Saturday he does not work; the morning on a Thursday. */
+export function managerDayHalves(isoDay: string, holiday: string | null | undefined, kind: ManagerPlannerKind): ManagerHalf[] {
   if (holiday) return [];
+  if (!managerWorksSaturday(kind) && weekdayOfIsoDay(isoDay) === 6) return [];
   return planDayListTypes(isoDay);
 }
 
@@ -848,16 +863,16 @@ export function managerDayHalves(isoDay: string, holiday: string | null | undefi
  * A day he may still change: a field day from today on — and, while one day is returned to him, that day
  * alone (the database refuses every other, `manager_plan_day_not_returned`).
  */
-export function isManagerDayOpen(input: { date: string; cairoToday: string; returnedDay: string | null; holiday: string | null }): boolean {
+export function isManagerDayOpen(input: { date: string; cairoToday: string; returnedDay: string | null; holiday: string | null; kind: ManagerPlannerKind }): boolean {
   if (!isIsoDay(input.date) || input.date < input.cairoToday) return false;
-  if (managerDayHalves(input.date, input.holiday).length === 0) return false;
+  if (managerDayHalves(input.date, input.holiday, input.kind).length === 0) return false;
   if (input.returnedDay && input.date !== input.returnedDay) return false;
   return true;
 }
 
-/** The days of his week, Saturday to Thursday. */
-export function managerWeekDays(weekStart: string): string[] {
-  return fieldWeekDays(weekStart);
+/** The days of his week: Saturday to Thursday, or Sunday to Thursday for a planner who does not work Saturday. */
+export function managerWeekDays(weekStart: string, kind: ManagerPlannerKind): string[] {
+  return fieldWeekDays(weekStart).filter((date) => managerWorksSaturday(kind) || weekdayOfIsoDay(date) !== 6);
 }
 
 // ── One half-day, as the screen sends it ────────────────────────────────────────────────────────

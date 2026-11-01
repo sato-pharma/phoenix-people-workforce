@@ -98,7 +98,7 @@ export async function loadSingleVisitDaysView(viewer: PhoenixCrmViewer, isTest: 
   const writer = managerPlanWriter(viewer);
   if (!writer || writer.kind !== "dm" || !viewer.hrId) return EMPTY_VIEW;
   const weeks = managerPlanWeeks(viewer.cairoToday);
-  const days = weeks.flatMap((week) => managerWeekDays(week));
+  const days = weeks.flatMap((week) => managerWeekDays(week, writer.kind));
   // The holidays depend only on the two weeks, never on his asks, so they load beside them (performance
   // brief, 2026-10-23) instead of after the names.
   const [asks, holidays] = await Promise.all([

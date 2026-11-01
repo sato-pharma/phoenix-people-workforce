@@ -828,10 +828,10 @@ async function buildBoard(
   }
   const slotByKey = new Map(slots.map((slot) => [`${slot.date}|${slot.half}`, slot]));
 
-  view.days = managerWeekDays(weekStart).map((date): ManagerBoardDay => {
+  view.days = managerWeekDays(weekStart, writer.kind).map((date): ManagerBoardDay => {
     const holiday = holidays.get(date) ?? null;
-    const halves = managerDayHalves(date, holiday);
-    const editable = view.canWrite && isManagerDayOpen({ date, cairoToday: viewer.cairoToday, returnedDay: plan?.status === "returned" ? plan.returnedDay : null, holiday });
+    const halves = managerDayHalves(date, holiday, writer.kind);
+    const editable = view.canWrite && isManagerDayOpen({ date, cairoToday: viewer.cairoToday, returnedDay: plan?.status === "returned" ? plan.returnedDay : null, holiday, kind: writer.kind });
     const daySlots = halves.map((half): ManagerBoardSlot => {
       const slot = slotByKey.get(`${date}|${half}`) ?? null;
       if (!slot) {
@@ -1093,8 +1093,8 @@ export async function saveManagerPlanSlot(viewer: PhoenixCrmViewer, raw: unknown
   const own = writer.kind === "dm";
 
   const holidays = await loadPlanHolidays(draft.date, draft.date);
-  if (!managerDayHalves(draft.date, holidays.get(draft.date) ?? null).includes(draft.half)) {
-    throw validationError(holidays.get(draft.date) ? `${holidays.get(draft.date)} is a public holiday, so it holds no plan.` : "This half-day is not a field half-day.");
+  if (!managerDayHalves(draft.date, holidays.get(draft.date) ?? null, writer.kind).includes(draft.half)) {
+    throw validationError(holidays.get(draft.date) ? `${holidays.get(draft.date)} is a public holiday, so it holds no plan.` : "This half-day is not one of your working half-days.");
   }
 
   // The territories this half-day may name: his own district, or the scope he picked for it.
