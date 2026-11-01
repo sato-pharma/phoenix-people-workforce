@@ -769,6 +769,34 @@ export function managerPlanWeekName(weekStart: string, cairoToday: string): stri
   return weekStart === fieldWeekStart(cairoToday) ? "This week" : "Coming week";
 }
 
+/**
+ * What stops Next on a half-day (production, 1 Nov 2026: Rasha Sabry's Wednesday never reached the server —
+ * Next walked on, and she met the day empty on Send). A half-day still missing something stops it every time,
+ * since it cannot be saved or sent. A day with only its district manager chosen stops it once: nothing of
+ * it is saved, but a half-day may go empty, so the second press walks on.
+ */
+export function managerNextHold(input: {
+  dayText: string;
+  half: ManagerHalf;
+  /** What the half-day still lacks, or null when it can be saved. */
+  problem: string | null;
+  /** The district manager or region chosen for the day in this visit. */
+  chosenScopeName: string | null;
+  /** Any half of the day holds a choice, saved or on the page. */
+  dayHasAPlan: boolean;
+}): { message: string; once: boolean } | null {
+  if (input.problem) {
+    return { once: false, message: `${input.dayText} ${input.half} is not saved yet: ${input.problem}. Finish it, or press Clear this half-day to leave it empty.` };
+  }
+  if (input.chosenScopeName && !input.dayHasAPlan) {
+    return {
+      once: true,
+      message: `You chose ${input.chosenScopeName} for ${input.dayText}, but not what you do. Nothing of this day is saved yet. Choose it under What you do, or press Next again to leave it empty.`,
+    };
+  }
+  return null;
+}
+
 /** The halves a day holds: none on a public holiday or a Friday, the morning on a Thursday. */
 export function managerDayHalves(isoDay: string, holiday: string | null | undefined): ManagerHalf[] {
   if (holiday) return [];

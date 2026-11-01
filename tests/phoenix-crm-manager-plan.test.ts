@@ -19,6 +19,7 @@ import {
   countsAsPlannersVisitWithRep,
   managerSeniorTitle,
   managerSeniorVisitTitle,
+  managerNextHold,
   managerSlotKinds,
   parseManagerDmVisit,
   parseManagerSeniorVisit,
@@ -1307,6 +1308,52 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
     "Send carries the week as the save it just made left it, never the version drawn before that save",
   );
   assert.equal(/\{ planId: plan\.planId, version: plan\.version, test \}/.test(sendFlow), false, "never the stale one");
+
+  // ── Next never walks past a half-day that is not saved (production, 1 Nov 2026, Rasha Sabry) ────
+  //
+  // No save of her Wednesday ever reached the server: Next walked on from a half-day still missing something,
+  // and she met the day on Send with nothing planned.
+
+  const wednesday = { dayText: "Wed 4 Nov", half: "AM" as const };
+  assert.deepEqual(
+    managerNextHold({ ...wednesday, problem: "tick at least one of the district manager's areas", chosenScopeName: "Hany Saad", dayHasAPlan: true }),
+    {
+      once: false,
+      message: "Wed 4 Nov AM is not saved yet: tick at least one of the district manager's areas. Finish it, or press Clear this half-day to leave it empty.",
+    },
+    "a half-day missing something stops Next every time, and says what is missing",
+  );
+  const onlyTheManager = managerNextHold({ ...wednesday, problem: null, chosenScopeName: "Hany Saad", dayHasAPlan: false });
+  assert.equal(onlyTheManager?.once, true, "a day with only its district manager chosen stops Next once, since a half-day may go empty");
+  assert.match(onlyTheManager?.message ?? "", /You chose Hany Saad for Wed 4 Nov, but not what you do\. Nothing of this day is saved yet\./, "and says nothing of the day is saved");
+  assert.equal(managerNextHold({ ...wednesday, problem: null, chosenScopeName: "Hany Saad", dayHasAPlan: true }), null, "the other half holds a plan: this half may go empty");
+  assert.equal(managerNextHold({ ...wednesday, problem: null, chosenScopeName: null, dayHasAPlan: false }), null, "a day he chose nothing on walks on");
+
+  const nextFlow = functionBody(planBoard, "  function goNext(");
+  assert.ok(nextFlow.includes("const hold = nextHold();"), "Next asks what stops it");
+  assert.match(nextFlow, /if \(hold && !\(hold\.once && nextWarnedDay === day\.date\)\) \{\s*setNextHeldAt\(key\);/, "and stays on the half-day");
+  assert.ok(
+    nextFlow.indexOf("const hold = nextHold();") < nextFlow.indexOf("const halfIndex = day.halves.indexOf(currentHalf);"),
+    "before it walks anywhere",
+  );
+  assert.ok(nextFlow.includes("void saveWaiting();"), "a half-day that can be saved goes as he presses, and a failed save is tried again");
+  assert.match(functionBody(planBoard, "function HalfStep("), /nextHoldMessage \? <CrmNote tone="warn">\{nextHoldMessage\}<\/CrmNote> : null/, "the reason is on the page, right above the button");
+
+  assert.match(sendFlow, /if \(waiting\) return waiting\.kind !== null && !problemOf\(waiting\);/, "Send counts a half-day still missing something as not planned");
+  assert.match(sendFlow, /problem \? `Not saved: \$\{problem\}`/, "and names what is missing on its row");
+  assert.match(sendFlow, /onClick=\{\(\) => onOpenHalf\(day\.date, half\)\}/, "with the way back to it");
+  assert.match(sendFlow, /disabled=\{waitingProblems\.length > 0 \|\|/, "and nothing is sent until it is finished or cleared");
+  assert.match(functionBody(planBoard, "  function chooseWeek("), /if \(next === view\?\.weekStart\) \{\s*setStep\(2\);\s*return;\s*\}/, "pressing the week on screen drops nothing he chose");
+
+  // The saves themselves: one the timer missed is owed another try, and an older read never lands over a save.
+  assert.match(saveFlow, /if \(saving\.current\) \{\s*missedSave\.current = true;\s*return false;\s*\}/, "a timer that fires during a save is remembered");
+  assert.match(saveFlow, /if \(missedSave\.current\) \{\s*missedSave\.current = false;\s*setSaveNudge\(/, "and the save that held it up arms the timer again");
+  assert.match(planBoard, /PLAN_AUTOSAVE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[drafts, saveNudge\]\);/, "the timer listens for that");
+  assert.match(
+    saveFlow,
+    /\(next\.scope \?\? null\) === \(scopeRef\.current \?\? null\) && !readOnItsWay\.current\) board\.replace\(next\);\s*else board\.reload\(\);/,
+    "a read on its way is read again after the save, never left to land over its answer",
+  );
 
   // ── The second and third day: his managers approve one named date (owner, 2026-10-20) ──────────
 
