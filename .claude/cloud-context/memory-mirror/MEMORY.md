@@ -33,7 +33,7 @@
 - [A heredoc can eat a SQL regex's backslash](a-bash-heredoc-can-eat-the-backslash-of-a-sql-regex.md) - 164 instead of 759, no error; use `[[:space:]]+`.
 - [A returning leaver is a new employee](a-returning-leaver-is-a-new-employee.md) - new record and HR ID, old one stays resigned; only a current record's ID or mobile blocks the joining form.
 - [Channels by Rep whole history took staging down](channels-by-rep-whole-history-took-staging-down.md) - nothing excluded, 7 min 45 s in; never rerun it, compare the pricing step by month.
-- [Delta (2) July to September were not Sahar's months](delta-2-july-to-september-were-not-sahars-months.md) - the engine names the seat's current holder on past months. 🔴 **The next sales PR, whichever session opens it, corrects two wordings (owner, 2026-11-01).**
+- [Delta (2) July to September were not Sahar's months](delta-2-july-to-september-were-not-sahars-months.md) - the engine names the seat's current holder on past months; the wording fix rides PR 6759.
 
 
 

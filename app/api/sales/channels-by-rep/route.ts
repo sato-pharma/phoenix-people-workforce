@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { loadChannelsByRep } from "@/lib/sales/channels-by-rep";
+import { ChannelsByRepRefused, loadChannelsByRep } from "@/lib/sales/channels-by-rep";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
 //
 // `period` is a month, or `all` for the whole history. Without it the read covers the newest published
 // closing, so only a request that names the whole history pays for it (resolveChannelsByRepPeriod).
+// `reveal` together with `all` is refused for every role (assertChannelsByRepReadAllowed).
 
 export async function GET(request: Request) {
   try {
@@ -41,6 +42,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
+    if (error instanceof ChannelsByRepRefused) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     if (isForbiddenError(error)) {
       return NextResponse.json(
         { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },

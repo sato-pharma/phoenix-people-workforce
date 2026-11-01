@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  assertChannelsByRepReadAllowed,
+  ChannelsByRepRefused,
   channelStems,
   excludedProductCodes,
   labelFor,
@@ -155,5 +157,36 @@ export async function runSalesChannelsByRepTests() {
     resolveChannelsByRepPeriod({ available: [], latestPublished: null, requested: null }),
     null,
     "no months at all is the one other way to reach null, and there is nothing for it to read",
+  );
+
+  // ── the whole history with nothing excluded is refused, for every role ──────────────────────
+  // Staging restarted uncleanly 7 min 45 s into this read, and nothing can stop it once it starts.
+  // Reveal resolves to an empty list only for a CEO or Super Admin, so those are the roles at stake.
+  for (const role of ["Super Admin", "CEO"] as const) {
+    assert.throws(
+      () => assertChannelsByRepReadAllowed(null, excludedProductCodes(role, true)),
+      ChannelsByRepRefused,
+      `the whole history with nothing excluded is refused for a ${role}`,
+    );
+    assert.doesNotThrow(
+      () => assertChannelsByRepReadAllowed("2026-09", excludedProductCodes(role, true)),
+      `one month with the restricted products revealed stays open for a ${role}`,
+    );
+  }
+  assert.doesNotThrow(
+    () => assertChannelsByRepReadAllowed(null, excludedProductCodes("Super Admin", false)),
+    "the whole history with the restricted products excluded stays open",
+  );
+
+  // Refused means never started, and refused means a 400 that says why rather than a 500.
+  const service = readFileSync(new URL("../src/lib/sales/channels-by-rep.ts", import.meta.url), "utf8");
+  const refusedAt = service.indexOf("assertChannelsByRepReadAllowed(period, excluded);");
+  assert.ok(refusedAt > 0, "the loader must run the refusal");
+  assert.ok(refusedAt < service.indexOf('.rpc("phx_sales_channels_by_rep"'), "the refusal must run before the read");
+  const route = readFileSync(new URL("../app/api/sales/channels-by-rep/route.ts", import.meta.url), "utf8");
+  assert.match(
+    route,
+    /error instanceof ChannelsByRepRefused\) \{\s*return NextResponse\.json\(\{ success: false, error: error\.message \}, \{ status: 400 \}\);/,
+    "the route must answer a refusal with a 400 carrying its words",
   );
 }
