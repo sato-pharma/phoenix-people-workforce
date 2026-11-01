@@ -41,6 +41,7 @@ import type {
   PortalHomeRepSales,
   PortalHomeSnapshot,
   PortalMyInterview,
+  Streamed,
 } from "@/lib/employee-portal/home-snapshot";
 import type { RepTodayPlan } from "@/lib/phoenix-crm/server/rep-landing";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
@@ -307,6 +308,17 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
  * A fragment, not a wrapper: the three pieces stay direct children of the caller's `space-y-*`
  * container, so the rhythm of the page is unchanged from when they were written out by hand.
  */
+async function BandPlanAdherence({ adherence }: { adherence: Streamed<PortalPlanAdherence | null> }) {
+  const planAdherence = await adherence;
+  if (!planAdherence?.latest) return null;
+  return <PlanAdherenceDashboardCard adherence={planAdherence} planBaseHref="/employee-portals/approvals/plan" />;
+}
+
+async function BandInterviews({ interviews }: { interviews: Streamed<PortalMyInterview[]> }) {
+  const myInterviews = await interviews;
+  return <MyInterviewsCard interviews={myInterviews} />;
+}
+
 export function PortalIdentityBand({
   myInterviews,
   planAdherence,
@@ -315,18 +327,23 @@ export function PortalIdentityBand({
   /** This person's own upcoming interviews. REQUIRED, like planAdherence, so no landing surface can
    * silently drop the card: every call site passes snapshot.myInterviews, and the card itself
    * renders nothing when the list is empty (which it is for almost everyone). */
-  myInterviews: PortalMyInterview[];
-  planAdherence: PortalPlanAdherence | null;
+  myInterviews: Streamed<PortalMyInterview[]>;
+  planAdherence: Streamed<PortalPlanAdherence | null>;
   shell: EmployeePortalShellData;
 }) {
   return (
     <>
       <IdentityCard data={shell} />
       <ProfileIntelBar shell={shell} />
-      {planAdherence?.latest ? (
-        <PlanAdherenceDashboardCard adherence={planAdherence} planBaseHref="/employee-portals/approvals/plan" />
-      ) : null}
-      <MyInterviewsCard interviews={myInterviews} />
+      {/* Each fills in on its own, and draws nothing until it does: most people have neither card, so a
+          placeholder here would be an empty square for nearly everyone (2026-11-01, "fix the portal home
+          slow opens"). Suspense adds no element, so they stay direct children of the caller's rhythm. */}
+      <Suspense fallback={null}>
+        <BandPlanAdherence adherence={planAdherence} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <BandInterviews interviews={myInterviews} />
+      </Suspense>
       {/* Travels with the identity band, per the design note above — every role lands here, so
           this is the one place a push opt-in nudge reaches every employee-portal role's home in
           a single edit. Renders nothing until it has checked this person's own state. */}
@@ -1231,7 +1248,7 @@ function MedicalRepCommandCenter({
   snapshot,
 }: {
   access?: AccessContext;
-  repTodayPlan: RepTodayPlan | null;
+  repTodayPlan: Promise<RepTodayPlan | null>;
   snapshot: PortalHomeSnapshot;
 }) {
   const {
@@ -1282,9 +1299,13 @@ function MedicalRepCommandCenter({
       {/* Same reason: two columns only when the row itself has the width for them — and only when
           there is a second column to hold. With no approved day the right-hand column renders
           nothing, and a 1fr track holding nothing is the empty square the owner banned, so the split
-          itself is conditional and the panels below run full width. */}
+          itself is conditional and the panels below run full width.
+          🔴 THE CONDITION IS IN THE CSS SINCE 2026-11-01 ("fix the portal home slow opens"): his day now
+          fills under its own Suspense, so the server draws this row before it knows whether there is a
+          day. The column carries `data-rep-day` while it loads and when it holds a day; a day that turns
+          out to be null removes it, and the split and the tiles below go with it. */}
       <div className="@container">
-        <div className={`grid gap-2 ${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
+        <div className="group/rep-day grid gap-2 @3xl:has-[>[data-rep-day]]:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="min-w-0 space-y-2">
             {/* The month these four tiles are showing, and the box that changes it (owner, 2026-10-01).
                 It sits directly ABOVE them and nowhere else on the page, because it governs exactly
@@ -1315,7 +1336,7 @@ function MedicalRepCommandCenter({
                 Suspense renders no element of its own, so the four tiles stay direct items of this grid
                 whether they are still loading or filled. */}
             <div className="@container">
-              <div className={`grid gap-2 ${repTodayPlan ? "grid-cols-2" : "grid-cols-2 @3xl:grid-cols-4"}`}>
+              <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4 group-has-[>[data-rep-day]]/rep-day:grid-cols-2">
                 <Suspense fallback={<RepTileLoading label="Achievement" />}>
                   <RepAchievementCard kpiMonth={kpiMonth} sales={cards.sales} />
                 </Suspense>
@@ -1378,11 +1399,15 @@ function MedicalRepCommandCenter({
               still one click away in the sidebar, which is where he goes for them; what he wants in
               front of him on opening the page is who he is seeing today. Do not restore either
               without his word. */}
-          {repTodayPlan ? (
-            <div className="min-w-0 space-y-2">
-              <RepTodayPlanPanel plan={repTodayPlan} />
-            </div>
-          ) : null}
+          <Suspense
+            fallback={
+              <div className="min-w-0 space-y-2" data-rep-day="">
+                <RepPanelLoading title="Your day" />
+              </div>
+            }
+          >
+            <RepDayColumn plan={repTodayPlan} />
+          </Suspense>
         </div>
       </div>
     </div>
@@ -1393,6 +1418,21 @@ function MedicalRepCommandCenter({
 //
 // Each awaits only its own read, and each read resolves (never rejects) to the null the awaited
 // snapshot would have carried, so a failed read draws the same honest empty state it always did.
+
+/**
+ * His day, the right-hand column. It no longer holds the rep's whole landing back: the read is the
+ * slowest on the page (2026-11-01, "fix the portal home slow opens"), so it fills in on its own.
+ * `loadRepTodayPlan` never rejects, and no day draws nothing, so the column and its split go with it.
+ */
+async function RepDayColumn({ plan }: { plan: Promise<RepTodayPlan | null> }) {
+  const day = await plan;
+  if (!day) return null;
+  return (
+    <div className="min-w-0 space-y-2" data-rep-day="">
+      <RepTodayPlanPanel plan={day} />
+    </div>
+  );
+}
 
 async function RepHonourCard({ standing }: { standing: Promise<PortalHomeSnapshot["mrRankStanding"]> }) {
   const mrRankStanding = await standing;
@@ -1872,12 +1912,12 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
  */
 export function PortalCommandCenter({
   access,
-  repTodayPlan = null,
+  repTodayPlan = Promise.resolve(null),
   snapshot,
 }: {
   access?: AccessContext;
   /** The rep's planned day — what replaced the Phoenix CRM Today module (owner, 2026-09-30). */
-  repTodayPlan?: RepTodayPlan | null;
+  repTodayPlan?: Promise<RepTodayPlan | null>;
   snapshot: PortalHomeSnapshot;
 }) {
   switch (snapshot.role) {

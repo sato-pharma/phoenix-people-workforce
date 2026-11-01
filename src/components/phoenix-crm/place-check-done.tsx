@@ -3,8 +3,10 @@
 /**
  * Phoenix CRM — what happens once a decision on Place checks has been saved.
  *
- * On the board it is exactly what every decision control did before this file existed: the page reads
- * itself again (`router.refresh()`), the decided row moves to where it now belongs, and nothing else.
+ * On the board it is what every decision control did before this file existed: the page reads itself
+ * again (`router.refresh()`), the decided row moves to where it now belongs, and nothing else. Since
+ * 2026-11-01 that re-read waits until the decisions have paused, one for a whole run of them — see
+ * `place-check-reread.ts` for what each one used to cost everybody else.
  *
  * Inside the one-by-one review (owner, 2026-10-18: "validate from this screen … then press next … like
  * sliding instead of opening") the same control is wrapped in a `PlaceCheckDoneProvider`, and the
@@ -26,6 +28,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
+import { placeCheckReread } from "@/components/phoenix-crm/place-check-reread";
 import { CrmPill, type PillTone } from "@/components/phoenix-crm/ui";
 import { PLACE_APPROVED_NOT_A_LIST_ADD } from "@/lib/phoenix-crm/validation-feedback";
 
@@ -71,7 +74,7 @@ export function usePlaceCheckDone(): (outcome: PlaceCheckOutcome) => PlaceCheckO
   return useCallback(
     (outcome: PlaceCheckOutcome): PlaceCheckOutcome => {
       scope?.done(scope.item, outcome);
-      router.refresh();
+      placeCheckReread.ask(() => router.refresh());
       return outcome;
     },
     [router, scope],

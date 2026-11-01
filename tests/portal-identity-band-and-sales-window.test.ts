@@ -128,7 +128,7 @@ export function runPortalIdentityBandAndSalesWindowTests() {
   {
     const hub = read("src/components/employee-portal/portal-command-center.tsx");
     assert.ok(
-      /planAdherence: PortalPlanAdherence \| null;/.test(hub),
+      /planAdherence: Streamed<PortalPlanAdherence \| null>;/.test(hub),
       "PortalIdentityBand's planAdherence prop must stay REQUIRED — an optional prop lets a new " +
         "role branch silently lose the plan card, which is the bug this component replaced.",
     );

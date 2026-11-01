@@ -32,7 +32,7 @@ import {
 } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { MmInboxClient } from "@/components/employee-portal/dashboards/mm-inbox-client";
-import { AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
+import { AwaitCard, AwaitRoleExtras, roleExtrasOf } from "@/components/employee-portal/dashboards/role-extras-stream";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -202,7 +202,9 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : null}
 
-      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
+      <Suspense fallback={null}>
+        <AwaitCard value={earlyBirdStars}>{(stars) => <EarlyBirdOfTheFortnightCard stars={stars} />}</AwaitCard>
+      </Suspense>
 
       <Suspense fallback={<MmSectionSkeleton title="Needs Your Decision" />}>
         <AwaitRoleExtras extras={extras}>
