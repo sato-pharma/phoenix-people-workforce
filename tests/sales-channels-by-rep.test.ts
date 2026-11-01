@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   channelStems,
@@ -73,6 +74,29 @@ export async function runSalesChannelsByRepTests() {
   });
   assert.equal(rep.attribution, "rep");
   assert.equal(rep.label, "Adel Srour", "a rep row is labelled with the person's name");
+
+  // The tab prints this field on the table and the phone card; it printed "cns" until it did.
+  assert.equal(rep.lineName, "CNS", "the line reads as its name, never its code");
+  assert.equal(
+    mapChannelsByRepRow({ line_code: "anti_infective" }).lineName,
+    "Anti Infective",
+    "anti_infective is the code most obviously not a name",
+  );
+  assert.equal(mapChannelsByRepRow({ line_code: "pedia" }).lineName, "Pedia");
+  assert.equal(mapChannelsByRepRow({ line_code: null }).lineName, null, "no line stays no line, for the tab's dash");
+  assert.equal(
+    mapChannelsByRepRow({ line_code: "new_line" }).lineName,
+    "new_line",
+    "an unknown code stays visible rather than vanishing or being guessed at",
+  );
+
+  const channelsTabSource = readFileSync("src/components/sales/channels-by-rep-tab.tsx", "utf8");
+  assert.ok(!channelsTabSource.includes('"lineCode"'), "the sort column must key on the name, or the Line header stops sorting");
+  assert.equal(
+    channelsTabSource.split("row.lineCode").length - 1,
+    2,
+    "the tab may use the code only in its two React keys; printing, sorting or searching it shows a code to the reader",
+  );
 
   const vacant = mapChannelsByRepRow({
     seat_id: "SEAT-2", rep_hr_id: null, rep_name: null,
