@@ -139,6 +139,12 @@ export type CustomerSalesDetail = {
 
 const DIRECTORY_RESULT_LIMIT = 2000;
 
+// Above the function's own 45s statement_timeout, so the database's answer reaches the page before
+// the client gives up. With nothing filtered this read returns about 59,000 customers in about 10s
+// warm, and a database restart empties the cache it relies on; at the default 15s that cold read
+// showed "Failed to load Customer Directory." while the query ran on with nobody waiting for it.
+const DIRECTORY_REQUEST_TIMEOUT_MS = 50_000;
+
 function normalizeCode(value: unknown) {
   return String(value ?? "").trim().toUpperCase();
 }
@@ -335,7 +341,7 @@ async function queryDirectoryRows(
   maps: NameMaps,
   role: PhoenixRole,
 ): Promise<CustomerDirectoryRow[]> {
-  const supabase = getSupabaseAdmin();
+  const supabase = getSupabaseAdmin({ requestTimeoutMs: DIRECTORY_REQUEST_TIMEOUT_MS });
   // Single execution: phx_customer_directory_json returns the whole result set as one
   // jsonb value, so the aggregation runs ONCE instead of being re-run per 1000-row page
   // (PostgREST's row cap previously forced ~28 re-executions = ~43s on the full directory).
