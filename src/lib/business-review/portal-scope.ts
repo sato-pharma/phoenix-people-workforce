@@ -324,7 +324,8 @@ export async function loadReviewOrgSnapshot(options?: {
 
   const loadSeats = async (): Promise<OrgSeat[]> => {
     const seatRes = await db
-      .from("au_v_org_tree")
+      // The sales tree: a district a Regional Manager holds himself is one of his districts.
+      .from("au_v_org_tree_sales")
       .select("seat_tier,seat_id,line_code,occupant_hr_id,path")
       .in("seat_tier", [...DISTRICT_SEAT_TIERS, "RSM"]);
     if (seatRes.error) throw new Error(`Business Review: could not read the organogram — ${seatRes.error.message}`);

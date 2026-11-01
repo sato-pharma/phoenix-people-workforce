@@ -20,6 +20,7 @@ import {
   MEDICAL_REP_AREA_UNRESOLVED_MESSAGE,
   resolveMedicalRepSosAreaCodes,
 } from "@/lib/sales/medical-rep-area-scope";
+import { areaCodesForMonth } from "@/lib/org/sales-only-seats";
 import type { ComparisonScope } from "@/lib/sales/monthly-closing-comparison";
 import { resolveWeeklyProductBound } from "@/lib/sales/weekly/access";
 import {
@@ -152,6 +153,8 @@ export type PortalClosingScope = {
    * Empty when their area is not on file.
    */
   areaCodes: Set<string> | null;
+  /** Areas the viewer's seat answers for only in months before the one named (sales-only-seats.ts). */
+  earlierMonthAreas?: Map<string, string>;
   /**
    * True only for a Medical Rep whose own area could not be resolved. Their bounds are then both empty,
    * so every loader shows them nothing — the page says why rather than rendering a blank closing.
@@ -318,7 +321,15 @@ export async function resolvePortalClosingScope(
 
   // Territory roles: DM/RM are narrowed to their own areas (seat map) or, failing that, their own
   // region; NSM is line-scoped so both bounds are null ⇒ the whole line.
-  return { line: defaultLine, allowedLines, productCodes: null, regionNames, areaCodes, areaUnresolved: false };
+  return {
+    line: defaultLine,
+    allowedLines,
+    productCodes: null,
+    regionNames,
+    areaCodes,
+    ...(salesScope.allowedEarlierMonthAreas ? { earlierMonthAreas: salesScope.allowedEarlierMonthAreas } : {}),
+    areaUnresolved: false,
+  };
 }
 
 /**
@@ -807,7 +818,7 @@ export async function loadPortalMonthlyClosing(input: {
   // otherwise see the raw matrix including LA003 / LA004.
   const safe = stripRestrictedColumns(locked);
   const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
+  const matrix = applyRegionScope(productScoped, scope.regionNames, areaCodesForMonth(scope.areaCodes, scope.earlierMonthAreas, selectedPeriod));
 
   // The Office grid rides the IDENTICAL scoping chain. Skipping any step here would leak a
   // confidential product's Office units, or show a District Manager the national Office figure
@@ -818,7 +829,7 @@ export async function loadPortalMonthlyClosing(input: {
         ? scopeMatrixToProducts(stripRestrictedColumns(parts.office), scope.productCodes)
         : stripRestrictedColumns(parts.office),
       scope.regionNames,
-      scope.areaCodes,
+      areaCodesForMonth(scope.areaCodes, scope.earlierMonthAreas, selectedPeriod),
     )
     : null;
 
@@ -861,7 +872,7 @@ export async function loadPortalClosingTrend(input: {
       const raw = await loadMonthlyClosingWithStoreSplit({ line: scope.line as string, period });
       const safe = stripRestrictedColumns(raw);
       const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-      const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
+      const matrix = applyRegionScope(productScoped, scope.regionNames, areaCodesForMonth(scope.areaCodes, scope.earlierMonthAreas, period));
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
       return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
     }),
@@ -930,7 +941,7 @@ export async function loadPortalLiveMonthly(input: {
 
   const safe = stripRestrictedColumns(raw);
   const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
+  const matrix = applyRegionScope(productScoped, scope.regionNames, areaCodesForMonth(scope.areaCodes, scope.earlierMonthAreas, selectedPeriod));
 
   return {
     matrix,

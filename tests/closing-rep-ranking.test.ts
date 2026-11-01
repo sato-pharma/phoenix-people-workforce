@@ -1224,7 +1224,7 @@ function assertAdminRepRankingButton(): void {
   for (const step of [
     "const safe = stripRestrictedColumns(locked);",
     "scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe",
-    "applyRegionScope(productScoped, scope.regionNames, scope.areaCodes)",
+    "applyRegionScope(productScoped, scope.regionNames, areaCodesForMonth(scope.areaCodes, scope.earlierMonthAreas, selectedPeriod))",
   ]) {
     assert.ok(
       portal.includes(step),

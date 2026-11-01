@@ -1,4 +1,4 @@
-import { type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
+import { resolveEmployeeIdentityId, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import {
   loadSalesNameMastersOncePerRender,
@@ -7,6 +7,7 @@ import {
 } from "@/lib/sales/medical-rep-area-scope";
 import { resolveOfficialLineValue } from "@/lib/sales/official-lines";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
+import { districtRegionCodesHeldBy, loadSalesSeatTree } from "@/lib/sales/seat-hierarchy";
 
 import { TERRITORY_PICKER_LINES } from "./skeleton";
 import type { TerritoryDiagnosticCode, TerritoryRootScope } from "./types";
@@ -107,9 +108,17 @@ async function resolveRegionalManagerScope(
   officialLine: string,
 ): Promise<TerritoryRootScope> {
   const references = await loadSalesNameMastersOncePerRender();
-  const regionCodes = await resolveRegionalManagerRegionCodes(ctx, salesScope, references);
+  const [regionCodes, seats] = await Promise.all([
+    resolveRegionalManagerRegionCodes(ctx, salesScope, references),
+    loadSalesSeatTree(),
+  ]);
   if (regionCodes.size === 0) return denied("region_unresolved", REGION_UNRESOLVED_MESSAGE);
-  return { level: "region", regionCodes: [...regionCodes].map((code) => code.toUpperCase()), officialLine };
+  const held = districtRegionCodesHeldBy(resolveEmployeeIdentityId(ctx), seats);
+  return {
+    level: "region",
+    regionCodes: [...new Set([...regionCodes].map((code) => code.toUpperCase()).concat(held))],
+    officialLine,
+  };
 }
 
 /**

@@ -8,8 +8,9 @@
 // Owner, 2026-10-20: "when filter by manager u find no manager … every single role that's
 // applicable to appear in a module, find and show it."
 //
-// This module answers both from `au_v_org_tree` (the public wrapper over au.seats, the same tree the
-// organogram, Phoenix CRM and the seat-derived area scope read):
+// This module answers both from `au_v_org_tree_sales` (the organogram's tree plus the districts a
+// Regional Manager holds himself, src/lib/org/sales-only-seats.ts, the same tree the seat-derived area
+// scope reads):
 //
 //   · vacantDistrictLabel — "Vacant — Alex-BHR" for a DM seat, from the seat's own district name.
 //   · regionalManagerAbove — the occupied RSM seat directly above a DM seat, if there is one.
@@ -35,6 +36,7 @@ export type SalesSeat = {
   lineCode: string | null;
   /** For a DM / ACTING_DM seat, the district it runs ("Alex-BHR", "Delta (1)"). */
   regionName: string | null;
+  regionCode?: string | null;
   /** As stored — the same spelling the achievement rows and the employee name map use. */
   occupantHrId: string | null;
   /** The per-line "Others" sales bucket. Holds nobody and is not a district. */
@@ -63,6 +65,7 @@ export function indexSalesSeats(rows: ReadonlyArray<Record<string, unknown>>): M
       tier,
       lineCode: text(row.line_code),
       regionName: text(row.region_name),
+      regionCode: text(row.region_code),
       occupantHrId: text(row.occupant_hr_id),
       isOtherPseudoDm: row.is_other_pseudo_dm === true,
     });
@@ -102,6 +105,22 @@ export function regionalManagerAbove(
 }
 
 /**
+ * The region codes of the district seats this person occupies themself. A Regional Manager's regions
+ * are otherwise read off people's labels, and a district he holds himself has nobody under it to carry
+ * the label.
+ */
+export function districtRegionCodesHeldBy(hrId: string | null | undefined, seats: SalesSeatTree): string[] {
+  const key = String(hrId ?? "").trim().toUpperCase();
+  if (!key) return [];
+  const codes = new Set<string>();
+  for (const seat of seats.values()) {
+    if (!DISTRICT_TIERS.has(seat.tier) || !seat.regionCode) continue;
+    if (String(seat.occupantHrId ?? "").trim().toUpperCase() === key) codes.add(seat.regionCode.toUpperCase());
+  }
+  return [...codes];
+}
+
+/**
  * The seat rows, cached five minutes under `sos-reference` — the tag every seat-moving write already
  * busts (see invalidateExecutiveDashboardCache), shared with the Phoenix CRM and CRM placement reads
  * of the same view. The ROWS are cached, never the Map: unstable_cache serialises what it stores.
@@ -109,17 +128,19 @@ export function regionalManagerAbove(
 const loadSalesSeatRows = unstable_cache(
   async (): Promise<Array<Record<string, unknown>>> => {
     const { data, error } = await getSupabaseAdmin()
-      .from("au_v_org_tree")
-      .select("seat_id,parent_seat_id,seat_tier,line_code,region_name,occupant_hr_id,is_other_pseudo_dm");
+      .from("au_v_org_tree_sales")
+      .select("seat_id,parent_seat_id,seat_tier,line_code,region_code,region_name,occupant_hr_id,is_other_pseudo_dm");
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Array<Record<string, unknown>>;
     // An unbounded PostgREST read stops at 1,000 rows with no error; never resolve half a tree.
     if (rows.length >= 1000) {
-      throw new Error(`au_v_org_tree returned ${rows.length} rows, at PostgREST's cap. Paginate this read before trusting it.`);
+      throw new Error(`au_v_org_tree_sales returned ${rows.length} rows, at PostgREST's cap. Paginate this read before trusting it.`);
     }
     return rows;
   },
-  ["sales-seat-hierarchy-v1"],
+  // v2: the rows gained `region_code` and come from the sales tree. A new key, so a cached copy of the
+  // old shape is never served to a reader that needs them.
+  ["sales-seat-hierarchy-v2"],
   { revalidate: 300, tags: ["sos-reference"] },
 );
 

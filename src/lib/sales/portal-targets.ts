@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { areaInBoundForMonth } from "@/lib/org/sales-only-seats";
 import { resolveSalesAccessScope, resolveSalesGeographyBound, type SalesAccessScope } from "@/lib/sales/access-scope";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 
@@ -89,6 +90,8 @@ export type TargetsScopeBound = {
   canViewAllTargets: boolean;
   /** Area codes the viewer owns; null = no area-level bound (fall back to line). */
   areaCodes: Set<string> | null;
+  /** Areas the viewer's seat answers for only in months before the one named (sales-only-seats.ts). */
+  earlierMonthAreas?: Map<string, string>;
   /** Sales line codes ("cns" | "pedia" | "anti_infective"); null = every line. */
   lineCodes: Set<string> | null;
   /**
@@ -154,7 +157,7 @@ export function filterAchievementForScope(rows: AchievementRow[], bound: Targets
     if (bound.areaCodes) {
       // A row with no area code (the `isOther` bucket) cannot be attributed to this viewer's areas.
       const areaCode = normalizeAreaCode(row.areaCode);
-      if (!areaCode || !bound.areaCodes.has(areaCode)) return false;
+      if (!areaCode || !areaInBoundForMonth(areaCode, row.period, bound.areaCodes, bound.earlierMonthAreas)) return false;
     }
     return true;
   });
@@ -201,6 +204,7 @@ export function targetsBoundFromSalesScope(scope: SalesAccessScope): TargetsScop
   return {
     canViewAllTargets: false,
     areaCodes,
+    ...(scope.allowedEarlierMonthAreas ? { earlierMonthAreas: scope.allowedEarlierMonthAreas } : {}),
     // An empty line set means "no line resolved" -> keep it as an empty Set (matches nothing) rather
     // than null (matches everything). filterAchievementForScope then returns [] unless areas bound.
     lineCodes,
@@ -224,8 +228,9 @@ export async function assertTargetsAreaInScope(
   ctx: AccessContext,
   areaCode: string,
   line: string | null | undefined,
+  period?: string | null,
 ): Promise<void> {
-  assertTargetsAreaInBound(await resolvePortalTargetsBound(ctx), areaCode, line);
+  assertTargetsAreaInBound(await resolvePortalTargetsBound(ctx), areaCode, line, period);
 }
 
 /** The pure half of assertTargetsAreaInScope — no DB, directly unit-tested. */
@@ -233,11 +238,12 @@ export function assertTargetsAreaInBound(
   bound: TargetsScopeBound,
   areaCode: string,
   line: string | null | undefined,
+  period?: string | null,
 ): void {
   if (bound.canViewAllTargets) return;
   const requested = normalizeAreaCode(areaCode);
   if (!requested) throw new Error("Forbidden: an area is required.");
-  if (!bound.areaCodes || !bound.areaCodes.has(requested)) {
+  if (!bound.areaCodes || !areaInBoundForMonth(requested, period, bound.areaCodes, bound.earlierMonthAreas)) {
     throw new Error("Forbidden: that area is outside your territory.");
   }
   if (bound.lineCodes) {

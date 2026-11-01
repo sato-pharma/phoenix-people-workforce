@@ -37,6 +37,7 @@ import { loadMonthlyAchievement } from "@/lib/sales/monthly-targets";
 import { loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
 
 import { loadSpotlightOrg, type SpotlightOrgIndex } from "./org";
+import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import { SPOTLIGHT_FLOOR } from "./period";
 import { bucketRows, hrKey, rowsFromBuckets, type Bucket } from "./rank";
 import type { PeriodKey, SpotlightResult, SpotlightRow, SpotlightSelection } from "./types";
@@ -152,6 +153,7 @@ const SELF_SEAT_SUBJECT: Readonly<Record<string, "rep" | "dm">> = {
 function findSelfSeat(org: SpotlightOrgIndex, hrId: string) {
   const key = hrKey(hrId);
   for (const seat of org.seats.values()) {
+    if (isRegionalManagerHeldDistrict(seat.seatId)) continue;
     if (SELF_SEAT_SUBJECT[seat.tier] && hrKey(seat.occupantHrId) === key) return seat;
   }
   return null;

@@ -143,7 +143,7 @@ async function stampOrganogram(): Promise<string> {
         .select("area_code,line_code,operational_region_code,dm_seat_id,effective_from,effective_to")
         .limit(ORGANOGRAM_ROW_CAP),
       supabase
-        .from("au_v_org_tree")
+        .from("au_v_org_tree_sales")
         .select("seat_id,occupant_hr_id,is_other_pseudo_dm")
         .limit(ORGANOGRAM_ROW_CAP),
     ]);

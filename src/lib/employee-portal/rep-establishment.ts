@@ -19,6 +19,7 @@
 // sells; counting it would put a manager's chair in a rep's denominator.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isRepSeatHeldOffOrganogram } from "@/lib/org/sales-only-seats";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SeatCount = {
@@ -38,13 +39,15 @@ const EMPTY: RepEstablishment = { company: { seats: 0, vacant: 0 }, byLine: new 
 
 /** Fold raw seat rows into the company and per-line counts. PURE, so the rule is testable dry. */
 export function foldRepEstablishment(
-  rows: readonly { seat_tier?: unknown; line_code?: unknown; is_vacant?: unknown }[],
+  rows: readonly { seat_id?: unknown; seat_tier?: unknown; line_code?: unknown; is_vacant?: unknown }[],
 ): RepEstablishment {
   const byLine = new Map<string, SeatCount>();
   let seats = 0;
   let vacant = 0;
   for (const row of rows) {
     if (String(row.seat_tier ?? "").trim().toUpperCase() !== "REP") continue;
+    // The establishment is the organogram's rep seats, so a seat held off the chart is not one of them.
+    if (isRepSeatHeldOffOrganogram(String(row.seat_id ?? ""))) continue;
     const isVacant = row.is_vacant === true;
     seats += 1;
     if (isVacant) vacant += 1;
@@ -68,7 +71,7 @@ export function foldRepEstablishment(
 export async function loadRepEstablishment(): Promise<RepEstablishment> {
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.from("au_v_org_tree").select("seat_tier,line_code,is_vacant");
+    const { data, error } = await supabase.from("au_v_org_tree").select("seat_id,seat_tier,line_code,is_vacant");
     if (error) return EMPTY;
     return foldRepEstablishment((data ?? []) as Record<string, unknown>[]);
   } catch {

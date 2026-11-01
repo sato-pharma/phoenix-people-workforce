@@ -493,8 +493,8 @@ export async function runBusinessReviewPortalScopeTests(): Promise<void> {
     }
     assert.ok(!page.includes("reviewAccessMapGeneratedAt"), "and the snapshot stamp is gone with it");
     assert.ok(
-      resolver.includes('.from("au_v_org_tree")'),
-      "the seat map is read from the live org tree",
+      resolver.includes('.from("au_v_org_tree_sales")'),
+      "the seat map is read from the live org tree, with the districts a Regional Manager holds himself",
     );
   }
 

@@ -46,7 +46,7 @@ function appUrl(path: string) {
 export async function loadTargetDirectory(lineCodes: string[]): Promise<TargetDirectory> {
   const supabase = getSupabaseAdmin();
   const [seatResult, mapResult, productNames] = await Promise.all([
-    supabase.from("au_v_org_tree").select("seat_id,parent_seat_id,seat_tier,line_code,occupant_hr_id"),
+    supabase.from("au_v_org_tree_sales").select("seat_id,parent_seat_id,seat_tier,line_code,occupant_hr_id"),
     supabase
       .from("au_v_line_area_map")
       .select("line_code,area_code,area_name,dm_seat_id,rep_seat_id,effective_from,effective_to")

@@ -31,6 +31,7 @@
 // only honest aggregate is VALUE. `actual_units` is deliberately not carried through this module.
 
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
+import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 
 import type {
   PeriodKey,
@@ -136,6 +137,8 @@ function subjectOf(
   }
 
   const tiers = SUBJECT_TIER[kind]!;
+  // A district a Regional Manager holds himself counts to him, and he is not a district manager.
+  if (kind === "dm" && isRegionalManagerHeldDistrict(row.dmSeatId)) return null;
   // A rep row already names its own seat; everything above it is reached by climbing, so an
   // NSM ranking picks up the rep rows under vacant district seats too.
   const start = kind === "rep" ? row.repSeatId : row.dmSeatId ?? row.repSeatId;

@@ -68,10 +68,10 @@ const PEDIA_TREE: AuTreeRow[] = [
   seat({ parent_seat_id: "SEAT-PED-DM-GZ", seat_id: "SEAT-PED-REP-GZ5", seat_tier: "REP" }),
   // A district lane whose manager is filled and every team seat empty (the lane that read
   // "5 team members · 5 vacant").
-  seat({ occupant_hr_id: "DM-2", parent_seat_id: "SEAT-PED-NSM", seat_id: "SEAT-PED-DM-SH", seat_tier: "DM" }),
-  seat({ parent_seat_id: "SEAT-PED-DM-SH", seat_id: "SEAT-PED-REP-SH1", seat_tier: "REP" }),
-  seat({ parent_seat_id: "SEAT-PED-DM-SH", seat_id: "SEAT-PED-REP-SH2", seat_tier: "REP" }),
-  seat({ parent_seat_id: "SEAT-PED-DM-SH", seat_id: "SEAT-PED-REP-SH3", seat_tier: "REP" }),
+  seat({ occupant_hr_id: "DM-2", parent_seat_id: "SEAT-PED-NSM", seat_id: "SEAT-PED-DM-MN", seat_tier: "DM" }),
+  seat({ parent_seat_id: "SEAT-PED-DM-MN", seat_id: "SEAT-PED-REP-MN1", seat_tier: "REP" }),
+  seat({ parent_seat_id: "SEAT-PED-DM-MN", seat_id: "SEAT-PED-REP-MN2", seat_tier: "REP" }),
+  seat({ parent_seat_id: "SEAT-PED-DM-MN", seat_id: "SEAT-PED-REP-MN3", seat_tier: "REP" }),
   // A Regional Manager with one district lane under him — one filled seat, one empty.
   seat({ occupant_hr_id: "RM-1", parent_seat_id: "SEAT-PED-NSM", seat_id: "SEAT-PED-RSM-DL", seat_tier: "RSM" }),
   seat({ occupant_hr_id: "DM-3", parent_seat_id: "SEAT-PED-RSM-DL", seat_id: "SEAT-PED-DM-DL", seat_tier: "DM" }),
