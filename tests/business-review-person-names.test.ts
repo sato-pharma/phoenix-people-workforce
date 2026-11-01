@@ -101,7 +101,8 @@ export async function runBusinessReviewPersonNamesTests() {
     for (const file of ["app/api/business-review/pack/route.ts", "app/employee-portals/business-review/page.tsx"]) {
       assert.match(
         stripComments(readFileSync(file, "utf8")),
-        /await reviewRepName\(\{/,
+        // awaited alone, or one member of the page's read wave (1 Nov 2026)
+        /(?:await |^\s*)reviewRepName\(\{/m,
         `${file} heads the rep's review with reviewRepName, never the scope's HR-id fallback`,
       );
     }

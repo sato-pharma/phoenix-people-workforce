@@ -320,6 +320,23 @@ came back.
 - "No deliverable address" — two active Medical Reps still have no Sato work email in Employee Master.
   Data, entered there, not code.
 
+## The Slowest pages tab (1 Nov 2026)
+
+`/admin/system-audit?tab=slow-pages` reads the last 7 days of `page_timings` through
+`phx_page_timings_summary` (`src/lib/system-audit/slow-pages.ts`) and shows two tables: hard loads
+(first byte, first content, largest content, interactive and the first `/api/` answer, per page
+shape) and taps inside the app (tap to the new route rendering), slowest first by the 90th percentile
+of the page looking ready, with the low-end devices' figure (four cores or fewer, or 4 GB or less)
+beside the overall one so a rep's phone is never averaged away by the office desktops. The table
+holds one row per hour, page shape, kind, device class and metric — count, median, 90th percentile
+and worst in milliseconds — and no column a person could be in; the browser beacon
+(`src/components/layout/page-timing-beacon.tsx`) sends the hard load once when the tab hides and
+the taps ten at a time, the web process keeps the hour in memory and writes each ended hour through
+`phx_page_timings_record` from the process-health tick, and `phx_prune_retention` drops rows at
+30 days (owner, 1 Nov 2026: "hourly medians per page, 30 days, no names"). A week with no rows says
+so; a database that cannot be read says "Unavailable", never zero. Account of the beacon:
+`docs/performance-engineering-standards.md`, item 20.
+
 ## What it replaced, and why
 
 Measured on production, 23 Oct 2026:

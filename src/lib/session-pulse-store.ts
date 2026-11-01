@@ -76,6 +76,12 @@ export interface PulseNotices {
   success?: boolean;
   error?: string;
   message?: string;
+  /**
+   * The envelope's unread internal-message count, read in the same statement as the notices
+   * (1 Nov 2026). A number sets the badge; null or absent means the pulse could not say, and the
+   * messages menu fetches its own count once.
+   */
+  unreadMessages?: number | null;
 }
 
 /** The badges half of a pulse: one `{ count, overdue? }` slot per badge, keyed as nav-badge-store.ts maps them. */

@@ -20,11 +20,13 @@
 // reconcile with every other CRM board rather than quietly counting reps who left.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getOrLoadShared } from "@/lib/cache/shared-read";
 import { type CallRateHolidays } from "@/lib/crm/call-rate";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
 import { isAgentInScope } from "@/lib/crm/doctor-coverage-roles";
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
-import { queryVisits } from "@/lib/crm/reads";
+import { isMissingCrmRpcError, queryVisits } from "@/lib/crm/reads";
+import { CRM_OPEN_ASSIGNMENTS } from "@/lib/crm/shared-windows";
 import {
   buildRepKpiReports,
   CATCH_ALL_CONTACT_CRM_ID,
@@ -96,7 +98,7 @@ export function toPanelContactRecord(row: OpenPanelAssignment): ContactRecord {
 }
 
 /**
- * Every contact on every rep's list TODAY, paged: the open periods of Phoenix's own list,
+ * Every contact on every rep's list TODAY: the open periods of Phoenix's own list,
  * `crm_contact_assignments` where `effective_to is null`.
  *
  * NOT `ireports360_contacts`. That is the vendor scrape; it stops moving the day the sweep is
@@ -104,6 +106,50 @@ export function toPanelContactRecord(row: OpenPanelAssignment): ContactRecord {
  * changes went uncounted. The open assignments carry the same list today — measured on production
  * 2026-09-14 before this reader moved: all 137 rep AM and PM counts identical, 7,831 contacts on
  * each side, and identical grades on every row (the assignment folds A+ into A, as the rules do).
+ *
+ * ONE statement since 1 Nov 2026 (the speed root cause). `phx_crm_open_assignments` returns every open row
+ * ordered by id in one request, where the page walk below counted them and fetched fifteen OFFSET pages at
+ * once — 5,488 of those pages a day at 28 ms each, the heaviest statement on the database on 1 Nov 2026,
+ * on top of ~450 ms at Supabase's edge for each request. The walk stays only for a database the function
+ * has not reached (PGRST202). A DISPLAY caller may pass `reuseRecentWindow: true` and take the copy every
+ * KPI board shares, up to a minute old and dropped at once by an applied list change
+ * (`refreshSharedContactRoster`); the system audit, and every reader that decides something, reads live.
+ */
+export async function loadPanelRows(options: { reuseRecentWindow?: boolean } = {}): Promise<ContactRecord[]> {
+  if (options.reuseRecentWindow !== true) return readPanelRows();
+  const { rows } = await getOrLoadShared(CRM_OPEN_ASSIGNMENTS, "open", readPanelRows, OPEN_ASSIGNMENTS_LIMITS);
+  return rows ?? [];
+}
+
+const OPEN_ASSIGNMENTS_RPC = "phx_crm_open_assignments";
+const OPEN_ASSIGNMENTS_LIMITS = { maxEntries: 1, maxRowsTotal: 30_000 };
+
+/** One open assignment as the function returns it: [id, agent_crm_id, agent_hr_id, contact_crm_id, grade, list_type]. */
+export type OpenAssignmentTuple = [number, number | null, string | null, number | null, string | null, string | null];
+
+/** The function's tuple as the row the page walk read. Pure; exported for its test. */
+export function panelAssignmentFromTuple(tuple: OpenAssignmentTuple): OpenPanelAssignment {
+  const [, agentCrmId, agentHrId, contactCrmId, grade, listType] = tuple;
+  return {
+    agent_crm_id: agentCrmId == null ? null : Number(agentCrmId),
+    agent_hr_id: agentHrId,
+    contact_crm_id: contactCrmId == null ? null : Number(contactCrmId),
+    grade,
+    list_type: listType,
+  };
+}
+
+async function readPanelRows(): Promise<ContactRecord[]> {
+  const { data, error } = await getSupabaseAdmin().rpc(OPEN_ASSIGNMENTS_RPC);
+  if (error) {
+    if (isMissingCrmRpcError(error)) return readPanelRowsByPages();
+    throw new Error(error.message);
+  }
+  return ((Array.isArray(data) ? data : []) as OpenAssignmentTuple[]).map((tuple) => toPanelContactRecord(panelAssignmentFromTuple(tuple)));
+}
+
+/**
+ * The pre-function read, kept only for a database that has not got `phx_crm_open_assignments` yet.
  *
  * THE PAGES ARE FETCHED AT ONCE, not one after another — counted first so the fan-out is exact.
  * crm/contact-lists.ts does the same thing for the same reason: ~9,800 rows is ten pages, and ten
@@ -115,7 +161,7 @@ export function toPanelContactRecord(row: OpenPanelAssignment): ContactRecord {
  * optimisation here — it is the only thing that makes the read complete. A missing page would not
  * error; it would quietly shrink somebody's panel and inflate his coverage.
  */
-export async function loadPanelRows(): Promise<ContactRecord[]> {
+async function readPanelRowsByPages(): Promise<ContactRecord[]> {
   const supabase = getSupabaseAdmin();
   const { count, error: countError } = await supabase
     .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
@@ -188,7 +234,7 @@ export async function loadRepKpiReports(input: {
   if (input.scope.kind === "none") return { reports: [], unidentifiedReps: 0 };
 
   const [contactRows, visitRows] = await Promise.all([
-    loadPanelRows(),
+    loadPanelRows({ reuseRecentWindow: input.reuseRecentWindow === true }),
     queryVisits<VisitRecord>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,

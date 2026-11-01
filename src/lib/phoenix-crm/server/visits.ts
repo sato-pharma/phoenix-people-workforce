@@ -111,7 +111,7 @@ import { recordCaptureProvenance } from "@/lib/phoenix-crm/server/capture-proven
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
-import { ensureReferenceCustomers, loadListedPharmacies, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomersRecently, loadListedPharmacies, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
 import { loadOffPlanExemptions, loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
@@ -133,6 +133,7 @@ import { prepareDoubleVisitRequest, raiseDoubleVisitRequestFromVisit } from "@/l
 import { loadPlanHolidays } from "@/lib/phoenix-crm/server/plan-holidays";
 import { loadLineProductManagers, raiseVisitAskFromVisit, visitAskSavedNote } from "@/lib/phoenix-crm/server/visit-asks";
 import { describeTerritory, personSeatTitle, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
   customerCountsAsValidated,
@@ -1048,10 +1049,12 @@ async function loadUnvalidatedVisitCounts(seatId: string, isTest: boolean, custo
   const unvalidated = customers
     .filter((row) => (row.validated_at === null || row.validated_at === undefined) && !isPharmacyListType(row.list_type))
     .map((row) => String(row.id));
-  // A hundred ids a read keeps the address well inside what the API accepts.
-  for (let start = 0; start < unvalidated.length; start += 100) {
-    const ids = unvalidated.slice(start, start + 100);
-    const rows = await fetchAllRowsKeyset<Row>(
+  // A hundred ids a read keeps the address well inside what the API accepts. The chunks are read a few at a
+  // time (1 Nov 2026, the speed root cause — each request is ~450 ms at Supabase's edge, and a list of two
+  // hundred customers paid them one after the other); a count is a sum, so the order they land in is nothing.
+  const chunks = Array.from({ length: Math.ceil(unvalidated.length / 100) }, (_unused, index) => unvalidated.slice(index * 100, index * 100 + 100));
+  const answers = await mapWithConcurrency(chunks, 4, (ids) =>
+    fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
           .from("phoenix_crm_visits")
@@ -1062,7 +1065,9 @@ async function loadUnvalidatedVisitCounts(seatId: string, isTest: boolean, custo
           .is("linked_from_visit_id", null)
           .is("imported_from_ireports360_at", null),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
-    );
+    ),
+  );
+  for (const rows of answers) {
     for (const row of rows) {
       const customerId = String(row.customer_id);
       counts.set(customerId, (counts.get(customerId) ?? 0) + 1);
@@ -1084,8 +1089,9 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   // visit, no plan row and no last visit yet. So every other read starts BESIDE the mint; the last
   // visits' read no longer waits for the product families (only its pick does); and the names ride on
   // the day's visits, the one read they need. The mint's own failure is still the one that surfaces,
-  // first, exactly as when it ran alone.
-  const ensured = ensureReferenceCustomers(seat, isTest);
+  // first, exactly as when it ran alone. Since 1 Nov 2026 it is the planners' throttled mint: a seat
+  // minted in the last five minutes skips it (the speed root cause — the RPC gated the form's whole wave).
+  const ensured = ensureReferenceCustomersRecently(seat, isTest);
   const visitRowsRead = loadVisitRows(seat.seatId, isTest, today);
   const productFamiliesRead = lineProductsByFamily(seat.lineName);
   // The products the last visits are narrowed to. `loadLastVisits` awaits this only once its own read

@@ -21,6 +21,8 @@ import {
 import { devSafePromiseAll } from "@/lib/utils/dev-safe-promise-all";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
+import { pushIdentityOf } from "@/lib/notifications/push-identity";
+import { personalMailboxConnected } from "@/lib/personal-mailbox/service";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import {
   describeVacancyReason,
@@ -2235,14 +2237,36 @@ export type MedicalRepPortalData = {
  * context. Do not add dashboard, chart, payroll history, request lists, or other
  * page-heavy data here; those belong in route-specific loaders.
  */
-export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "hrContract">;
+export type EmployeePortalShellData = Pick<MedicalRepPortalData, "employee" | "hrContract"> & {
+  /**
+   * Whether this person has "My email" connected, read once here (five-minute memory) so the envelope
+   * asks the mailbox only when there is one — the browser used to ask on every page view (1 Nov 2026).
+   */
+  mailboxConnected: boolean;
+  /**
+   * The HR id this browser registers its push subscription under, or null for a session with no push
+   * identity (a test login, View as Seat). Printed into the shell so the OneSignal provider need not
+   * fetch /api/notifications/push/context on every page (src/lib/notifications/push-identity.ts).
+   */
+  pushHrId: string | null;
+};
 
 export const getEmployeePortalShellData = cache(async (access: AccessContext): Promise<EmployeePortalShellData> => {
   // The directory does not depend on who the viewer is, so it loads beside the viewer's own auth row instead of
-  // after it (performance brief, 2026-10-23): the shell used to pay the two reads one after the other.
-  const [currentUser, directory] = await Promise.all([
+  // after it (performance brief, 2026-10-23): the shell used to pay the two reads one after the other. The
+  // mailbox connection rides the same wave (1 Nov 2026).
+  // ONE WAVE (1 Nov 2026, the speed root cause). The manager's name and the photo used to wait for the
+  // viewer's row and the directory — a second round trip to Frankfurt on every portal render. The person
+  // is almost always who the session says (resolveEmployeeIdentityId), so both reads start on that id
+  // beside the other three; the rare render where the auth row names someone else pays a second wave.
+  // Pinned by tests/performance-phase-3.test.ts (§C).
+  const expectedHrId = normalizeHrId(resolveEmployeeIdentityId(access));
+  const [currentUser, directory, mailboxConnected, expectedManager, expectedPhotoUrl] = await Promise.all([
     resolvePortalCurrentUser(access),
     getEmployeeDirectory(),
+    personalMailboxConnected(access),
+    expectedHrId ? resolveDirectManagerName(expectedHrId) : Promise.resolve(null),
+    expectedHrId ? uploadedEmployeePhotoUrl(expectedHrId) : Promise.resolve(null),
   ]);
   const currentHrId = normalizeHrId(currentUser.hrId);
   const employee = currentHrId
@@ -2257,10 +2281,10 @@ export const getEmployeePortalShellData = cache(async (access: AccessContext): P
         ? "On Probation"
         : "Completed";
 
-  const [manager, photoUrl] = await Promise.all([
-    resolveDirectManagerName(employee.hrId),
-    uploadedEmployeePhotoUrl(employee.hrId),
-  ]);
+  const [manager, photoUrl] =
+    expectedHrId && hrIdsMatch(employee.hrId, expectedHrId)
+      ? [expectedManager, expectedPhotoUrl]
+      : await Promise.all([resolveDirectManagerName(employee.hrId), uploadedEmployeePhotoUrl(employee.hrId)]);
 
   return {
     employee: {
@@ -2285,6 +2309,10 @@ export const getEmployeePortalShellData = cache(async (access: AccessContext): P
       probationStatus,
       serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),
     },
+    mailboxConnected,
+    // The portal shell asserted employee_profile:read before it asked for this data (the same gate
+    // the context route keeps), so the pure rule is enough here.
+    pushHrId: pushIdentityOf(access),
   };
 });
 

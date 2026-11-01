@@ -119,10 +119,12 @@ function testRejectionAuditAfterResponse() {
 
 function testShellAndSidebar() {
   const service = read("src/lib/employee-portal/service.ts");
+  // The wave may carry more reads (the manager's name and the photo, 1 Nov 2026); the mailbox
+  // connection must be read BESIDE the viewer and the directory, never after them.
   assert.match(
     service,
-    /const \[currentUser, directory\] = await Promise\.all\(\[\s*resolvePortalCurrentUser\(access\),\s*getEmployeeDirectory\(\),\s*\]\);/,
-    "RED the shell reads the current user and the directory together",
+    /const \[currentUser, directory, mailboxConnected(?:, \w+)*\] = await Promise\.all\(\[\s*resolvePortalCurrentUser\(access\),\s*getEmployeeDirectory\(\),\s*personalMailboxConnected\(access\),/,
+    "RED the shell reads the current user, the directory and the mailbox connection together",
   );
 
   const planSwitch = read("src/lib/phoenix-crm/server/manager-plan-switch.ts");

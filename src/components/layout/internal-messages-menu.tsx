@@ -7,6 +7,7 @@ import { PersonalMailboxPanel, type PersonalMailboxOpenRequest } from "@/compone
 import { systemUiText } from "@/config/system-settings";
 import { HEADER_PANEL_MAX_HEIGHT, placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { unreadBadgeLabel } from "@/lib/personal-mailbox/rules";
+import { subscribePulseNotices } from "@/lib/session-pulse-store";
 import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 import { askForDesktopMailAlerts, usePersonalMailboxAlerts } from "@/hooks/use-personal-mailbox-alerts";
@@ -104,11 +105,18 @@ const MESSAGES_PANEL_GUTTER = 16;
 export function InternalMessagesMenu({
   isAdminMode,
   embedded = false,
+  mailboxConnected,
   onUnreadChange,
 }: {
   isAdminMode: boolean;
   /** Portal only: render just the panel body (no trigger, no floating, always open) for the unified inbox. */
   embedded?: boolean;
+  /**
+   * Whether this person has "My email" connected, as the shell's render already knows it. False
+   * stops the mailbox unread check before it starts (nothing to check); true or undefined keeps it.
+   * The check used to run on every page view for everyone, five reads deep, to learn "not connected".
+   */
+  mailboxConnected?: boolean;
   /** Embedded: report unread (Phoenix + email) up, so the inbox trigger can show a combined badge. */
   onUnreadChange?: (count: number) => void;
 }) {
@@ -164,7 +172,7 @@ export function InternalMessagesMenu({
     },
     [repositionPanel],
   );
-  const { unread: emailUnread } = usePersonalMailboxAlerts({ canOpenEmail, onOpenEmail: openEmail });
+  const { unread: emailUnread } = usePersonalMailboxAlerts({ canOpenEmail, enabled: mailboxConnected, onOpenEmail: openEmail });
   const badgeLabel = unreadBadgeLabel(unreadCount + (emailUnread ?? 0));
   const totalUnread = unreadCount + (emailUnread ?? 0);
   useEffect(() => {
@@ -212,12 +220,23 @@ export function InternalMessagesMenu({
     }
   }, [markInboxRead]);
 
-  // Once when the header mounts, so the envelope's badge counts unread Phoenix messages BEFORE the
-  // panel is first opened. It loaded only on open, so the badge — the only unread signal on a phone —
-  // stayed blank for someone with messages waiting until they happened to open it anyway.
+  // The envelope's badge counts unread Phoenix messages BEFORE the panel is first opened — the only
+  // unread signal on a phone. It used to fetch the whole list on mount for that one number, on every
+  // page view; since 1 Nov 2026 the number rides the session pulse the bell already receives
+  // (`unreadMessages`, read in the same statement as the notices), so a page view costs no request
+  // here at all. A pulse that cannot say (null — the bundle RPC is not on this database yet) makes
+  // the menu fetch its list once, as before, and the open panel still re-reads and marks read.
+  const fetchedOnce = useRef(false);
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => void loadMessages(), 0);
-    return () => window.clearTimeout(timeoutId);
+    return subscribePulseNotices((notices) => {
+      if (typeof notices.unreadMessages === "number") {
+        setUnreadCount(notices.unreadMessages);
+        return;
+      }
+      if (fetchedOnce.current) return;
+      fetchedOnce.current = true;
+      void loadMessages();
+    });
   }, [loadMessages]);
 
   useEffect(() => {

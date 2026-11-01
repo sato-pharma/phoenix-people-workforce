@@ -26,10 +26,13 @@ export function Topbar({
   permissionLookup = {},
   viewer,
   currentRole,
+  mailboxConnected,
   personalLayout = null,
   scope,
 }: {
   currentRole?: PhoenixRole;
+  /** Whether this person has "My email" connected, resolved server-side in AppShell (1 Nov 2026). */
+  mailboxConnected?: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   /** This viewer's own saved arrangement, resolved server-side in AppShell and handed to the
@@ -159,7 +162,7 @@ export function Topbar({
           {isAdminMode ? <CalculatorWidget isAdminMode={isAdminMode} /> : null}
           <DisplayScaleControl isAdminMode={isAdminMode} />
           <InAppNotificationsBell isAdminMode={isAdminMode} />
-          <InternalMessagesMenu isAdminMode={isAdminMode} />
+          <InternalMessagesMenu isAdminMode={isAdminMode} mailboxConnected={mailboxConnected} />
           <div className="relative" ref={userMenuRef}>
             <button
               aria-expanded={userMenuOpen}

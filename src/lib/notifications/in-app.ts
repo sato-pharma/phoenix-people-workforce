@@ -30,6 +30,7 @@ import {
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { todayInCairo } from "@/lib/date-only";
 import { noticeIsDue } from "@/lib/notifications/due-today";
+import { afterResponse } from "@/lib/http/after-response";
 
 export type InAppNotificationCategory = "coaching_report" | "general" | "internal_message";
 
@@ -230,6 +231,13 @@ export function classifyActionableApprovalCandidates(rows: InAppNotificationEven
  * moved past the stage it was about, so it disappears from the bell without the approver
  * needing to clear it manually. Fail-open throughout: any lookup error just leaves the
  * notification visible rather than risk hiding something still genuinely pending.
+ *
+ * Since 1 Nov 2026 it runs AFTER the bell's response (afterResponse) and at most once every
+ * ARCHIVE_CHECK_GAP_MS per viewer and candidate set (see scheduleStaleApprovalArchive): the five
+ * approval reads it asks — the Approvals Hub's plan queue among them — were paid inside every
+ * minute's pulse by every manager with a "please decide" notice on the bell. A decided notice now
+ * leaves the bell on the pulse after the check instead of the same one: up to about three minutes
+ * later, never more.
  */
 async function archiveStaleApprovalNotifications(access: AccessContext, rows: InAppNotificationEventRow[]): Promise<Set<string>> {
   const stale = new Set<string>();
@@ -324,12 +332,62 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
   return stale;
 }
 
+/** The least time between two stale-approval checks for one viewer over one candidate set. */
+export const ARCHIVE_CHECK_GAP_MS = 2 * 60_000;
+const archiveCheckedAt = new Map<string, number>();
+
+/**
+ * Run the stale-approval archive once the response has gone, and not again for the same viewer and
+ * the same candidates inside ARCHIVE_CHECK_GAP_MS. The key names the candidate ids, so a NEW notice
+ * is checked on the next bell read whatever the clock says; only a repeat of the same set waits.
+ * The map is this process's memory: it is cleared when the viewer's set changes and bounded by the
+ * number of viewers with approval notices, which is small.
+ */
+function scheduleStaleApprovalArchive(access: AccessContext, hrId: string, candidates: InAppNotificationEventRow[]): void {
+  if (candidates.length === 0) return;
+  const ids = candidates.map((row) => String(row.id ?? "")).filter(Boolean).sort();
+  const key = `${hrId}|${ids.join(",")}`;
+  const now = Date.now();
+  const last = archiveCheckedAt.get(key) ?? 0;
+  if (now - last < ARCHIVE_CHECK_GAP_MS) return;
+  archiveCheckedAt.set(key, now);
+  // Entries older than the gap are of no use: drop them so the map never grows with stale keys.
+  for (const [entryKey, at] of archiveCheckedAt) {
+    if (now - at >= ARCHIVE_CHECK_GAP_MS && entryKey !== key) archiveCheckedAt.delete(entryKey);
+  }
+  void afterResponse("in-app-notices-archive", () => archiveStaleApprovalNotifications(access, candidates));
+}
+
 type NotificationUserStateRow = {
   archived_at?: string | null;
   hr_id?: string | null;
   notification_event_id?: string | null;
   read_at?: string | null;
   user_id?: string | null;
+};
+
+/** What the bell reads in one request: the notices and the envelope's unread count. */
+export type InAppNoticeBundle = {
+  notices: InAppNotificationView[];
+  /** The unread count of the viewer's newest twenty internal messages; null when it could not be read. */
+  unreadMessages: number | null;
+};
+
+/** The admin client's two doors the bundle read uses, so a test can hand in a fake. */
+export type NoticeReadClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from" | "rpc">;
+
+/** The RPC is not on this database yet (the migration has not run): PGRST202 / 42883. */
+function rpcMissing(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null ? String((error as { code?: unknown }).code ?? "") : "";
+  if (code === "PGRST202" || code === "42883") return true;
+  const text = (error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`).toLowerCase();
+  return text.includes("could not find the function") || text.includes("function public.phx_in_app_notices");
+}
+
+type NoticeRpcPayload = {
+  events?: unknown;
+  states?: unknown;
+  unread_messages?: unknown;
 };
 
 type InAppNotificationListRow = Omit<InAppNotificationMetricRow, "id" | "metadata"> & {
@@ -434,87 +492,187 @@ export async function enqueueInAppNotification(input: InAppNotificationInput): P
   }
 }
 
+/**
+ * The columns the bell reads from notification_events — the same fifteen whether they arrive from the
+ * RPC (jsonb_build_object in 20261101230000_phx_in_app_notices.sql) or from the PostgREST fallback.
+ */
+const NOTICE_SELECT_COLUMNS =
+  "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at,module,priority,action_url,event_type,test_login_id";
+
+/**
+ * The bell's four reads as they were before the RPC (1 Nov 2026): the viewer's own notices, the
+ * notices that name the viewer, the flooded seat's other kinds, then the read/archive states. Kept as
+ * the fallback for a database the migration has not reached (the RPC answers PGRST202), and nowhere
+ * else — each arm fenced `.lte("scheduled_for", today)` exactly as before. The envelope's unread count
+ * is not read here: the menu fetches it once itself when the pulse carries none.
+ */
+async function legacyNoticeReads(input: {
+  access: AccessContext;
+  allowedCategories: string[];
+  client: NoticeReadClient;
+  employeeHrId: string;
+  readLimit: number;
+  today: string;
+}): Promise<{ events: InAppNotificationEventRow[]; readStates: (rowIds: string[]) => Promise<NotificationUserStateRow[]> }> {
+  const { access, allowedCategories, client: supabase, employeeHrId, readLimit, today } = input;
+  const selectColumns = NOTICE_SELECT_COLUMNS;
+  // The two reads are independent, so they run together: the bell is polled by every open page and each
+  // round trip to the database costs 300-600 ms (Sentry, 2026-10-16), which the second one used to add on top.
+  const [employeeResult, recipientResult, otherKindsResult] = await Promise.all([
+    supabase
+      .from("notification_events")
+      .select(selectColumns)
+      .eq("employee_hr_id", employeeHrId.toUpperCase())
+      .in("category", allowedCategories)
+      .lte("scheduled_for", today)
+      .order("created_at", { ascending: false })
+      .limit(readLimit),
+    supabase
+      .from("notification_events")
+      .select(selectColumns)
+      .overlaps("recipients", [employeeHrId])
+      .in("category", allowedCategories)
+      .lte("scheduled_for", today)
+      .order("created_at", { ascending: false })
+      .limit(readLimit),
+    // The Talent Acquisition seat gets a new-CV notice every twenty minutes, so the two reads above
+    // fill with them and reach back only a day or two. Her other notices are read on their own, so an
+    // interview request that has waited three days is still on the page (seat-notice-filter.ts).
+    seatNeedsOtherKindsRead(access.role)
+      ? supabase
+          .from("notification_events")
+          .select(selectColumns)
+          .eq("employee_hr_id", employeeHrId.toUpperCase())
+          .in("category", allowedCategories)
+          .lte("scheduled_for", today)
+          .or(`event_type.is.null,event_type.neq.${TALENT_ACQUISITION_FLOODING_EVENT_TYPE}`)
+          .order("created_at", { ascending: false })
+          .limit(readLimit)
+      : null,
+  ]);
+
+  if (employeeResult.error) throw employeeResult.error;
+
+  const rowsById = new Map<string, InAppNotificationEventRow>();
+  for (const row of (employeeResult.data ?? []) as InAppNotificationEventRow[]) {
+    const id = String(row.id ?? "");
+    if (id) rowsById.set(id, row);
+  }
+
+  if (!recipientResult.error) {
+    for (const row of (recipientResult.data ?? []) as InAppNotificationEventRow[]) {
+      const id = String(row.id ?? "");
+      if (id) rowsById.set(id, row);
+    }
+  }
+
+  // A failed side read costs her the older interview requests, never the bell itself.
+  if (otherKindsResult && !otherKindsResult.error) {
+    for (const row of (otherKindsResult.data ?? []) as InAppNotificationEventRow[]) {
+      const id = String(row.id ?? "");
+      if (id) rowsById.set(id, row);
+    }
+  }
+
+  const identity = viewerIdentity(access);
+  const readStates = async (rowIds: string[]): Promise<NotificationUserStateRow[]> => {
+    if (rowIds.length === 0) return [];
+    let stateQuery = supabase
+      .from("notification_user_states")
+      .select("notification_event_id,user_id,hr_id,read_at,archived_at")
+      .in("notification_event_id", rowIds);
+    stateQuery = identity.userId
+      ? stateQuery.or(
+          // The HR id is quoted: it is normalised, never validated, and a `,` in it would end
+          // its arm and silently widen whose read/archive state this row picks up (MR-B04).
+          [
+            quotedOrClause("user_id", "eq", identity.userId),
+            quotedOrClause("hr_id", "eq", employeeHrId),
+          ].join(","),
+        )
+      : stateQuery.eq("hr_id", employeeHrId);
+    const { data: stateRows, error: stateError } = await stateQuery;
+    if (stateError) throw stateError;
+    return (stateRows ?? []) as NotificationUserStateRow[];
+  };
+
+  return { events: Array.from(rowsById.values()), readStates };
+}
+
+/**
+ * The bell's list, as before — the notices half of listInAppNoticeBundleForViewer, for the callers
+ * that want nothing else (the bell's own route, mark-all-read, clear-all).
+ */
 export async function listInAppNotificationsForViewer(
   access: AccessContext,
   limit = 8,
 ): Promise<InAppNotificationView[]> {
+  return (await listInAppNoticeBundleForViewer(access, limit)).notices;
+}
+
+/**
+ * ONE REQUEST AFTER THE SESSION (1 Nov 2026). The bell used to cost three notification_events reads,
+ * a notification_user_states read and, for an approver, up to five approval reads — on every pulse
+ * of every open tab — and the envelope beside it fetched its own unread count on every page view.
+ * Everything the database can answer in one statement now comes from phx_in_app_notices()
+ * (20261101230000_phx_in_app_notices.sql); every filter the app applies after the read is unchanged
+ * and still applied here, and the approver archive runs after the response, throttled.
+ *
+ * A database the migration has not reached answers PGRST202, and the four reads run as before.
+ */
+export async function listInAppNoticeBundleForViewer(
+  access: AccessContext,
+  limit = 8,
+  client: NoticeReadClient = getSupabaseAdmin(),
+): Promise<InAppNoticeBundle> {
   const identity = viewerIdentity(access);
   const employeeHrId = identity.hrId;
-  if (!employeeHrId) return [];
+  if (!employeeHrId) return { notices: [], unreadMessages: null };
 
   try {
-    const supabase = getSupabaseAdmin();
+    const supabase = client;
     const boundedLimit = Math.max(1, Math.min(limit, 20));
     // A seat that hides some notices reads past them (see seat-notice-filter.ts); the slice below
     // still returns at most boundedLimit.
     const readLimit = noticeFetchLimit(access.role, boundedLimit);
-    const selectColumns =
-      "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at,module,priority,action_url,event_type,test_login_id";
 
     const allowedCategories = Array.from(PERSONAL_BELL_CATEGORIES);
     // Fenced in SQL as well as after it: the 110 future probation reminders would otherwise use up
     // the read limit before the notices that are due today are reached (see noticeIsDue).
     const today = todayInCairo();
 
-    // The two reads are independent, so they run together: the bell is polled by every open page and each
-    // round trip to the database costs 300-600 ms (Sentry, 2026-10-16), which the second one used to add on top.
-    const [employeeResult, recipientResult, otherKindsResult] = await Promise.all([
-      supabase
-        .from("notification_events")
-        .select(selectColumns)
-        .eq("employee_hr_id", employeeHrId.toUpperCase())
-        .in("category", allowedCategories)
-        .lte("scheduled_for", today)
-        .order("created_at", { ascending: false })
-        .limit(readLimit),
-      supabase
-        .from("notification_events")
-        .select(selectColumns)
-        .overlaps("recipients", [employeeHrId])
-        .in("category", allowedCategories)
-        .lte("scheduled_for", today)
-        .order("created_at", { ascending: false })
-        .limit(readLimit),
-      // The Talent Acquisition seat gets a new-CV notice every twenty minutes, so the two reads above
-      // fill with them and reach back only a day or two. Her other notices are read on their own, so an
-      // interview request that has waited three days is still on the page (seat-notice-filter.ts).
-      seatNeedsOtherKindsRead(access.role)
-        ? supabase
-            .from("notification_events")
-            .select(selectColumns)
-            .eq("employee_hr_id", employeeHrId.toUpperCase())
-            .in("category", allowedCategories)
-            .lte("scheduled_for", today)
-            .or(`event_type.is.null,event_type.neq.${TALENT_ACQUISITION_FLOODING_EVENT_TYPE}`)
-            .order("created_at", { ascending: false })
-            .limit(readLimit)
-        : null,
-    ]);
+    let events: InAppNotificationEventRow[];
+    let readStates: (rowIds: string[]) => Promise<NotificationUserStateRow[]>;
+    let unreadMessages: number | null = null;
 
-    if (employeeResult.error) throw employeeResult.error;
+    const rpc = await supabase.rpc("phx_in_app_notices", {
+      p_hr_id: employeeHrId,
+      p_user_id: identity.userId ?? "",
+      // The envelope's identity is the session's own ids, the same strings the messages list reads
+      // with first (internal-messages/service.ts, "ONE WAVE, NOT TWO"); the menu re-reads on open.
+      p_msg_hr_id: normalizeHrId(access.hrId) ?? "",
+      p_login_id: cleanText(access.loginId),
+      p_categories: allowedCategories,
+      p_today: today,
+      p_limit: readLimit,
+      p_other_kinds: seatNeedsOtherKindsRead(access.role),
+      p_flooding_event_type: TALENT_ACQUISITION_FLOODING_EVENT_TYPE,
+    });
 
-    const rowsById = new Map<string, InAppNotificationEventRow>();
-    for (const row of (employeeResult.data ?? []) as InAppNotificationEventRow[]) {
-      const id = String(row.id ?? "");
-      if (id) rowsById.set(id, row);
+    if (rpc.error && !rpcMissing(rpc.error)) throw rpc.error;
+    if (rpc.error) {
+      const legacy = await legacyNoticeReads({ access, allowedCategories, client: supabase, employeeHrId, readLimit, today });
+      events = legacy.events;
+      readStates = legacy.readStates;
+    } else {
+      const payload = (rpc.data ?? {}) as NoticeRpcPayload;
+      events = Array.isArray(payload.events) ? (payload.events as InAppNotificationEventRow[]) : [];
+      const states = Array.isArray(payload.states) ? (payload.states as NotificationUserStateRow[]) : [];
+      readStates = async () => states;
+      unreadMessages = typeof payload.unread_messages === "number" && Number.isFinite(payload.unread_messages) ? payload.unread_messages : null;
     }
 
-    if (!recipientResult.error) {
-      for (const row of (recipientResult.data ?? []) as InAppNotificationEventRow[]) {
-        const id = String(row.id ?? "");
-        if (id) rowsById.set(id, row);
-      }
-    }
-
-    // A failed side read costs her the older interview requests, never the bell itself.
-    if (otherKindsResult && !otherKindsResult.error) {
-      for (const row of (otherKindsResult.data ?? []) as InAppNotificationEventRow[]) {
-        const id = String(row.id ?? "");
-        if (id) rowsById.set(id, row);
-      }
-    }
-
-    const newestFirst = Array.from(rowsById.values())
+    const newestFirst = events
       // Personal-bell category allowlist: hide legacy/orphaned categories (e.g.
       // "leave") that may carry mis-assigned recipients. Defense-in-depth on top
       // of the SQL .in("category", ...) filter. See src/lib/notifications/recipients.ts.
@@ -544,25 +702,10 @@ export async function listInAppNotificationsForViewer(
     const stateByEventId = new Map<string, NotificationUserStateRow>();
     if (rowIds.length > 0) {
       try {
-        let stateQuery = supabase
-          .from("notification_user_states")
-          .select("notification_event_id,user_id,hr_id,read_at,archived_at")
-          .in("notification_event_id", rowIds);
-        stateQuery = identity.userId
-          ? stateQuery.or(
-              // The HR id is quoted: it is normalised, never validated, and a `,` in it would end
-              // its arm and silently widen whose read/archive state this row picks up (MR-B04).
-              [
-                quotedOrClause("user_id", "eq", identity.userId),
-                quotedOrClause("hr_id", "eq", employeeHrId),
-              ].join(","),
-            )
-          : stateQuery.eq("hr_id", employeeHrId);
-        const { data: stateRows, error: stateError } = await stateQuery;
-        if (stateError) throw stateError;
-        for (const state of (stateRows ?? []) as NotificationUserStateRow[]) {
+        const wanted = new Set(rowIds);
+        for (const state of await readStates(rowIds)) {
           const id = String(state.notification_event_id ?? "");
-          if (id) stateByEventId.set(id, state);
+          if (id && wanted.has(id)) stateByEventId.set(id, state);
         }
       } catch (error) {
         if (!stateSchemaMissing(error)) throw error;
@@ -596,11 +739,16 @@ export async function listInAppNotificationsForViewer(
       };
     });
 
-    const staleApprovalIds = await archiveStaleApprovalNotifications(access, rows).catch(() => new Set<string>());
-    const archivedEventIds = new Set([
-      ...mappedRows.filter((row) => stateByEventId.get(row.id)?.archived_at).map((row) => row.id),
-      ...staleApprovalIds,
-    ]);
+    // The approver archive runs after this response (scheduleStaleApprovalArchive), over the rows
+    // not already archived; a notice it archives leaves the bell on the next pulse.
+    scheduleStaleApprovalArchive(
+      access,
+      employeeHrId,
+      rows.filter((row) => !stateByEventId.get(String(row.id ?? ""))?.archived_at),
+    );
+    const archivedEventIds = new Set(
+      mappedRows.filter((row) => stateByEventId.get(row.id)?.archived_at).map((row) => row.id),
+    );
 
     // Read-time enrichment: resolve the (non-sensitive) subject/type/period for
     // vacation notifications so OLD rows display subject-first like new ones.
@@ -620,7 +768,7 @@ export async function listInAppNotificationsForViewer(
     }
 
     const views = mapInAppNotificationRows(mappedRows, employeeHrId, enrichmentByRequestId);
-    return views.filter((view) => !archivedEventIds.has(view.id)).map((view) => {
+    const notices = views.filter((view) => !archivedEventIds.has(view.id)).map((view) => {
       const state = stateByEventId.get(view.id);
       const source = mappedRows.find((row) => row.id === view.id);
       return {
@@ -631,8 +779,9 @@ export async function listInAppNotificationsForViewer(
         readAt: state?.read_at ?? null,
       };
     });
+    return { notices, unreadMessages };
   } catch (error) {
-    if (notificationSchemaMissing(error)) return [];
+    if (notificationSchemaMissing(error)) return { notices: [], unreadMessages: null };
     throw error;
   }
 }

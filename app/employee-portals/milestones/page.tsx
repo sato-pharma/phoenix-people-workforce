@@ -40,8 +40,13 @@ export default async function EmployeePortalMilestonesPage() {
   let photoUrl: string | null = null;
   try {
     if (access.hrId) {
-      entries = await listEmployeeMilestones(access.hrId);
-      photoUrl = (await uploadedEmployeePhotoUrl(access.hrId)) ?? employeeProfileImageForHrId(access.hrId);
+      // The cards and his photo are independent reads, so they go together (1 Nov 2026).
+      const [milestoneEntries, uploadedPhoto] = await Promise.all([
+        listEmployeeMilestones(access.hrId),
+        uploadedEmployeePhotoUrl(access.hrId),
+      ]);
+      entries = milestoneEntries;
+      photoUrl = uploadedPhoto ?? employeeProfileImageForHrId(access.hrId);
     }
   } catch (error) {
     logPortalFailure(

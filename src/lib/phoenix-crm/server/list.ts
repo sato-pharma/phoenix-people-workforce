@@ -816,9 +816,10 @@ async function mintReferenceCustomers(seat: OrgSeat, isTest: boolean): Promise<v
  * How long a seat's successful mint lets the PLANNERS skip the next one (2026-10-23, every page change
  * under 1 second). The mint finds something new only after an iReports360 change, yet the monthly
  * planner and the week's plan used to run it — and wait on it before reading a single customer — on
- * every open. The List, the visit form and missed records still mint on every read, and each of those
- * mints restarts this window, so a new iReports360 customer reaches the planner within five minutes at
- * the outside, at once if the rep has opened his List since.
+ * every open. Since 1 Nov 2026 the List and the visit form go through it too (the speed root cause: the
+ * mint's RPC gated every read of the two screens a rep opens most); only missed records still mints on
+ * every read, and that mint restarts this window, so a new iReports360 customer reaches every screen
+ * within five minutes at the outside, at once after an app move (`forgetReferenceMints`).
  */
 export const REFERENCE_MINT_FRESH_MS = 5 * 60_000;
 /** The most seats whose last mint is remembered; past it the oldest goes, which costs one extra mint. */
@@ -831,7 +832,7 @@ function referenceMintKey(seatId: string, lineCode: string, isTest: boolean): st
 }
 
 /**
- * `ensureReferenceCustomers` for the two planners: a seat minted successfully in the last
+ * `ensureReferenceCustomers` for the two planners, the List and the visit form: a seat minted successfully in the last
  * `REFERENCE_MINT_FRESH_MS` answers with an already-settled promise, so `ensured.then(...)` starts the
  * customer read at once instead of one hop later. The first open (no stamp, or an expired one) still
  * mints BEFORE the customer read, a mint already running is joined rather than repeated, and a failed
@@ -1458,7 +1459,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   // request, no visit, no pharmacy feedback, no validation check and no comment yet, and the mint
   // writes nothing but customers and their list events. So every other read starts BESIDE the mint,
   // and the mint's own failure is still the one that surfaces, first, exactly as when it ran alone.
-  const ensured = ensureReferenceCustomers(seat, isTest);
+  // Since 1 Nov 2026 it is the planners' throttled mint: a seat minted in the last five minutes skips it.
+  const ensured = ensureReferenceCustomersRecently(seat, isTest);
   const referenceRead = ensured.then(() => loadReference(seat.seatId, isTest));
   const customersRead = ensured.then(() => loadTerritoryCustomers(seat.seatId, isTest));
   const requestRowsRead = loadRequestRows([seat.seatId], isTest);

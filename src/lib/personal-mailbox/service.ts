@@ -26,6 +26,7 @@
 // password to recover. Sending is never retried either: a failed send is reported, not repeated.
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { invalidatePersonalMailboxConnectionCache, PERSONAL_MAILBOX_CONNECTION_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { describeImapError, normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
@@ -61,6 +62,7 @@ import type {
 } from "@/lib/personal-mailbox/types";
 import { openSecret, sealSecret } from "@/lib/security/secret-box";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { unstable_cache } from "next/cache.js";
 
 const CONNECTIONS_TABLE = "personal_mailbox_connections";
 const SECRET_OPTIONS = { context: PERSONAL_MAILBOX_SECRET_CONTEXT } as const;
@@ -115,6 +117,50 @@ function db() {
 
 function clip(value: string): string {
   return value.length > MAX_ERROR_LENGTH ? value.slice(0, MAX_ERROR_LENGTH) : value;
+}
+
+/** How long a shell may trust its memory of "connected / not connected" before reading the row again. */
+const CONNECTION_CACHE_SECONDS = 300;
+
+const readConnectionActive = unstable_cache(
+  async (ownerKey: string, loginId: string): Promise<boolean> => {
+    const { data, error } = await db()
+      .from(CONNECTIONS_TABLE)
+      .select("status")
+      .eq("owner_key", ownerKey)
+      .eq("owner_login_id", loginId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as { status?: string } | null)?.status === "active";
+  },
+  ["personal-mailbox-connection-active"],
+  { revalidate: CONNECTION_CACHE_SECONDS, tags: [PERSONAL_MAILBOX_CONNECTION_CACHE_TAG] },
+);
+
+/**
+ * Whether this person has "My email" connected and working — ONE small read, remembered for five
+ * minutes and busted by every write that changes it — for the shell to print into its HTML so the
+ * envelope asks the mailbox only when there is one (1 Nov 2026).
+ *
+ * WHY. The envelope's unread check ran on every page view, for every role, through
+ * /api/messages/mailbox/unread: a session read, the owner's employee row, the connection row, then
+ * "not connected" — five sequential reads to learn that most people have nothing connected, and
+ * again every two minutes and on every return to the tab. Reads the status alone: whether the
+ * password still opens the mailbox is the check's own business, once it runs.
+ *
+ * Never throws: an unreadable row answers false, and the envelope's open panel still tells the
+ * truth from its own read.
+ */
+export async function personalMailboxConnected(access: AccessContext): Promise<boolean> {
+  if (access.source === "guest" || access.source === "system") return false;
+  const key = mailboxOwnerKey(access);
+  const loginId = access.loginId?.trim() || null;
+  if (!key || !loginId) return false;
+  try {
+    return await readConnectionActive(key, loginId);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -190,6 +236,7 @@ async function markNeedsReconnect(row: ConnectionRow, reason: string): Promise<v
     .from(CONNECTIONS_TABLE)
     .update({ last_error: clip(reason), status: "needs_reconnect", updated_at: new Date().toISOString() })
     .eq("id", row.id);
+  invalidatePersonalMailboxConnectionCache("personal mailbox marked for reconnect");
   if (error) {
     // The refusal itself still reaches the person; only the flag failed to stick. Recorded so a
     // mailbox that keeps being retried against a dead password is visible to whoever looks.
@@ -302,6 +349,7 @@ export async function connectPersonalMailbox(
     );
   if (error) throw error;
   forgetInboxStatus(owner);
+  invalidatePersonalMailboxConnectionCache("personal mailbox connected");
   return getPersonalMailboxState(owner);
 }
 
@@ -418,6 +466,7 @@ export async function connectNewHireMailbox(input: {
     }
     throw error;
   }
+  invalidatePersonalMailboxConnectionCache("new hire mailbox connected");
   return { alreadyConnected: false, emailAddress: address };
 }
 
@@ -430,6 +479,7 @@ export async function disconnectPersonalMailbox(owner: PersonalMailboxOwner): Pr
     .eq("owner_login_id", owner.loginId);
   if (error) throw error;
   forgetInboxStatus(owner);
+  invalidatePersonalMailboxConnectionCache("personal mailbox disconnected");
   return { connected: false, emailAddress: owner.emailAddress };
 }
 
@@ -621,6 +671,7 @@ export async function purgeDepartedPersonalMailboxes(): Promise<{ removed: numbe
   try {
     const { data, error } = await db().rpc("phx_purge_departed_personal_mailboxes");
     if (error) throw error;
+    invalidatePersonalMailboxConnectionCache("departed personal mailboxes purged");
     return { error: null, removed: typeof data === "number" ? data : Number(data ?? 0) || 0 };
   } catch (error) {
     logError("Personal mailbox purge of departed owners failed", {

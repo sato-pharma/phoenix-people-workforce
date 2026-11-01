@@ -8,19 +8,21 @@ import { IntegrityChecks } from "@/components/admin/system-audit/integrity-check
 import { LoginSecuritySection } from "@/components/admin/system-audit/login-security-section";
 import { RoleCoverageSection } from "@/components/admin/system-audit/role-coverage-section";
 import { SalaryFlagsSection } from "@/components/admin/system-audit/salary-flags-section";
+import { SlowPagesSection } from "@/components/admin/system-audit/slow-pages-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import type { IntegrityOverview } from "@/lib/system-audit/integrity-runs";
 
 /**
  * /admin/system-audit — the System Error & Data Integrity Audit, Super Admin only.
  *
- * Five tabs, the active one in `?tab=`: Incidents (the 11-column ledger, default), Integrity checks
- * (the stored nightly reconciliation), and the three sections moved here from the retired
- * dashboards — Login security, Salary flags, Role coverage. Only the active tab is rendered, so
+ * Six tabs, the active one in `?tab=`: Incidents (the 11-column ledger, default), Integrity checks
+ * (the stored nightly reconciliation), the three sections moved here from the retired dashboards —
+ * Login security, Salary flags, Role coverage — and, since 1 Nov 2026, Slowest pages (what the
+ * browsers reported this week, from the page_timings table). Only the active tab is rendered, so
  * opening the page reads only what that tab needs. Nothing refreshes on a timer.
  *
- * A server component: the three moved sections may load their own data on the server, and they
- * are rendered here inside their own <Suspense> so a slow one never holds the tab bar.
+ * A server component: the sections load their own data on the server, and each is rendered here
+ * inside its own <Suspense> so a slow one never holds the tab bar.
  */
 
 export const SYSTEM_AUDIT_TABS = [
@@ -29,6 +31,7 @@ export const SYSTEM_AUDIT_TABS = [
   { key: "login-security", label: "Login security" },
   { key: "salary-flags", label: "Salary flags" },
   { key: "role-coverage", label: "Role coverage" },
+  { key: "slow-pages", label: "Slowest pages" },
 ] as const;
 
 export type SystemAuditTab = (typeof SYSTEM_AUDIT_TABS)[number]["key"];
@@ -114,6 +117,13 @@ export function SystemAuditPage({
     body = (
       <Suspense fallback={<SectionFallback title="Loading role coverage" />}>
         <RoleCoverageSection />
+      </Suspense>
+    );
+  } else if (activeTab === "slow-pages") {
+    // The Slowest pages section: the week's page timings as the browsers reported them, nobody in them.
+    body = (
+      <Suspense fallback={<SectionFallback title="Loading the slowest pages" />}>
+        <SlowPagesSection />
       </Suspense>
     );
   }

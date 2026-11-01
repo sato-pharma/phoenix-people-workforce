@@ -1587,8 +1587,10 @@ export function runNavigationPersonalLayoutTests() {
     const shell = readFileSync("src/components/layout/app-shell.tsx", "utf8");
     // Read beside the topbar's identity since 2026-10-16 (one round trip instead of two) — still the
     // EFFECTIVE layout, still under the session's own key, and still what the sidebar renders.
+    // The same wave carries the mailbox connection and the push identity since 1 Nov 2026 (the shell
+    // stopped chattering); the layout is still its first read.
     assert.ok(
-      /const \[\{ layout: personalLayout \}, viewer\] = await Promise\.all\(\[\s*loadEffectiveLayout\(layoutOwnerKey\(access\)\),/.test(shell),
+      /const \[\{ layout: personalLayout \}, viewer(?:, \w+)*\] = await Promise\.all\(\[\s*loadEffectiveLayout\(layoutOwnerKey\(access\)\),/.test(shell),
       "the app shell must resolve the effective layout, not just the personal one",
     );
 

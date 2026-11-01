@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   CONTACT_HR_DRAFT_KEY_BASE,
   EXPENSE_DECISION_DRAFT_KEY_BASE,
+  PUSH_REGISTRATION_MEMO_KEY_BASE,
   UNOWNED_LEGACY_DRAFT_KEYS,
   clearSignedOutDrafts,
   isOwnedByViewer,
@@ -196,5 +197,35 @@ export function runBrowserStorageOwnerScopedTests() {
     const expense = source("src/components/outstation/expense-approvals-workspace.tsx");
     assert.match(expense, /if \(!draftKey\) return null;/, "with no reviewer, no decision draft is read");
     assert.match(expense, /function writeExpenseDecisionDraft\(draftKey: string \| null, decisions: Record<string, Decision>\) \{\s*if \(!draftKey\) return;/, "and none is written");
+  }
+
+  // ── 7. The push registration memo (1 Nov 2026) ───────────────────────────────────────────────────────
+  // What this browser last reported to push_subscriptions, per person: a shared tablet registers
+  // again for whoever signs in next, and one person's memo never silences another's registration.
+  {
+    assert.equal(
+      ownerScopedStorageKey(PUSH_REGISTRATION_MEMO_KEY_BASE, " pd-0030 "),
+      `${PUSH_REGISTRATION_MEMO_KEY_BASE}:PD-0030`,
+      "the memo is kept under the person's own key",
+    );
+    assert.equal(ownerScopedStorageKey(PUSH_REGISTRATION_MEMO_KEY_BASE, null), null, "a session with no push identity keeps no memo");
+
+    const storage = new FakeStorage({
+      [`${PUSH_REGISTRATION_MEMO_KEY_BASE}:PD-0030`]: "{}",
+      [`${CONTACT_HR_DRAFT_KEY_BASE}:PD-0030`]: "{}",
+    });
+    clearSignedOutDrafts(storage);
+    assert.deepEqual(
+      storage.keys(),
+      [`${PUSH_REGISTRATION_MEMO_KEY_BASE}:PD-0030`],
+      "sign-out keeps the memo: it is not a draft, its key already names the person, and the device's subscription is the same when the same person returns",
+    );
+
+    const provider = source("src/components/notifications/onesignal-provider.tsx");
+    assert.match(
+      provider,
+      /const memoKey = ownerScopedStorageKey\(PUSH_REGISTRATION_MEMO_KEY_BASE, identity\);/,
+      "the provider keys the memo by the person it just resolved — never by the browser alone",
+    );
   }
 }

@@ -14,6 +14,8 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
+import { pushIdentityOf } from "@/lib/notifications/push-identity";
+import { personalMailboxConnected } from "@/lib/personal-mailbox/service";
 import { NO_PHOENIX_CRM_ENTRIES, phoenixCrmSidebarEntries } from "@/lib/phoenix-crm/server/sidebar-entries";
 
 export const dynamic = "force-dynamic";
@@ -55,14 +57,17 @@ export default async function PayslipsPage() {
     );
   }
 
-  const [hasDeviceMapping, phoenixCrm] = access.hrId
+  const [hasDeviceMapping, phoenixCrm, mailboxConnected] = access.hrId
     ? await Promise.all([
         employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
         // The same gate the portal shell asks. This page builds its own chrome, so a flag left out
         // here is a sidebar row that disappears the moment the rep opens his payslips.
         phoenixCrmSidebarEntries(access).catch(() => NO_PHOENIX_CRM_ENTRIES),
+        // The chrome's envelope asks the mailbox only when one is connected (1 Nov 2026, the speed
+        // root cause). The portal shell reads this in its own wave; this page builds its own chrome.
+        personalMailboxConnected(access).catch(() => false),
       ])
-    : ([false, NO_PHOENIX_CRM_ENTRIES] as const);
+    : ([false, NO_PHOENIX_CRM_ENTRIES, false] as const);
 
   const visibility = resolveEmployeePortalNavVisibility(
     data.employee.roleLabel,
@@ -107,7 +112,7 @@ export default async function PayslipsPage() {
   }
 
   return (
-    <EmployeePortalChrome data={data} visibility={visibility}>
+    <EmployeePortalChrome data={{ ...data, mailboxConnected, pushHrId: pushIdentityOf(access) }} visibility={visibility}>
       {/* Same name, badge and look as /employee-portals/payslips, which a rep reaches from the
           sidebar — a payslip notification lands here instead, and must not open a different page. */}
       <EmployeePortalPageShell

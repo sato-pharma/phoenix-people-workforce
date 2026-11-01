@@ -1,5 +1,8 @@
+import { unstable_cache } from "next/cache.js";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { DEVICE_MAPPING_CACHE_TAG, invalidateDeviceMappingCache } from "@/lib/dashboard/invalidation";
 import {
   attendanceDeviceUserKey,
   normalizeAttendanceHrId,
@@ -7,23 +10,44 @@ import {
   summarizeDeviceUserMappings,
 } from "@/lib/attendance/metrics";
 
+// The tag is declared in src/lib/dashboard/invalidation.ts as a bare string and re-exported by its owner
+// here (portal rule, 2026-10-17).
+export { DEVICE_MAPPING_CACHE_TAG };
+
+/** How long a shell may trust its memory of "enrolled / not enrolled" before counting the rows again. */
+const DEVICE_MAPPING_CACHE_SECONDS = 600;
+
+const readEmployeeHasActiveDeviceMapping = unstable_cache(
+  async (normalizedHrId: string): Promise<boolean> => {
+    const { count, error } = await getSupabaseAdmin()
+      .from("attendance_device_user_map")
+      .select("id", { count: "exact", head: true })
+      .eq("employee_hr_id", normalizedHrId)
+      .eq("is_active", true)
+      .limit(1);
+    if (error) throw error;
+    return (count ?? 0) > 0;
+  },
+  ["employee-has-active-device-mapping"],
+  { revalidate: DEVICE_MAPPING_CACHE_SECONDS, tags: [DEVICE_MAPPING_CACHE_TAG] },
+);
+
 /**
- * Returns true if the employee has at least one active fingerprint device
- * mapping. Used to gate the "Fingerprint Report" tab in the employee portal nav.
- * Single-row HEAD query — does not load the full mapping list.
+ * Returns true if the employee has at least one active fingerprint device mapping. Gates the
+ * Attendance Analytics row in the employee portal sidebar, so the portal shell asks it on EVERY
+ * render: remembered for ten minutes per person and busted by saveAttendanceDeviceUserMapping, the one
+ * write that changes it (1 Nov 2026, the speed root cause — it was an uncached count per page view).
+ * Single-row HEAD query underneath; a failed read answers false and is not remembered.
  */
 export async function employeeHasActiveDeviceMapping(hrId: string): Promise<boolean> {
   if (!hrId) return false;
   const normalized = normalizeAttendanceHrId(hrId);
-  const supabase = getSupabaseAdmin();
-  const { count, error } = await supabase
-    .from("attendance_device_user_map")
-    .select("id", { count: "exact", head: true })
-    .eq("employee_hr_id", normalized)
-    .eq("is_active", true)
-    .limit(1);
-  if (error) return false;
-  return (count ?? 0) > 0;
+  if (!normalized) return false;
+  try {
+    return await readEmployeeHasActiveDeviceMapping(normalized);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -306,4 +330,7 @@ export async function saveAttendanceDeviceUserMapping(input: {
       });
     if (error) throw error;
   }
+  // The portal shell remembers "enrolled / not enrolled" for ten minutes (employeeHasActiveDeviceMapping):
+  // this is the one write that changes the answer, so every shell asks again.
+  invalidateDeviceMappingCache("attendance device mapping saved");
 }

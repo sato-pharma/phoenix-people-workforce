@@ -1,4 +1,4 @@
-import type { MedicalRepPortalData } from "@/lib/employee-portal/service";
+import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 
 const salesTrend = [
   { period: "2025-12", sales: 860000, target: 920000 },
@@ -49,6 +49,10 @@ const salaryTrend = [
 ];
 
 export const employeePortalDevPreviewData = {
+  // The two shell fields every portal page renders since 1 Nov 2026 (the speed root cause): a preview
+  // has no connected mailbox and no push identity.
+  mailboxConnected: false,
+  pushHrId: null,
   employee: {
     area: "Greater Cairo",
     department: "Sales",
@@ -335,4 +339,4 @@ export const employeePortalDevPreviewData = {
     trend: salesTrend,
     units: 35680,
   },
-} satisfies MedicalRepPortalData;
+} satisfies MedicalRepPortalData & EmployeePortalShellData;

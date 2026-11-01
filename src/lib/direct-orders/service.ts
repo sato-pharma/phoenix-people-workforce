@@ -115,6 +115,7 @@ import {
 } from "@/lib/direct-orders/hold-decision";
 import { checkDirectOrderGeography, type DirectOrderPhotoTerritory } from "@/lib/direct-orders/geography-check";
 import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { refreshSharedTradeCounterparties } from "@/lib/crm/shared-windows";
 import { extraDirectOrderAreaCodes } from "@/lib/direct-orders/extra-area-grants";
 import {
   canRecordDirectOrderCollection,
@@ -4489,6 +4490,8 @@ export async function submitDirectOrder(
   }
   // A new order is a new held or awaiting count on the finance landing.
   invalidateFinanceDashboardCache("direct order submitted");
+  // The Reps List's trade counts (src/lib/crm/contact-trade.ts) include this venue's orders from now on.
+  refreshSharedTradeCounterparties("direct order submitted");
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -4996,6 +4999,7 @@ export async function decideDirectOrder(
   const result = mapRequestRow((Array.isArray(updated) ? updated[0] : updated) as Record<string, unknown>);
   // The finance landing counts awaiting and approved orders; this decision just moved one.
   invalidateFinanceDashboardCache("direct order decided");
+  refreshSharedTradeCounterparties("direct order decided");
 
   const caps = await loadDirectOrderCaps();
   const overCap = isRequestOverCap(request, caps);

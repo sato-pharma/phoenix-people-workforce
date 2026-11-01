@@ -96,7 +96,11 @@ const PRODUCTION_TODAY: AdvisorCount[] = [
   // 275, RAISED from 274 on 2026-10-30 — public.phoenix_crm_imported_visit_sources (oid 531421), the
   // source map of the 29 Oct iReports360 history import, server-only by design. 0 of all 275 grant
   // anon, authenticated or PUBLIC anything, read live.
-  { category: "rls_enabled_no_policy", current_count: 275 },
+  // 277, RAISED from 275 on 2026-11-01 — production read 277 on 2 Nov; by oid the newest two are
+  // public.page_timings (580441, the hourly page-timing summaries, server-only by design) and
+  // au.bak_20261101_pedia_sharkia_line_area_map (578491, a 1 Nov pre-image in a standing schema).
+  // 0 of all 277 grant anon, authenticated or PUBLIC anything, read live.
+  { category: "rls_enabled_no_policy", current_count: 277 },
   { category: "function_search_path_mutable", current_count: 0 },
   // 0 since 2026-10-23: pg_trgm moved to `extensions` in 20261023043536 (was 1).
   { category: "extension_in_public", current_count: 0 },
@@ -134,13 +138,13 @@ export function runAdvisorBaselineGuardTests() {
 
   // ── growth is an error ───────────────────────────────────────────────────
   const grew = PRODUCTION_TODAY.map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 276 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 278 } : r,
   );
   const growth = evaluateAdvisorCounts(REAL_BASELINE, grew);
   const exceeded = growth.find((f) => f.code === "advisor_baseline_exceeded");
   assert.ok(exceeded, "a single new untriaged table must fail the check");
   assert.equal(exceeded!.severity, "error");
-  assert.match(exceeded!.message, /276/);
+  assert.match(exceeded!.message, /278/);
   assert.match(exceeded!.message, /\+1/, "the message must say HOW MUCH it grew, not just that it did");
   // 🔴 pg_trgm left `public` on 2026-10-23, so the floor is zero: an extension installed back into
   // `public` is growth, and fails.
@@ -294,7 +298,7 @@ export function runAdvisorBaselineGuardTests() {
   }
   // Young counters soften ONLY unused_index — a catalog count does not reset with the counters.
   const youngAndGrew = afterCrash(18).map((r) =>
-    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 276 } : r,
+    r.category === "rls_enabled_no_policy" ? { ...r, current_count: 278 } : r,
   );
   assert.ok(
     evaluateAdvisorCounts(REAL_BASELINE, youngAndGrew)

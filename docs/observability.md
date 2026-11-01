@@ -1329,7 +1329,10 @@ On 2026-10-23 one page replaced four: System Issues (`/admin/system-issues`), Er
 button that opened one of them opens it. Its tabs are Incidents (the folded `app_error_events` and
 integrity findings), Integrity checks, Login security (locked accounts, forced resets, exact failed
 sign-in counts, the 7-day security lens and the IP block list), Salary flags (every flag, never cut
-at a row limit) and Role coverage, moved intact. A source that cannot be read says "Unavailable",
+at a row limit), Role coverage, moved intact, and — since 1 Nov 2026 — Slowest pages: the week's page
+timings from `page_timings` (one row per hour, page shape, kind, device class and metric; no person),
+slowest first by the 90th percentile of the page looking ready, hard loads and taps in two tables, with
+the low-end devices' figure beside the overall one. A source that cannot be read says "Unavailable",
 never zero. Retired with the old pages: the AI triage, the per-user attempt counts, the deploy
 timeline, the weekly system health digest and the Monitoring CSV export.
 

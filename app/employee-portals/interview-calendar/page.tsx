@@ -42,6 +42,14 @@ export default async function EmployeePortalInterviewCalendarPage({
     redirect(`/recruitment/interview-calendar${preservedQuery(params)}`);
   }
 
+  // STARTED TOGETHER (1 Nov 2026, the speed root cause): the three answers about this viewer are
+  // independent, so the two the calendar needs start beside the role instead of after it. A viewer
+  // the calendar is not shared with still gets the plain "not shared" answer below and never awaits
+  // them; the guards keep their rejections, if any, from surfacing unhandled.
+  const abilitiesLoad = interviewCalendarAbilities(access);
+  const canRequestLoad = mayRequestInterviews(access);
+  abilitiesLoad.catch(() => {});
+  canRequestLoad.catch(() => {});
   const role = await resolveInterviewCalendarRole(access).catch(() => null);
   if (!role) {
     return (
@@ -52,6 +60,7 @@ export default async function EmployeePortalInterviewCalendarPage({
     );
   }
 
+  const [abilities, canRequest] = await Promise.all([abilitiesLoad, canRequestLoad]);
   const now = new Date();
   const week = typeof params.week === "string" && isDateKey(params.week) ? params.week : upcomingWeekStart(now);
   const open = typeof params.open === "string" && isUuid(params.open) ? params.open : null;
@@ -64,9 +73,9 @@ export default async function EmployeePortalInterviewCalendarPage({
       title="Interview Calendar"
     >
       <InterviewCalendarView
-        abilities={await interviewCalendarAbilities(access)}
+        abilities={abilities}
         canReadRequests={readsInterviewRequestInbox(access)}
-        canRequest={await mayRequestInterviews(access)}
+        canRequest={canRequest}
         initialOpen={open}
         initialWeek={week}
         role={role}

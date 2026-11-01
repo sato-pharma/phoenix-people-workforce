@@ -91,6 +91,24 @@ export const CRM_DAILY_FORECAST_CACHE_TAG = "phoenix-crm-daily-forecast";
  */
 export const MY_MAP_SNAPSHOT_CACHE_TAG = "phoenix-crm-my-map-snapshot";
 
+/**
+ * Whether a person has "My email" connected (src/lib/personal-mailbox/service.ts, personalMailboxConnected),
+ * which the portal and admin shells read on every render to decide whether the envelope checks the
+ * mailbox at all (1 Nov 2026). A bare string here for the same reason as the tags above. Busted by
+ * invalidatePersonalMailboxConnectionCache on connect, disconnect, a new hire's connection, a refused
+ * password and the departed-mailbox purge; the 5-minute TTL is the backstop.
+ */
+export const PERSONAL_MAILBOX_CONNECTION_CACHE_TAG = "personal-mailbox-connection";
+
+/**
+ * Whether a person has an ACTIVE fingerprint device mapping (src/lib/attendance/device-user-mapping.ts,
+ * employeeHasActiveDeviceMapping), which the portal shell asks on every render to show or hide the
+ * Attendance Analytics row (1 Nov 2026, the speed root cause: one uncached count per page view). A bare
+ * string here for the same reason as the tags above. Busted by invalidateDeviceMappingCache from the one
+ * write that changes it, saveAttendanceDeviceUserMapping; the 10-minute TTL is the backstop.
+ */
+export const DEVICE_MAPPING_CACHE_TAG = "attendance-device-mapping";
+
 /** Modules whose changes move a figure on the Finance Command Center. */
 const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
 
@@ -201,6 +219,30 @@ export function invalidateMyMapSnapshotCache(reason: string) {
     revalidateTag(MY_MAP_SNAPSHOT_CACHE_TAG, { expire: 0 });
   } catch (error) {
     console.warn("My map snapshot cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/** A device mapping was saved: every shell asks again whether that person is enrolled on the device. */
+export function invalidateDeviceMappingCache(reason: string) {
+  try {
+    revalidateTag(DEVICE_MAPPING_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Device mapping cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/** A mailbox was connected, dropped or refused: every shell reads the connection again on its next render. */
+export function invalidatePersonalMailboxConnectionCache(reason: string) {
+  try {
+    revalidateTag(PERSONAL_MAILBOX_CONNECTION_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Personal mailbox connection cache tag revalidation failed.", {
       error: error instanceof Error ? error.message : String(error),
       reason,
     });

@@ -108,16 +108,138 @@ shape, not just its two specific symptoms.
 19. **The portal shell is ONE parallel wave.** `employee-portal-server-shell.tsx` awaits exactly
     `assertPermission`, one `Promise.all` of four reads, the already-started module-lock promise,
     `headers()` and `cookies()`. A sixth sequential await in front of the page fails the test; add a
-    read inside the wave, not beside it.
+    read inside the wave, not beside it. Since 1 Nov 2026 the same test pins `getEmployeePortalShellData`'s
+    first wave (`SHELL_DATA_FIRST_WAVE`: the viewer's row, the directory, the manager's name and the photo
+    start together on the session's own id; the fingerprint device-mapping count is remembered ten minutes
+    under a bare tag the one write busts) and the awaits of five portal pages — business review, employee
+    360, fingerprint analytics, interview calendar, milestones — as `PAGE_AWAITS_BASELINE`: a page that
+    grows a sequential await fails, and one that loses an await rewrites its line so the gain is kept.
 
-20. **Server-Timing is durations only; the browser beacon is a page shape and two numbers.** The
-    four Phoenix CRM GET routes and badge-counts answer with `Server-Timing` (`total` plus the stage
-    names `access`, `viewer`, `load`, or `cached`/`joined`/`ran` for badges), and the same stages are
-    recorded as `route_<label>_<stage>` in the per-minute `process_health` line. `PageTimingBeacon`
-    sends first and largest content time on hard loads to `/api/telemetry/page-timing`, which keeps
-    them under `page_first_content <path>` and `page_largest_content <path>`. Soft navigations are
-    not measured, and a page cannot set `Server-Timing` on its own HTML except through `proxy.ts`.
-    These are measurements to be taken after a deploy, not achieved figures.
+20. **Server-Timing is durations only; the browser beacon is a page shape, a kind, a device class
+    and milliseconds — and, since 1 Nov 2026, it is kept by the hour.** Seven Phoenix CRM GET
+    routes (overview, today, visits, plans, and since 1 Nov 2026 the List, its board and the Add Visit
+    form) and badge-counts answer with `Server-Timing` (`total` plus the stage names `access`,
+    `viewer`, `load`, or `cached`/`joined`/`ran` for badges), and the same stages are recorded as
+    `route_<label>_<stage>` in the per-minute `process_health` line. `PageTimingBeacon` sends, once
+    per hard load when the tab hides, the first byte, first content, largest content (Safari reports
+    none), interactive and the first `/api/` answer; `RouteTransitionProvider` measures every tap
+    inside the app from the tap to the new route rendering and queues it, ten taps to a beacon or
+    when the tab hides. `/api/telemetry/page-timing` records each number under `page_<metric> <path>`
+    in the `process_health` line and into the hour's in-process store; the `process_health` tick
+    writes each ended hour to `page_timings` (count, median, 90th percentile, worst per page shape,
+    kind, device class and metric; pruned at 30 days by `phx_prune_retention`; owner, 1 Nov 2026:
+    "hourly medians per page, 30 days, no names"), and `/admin/system-audit?tab=slow-pages` shows the
+    week, slowest first. No person is in any of it. A page cannot set `Server-Timing` on its own HTML
+    except through `proxy.ts`. These are measurements to be taken after a deploy, not achieved figures.
+
+21. **A CRM board read that grows with the field is ONE SQL function answering one jsonb array, never
+    a wave of chunked requests.** A production read costs ~450 ms at Supabase's edge for 2–7 ms of SQL
+    (measured 1 Nov 2026, below), so the request count is the lever. The Reps List's check-ins
+    (`phx_crm_contact_checkins`) and brick names (`phx_crm_brick_meta`) and the KPI panel's open
+    assignments (`phx_crm_open_assignments`) each come from one function, with the page walk kept only
+    as the PGRST202 fallback for a database the migration has not reached; the ids a function filters
+    on are its PARAMETER, never an `array_agg` sublink (that planned a 346 ms full scan of the view).
+    Pinned by `tests/phoenix-crm-board-reads.test.ts`.
+
+22. **A reference table a board reads whole is a shared copy with a namespace in
+    `src/lib/crm/shared-windows.ts`, and every write that changes it bumps that namespace before it
+    answers.** The region → brick map, the trade counterparties (six whole-table reads per board open
+    before) and the KPI panel's open assignments joined the contact roster there on 1 Nov 2026; a
+    decision or an audit never opts into the copy (`reuseRecentWindow` is for display boards). The
+    same test pins the namespaces and the refresh calls in region-brick, direct orders and marketing.
+
+23. **A screen mints the reference list through `ensureReferenceCustomersRecently`, never
+    `ensureReferenceCustomers`, unless it looks for exactly what a mint would add.** The List and the
+    Add Visit form joined the two planners behind the five-minute throttle on 1 Nov 2026; missed
+    records still mints every time. The unvalidated-visit counts behind the form read their id chunks
+    four at a time (`mapWithConcurrency`). Pinned by `tests/phoenix-crm-reference-mint-throttle.test.ts`.
+
+## The speed root cause (measured 1 Nov 2026)
+
+The owner's brief, 1 Nov 2026: measure every Phoenix CRM and employee-portal page as a signed-in rep,
+record everything, find the root cause before any compute upgrade, and fix it. Measured in a rep's own
+browser (hard loads, desktop, a quiet Sunday evening), with production HTTP logs, Supabase edge logs,
+Postgres statement statistics and the database host sampler for the whole day.
+
+### What the rep saw (milliseconds)
+
+| Page | First byte | First paint | Usable | What held it |
+| --- | --- | --- | --- | --- |
+| Phoenix CRM · Visits | 969 | 1,156 | ≈5,800 | the client booted until ~2.6 s, THEN `visits` 1,233 · `visits/form` 1,368 · `commitments` 1,237 · `call-prep` 1,231 |
+| Phoenix CRM · List | 1,072 | 1,204 | 5,078 | `list` 2,848 · `list/board` 3,124 |
+| Phoenix CRM · Plan | 619 | 720 | 2,814 | `monthly-plans` 1,491 |
+| Phoenix CRM · Calendar, Directory, Day, Reports | 540–1,010 | 640–1,470 | 1,680–2,430 | shell chatter only |
+| Phoenix CRM · My Map | 673 | 996 | 2,243 | Google Maps JS |
+| Home | 1,112 (4,422 at 20:30) | 1,476 | 3,182 | `pulse` 1,463, settings 469 |
+| Weekly Stock | 1,018 | 1,680 | 13,312 | server render 12.9 s, 428 KB HTML |
+| Business Review | 1,545 | 2,260 | 10,605 | server render 10.5 s |
+| Ranks | 1,649 | 2,204 | 8,971 | 2,799 KB HTML |
+| Source of Sales | 563 | 1,144 | 8,760 | server action 7,044 |
+| Territory Drilldown | 1,069 | 1,348 | 6,023 | `/area/D12` 3,349 · `/totals` 3,353 |
+| ROI Tracker | 1,466 | 1,824 | 6,783 | `roi-tracker` 3,167 |
+| KPIs · Coverage | 1,305 | 2,172 | 4,622 | |
+| Employee 360 | 1,071 | 1,720 | 4,119 | sequential awaits |
+| Targets / My Visits | 2,636 / 3,278 | 3,280 / 4,228 | 4,130 / 3,963 | server render |
+| Every other portal page | 450–1,540 | 760–2,080 | 1,500–3,900 | shell chatter: `pulse` 600–1,900 · `messages` 300–960 · `mailbox/unread` 400–1,580 · `push/context` 180–920 · `push/register` 240–860 |
+
+Taps inside the app: Visits → chooser 2.3 s to content; chooser → List 3.1 s (`list` 2,322 and
+`list/board` 2,648, both starting only at 0.5 s); Home → Visits 4.4 s settled.
+
+### Where the time went
+
+1. **Each CRM read cost ~450 ms at Supabase's edge for 2–7 ms of SQL.** Peak half hour (10:30–11:00
+   Cairo): 36,104 requests, 1,203 a minute. `phoenix_crm_places` 1,973 reads at a median of 453 ms,
+   `phoenix_crm_visits` 1,944 at 495, `phoenix_crm_customers` 1,743 at 473, `validation_reviews`
+   1,236 at 489; `pg_stat_statements` for the same statements: 0.8–6 ms mean. About 90 % of every read
+   is request handling on a saturated 2-core Small host, not the database — so the request COUNT is the
+   lever, not the statement.
+2. **A CRM tab open fired 40–60 Supabase requests.** `/list` 15–20 in 4 waves; `/list/board` 20–30 in
+   5–6 (each contact's whole check-in history in 50-id chunks, six uncached whole-table reads of the
+   trade counterparties, the brick map → names → areas in chunks); `/visits/form` 22–28 with an
+   unthrottled reference mint in front; `/monthly-plans` 25–30; `/call-prep` 8–12 in 4–6 sequential
+   waves. Each request paid the session RPC first, and every wave waited ~450 ms.
+3. **The shell talked on every page view, for every role, and kept talking.** About 15 requests
+   before any data — the pulse (session plus three waves of notices), the messages list, the mailbox
+   probe (five sequential reads to answer "not connected"), the push context and a register upsert, the
+   activity track, the touch trail — plus the pulse every 30 s per open tab (3,495 session-bundle calls
+   in the peak half hour, 9.7 % of all requests). The touch trail alone was 2,833,242 rows and 1,224 MB,
+   26 % of the database.
+4. **Data was fetched in series across two network boundaries.** The server rendered the shell
+   (0.6–1.0 s, 2.4–4.4 s with the host busy), the browser downloaded and ran ~2 MB of JavaScript, and
+   only then did the tab's data requests start.
+5. **Eight pages do seconds of work per request with no cache** (the table above).
+6. **Not the cause, recorded so nobody chases it:** the `_rsc` prefetches (a median of 36 ms each on
+   Railway; two per link is Next 16's segment cache, and the loading-skeleton prefetch is the owner's
+   2026-10-23 rule); Postgres itself (mean statement 4.3 ms, cache hit 98.84 %, 4.7 GB). Also that day:
+   production Postgres restarted uncleanly at 14:03 Cairo with the host this short of memory (582 5xx),
+   and four hand-run `create temp table … as execute` analyses of 40–125 s ran on production after it.
+
+A correction of record: PR 6714's description said "each query runs in milliseconds" — true of the
+statement, not of the request, which cost ~450 ms at the peak.
+
+### What changed, and when
+
+- **Stage 0 (1 Nov 2026):** the touch trail retired on the owner's word and its table dropped.
+- **Stage 1 (2 Nov 2026):** the shell's chatter — the bell's notices, the unread count and the
+  internal-messages badge from one statement (`phx_in_app_notices`) after the session, the messages
+  list fetched when the menu opens, the mailbox hook silent when the shell says no mailbox is
+  connected, the push viewer in the shell HTML with a registration skipped inside the week, page views
+  batched every 30 s; the shell's data one wave and five pages' awaits pinned (item 19); every page's
+  timing kept by the hour (item 20); the List, its board and the Add Visit form (items 21–23).
+- **Stage 2 (next):** call prep's and the monthly planner's waves, and the heavy pages remembered under
+  tags their writes drop. Still open from Stage 1, on purpose: `readOpenList` pages by OFFSET; only the
+  seven CRM routes carry `Server-Timing`; the shell does not yet embed its stage durations.
+
+### The compute question
+
+Postgres is fast; the HOST is saturated by request handling on 2 shared cores with 1,932 MB and swap in
+use, and it restarted uncleanly 14 times between 7 and 25 Oct and again on 1 Nov at 14:03 Cairo. Stages
+0–2 cut the request count, which is the root cause. A larger tier does not change the request count and
+is the only lever on the restarts and the swap; it is decided on the Supabase dashboard (Project →
+Settings → Compute and Disk), never in chat. Measure after each stage, same hour against the same
+figures: requests per minute at the Monday 10:30–11:00 peak against 1,203; the `phoenix_crm_places`
+median against 453 ms; session-bundle calls against 3,495 per half hour; CPU idle and swap against
+20–57 % and 191–483 MB (`docs/environment.md`, the host bullet).
 
 ## Related documentation
 

@@ -184,7 +184,7 @@ export async function runPhoenixCrmReferenceMintThrottleTests(): Promise<void> {
     assert.match(list, /REFERENCE_MINT_FRESH_MS = 5 \* 60_000;/, "five minutes, as agreed");
 
     const always = functionBody(list, "export async function ensureReferenceCustomers(");
-    assert.match(always, /await mintReferenceCustomers\(seat, isTest\);/, "the List, visit form and missed records still mint on every read");
+    assert.match(always, /await mintReferenceCustomers\(seat, isTest\);/, "missed records still mints on every read (since 1 Nov 2026 the List and the visit form go through the throttle)");
     assertBeforeText(always, "await mintReferenceCustomers(seat, isTest);", "referenceMints.stamp(", "and stamp only after the mint succeeded");
 
     const move = functionBody(list, "export async function moveCustomerToSeat(");
@@ -193,6 +193,9 @@ export async function runPhoenixCrmReferenceMintThrottleTests(): Promise<void> {
     for (const [file, declaration] of [
       ["src/lib/phoenix-crm/server/plans.ts", "export async function loadPlanner("],
       ["src/lib/phoenix-crm/server/monthly-plans.ts", "export async function loadMonthlyPlanner("],
+      // 1 Nov 2026 (the speed root cause): the List and Add Visit too — the two screens a rep opens most.
+      ["src/lib/phoenix-crm/server/list.ts", "export async function loadTerritoryList("],
+      ["src/lib/phoenix-crm/server/visits.ts", "export async function loadVisitForm("],
     ] as const) {
       const body = functionBody(source(file), declaration);
       assert.match(body, /const ensured = ensureReferenceCustomersRecently\(seat, isTest\);/, `${declaration} mints through the throttle`);

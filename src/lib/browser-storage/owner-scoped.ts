@@ -52,6 +52,12 @@ export function ownerScopedStorageKey(base: string, viewerHrId: unknown): string
 export const CONTACT_HR_DRAFT_KEY_BASE = "phoenix:contact-hr-draft:v2";
 /** The expense-approval decision draft — unsaved decisions, cleared at sign-out. */
 export const EXPENSE_DECISION_DRAFT_KEY_BASE = "phoenix.outstation.expense-approvals.draft.v2";
+/**
+ * What this browser last reported to push_subscriptions for one person (onesignal-provider.tsx) —
+ * per person, so a shared tablet registers again for whoever signs in next. Not a draft: it is not
+ * cleared at sign-out, because the device's subscription is the same when the same person returns.
+ */
+export const PUSH_REGISTRATION_MEMO_KEY_BASE = "phoenix.push.registration.v1";
 
 /**
  * Keys from before the owner rule. Each one holds a draft that cannot say whose it is, so each page
