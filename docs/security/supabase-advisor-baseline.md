@@ -500,9 +500,10 @@ would turn the next normal week red for a reason nobody would be able to triage.
 **Raised 615 to 722 on 2026-10-09.** The daily check read 576 to 722 between 1 and 9 October (666
 on 9 October): the count moves both ways, because indexes on newly shipped tables read as unused
 until their screens are opened. 722 is the highest reading seen, so it is a ceiling for noise, not
-a target. **A caution from the same review:** `phoenix_crm_touch_trail_session_idx` (31 MB) reads
-as never scanned, but the table is only 6 days old and the index backs the Super Admin
-touch-trail session view (`.eq("session_id", ...)`), so its zero scans are not evidence it is dead.
+a target. **A caution from the same review, now history:** `phoenix_crm_touch_trail_session_idx` (31 MB)
+read as never scanned while it backed the Super Admin's touch-trail session view; the trail, its table
+and its six indexes were retired on 2026-11-01 (owner: "retire and delete all its traces"), so the
+count falls by six.
 
 **Our definition, not the advisor's:** an index never scanned since the last stats reset
 (`idx_scan = 0`), that is not unique, not a primary key, and does not back a constraint.

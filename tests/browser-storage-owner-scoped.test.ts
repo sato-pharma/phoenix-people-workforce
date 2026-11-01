@@ -16,8 +16,8 @@ import {
  *
  * Six browser-held stores were keyed on the BROWSER alone, so on a shared phone or office PC what one
  * person left behind was restored for — and in the offline queues' case SENT as — whoever signed in
- * next: an outstation money claim, a leave request, a marketing validation visit, a CRM touch trail,
- * a message to HR and a reviewer's unsaved expense decisions. The rule is in
+ * next: an outstation money claim, a leave request, a marketing validation visit, a message to HR,
+ * a reviewer's unsaved expense decisions and the CRM touch trail (retired on 2026-11-01). The rule is in
  * src/lib/browser-storage/owner-scoped.ts; this suite pins the rule itself, and that every store
  * reads it.
  *
@@ -88,15 +88,14 @@ export function runBrowserStorageOwnerScopedTests() {
       "phoenix:contact-hr-draft:v1": "{}",
       "phoenix.outstation.expense-approvals.draft.v1": "{}",
       "phoenix-outstation-draft:MR-0412": "{}",
-      "phx-crm-touch-trail": "[]",
       "phoenix-theme": "dark",
     });
     clearSignedOutDrafts(storage);
     assert.deepEqual(
       storage.keys(),
-      ["phoenix-outstation-draft:MR-0412", "phoenix-theme", "phx-crm-touch-trail"],
+      ["phoenix-outstation-draft:MR-0412", "phoenix-theme"],
       "sign-out removes every person's unsaved-typing draft and every un-owned legacy key, and leaves the " +
-        "owner-checked queues (the outstation claim, the touch trail) and unrelated settings alone",
+        "owner-checked queue (the outstation claim) and unrelated settings alone",
     );
     assert.equal(UNOWNED_LEGACY_DRAFT_KEYS.length, 3, "the three pre-rule keys are all named");
 
@@ -197,26 +196,5 @@ export function runBrowserStorageOwnerScopedTests() {
     const expense = source("src/components/outstation/expense-approvals-workspace.tsx");
     assert.match(expense, /if \(!draftKey\) return null;/, "with no reviewer, no decision draft is read");
     assert.match(expense, /function writeExpenseDecisionDraft\(draftKey: string \| null, decisions: Record<string, Decision>\) \{\s*if \(!draftKey\) return;/, "and none is written");
-  }
-
-  // ── 7. The CRM touch trail's held batches ─────────────────────────────────────────────────────────────
-  {
-    const collector = source("src/components/phoenix-crm/touch-trail-collector.tsx");
-    assert.match(
-      collector,
-      /const batches: Queued\[\] = queued\.filter\(\(batch\) => isOwnedByViewer\(batch\.ownerHrId, owner\)\);/,
-      "a held batch is sent only under its own person's session, so one rep's taps are never filed as the next rep's",
-    );
-    assert.match(collector, /writeQueue\(othersHeld\);/, "another person's held batches stay on the phone for them");
-    assert.match(collector, /ownerHrId: owner \|\| undefined,/, "every new batch says whose hands made it");
-    assert.equal(
-      (collector.match(/JSON\.stringify\(\{ \.\.\.wireOf\(batch\), sessionId, test \}\)/g) ?? []).length,
-      2,
-      "both the fetch and the beacon send the batch as the route has always read it, without the owner",
-    );
-    assert.doesNotMatch(collector, /\{ \.\.\.batch, sessionId, test \}/, "the owner never goes over the wire");
-    for (const layout of ["app/employee-portals/field-crm/layout.tsx", "app/(admin)/admin/field-crm/layout.tsx"]) {
-      assert.match(source(layout), /<PhoenixCrmTouchTrail viewerHrId=\{access\.hrId\} \/>/, `${layout} tells the collector who is signed in`);
-    }
   }
 }

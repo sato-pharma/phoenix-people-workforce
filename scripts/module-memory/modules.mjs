@@ -289,17 +289,16 @@ export const MODULES = [
   // 🔴 SPLIT AGAIN, 2026-10-04, FOR THE SAME REASON AS THE ONE ABOVE: `phoenix-crm` reached 33 rules and its
   // injected pointer measured 4,019 bytes against the 4,000 margin `tests/module-memory.test.ts` holds, the
   // moment the SFE's refused-readings board added its rule. The silent detectors (location, behaviour and
-  // photo integrity), the touch trail and the two SFE boards that read them are ONE family of rules — the
+  // photo integrity) and the two SFE boards that read them are ONE family of rules — the
   // evidence a rep is never shown and who may read it — so they move together. `phoenix-crm` still keeps every
   // glob it had, so a file in this family loads the PAIR and nothing that used to arrive stops arriving.
   {
     id: "phoenix-crm-boards",
-    title: "Phoenix CRM — the silent detectors, the touch trail and the SFE's boards",
-    scope: "Location, behaviour and photo integrity, mock-location detection, the touch trail, refused readings and duplicate customers — the evidence a rep is never shown, and the admin boards that read it and who may open each.",
+    title: "Phoenix CRM — the silent detectors and the SFE's boards",
+    scope: "Location, behaviour and photo integrity, mock-location detection, refused readings and duplicate customers — the evidence a rep is never shown, and the admin boards that read it and who may open each.",
     globs: [
-      "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules,touch-trail,touch-trail-archive,touch-trail-reader}.ts",
-      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors,touch-trail,touch-trail-archive,touch-trail-reader}.ts",
-      "src/components/phoenix-crm/touch-trail-{board,collector}.tsx",
+      "src/lib/phoenix-crm/{behaviour-integrity,duplicate-photos,location-integrity,refused-readings-rules}.ts",
+      "src/lib/phoenix-crm/server/{behaviour,blind-payloads,duplicate-customers,integrity-board,location-integrity,photo-dupes,refused-readings-board,silent-detectors}.ts",
       // The location-integrity board's own pure modules and its view (2026-10-13). They sit under
       // `crm-integrity/`, which the `crm` module owns as a BROAD glob — so these narrow globs load
       // this file IN ADDITION to that one, which is the intended way round: the rules a session needs
@@ -307,11 +306,8 @@ export const MODULES = [
       "src/lib/crm-integrity/integrity-{board-filters,board-rows,case-map,case-story,settle-presets}.ts",
       "src/components/crm-integrity/integrity-{board-view,settle}.tsx",
       "app/**/phoenix-crm/{integrity,duplicates,refused-readings}/**",
-      "app/**/field-crm/touch-trail/**",
-      "app/api/phoenix-crm/touch-trail/**",
       "app/api/cron/phoenix-crm-integrity-sweep/**",
-      "app/api/cron/phoenix-crm-touch-trail-archive/**",
-      "tests/phoenix-crm-{behaviour-integrity,blind,duplicate,location-integrity,refused-readings-board,touch-trail}*",
+      "tests/phoenix-crm-{behaviour-integrity,blind,duplicate,location-integrity,refused-readings-board}*",
       "tests/crm-integrity-*",
       // The Visit report generator (2026-10-15) reads the integrity evidence and shares its audience, so its
       // files load this module's rules too.
@@ -321,8 +317,8 @@ export const MODULES = [
       "app/employee-portals/visit-report/**",
       "tests/phoenix-crm-visit-report*",
     ],
-    keywords: ["visit report", "integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "touch trail", "refused readings", "mock-location", "mock location detection"],
-    tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints", "phoenix_crm_touch_trail"],
+    keywords: ["visit report", "integrity board", "behaviour integrity", "photo sweep", "duplicate customers", "refused readings", "mock-location", "mock location detection"],
+    tables: ["phoenix_crm_location_integrity", "phoenix_crm_behaviour_integrity", "phoenix_crm_photo_fingerprints"],
   },
   // 🔴 SPLIT 2026-10-20, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `phoenix-crm-boards`'s
   // injected pointer measured 4,098 bytes against the 4,000-byte margin the moment the Visit Report's
@@ -1288,6 +1284,30 @@ export const MODULES = [
     ],
     keywords: ["migration", "migrations", "supabase", "rls", "postgrest", "apply_migration", "execute_sql"],
     tables: [],
+  },
+  // 🔴 SPLIT, 2026-11-01, FOR THE REASON `phoenix-crm-approvals` RECORDS: `database` measured a 4,014-byte
+  // pointer against the 4,000 margin `tests/module-memory.test.ts` holds, the moment the touch trail's
+  // retirement reworded the retention line (15 bytes longer) on top of the three planner rules #6759 added
+  // the same evening. Writing a migration, the routes that apply one when the MCP declines, the ledger and
+  // the digest that answers a missing row, and the drift sweeps are ONE family — the life of a migration
+  // file — so they move together. `database` KEEPS EVERY GLOB IT HAD, so a migration file loads the PAIR
+  // and nothing that used to arrive stops arriving.
+  {
+    id: "database-migrations",
+    title: "Database — migrations, their ledger and the routes that apply them",
+    scope: "Writing a migration (its header and the -- SAFE: mark), the routes staging and production take when the MCP declines one and what each records, the schema_migrations ledger and the md5(prosrc) digest that answers a missing row, ACKNOWLEDGED_EXCEPTIONS, and the drift sweeps with their grace window.",
+    globs: [
+      "supabase/migrations/**",
+      "scripts/{apply-sql-file,check-migrations}.mjs",
+      "scripts/{apply-migrations-to-staging,check-migrations-applied}.ts",
+      "scripts/lib/migration-inventory.ts",
+      "tests/migration-*",
+      "tests/migrations-*",
+      "tests/staging-migration-applier.test.ts",
+      "docs/migrations.md",
+    ],
+    keywords: ["migration ledger", "schema_migrations", "apply-sql-file", "acknowledged_exceptions", "acknowledged exception", "drift check", "ledger row", "declined", "-- safe:"],
+    tables: ["schema_migrations"],
   },
   {
     id: "engineering",

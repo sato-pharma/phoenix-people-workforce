@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { Check, Download, Trash2, X } from "lucide-react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
+import { cairoClock24 } from "@/components/phoenix-crm/format";
 import {
   CrmButton,
   CrmCard,
@@ -39,7 +40,6 @@ import {
 import { CrmVisitRecordingPlayer } from "@/components/phoenix-crm/voice-playback";
 import { Switch } from "@/components/ui/switch";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
-import { cairoClock } from "@/lib/phoenix-crm/touch-trail-reader";
 import {
   describeRecordingLength,
   describeRecordingSize,
@@ -98,18 +98,18 @@ function matches(query: string, values: ReadonlyArray<string>): boolean {
 /** Who switched it on and when; empty when off or unrecorded, because the switch beside it already says On or Off. */
 function switchedOnText(rep: RecordingRepRow): string {
   if (!rep.required) return "";
-  const when = rep.setAt ? `${formatPhoenixLongDate(rep.setAt)}, ${cairoClock(rep.setAt).slice(0, 5)}` : null;
+  const when = rep.setAt ? `${formatPhoenixLongDate(rep.setAt)}, ${cairoClock24(rep.setAt)}` : null;
   return [rep.setByName ? `By ${rep.setByName}` : null, when].filter(Boolean).join(" · ");
 }
 
 function visitWhenText(row: RecordingListRow): string {
-  return `${formatPhoenixLongDate(row.visitDate)}, ${cairoClock(row.capturedAt).slice(0, 5)}`;
+  return `${formatPhoenixLongDate(row.visitDate)}, ${cairoClock24(row.capturedAt)}`;
 }
 
 /** Who decided and when, with the refusal's note. Empty while it waits. */
 function reviewedText(row: RecordingListRow): string {
   if (row.reviewStatus === "pending") return "";
-  const when = row.reviewedAt ? `${formatPhoenixLongDate(row.reviewedAt)}, ${cairoClock(row.reviewedAt).slice(0, 5)}` : null;
+  const when = row.reviewedAt ? `${formatPhoenixLongDate(row.reviewedAt)}, ${cairoClock24(row.reviewedAt)}` : null;
   return [row.reviewedByName ? `By ${row.reviewedByName}` : null, when, row.reviewNote].filter(Boolean).join(" · ");
 }
 

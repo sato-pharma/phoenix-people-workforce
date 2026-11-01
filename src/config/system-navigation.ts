@@ -4722,19 +4722,6 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
-    // Every tap, press and keystroke on Phoenix CRM (owner, 2026-10-03: "every single thing is saved,
-    // even if the rep didn't save it"), read a day at a time. The Super Admin's ALONE and for two
-    // reasons: it records every pair of hands on the module including a manager's, and it keeps what a
-    // rep typed and then deleted. `canReadTouchTrail` is the enforcing gate inside the page; this card
-    // only draws the link, and the rep is never shown that the trail exists.
-    href: "/admin/field-crm/touch-trail",
-    icon: Fingerprint,
-    label: "Touch Trail",
-    description: "Every tap, press and keystroke on Phoenix CRM, grouped into the page loads that made the day — including what a rep typed and then deleted.",
-    permissions: [{ resource: "phoenix_crm", action: "update" }],
-    roles: ["Super Admin"],
-  },
-  {
     // The reps who must record each visit before logging it (owner, 2026-10-16: "this only works to who
     // the admin choose not everyone"). The Super Admin's ALONE: `canManageVisitRecording` is the
     // enforcing gate inside the page and every route; this card only draws the link.
@@ -5382,10 +5369,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/refused-readings",
           // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.
           "/admin/field-crm/validation-reviews",
-          // Beside it, and in the same band for the same reason: the raw evidence under those
-          // integrity rows, and the Super Admin's alone.
-          "/admin/field-crm/touch-trail",
-          // The visit recordings a chosen rep makes: field evidence like the trail, the Super Admin's alone.
+          // The visit recordings a chosen rep makes: field evidence, the Super Admin's alone.
           "/admin/field-crm/visit-recording",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a

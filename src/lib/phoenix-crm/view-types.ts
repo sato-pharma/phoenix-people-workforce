@@ -135,13 +135,6 @@ export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/li
 export type { ReopenedCustomerRow, ValidatedPlaceRow, ValidationReviewRow } from "@/lib/phoenix-crm/server/validation-reviews";
 export type { PlaceNoteIndex, PlaceNoteView, PlaceRecommendationView, RepPlaceNote } from "@/lib/phoenix-crm/server/place-notes";
 export type { SharedPlaceBoardRow, SharedPlaceReading, SharedPlaceRow } from "@/lib/phoenix-crm/server/shared-places";
-export type {
-  TouchTrailDayView,
-  TouchTrailEventRow,
-  TouchTrailPerson,
-  TouchTrailSessionCard,
-  TouchTrailSessionView,
-} from "@/lib/phoenix-crm/server/touch-trail-reader";
 /** The district manager's weekly plan (owner, 2026-10-16): his board, his own list, his single visits, the report. */
 export type {
   ManagerBoardArea,

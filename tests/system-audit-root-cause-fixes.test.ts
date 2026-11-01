@@ -59,13 +59,6 @@ export function directOrderUuidMissing(source: string): string[] {
   return [];
 }
 
-/** APP-C2E4684A — the Touch Trail day read has an index in its own order. */
-export function touchTrailIndexMissing(migration: string): string[] {
-  return /create index if not exists phoenix_crm_touch_trail_day_id_idx\s+on public\.phoenix_crm_touch_trail \(visit_day, id\);/.test(migration)
-    ? []
-    : ["the (visit_day, id) index must exist for the day read's visit_day = $1 AND id > $cursor ORDER BY id"];
-}
-
 function firesOnBreak(name: string, check: (source: string) => string[], source: string, broken: string) {
   assert.notEqual(broken, source, `${name}: the broken copy must actually differ`);
   assert.ok(check(broken).length > 0, `${name}: the pin fires when the fix is removed`);
@@ -105,11 +98,4 @@ export async function runSystemAuditRootCauseFixesTests() {
   const directOrders = code("src/lib/direct-orders/service.ts");
   assert.deepEqual(directOrderUuidMissing(directOrders), [], "a mistyped order address is not found, never a crash");
   firesOnBreak("direct orders", directOrderUuidMissing, directOrders, directOrders.replace("if (!isUuid(requestId)) return null;", ""));
-
-  const migration = readFileSync(
-    new URL("../supabase/migrations/20261023210000_phoenix_crm_touch_trail_day_id_index.sql", import.meta.url),
-    "utf8",
-  );
-  assert.deepEqual(touchTrailIndexMissing(migration), [], "the Touch Trail day read is indexed in its own order");
-  firesOnBreak("touch trail", touchTrailIndexMissing, migration, migration.replace("on public.phoenix_crm_touch_trail (visit_day, id);", "on public.phoenix_crm_touch_trail (visit_day, seat_id);"));
 }

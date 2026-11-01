@@ -150,7 +150,7 @@ skip list `SCREEN_CAPTURE_SKIP_LIST` in `src/lib/error-monitor/screen-capture-ru
 reporters themselves (`/api/errors/*`, this endpoint included), sign-in and the heartbeat
 (`/api/auth/*`), page-view tracking (`/api/activity/*`), the live activity poll, the notification
 bell's poll, the sidebar layout and badge counts (`…/pending-count`, `…/needs-action-count`,
-`…/unbooked-count`, `/api/approvals/badge-counts`), the CRM touch-trail beacon, and the health checks.
+`…/unbooked-count`, `/api/approvals/badge-counts`), and the health checks.
 **Not captured either:** a server action or route that answers **200 with an error in its payload** —
 nothing in the HTTP answer says it was a refusal, so only a status of 400 or more is one; and a refusal
 shown by the page without any request at all (a form's own validation). An inner scrolled panel is drawn

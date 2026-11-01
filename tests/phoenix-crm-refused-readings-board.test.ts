@@ -389,7 +389,7 @@ export async function runPhoenixCrmRefusedReadingsBoardTests(): Promise<void> {
   // permission the browser blocks produces no reading, reaches no door, and reached no row — so the
   // board was blind to the one refusal nobody can diagnose from the outside. Norhan Gamal's iPhone
   // answered PERMISSION_DENIED five times across 10 and 12 October 2026 and this table held ZERO rows
-  // for her seat; the only trace was the touch trail, which keeps a message only if the rep presses
+  // for her seat; the only trace was the touch trail (since retired), which kept a message only if the rep pressed
   // it, and which carried 42 location and 30 camera messages from four reps over 4-12 October.
   {
     const blockedLocation = refusalSentence({ subjectKind: "place", reason: "blocked", accuracyMeters: null, photoAccuracyMeters: null, maxAccuracyMeters: null, blockedPermission: "location" });

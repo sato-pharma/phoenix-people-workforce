@@ -6500,6 +6500,37 @@ fixes the place on the SHARPER of the two readings (the photo's on a tie; `pickP
 is still stored and read by the integrity board, above the rep. A rough pin is still refused. Never
 restore the photo gate without his word. Pinned by `tests/phoenix-crm-accuracy-gate.test.ts`.
 
+## The touch trail is retired — owner ruling, 2026-11-01
+
+His words, 1 November 2026, about 21:00 Cairo, in the speed root-cause session, after the facts below
+were put to him: **"retire and delete all its traces."** The two sections that follow (3 October and
+27 October) are the account of the trail while it lived; they stay as history and bind nothing.
+
+The facts, read on production at 20:55 Cairo that evening: `phoenix_crm_touch_trail` held 2,834,233 rows
+and 1,224 MB — 668 MB of heap and 556 MB across six indexes — 26 % of the 4,690 MB database; it had been
+written 4,557 times since the 14:03 restart and read never; the collector cost one request on every
+screen change and one every 30 s for every open tab, on a database host whose request handling (not
+its SQL) was the measured root cause of the slow pages; and the 30-day archive had written no file,
+because its first night fell due on 2 November. Counting the rows took 19 seconds on that host.
+
+What went, in one PR: the collector and the two `field-crm` layouts' mount of it, the route
+`/api/phoenix-crm/touch-trail`, the Super Admin's reader page and its sidebar card, the nightly archive
+route, its declaration in `job-schedule.ts` and `cronjob-sync.mjs`, the cron-job.org job (deleted the same
+sitting, so the heartbeat never alarms about a stopped job), the three tests, the module-memory globs,
+and every rule line that described it — each edited to one "retired" line, never a second contradicting
+line. The reps' phones still held queued batches under `localStorage["phx-crm-touch-trail"]`; a
+one-release cleanup component mounted by those same layouts removes the key, and both go in the release
+after this one.
+
+The table and the empty archive bucket are dropped by
+`supabase/migrations/20261101203000_retire_phoenix_crm_touch_trail.sql`, run on production by hand only after
+the code is live (nothing may still write to the table), off-hours, with the day's backup confirmed —
+production has no point-in-time recovery, so that backup is the only copy of the trail that remains.
+
+Where a refusal that saved nothing is found now: the refused-readings board
+(`/admin/phoenix-crm/refused-readings`), which since 13 October records a browser-blocked permission
+through its own route — the case that first made the trail the only trace.
+
 ## The Phoenix CRM touch trail — owner ruling, 2026-10-03
 
 His words, on the evening of 3 October 2026, after a day in which two reps were blocked and both

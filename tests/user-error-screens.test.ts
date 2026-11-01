@@ -98,7 +98,6 @@ function rulesTests() {
     "/api/direct-orders/needs-action-count",
     "/api/readyz",
     "/api/healthz",
-    "/api/phoenix-crm/touch-trail",
   ]) {
     assert.equal(isSkippedScreenPath(path), true, `${path} is never photographed`);
   }

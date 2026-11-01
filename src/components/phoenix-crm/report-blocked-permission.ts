@@ -8,8 +8,8 @@
  * sent a reading and a door turned it away. A blocked permission never produces a reading, so it
  * never reaches a door and never reached a row — on 10 and 12 October 2026 Norhan Gamal's iPhone
  * answered PERMISSION_DENIED five times, `phoenix_crm_refused_readings` held NOTHING for her seat,
- * and the only trace anywhere was the touch trail, which records the message only if the rep happens
- * to press it. So the one place that knows is the browser, and the browser now says so.
+ * and the only trace anywhere was the touch trail (since retired), which recorded the message only if
+ * the rep happened to press it. So the one place that knows is the browser, and the browser now says so.
  *
  * 🔴 IT IS FIRE-AND-FORGET AND IT CHANGES NOTHING THE REP SEES (golden rule #1). It is called AFTER
  * the message is set, never before; it returns void, awaits nothing, throws nothing and is never on
@@ -26,7 +26,7 @@ import { type BlockedPermission, type RefusedSubject } from "@/lib/phoenix-crm/r
 const ENDPOINT = "/api/phoenix-crm/refused-readings";
 
 /**
- * The territory's seat, read off the path exactly as the touch trail's collector reads it:
+ * The territory's seat, read off the path:
  * `/employee-portals/field-crm/day/<seatId>` is the only route that names one, and null everywhere
  * else is correct rather than missing — the ROUTE resolves the rep from the session.
  */

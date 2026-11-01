@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { FLUSH_AT_EVENTS, FLUSH_EVERY_MS } from "../src/lib/phoenix-crm/touch-trail.ts";
-import { DEVICE_CLOCK_GRACE_MS, deviceClockNote } from "../src/lib/phoenix-crm/touch-trail-reader.ts";
 import { phoenixCrmModuleOfNotice } from "../src/lib/phoenix-crm/notice-badge-rules.ts";
 import { phoenixCrmModulePath } from "../src/lib/phoenix-crm/modules.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -16,8 +14,7 @@ import { stripComments } from "./support/comment-strip.ts";
  *   2. The badges take the live teams from a minute-long copy that a Start or Stop clears at once.
  *   3. The settings are held 30 s and dropped by every save; the viewer is built once per page render.
  *   4. The bell does not poll a hidden tab; the template wording is held 30 s and dropped by its save.
- *   5. The touch trail flushes every 30 s, and the phone-clock line stays at the one minute it has meant.
- *   6. Small client repeats: the voice probe asks once per page, the photo's place-name lookup runs
+ *   5. Small client repeats: the voice probe asks once per page, the photo's place-name lookup runs
  *      while the shutter reading is taken, and a written-up visit re-reads its own day.
  *
  * Most of these are pinned by SOURCE, because each one lives behind the database client or the browser.
@@ -155,20 +152,7 @@ export function runPhoenixCrmPerformanceTests(): void {
     assert.doesNotMatch(unread, /\.in\("notification_event_id", ids\)/, "never one URL holding all 300 ids");
   }
 
-  // ── 5. The touch trail's timer, and the phone-clock line it must not move ─────────────────────────────
-  {
-    assert.equal(FLUSH_EVERY_MS, 30_000, "a quiet screen files what it saw every 30 seconds");
-    assert.equal(FLUSH_AT_EVENTS, 40, "a busy one still files at 40 events, as before");
-    assert.equal(DEVICE_CLOCK_GRACE_MS, 60_000, "a phone is still called out past one minute, as it always was");
-    assert.equal(deviceClockNote(FLUSH_EVERY_MS + 29_000), null, "thirty seconds of wait plus network is the flush, not the clock");
-    assert.match(String(deviceClockNote(61_000)), /behind the server/, "past the minute, the phone's clock is named");
-
-    const collector = code("src/components/phoenix-crm/touch-trail-collector.tsx");
-    assert.match(collector, /if \(document\.visibilityState !== "visible"\) flush\("leaving"\);/, "hiding the page still files at once");
-    assert.match(collector, /const onPageHide = \(\) => \{\s*record\(\{ kind: "hide" \}\);\s*flush\("leaving"\);/, "and so does leaving it");
-  }
-
-  // ── 6. Small client repeats ───────────────────────────────────────────────────────────────────────────
+  // ── 5. Small client repeats ───────────────────────────────────────────────────────────────────────────
   {
     const speak = code("src/components/phoenix-crm/speak.tsx");
     assert.match(speak, /browser\.audio && transcriptionAnswer === null \? TRANSCRIBE_URL : null/, "the voice probe asks only while the answer is unknown");
@@ -191,7 +175,7 @@ export function runPhoenixCrmPerformanceTests(): void {
     assert.equal(count(tab, "onWrittenUp={detail.reload}"), 2, "both write-up doors — the card and the table row — hand it the day's reload");
   }
 
-  // ── 7. The portal's manager name, one read ────────────────────────────────────────────────────────────
+  // ── 6. The portal's manager name, one read ────────────────────────────────────────────────────────────
   {
     const service = code("src/lib/employee-portal/service.ts");
     assert.match(

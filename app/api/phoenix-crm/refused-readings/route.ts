@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 // own permission is off. That is why it has a route of its own instead of riding a save — there is
 // no save to ride.
 //
-// 🔴 IT ALWAYS ANSWERS 204, exactly like the touch trail. A rep must not be able to tell this table
+// 🔴 IT ALWAYS ANSWERS 204. A rep must not be able to tell this table
 // exists (golden rule #1), so a readable body — a count, an id, an error — is precisely what must
 // not be here. The only non-204 is the shared CSRF refusal, which is not this route's to invent.
 //
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     // READ, not create: a rep who may open Phoenix CRM is a rep whose blocked permission belongs on
-    // the board that exists to help him — the same permission the touch trail asks for.
+    // the board that exists to help him.
     await assertPermission(access, "phoenix_crm", "read");
     const actorHrId = personKey(access.hrId);
     if (!actorHrId) return new NextResponse(null, { status: 204 });

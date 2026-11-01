@@ -17,10 +17,11 @@ import { stripComments } from "./support/comment-strip.ts";
 // redirect, so there is no route in the group where it does not apply.
 //
 // The field-crm one was added on 2026-10-03 to mount the Phoenix CRM touch trail once
-// over that subtree. It renders `{children}` beside a null-returning client collector
-// and nothing else: it resolves no access context, reads no navigation mode, imports no
-// portal shell and redirects nowhere, so it introduces no portal-mode route and cannot
-// weaken the premise below.
+// over that subtree; since the trail's retirement (owner, 2026-11-01) it mounts only a
+// null-returning client cleanup of the trail's old browser queue, for one release. It
+// renders `{children}` beside that and nothing else: it resolves no access context, reads
+// no navigation mode, imports no portal shell and redirects nowhere, so it introduces no
+// portal-mode route and cannot weaken the premise below.
 //
 // That makes any `if (mode === "admin") … else <EmployeePortalPageShell>` branch in
 // a page here unreachable: it is written for a reader the layout has already sent

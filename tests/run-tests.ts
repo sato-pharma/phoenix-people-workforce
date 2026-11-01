@@ -2144,9 +2144,6 @@ import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-ad
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
-import { runPhoenixCrmTouchTrailTests } from "./phoenix-crm-touch-trail.test.ts";
-import { runPhoenixCrmTouchTrailReaderTests } from "./phoenix-crm-touch-trail-reader.test.ts";
-import { runPhoenixCrmTouchTrailArchiveTests } from "./phoenix-crm-touch-trail-archive.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
@@ -7712,21 +7709,6 @@ await runTest(
 );
 
 await runTest(
-  "the Phoenix CRM TOUCH TRAIL — every interaction in the module saved whether or not the rep saved anything (owner, 2026-10-03: \"every click or every touch on the touch screen for this module to be saved in a separate audit trail … even if the rep didn't save it … anything you can record, anything you can capture … like a file manager grabber. Anything touches him, automatically saved.\" Both of that day's incidents were reconstructed hours later out of upload slots and storage bytes, because the module recorded only what a rep SUCCEEDED in saving: one rep refused eighteen times left no row anywhere, and a second's nine refusals in 67 seconds — same photo, same reading, nine presses — existed nowhere but in his hands. Pinned: a password-type, autocomplete or NAMED field has its value dropped at capture while its LENGTH is kept, and the comment a rep typed and abandoned is kept in full; a descriptor prefers a hand-placed data-trail over a name, an id and a bare tag and NEVER carries a class list, which every restyle would rename; a label is flattened and cut, never ellipsed; the server's read is total — rubbish, an infinity, a missing kind, a non-array and 250 events all record less and never throw, and the per-request cap holds; golden rule #1 holds mechanically — the collector returns null, every listener is capture-phase AND passive, it never preventDefaults, never throws, uses pagehide rather than beforeunload and a beacon on the way out, and the route answers 204 on every path with no readable body; the actor is personKey(access.hrId) and the test flag may only be ADDED by a body; both layouts mount it and draw nothing; the route is declared in the access registry; and the table is one transaction, locked to the service role, keyed by a bigint identity for keyset paging, dated by the Cairo visit day rather than current_date, and deliberately UNKEYED so nine identical presses are nine rows)",
-  runPhoenixCrmTouchTrailTests,
-);
-
-await runTest(
-  "the Phoenix CRM touch trail's READER — the Super Admin's own page over the table (owner, 2026-10-04: \"build the touch trail reader for the Super Admin\"; until it existed the table could be read only with hand-written SQL). Pinned: every read is keyset-paged on the bigint id past PostgREST's SILENT 1,000-row ceiling, with no range and no offset walk — which over a table still being written to would both repeat and skip rows — and a cursor that cannot advance stops rather than spinning; the gate is the Super Admin's ALONE and never a test persona, refused inside the service as well as on the page because the trail holds every pair of hands on the module including a manager's and what a rep typed and then DELETED; the reader cannot write at all — no insert, update, upsert, delete or RPC in any of its four files; every column either projection names is checked against the migration that created the table, because a PostgREST select is a STRING and one wrong name fails the WHOLE read with a 42703 the compiler cannot see, and every stored column is reachable by the stream or part of the evidence has no reader; the day is read WHOLE and narrowed in memory, since a rep filter in the query would shrink the people list to the person already chosen; the server's arrival and the device's own stamp are never averaged — only the MINIMUM gap carries information, because the flush wait can only inflate it, and nothing is said inside that grace; a row that will not parse is dropped and COUNTED out loud, as is a day past the ceiling and a session past the stream cap; the order within a page load is ms_since_load because forty events share one arrival; and the clock is Cairo to the second by named zone in summer AND winter, with no ellipsis, no overflow-x and no min-width — a fixed table with named widths on desktop and the same rows as cards on a phone",
-  runPhoenixCrmTouchTrailReaderTests,
-);
-
-await runTest(
-  "the Phoenix CRM touch trail ARCHIVE (owner, 2026-10-27: \"Archive after 30 days\", after the afternoon database stalls on a 2 GB box where the trail was the biggest table, 985 MB in 24 days). Pinned: the database keeps today and the 29 days before it, so 3 October leaves on 2 November and not a day sooner, and the picker never offers a day the database no longer holds; every file is uploaded, DOWNLOADED again, hashed against what was sent and its rows counted and its first and last id compared BEFORE a single row is deleted, because production has no point-in-time recovery; the delete names every id it removes in short slices and is never narrowed by a range, so a late row filed on an old day is never lost; a delete that did not land stops the run rather than re-archiving the same file until the budget runs out; a dry run writes nothing; the bucket is private, reached only by the service role, and its migration deletes nothing; the route is cron-guarded, signals its start to the dead-man's switch and tells nobody; and an empty archived day says it is archived rather than that nothing was recorded",
-  runPhoenixCrmTouchTrailArchiveTests,
-);
-
-await runTest(
   "Phoenix CRM reps still recording in iReports360 (from a team's start its reps' iReports360 visits are IGNORED everywhere, owner 2026-10-02 — so a rep who carries on logging there is doing real work that reaches NO figure at all, and the volume is not small: 1,629 vendor visits in the fourteen days before Delta (1) began, 135.8 a day. The question cannot be asked of crm_visits_unified, which anti-joins exactly these rows out and would answer a confident zero for a rep logging every day, so ONE loader reads the raw mirror, inside each rep's own counted_from/counted_until window; the sentence names the people and states the cost and carries no verdict on anyone, because a rep still on the old app is following the habit he was trained in; and it never reaches him — the SERVER empties it with isLocationBlind rather than a screen choosing not to render it, and every file that reads the flag at all is named here)",
   runPhoenixCrmVendorLeftoverTests,
 );
@@ -10834,7 +10816,7 @@ await runTest(
   runPhoenixCrmSpeakTests,
 );
 await runTest(
-  "Phoenix CRM performance audit (2026-10-16): a notice is delivered after the reply has gone with its deliveries side by side, while a sender still asks the live-team gate fresh and only the badges read the minute-long copy a Start or Stop clears; the settings and template wording are held 30 s and dropped by every save; the bell skips a hidden tab; the touch trail flushes every 30 s while the phone-clock line stays at its one minute; and the voice probe, the photo's place lookup and a written-up visit's reload each stop repeating work",
+  "Phoenix CRM performance audit (2026-10-16): a notice is delivered after the reply has gone with its deliveries side by side, while a sender still asks the live-team gate fresh and only the badges read the minute-long copy a Start or Stop clears; the settings and template wording are held 30 s and dropped by every save; the bell skips a hidden tab; and the voice probe, the photo's place lookup and a written-up visit's reload each stop repeating work",
   runPhoenixCrmPerformanceTests,
 );
 await runTest(
