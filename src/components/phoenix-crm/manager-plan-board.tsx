@@ -185,7 +185,7 @@ function plansARegion(view: ManagerPlanBoardView | null): boolean {
 }
 
 /** What a half-day still lacks before it can be saved, or null when it can. */
-function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion = false, customersOptional = false): string | null {
+function draftProblem(draft: HalfDraft, choosesDistrict: boolean, byRegion: boolean, customersOptional: boolean): string | null {
   if (choosesDistrict && namesADistrict(draft.kind) && !draft.scope) return byRegion ? "choose the region" : "choose the district manager";
   if (draft.kind === "with_rep") {
     if (!draft.repSeatId) return "choose the rep you go with";
@@ -474,7 +474,8 @@ export function ManagerPlanBoard({
           });
           continue;
         }
-        const problem = draftProblem(waiting, choosesADistrict(viewRef.current), plansARegion(viewRef.current));
+        // 🔴 The same answer the screen gave (owner look, 2026-11-01): told nothing here, a half-day naming the rep or the area alone read "Saving soon…" and never went.
+        const problem = draftProblem(waiting, choosesADistrict(viewRef.current), plansARegion(viewRef.current), viewRef.current?.customersOptional === true);
         if (problem) {
           allSaved = false;
           continue;
