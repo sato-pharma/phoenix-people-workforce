@@ -1355,6 +1355,11 @@ async function runLocationTests() {
   assert.match(locations, /source: "plugin"/, "and the plugin's own trail is labelled apart");
   assert.match(locations, /"\/rest\/plugins\/deviceinfo\/deviceinfo\/private\/search\/dynamic"/, "the deviceinfo history endpoint");
   assert.match(locations, /sendData: true/, "🔴 which collects nothing until it is switched on — it defaults to FALSE");
+  // 🔴 THE HISTORY IS ASKED FOR BY `deviceNumber`. The live server answers `deviceFilter` with
+  // "error.notfound.device" inside an HTTP 200 (measured 1 Nov 2026), and the read's catch turned that
+  // into an empty trail — so the movements panel could never show a fix, whatever the tablet sent.
+  assert.match(locations, /deviceNumber: number, pageNum: 1/, "the deviceinfo history is filtered by deviceNumber");
+  assert.doesNotMatch(locations, /deviceFilter/, "🔴 never deviceFilter — the server refuses it and the refusal reads as an empty trail");
   // 🔴 AN EMPTY HISTORY IS "NOTHING RECORDED", NEVER "THE TABLET DID NOT MOVE". Whether the stock free
   // agent feeds this plugin at all is unproven until a real tablet does it — `ProUtils` is a stub in the
   // open-source agent — so the note must say so rather than imply a tablet stayed still.
