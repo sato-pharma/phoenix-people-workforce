@@ -10,10 +10,11 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  * already abandoned (15 s) kept running on the database, and a pile of them slows every page — the 22 Oct
  * stall was four database restarts under load. The owner chose 5 minutes the same morning.
  *
- * A function's own `SET statement_timeout` CANNOT extend a lower limit set by its caller — proved on staging
- * that day (a function declaring 10s was cancelled at its caller's 1s). So the role limit must be at or above
- * every limit a function declares, or that function is cut short with a number in its header that promises
- * otherwise. This file checks both halves on every migration in the repository.
+ * No function declares more than the role's limit. Through PostgREST a function's own `SET statement_timeout`
+ * replaces the role's limit, so a bigger number really would run longer (measured 1 Nov 2026: a 6 s declaration
+ * called with the anon key, whose limit is 3 s, slept 4 s and answered 200). Over a direct connection the same
+ * declaration does nothing and the function is cut at its caller's limit. This file checks both halves on every
+ * migration in the repository.
  */
 
 const MIGRATIONS = new URL("../supabase/migrations/", import.meta.url);
@@ -49,7 +50,7 @@ export function runServiceRoleStatementTimeoutTests() {
   assert.deepEqual(
     over,
     [],
-    `🔴 a function declares more time than service_role's ${limit}s allows, and a function's SET cannot raise its `
-      + "caller's limit — batch the job or raise the role limit with the owner, never just a bigger number",
+    `🔴 a function declares more time than service_role's ${limit}s, and through PostgREST that number replaces the `
+      + "role's limit — batch the job or raise the role limit with the owner, never just a bigger number",
   );
 }
