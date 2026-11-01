@@ -20,9 +20,11 @@ function entry(overrides: Partial<RegisterTablet>): RegisterTablet {
     holderName: null,
     id: "reg-1",
     imei: null,
+    lineNumber: null,
     manufacturer: null,
     model: null,
     serialNumber: null,
+    simNumber: null,
     status: "in_stock",
     ...overrides,
   };

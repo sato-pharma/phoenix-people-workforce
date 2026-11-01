@@ -46,6 +46,8 @@ export type RepHeadwindRow = {
   batteryLevel: number | null;
   batteryCharging: boolean | null;
   agentVersion: string | null;
+  /** The launcher version the tablet is actually RUNNING (not the enrolment target) — for "up to date?". */
+  launcherVersion: string | null;
   lastContactAt: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -56,6 +58,12 @@ export type RepHeadwindRow = {
   assetTag: string | null;
   holderName: string | null;
   holderJobTitle: string | null;
+  /**
+   * From the custody register: the SIM and line recorded against the tablet, null when unregistered.
+   * Either one present means the tablet carries a data SIM and stays online without a rep's Wi-Fi.
+   */
+  simNumber: string | null;
+  lineNumber: string | null;
   /** The matched register device id — what a reserve/assign/mark action targets. Null if unregistered. */
   registerDeviceId: string | null;
   /** The register device's custody status: in_stock, reserved, assigned, repair, lost, stolen, retired. */
@@ -111,6 +119,8 @@ function toRow(
     isAndroid: device.isAndroid,
     lastContactAt: device.lastContactAt,
     latitude: device.latitude,
+    launcherVersion: device.launcherVersion,
+    lineNumber: entry?.lineNumber ?? null,
     locatedAt: device.locatedAt,
     longitude: device.longitude,
     manufacturer: device.manufacturer,
@@ -123,6 +133,7 @@ function toRow(
     registerStatus: entry?.status ?? null,
     rustDeskId: device.rustDeskId,
     serialNumber: device.serialNumber,
+    simNumber: entry?.simNumber ?? null,
     // 🔴 AN UNREADABLE REGISTER IS NOT AN EMPTY ONE. With no register read, every tablet matches nothing,
     // and flagging them all "not in the custody register" offered an Add to custody on tablets that are
     // in it — a duplicate row a click away. Unknown stays unknown: the page says the register could not

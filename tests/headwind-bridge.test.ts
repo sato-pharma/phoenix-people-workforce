@@ -55,8 +55,11 @@ import {
 } from "../src/lib/devices/headwind/configurations.ts";
 import {
   fixesToPoints,
+  fleetLauncherTarget,
   fleetRowsToPoints,
+  launcherRank,
   summarizeFleet,
+  tabletSetupReadiness,
   DASHBOARD_LOW_BATTERY,
   DASHBOARD_ONLINE_WINDOW_MS,
   type DashboardLocationFix,
@@ -198,9 +201,11 @@ function register(overrides: Partial<RegisterTablet>): RegisterTablet {
     holderName: null,
     id: "reg-1",
     imei: null,
+    lineNumber: null,
     manufacturer: null,
     model: null,
     serialNumber: null,
+    simNumber: null,
     status: "assigned",
     ...overrides,
   };
@@ -221,6 +226,7 @@ function device(overrides: Partial<HeadwindDevice>): HeadwindDevice {
     isAndroid: true,
     lastContactAt: null,
     latitude: null,
+    launcherVersion: null,
     locatedAt: null,
     longitude: null,
     manufacturer: null,
@@ -251,6 +257,8 @@ function repRow(overrides: Partial<RepHeadwindRow>): RepHeadwindRow {
     isAndroid: true,
     lastContactAt: null,
     latitude: null,
+    launcherVersion: null,
+    lineNumber: null,
     locatedAt: null,
     longitude: null,
     manufacturer: null,
@@ -263,6 +271,7 @@ function repRow(overrides: Partial<RepHeadwindRow>): RepHeadwindRow {
     registerStatus: null,
     rustDeskId: null,
     serialNumber: null,
+    simNumber: null,
     unregistered: false,
     ...overrides,
   };
@@ -3497,6 +3506,63 @@ function runDashboardTests() {
   assert.equal(summary.lowBattery, 1, "only A is low: 12% and off the charger; B at 8% is charging; D reported no level");
   assert.equal(summary.notInRegister, 1, "one tablet the register does not yet know");
   assert.equal(DASHBOARD_LOW_BATTERY, 20, "the low-battery line is 20%");
+  assert.equal(summary.fullySetUp, 0, "none of the four baseline rows (no SIM recorded) is fully set up");
+
+  // ── Setup readiness ────────────────────────────────────────────────────────────────────────────
+  // 🔴 LAUNCHER RANK ORDERS BY NUMERIC SEGMENTS, NOT STRING. These are `6.<build>` versions, so 6.39 is
+  // NEWER than 6.9 (build 39 > build 9) — yet "6.39" < "6.9" as strings. BREAK-TEST: compare the version
+  // strings directly in `launcherRank` and the second line below reads backwards.
+  assert.ok((launcherRank("6.48") ?? 0) > (launcherRank("6.39") ?? 0), "6.48 ranks above 6.39");
+  assert.ok((launcherRank("6.39") ?? 0) > (launcherRank("6.9") ?? 0), "6.39 ranks above 6.9 — a string compare gets this backwards");
+  assert.equal(launcherRank(null), null, "no version reported → no rank");
+  assert.equal(launcherRank("—"), null, "a version with no digits has no rank, rather than ranking as zero");
+
+  const launcherFleet = [
+    repRow({ deviceNumber: "R1", launcherVersion: "6.39" }),
+    repRow({ deviceNumber: "R2", launcherVersion: "6.48" }),
+    repRow({ deviceNumber: "R3", launcherVersion: null }),
+  ];
+  assert.equal(fleetLauncherTarget(launcherFleet), launcherRank("6.48"), "the fleet target is the newest launcher any tablet runs");
+  assert.equal(fleetLauncherTarget([repRow({ deviceNumber: "none" })]), null, "no tablet reports a version → no target, so nothing is behind");
+
+  const target = fleetLauncherTarget(launcherFleet);
+  const fully = repRow({
+    deviceNumber: "FULL",
+    latitude: 30.0,
+    launcherVersion: "6.48",
+    longitude: 31.2,
+    rustDeskId: "scr-1",
+    simNumber: "8801700000001",
+  });
+  const ready = tabletSetupReadiness(fully, { launcherTarget: target });
+  assert.ok(
+    ready.inCustody && ready.simRecorded && ready.screenIdReported && ready.locationReported && ready.launcherCurrent,
+    "every provisioning signal is green on a fully set-up tablet",
+  );
+  // 🔴 `ready` IS THE CONJUNCTION OF THE FIVE. BREAK-TEST: drop any one term from `ready` in dashboard.ts
+  // and one of the five-missing assertions below stops flipping it.
+  assert.equal(ready.ready, true, "and `ready` is their conjunction");
+
+  assert.equal(tabletSetupReadiness({ ...fully, unregistered: true }, { launcherTarget: target }).inCustody, false, "not in the register → not in custody");
+  assert.equal(tabletSetupReadiness({ ...fully, unregistered: true }, { launcherTarget: target }).ready, false, "a tablet not in custody is not ready");
+  assert.equal(tabletSetupReadiness({ ...fully, lineNumber: null, simNumber: null }, { launcherTarget: target }).simRecorded, false, "no SIM and no line → SIM not recorded");
+  assert.equal(tabletSetupReadiness({ ...fully, lineNumber: null, simNumber: null }, { launcherTarget: target }).ready, false, "a tablet with no SIM recorded is not ready");
+  assert.equal(tabletSetupReadiness({ ...fully, rustDeskId: null }, { launcherTarget: target }).screenIdReported, false, "no RustDesk id → screen not set up");
+  assert.equal(tabletSetupReadiness({ ...fully, rustDeskId: null }, { launcherTarget: target }).ready, false, "a tablet with no screen id is not ready");
+  assert.equal(tabletSetupReadiness({ ...fully, latitude: null, longitude: null }, { launcherTarget: target }).locationReported, false, "never located → no location");
+  assert.equal(tabletSetupReadiness({ ...fully, latitude: null, longitude: null }, { launcherTarget: target }).ready, false, "a tablet that has never located is not ready");
+  assert.equal(tabletSetupReadiness({ ...fully, launcherVersion: "6.39" }, { launcherTarget: target }).launcherCurrent, false, "behind the fleet's newest launcher → not current");
+  assert.equal(tabletSetupReadiness({ ...fully, launcherVersion: "6.39" }, { launcherTarget: target }).ready, false, "a tablet behind on its launcher is not ready");
+
+  // A line number alone carries the SIM signal — either field means the tablet has a data line.
+  assert.equal(tabletSetupReadiness({ ...fully, lineNumber: "01001234567", simNumber: null }, { launcherTarget: target }).simRecorded, true, "a recorded line number alone counts as a SIM");
+  // 🔴 ONLINE AND BATTERY ARE HEALTH, NOT PROVISIONING. A finished tablet briefly off or flat is still set up.
+  assert.equal(tabletSetupReadiness({ ...fully, batteryLevel: 4, lastContactAt: null }, { launcherTarget: target }).ready, true, "being offline and flat does not undo provisioning");
+  // No fleet target → the launcher never blocks readiness, so a brand-new fleet is not all flagged behind.
+  assert.equal(tabletSetupReadiness({ ...fully, launcherVersion: "1.0" }, { launcherTarget: null }).launcherCurrent, true, "with no fleet target, no tablet reads as behind");
+
+  const setupFleet = [fully, { ...fully, deviceNumber: "HALF", lineNumber: null, simNumber: null }, repRow({ deviceNumber: "BARE" })];
+  assert.equal(summarizeFleet(setupFleet, now).fullySetUp, 1, "summarizeFleet counts only the fully provisioned tablet");
 
   // The fleet map: one point per tablet that has a position, labelled with its tag/holder.
   const held = repRow({ assetTag: "PHX-TAB-0007", deviceNumber: "E", holderName: "Gannatullah Amer", latitude: 30.1, longitude: 31.2 });
@@ -3590,6 +3656,12 @@ function runDashboardTests() {
 
   const overview = stripComments(source("src/components/devices/tablet-fleet-overview.tsx"));
   assert.match(overview, /summarizeFleet\(/, "the overview strip counts through the pure summary, not its own query");
+  assert.match(overview, /Fully set up/, "the overview shows a Fully set up tile");
+  assert.match(overview, /summary\.fullySetUp/, "sourced from the pure summary's count, never a re-count in the component");
+
+  const fleetComponent = stripComments(source("src/components/devices/headwind-fleet.tsx"));
+  assert.match(fleetComponent, /tabletSetupReadiness\(/, "the fleet rows derive their setup chips from the pure readiness helper");
+  assert.match(fleetComponent, /fleetLauncherTarget\(/, "and measure launcher currency against the fleet's newest, computed once for all rows");
   const map = stripComments(source("src/components/devices/tablet-fleet-map.tsx"));
   assert.match(map, /NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/, "the map reuses the shared browser key");
   assert.match(map, /border border-slate-200/, "and wears the devices look — a slate border, square, not the field map's rounded card");

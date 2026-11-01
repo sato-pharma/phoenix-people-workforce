@@ -812,9 +812,11 @@ function registerTablet(overrides: Partial<RegisterTablet> & Pick<RegisterTablet
     holderJobTitle: "Medical Representative",
     holderName: null,
     imei: null,
+    lineNumber: null,
     manufacturer: "Lenovo",
     model: "Tab M11",
     serialNumber: null,
+    simNumber: null,
     status: "assigned",
     ...overrides,
   };
