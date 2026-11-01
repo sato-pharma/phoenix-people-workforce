@@ -504,6 +504,8 @@ export type ManagerPlanWriter = {
   seat: OrgSeat | null;
   /** The lines he plans in: his seat's, or the product managers' two. */
   lineCodes: string[];
+  /** A product manager's title on his HR record ("Group Product Manager"); absent for everyone else. */
+  jobTitle?: string | null;
 };
 
 /**
@@ -515,7 +517,7 @@ export type ManagerPlanWriter = {
 export function managerPlanWriterOf(
   org: OrgIndex,
   hrId: string | null | undefined,
-  options: { productManager: boolean; trainingManager?: boolean },
+  options: { productManager: boolean; trainingManager?: boolean; productManagerTitle?: string | null },
 ): ManagerPlanWriter | null {
   const key = personKey(hrId);
   if (!key) return null;
@@ -523,7 +525,7 @@ export function managerPlanWriterOf(
   if (dmSeat) return { kind: "dm", hrId: key, seat: dmSeat, lineCodes: dmSeat.lineCode ? [dmSeat.lineCode] : [] };
   const senior = seniorPlanSeats(org, key)[0];
   if (senior) return { kind: senior.tier === "NSM" ? "nsm" : "rsm", hrId: key, seat: senior, lineCodes: senior.lineCode ? [senior.lineCode] : [] };
-  if (options.productManager) return { kind: "pm", hrId: key, seat: null, lineCodes: [...PRODUCT_MANAGER_PLAN_LINES] };
+  if (options.productManager) return { kind: "pm", hrId: key, seat: null, lineCodes: [...PRODUCT_MANAGER_PLAN_LINES], jobTitle: options.productManagerTitle ?? null };
   if (options.trainingManager) {
     const lines = [...new Set(org.territories.flatMap((seat) => (seat.lineCode ? [seat.lineCode] : [])))].sort();
     return { kind: "tm", hrId: key, seat: null, lineCodes: lines };
@@ -531,11 +533,15 @@ export function managerPlanWriterOf(
   return null;
 }
 
-/** What the screens call him: "District manager", "Regional sales manager", "National sales manager", "Product manager", "Training manager". */
-export function managerPlannerTitle(kind: ManagerPlannerKind): string {
+/**
+ * What the screens call him: "District manager", "Regional sales manager", "National sales manager", "Training
+ * manager". 🔴 A product manager is called what his HR record says (owner, 2026-11-01: Rasha Sabry read "Product
+ * manager" and is the Group Product Manager); the plain word is only for a planner no longer on the roster.
+ */
+export function managerPlannerTitle(kind: ManagerPlannerKind, jobTitle?: string | null): string {
   if (kind === "rsm") return "Regional sales manager";
   if (kind === "nsm") return "National sales manager";
-  if (kind === "pm") return "Product manager";
+  if (kind === "pm") return jobTitle?.trim() || "Product manager";
   if (kind === "tm") return "Training manager";
   return "District manager";
 }

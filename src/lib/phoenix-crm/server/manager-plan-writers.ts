@@ -45,8 +45,8 @@ import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadLiveTeamSeatIdsForDisplay } from "@/lib/phoenix-crm/server/live-teams";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-/** A product manager who plans here, and the manager his HR record names. */
-export type ProductManagerPlanner = { hrId: string; managerHrId: string | null };
+/** A product manager who plans here, and the manager and the title his HR record names. */
+export type ProductManagerPlanner = { hrId: string; managerHrId: string | null; jobTitle?: string | null };
 
 type Row = Record<string, unknown>;
 
@@ -66,7 +66,7 @@ async function readRoleRoster(roles: ReadonlySet<string>, purpose: string): Prom
   if (hrIds.length === 0) return [];
   const { data: people, error: peopleError } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id, employment_status, manager_hr_id")
+    .select("hr_id, employment_status, manager_hr_id, job_title")
     .in("hr_id", hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)));
   if (peopleError) throw peopleError;
   // Every spelling of an id is asked for, so one person can come back as two rows: he plans once, under
@@ -77,21 +77,21 @@ async function readRoleRoster(roles: ReadonlySet<string>, purpose: string): Prom
     if (!hrId || isTerminalEmploymentStatus(textOrNull(row.employment_status))) continue;
     const managerHrId = personKey(textOrNull(row.manager_hr_id));
     const known = byPerson.get(hrId);
-    if (!known || (!known.managerHrId && managerHrId)) byPerson.set(hrId, { hrId, managerHrId });
+    if (!known || (!known.managerHrId && managerHrId)) byPerson.set(hrId, { hrId, managerHrId, jobTitle: textOrNull(row.job_title) ?? known?.jobTitle ?? null });
   }
   return [...byPerson.values()].sort((left, right) => left.hrId.localeCompare(right.hrId));
 }
 
 const cachedProductManagerRoster = unstable_cache(
   () => readRoleRoster(PRODUCT_MANAGER_PLAN_ROLES, "Phoenix CRM — product managers who plan a week"),
-  ["phoenix-crm-product-manager-planners-v1"],
+  ["phoenix-crm-product-manager-planners-v2"],
   { revalidate: 300 },
 );
 
 /** The Training Manager's roster (owner, 2026-10-24) — read the same way, under its own key. */
 const cachedTrainingManagerRoster = unstable_cache(
   () => readRoleRoster(TRAINING_MANAGER_PLAN_ROLES, "Phoenix CRM — the Training Manager who plans a week"),
-  ["phoenix-crm-training-manager-planners-v1"],
+  ["phoenix-crm-training-manager-planners-v2"],
   { revalidate: 300 },
 );
 

@@ -310,7 +310,8 @@ export function buildFieldLines(input: FieldLinesInput): HrOpsLineDraft[] {
         lineName: entry?.lineName ?? null,
         managerName: entry?.managerName ?? null,
         name: entry?.name ?? key,
-        tierLabel: input.productManagerKeys.has(key) ? "Product manager" : null,
+        // What the HR record calls them (owner, 2026-11-01): Rasha Sabry is the Group Product Manager.
+        tierLabel: input.productManagerKeys.has(key) ? (entry?.jobTitle?.trim() || "Product manager") : null,
       }, false);
       if (line) lines.push(line);
     }

@@ -111,9 +111,12 @@ import {
   assertManagerPlanWriter,
   managerAskDeciderRole,
   managerDistrictSeats,
+  managerPlace,
   managerPlanChoices,
   managerPlanDeciderRole,
   managerPlanReach,
+  managerPlanWriter,
+  managerPlanWriterFor,
   managerTeamSeats,
   mayOpenManagerRecord,
   readsManagerPlanOf,
@@ -954,7 +957,33 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.deepEqual([...PRODUCT_MANAGER_PLAN_LINES], ["pedia", "anti_infective"]);
   assert.deepEqual(seniorPlanSeats(wide, "B-155"), [], "a product manager holds no regional or national seat, so nothing ever switches his legacy form off");
   assert.equal(managerPlannerTitle("rsm"), "Regional sales manager");
-  assert.equal(managerPlannerTitle("pm"), "Product manager");
+  assert.equal(managerPlannerTitle("pm"), "Product manager", "a planner no longer on the roster falls back to the plain word");
+  // 🔴 A product manager is called what his HR record says (owner, 2026-11-01: Rasha Sabry read "Product manager").
+  const titledRoster = [
+    { hrId: personKey("B-155") ?? "", managerHrId: null, jobTitle: "Group Product Manager" },
+    { hrId: "B-777", managerHrId: null, jobTitle: "  " },
+  ];
+  const titled = managerPlanWriterFor({ org: wide, productManagers: titledRoster }, "B-155");
+  assert.equal(titled?.kind, "pm");
+  assert.equal(managerPlannerTitle("pm", titled?.jobTitle), "Group Product Manager", "the plan board and the Approvals Hub print her HR title");
+  assert.equal(managerPlace(null, "pm", titled?.jobTitle), "Group Product Manager", "and so does every picker that places her");
+  assert.equal(managerPlace(null, "pm"), "Product manager");
+  const ownWriter = managerPlanWriter({ org: wide, hrId: "B-155", plansAsProductManager: true, productManagers: titledRoster });
+  assert.equal(ownWriter?.jobTitle, "Group Product Manager", "her own writer, which places her first in her own pick list, carries it too");
+  const blankTitle = managerPlanWriterFor({ org: wide, productManagers: titledRoster }, "B-777");
+  assert.equal(managerPlannerTitle("pm", blankTitle?.jobTitle), "Product manager", "a blank HR title never prints an empty line");
+  assert.equal(managerPlannerTitle("dm", "Group Product Manager"), "District manager", "a seat's title stays the seat's");
+  assert.ok(source("src/lib/phoenix-crm/server/manager-plan-writers.ts").includes("manager_hr_id, job_title"), "the roster reads the title off the HR record");
+  for (const [file, call] of [
+    ["src/lib/phoenix-crm/server/manager-plans.ts", "managerPlannerTitle(writer.kind, writer.jobTitle)"],
+    ["src/lib/phoenix-crm/server/manager-plans.ts", "managerPlace(writer.seat, writer.kind, writer.jobTitle)"],
+    ["src/lib/phoenix-crm/server/manager-plans.ts", "managerPlace(entry.seat, entry.kind, entry.jobTitle)"],
+    ["src/lib/phoenix-crm/server/manager-customers.ts", "managerPlace(entry.seat, entry.kind, entry.jobTitle)"],
+    ["src/lib/phoenix-crm/server/manager-plan-report.ts", "managerPlace(entry.seat, entry.kind, entry.jobTitle)"],
+    ["src/lib/phoenix-crm/server/manager-plan-hub.ts", "managerPlannerTitle(plan.plannerKind, managerPlanWriterFor(viewer, plan.managerHrId)?.jobTitle)"],
+  ] as const) {
+    assert.ok(source(file).includes(call), `${file} prints a product manager's HR title: ${call}`);
+  }
 
   // The scope he picks first. A district manager picks none; Hany his three; Ali every district below him,
   // Hany's grouped under Hany's region; a product manager a line, then its districts or "any rep".
