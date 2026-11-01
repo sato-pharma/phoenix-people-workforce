@@ -73,6 +73,15 @@ export function placeNoteAuthorLabel(source: PlaceNoteSource, name: string | nul
   return name ? `${name} · ${role}` : role;
 }
 
+/**
+ * True when a decision's own note is already on the row as a comment (since 2026-11-01 every comment
+ * written with a decision is), so the company board prints it once, under "The rep can read this".
+ */
+export function decisionNoteIsAComment(decisionNote: string | null, comments: ReadonlyArray<{ body: string }>): boolean {
+  const said = decisionNote?.trim();
+  return Boolean(said) && comments.some((comment) => comment.body.trim() === said);
+}
+
 /** What a recommendation reads as, in the owner's own words for the two buttons. */
 export function placeRecommendationLabel(value: PlaceRecommendation): string {
   return value === "validate" ? "Recommend validate" : "Recommend not validate";

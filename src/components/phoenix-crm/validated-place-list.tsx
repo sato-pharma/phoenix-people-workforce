@@ -11,8 +11,9 @@
  * Refusing writes the same review the automatic check would have written and runs the same reject, so
  * the rep reads the system's own wording ("The system could not confirm this place") and never that
  * a person looked at him. Since 2026-10-08 the Super Admin also picks WHAT IS WRONG WITH THE PHOTO from
- * a closed list, and that one sentence is the only thing the rep is told; the note beside it is kept on
- * the record, never shown to him, and OPTIONAL since 2026-10-15 ("admin comment is optional").
+ * a closed list, and that one sentence is what the rep is told about the photo. The comment beside it is
+ * OPTIONAL since 2026-10-15 ("admin comment is optional"), and since 2026-11-01 the rep and their manager
+ * read it, from the System Administrator and with no name on it (`tellDecisionComment`).
  *
  * 🔴 REFUSING A PLACE THAT WAS APPROVED IN THE QUEUE ABOVE IS BETTER DONE THERE. This path upserts the
  * review row's `google` column wholesale to `refused_by_admin`, so the evidence the system held it on
@@ -23,7 +24,7 @@
  * scroller); a phone draws the same rows as cards. Square corners throughout.
  */
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { BulkDecideBar, BulkPick, useRowPicks, type BulkAction } from "@/components/phoenix-crm/place-check-bulk";
@@ -340,10 +341,16 @@ function Refuse({ row, scope = "" }: { row: ValidatedPlaceRow; scope?: string })
  * Confirm it himself (owner, 2026-10-17: *"make me able to approve"* — "I can read them. So why you
  * cannot?"). One press: the customer is already validated, so approving changes nothing the rep sees;
  * it records that the Super Admin looked and confirmed, and the place leaves Not confirmed.
+ *
+ * The comment box stays folded so a row is still the photo and one button, and a comment written in it
+ * reaches the rep and their manager (owner, 2026-11-01).
  */
 function Approve({ row }: { row: ValidatedPlaceRow }) {
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(row);
+  const noteFieldId = useId();
+  const [commenting, setCommenting] = useState(false);
+  const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -352,7 +359,7 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
     setSaving(true);
     setProblem(null);
     try {
-      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: "" }, "approved");
+      await crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note }, "approved");
       markSaved(done("approved"));
       setSaving(false);
     } catch (error) {
@@ -365,9 +372,31 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
 
   return (
     <div className="space-y-2">
+      {commenting ? (
+        <>
+          <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={noteFieldId}>
+            {VALIDATION_NOTE_LABEL}
+          </label>
+          <textarea
+            className={crmTextareaClassName}
+            disabled={saving}
+            id={noteFieldId}
+            maxLength={500}
+            onChange={(event) => setNote(event.target.value)}
+            rows={2}
+            value={note}
+          />
+          <RefusalNoteHint />
+        </>
+      ) : null}
       <CrmButton disabled={saving} onClick={() => void approve()} variant="primary">
         {saving ? "Approving…" : "Approve this validation"}
       </CrmButton>
+      {commenting ? null : (
+        <CrmButton onClick={() => setCommenting(true)} size="sm" variant="ghost">
+          Add a comment
+        </CrmButton>
+      )}
       <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>

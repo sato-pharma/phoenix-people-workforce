@@ -293,6 +293,11 @@ export function CustomerScreen({
             render one he may not read. */}
         {customer.notes.map((note) => (
           <CrmNote className="mt-3" key={note.noteId} title={note.authorText} tone="info">
+            {note.aboutBuilding ? (
+              <span className="block break-words text-xs font-semibold text-slate-500" dir="auto">
+                About the polyclinic or centre: {note.aboutBuilding}
+              </span>
+            ) : null}
             <span className="block break-words" dir="auto">
               {note.body}
             </span>

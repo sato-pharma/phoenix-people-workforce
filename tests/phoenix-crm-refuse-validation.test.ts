@@ -363,10 +363,11 @@ function checkScreens(): void {
 
 function checkTheRepReadsNothingAboutAPerson(): void {
   const list = read("src/components/phoenix-crm/validated-place-list.tsx");
-  // The note is still the record's: its label says the rep reads only the chosen reason.
-  assert.match(list, /\{VALIDATION_NOTE_LABEL\}/, "the note is labelled as the record's, not the rep's");
+  // The comment reaches the rep and their manager since 2026-11-01, and its label says so; the rep still
+  // reads a role and never a name (`placeNoteRepAuthorText`).
+  assert.match(list, /\{VALIDATION_NOTE_LABEL\}/, "the comment box says who reads it");
   const feedback = read("src/lib/phoenix-crm/validation-feedback.ts");
-  assert.match(feedback, /VALIDATION_NOTE_LABEL = "Note for the record — optional \(the rep reads only the reason above\)"/);
+  assert.match(feedback, /VALIDATION_NOTE_LABEL = "Comment — optional \(the rep and their manager read it\)"/);
 
   // What the rep's own list says after a refusal is still the SYSTEM's sentence ("this place" since
   // 2026-10-08), with the chosen reason about his photo in place of it when there is one.
