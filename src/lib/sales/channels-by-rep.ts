@@ -203,6 +203,23 @@ export function resolveChannelsByRepPeriod(input: {
   return input.latestPublished ?? latestNonFuturePeriod(input.available) ?? input.available[0] ?? null;
 }
 
+/** A read this module will not start, for any role. The route answers it with a 400. */
+export class ChannelsByRepRefused extends Error {}
+
+/**
+ * The whole history with nothing excluded is refused (owner, 2026-11-01). Staging restarted uncleanly
+ * 7 min 45 s into that read on 2026-11-01, it has never finished on either database, and nothing can
+ * stop it once it starts: the function's own statement_timeout does not fire. One month with the
+ * restricted products revealed, and the whole history without them, both stay open.
+ */
+export function assertChannelsByRepReadAllowed(period: string | null, excluded: readonly string[]): void {
+  if (period === null && excluded.length === 0) {
+    throw new ChannelsByRepRefused(
+      "The whole history with the restricted products included is not available. Choose one month.",
+    );
+  }
+}
+
 export async function loadChannelsByRep(options: {
   period?: string | null;
   revealRestricted?: boolean;
@@ -217,6 +234,7 @@ export async function loadChannelsByRep(options: {
     right.localeCompare(left),
   );
   const excluded = excludedProductCodes(options.role, options.revealRestricted === true);
+  assertChannelsByRepReadAllowed(period, excluded);
   const stems = channelStems();
 
   const supabase = getSupabaseAdmin({ requestTimeoutMs: CHANNELS_BY_REP_REQUEST_TIMEOUT_MS });
