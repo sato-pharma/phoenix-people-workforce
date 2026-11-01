@@ -148,10 +148,14 @@ export async function getHeadwindLocationHistory(
 
   let fixes: HeadwindLocationFix[] = [];
   try {
+    // 🔴 THE FILTER FIELD IS `deviceNumber`, NOT `deviceFilter`. Measured on the live server, 1 Nov 2026:
+    // `deviceFilter` — as the number, as the id, as a string or a number — answers `status: "ERROR",
+    // "error.notfound.device"` inside an HTTP 200, while `deviceNumber` answers `status: "OK"`. The catch
+    // below turned that refusal into an empty trail, so this read could never have shown a single fix.
     const page = await callHeadwind<{ items?: unknown }>(
       "/rest/plugins/deviceinfo/deviceinfo/private/search/dynamic",
       {
-        body: JSON.stringify({ deviceFilter: number, pageNum: 1, pageSize: 200, sortValue: "createTime" }),
+        body: JSON.stringify({ deviceNumber: number, pageNum: 1, pageSize: 200, sortValue: "createTime" }),
         method: "POST",
       },
       fetchImpl,
