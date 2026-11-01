@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 391647f9-8f7a-4e5f-a51e-3371c51627f0
-  modified: 2026-09-12T00:01:32.116Z
+  modified: 2026-11-01T12:29:38.178Z
 ---
 
 **The problem this solves.** Verifying a mobile layout here is blocked three ways at once: `pnpm run
@@ -159,6 +159,16 @@ those and the page stays on its loading skeleton forever. Then run `$RV($RB)` on
 and screenshots worked even though `tabs_context` said the pane was hidden. This measures the real
 markup, real classes and real production strings. Nothing is copied by hand. Scripts: session
 af67af9f scratchpad `static-snapshot-server.cjs`.
+
+🔴 **BEST WHEN NO DEV SERVER FITS: BUNDLE THE REAL CLIENT COMPONENT, AND IT TESTS BEHAVIOUR TOO (2026-11-01).** A Next dev
+compile cost ~3 GB even for one tiny page; this cost well under 1 GB and never neared the line. Webpack from
+`next/dist/compiled/webpack/webpack` (`.webpack`, no `init()`; `resolve.modules` must keep `"node_modules"` for pnpm), a small
+loader over `next/dist/build/swc` (`loadBindings`, `transform`), `app/globals.css` through `.pnpm/postcss@8.5.31` and
+`@tailwindcss/postcss`, and a `window.fetch` fake answering `{ <key>: …, success: true }`. Clicks drive the real state, so it
+caught what a markup copy cannot and 18 fired source assertions had not: the plan board's save loop called `draftProblem`
+without `customersOptional`, so a rep-alone half-day read "Saving soon…" and sent nothing, live (PR 6747). Count the POSTs. Control
+the CSS with a probe `rounded-full`, or "0 round corners" may only mean no stylesheet. The pane's `visibilityState` can read
+`hidden` while timers still run, and screenshots time out. Scripts: session f6823e9d scratchpad `look/`.
 
 🔴 **AN ARABIC TOKEN IS NOT A CONTROL FOR AN UNBREAKABLE WORD — it wraps anyway, and the false clean
 looks exactly like a passing screen (2026-09-28).** Probing the Phoenix CRM Today table for the one
