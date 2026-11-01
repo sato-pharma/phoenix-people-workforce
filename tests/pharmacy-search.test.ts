@@ -14,6 +14,11 @@ import { MAX_BRICK_SNAP_KM, pickNearestBrick } from "../src/lib/pharmacy-search/
 import { mergeHospitals, __testables as nearbyTestables } from "../src/lib/pharmacy-search/nearby.ts";
 import { sameVenueSiblings } from "../src/lib/pharmacy-search/profile.ts";
 import { resolveTerritory, type TerritoryReference } from "../src/lib/pharmacy-search/reference.ts";
+import {
+  visibleDistributorRows,
+  visibleTerritoryReference,
+  withoutHiddenReferenceCodes,
+} from "../src/lib/pharmacy-search/source-visibility.ts";
 import { PHOENIX_PROFILE_ID_PREFIX, phoenixCodeFromProfileId } from "../src/lib/pharmacy-search/types.ts";
 import { __testables as searchTestables } from "../src/lib/pharmacy-search/search.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -405,7 +410,7 @@ export function runPharmacySearchTests() {
       readFileSync(fileURLToPath(new URL("../src/lib/pharmacy-search/profile.ts", import.meta.url)), "utf8"),
     );
     const registryAt = source.indexOf("request.phoenixPharmacyCode");
-    const nameFallbackAt = source.indexOf("await loadSiblingRows(request.name)");
+    const nameFallbackAt = source.indexOf("await loadSiblingRows(request.name,");
     const codeLookupAt = source.indexOf('.eq("distributor_code", request.distributorCode)');
     assert.ok(
       registryAt !== -1 && nameFallbackAt !== -1 && codeLookupAt !== -1,
@@ -992,5 +997,92 @@ export function runPharmacySearchTests() {
       "the live-brick test must be satisfied by the territory reference's own brick map",
     );
     assert.ok(MAX_BRICK_SNAP_KM > 0, "the snap ceiling must stay a real distance");
+  }
+
+  // ── El Qema leaves this screen for everyone but Super Admin, the CEO included ──
+  // Owner, 2026-11-01. As the SFE Manager, searching its name returned 60 of its customers.
+  {
+    const superAdmin = { role: "Super Admin", scope: "system" } as const;
+    const hiddenFrom = [
+      { role: "CEO", scope: "company" },
+      { role: "SFE Manager", scope: "company" },
+    ] as const;
+
+    const withElQema: TerritoryReference = {
+      ...reference(),
+      distributorNames: new Map([
+        ["IS", "Ibn sina"],
+        ["QM", "El Qema"],
+      ]),
+    };
+    const code = (distributorCode: string) => ({
+      customerCode: "1001",
+      distributorCode,
+      distributorName: distributorCode,
+      fromReferenceList: true,
+      territory: resolveTerritory(reference(), {}),
+    });
+    type FakeQuery = { applied: string[]; or(filters: string): FakeQuery };
+    const fakeQuery = (): FakeQuery => {
+      const query: FakeQuery = {
+        applied: [],
+        or(filters) {
+          query.applied.push(filters);
+          return query;
+        },
+      };
+      return query;
+    };
+
+    assert.equal(
+      visibleTerritoryReference(withElQema, superAdmin).distributorNames.get("QM"),
+      "El Qema",
+      "Super Admin keeps the name",
+    );
+    assert.equal(visibleDistributorRows(fakeQuery(), superAdmin).applied.length, 0, "Super Admin reads every row");
+    assert.deepEqual(
+      withoutHiddenReferenceCodes([code("El Qema")], withElQema, superAdmin).map((entry) => entry.distributorCode),
+      ["El Qema"],
+      "Super Admin keeps the reference row",
+    );
+
+    for (const viewer of hiddenFrom) {
+      const names = visibleTerritoryReference(withElQema, viewer).distributorNames;
+      assert.equal(names.has("QM"), false, `${viewer.role}: typing the name must not list its customers`);
+      assert.equal(names.get("IS"), "Ibn sina", `${viewer.role}: other distributors stay`);
+      assert.equal(withElQema.distributorNames.has("QM"), true, "the shared cached reference must never be edited");
+
+      // A row with no distributor names nobody, and `not.in` alone would silently drop it.
+      assert.deepEqual(
+        visibleDistributorRows(fakeQuery(), viewer).applied,
+        ["distributor_code.is.null,distributor_code.not.in.(QM)"],
+        `${viewer.role}: the read must leave El Qema's rows out at the query`,
+      );
+
+      // The reference list carries the name as typed and no code, so this is the only way to know.
+      assert.deepEqual(
+        withoutHiddenReferenceCodes(
+          [code("El Qema"), code("el qema "), code("QM"), code("Ibn sina")],
+          withElQema,
+          viewer,
+        ).map((entry) => entry.distributorCode),
+        ["Ibn sina"],
+        `${viewer.role}: the reference list must not name El Qema, in any case`,
+      );
+    }
+
+    // Every read of a table holding El Qema's rows must go through the filter. A new one that does
+    // not fails here, instead of quietly putting its customers back on the screen.
+    const tables = '"(?:source_of_sales_customer_map|direct_order_pharmacy_distributor_codes)"';
+    for (const file of ["search.ts", "profile.ts", "nearby.ts"]) {
+      const source = stripComments(
+        readFileSync(fileURLToPath(new URL(`../src/lib/pharmacy-search/${file}`, import.meta.url)), "utf8"),
+      );
+      const reads = source.match(new RegExp(`\\.from\\(\\s*${tables}`, "g"))?.length ?? 0;
+      const filtered =
+        source.match(new RegExp(`visibleDistributorRows\\(\\s*supabase\\s*\\.from\\(\\s*${tables}`, "g"))?.length ?? 0;
+      assert.ok(reads > 0, `${file} must still read these tables, or this check has gone stale`);
+      assert.equal(filtered, reads, `${file}: every read of a distributor's rows must go through visibleDistributorRows`);
+    }
   }
 }
