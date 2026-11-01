@@ -67,7 +67,7 @@ export default async function TeamPlaceChecksPage() {
         placeIds: [...reviewsRows.rows.map((row) => row.placeId), ...validatedRows.rows.map((row) => row.placeId)],
         sharedPlaceIds: sharedRows.rows.map((row) => row.sharedPlaceId),
       };
-      return Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
+      return Promise.all([loadPlaceNoteIndex(subjects, { managerBoard: true }), loadPlaceCheckIntegrity(viewer, subjects)]);
     }),
   ]);
   const rows = reviews.rows;
@@ -85,7 +85,7 @@ export default async function TeamPlaceChecksPage() {
   return (
     <EmployeePortalPageShell
       badge="CRM"
-      description={`Every place one of your reps validates is checked by the system before it counts: an AM customer against their own Google Maps listing — the listing must be that customer, and the rep must have stood within ${GOOGLE_MATCH_METERS} m of it — and every new place by reading the sign on the building, which must name the customer. These are your team's places, with what the system read on each one. A place that did not match is refused at the door and the rep is told what is wrong with the photograph, and never that anybody looked at it.`}
+      description={`Every place one of your reps validates is checked by the system before it counts: an AM customer against their own Google Maps listing — the listing must be that customer, and the rep must have stood within ${GOOGLE_MATCH_METERS} m of it — and every new place by reading the sign on the building, which must name the customer. These are your team's places, with what the system read on each one. A place that did not match is refused at the door and the rep is told what is wrong with the photograph. A comment on a place shows on its row, here and to the rep when it says so.`}
       title="Place checks"
     >
       <div className="min-w-0 space-y-5">

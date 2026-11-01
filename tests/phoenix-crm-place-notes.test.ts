@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  decisionNoteIsAComment,
   parsePlaceNoteSource,
   parsePlaceNoteSubjectKind,
   parsePlaceRecommendation,
@@ -453,8 +454,68 @@ function checkDeviceEvidence(): void {
   assert.match(migration, /notify pgrst, 'reload schema';/, "and PostgREST is told, or it answers PGRST205 about a brand-new table");
 }
 
+// ── A comment written with a decision reaches the rep and their manager (owner, 2026-11-01) ─────────
+
+function checkDecisionCommentReachesTheRep(): void {
+  // Every way a place or a building is decided carries the comment, on either answer.
+  const reviews = read("src/lib/phoenix-crm/server/validation-reviews.ts");
+  for (const name of ["decideValidationReview", "restoreValidation", "refuseValidatedPlace", "approveValidatedPlace"]) {
+    assert.match(functionBody(reviews, name), /tellDecisionComment\(viewer, "place",/, `${name} tells the rep the comment`);
+  }
+  const buildings = read("src/lib/phoenix-crm/server/shared-places.ts");
+  for (const name of ["decideSharedPlace", "restoreSharedPlace"]) {
+    assert.match(functionBody(buildings, name), /tellDecisionComment\(viewer, "shared_place",/, `${name} tells the rep the comment`);
+  }
+
+  // It is always visible, goes through the one write, and an empty comment writes nothing.
+  const notes = read("src/lib/phoenix-crm/server/place-notes.ts");
+  const tell = functionBody(notes, "tellDecisionComment");
+  assert.match(tell, /savePlaceNote\(viewer, \{[^}]*repVisible: true/, "the comment is always rep-visible, through the one write");
+  assert.match(tell, /if \(!cleanText\(comment, PLACE_NOTE_MAX_LENGTH\)\) return;/, "an empty comment writes no row");
+  assert.match(tell, /catch \(error\)/, "and it never un-does a decision that is already committed");
+
+  // 🔴 The rep's read of building comments is filtered in the QUERY, so a hidden one never reaches his browser.
+  const buildingRead = functionBody(notes, "loadRepVisibleBuildingNotes");
+  assert.match(buildingRead, /\.eq\("rep_visible", true\)/, "only the comments the rep may read");
+  assert.match(buildingRead, /\.eq\("seat_id", seatId\)/, "and only on his own territory");
+  assert.match(buildingRead, /row\.seat_id !== seatId/, "and only on a card of his own customer");
+  assert.doesNotMatch(buildingRead, /author_hr_id/, "and the writer's name is never read for him");
+
+  // 🔴 A district manager reads the role alone on a System Administrator's comment: the name stays on the server.
+  assert.match(functionBody(notes, "loadPlaceNoteIndex"), /!\(options\.managerBoard && source === "system_admin"\)/);
+  assert.match(read("app/employee-portals/place-checks/page.tsx"), /loadPlaceNoteIndex\(subjects, \{ managerBoard: true \}\)/);
+  assert.equal(placeNoteAuthorLabel("system_admin", null), "System Administrator", "with no name, the manager's board reads the role");
+
+  // The comment is printed once on the deciders' board, and an old private note stays on the record.
+  const comment = (body: string) => ({ body });
+  assert.equal(decisionNoteIsAComment("  The sign is hidden. ", [comment("The sign is hidden.")]), true);
+  assert.equal(decisionNoteIsAComment("Written before the rule", [comment("Something else")]), false);
+  assert.equal(decisionNoteIsAComment(null, [comment("Anything")]), false);
+  const board = read("app/(admin)/admin/field-crm/validation-reviews/page.tsx");
+  assert.match(board, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("place", row\.placeId\)\]/);
+  assert.match(board, /decisionNoteIsAComment\(row\.decisionNote, notes\.notes\[placeNoteSubjectKey\("shared_place", row\.sharedPlaceId\)\]/);
+
+  // The rep's list carries both shapes: on a customer's card, and for an empty building inside To validate only.
+  const list = read("src/lib/phoenix-crm/server/list.ts");
+  assert.match(list, /loadRepVisibleBuildingNotes\(seat\.seatId, isTest\)/);
+  assert.match(list, /emptyBuildingNotes: buildingNotes\.withNoCustomer/);
+  const tab = read("src/components/phoenix-crm/list-tab.tsx");
+  assert.match(tab, /current === "to_validate" && view\.emptyBuildingNotes\.length > 0/, "never a banner above the chooser");
+  assert.ok(tab.indexOf('title="Which part of the list"') < tab.indexOf("view.emptyBuildingNotes.map"), "it sits under the chooser");
+  assert.match(read("src/components/phoenix-crm/list-customer.tsx"), /note\.aboutBuilding/, "the card says which building it is about");
+
+  // Approving an unconfirmed place can carry a comment too.
+  const approve = read("src/components/phoenix-crm/validated-place-list.tsx");
+  assert.match(approve, /approve", \{ placeId: row\.placeId, note \}/, "the typed comment is what is posted");
+  assert.doesNotMatch(approve, /note: ""/, "never a hard-coded empty note");
+  // The box says who reads it, on the take-back as well.
+  assert.match(read("src/components/phoenix-crm/validation-review-queue.tsx"), /\{VALIDATION_NOTE_LABEL\}/);
+  assert.doesNotMatch(read("src/lib/phoenix-crm/validation-feedback.ts"), /never shown to the rep|the rep reads only/);
+}
+
 export function runPhoenixCrmPlaceNotesTests(): void {
   checkRepWording();
+  checkDecisionCommentReachesTheRep();
   checkTeamScope();
   checkHeDecidesNothing();
   checkVisibilityIsChosen();

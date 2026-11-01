@@ -49,6 +49,7 @@ import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
+import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { signboardDoorHolds, signboardHoldRecord, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
@@ -720,6 +721,8 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   // what is wrong with his photo and nothing else, and against the paragraph above this function.
   // One notice per customer actually back under To validate, which is what the RPC returns.
   await tellSeatedRepsValidateAgain(viewer, result, reopened);
+  // The comment written with it, on either answer (owner, 2026-11-01).
+  await tellDecisionComment(viewer, "shared_place", String(result.shared_place_id), body.note);
   return {
     sharedPlaceId: String(result.shared_place_id),
     name: String(result.name),
@@ -888,7 +891,8 @@ export type SharedPlaceRestore = {
  * 🔴 AND THE REP IS TOLD NOTHING BY IT, deliberately — the same silence `restoreValidation` keeps. He
  * was told what was wrong with the photo and that the place was back under To validate; when it comes
  * back he simply has it again, and his own screens never say that a person decided either way (golden
- * rule #1). The notice he already has is withdrawn by the customer's own validation, by prefix.
+ * rule #1). The notice he already has is withdrawn by the customer's own validation, by prefix. A
+ * comment written with the restore is the one exception: he and his manager read it (owner, 2026-11-01).
  */
 export async function restoreSharedPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<SharedPlaceRestore> {
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
@@ -909,6 +913,8 @@ export async function restoreSharedPlace(viewer: PhoenixCrmViewer, raw: unknown)
       customerId: String(row.customer_id),
       customerName: String(row.customer_name ?? "This customer"),
     }));
+
+  await tellDecisionComment(viewer, "shared_place", String(result.shared_place_id), body.note);
 
   return {
     sharedPlaceId: String(result.shared_place_id),

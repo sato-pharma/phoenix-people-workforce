@@ -214,7 +214,7 @@ function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
   return (
     <div className="space-y-2 border-t border-slate-100 pt-2">
       <label className="block text-xs font-black uppercase tracking-[0.12em] text-slate-500" htmlFor={`restore-note-${scope}${row.reviewId}`}>
-        Why it is accepted after all — optional (kept on the record, never shown to the rep)
+        {VALIDATION_NOTE_LABEL}
       </label>
       <textarea
         className={crmTextareaClassName}
@@ -303,7 +303,7 @@ function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: 
       </CrmButton>
       <p className="break-words text-xs text-slate-500">
         This retires the place the approval let stand; when it is the customer&rsquo;s only one, they go back to To validate and{" "}
-        {row.repName} is told what is wrong with the photo — never that anybody looked.
+        {row.repName} is told what is wrong with the photo.
       </p>
       {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED}</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
@@ -314,10 +314,10 @@ function RejectAfterApproval({ row, scope }: { row: ValidationReviewRow; scope: 
 /**
  * A settled row, as the DISTRICT MANAGER reads it (owner, 2026-10-13).
  *
- * 🔴 IT NAMES NOBODY AND CARRIES NO NOTE. `decidedByName` is the Super Admin, and the decision note is
- * his own record of why — the owner's instruction was that the manager's screen does not show that the
- * final call is the administrator's, so neither appears here. What DOES appear is the one sentence the
- * rep himself was told about his photograph, because that is the thing the manager has to follow up.
+ * 🔴 IT NAMES NOBODY AND CARRIES NO NOTE. `decidedByName` is the Super Admin, and `decisionNote` may be
+ * a note written before 2026-11-01 under the promise that nobody else reads it, so neither appears here.
+ * A comment written with a decision since then reaches him as a comment, in `PlaceCheckNotes` under this,
+ * by role alone. What appears here is the one sentence the rep himself was told about his photograph.
  * There is no "approve it after all" either: taking a decision back is not his.
  */
 function Settled({ row }: { row: ValidationReviewRow }) {

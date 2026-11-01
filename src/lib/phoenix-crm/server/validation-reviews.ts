@@ -40,6 +40,7 @@ import { callPhoenixCrm, numberOrNull, seatScoped, selectByIds, throwIfError } f
 import { readEveryPage } from "@/lib/phoenix-crm/server/paged-read";
 import { notifyPhoenixCrm, PHOENIX_CRM_NOTIFICATION_CATEGORY, PHOENIX_CRM_NOTIFICATION_MODULE } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
 import { loadSharedPlaceNames, loadSharedPlaceRefusalsForCustomers } from "@/lib/phoenix-crm/server/shared-places";
 import {
@@ -696,9 +697,9 @@ export async function loadValidationReviews(
  *
  * 🔴 A REJECTION NOW CARRIES WHAT IS WRONG WITH THE PHOTO, AND THE REP IS TOLD IT (owner, 2026-10-08:
  * "tell the rep why"). The reason is REQUIRED on a reject and never asked on an approve; it is one of
- * the eight in validation-feedback.ts, and the rep reads only its sentence about his own picture —
- * never the free-text note, never who decided, never that anybody did. The note is OPTIONAL and always
- * was on this path.
+ * the eight in validation-feedback.ts, and the rep reads its sentence about his own picture. The comment
+ * is OPTIONAL and always was on this path; since 2026-11-01 one that is written reaches the rep and his
+ * manager on either decision (`tellDecisionComment`), by role and never by name.
  *
  * 🔴 AND A REJECT IS ACCEPTED ON A REVIEW THIS PAGE ALREADY APPROVED (owner, 2026-10-15: "make admin
  * able to reject validation even if approved before"). `phoenix_crm_decide_validation_review` lets
@@ -736,6 +737,13 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   await withdrawInAppNotificationsByEventKeyPrefix(reviewNoticeKey(reviewId)).catch(() => undefined);
   // And the rep is told what is wrong with his photo — in-app only, about his picture alone.
   if (decision === "reject") await tellRepValidateAgain(viewer, result);
+  // The comment written with it, which the RPC's answer does not name the place of.
+  if (cleanText(body.note, 500)) {
+    const { data: reviewed, error: reviewedError } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("place_id").eq("id", reviewId).maybeSingle();
+    if (reviewedError) logError("Phoenix CRM decision comment could not find its place", { error: reviewedError, labels: { event: "phoenix_crm_decision_comment_failed" } });
+    const reviewedPlace = text((reviewed as Row | null)?.place_id);
+    if (reviewedPlace) await tellDecisionComment(viewer, "place", reviewedPlace, body.note);
+  }
   // A rejected place leaves My map; its landing cards read again rather than waiting out their minute.
   invalidateMyMapSnapshotCache("phoenix-crm-decide-validation-review");
   return { reviewId, status: decision === "approve" ? "approved" : "rejected" };
@@ -778,6 +786,7 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
   });
   // The refusal is taken back, so the bell that asked him to capture it again goes with it.
   await withdrawValidationNotConfirmed(String(result.customer_id));
+  await tellDecisionComment(viewer, "place", String(result.place_id), note);
   return { reviewId: String(result.review_id), validated: result.validated === true };
 }
 
@@ -1067,8 +1076,8 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   if (!canDecideValidationReviews(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager decide these.");
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.placeId)) throw validationError("Choose the place to refuse.");
-  // What is wrong with the photo, because it is the one thing the rep is told (2026-10-08). The note
-  // beside it is the record a reader comes back to, the rep never sees it, and it is his to leave empty.
+  // What is wrong with the photo, required because the rep is always told it (2026-10-08). The comment
+  // beside it is the decider's to leave empty; one that is written reaches the rep and his manager.
   const refusalReason = parseValidationRefusalReason(body.refusalReason);
   if (!refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const note = cleanText(body.note, 500);
@@ -1129,6 +1138,7 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
   // He is told what is wrong with his photo, exactly as an automatic hold's rejection tells him — one
   // notice, one wording, and nothing in it says a person looked.
   await tellRepValidateAgain(viewer, result);
+  await tellDecisionComment(viewer, "place", placeId, note);
   return { placeId, reopened: result.reopened === true };
 }
 
@@ -1140,7 +1150,8 @@ export async function refuseValidatedPlace(viewer: PhoenixCrmViewer, raw: unknow
  * name, put to `pending` and then decided by the SAME `phoenix_crm_decide_validation_review` approve —
  * so a confirmation is one more `validation_review_approved` event, and the place leaves Not confirmed
  * because a review now exists for it (`reviewed`). The customer is already validated, so nothing the
- * rep sees changes and he is told nothing (golden rule #1).
+ * rep sees changes and he is told nothing (golden rule #1) — unless a comment was written with it, which
+ * he and his manager read (owner, 2026-11-01).
  *
  * A place someone has already decided is left exactly as it is, and a place the door is still holding
  * is approved on its own review, keeping the evidence it was held on.
@@ -1162,8 +1173,11 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
   if (!place) throw notFoundError("This place is no longer there. Reload the page.");
   if (place.status !== "active") throw validationError("This place is already retired. Reload the page.");
   const existing = reviewRead.data as Row | null;
-  // Decided already — by him, or by the system's own reading. Nothing to add.
-  if (existing && existing.status !== "pending") return { placeId, approved: false };
+  // Decided already — by him, or by the system's own reading. Nothing to add but the comment he wrote.
+  if (existing && existing.status !== "pending") {
+    await tellDecisionComment(viewer, "place", placeId, note);
+    return { placeId, approved: false };
+  }
 
   let reviewId = existing ? String(existing.id) : null;
   if (!reviewId) {
@@ -1197,6 +1211,7 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
   });
   // A held place's "waiting for you" notice is answered.
   await withdrawValidationReviewWaiting(reviewId);
+  await tellDecisionComment(viewer, "place", placeId, note);
   return { placeId, approved: true };
 }
 

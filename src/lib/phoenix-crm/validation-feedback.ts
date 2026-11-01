@@ -19,6 +19,12 @@
 // reason the two decision screens' labels moved from "never shown to the rep" to "the rep reads only
 // the reason you chose", rather than the promise being quietly broken.
 //
+// 🔴 THE FREE-TEXT COMMENT STOPPED BEING PRIVATE ON 2026-11-01 (owner: "when sfe or admin reject or
+// approve validation and write the comment this comment appear to the rep and his manager"). A comment
+// written WITH a decision now reaches both through the one door a rep already reads a person's words by
+// — `phoenix_crm_place_notes`, by role and never by name. A note written before that day was written
+// under the old promise and stays private: `decision_note` is never read on the rep's side.
+//
 // WHY NOT IN google-place-rules.ts, where the other rep-facing strings live: that file is the
 // AUTOMATIC verdict, and `googleCheckApplies` makes it AM-only. These reasons are a human's reading
 // of a photograph and they apply to a PM refusal through `refuseValidatedPlace` just as much. A
@@ -152,9 +158,9 @@ export function validationRefusalRepText(key: string | null): string | null {
   return VALIDATION_REFUSAL_REASONS.find((reason) => reason.key === key)?.rep ?? null;
 }
 
-/** Under the note box on both decision screens, so the new split is stated where it is used. */
+/** Under the comment box on the decision screens, so who reads it is stated where it is typed. */
 export const VALIDATION_NOTE_HINT =
-  "Kept on the record for you. The rep reads only the reason you chose above.";
+  "The rep and their manager read this comment, from the System Administrator, with no name on it.";
 
 /** Above the picker. It says who reads it, because that is the thing that changed. */
 export const VALIDATION_REASON_LABEL = "What is wrong with the photo (the rep is told this)";
@@ -164,14 +170,13 @@ export const VALIDATION_REASON_PLACEHOLDER = "Choose what is wrong";
 export const VALIDATION_REASON_REQUIRED =
   "Choose what is wrong with the photo — the rep is told this.";
 /**
- * On the note box, replacing the old "never shown to the rep". The promise it made is still kept.
+ * On the comment box. It says who reads it, because since 2026-11-01 the rep and their manager do.
  *
  * 🔴 IT SAYS OPTIONAL SINCE 2026-10-15 (owner: "admin comment is optional"). It was required, and of
  * the 24 refusals in the module's first five days 22 carried the single character `-`: a field that is
- * required and never read is a field that gets a dash. The REASON above it — the one sentence the rep
- * is actually told — stays required.
+ * required and never read is a field that gets a dash. The REASON above it stays required on a refusal.
  */
-export const VALIDATION_NOTE_LABEL = "Note for the record — optional (the rep reads only the reason above)";
+export const VALIDATION_NOTE_LABEL = "Comment — optional (the rep and their manager read it)";
 
 // ── A place check is not an add to the rep's list ────────────────────────────────────────────────
 
