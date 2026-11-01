@@ -23,6 +23,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **EL QEMA LEAVES PHARMACY SEARCH FOR EVERYONE BUT SUPER ADMIN, THE CEO INCLUDED** (owner, 2026-11-01): its customers, its name, its reference-list rows and its customers in the nearby-hospital list. `src/lib/pharmacy-search/source-visibility.ts`; a new read of its rows goes through `visibleDistributorRows`, pinned by `tests/pharmacy-search.test.ts`.
+- 🔴 **EL QEMA'S ROWS LEAVE THE CUSTOMER DIRECTORY FOR EVERYONE BUT SUPER ADMIN** (owner, 2026-11-01), with its export, Customers tab, filter option and detail page; the SFE Manager was reading 45 of its customers for September by name. Done in `customer-directory.ts` on the closing's own `MASKED_SOURCE_DISTRIBUTORS`, so its totals fall by what was removed. Pinned by `tests/customer-directory.test.ts`.
 - 🔴 **THE CUSTOMER DIRECTORY HAS SIX GATES AND THE SFE MANAGER MUST PASS ALL OF THEM** (2026-11-01). His 2026-08-05 access opened the page and the export only, so the page loaded on its own loader and his first filter answered "restricted to the admin account". The list, channel and detail routes and the detail page now carry the same clause. Pinned by `tests/sfe-manager-nav-dead-links.test.ts`.
 🔴 **`sales-closing.md` IS ALSO LOADED whenever you are here** — its broad `src/lib/sales/*` glob sees
 every file this module covers. That is deliberate: the closing's golden rules (the published month is

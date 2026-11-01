@@ -6,11 +6,13 @@
  */
 
 import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
+import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { googleMapsUrlFor, resolvePharmacyCoordinates } from "./locate";
 import { DEFAULT_RADIUS_KM, findKnownHospitals, findNearbyContacts, mergeHospitals } from "./nearby";
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
+import { visibleDistributorRows, visibleTerritoryReference, withoutHiddenReferenceCodes } from "./source-visibility";
 import {
   EMPTY_TERRITORY,
   PHOENIX_PROFILE_ID_PREFIX,
@@ -54,16 +56,18 @@ type CustomerMapRow = {
   region_code: string | null;
 };
 
-async function loadSiblingRows(name: string): Promise<CustomerMapRow[]> {
+async function loadSiblingRows(name: string, viewer: SourceMaskViewer): Promise<CustomerMapRow[]> {
   const supabase = getSupabaseAdmin();
   // `ilike` with no wildcards is a case-insensitive exact match — it catches the same pharmacy
   // filed under different capitalisation by two distributors without dragging in every name that
   // merely contains this one.
-  const { data, error } = await supabase
-    .from("source_of_sales_customer_map")
-    .select("distributor_code, customer_code, customer_name, address, brick_id, area_code, region_code")
-    .ilike("customer_name", name)
-    .limit(100);
+  const { data, error } = await visibleDistributorRows(
+    supabase
+      .from("source_of_sales_customer_map")
+      .select("distributor_code, customer_code, customer_name, address, brick_id, area_code, region_code")
+      .ilike("customer_name", name),
+    viewer,
+  ).limit(100);
 
   if (error) throw new Error(`Distributor code lookup failed: ${error.message}`);
   return (data ?? []) as CustomerMapRow[];
@@ -86,7 +90,7 @@ type RegistryBase = {
  * `PharmacyNotFoundError`, which on screen reads as "this pharmacy does not exist" about a
  * pharmacy the search box just listed.
  */
-async function loadRegistryBase(phoenixPharmacyCode: string): Promise<RegistryBase | null> {
+async function loadRegistryBase(phoenixPharmacyCode: string, viewer: SourceMaskViewer): Promise<RegistryBase | null> {
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
@@ -105,11 +109,10 @@ async function loadRegistryBase(phoenixPharmacyCode: string): Promise<RegistryBa
   const code = String(row.phoenix_pharmacy_code ?? "").trim();
   if (!id || !name || !code) return null;
 
-  const { data: codeRows, error: codeError } = await supabase
-    .from("direct_order_pharmacy_distributor_codes")
-    .select("distributor_code, customer_code")
-    .eq("pharmacy_id", id)
-    .limit(50);
+  const { data: codeRows, error: codeError } = await visibleDistributorRows(
+    supabase.from("direct_order_pharmacy_distributor_codes").select("distributor_code, customer_code").eq("pharmacy_id", id),
+    viewer,
+  ).limit(50);
 
   if (codeError) throw new Error(`Phoenix pharmacy code lookup failed: ${codeError.message}`);
 
@@ -236,21 +239,27 @@ async function loadSales(pairs: Array<{ clientCode: string; distributorCode: str
  * profile, with `warnings` explaining each empty section. An empty section that looks like a zero
  * is the failure mode this guards against.
  */
-export async function loadPharmacyProfile(request: PharmacyProfileRequest): Promise<PharmacyProfile> {
+export async function loadPharmacyProfile(
+  request: PharmacyProfileRequest,
+  viewer: SourceMaskViewer,
+): Promise<PharmacyProfile> {
   const supabase = getSupabaseAdmin();
-  const reference = await getTerritoryReference();
+  const fullReference = await getTerritoryReference();
+  const reference = visibleTerritoryReference(fullReference, viewer);
   const radiusKm = request.radiusKm ?? DEFAULT_RADIUS_KM;
   const warnings: string[] = [];
 
   let baseRow: CustomerMapRow | null = null;
 
   if (request.distributorCode && request.customerCode) {
-    const { data, error } = await supabase
-      .from("source_of_sales_customer_map")
-      .select("distributor_code, customer_code, customer_name, address, brick_id, area_code, region_code")
-      .eq("distributor_code", request.distributorCode)
-      .eq("customer_code", request.customerCode)
-      .limit(1);
+    const { data, error } = await visibleDistributorRows(
+      supabase
+        .from("source_of_sales_customer_map")
+        .select("distributor_code, customer_code, customer_name, address, brick_id, area_code, region_code")
+        .eq("distributor_code", request.distributorCode)
+        .eq("customer_code", request.customerCode),
+      viewer,
+    ).limit(1);
 
     if (error) throw new Error(`Pharmacy lookup failed: ${error.message}`);
     baseRow = (data?.[0] as CustomerMapRow | undefined) ?? null;
@@ -267,12 +276,12 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
   // for the same reason.
   let registry: RegistryBase | null = null;
   if (!baseRow && request.phoenixPharmacyCode) {
-    registry = await loadRegistryBase(request.phoenixPharmacyCode);
+    registry = await loadRegistryBase(request.phoenixPharmacyCode, viewer);
     baseRow = registry?.row ?? null;
   }
 
   if (!baseRow && request.name) {
-    const rows = await loadSiblingRows(request.name);
+    const rows = await loadSiblingRows(request.name, viewer);
     baseRow = rows[0] ?? null;
   }
 
@@ -296,7 +305,7 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     regionCode: baseRow.region_code,
   });
 
-  const siblings = sameVenueSiblings(await loadSiblingRows(name), registry);
+  const siblings = sameVenueSiblings(await loadSiblingRows(name, viewer), registry);
   const distributorCodes: PharmacyDistributorCode[] = [];
   const seenPairs = new Set<string>();
 
@@ -338,9 +347,10 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
     });
   }
 
-  const referenceCodes = await loadReferenceCodes(
-    distributorCodes.map((entry) => entry.customerCode).slice(0, 20),
-    reference,
+  const referenceCodes = withoutHiddenReferenceCodes(
+    await loadReferenceCodes(distributorCodes.map((entry) => entry.customerCode).slice(0, 20), reference),
+    fullReference,
+    viewer,
   );
   for (const entry of referenceCodes) {
     const pairKey = `${entry.distributorCode}:${entry.customerCode}`;
@@ -361,7 +371,7 @@ export async function loadPharmacyProfile(request: PharmacyProfileRequest): Prom
   const centre = coordinates ? { latitude: coordinates.latitude, longitude: coordinates.longitude } : null;
   const [contacts, knownHospitals] = await Promise.all([
     centre ? findNearbyContacts(centre, radiusKm) : Promise.resolve({ doctors: [], hospitals: [] }),
-    findKnownHospitals({ brickId: territory.brickId, centre, radiusKm }),
+    findKnownHospitals({ brickId: territory.brickId, centre, radiusKm, viewer }),
   ]);
   const nearbyDoctors = contacts.doctors;
   // CRM hospitals first: they are the only ones carrying a measured distance, and `mergeHospitals`
