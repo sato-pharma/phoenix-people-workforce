@@ -306,8 +306,8 @@ back) and seen to fail.
 
 - **The refusal reason** (`validation-feedback.ts`). Six closed reasons: no signboard in the photo;
   the sign is not this customer; too dark or blurred to read; not taken at the entrance; a photo of
-  paper, not a building; the location is not where the photo was taken. The free note stays on the
-  record. The rep receives `phoenix_crm.validation_not_confirmed` — in-app and Telegram only,
+  paper, not a building; the location is not where the photo was taken. The free note stayed on the
+  record until 2026-11-01 (see "The comment written with a decision"). The rep receives `phoenix_crm.validation_not_confirmed` — in-app and Telegram only,
   push-blocked, never email.
 - **One notice per row.** "Validate again" and "Not validated yet" both rendered for five days because
   both branches tested the same condition and both titles were literals. Both now come from
@@ -803,3 +803,15 @@ spelling-checking them, and by the boundary and refusal suites it sits beside.
 - The owner: *"some polyclinics have their timetable only online"*, and he chose **"Save it, hold for me"**.
 - A timetable photographed on a phone or computer screen is now saved and held for him on the first try, as `timetable_on_a_screen`. No try is spent, because a retake cannot fix it. The rep reads: "The timetable was photographed on a screen, so it is held for admin approval."
 - It still never validates by itself. In Place checks the system says what it saw and recommends nothing ("look"); he checks the customer's name on the screen and decides. Until then the doctor stays out of the KPIs, like every held seating.
+
+## The comment written with a decision (2026-11-01)
+
+Owner: "when sfe or admin reject or approve validation and write the comment this comment appear to the rep and his maanger".
+
+- **What changed.** A comment typed while approving, refusing or taking back a place or a polyclinic used to be the record's alone. It now also becomes a visible place comment, written by `tellDecisionComment` through `savePlaceNote`. An empty comment writes nothing.
+- **What the rep reads.** "From the System Administrator" and the words, with no name and no notice. An SFE Manager's comment reads the same, because both are the `system_admin` source.
+- **What the manager reads.** The comment on the row of their own Place checks tab, with the role alone: `loadPlaceNoteIndex(subjects, { managerBoard: true })` keeps the name on the server.
+- **A building has no customer of its own.** Its comment sits on the card of every customer of that territory ever seated there. For a building with nobody seated (62 of the 96 rejected by 2026-11-01) it shows inside To validate for 30 days, under the chooser.
+- **Not retroactive.** 159 review decisions and 34 building decisions carry an older note written under "never shown to the rep". Those stay private.
+- **Failure.** The decision is already committed when the comment is written, so a failed write is logged (`phoenix_crm_decision_comment_failed`) and the words stay in `decision_note`.
+- **Printed once.** The deciders' page hides `decision_note` when the same words are already a visible comment on that row (`decisionNoteIsAComment`).

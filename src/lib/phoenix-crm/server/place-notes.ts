@@ -22,10 +22,15 @@
  * badge (his own choice, 2026-10-13). Nothing else about a check moved into his sight, and a note he
  * may not read never leaves the server: `loadRepVisiblePlaceNotes` filters on `rep_visible` in the
  * query, because a field a browser receives counts as shown.
+ *
+ * 🔴 AND A COMMENT WRITTEN WITH A DECISION COMES THROUGH THIS SAME DOOR, ALWAYS VISIBLE (owner,
+ * 2026-11-01: "when sfe or admin reject or approve validation and write the comment this comment appear
+ * to the rep and his manager"). `tellDecisionComment` below, on every approve, reject and take-back.
  */
 
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
+import { logError } from "@/lib/observability/log";
 import { cleanText } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import {
@@ -120,10 +125,15 @@ export const EMPTY_PLACE_NOTE_INDEX: PlaceNoteIndex = { integrity: {}, notes: {}
  * past 600 rows on production, and a 400-id `.in()` has already overflowed the response headers on
  * this very page (`UND_ERR_HEADERS_OVERFLOW`, 2026-10-07).
  */
-export async function loadPlaceNoteIndex(input: {
-  placeIds: ReadonlyArray<string>;
-  sharedPlaceIds: ReadonlyArray<string>;
-}): Promise<PlaceNoteIndex> {
+export async function loadPlaceNoteIndex(
+  input: {
+    placeIds: ReadonlyArray<string>;
+    sharedPlaceIds: ReadonlyArray<string>;
+  },
+  // 🔴 A district manager's board names nobody above him (owner, 2026-10-13), so it gets the writer's
+  // ROLE alone on a System Administrator's comment — and the name never leaves the server for him.
+  options: { managerBoard?: boolean } = {},
+): Promise<PlaceNoteIndex> {
   const placeIds = [...new Set(input.placeIds.filter((id) => isUuid(id)))];
   const sharedPlaceIds = [...new Set(input.sharedPlaceIds.filter((id) => isUuid(id)))];
   if (placeIds.length === 0 && sharedPlaceIds.length === 0) return EMPTY_PLACE_NOTE_INDEX;
@@ -154,7 +164,10 @@ export async function loadPlaceNoteIndex(input: {
     if (!source) continue;
     (notes[key] ??= []).push({
       advice: source === "system_admin" ? parsePlaceNoteAdvice(row.advice) : null,
-      authorLabel: placeNoteAuthorLabel(source, text(row.author_hr_id) ? nameOf(names, text(row.author_hr_id), "") || null : null),
+      authorLabel: placeNoteAuthorLabel(
+        source,
+        text(row.author_hr_id) && !(options.managerBoard && source === "system_admin") ? nameOf(names, text(row.author_hr_id), "") || null : null,
+      ),
       body: String(row.body ?? ""),
       noteId: String(row.id),
       repVisible: row.rep_visible === true,
@@ -187,8 +200,11 @@ function subjectKeyOf(row: Row): string | null {
 
 // ── What the rep reads on his own customer ──────────────────────────────────────────────────────
 
-/** One comment the rep may read, on his own customer. A ROLE and the words — nothing else. */
-export type RepPlaceNote = { noteId: string; authorText: string; body: string; writtenAtText: string };
+/**
+ * One comment the rep may read, on his own customer. A ROLE and the words — nothing else. `aboutBuilding`
+ * is the polyclinic or centre it was written about, when it was written about the building.
+ */
+export type RepPlaceNote = { noteId: string; authorText: string; body: string; writtenAtText: string; aboutBuilding: string | null };
 
 /**
  * The visible comments on one territory's customers, newest first — the rep's own read.
@@ -230,6 +246,7 @@ export async function loadRepVisiblePlaceNotes(seatId: string, isTest: boolean):
     if (!customerId || !source) continue;
     const list = byCustomer.get(customerId) ?? [];
     list.push({
+      aboutBuilding: null,
       authorText: placeNoteRepAuthorText(source),
       body: String(row.body ?? ""),
       noteId: String(row.id),
@@ -238,6 +255,76 @@ export async function loadRepVisiblePlaceNotes(seatId: string, isTest: boolean):
     byCustomer.set(customerId, list);
   }
   return byCustomer;
+}
+
+/** How long a comment on a building nobody is seated in stays in To validate — it has no customer to sit on. */
+const EMPTY_BUILDING_NOTE_DAYS = 30;
+
+/**
+ * The visible comments on one territory's polyclinics and centres.
+ *
+ * A building comment has no customer of its own, so it reaches the rep two ways, each comment once per
+ * screen: on the card of every customer ever seated there — a rejected building's places are retired,
+ * not deleted, so its customers still carry it — and, for a building with nobody seated, in To validate
+ * for 30 days. 62 of the 96 buildings rejected by 2026-11-01 had no customer at all, so reading only the
+ * first way would tell most of them nothing.
+ */
+export async function loadRepVisibleBuildingNotes(
+  seatId: string,
+  isTest: boolean,
+): Promise<{ byCustomer: Map<string, RepPlaceNote[]>; withNoCustomer: RepPlaceNote[] }> {
+  const { rows, error } = await readEveryPage<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_place_notes")
+        .select("id, shared_place_id, author_source, body, created_at")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .eq("rep_visible", true)
+        .not("shared_place_id", "is", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    { maxRows: 1_000, whenFull: "stop", what: "The comments written about this territory's buildings", uniqueBy: (row) => String(row.id) },
+  );
+  throwIfError(error);
+  const byCustomer = new Map<string, RepPlaceNote[]>();
+  const withNoCustomer: RepPlaceNote[] = [];
+  if (rows.length === 0) return { byCustomer, withNoCustomer };
+
+  const buildingIds = [...new Set(rows.map((row) => String(row.shared_place_id)))];
+  const [buildings, seated] = await Promise.all([
+    selectByIds<Row>("phoenix_crm_shared_places", "id, name", "id", buildingIds),
+    selectByIds<Row>("phoenix_crm_places", "customer_id, shared_place_id, seat_id", "shared_place_id", buildingIds),
+  ]);
+  const nameOfBuilding = new Map(buildings.map((row) => [String(row.id), String(row.name ?? "")]));
+  const customersOf = new Map<string, Set<string>>();
+  for (const row of seated) {
+    const customerId = text(row.customer_id);
+    if (!customerId || row.seat_id !== seatId) continue;
+    const buildingId = String(row.shared_place_id);
+    customersOf.set(buildingId, (customersOf.get(buildingId) ?? new Set<string>()).add(customerId));
+  }
+
+  const oldest = Date.now() - EMPTY_BUILDING_NOTE_DAYS * 24 * 60 * 60 * 1_000;
+  for (const row of rows) {
+    const source = parsePlaceNoteSource(row.author_source);
+    if (!source) continue;
+    const buildingId = String(row.shared_place_id);
+    const note: RepPlaceNote = {
+      aboutBuilding: nameOfBuilding.get(buildingId) || null,
+      authorText: placeNoteRepAuthorText(source),
+      body: String(row.body ?? ""),
+      noteId: String(row.id),
+      writtenAtText: formatPhoenixDateTime(String(row.created_at)),
+    };
+    const customers = customersOf.get(buildingId);
+    if (!customers) {
+      if (new Date(String(row.created_at)).getTime() >= oldest) withNoCustomer.push(note);
+      continue;
+    }
+    for (const customerId of customers) byCustomer.set(customerId, [...(byCustomer.get(customerId) ?? []), note]);
+  }
+  return { byCustomer, withNoCustomer };
 }
 
 // ── Writing one ─────────────────────────────────────────────────────────────────────────────────
@@ -320,6 +407,22 @@ export async function savePlaceNote(viewer: PhoenixCrmViewer, raw: unknown): Pro
   // the exact thing golden rule #1 keeps off his phone, and `notifyPhoenixCrm` is deliberately not
   // imported here so a later edit cannot add one without noticing this comment.
   return { noteId: String((inserted.data as Row).id) };
+}
+
+/**
+ * The comment written WITH an approval, a refusal or a take-back, as a comment the rep and the district
+ * manager above him read (owner, 2026-11-01). The one write above, never a second path: same role
+ * wording, same silence, the seat re-read from the subject's own row. An empty comment writes nothing.
+ *
+ * Never throws: the decision is already committed, and the words stay in its own `decision_note`.
+ */
+export async function tellDecisionComment(viewer: PhoenixCrmViewer, subjectKind: PlaceNoteSubjectKind, subjectId: string, comment: unknown): Promise<void> {
+  if (!cleanText(comment, PLACE_NOTE_MAX_LENGTH)) return;
+  try {
+    await savePlaceNote(viewer, { body: comment, repVisible: true, subjectId, subjectKind });
+  } catch (error) {
+    logError("Phoenix CRM decision comment could not reach the rep", { error, labels: { event: "phoenix_crm_decision_comment_failed" } });
+  }
 }
 
 /**

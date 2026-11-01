@@ -232,7 +232,12 @@ function checkHisApprove(): void {
   assert.ok(start > 0, "the Super Admin can approve a place the system could not confirm");
   const body = reviews.slice(start, reviews.indexOf("\n}\n", start));
   assert.ok(body.indexOf("canDecideValidationReviews(viewer)") < body.indexOf("getSupabaseAdmin()"), "the Super Admin alone, before anything is read");
-  assert.ok(body.includes('if (existing && existing.status !== "pending") return { placeId, approved: false };'), "a decided place is left as it is");
+  // The decision stands and nothing is re-decided; only the comment written with the press still reaches the rep (owner, 2026-11-01).
+  assert.match(
+    body,
+    /if \(existing && existing\.status !== "pending"\) \{\s*await tellDecisionComment\(viewer, "place", placeId, note\);\s*return \{ placeId, approved: false \};\s*\}/,
+    "a decided place is left as it is",
+  );
   assert.ok(body.includes('reason: "confirmed_by_admin"'), "the review row says he confirmed it");
   assert.ok(body.includes('{ onConflict: "place_id" }'), "an upsert on the UNIQUE place_id");
   assert.ok(body.includes('decision: "approve"') && !body.includes('decision: "reject"'), "through the one approve");

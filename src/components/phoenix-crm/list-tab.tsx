@@ -777,6 +777,28 @@ function ListHome({
 
       {current === "board" ? <BoardSection onRowAction={onRowAction} resource={board} view={view} /> : null}
 
+      {/* A comment on a polyclinic or centre nobody is seated in has no customer card to sit on. It goes
+          here, under the chooser and only in this part (owner, 2026-09-30: no strip above the list). */}
+      {current === "to_validate" && view.emptyBuildingNotes.length > 0 ? (
+        <CrmBlock className="border-t border-slate-100">
+          <div className="min-w-0 space-y-3">
+            {view.emptyBuildingNotes.map((note) => (
+              <CrmNote key={note.noteId} title={note.authorText} tone="info">
+                {note.aboutBuilding ? (
+                  <span className="block break-words text-xs font-semibold text-slate-500" dir="auto">
+                    About the polyclinic or centre: {note.aboutBuilding}
+                  </span>
+                ) : null}
+                <span className="block break-words" dir="auto">
+                  {note.body}
+                </span>
+                <span className="mt-0.5 block text-xs font-semibold text-slate-500">{note.writtenAtText}</span>
+              </CrmNote>
+            ))}
+          </div>
+        </CrmBlock>
+      ) : null}
+
       {current === "to_validate" ? (
         <CustomerSection
           customers={pending}

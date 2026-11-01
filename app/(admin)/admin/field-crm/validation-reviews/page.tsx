@@ -6,6 +6,7 @@ import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
+import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
@@ -59,10 +60,8 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     loadReopenedCustomers(viewer),
     loadSharedPlaceBoard(viewer),
   ]);
-  const rows = reviews.rows;
   const validated = validatedRead.rows;
   const reopened = reopenedRead.rows;
-  const sharedPlaces = sharedRead.rows;
   const capped = {
     reviews: reviews.capped,
     validated: validatedRead.capped,
@@ -70,14 +69,22 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     sharedPlaces: sharedRead.capped,
   };
   const subjects = {
-    placeIds: [...rows.map((row) => row.placeId), ...validated.map((row) => row.placeId)],
-    sharedPlaceIds: sharedPlaces.map((row) => row.sharedPlaceId),
+    placeIds: [...reviews.rows.map((row) => row.placeId), ...validated.map((row) => row.placeId)],
+    sharedPlaceIds: sharedRead.rows.map((row) => row.sharedPlaceId),
   };
   // Every comment, recommendation and integrity case on this page's subjects — two reads for the whole
   // page, both keyed by `placeNoteSubjectKey` (owner, 2026-10-13). The evidence read lives in
   // `server/integrity-board.ts`, which is where a read of the evidence belongs, and is merged in here.
   const [notes, integrity] = await Promise.all([loadPlaceNoteIndex(subjects), loadPlaceCheckIntegrity(viewer, subjects)]);
   const noteIndex = { ...notes, integrity };
+  // A comment written with a decision is on the row as a comment too (`tellDecisionComment`), so it is
+  // drawn there, under "The rep can read this", and not a second time beside the decision.
+  const rows = reviews.rows.map((row) =>
+    decisionNoteIsAComment(row.decisionNote, notes.notes[placeNoteSubjectKey("place", row.placeId)] ?? []) ? { ...row, decisionNote: null } : row,
+  );
+  const sharedPlaces = sharedRead.rows.map((row) =>
+    decisionNoteIsAComment(row.decisionNote, notes.notes[placeNoteSubjectKey("shared_place", row.sharedPlaceId)] ?? []) ? { ...row, decisionNote: null } : row,
+  );
   const waiting = rows.filter((row) => row.status === "pending");
   const decided = rows.filter((row) => row.status !== "pending");
   // 🔴 THE CARDS COUNT WHAT THE BOARD DRAWS (owner, 2026-10-17: "is this a report that really shows me

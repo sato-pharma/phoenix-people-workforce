@@ -131,7 +131,7 @@ import {
   withdrawValidationNotConfirmed,
 } from "@/lib/phoenix-crm/server/validation-reviews";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
-import { loadRepVisiblePlaceNotes, type RepPlaceNote } from "@/lib/phoenix-crm/server/place-notes";
+import { loadRepVisibleBuildingNotes, loadRepVisiblePlaceNotes, type RepPlaceNote } from "@/lib/phoenix-crm/server/place-notes";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { resolvePinGeography, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -645,6 +645,11 @@ export type TerritoryListView = {
    * costs no extra read.
    */
   moveTargets: ListMoveTarget[];
+  /**
+   * The comments written about a polyclinic or centre with nobody seated in it, so on no customer's card:
+   * drawn inside To validate, and only for 30 days (`loadRepVisibleBuildingNotes`).
+   */
+  emptyBuildingNotes: RepPlaceNote[];
   readiness: ReadinessSummary & { readyAt: string | null };
   /** Whose iReports360 list the reference is; the name is null when that person is not on record. */
   referenceSource: { name: string | null; isCurrent: boolean } | null;
@@ -1528,6 +1533,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     loadLocationChecks(seat.seatId, isTest),
     // The comments somebody chose to show this territory's rep. Rep-visible only, in the query.
     loadRepVisiblePlaceNotes(seat.seatId, isTest),
+    loadRepVisibleBuildingNotes(seat.seatId, isTest),
     // The people named on the page, the moment the three reads that name them land.
     Promise.all([requestRowsRead, customersRead, referenceRead]).then(([requestRows, { customers }, reference]) =>
       loadPeopleNames([
@@ -1557,9 +1563,12 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     storedReadyAt,
     locationChecks,
     repNotes,
+    buildingNotes,
     names,
     referenceBrickMeta,
   ] = await wave;
+  // A comment on a building sits on the card of every customer seated there, beside his own.
+  for (const [customerId, notes] of buildingNotes.byCustomer) repNotes.set(customerId, [...(repNotes.get(customerId) ?? []), ...notes]);
   const requests = await withPlaceCheckHolds(
     viewer,
     isTest,
@@ -1748,6 +1757,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
           (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
           (left.repName ?? left.territoryName).localeCompare(right.repName ?? right.territoryName),
       ),
+    emptyBuildingNotes: buildingNotes.withNoCustomer,
     readiness: { ...summary, ready: summary.ready || Boolean(storedReadyAt), readyAt: storedReadyAt },
     referenceSource: source ? { name: nameOf(names, source.source_hr_id, "") || null, isCurrent: source.source_is_current } : null,
     reference: referenceEntries,

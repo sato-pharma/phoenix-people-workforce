@@ -817,8 +817,8 @@ export function ValidationReviewsBoard({
                 title={`${decidedTitle} (${filteredDecided.length})`}
                 description={
                   team
-                    ? "What has been settled, and the one sentence the rep was told about the photograph."
-                    : "What was approved or rejected, by whom, with the note kept on the record."
+                    ? "What has been settled, the one sentence the rep was told about the photograph, and any comment on it."
+                    : "What was approved or rejected, by whom, with the comment the rep and their manager read."
                 }
               >
                 {filteredDecided.length === 0 ? (
