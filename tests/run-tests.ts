@@ -6098,7 +6098,7 @@ await runTest("api-errors factories are always thrown, never called bare (a drop
 await runTest("direct orders report columns (positional twins, Arabic intact, nulls blank, NaN-safe totals)", runDirectOrderReportColumnsTests);
 await runTest("marketing request report columns (positional twins, owner's 16 headers first, Sunday-week W2 rule, Cairo times)", runMarketingRequestReportColumnsTests);
 await runTest("direct orders validation capture is reachable from BOTH the admin and portal routes (requester-only, held-only)", runDirectOrderValidationCaptureReachableTests);
-await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed, a timeout is silent and a refusal warns)", runDirectOrderSheetWebhookTests);
+await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed; on the Direct Orders and Marketing pings a timeout is silent and a refusal warns)", runDirectOrderSheetWebhookTests);
 await runTest("direct orders reverse authorization (scope guard inherited, registry-gated, real status passed)", runDirectOrderReverseAuthorizationTests);
 await runTest("direct orders error classification (every bare refusal reaches the caller as the right status, not 500)", runDirectOrderErrorClassificationTests);
 await runTest("direct orders workspace vocabulary (no database status reaches a user; the inbox never shows a queue nobody can clear)", runDirectOrderWorkspaceVocabularyTests);

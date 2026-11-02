@@ -1,12 +1,14 @@
 ---
 name: hr-operations-specialist-seat-owner-decisions
-description: "owner 2026-10-20 — role key \"HR Administration\" shown \"HR Operations Specialist\" (built for Yasmeena, HR-009, who was moved BACK to HR Operations on 2026-10-21; the seat is left in place, empty) is salary-blind everywhere except the renewal annex, prints 8 papers, reviews Daily & Weekly Reports in DAYS only; a manager's own visits COUNT in that manager's own row of her field report; \"HR Operations\" is shown \"HR Generalist\" and stays empty for a hire, its alerts falling to the Super Admin."
+description: "owner 2026-10-20 — role key \"HR Administration\" shown \"HR Operations Specialist\" (built for Yasmeena, HR-009, moved BACK to HR Operations on 2026-10-21; Aya Tarek holds it since 2026-10-28) is salary-blind everywhere except HR Forms, which he opened to her whole on 2026-11-02 with the Hiring Documents grant (she sees and prints the salary there and cannot change it), reviews Daily & Weekly Reports in DAYS only; a manager's own visits COUNT in that manager's own row of her field report; \"HR Operations\" is shown \"HR Generalist\" and stays empty for a hire, its alerts falling to the Super Admin."
 metadata:
   node_type: memory
   type: project
   originSessionId: 061d8c97-37ba-4e99-8b5d-a309001b06a0
   modified: 2026-10-27T22:09:29.491Z
 ---
+
+🔴 **2026-11-02: THE EIGHT-PAPER LIMIT BELOW IS GONE** — owner: "OPEN IN HER ACCOUNT Contact the joiner, confirm papers and attendance time/ Receive the hiring papers/ OPEN HR FORMS FULL MODULE TO AYA". Current rule: `.claude/rules/hiring-documents.md`.
 
 🔴 **2026-10-28: Aya Tarek (OF-0005, Office Coordinator) now HOLDS the `HR Administration` seat** — owner asked "add all modules in hr operations specialist account to the office coordinator account", then picked "Specialist seat, no salary" over Yasmeena's HR Operations seat. Four writes done (role, session_version 1→2, access profile SELF, both metadata blocks; she had no live sessions). The seat's alerts that fell to him while it was empty now reach her. Her `employees.job_title` stays "Office Coordinator".
 
