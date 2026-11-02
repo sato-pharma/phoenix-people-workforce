@@ -9,7 +9,6 @@ import {
   FilePlus2,
   Paperclip,
   RefreshCw,
-  ScanLine,
   Search,
   SlidersHorizontal,
   Table2,
@@ -18,18 +17,11 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
-import {
-  AdminCallout,
-  AdminInsightChip,
-  AdminPageHero,
-  AdminStatCard,
-  AdminTableShell,
-} from "@/components/admin/admin-design-system";
-import { Badge } from "@/components/ui/badge";
+import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
 import { HiringJoinersPanel } from "@/components/hiring-documents/hiring-joiners-panel";
+import { FieldLabel } from "@/components/ui/form-kit";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
@@ -39,11 +31,16 @@ import {
   HIRING_DOCUMENT_FILTER_ALL,
   HIRING_DOCUMENT_SCANNING_UNSCANNED,
   filterHiringDocumentEmployees,
-  hiringDocumentCompletionPercent,
   hiringDocumentFilterSearchParams,
   type HiringDocumentFilterState,
 } from "@/lib/hiring-documents/filters";
-import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
+import {
+  employeePapersStanding,
+  HIRING_DOCUMENT_SIGNAL_LABEL,
+  hiringDocumentsFor,
+  hiringDocumentSignal,
+  type HiringDocumentSignal,
+} from "@/lib/hiring-documents/readiness-signal";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -51,7 +48,9 @@ import type {
   HiringDocumentStatus,
 } from "@/lib/hiring-documents/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import {
+  phxLabelClassName,
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
@@ -67,7 +66,7 @@ type Props = {
   initialError: string | null;
 };
 
-type ActiveTab = "documents" | "capture" | "control";
+type ActiveTab = "joiners" | "documents" | "capture" | "control";
 
 // The sentinel, and the row filter under it, live in `@/lib/hiring-documents/filters` — the XLSX
 // export is built on the SERVER from the same filter state, and an export that does not match the
@@ -82,9 +81,28 @@ const frozenHeaderClassName =
 // row boundary, not to the cell — so a `border-b` stays behind the instant the header cell sticks
 // and the line under the header vanishes while you scroll. An inset shadow travels with the cell.
 const frozenHeaderStyle: React.CSSProperties = { boxShadow: "inset 0 -1px 0 var(--phx-line)" };
-const tableCellClassName = "border-b border-phx-line px-3 py-4 align-top";
-const inputClassName = "";
-const selectClassName  = phxSelectClassName;
+const tableCellClassName = "border-b border-phx-line px-3 py-3 align-top";
+const selectClassName = phxSelectClassName;
+const fieldLabelClassName = phxLabelClassName;
+const ledgerLabelClassName = "text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const ledgerValueClassName = "mt-1 text-2xl font-black tabular-nums text-phx-ink";
+const ledgerNoteClassName = "mt-0.5 text-phx-xs font-semibold text-phx-ink-soft";
+const documentButtonClassName = "h-auto min-h-9 gap-1 whitespace-normal px-1.5 py-1 text-phx-xs leading-tight";
+
+const SIGNAL_EDGE: Record<HiringDocumentSignal, string> = {
+  complete: "border-l-phx-ok",
+  missing: "border-l-phx-danger",
+  overdue: "border-l-phx-danger",
+  pending: "border-l-phx-line",
+  unevidenced: "border-l-phx-warn",
+};
+const SIGNAL_WORD: Record<HiringDocumentSignal, string> = {
+  complete: "text-phx-ok",
+  missing: "text-phx-danger",
+  overdue: "text-phx-danger",
+  pending: "text-phx-ink-soft",
+  unevidenced: "text-phx-warn",
+};
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
@@ -101,24 +119,14 @@ function uniqueOptions(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
 }
 
-function statusBadge(status: string | null | undefined) {
+/** Said only when it is news: nearly everyone on the list is active. */
+function statusWord(status: string | null | undefined) {
   const normalized = String(status ?? "active").toLowerCase();
-  // Same words as the filter's <option> list, from the same place. The badge only ever LOOKED
-  // right because `Badge` is styled `uppercase`; the string it was handed was the stored code.
+  // Same words as the filter's <option> list, from the same place.
   const label = employmentStatusLabel(normalized) || "Unknown";
-  if (normalized === "active" || normalized === "on_leave") {
-    return <Badge variant="success">{label}</Badge>;
-  }
-  if (normalized === "resigned" || normalized === "terminated") {
-    return <Badge variant="danger">{label}</Badge>;
-  }
-  return <Badge variant="warning">{label}</Badge>;
-}
-
-function documentStatusBadge(status: HiringDocumentStatus) {
-  if (status === "submitted") return <Badge variant="success">Submitted</Badge>;
-  if (status === "missing") return <Badge variant="danger">Missing</Badge>;
-  return <Badge variant="warning">Pending</Badge>;
+  if (normalized === "active") return null;
+  const tone = normalized === "on_leave" ? "text-phx-ink-soft" : normalized === "resigned" || normalized === "terminated" ? "text-phx-danger" : "text-phx-warn";
+  return <p className={cn("mt-0.5 text-phx-xs font-black", tone)}>{label}</p>;
 }
 
 function getCompletionPercent(data: HiringDocumentsDashboardData | null) {
@@ -126,12 +134,11 @@ function getCompletionPercent(data: HiringDocumentsDashboardData | null) {
   return Math.round((data.summary.submittedDocuments / data.summary.totalDocumentSlots) * 100);
 }
 
-// One arithmetic, shared with the export — the completion the workbook prints is the completion the
-// screen shows, and the completion filter narrows both by the same number.
-const employeeCompletion = hiringDocumentCompletionPercent;
-
 export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveFiles, initialData, initialError }: Props) {
-  const [activeTab, setActiveTab] = React.useState<ActiveTab>("documents");
+  const [activeTab, setActiveTab] = React.useState<ActiveTab>("joiners");
+  const [arrivingCount, setArrivingCount] = React.useState<number | null>(null);
+  // Whose papers are open beneath their row: one person at a time.
+  const [openHrId, setOpenHrId] = React.useState<string | null>(null);
   const [data, setData] = React.useState<HiringDocumentsDashboardData | null>(initialData);
   const [error, setError] = React.useState<string | null>(initialError);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -149,6 +156,7 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
   const [busyKey, setBusyKey] = React.useState<string | null>(null);
   // Which employee x document pair the Scan & Upload tab opens on. Set by the paperclip in a grid
   // cell, so HR never has to re-find in two dropdowns the row she is already looking at.
+  const captureSectionRef = React.useRef<HTMLDivElement>(null);
   const [captureTarget, setCaptureTarget] = React.useState<{ documentId: string; employeeHrId: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState(false);
@@ -203,128 +211,116 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
     (data?.summary.submittedDocuments ?? 0) - (data?.summary.scannedDocuments ?? 0),
   );
 
-  // One document's tick / missing / scan controls for one person. The desktop table and the phone
-  // card both draw it, so the two never drift.
+  // One document's standing and controls for one person. The desktop panel and the phone card both
+  // draw it, so the two never drift. Words on the buttons rather than icons: the row is read by someone
+  // holding a paper, and a tick, a cross and a paperclip each needed a tooltip to explain.
   const renderDocumentRow = (employee: (typeof filteredEmployees)[number], document: (typeof documents)[number]) => {
-                              const entry = employee.documents[document.id];
-                              const dueDate = entry?.dueDate ?? "";
-                              const status = entry?.status ?? "pending";
-                              const busy = Boolean(busyKey?.startsWith(`${employee.hrId}:${document.id}`));
+    const entry = employee.documents[document.id];
+    const dueDate = entry?.dueDate ?? "";
+    const status = entry?.status ?? "pending";
+    const fileCount = entry?.fileCount ?? 0;
+    const busy = Boolean(busyKey?.startsWith(`${employee.hrId}:${document.id}`));
+    const signal = hiringDocumentSignal({ dueDate: entry?.dueDate ?? null, fileCount, status });
 
-                              return (
-                                <div className="px-3 py-2.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="min-w-0 pr-2 text-xs font-bold text-phx-ink">{document.name}</p>
-                                    {documentStatusBadge(status)}
-                                  </div>
-                                  <div className="mt-2 flex items-center gap-2">
-                                    <Button
-                                      aria-label={
-                                        status === "submitted"
-                                          ? `Clear submitted tick for ${document.name} for ${employee.fullName}`
-                                          : `Mark ${document.name} submitted for ${employee.fullName}`
-                                      }
-                                      className="h-8 w-8  p-0"
-                                      disabled={!canManage || busy}
-                                      // Toggle: a second click clears the tick back to pending, so a
-                                      // mistaken tick can be undone and re-applied freely.
-                                      onClick={() =>
-                                        void updateDocumentStatus(
-                                          employee,
-                                          document,
-                                          status === "submitted" ? "pending" : "submitted",
-                                        )
-                                      }
-                                      title={status === "submitted" ? "Clear tick" : "Mark submitted"}
-                                      variant={status === "submitted" ? "default" : "secondary"}
-                                    >
-                                      <Check className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      aria-label={
-                                        status === "missing"
-                                          ? `Clear missing mark for ${document.name} for ${employee.fullName}`
-                                          : `Mark ${document.name} missing for ${employee.fullName}`
-                                      }
-                                      className="h-8 w-8  p-0"
-                                      disabled={!canManage || busy}
-                                      // Toggle: a second click clears the missing mark back to pending.
-                                      onClick={() =>
-                                        void updateDocumentStatus(
-                                          employee,
-                                          document,
-                                          status === "missing" ? "pending" : "missing",
-                                          dueDate || null,
-                                        )
-                                      }
-                                      title={status === "missing" ? "Clear mark" : "Mark missing"}
-                                      variant={status === "missing" ? "destructive" : "secondary"}
-                                    >
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      aria-label={`Scan or upload ${document.name} for ${employee.fullName}`}
-                                      className="h-8 gap-1  px-2"
-                                      onClick={() => openCapture(employee.hrId, document.id)}
-                                      title="Open Scan & Upload"
-                                      variant="secondary"
-                                    >
-                                      <Paperclip className="h-4 w-4" />
-                                      <span className="text-xs font-bold">{entry?.fileCount ?? 0}</span>
-                                    </Button>
-                                  </div>
-                                  {status === "submitted" && (entry?.fileCount ?? 0) === 0 ? (
-                                    <p className="mt-2 text-phx-xs font-semibold text-[#B45309]">
-                                      Ticked, no scan on file
-                                    </p>
-                                  ) : null}
-                                  {status === "missing" ? (
-                                    <label className="mt-2 block">
-                                      <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
-                                      <Input
-                                        className="h-9 text-xs"
-                                        disabled={!canManage || busy}
-                                        onBlur={(event) => {
-                                          const previous = deadlineOnFocusRef.current;
-                                          deadlineOnFocusRef.current = null;
-                                          if (previous !== null && !hiringDeadlineChanged(previous, event.target.value)) return;
-                                          void updateDocumentStatus(employee, document, "missing", normalizeHiringDeadline(event.target.value));
-                                        }}
-                                        onChange={(event) => {
-                                          const value = event.target.value;
-                                          setData((current) => {
-                                            if (!current) return current;
-                                            return {
-                                              ...current,
-                                              employees: current.employees.map((row) => row.hrId === employee.hrId
-                                                ? {
-                                                  ...row,
-                                                  documents: {
-                                                    ...row.documents,
-                                                    [document.id]: {
-                                                      ...row.documents[document.id],
-                                                      dueDate: value,
-                                                      documentId: document.id,
-                                                      status: "missing",
-                                                    },
-                                                  },
-                                                }
-                                                : row),
-                                            };
-                                          });
-                                        }}
-                                        onFocus={(event) => {
-                                          deadlineOnFocusRef.current = event.target.value;
-                                        }}
-                                        type="date"
-                                        value={dueDate}
-                                      />
-                                    </label>
-                                  ) : null}
-                                </div>
-                              );
+    return (
+      <div className={cn("border border-l-[3px] border-phx-line bg-white px-3 py-2.5 shadow-none", SIGNAL_EDGE[signal])}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <p className="min-w-0 break-words text-sm font-bold text-phx-ink">{document.name}</p>
+          <p className={cn("text-phx-xs font-black", SIGNAL_WORD[signal])}>{HIRING_DOCUMENT_SIGNAL_LABEL[signal]}</p>
+        </div>
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          <Button
+            aria-label={
+              status === "submitted"
+                ? `Clear submitted tick for ${document.name} for ${employee.fullName}`
+                : `Mark ${document.name} submitted for ${employee.fullName}`
+            }
+            aria-pressed={status === "submitted"}
+            className={documentButtonClassName}
+            disabled={!canManage || busy}
+            // Toggle: a second press clears it back to pending, so a mistaken tick can be undone.
+            onClick={() =>
+              void updateDocumentStatus(employee, document, status === "submitted" ? "pending" : "submitted")
+            }
+            variant={status === "submitted" ? "default" : "secondary"}
+          >
+            <Check className="h-3.5 w-3.5" />
+            Submitted
+          </Button>
+          <Button
+            aria-label={
+              status === "missing"
+                ? `Clear missing mark for ${document.name} for ${employee.fullName}`
+                : `Mark ${document.name} missing for ${employee.fullName}`
+            }
+            aria-pressed={status === "missing"}
+            className={documentButtonClassName}
+            disabled={!canManage || busy}
+            // Toggle: a second press clears the missing mark back to pending.
+            onClick={() =>
+              void updateDocumentStatus(employee, document, status === "missing" ? "pending" : "missing", dueDate || null)
+            }
+            variant={status === "missing" ? "destructive" : "secondary"}
+          >
+            <X className="h-3.5 w-3.5" />
+            Missing
+          </Button>
+          <Button
+            aria-label={`Scan or upload ${document.name} for ${employee.fullName}`}
+            className={documentButtonClassName}
+            onClick={() => openCapture(employee.hrId, document.id)}
+            variant="secondary"
+          >
+            <Paperclip className="h-3.5 w-3.5" />
+            {fileCount > 0 ? `${fileCount} on file` : "Scan"}
+          </Button>
+        </div>
+        {status === "missing" ? (
+          <label className="mt-2 block">
+            <span className={fieldLabelClassName}>Deadline</span>
+            <Input
+              className="h-9 text-xs"
+              disabled={!canManage || busy}
+              onBlur={(event) => {
+                const previous = deadlineOnFocusRef.current;
+                deadlineOnFocusRef.current = null;
+                if (previous !== null && !hiringDeadlineChanged(previous, event.target.value)) return;
+                void updateDocumentStatus(employee, document, "missing", normalizeHiringDeadline(event.target.value));
+              }}
+              onChange={(event) => {
+                const value = event.target.value;
+                setData((current) => {
+                  if (!current) return current;
+                  return {
+                    ...current,
+                    employees: current.employees.map((row) => row.hrId === employee.hrId
+                      ? {
+                        ...row,
+                        documents: {
+                          ...row.documents,
+                          [document.id]: {
+                            ...row.documents[document.id],
+                            dueDate: value,
+                            documentId: document.id,
+                            status: "missing",
+                          },
+                        },
+                      }
+                      : row),
+                  };
+                });
+              }}
+              onFocus={(event) => {
+                deadlineOnFocusRef.current = event.target.value;
+              }}
+              type="date"
+              value={dueDate}
+            />
+          </label>
+        ) : null}
+      </div>
+    );
   };
-
 
   async function refreshDashboard() {
     setIsRefreshing(true);
@@ -379,6 +375,11 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
     setNotice(null);
     setError(null);
   }
+
+  // The press can come from far down a long list, so the tab it opens starts off the screen. Follow it.
+  React.useEffect(() => {
+    if (captureTarget) captureSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [captureTarget]);
 
   async function updateDocumentStatus(
     employee: HiringDocumentEmployeeRow,
@@ -513,470 +514,538 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
     }
   }
 
-  return (
-    <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4  sm:p-6">
-      <div className="relative space-y-6">
-        <AdminPageHero
-          actions={
-            <div className="flex flex-wrap gap-2">
-              <Button
-                className="h-11 gap-2 "
-                disabled={isExporting || !data}
-                onClick={() => void exportWorkbook()}
-                variant="secondary"
-              >
-                {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
-                {isExporting ? "Building the workbook" : "Export XLSX"}
-              </Button>
-              <Button
-                className="h-11 gap-2 "
-                disabled={isRefreshing}
-                onClick={() => void refreshDashboard()}
-                variant="secondary"
-              >
-                {isRefreshing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Refresh
-              </Button>
-            </div>
-          }
-          badges={
-            <div className="flex flex-wrap gap-2">
-              <AdminInsightChip>{employees.length} employees</AdminInsightChip>
-              <AdminInsightChip tone="orange">{documents.length} documents</AdminInsightChip>
-              <AdminInsightChip tone="slate">{getCompletionPercent(data)}% complete</AdminInsightChip>
-            </div>
-          }
-          description="Track onboarding document submission by employee, mark delivered documents, set deadlines for missing items, and control the document checklist."
-          eyebrow="People Operations"
-          icon={<FileCheck2 className="h-3.5 w-3.5" />}
-          title="Hiring Documents"
-        />
+  const hasFilters =
+    query !== "" ||
+    lineFilter !== allValue ||
+    statusFilter !== allValue ||
+    managerFilter !== allValue ||
+    jobTitleFilter !== allValue ||
+    scanningFilter !== allValue ||
+    hireDateFrom !== "" ||
+    hireDateTo !== "" ||
+    completionMin !== "" ||
+    completionMax !== "";
 
-        {error ? (
-          <AdminCallout tone="danger">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-[#B91C1C]" />
-            <div>
-              <h2 className="text-sm font-bold text-[#B91C1C]">Hiring documents unavailable</h2>
-              <p className="mt-1 text-sm text-[#991B1B]">{error}</p>
-            </div>
-          </AdminCallout>
-        ) : null}
+  function clearFilters() {
+    setQuery("");
+    setLineFilter(allValue);
+    setStatusFilter(allValue);
+    setManagerFilter(allValue);
+    setJobTitleFilter(allValue);
+    setScanningFilter(allValue);
+    setHireDateFrom("");
+    setHireDateTo("");
+    setCompletionMin("");
+    setCompletionMax("");
+  }
 
-        {notice ? (
-          <AdminCallout tone="success">
-            <Check className="mt-0.5 h-5 w-5 text-[#166534]" />
-            <p className="text-sm font-bold text-[#166534]">{notice}</p>
-          </AdminCallout>
-        ) : null}
+  function showUnscanned() {
+    clearFilters();
+    setScanningFilter(HIRING_DOCUMENT_SCANNING_UNSCANNED);
+    setActiveTab("documents");
+  }
 
-        {/* Six tiles, so the track goes 2 -> 3 -> 6 rather than the old 2 -> 5: five columns of six
-            cards strands one on a row of its own, and three at `lg` keeps two even rows on the
-            widths between. */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <AdminStatCard description="Employees in the hiring document workflow." icon={<FileCheck2 className="h-5 w-5" />} label="Employees" value={data?.summary.employees ?? 0} tone="blue" />
-          <AdminStatCard description="Active checklist documents controlled by HR." icon={<FilePlus2 className="h-5 w-5" />} label="Documents" value={documents.length} />
-          <AdminStatCard description="Documents marked as delivered." icon={<Check className="h-5 w-5" />} label="Submitted" value={data?.summary.submittedDocuments ?? 0} tone="emerald" />
-          {/* Scanning progress, as a FRACTION on purpose. A bare count of scans reads as progress on
-              its own; what matters is how far it trails the ticks, and on production that gap was 3
-              files against 380 ticks. The description carries the gap in words, because the gap IS
-              the work — and it says so plainly rather than leaving a reader to subtract. */}
-          <AdminStatCard
-            description={
-              scanGap > 0
-                ? `${scanGap} submitted ${scanGap === 1 ? "document has" : "documents have"} no file on record yet.`
-                : "Every submitted document has a scan on file."
-            }
-            icon={<ScanLine className="h-5 w-5" />}
-            label="Scanned"
-            tone="violet"
-            value={`${data?.summary.scannedDocuments ?? 0} / ${data?.summary.submittedDocuments ?? 0}`}
-          />
-          <AdminStatCard description="Documents marked missing by HR." icon={<X className="h-5 w-5" />} label="Missing" value={data?.summary.missingDocuments ?? 0} tone="rose" />
-          <AdminStatCard description="Missing documents with due date today or earlier." icon={<AlertTriangle className="h-5 w-5" />} label="Due" value={data?.summary.dueDocuments ?? 0} tone="orange" />
+  const tabs: Array<{ id: ActiveTab; label: string }> = [
+    { id: "joiners", label: arrivingCount === null ? "Joiners arriving" : `Joiners arriving · ${arrivingCount}` },
+    { id: "documents", label: `All employees · ${employees.length}` },
+    { id: "capture", label: "Scan & Upload" },
+    ...(canEditChecklist ? [{ id: "control" as const, label: "Checklist" }] : []),
+  ];
+
+  const renderNotes = (employee: (typeof filteredEmployees)[number]) => (
+    <div>
+      <span className={fieldLabelClassName}>Notes</span>
+      <textarea
+        aria-label={`HR notes for ${employee.fullName}`}
+        className={cn(phxTextareaClassName, "min-h-24")}
+        disabled={!canManage || busyKey === `${employee.hrId}:notes`}
+        onBlur={(event) => {
+          const currentValue = event.target.value;
+          if (currentValue !== (employee.notes ?? "")) void saveEmployeeNotes(employee.hrId, currentValue);
+        }}
+        onChange={(event) => setDraftNotes((current) => ({ ...current, [employee.hrId]: event.target.value }))}
+        placeholder="HR notes..."
+        value={draftNotes[employee.hrId] ?? employee.notes ?? ""}
+      />
+    </div>
+  );
+
+  const renderPapers = (employee: (typeof filteredEmployees)[number]) => {
+    const standing = employeePapersStanding(documents, employee);
+    if (standing.total === 0) return <p className="text-phx-xs font-semibold text-phx-ink-soft">No papers asked of them.</p>;
+    const percent = Math.round((standing.received / standing.total) * 100);
+    const complete = standing.received === standing.total;
+    return (
+      <div>
+        <p className="text-sm font-black tabular-nums text-phx-ink">
+          {standing.received} of {standing.total}
+          <span className="ml-1 text-phx-xs font-semibold text-phx-ink-soft">submitted</span>
+        </p>
+        <div
+          aria-label={`Papers submitted by ${employee.fullName}`}
+          aria-valuemax={standing.total}
+          aria-valuemin={0}
+          aria-valuenow={standing.received}
+          className="mt-1 h-1 w-full bg-phx-line"
+          role="progressbar"
+        >
+          <div className={cn("h-full", complete ? "bg-phx-ok" : "bg-phx-accent")} style={{ width: `${percent}%` }} />
         </div>
+        {standing.overdue > 0 || standing.missing > 0 || standing.noScan > 0 ? (
+          <p className="mt-1.5 text-phx-xs font-bold">
+            {[
+              standing.overdue > 0 ? <span className="text-phx-danger" key="overdue">{standing.overdue} overdue</span> : null,
+              standing.missing > 0 ? <span className="text-phx-danger" key="missing">{standing.missing} missing</span> : null,
+              standing.noScan > 0 ? <span className="text-phx-warn" key="scan">{standing.noScan} no scan</span> : null,
+            ]
+              .filter(Boolean)
+              .map((word, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 ? " · " : null}
+                  {word}
+                </React.Fragment>
+              ))}
+          </p>
+        ) : null}
+      </div>
+    );
+  };
 
-        <HiringJoinersPanel
-          canManage={canManage}
-          documents={documents}
-          employees={employees}
-          onReceivePapers={openCapture}
-        />
+  const renderToggle = (employee: (typeof filteredEmployees)[number], panelId: string) => {
+    const open = openHrId === employee.hrId;
+    const Chevron = open ? ChevronUp : ChevronDown;
+    return (
+      <Button
+        {...rowDetailToggleProps(panelId, open)}
+        aria-label={`${open ? "Close" : "Open"} the papers of ${employee.fullName}`}
+        className="h-9 w-full gap-1.5"
+        onClick={() => setOpenHrId(open ? null : employee.hrId)}
+        variant="secondary"
+      >
+        {open ? "Close" : "Open"}
+        <Chevron className="h-4 w-4" />
+      </Button>
+    );
+  };
 
-        <div className="flex flex-wrap gap-2  border border-phx-line bg-white p-2 shadow-sm">
-          <Button
-            className="h-10 "
-            onClick={() => setActiveTab("documents")}
-            variant={activeTab === "documents" ? "default" : "ghost"}
-          >
-            Hiring Documents
-          </Button>
-          <Button
-            className="h-10 "
-            onClick={() => setActiveTab("capture")}
-            variant={activeTab === "capture" ? "default" : "ghost"}
-          >
-            Scan &amp; Upload
-          </Button>
-          {canEditChecklist ? (
+  return (
+    <div className="space-y-5">
+      <AdminPageHero
+        actions={
+          <div className="flex flex-wrap gap-2">
             <Button
-              className="h-10 "
-              onClick={() => setActiveTab("control")}
-              variant={activeTab === "control" ? "default" : "ghost"}
+              className="h-10 gap-2"
+              disabled={isExporting || !data}
+              onClick={() => void exportWorkbook()}
+              variant="secondary"
             >
-              Hiring Documents Control
+              {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+              {isExporting ? "Building the workbook" : "Export XLSX"}
             </Button>
+            <Button
+              className="h-10 gap-2"
+              disabled={isRefreshing}
+              onClick={() => void refreshDashboard()}
+              variant="secondary"
+            >
+              <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
+        }
+        description={
+          canEditChecklist
+            ? "Contact the people arriving, receive their papers, and keep the document checklist."
+            : "Contact the people arriving and receive their papers."
+        }
+        eyebrow="People Operations"
+        icon={<FileCheck2 className="h-3.5 w-3.5" />}
+        title="Hiring Documents"
+      />
+
+      {/* The page runs long, so a message that stays at the top is a message nobody reads. It follows. */}
+      {error || notice ? (
+        <div aria-live="polite" className="sticky top-2 z-20 space-y-2">
+          {error ? (
+            <AdminCallout tone="danger">
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-[#B91C1C]" />
+              <div>
+                <h2 className="text-sm font-bold text-[#B91C1C]">Hiring documents unavailable</h2>
+                <p className="mt-1 text-sm text-[#991B1B]">{error}</p>
+              </div>
+            </AdminCallout>
+          ) : null}
+          {notice ? (
+            <AdminCallout tone="success">
+              <Check className="mt-0.5 h-5 w-5 text-[#166534]" />
+              <p className="text-sm font-bold text-[#166534]">{notice}</p>
+            </AdminCallout>
           ) : null}
         </div>
+      ) : null}
 
-        {activeTab === "capture" ? (
-          <AdminTableShell
-            description="Photograph a document with the camera and Phoenix turns the pages into one clean PDF, or upload a file the office scanner already produced. Attaching a document ticks it on the checklist."
-            title="Scan & Upload"
-          >
-            <HiringDocumentCapture
+      {/* One flat strip, so the first screen is the work. No figures when the read failed: an
+          unavailable source says so above, and a row of zeros would read as an answer. */}
+      {data ? (
+        <dl className="grid grid-cols-2 gap-px border border-phx-line bg-phx-line lg:grid-cols-5">
+          <div className="col-span-2 bg-white px-4 py-3 lg:col-span-1">
+            <dt className={ledgerLabelClassName}>Employees</dt>
+            <dd className={ledgerValueClassName}>{data.summary.employees}</dd>
+            <dd className={ledgerNoteClassName}>{documents.length} papers on the checklist</dd>
+          </div>
+          <div className="bg-white px-4 py-3">
+            <dt className={ledgerLabelClassName}>Submitted</dt>
+            <dd className={ledgerValueClassName}>
+              {data.summary.submittedDocuments}
+              <span className="text-sm font-bold text-phx-ink-soft"> of {data.summary.totalDocumentSlots}</span>
+            </dd>
+            <dd className={ledgerNoteClassName}>{getCompletionPercent(data)}% of what is owed</dd>
+          </div>
+          {/* A fraction on purpose: what matters is how far the scans trail the ticks, and the gap IS
+              the work, so it is said in words and is one press from the people it means. */}
+          <div className="bg-white px-4 py-3">
+            <dt className={ledgerLabelClassName}>Scanned</dt>
+            <dd className={ledgerValueClassName}>
+              {data.summary.scannedDocuments}
+              <span className="text-sm font-bold text-phx-ink-soft"> of {data.summary.submittedDocuments}</span>
+            </dd>
+            <dd className={ledgerNoteClassName}>
+              {scanGap > 0 ? (
+                <button className="text-left font-bold text-phx-accent-press hover:underline" onClick={showUnscanned} type="button">
+                  {scanGap} with no file. Show who
+                </button>
+              ) : (
+                "Every submitted paper has a scan"
+              )}
+            </dd>
+          </div>
+          <div className="bg-white px-4 py-3">
+            <dt className={ledgerLabelClassName}>Missing</dt>
+            <dd className={cn(ledgerValueClassName, data.summary.missingDocuments > 0 && "text-phx-warn")}>{data.summary.missingDocuments}</dd>
+            <dd className={ledgerNoteClassName}>Marked missing by HR</dd>
+          </div>
+          <div className="bg-white px-4 py-3">
+            <dt className={ledgerLabelClassName}>Due</dt>
+            <dd className={cn(ledgerValueClassName, data.summary.dueDocuments > 0 && "text-phx-danger")}>{data.summary.dueDocuments}</dd>
+            <dd className={ledgerNoteClassName}>Deadline today or earlier</dd>
+          </div>
+        </dl>
+      ) : null}
+
+      <div className="scroll-mt-4" ref={captureSectionRef}>
+        <div aria-label="Hiring documents sections" className="grid grid-cols-2 border-b border-phx-line sm:flex sm:flex-wrap" role="tablist">
+          {tabs.map((tab) => (
+            <button
+              aria-selected={activeTab === tab.id}
+              className={cn(
+                "-mb-px min-h-11 border-b-2 px-4 py-2 text-left text-sm transition-colors",
+                activeTab === tab.id
+                  ? "border-phx-accent font-black text-phx-ink"
+                  : "border-transparent font-bold text-phx-ink-soft hover:text-phx-ink",
+              )}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="pt-4">
+          {/* Stays mounted on every tab: going to receive a paper and coming back must not lose what
+              was typed for a joiner, and the tab above reads its count from here. */}
+          <div className={activeTab === "joiners" ? undefined : "hidden"}>
+            <HiringJoinersPanel
               canManage={canManage}
-              canRemoveFiles={canRemoveFiles}
               documents={documents}
               employees={employees}
-              initialDocumentId={captureTarget?.documentId ?? null}
-              initialEmployeeHrId={captureTarget?.employeeHrId ?? null}
-              key={`${captureTarget?.employeeHrId ?? ""}:${captureTarget?.documentId ?? ""}`}
-              onChanged={refreshDashboard}
+              onArrivingCount={setArrivingCount}
+              onReceivePapers={openCapture}
             />
-          </AdminTableShell>
-        ) : null}
+          </div>
 
-        {activeTab === "documents" ? (
-          <>
+          {activeTab === "capture" ? (
             <AdminTableShell
-              description="Filter the employee checklist before updating submitted or missing document status."
-              title="Hiring Documents Filters"
+              description="Photograph a document and Phoenix turns the pages into one clean PDF, or upload a file the office scanner already produced. Attaching a document ticks it on the checklist."
+              title="Scan & Upload"
             >
-                <div className="mb-3 flex flex-wrap gap-2">
-                  <Button
-                    className="h-10 gap-2 "
-                    onClick={() => setAdvancedOpen((value) => !value)}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <SlidersHorizontal className="h-4 w-4" />
-                    Advanced Filters
-                    {advancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    className="h-10 "
-                    onClick={() => {
-                      setQuery("");
-                      setLineFilter(allValue);
-                      setStatusFilter(allValue);
-                      setManagerFilter(allValue);
-                      setJobTitleFilter(allValue);
-                      setScanningFilter(allValue);
-                      setHireDateFrom("");
-                      setHireDateTo("");
-                      setCompletionMin("");
-                      setCompletionMax("");
-                    }}
-                    type="button"
-                    variant="ghost"
-                  >
-                    Clear Filters
-                  </Button>
-                </div>
-                <div className="grid gap-3 p-4 lg:grid-cols-3">
-                  <label className="relative block">
-                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Search</span>
-                    <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-phx-ink-soft" />
-                    <Input
-                    className={`${inputClassName} pl-9`}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Employee, HR ID, manager..."
-                    value={query}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
-                  <SearchableSelect className={selectClassName} onChange={(event) => setLineFilter(event.target.value)} value={lineFilter}>
-                    <option value={allValue}>All lines</option>
-                    {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
-                  </SearchableSelect>
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Employee Status</span>
-                  <SearchableSelect className={selectClassName} onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
-                    <option value={allValue}>All statuses</option>
-                    {statusOptions.map((status) => <option key={status} value={status}>{employmentStatusLabel(status)}</option>)}
-                  </SearchableSelect>
-                </label>
+              <div className="p-4">
+                <HiringDocumentCapture
+                  canManage={canManage}
+                  canRemoveFiles={canRemoveFiles}
+                  documents={documents}
+                  employees={employees}
+                  initialDocumentId={captureTarget?.documentId ?? null}
+                  initialEmployeeHrId={captureTarget?.employeeHrId ?? null}
+                  key={`${captureTarget?.employeeHrId ?? ""}:${captureTarget?.documentId ?? ""}`}
+                  onChanged={refreshDashboard}
+                />
               </div>
-              {advancedOpen ? (
-                <div className="grid gap-3 border-t border-phx-line bg-white/80 p-4 lg:grid-cols-3">
-                  <label className="block">
-                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Manager</span>
-                    <SearchableSelect className={selectClassName} onChange={(event) => setManagerFilter(event.target.value)} value={managerFilter}>
-                      <option value={allValue}>All managers</option>
-                      {managerOptions.map((manager) => <option key={manager} value={manager}>{manager}</option>)}
-                    </SearchableSelect>
-                  </label>
-                  <label className="block">
-                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Job Title</span>
-                    <SearchableSelect className={selectClassName} onChange={(event) => setJobTitleFilter(event.target.value)} value={jobTitleFilter}>
-                      <option value={allValue}>All job titles</option>
-                      {jobTitleOptions.map((title) => <option key={title} value={title}>{title}</option>)}
-                    </SearchableSelect>
-                  </label>
-                  <label className="block">
-                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Scanning</span>
-                    {/* Its own filter, not a completion range: an employee can read 100% complete and
-                        still have every one of those documents unscanned, which is the state production
-                        is in. No completion range can find that work. */}
-                    <select className={selectClassName} onChange={(event) => setScanningFilter(event.target.value)} value={scanningFilter}>
-                      <option value={allValue}>All employees</option>
-                      <option value={HIRING_DOCUMENT_SCANNING_UNSCANNED}>Only with documents to scan</option>
-                    </select>
-                  </label>
-                  <label className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date From</span>
-                      <Input className={inputClassName} onChange={(event) => setHireDateFrom(event.target.value)} type="date" value={hireDateFrom} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date To</span>
-                      <Input className={inputClassName} onChange={(event) => setHireDateTo(event.target.value)} type="date" value={hireDateTo} />
-                    </div>
-                  </label>
-                  <label className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Min %</span>
-                      <Input
-                        className={inputClassName}
-                        onChange={(event) => setCompletionMin(event.target.value)}
-                        type="number"
-                        value={completionMin}
-                        max={100}
-                        min={0}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Max %</span>
-                      <Input
-                        className={inputClassName}
-                        onChange={(event) => setCompletionMax(event.target.value)}
-                        type="number"
-                        value={completionMax}
-                        max={100}
-                        min={0}
-                      />
-                    </div>
-                  </label>
-                </div>
-              ) : null}
             </AdminTableShell>
+          ) : null}
 
-            {/* Desktop: one row per employee. The document columns of the old matrix are one checklist
-                cell, so the table fits the screen however many documents are configured. */}
-            <Card className="hidden overflow-hidden border border-phx-line bg-white p-0 md:block">
-              <div className="max-h-[70vh] overflow-y-auto">
-                <table className="w-full table-fixed text-sm">
-                  <colgroup>
-                    <col className="w-[28%]" />
-                    <col className="w-[44%]" />
-                    <col className="w-[28%]" />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Employee</th>
-                      <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Documents</th>
-                      <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredEmployees.length === 0 ? (
-                      <tr>
-                        <td className="px-3 py-12 text-center text-sm text-phx-ink-soft" colSpan={3}>
-                          No employees match the current filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredEmployees.map((employee, index) => {
-                        const applicableDocuments = hiringDocumentsFor(documents, employee);
-                        return (
-                          <tr className="hover:bg-phx-accent-soft/40" key={`${employee.hrId}-${index}`}>
-                            <td className={`${tableCellClassName} break-words`}>
-                              <p className="font-bold text-phx-ink">{employee.fullName}</p>
-                              <p className="mt-1 text-xs text-phx-ink-soft">{employee.jobTitle ?? "—"}</p>
-                              <p className="mt-1 text-xs text-phx-ink-soft">
-                                {employee.lineName ?? "—"} · hired {formatDate(employee.hireDate)}
-                              </p>
-                              <p className="mt-1 text-xs text-phx-ink-soft">Manager: {employee.managerName ?? "—"}</p>
-                              <div className="mt-2 flex flex-wrap items-center gap-2">
-                                {statusBadge(employee.employmentStatus)}
-                                <Badge variant="neutral">{employeeCompletion(employee, documents)}%</Badge>
-                              </div>
-                            </td>
-                            <td className={`${tableCellClassName} break-words`}>
-                              {applicableDocuments.length === 0 ? (
-                                <p className="text-xs text-phx-ink-soft">No hiring documents configured.</p>
-                              ) : (
-                                <div className="divide-y divide-phx-line border border-phx-line">
-                                  {applicableDocuments.map((document) => (
-                                    <React.Fragment key={`${employee.hrId}:${document.id}`}>
-                                      {renderDocumentRow(employee, document)}
-                                    </React.Fragment>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
-                            <td className={tableCellClassName}>
-                              <textarea
-                                className={cn(phxTextareaClassName, "min-h-24")}
-                                disabled={!canManage || busyKey === `${employee.hrId}:notes`}
-                                onBlur={(event) => {
-                                  const currentValue = event.target.value;
-                                  if (currentValue !== (employee.notes ?? "")) void saveEmployeeNotes(employee.hrId, currentValue);
-                                }}
-                                onChange={(event) => setDraftNotes((current) => ({ ...current, [employee.hrId]: event.target.value }))}
-                                placeholder="HR notes..."
-                                value={draftNotes[employee.hrId] ?? employee.notes ?? ""}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-
-            {/* Mobile: one card per employee, name/HR ID as the title, and a compact
-                submitted/missing checklist (one row per document type) as the body,
-                instead of forcing the 10+ column matrix into a cramped card. */}
-            <Card className="divide-y divide-phx-line  border border-phx-line bg-white p-0  md:hidden">
-              {filteredEmployees.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-phx-ink-soft">
-                  No employees match the current filters.
+          {activeTab === "documents" ? (
+            <div className="space-y-3">
+              <div className="border border-phx-line bg-white p-4 shadow-none">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  <div>
+                    <FieldLabel htmlFor="hiring-documents-search">Search</FieldLabel>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
+                      <Input
+                        className="pl-9"
+                        id="hiring-documents-search"
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Employee, HR ID, manager"
+                        value={query}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="hiring-documents-line">Line</FieldLabel>
+                    <SearchableSelect className={selectClassName} id="hiring-documents-line" onChange={(event) => setLineFilter(event.target.value)} value={lineFilter}>
+                      <option value={allValue}>All lines</option>
+                      {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
+                    </SearchableSelect>
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="hiring-documents-status">Employee Status</FieldLabel>
+                    <SearchableSelect className={selectClassName} id="hiring-documents-status" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
+                      <option value={allValue}>All statuses</option>
+                      {statusOptions.map((status) => <option key={status} value={status}>{employmentStatusLabel(status)}</option>)}
+                    </SearchableSelect>
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      aria-expanded={advancedOpen}
+                      className="h-10 w-full gap-2 md:w-auto"
+                      onClick={() => setAdvancedOpen((value) => !value)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                      More filters
+                      {advancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
-              ) : (
-                filteredEmployees.map((employee, index) => {
-                  const completion = employeeCompletion(employee, documents);
-                  // The documents that apply to THIS person: an exit paper is not on an active
-                  // employee's card at all, so the count under it is out of what they can actually
-                  // be asked for.
-                  const applicableDocuments = hiringDocumentsFor(documents, employee);
-                  const submittedCount = applicableDocuments.filter(
-                    (document) => employee.documents[document.id]?.status === "submitted",
-                  ).length;
 
-                  return (
-                    <div className="px-4 py-4" key={`${employee.hrId}-${index}-mobile`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-black text-phx-ink">{employee.fullName}</p>
-                          <p className="mt-0.5 text-xs text-phx-ink-soft">{employee.jobTitle ?? "—"}</p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1.5">
-                          {statusBadge(employee.employmentStatus)}
-                          <Badge variant="neutral">{completion}%</Badge>
-                        </div>
+                {advancedOpen ? (
+                  <div className="mt-3 grid gap-3 border-t border-phx-line pt-3 md:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <FieldLabel htmlFor="hiring-documents-manager">Manager</FieldLabel>
+                      <SearchableSelect className={selectClassName} id="hiring-documents-manager" onChange={(event) => setManagerFilter(event.target.value)} value={managerFilter}>
+                        <option value={allValue}>All managers</option>
+                        {managerOptions.map((manager) => <option key={manager} value={manager}>{manager}</option>)}
+                      </SearchableSelect>
+                    </div>
+                    <div>
+                      <FieldLabel htmlFor="hiring-documents-title">Job Title</FieldLabel>
+                      <SearchableSelect className={selectClassName} id="hiring-documents-title" onChange={(event) => setJobTitleFilter(event.target.value)} value={jobTitleFilter}>
+                        <option value={allValue}>All job titles</option>
+                        {jobTitleOptions.map((title) => <option key={title} value={title}>{title}</option>)}
+                      </SearchableSelect>
+                    </div>
+                    <div>
+                      <FieldLabel htmlFor="hiring-documents-scanning">Scanning</FieldLabel>
+                      {/* Its own filter, not a completion range: an employee can read 100% complete and
+                          still have every one of those documents unscanned, and no range can find that. */}
+                      <select className={selectClassName} id="hiring-documents-scanning" onChange={(event) => setScanningFilter(event.target.value)} value={scanningFilter}>
+                        <option value={allValue}>All employees</option>
+                        <option value={HIRING_DOCUMENT_SCANNING_UNSCANNED}>Only with documents to scan</option>
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <FieldLabel htmlFor="hiring-documents-hired-from">Hired from</FieldLabel>
+                        <Input id="hiring-documents-hired-from" onChange={(event) => setHireDateFrom(event.target.value)} type="date" value={hireDateFrom} />
                       </div>
+                      <div>
+                        <FieldLabel htmlFor="hiring-documents-hired-to">Hired to</FieldLabel>
+                        <Input id="hiring-documents-hired-to" onChange={(event) => setHireDateTo(event.target.value)} type="date" value={hireDateTo} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <FieldLabel htmlFor="hiring-documents-completion-min">Completion min %</FieldLabel>
+                        <Input id="hiring-documents-completion-min" max={100} min={0} onChange={(event) => setCompletionMin(event.target.value)} type="number" value={completionMin} />
+                      </div>
+                      <div>
+                        <FieldLabel htmlFor="hiring-documents-completion-max">Completion max %</FieldLabel>
+                        <Input id="hiring-documents-completion-max" max={100} min={0} onChange={(event) => setCompletionMax(event.target.value)} type="number" value={completionMax} />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
-                      <dl className="mt-3 grid grid-cols-2 gap-2">
-                        <div className=" border border-phx-line bg-phx-paper px-2.5 py-2">
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Line</dt>
-                          <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">{employee.lineName ?? "—"}</dd>
-                        </div>
-                        <div className=" border border-phx-line bg-phx-paper px-2.5 py-2">
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Hiring Date</dt>
-                          <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">{formatDate(employee.hireDate)}</dd>
-                        </div>
-                        <div className="col-span-2  border border-phx-line bg-phx-paper px-2.5 py-2">
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Manager</dt>
-                          <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">
-                            {employee.managerName ?? "—"}
-                          </dd>
-                        </div>
-                      </dl>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-phx-line pt-3">
+                  <p className="text-phx-xs font-bold tabular-nums text-phx-ink-soft">
+                    Showing {filteredEmployees.length} of {employees.length}. Export XLSX follows these filters.
+                  </p>
+                  {hasFilters ? (
+                    <Button className="h-8" onClick={clearFilters} type="button" variant="ghost">
+                      Clear filters
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
 
-                      <div className="mt-3">
-                        <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-                          Documents ({submittedCount}/{applicableDocuments.length} submitted)
-                        </p>
-                        <div className="divide-y divide-phx-line  border border-phx-line">
-                          {applicableDocuments.length === 0 ? (
-                            <div className="px-3 py-3 text-xs text-phx-ink-soft">No hiring documents configured.</div>
-                          ) : (
-                            applicableDocuments.map((document) => (
+              {/* Desktop: ONE LINE PER EMPLOYEE. Ten papers with three controls each made every row
+                  about 700px tall, so a list of two hundred people could not be read at all. A row's
+                  papers open beneath it as its joined panel, one person at a time. */}
+              <div className="hidden border border-phx-line bg-white shadow-none md:block">
+                <div className="max-h-[75vh] overflow-y-auto">
+                  <table className="w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-[34%]" />
+                      <col className="w-[24%]" />
+                      <col className="w-[28%]" />
+                      <col className="w-[14%]" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Employee</th>
+                        <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Line and manager</th>
+                        <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Papers</th>
+                        <th className={frozenHeaderClassName} style={frozenHeaderStyle}>Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredEmployees.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-12 text-center text-sm text-phx-ink-soft" colSpan={4}>
+                            {data ? "No employees match the current filters." : "The list could not be read. Press Refresh to try again."}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredEmployees.map((employee, index) => {
+                          const panelId = `hiring-employee-panel-${index}`;
+                          return (
+                            <React.Fragment key={`${employee.hrId}-${index}`}>
+                              <tr>
+                                <td className={`${tableCellClassName} break-words`}>
+                                  <p className="font-black text-phx-ink" dir="auto">{employee.fullName}</p>
+                                  <p className="mt-0.5 text-phx-xs font-semibold text-phx-ink-soft">
+                                    {employee.jobTitle ?? "No job title"}
+                                  </p>
+                                  {statusWord(employee.employmentStatus)}
+                                </td>
+                                <td className={`${tableCellClassName} break-words`}>
+                                  <p className="text-phx-xs font-bold text-phx-ink">{employee.lineName ?? "No line"}</p>
+                                  <p className="mt-0.5 text-phx-xs font-semibold text-phx-ink-soft">{employee.managerName ?? "No manager"}</p>
+                                  <p className="text-phx-xs font-semibold text-phx-ink-faint">Hired {formatDate(employee.hireDate)}</p>
+                                </td>
+                                <td className={tableCellClassName}>{renderPapers(employee)}</td>
+                                <td className={tableCellClassName}>{renderToggle(employee, panelId)}</td>
+                              </tr>
+                              {openHrId === employee.hrId ? (
+                                <TableRowDetail className="px-3 pb-4" colSpan={4} id={panelId}>
+                                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
+                                    <div className="grid content-start gap-2 lg:grid-cols-2">
+                                      {hiringDocumentsFor(documents, employee).map((document) => (
+                                        <React.Fragment key={`${employee.hrId}:${document.id}`}>
+                                          {renderDocumentRow(employee, document)}
+                                        </React.Fragment>
+                                      ))}
+                                    </div>
+                                    {renderNotes(employee)}
+                                  </div>
+                                </TableRowDetail>
+                              ) : null}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Phone: the same one line per person, as a card, with the same panel under it. */}
+              <div className="space-y-3 md:hidden">
+                {filteredEmployees.length === 0 ? (
+                  <div className="border border-phx-line bg-white px-4 py-12 text-center text-sm text-phx-ink-soft shadow-none">
+                    {data ? "No employees match the current filters." : "The list could not be read. Press Refresh to try again."}
+                  </div>
+                ) : (
+                  filteredEmployees.map((employee, index) => {
+                    const panelId = `hiring-employee-card-panel-${index}`;
+                    return (
+                      <div className="space-y-3 border border-phx-line bg-white p-4 shadow-none" key={`${employee.hrId}-${index}-mobile`}>
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-black text-phx-ink" dir="auto">{employee.fullName}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{employee.jobTitle ?? "No job title"}</p>
+                          <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">
+                            {employee.lineName ?? "No line"} · {employee.managerName ?? "No manager"}
+                          </p>
+                          <p className="text-phx-xs font-semibold text-phx-ink-faint">Hired {formatDate(employee.hireDate)}</p>
+                          {statusWord(employee.employmentStatus)}
+                        </div>
+                        {renderPapers(employee)}
+                        {renderToggle(employee, panelId)}
+                        {openHrId === employee.hrId ? (
+                          <div className="space-y-2 border-t border-phx-line pt-3" id={panelId}>
+                            {hiringDocumentsFor(documents, employee).map((document) => (
                               <React.Fragment key={`${employee.hrId}:${document.id}:mobile`}>
                                 {renderDocumentRow(employee, document)}
                               </React.Fragment>
-                            ))
-                          )}
-                        </div>
+                            ))}
+                            {renderNotes(employee)}
+                          </div>
+                        ) : null}
                       </div>
-
-                      <div className="mt-3">
-                        <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Notes</span>
-                        <textarea
-                          className={cn(phxTextareaClassName, "min-h-20")}
-                          disabled={!canManage || busyKey === `${employee.hrId}:notes`}
-                          onBlur={(event) => {
-                            const currentValue = event.target.value;
-                            if (currentValue !== (employee.notes ?? "")) void saveEmployeeNotes(employee.hrId, currentValue);
-                          }}
-                          onChange={(event) => setDraftNotes((current) => ({ ...current, [employee.hrId]: event.target.value }))}
-                          placeholder="HR notes..."
-                          value={draftNotes[employee.hrId] ?? employee.notes ?? ""}
-                        />
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </Card>
-          </>
-        ) : (
-          <AdminTableShell
-            description="Add or remove checklist documents. New documents immediately appear as new columns in the hiring documents table."
-            title="Hiring Documents Control"
-          >
-            <div className="grid gap-3 p-4 lg:grid-cols-[1fr_1fr_auto]">
-              <label className="block">
-                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Document Name</span>
-                <Input
-                  className={inputClassName}
-                  disabled={!canManage}
-                  onChange={(event) => setNewDocumentName(event.target.value)}
-                  placeholder="e.g. Syndicate card"
-                  value={newDocumentName}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Description</span>
-                <Input
-                  className={inputClassName}
-                  disabled={!canManage}
-                  onChange={(event) => setNewDocumentDescription(event.target.value)}
-                  placeholder="Optional control note"
-                  value={newDocumentDescription}
-                />
-              </label>
-              <div className="flex items-end">
-                <Button
-                  className="h-10 w-full gap-2  lg:w-auto"
-                  disabled={!canManage || !newDocumentName.trim() || busyKey === "document:create"}
-                  onClick={() => void addDocument()}
-                >
-                  <FilePlus2 className="h-4 w-4" />
-                  Add
-                </Button>
+                    );
+                  })
+                )}
               </div>
             </div>
+          ) : null}
 
-            {/* Capped so the four headings below have a scrollport to stick against. A short
-                document list is shorter than the cap, so it neither scrolls nor freezes — the
-                header only pins itself once the list is long enough to need it. */}
-            <PortalDesktopTable
+          {/* ONLY on its own tab. This was the `else` of "documents", so it also drew under Scan & Upload,
+              and the seat that may not change the checklist was offered Add and Delete there. */}
+          {activeTab === "control" && canEditChecklist ? (
+            <AdminTableShell
+              description="Add or remove checklist documents. A new document appears on every employee's checklist at once."
+              title="Checklist"
+            >
+              <div className="grid gap-3 p-4 lg:grid-cols-[1fr_1fr_auto]">
+                <div>
+                  <FieldLabel htmlFor="hiring-documents-new-name">Document Name</FieldLabel>
+                  <Input
+                    disabled={!canManage}
+                    id="hiring-documents-new-name"
+                    onChange={(event) => setNewDocumentName(event.target.value)}
+                    placeholder="e.g. Syndicate card"
+                    value={newDocumentName}
+                  />
+                </div>
+                <div>
+                  <FieldLabel htmlFor="hiring-documents-new-description">Description</FieldLabel>
+                  <Input
+                    disabled={!canManage}
+                    id="hiring-documents-new-description"
+                    onChange={(event) => setNewDocumentDescription(event.target.value)}
+                    placeholder="Optional control note"
+                    value={newDocumentDescription}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    className="h-10 w-full gap-2 lg:w-auto"
+                    disabled={!canManage || !newDocumentName.trim() || busyKey === "document:create"}
+                    onClick={() => void addDocument()}
+                  >
+                    <FilePlus2 className="h-4 w-4" />
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              {/* Capped so the four headings below have a scrollport to stick against. A short
+                  document list is shorter than the cap, so it neither scrolls nor freezes. */}
+              <PortalDesktopTable
                 className="text-sm"
                 cols={
                   <colgroup>
@@ -1005,22 +1074,18 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
                     </tr>
                   ) : (
                     documents.map((document) => (
-                      <tr className="hover:bg-phx-accent-soft/40" key={document.id}>
-                        {/* The name, and not the row's UUID underneath it. That id was printed
-                            under all ten document names — "b748745e-b674-479e-915d-d01f4c84dcd4"
-                            below "National ID copy" — and it is a primary key: nothing on this
-                            screen asks for it, nobody types it, and the Delete button already
-                            carries it in the closure. Names are unique here, so it disambiguates
-                            nothing either. */}
+                      <tr key={document.id}>
+                        {/* The name, and not the row's UUID underneath it: nothing here asks for a
+                            primary key, and the Delete button already carries it in the closure. */}
                         <td className={tableCellClassName}>
                           <p className="font-bold text-phx-ink">{document.name}</p>
                         </td>
-                        <td className={tableCellClassName}>{document.description ?? "—"}</td>
+                        <td className={tableCellClassName}>{document.description ?? "None"}</td>
                         <td className={tableCellClassName}>{document.displayOrder}</td>
                         <td className={tableCellClassName}>
                           <Button
                             aria-label={`Delete ${document.name}`}
-                            className="h-9 gap-2 "
+                            className="h-9 gap-2"
                             disabled={!canManage || busyKey === `document:${document.id}:delete`}
                             onClick={() => void deleteDocument(document)}
                             variant="destructive"
@@ -1033,44 +1098,45 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
                     ))
                   )}
                 </tbody>
-            </PortalDesktopTable>
+              </PortalDesktopTable>
 
-            {/* Mobile: one card per configured document (name as title, order as a badge). */}
-            <div className="divide-y divide-phx-line  border border-phx-line md:hidden">
-              {documents.length === 0 ? (
-                <div className="px-4 py-10 text-center text-sm text-phx-ink-soft">
-                  No hiring documents are configured yet.
-                </div>
-              ) : (
-                documents.map((document) => (
-                  <div className="px-4 py-3.5" key={`${document.id}-mobile`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-bold text-phx-ink">{document.name}</p>
-                      </div>
-                      <Badge variant="neutral">Order {document.displayOrder}</Badge>
-                    </div>
-                    {document.description ? (
-                      <p className="mt-2 text-xs text-phx-ink-soft">{document.description}</p>
-                    ) : null}
-                    <div className="mt-3">
-                      <Button
-                        aria-label={`Delete ${document.name}`}
-                        className="h-9 gap-2 "
-                        disabled={!canManage || busyKey === `document:${document.id}:delete`}
-                        onClick={() => void deleteDocument(document)}
-                        variant="destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </Button>
-                    </div>
+              {/* Phone: one card per configured document. */}
+              <div className="divide-y divide-phx-line border-t border-phx-line md:hidden">
+                {documents.length === 0 ? (
+                  <div className="px-4 py-10 text-center text-sm text-phx-ink-soft">
+                    No hiring documents are configured yet.
                   </div>
-                ))
-              )}
-            </div>
-          </AdminTableShell>
-        )}
+                ) : (
+                  documents.map((document) => (
+                    <div className="px-4 py-3.5" key={`${document.id}-mobile`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-phx-ink">{document.name}</p>
+                        </div>
+                        <span className="shrink-0 text-phx-xs font-bold text-phx-ink-soft">Order {document.displayOrder}</span>
+                      </div>
+                      {document.description ? (
+                        <p className="mt-2 text-xs text-phx-ink-soft">{document.description}</p>
+                      ) : null}
+                      <div className="mt-3">
+                        <Button
+                          aria-label={`Delete ${document.name}`}
+                          className="h-9 gap-2"
+                          disabled={!canManage || busyKey === `document:${document.id}:delete`}
+                          onClick={() => void deleteDocument(document)}
+                          variant="destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </AdminTableShell>
+          ) : null}
+        </div>
       </div>
     </div>
   );
