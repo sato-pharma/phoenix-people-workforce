@@ -81,6 +81,7 @@ import { planEntryKeyOf, planEntryKeysetAfter } from "@/lib/crm/plan-entry-keyse
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -410,6 +411,18 @@ const PLAN_SCAN_COLUMNS =
 /** A plan row as a scan reads it — with the entry id its keyset cursor carries (`plan-entry-keyset.ts`). */
 type ScannedPlanRow = PlanRow & { crm_plan_entry_id?: number | string | null };
 
+/** Named chunks of one scan in flight at once — as many as the door's own day slices. */
+const PLAN_CHUNK_CONCURRENCY = 4;
+
+/**
+ * One board's named plan reads, so the same chunk of the same window is asked for once (2 Nov 2026, "fix
+ * the portal home slow opens"). A rep's KPI tile read his month's plan rows SIX times: its discovery, its
+ * doctor lists and its Phoenix half each asked again, one after the other, and the tile was the last thing
+ * on his landing to finish. The memo lives for one board and holds what the database answered, unfiltered,
+ * so each scan still applies its own de-duplication. A board makes one; no other caller passes one.
+ */
+export type PlanChunkMemo = Map<string, Promise<ScannedPlanRow[] | null>>;
+
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
  * ships, so the page renders an honest empty state instead of a crash.
  *
@@ -426,13 +439,14 @@ type ScannedPlanRow = PlanRow & { crm_plan_entry_id?: number | string | null };
  *
  * `agentHrIds` exists for the CRM cutover, and is never a replacement for `agentCrmIds`. A rep hired
  * after it has no CRM id, so his native plan rows carry a NULL `agent_crm_id` and only an hr id can
- * find them. Pass BOTH for a mixed set: the two lists are read as separate passes and UNIONED (a row
- * found by both is returned once), so the vendor rows with no hr id are still found by their CRM id.
+ * find them. Pass BOTH for a mixed set: the two lists are read as separate passes, side by side, and
+ * UNIONED in CRM-then-hr order (a row found by both is returned once), so the vendor rows with no hr id
+ * are still found by their CRM id.
  * Supplied lists that are all empty → no rows. */
 export async function scanPlanEntries(
   from: string,
   to: string,
-  options?: { agentCrmIds?: readonly number[]; agentHrIds?: readonly string[] },
+  options?: { agentCrmIds?: readonly number[]; agentHrIds?: readonly string[]; memo?: PlanChunkMemo },
 ): Promise<PlanRow[]> {
   const supabase = getSupabaseAdmin();
   type AgentChunk = { column: "agent_crm_id" | "agent_hr_id"; values: readonly (number | string)[] } | null;
@@ -520,12 +534,7 @@ export async function scanPlanEntries(
   //
   // Each chunk comes back in ascending entry id, as it did under the OFFSET scan; ties keep the
   // keyset's (day, hr id) order. Callers that need one order across chunks re-sort (`inPlanEntryOrder`).
-  const rows: PlanRow[] = [];
-  // Only a union of two passes can return one entry twice. The whole key makes that exact: the entry id
-  // alone would also drop the second rep's row that shares it.
-  const seenEntries = new Set<string>();
-  const dedupe = agentChunks.length > 1;
-  for (const chunk of agentChunks) {
+  const readChunk = async (chunk: AgentChunk): Promise<ScannedPlanRow[] | null> => {
     const chunkRows: ScannedPlanRow[] = [];
     let cursor: ScannedPlanRow | null = null;
     for (;;) {
@@ -542,23 +551,45 @@ export async function scanPlanEntries(
         .order("agent_hr_id", { ascending: true, nullsFirst: false })
         .limit(PLAN_PAGE_SIZE);
       if (error) {
-        if (isPlanSchemaMissing(error)) return [];
+        if (isPlanSchemaMissing(error)) return null;
         throw new Error(error.message);
       }
       const page = (data ?? []) as unknown as ScannedPlanRow[];
-      for (const row of page) {
-        if (dedupe) {
-          const key = planEntryKeyOf(row);
-          if (seenEntries.has(key)) continue;
-          seenEntries.add(key);
-        }
-        chunkRows.push(row);
-      }
+      chunkRows.push(...page);
       const last = page[page.length - 1] ?? null;
-      if (page.length < PLAN_PAGE_SIZE || last?.crm_plan_entry_id == null || !last.plan_date) break;
+      if (page.length < PLAN_PAGE_SIZE || last?.crm_plan_entry_id == null || !last.plan_date) return chunkRows;
       cursor = last;
     }
-    rows.push(...inPlanEntryOrder(chunkRows));
+  };
+  const memo = options?.memo;
+  const readRemembered = (chunk: AgentChunk): Promise<ScannedPlanRow[] | null> => {
+    if (!memo || !chunk) return readChunk(chunk);
+    const key = `${from}|${to}|${chunk.column}|${chunk.values.join(",")}`;
+    const held = memo.get(key);
+    if (held) return held;
+    const read = readChunk(chunk);
+    memo.set(key, read);
+    return read;
+  };
+  // Side by side, then folded in the order the lists were given: the passes share nothing, so a pass need
+  // not wait for the one before it, and the union is the one reading them in turn would give.
+  const chunks = await mapWithConcurrency(agentChunks, PLAN_CHUNK_CONCURRENCY, readRemembered);
+  const rows: PlanRow[] = [];
+  // Only a union of two passes can return one entry twice. The whole key makes that exact: the entry id
+  // alone would also drop the second rep's row that shares it.
+  const seenEntries = new Set<string>();
+  const dedupe = agentChunks.length > 1;
+  for (const chunkRows of chunks) {
+    if (chunkRows === null) return [];
+    const kept = dedupe
+      ? chunkRows.filter((row) => {
+          const key = planEntryKeyOf(row);
+          if (seenEntries.has(key)) return false;
+          seenEntries.add(key);
+          return true;
+        })
+      : chunkRows;
+    rows.push(...inPlanEntryOrder(kept));
   }
   return rows;
 }
@@ -683,6 +714,8 @@ export async function getRepDoctorLists(input: {
    * approval or a notification. A read narrowed to `agents` always reads live.
    */
   reuseRecentWindow?: boolean;
+  /** The board's plan reads (see {@link PlanChunkMemo}). Only the KPIs board passes one. */
+  planChunks?: PlanChunkMemo;
 }): Promise<RepDoctorListsBoard> {
   const monthWindow = monthBounds(input.month);
   const from = input.window?.from ?? monthWindow.from;
@@ -691,10 +724,10 @@ export async function getRepDoctorLists(input: {
 
   const [planRows, visitRows, excludedAgentCrmIds, directory, norms] = await Promise.all([
     agents
-      ? // Two passes (CRM ids, then hr ids) come back one after the other; the company-wide read comes
+      ? // Two passes (CRM ids, then hr ids) are folded one after the other; the company-wide read comes
         // back in entry-id order, and the builder takes a rep's identity from his FIRST plan row, so
         // the union is put back into that order.
-        scanPlanEntries(from, to, { agentCrmIds: agents.crmIds, agentHrIds: agents.hrIds }).then(inPlanEntryOrder)
+        scanPlanEntries(from, to, { agentCrmIds: agents.crmIds, agentHrIds: agents.hrIds, memo: input.planChunks }).then(inPlanEntryOrder)
       : scanPlanEntries(from, to),
     queryVisits<VisitRow>({
       collapseDoubleVisits: true,

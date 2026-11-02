@@ -93,13 +93,14 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { buildManagersAboveByHrId } from "@/lib/org/manager-filter";
 import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
-import { resolveKpiBoardAgents } from "@/lib/crm/kpi-board-agents";
+import { kpiBoardDiscovery } from "@/lib/crm/kpi-board-agents";
 import { countCallRateWorkingDays, type CallRateHolidays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import {
   getRepDoctorLists,
   monthLabelOf,
   repDoctorListRepKey,
+  type PlanChunkMemo,
   type RepDoctorListDoctorRow,
   type RepDoctorListRepRow,
 } from "@/lib/crm/rep-doctor-lists";
@@ -1369,12 +1370,61 @@ export async function getKpisBoard(input: {
   // (buildRepDoctorListsBoard, "a doctor off THIS rep's plan is usually on another's"), and a read
   // of these reps alone would print that doctor as a bare id. Every other output of the doctor
   // lists the board reads is per rep, so only that tab keeps the company-wide read.
+  // ONE BOARD, ONE ASK (2 Nov 2026, "fix the portal home slow opens"): the doctor lists and the Phoenix
+  // half ask the same discovery and read the same plan rows, so they share them (PlanChunkMemo).
+  const planChunks: PlanChunkMemo = new Map();
+  const discover = kpiBoardDiscovery(planChunks);
   const agentsRead = input.coverageDoctors
     ? Promise.resolve(null)
-    : resolveKpiBoardAgents(scope, {
+    : discover(scope, {
         from: callRange.dateFrom < range.dateFrom ? callRange.dateFrom : range.dateFrom,
         to: callRange.dateTo > range.windowEnd ? callRange.dateTo : range.windowEnd,
       });
+  const employeesRead = getEmployeeDirectoryRows({ includeInactive: true });
+  // An unreadable setting is "no cutover": see the note where it is awaited below.
+  const cutoverRead = getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER);
+  const startedRead = loadStartedRepWindows();
+  // PHASE 6. Loaded when the company-wide cutover has passed, OR when ANY team in scope went live before
+  // this period — the per-team switch (owner, 2026-10-07).
+  const loadPhoenixHalf = (
+    employees: Awaited<typeof employeesRead>,
+    cutover: Awaited<typeof cutoverRead>,
+    startedWindows: Awaited<typeof startedRead>,
+  ) =>
+    kpiRulesFor(cutover, range.dateFrom, range.windowEnd).rules === "phoenix" ||
+    phoenixRuleRepKeys(startedWindows, range.dateFrom).size > 0
+      ? loadPhoenixRepKpis({
+          scope,
+          // dateTo through today for the visits coverage and frequency read; callRateTo stops the
+          // call-rate lanes and their working days at yesterday (ruling C1).
+          window: {
+            dateFrom: range.dateFrom,
+            dateTo: range.dateTo,
+            windowEnd: range.windowEnd,
+            callRateTo: callRange.dateTo,
+          },
+          month: { start: `${input.month}-01`, end: range.monthEnd },
+          today: input.todayIso,
+          employees,
+          // Only the scope's reps when it is a few people, as the doctor-list half above reads —
+          // and, like it, the Coverage tab keeps the company-wide read (crm/phoenix-kpi-data.ts).
+          narrowToScope: !input.coverageDoctors,
+          reuseRecentWindow: true,
+          boardReads: { discover, planChunks },
+        })
+      : Promise.resolve(null);
+  // BESIDE THE FIRST HALF, NOT AFTER IT, when the board reads a few people: a rep's KPI tile finished last
+  // on his landing because this half only started once the other had come back. A company-wide board keeps
+  // the two halves in turn, so one open never doubles the day-slice requests in flight on the database.
+  const phoenixBeside = agentsRead.then((agents) =>
+    agents
+      ? Promise.all([employeesRead, cutoverRead, startedRead]).then(async ([employees, cutover, startedWindows]) => ({
+          load: await loadPhoenixHalf(employees, cutover, startedWindows),
+        }))
+      : null,
+  );
+  // Awaited below; a failure here must not surface as unhandled while the first half is still running.
+  phoenixBeside.catch(() => undefined);
   const [callRate, docList, employees, windowHolidays, cutover, startedWindows] = await Promise.all([
     // Through YESTERDAY (ruling C1): its working days are the denominator every rate on this board
     // divides by, the rep KPI reports below included.
@@ -1383,6 +1433,7 @@ export async function getKpisBoard(input: {
         dateFrom: callRange.dateFrom,
         dateTo: callRange.dateTo,
         reuseRecentWindow: true,
+        startedWindows: startedRead,
         ...(agents ? { agents } : {}),
       }),
     ),
@@ -1398,22 +1449,23 @@ export async function getKpisBoard(input: {
         // drill-down cap. The rows are in memory either way; only the chosen rep's leave this file.
         uncapped: Boolean(input.coverageDoctors),
         reuseRecentWindow: true,
+        planChunks,
         ...(agents ? { agents } : {}),
       }),
     ),
-    getEmployeeDirectoryRows({ includeInactive: true }),
+    employeesRead,
     // The window's OWN end, not today. callRate.workingDays counts the days worked so far; this
     // counts the days the window contains. The pair is what separates "the team is behind" from
     // "it is the 3rd of the month" — see workingDaysInWindow on KpisBoard.
     loadCallRateHolidays(range.dateFrom, range.windowEnd),
     // Phase 6's switch. An unreadable setting is "no cutover": the board then shows exactly what it
     // showed before phase 6, which is never a wrong number, only an old rule.
-    getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
+    cutoverRead,
     // THE SWITCH IS PER GO-LIVE TEAM (owner, 2026-10-07: "switched gradually based on the go live
     // teams"). The global cutover above is still null on production and a team start never sets it, so
     // this board scored Delta (1) by the OLD rules while its reps were logging in Phoenix CRM. Fails
     // OPEN — an unreadable answer is "no started team" and the board shows what it showed before.
-    loadStartedRepWindows(),
+    startedRead,
   ]);
   const rules = kpiRulesFor(cutover, range.dateFrom, range.windowEnd);
   // The reps whose own team had gone live before this period began. A board spanning a go-live
@@ -1469,30 +1521,10 @@ export async function getKpisBoard(input: {
   const scopedReps = keepMedicalRepsOnly(allInScope);
 
   // PHASE 6. Restamped BEFORE the facets, filters, podium and totals, so every one of them reads the
-  // Phoenix numbers. Loaded when the company-wide cutover has passed, OR when ANY team in scope went
-  // live before this period — the per-team switch (owner, 2026-10-07). Each row is then stamped only
-  // if ITS OWN rep is one of them, so a rep still on iReports360 keeps the old numbers beside him.
-  const phoenix =
-    rules.rules === "phoenix" || phoenixRuleReps.size > 0
-      ? await loadPhoenixRepKpis({
-          scope,
-          // dateTo through today for the visits coverage and frequency read; callRateTo stops the
-          // call-rate lanes and their working days at yesterday (ruling C1).
-          window: {
-            dateFrom: range.dateFrom,
-            dateTo: range.dateTo,
-            windowEnd: range.windowEnd,
-            callRateTo: callRange.dateTo,
-          },
-          month: { start: `${input.month}-01`, end: range.monthEnd },
-          today: input.todayIso,
-          employees,
-          // Only the scope's reps when it is a few people, as the doctor-list half above reads —
-          // and, like it, the Coverage tab keeps the company-wide read (crm/phoenix-kpi-data.ts).
-          narrowToScope: !input.coverageDoctors,
-          reuseRecentWindow: true,
-        })
-      : null;
+  // Phoenix numbers. Each row is stamped only if ITS OWN rep is one of the started ones, so a rep still
+  // on iReports360 keeps the old numbers beside him.
+  const beside = await phoenixBeside;
+  const phoenix = beside ? beside.load : await loadPhoenixHalf(employees, cutover, startedWindows);
   if (phoenix) {
     for (const row of scopedReps) {
       // PER REP. The company-wide cutover stamps everybody; a per-team start stamps only its own
