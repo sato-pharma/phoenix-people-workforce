@@ -15,6 +15,7 @@ import {
 } from "../src/lib/phoenix-crm/venue-cap-rules.ts";
 
 const MIGRATION = "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql";
+const ROUND_TRIP_MIGRATION = "supabase/migrations/20261102133258_phoenix_crm_venue_cap_round_trip.sql";
 
 function read(path: string): string {
   return readFileSync(path, "utf8").replace(/\r\n/g, "\n");
@@ -104,13 +105,23 @@ function runMigrationRules(): void {
   assert.ok(functionBody(sql, "phoenix_crm_offplan_exempt").includes("e.seat_id = p_seat"), "🔴 per seat: no other rep is reached");
   assert.ok(functionBody(sql, "phoenix_crm_venue_cap_lifted").includes("e.seat_id = p_seat"), "🔴 per seat: no other rep is reached");
 
-  const door = functionBody(sql, "phoenix_crm_shared_place_day_cap");
+  // The door and the write were replaced by the round-trip migration, so they are asked of the latest definition.
+  const latest = read(ROUND_TRIP_MIGRATION);
+  const door = functionBody(latest, "phoenix_crm_shared_place_day_cap");
   assert.ok(door.includes("v_cap := greatest(coalesce(v_cap, 3), coalesce(v_own, 0));"), "🔴 the door holds the greater of the company number and the venue's");
+  assert.ok(door.includes("where sp.id = v_shared and sp.seat_id = new.seat_id;"), "🔴 a raised number holds for the seat that owns the venue: a moved customer's new rep keeps the company number, as that rep's plan does");
   assert.ok(door.indexOf("phoenix_crm_venue_cap_lifted(new.seat_id)") < door.indexOf("v_cap := greatest"), "a lifted venue returns before any number is read");
   assert.ok(door.includes("and not v.offplan_exempt"), "a stamped visit stays out of the count");
 
-  const write = functionBody(sql, "phoenix_crm_venue_cap_set");
+  const write = functionBody(latest, "phoenix_crm_venue_cap_set");
   assert.ok(write.includes("sp.seat_id = any(p_seats)") && write.includes("for update"), "🔴 only the rep's own seats, under the venue's lock");
+  assert.ok(
+    write.indexOf("e.ended_at is not null") < write.indexOf("(seat_id, label, shared_place_id, customer_id, note") && write.includes("(v_place.seat_id, v_place.name, v_place.id, v_account, 'Switched on"),
+    "🔴 switching on looks up the account the last switch-off ended and writes it on the new row, so off then on is a round trip",
+  );
+  assert.ok(write.includes("set customer_id = coalesce(kept.customer_id, v_account)"), "🔴 the account moves to the second venue's row");
+  assert.ok(/pl\.customer_id = v_account and pl\.shared_place_id = v_place\.id and pl\.retired_at is null\s+\) then\s+v_account := null;/.test(write), "🔴 unless it sits in the venue being switched off");
+  assert.ok(!/other\.retired_at is null\s+and/.test(write), "🔴 a retired venue keeps its row, inert until it is restored");
   assert.ok(write.includes("p_cap <= coalesce(v_setting, 3) or p_cap > 20"), "🔴 the database refuses a number that is not a raise");
   assert.ok(write.includes("other.id <> v_place.id"), "🔴 a name key row reaching a second venue hands it a row of its own before it ends");
   assert.ok(write.indexOf("other.id <> v_place.id") < write.indexOf("set ended_at = now(), ended_by_hr_id = p_actor"), "and it does so first");

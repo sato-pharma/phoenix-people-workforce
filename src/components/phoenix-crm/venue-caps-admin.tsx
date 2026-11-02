@@ -32,6 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
+  effectiveVenueCap,
   VENUE_CAP_MAX,
   VENUE_CAPS_ADMIN_PATH,
   venueCapNumberProblem,
@@ -138,9 +139,7 @@ export function VenueCapsAdmin({ view }: { view: VenueCapsAdminView }) {
         <div className="grid min-w-0 gap-1">
           <p className="break-words text-sm font-black text-slate-900">{venueCapStateLabel(venue, view.companyCap)}</p>
           <p className="break-words text-xs font-semibold text-slate-500">
-            {venue.dailyCap !== null
-              ? `Switching No cap off returns it to ${venue.dailyCap} visits a day.`
-              : `Switching No cap off returns it to ${view.companyCap} visits a day.`}
+            {`Switching No cap off returns it to ${effectiveVenueCap(view.companyCap, venue.dailyCap)} visits a day.`}
           </p>
           {rowError ? <p className="break-words text-xs font-bold text-rose-800">{rowError}</p> : null}
         </div>

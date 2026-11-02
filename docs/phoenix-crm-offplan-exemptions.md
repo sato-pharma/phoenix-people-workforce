@@ -75,18 +75,27 @@ an exception of this kind needs no migration. The page is `/admin/field-crm/venu
   on the plan and at the door, and the out-of-plan limit there.
 - **Switching off** ends every lifting row reaching the venue, a name key row included. If that key also reaches
   another live venue of the seat, that venue first gets a row of its own, so one switch never turns a second one off.
-  Ended rows stay, with `ended_by_hr_id`. An account named on an ended row loses its exception with it.
+  A retired venue the key reaches keeps a row too, inert until the venue is restored. Ended rows stay, with
+  `ended_by_hr_id`.
+- **An account named on the row** (the hospital's own account on the Alexandria rows) goes with the venue when it is
+  switched off, and **switching back on brings it back**: `lift` reads the last ended row reaching the venue. If the key
+  also reaches a second venue, the account moves to that venue's row instead, unless the account sits in the venue being
+  switched off. One account comes back per venue; every row today names one.
 - **The number:** `phoenix_crm_shared_places.daily_cap`, above the company number and 20 at most, asked by the page, the
   service and `phoenix_crm_venue_cap_set`. The door and the plan hold `greatest(setting, daily_cap)`, so a company number
   raised later is never undercut. It moves the venue's daily number ONLY: the out-of-plan 2 a day and 8 a week still apply
   there. That is the difference from the switch, and the page says so.
 - **A row that frees unplanned visits only** (the Air Force hospital's, `lifts_venue_cap = false`) is left alone by the
   switch, shown as a note, and ended only by its own "End this exception", which asks first. The page cannot set one.
-- **Per seat**, like every row here: a successor on the seat inherits it. What stays is the same list as above. No
-  message or email goes out; the rep's allowance card names a lifted venue, as it does for the rows above.
+- **Per seat**, like every row here: a successor on the seat inherits it. A customer moved to another seat keeps a place
+  in the old seat's venue, and that rep holds the company number there, plan and door alike. What stays is the same list
+  as above. No message or email goes out; the rep's allowance card names a lifted venue, as it does for the rows above.
+- **Lowering does not re-check a plan already sent.** Switching off or going back to a lower number leaves approved plans
+  as they are, so a visit past the new number is refused at the door that day. A company settings change behaves the same.
+- **The number keeps no history.** `raise` overwrites who and when, and `standard` clears them; switch rows keep theirs.
 - The read and the write are `phoenix_crm_venue_cap_board(seats)` and `phoenix_crm_venue_cap_set(...)`, so "is it lifted"
-  is answered by the door's own match. Migration `20261102130045_phoenix_crm_venue_cap_admin.sql`. Pinned by
-  `tests/phoenix-crm-venue-caps.test.ts`.
+  is answered by the door's own match. Migrations `20261102130045_phoenix_crm_venue_cap_admin.sql` and
+  `20261102133258_phoenix_crm_venue_cap_round_trip.sql`. Pinned by `tests/phoenix-crm-venue-caps.test.ts`.
 
 ## A new hire's first month (owner, 2026-10-26)
 

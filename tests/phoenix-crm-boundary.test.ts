@@ -1048,6 +1048,8 @@ const LATER_MIGRATIONS = [
   // two NEW functions (the page's read and write), and four functions REPLACED with their live bodies, whose earlier
   // definers sit above (20261017150000 and 20261031170001). It is the latest to replace them, so it appends at the end.
   "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql",
+  // The same page's door and write, replaced again the same day: a number stays on its own seat, and a switch is a round trip.
+  "supabase/migrations/20261102133258_phoenix_crm_venue_cap_round_trip.sql",
 ];
 
 /**
