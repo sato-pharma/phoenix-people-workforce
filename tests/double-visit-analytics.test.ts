@@ -171,7 +171,7 @@ export function runDoubleVisitAnalyticsTests() {
   // `speciality` was the LAST select item until the Phoenix field set was appended on 2026-10-07, so
   // this pinned the end of the string. It pins the ITEM now — the guarantee is that the speciality is
   // read, not that nothing is read after it, and a tail pin goes red every time the list grows.
-  assert.match(service, /visit_type_description, speciality, "/, "the double-visit read must carry the contact speciality that marks a pharmacy");
+  assert.match(service, /visit_type_description, speciality"/, "the double-visit read must carry the contact speciality that marks a pharmacy");
   // The outstation trip-workload fallback was the last count split on the raw CRM period; it moved to
   // the bucket helper in its own risk-reviewed change (2026-09-21). No count splits on the period now.
   assert.equal(

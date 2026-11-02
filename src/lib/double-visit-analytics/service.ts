@@ -574,7 +574,7 @@ function extractNameAreaLine(value: string | null | undefined) {
 async function paginateLiveMirrorVisits(
   dateFrom: string,
   dateTo: string,
-  options?: { includeResignedAgents?: boolean; visitDates?: readonly string[] },
+  options?: { includeResignedAgents?: boolean; visitDates?: readonly string[]; withoutVisitDetail?: boolean },
 ): Promise<MirrorVisitRow[]> {
   // Reads through the CRM single-door double-visit loader (keyset-paginated past the PostgREST
   // row cap, resigned/excluded agents removed by default). The canonical double-visit predicate —
@@ -594,12 +594,14 @@ async function paginateLiveMirrorVisits(
       columns:
         "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
         "double_crm_id, double_hr_id, double_name, double2_crm_id, double2_hr_id, double2_name, companion_hr_ids, ampm, " +
-        "visit_type, visit_type_description, speciality, " +
+        "visit_type, visit_type_description, speciality" +
         // THE PHOENIX FIELD SET, raw. This loader has no reader — `getDoubleVisitReportData` holds the
         // access context and shapes it to that reader's tier there. Selecting it here and deciding sight
         // there is deliberate: this function also feeds the scoring engine and the private calendar,
         // neither of which prints a column, so neither needs a viewer threaded into it.
-        PHOENIX_VISIT_DETAIL_COLUMNS,
+        // The portal focus panel only counts, so it leaves the field set behind: more than half of each
+        // request's bytes on every manager's landing (494 KB against 219 KB, one week, 2 Nov 2026).
+        (options?.withoutVisitDetail ? "" : `, ${PHOENIX_VISIT_DETAIL_COLUMNS}`),
     });
   // Whole days only (see findDoubleVisitCalendarDays): every row of each listed day, whoever it names.
   if (options?.visitDates) return readListedDayRuns(options.visitDates, { end: dateTo, start: dateFrom }, read);
@@ -870,6 +872,8 @@ export async function getLiveDoubleVisitRows(
     includeResignedAgents?: boolean;
     /** Read only these whole days of the window (see findDoubleVisitCalendarDays). */
     visitDates?: readonly string[];
+    /** Leave the Phoenix field set out of the read, for a caller that prints no visit (the focus panel). */
+    withoutVisitDetail?: boolean;
     /** The identity overrides the caller already read, so ONE snapshot decides both which days were
      * read and who each visit is credited to. */
     crmIdentityResolutions?: readonly CrmResolutionRow[];
@@ -2070,6 +2074,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     focusHrIds.length === 0
       ? []
       : await getLiveDoubleVisitRows(trendStart, periodTo, employees, {
+          withoutVisitDetail: true,
           ...(focusDays ? { crmIdentityResolutions: focusDays.resolutions, visitDates: focusDays.days } : {}),
         });
   const { dvCountByHrId, ownRows } = doubleVisitFocusTallies(allDvRows, viewerCanonicalKey);
