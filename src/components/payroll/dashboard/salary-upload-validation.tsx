@@ -1,5 +1,4 @@
 import { AlertTriangle, Download, FileCheck2, Loader2, Upload } from "lucide-react";
-import Link from "next/link";
 import type { RefObject } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
@@ -146,12 +145,12 @@ export function SalaryUploadActions({
         ))}
       </SearchableSelect>
       {hasPayrollPeriod ? (
-        <Link href={`/api/payroll/template?upload=1&month=${payrollMonth}&year=${payrollYear}`}>
-          <Button variant="secondary">
+        <Button asChild variant="secondary">
+          <a href={`/api/payroll/template?upload=1&month=${payrollMonth}&year=${payrollYear}`}>
             <Download className="mr-2 h-4 w-4" />
             Download Upload Template
-          </Button>
-        </Link>
+          </a>
+        </Button>
       ) : (
         <Button disabled variant="secondary">
           <Download className="mr-2 h-4 w-4" />
@@ -159,12 +158,12 @@ export function SalaryUploadActions({
         </Button>
       )}
       {hasPayrollPeriod ? (
-        <Link href={`/api/payroll/template?ready=1&month=${payrollMonth}&year=${payrollYear}`}>
-          <Button variant="secondary">
+        <Button asChild variant="secondary">
+          <a href={`/api/payroll/template?ready=1&month=${payrollMonth}&year=${payrollYear}`}>
             <Download className="mr-2 h-4 w-4" />
             Download Ready Payroll
-          </Button>
-        </Link>
+          </a>
+        </Button>
       ) : (
         <Button disabled variant="secondary">
           <Download className="mr-2 h-4 w-4" />

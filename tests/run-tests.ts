@@ -1603,6 +1603,7 @@ import { runDirectOrderPharmacyRejectedTests } from "./direct-orders-pharmacy-re
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
 import { runDirectOrdersPharmacyValidationTests } from "./direct-orders-pharmacy-validation.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
+import { runPayrollDownloadLinksNeverPrefetchTests } from "./payroll-download-links-never-prefetch.test.ts";
 import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
 import { runAnalyticsDimProductsHeadOfficeExclusionTests } from "./analytics-dim-products-head-office-exclusion.test.ts";
 import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
@@ -6093,6 +6094,7 @@ await runTest("payroll copilot expense review (month-lag: pays prior month's out
 await runTest("payroll copilot vacation settlement (defer/salary/reject never leave two live rows)", runPayrollCopilotVacationSettlementTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
+await runTest("the payroll page's downloads are plain anchors, so opening it runs no export", runPayrollDownloadLinksNeverPrefetchTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
 await runTest("direct orders approval detail (names never codes, medical rep, notification completeness)", runDirectOrdersApprovalDetailNamesTests);
 await runTest("direct orders family basket (Lacto only, confidential excluded, form offers what the service accepts)", runDirectOrderFamilyBasketTests);
