@@ -5,6 +5,9 @@
 // browser receives counts as shown even when nothing draws it (Phoenix CRM golden rule #1), so the
 // portal query does not SELECT `metrics` at all — only the admin twin's does.
 
+import { unstable_cache } from "next/cache";
+
+import { REP_RANKS_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { EMPTY_QUALITY_FACTS } from "@/lib/rep-ranks/field-quality";
@@ -242,12 +245,30 @@ function toRow(
   return row;
 }
 
-/** One window's board. `windowKey` absent → the newest computed window of that kind. */
+/**
+ * How long a board or a profile is remembered (2 Nov 2026, the speed root cause, Stage 2). The standings
+ * change only when the nightly compute writes them, and that writer drops REP_RANKS_CACHE_TAG when it
+ * finishes (compute.ts rebuildWindows), so the hour is a backstop, never the freshness.
+ */
+const RANK_READ_TTL_SECONDS = 3600;
+
+/**
+ * One window's board. `windowKey` absent → the newest computed window of that kind. Remembered per kind,
+ * window and AUDIENCE — the admin twin's rows carry the metrics and the portal's never do, so the two
+ * never share an entry.
+ */
 export async function loadRankBoard(input: {
   kind: RankWindowKind;
   windowKey?: string | null;
   audience: RankAudience;
 }): Promise<RankBoard> {
+  return unstable_cache(() => readRankBoard(input), ["rep-ranks-board", input.kind, input.windowKey ?? "-", input.audience], {
+    revalidate: RANK_READ_TTL_SECONDS,
+    tags: [REP_RANKS_CACHE_TAG],
+  })();
+}
+
+async function readRankBoard(input: { kind: RankWindowKind; windowKey?: string | null; audience: RankAudience }): Promise<RankBoard> {
   const windows = await windowOptions(input.kind);
   const window = windows.find((option) => option.key === input.windowKey) ?? windows[0] ?? null;
   if (!window) return { kind: input.kind, window: null, windows, rows: [], lines: [], computedAt: null };
@@ -353,10 +374,14 @@ export type RankProfile = {
   monthTrail: { label: string; total: number | null; rank: MilitaryRank }[];
 };
 
-/** One rep's profile: rank, stars, titles and the whole timeline. Scores only — never metrics. */
+/** One rep's profile: rank, stars, titles and the whole timeline. Scores only — never metrics. Remembered per rep. */
 export async function loadRankProfile(hrId: string): Promise<RankProfile | null> {
   const key = normalizeHrIdForAccess(hrId);
   if (!key) return null;
+  return unstable_cache(() => readRankProfile(key), ["rep-ranks-profile", key], { revalidate: RANK_READ_TTL_SECONDS, tags: [REP_RANKS_CACHE_TAG] })();
+}
+
+async function readRankProfile(key: string): Promise<RankProfile | null> {
   const { data, error } = await db()
     .from("rep_rank_standings")
     .select(PORTAL_COLUMNS)

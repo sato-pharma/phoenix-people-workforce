@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { startServerTimer } from "@/lib/http/server-timing";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadCallPrep } from "@/lib/phoenix-crm/server/call-prep";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
@@ -19,13 +20,17 @@ export const dynamic = "force-dynamic";
 //
 // The territory gate is inside `loadCallPrep` — the rep's own seat, nobody else's.
 export async function GET(request: Request) {
+  // Server-Timing (durations only): access, viewer and load — the same three stages as the List, so a
+  // slow prep is read in the network panel and the process-health line (2 Nov 2026, Stage 2).
+  const timer = startServerTimer("crm_call_prep");
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
-    const viewer = await resolvePhoenixCrmViewer(access);
+    timer.lap("access");
+    const viewer = await timer.measure("viewer", () => resolvePhoenixCrmViewer(access));
     const search = searchOf(request);
-    const prep = await loadCallPrep(viewer, { seatId: search.get("seatId"), test: search.get("test") });
-    return NextResponse.json({ prep, success: true });
+    const prep = await timer.measure("load", () => loadCallPrep(viewer, { seatId: search.get("seatId"), test: search.get("test") }));
+    return NextResponse.json({ prep, success: true }, { headers: timer.headers() });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not load tomorrow's stops.");
   }

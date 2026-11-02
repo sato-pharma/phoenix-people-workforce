@@ -12,7 +12,7 @@
 import { Crown, FileDown, Medal, Trophy } from "lucide-react";
 
 import { rankChipClass, SectionHead, SectionMeta } from "@/components/employee-portal/portal-command-center";
-import { RankInsigniaBadge, RankName, StarRow } from "@/components/rep-ranks/rank-insignia";
+import { RankInsigniaBadge, RankInsigniaSprite, RankName, StarRow } from "@/components/rep-ranks/rank-insignia";
 import { PHOENIX_CRM_INTEGRITY_LABELS, type PhoenixCrmIntegrityFlag } from "@/lib/phoenix-crm/location-integrity";
 import { explainStanding, leverSentence } from "@/lib/rep-ranks/explain";
 import { promotionSentence, RANK_LADDER } from "@/lib/rep-ranks/ladder";
@@ -656,6 +656,8 @@ export function RepRanksBoard({
 
   return (
     <div className="space-y-3">
+      {/* Every rank's drawing once, ahead of the first badge; the profile panel above the board uses it too. */}
+      <RankInsigniaSprite />
       <WindowTabs board={board} context={context} />
       {!board.window ? (
         <div className="border border-slate-200 bg-white px-5 py-6">

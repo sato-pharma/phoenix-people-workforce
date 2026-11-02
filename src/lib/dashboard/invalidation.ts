@@ -109,6 +109,23 @@ export const PERSONAL_MAILBOX_CONNECTION_CACHE_TAG = "personal-mailbox-connectio
  */
 export const DEVICE_MAPPING_CACHE_TAG = "attendance-device-mapping";
 
+/**
+ * The Phoenix Ranks board and profiles (src/lib/rep-ranks/server/read.ts), remembered for an hour per
+ * window and audience (2 Nov 2026, the speed root cause, Stage 2: the board read ~3,000 standings rows
+ * and every title on every open). The standings change only when the nightly compute writes them, and
+ * that one writer (rebuildWindows in compute.ts) drops this tag when it finishes.
+ */
+export const REP_RANKS_CACHE_TAG = "rep-ranks";
+
+/**
+ * The Weekly Stock payload (src/lib/sales/weekly/stock-dashboard-service.ts), remembered for five
+ * minutes per viewer SCOPE and filters (2 Nov 2026, the speed root cause, Stage 2: 12.9 s of server
+ * render per open on production). Dropped by every weekly write path through bumpWeeklyRowsGeneration
+ * (upload, delete, retag, alias heal, the admin reset) and by a Product Master price edit through
+ * invalidatePriceDependentSalesCaches, since a stock value is units at the factory price.
+ */
+export const WEEKLY_STOCK_CACHE_TAG = "weekly-stock-payload";
+
 /** Modules whose changes move a figure on the Finance Command Center. */
 const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
 
@@ -237,6 +254,30 @@ export function invalidateDeviceMappingCache(reason: string) {
   }
 }
 
+/** The nightly compute wrote new standings: the board and every profile read them again on the next open. */
+export function invalidateRepRanksCache(reason: string) {
+  try {
+    revalidateTag(REP_RANKS_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Rep ranks cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+/** Weekly rows were written: every Weekly Stock open rebuilds its payload. Expired at once, so the uploader's own next screen shows the upload. */
+export function invalidateWeeklyStockCache(reason: string) {
+  try {
+    revalidateTag(WEEKLY_STOCK_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Weekly stock cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
 /** A mailbox was connected, dropped or refused: every shell reads the connection again on its next render. */
 export function invalidatePersonalMailboxConnectionCache(reason: string) {
   try {
@@ -296,7 +337,8 @@ export function invalidateCompanyVacationReportCache(reason: string) {
  * Best-effort, as below.
  */
 export function invalidatePriceDependentSalesCaches(reason: string) {
-  for (const tag of [CLOSING_STORE_SPLIT_CACHE_TAG, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG]) {
+  // Weekly Stock joins them (2 Nov 2026): its values are units at the factory price, and its payload is remembered.
+  for (const tag of [CLOSING_STORE_SPLIT_CACHE_TAG, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG, WEEKLY_STOCK_CACHE_TAG]) {
     try {
       revalidateTag(tag, { expire: 0 });
     } catch (error) {

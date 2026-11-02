@@ -2937,6 +2937,7 @@ import { runSickLeaveReachesHrApprovalsTests } from "./sick-leave-reaches-hr-app
 import { runRollupExecBufferTests } from "./rollup-exec-buffer.test.ts";
 import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold.test.ts";
 import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
+import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -11655,6 +11656,10 @@ await runTest("Pedia Sharkia 1 and 2: off the organogram, counted to Hany Saad f
 await runTest(
   "Phoenix CRM board reads in one statement (1 Nov 2026, the speed root cause — each request ~450 ms at Supabase's edge for 2-7 ms of SQL): the KPI panel's open assignments, the Reps List's brick names and its contacts' check-ins each come from one function, with the page walk kept only for a database without it; the region -> brick map and the trade counterparties are shared copies the writes drop; the List and Add Visit mint through the planners' throttle; the unvalidated counts read four chunks at a time; the three routes answer with Server-Timing",
   runPhoenixCrmBoardReadsTests,
+);
+await runTest(
+  "Phoenix CRM territory bundle and the heavy pages remembered (2 Nov 2026, the speed root cause, Stage 2): the List, Add Visit, the planners and the call prep read a seat's customers, places and venues from one function and the call prep reads its whole day from another, each with the keyset reads kept only for a database without it and both doors folded by one fold; the month planner reads two waves, not four; the edit requests and the returns ride the bundle; the Ranks board draws each insignia once and is remembered per window until the nightly compute drops it; Weekly Stock is remembered per scope and filters, never per viewer, and dropped by every weekly write and a price edit",
+  runPhoenixCrmTerritoryBundleTests,
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);

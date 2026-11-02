@@ -38,6 +38,7 @@
  * returns void, which is what stops a later edit here reaching for its issue time out of habit.
  */
 
+import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { refreshSharedCrmWindows } from "@/lib/crm/shared-windows";
 import { validationError } from "@/lib/http/api-errors";
 import { afterResponse } from "@/lib/http/after-response";
@@ -111,7 +112,17 @@ import { recordCaptureProvenance } from "@/lib/phoenix-crm/server/capture-proven
 import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
-import { ensureReferenceCustomersRecently, loadListedPharmacies, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import {
+  emptyTerritoryCustomers,
+  ensureReferenceCustomersRecently,
+  foldTerritoryCustomers,
+  loadListedPharmacies,
+  loadMonthVisitCounts,
+  loadTerritoryCustomers,
+  territoryBundleOf,
+  type TerritoryBundle,
+  type TerritoryCustomers,
+} from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPlannedOtherDays } from "@/lib/phoenix-crm/server/offplan-day";
 import { loadOffPlanExemptions, loadOffPlanRows } from "@/lib/phoenix-crm/server/offplan-cap";
@@ -981,6 +992,67 @@ export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date:
   const rows = await loadVisitRows(seatId, isTest, date);
   const [names, productManagerRoles] = await Promise.all([loadPeopleNames(visitPeople(rows)), productManagerRolesFor(options.org, seatId)]);
   return rows.map((row) => mapVisitRow(row, names, { ...options, productManagerRoles }));
+}
+
+/** What `phoenix_crm_planned_day` answers (20261102040000), as `loadPlannedDay` reads it. */
+type PlannedDayBundle = { plan: Row | null; items: string[]; edits: Row[]; returns: Row[]; stops: TerritoryBundle };
+
+export type PlannedDay = {
+  /** `plannedCustomersOn`'s answer: THIS DAY's status, and the day's planned customers. */
+  planned: { status: PhoenixCrmPlanStatus | null; customerIds: string[] };
+  /** Those customers as the list reads them, with their places and venues — nobody on a day that is not sent. */
+  stops: TerritoryCustomers;
+};
+
+function plannedDayBundleOf(data: unknown): PlannedDayBundle {
+  const bag = (data && typeof data === "object" ? data : {}) as Row;
+  const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.map((item) => (item && typeof item === "object" ? item : {}) as Row) : []);
+  return {
+    plan: bag.plan && typeof bag.plan === "object" ? (bag.plan as Row) : null,
+    items: Array.isArray(bag.items) ? bag.items.map((item) => String(item)) : [],
+    edits: rows(bag.edits),
+    returns: rows(bag.returns),
+    stops: territoryBundleOf(bag.stops),
+  };
+}
+
+/**
+ * The day's planned stops AND their customers in ONE request (2 Nov 2026, the speed root cause, Stage
+ * 2): `phoenix_crm_planned_day` reads the week's plan row, the day's items, the week's edit requests
+ * and its 'returned' events, and the stops' customers, places and venues in one statement — the five
+ * waves the call prep stood on, each ~450 ms at Supabase's edge before a byte was parsed.
+ *
+ * 🔴 THE DAY'S STATUS IS STILL `plannedCustomersOn`'s RULE, asked of the same rows: `loadPlanDayFacts`
+ * with the edits and the returns handed in, then `planDayStatus` — a week returned for ONE day still
+ * stands on its other days, and only the returned day reads `returned`. The stops are exactly what
+ * `loadTerritoryCustomers(..., { onListOnly: true, customerIds })` reads — the same function, on the
+ * database side — so a planned customer who has left the list is still not a stop, and a day that is
+ * not sent reads nobody. Until the function is applied (PGRST202) the two doors are asked one after the
+ * other, as the call prep always did.
+ */
+export async function loadPlannedDay(seatId: string, isTest: boolean, date: string): Promise<PlannedDay> {
+  const bundle = await getSupabaseAdmin().rpc("phoenix_crm_planned_day", {
+    p_seat_id: seatId,
+    p_is_test: isTest,
+    p_week_start: fieldWeekStart(date),
+    p_day: date,
+  });
+  if (bundle.error) {
+    if (!isMissingCrmRpcError(bundle.error)) throwIfError(bundle.error);
+    const planned = await plannedCustomersOn(seatId, isTest, date);
+    const stops = await loadTerritoryCustomers(seatId, isTest, {
+      onListOnly: true,
+      customerIds: isPlanSentForReview(planned.status) ? planned.customerIds : [],
+    });
+    return { planned, stops };
+  }
+  const day = plannedDayBundleOf(bundle.data);
+  if (!day.plan) return { planned: { status: null, customerIds: [] }, stops: emptyTerritoryCustomers() };
+  const planId = String(day.plan.id);
+  const facts = await loadPlanDayFacts([day.plan], isTest, { edits: day.edits, returns: day.returns });
+  const dayFacts = facts.get(planId);
+  const planned = { status: dayFacts ? planDayStatus({ ...dayFacts, date }) : null, customerIds: day.items };
+  return { planned, stops: isPlanSentForReview(planned.status) ? foldTerritoryCustomers(day.stops) : emptyTerritoryCustomers() };
 }
 
 /**

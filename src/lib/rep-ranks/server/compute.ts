@@ -23,6 +23,7 @@ import { isCallRateWorkingDay } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { addDaysIso, cairoHourMinute } from "@/lib/crm/dates";
 import { PHOENIX_CRM_TEAM_STARTS_TABLE, parsePhoenixTeamStart } from "@/lib/crm/phoenix-team-starts";
+import { invalidateRepRanksCache } from "@/lib/dashboard/invalidation";
 import { hrIdLookupKeys, normalizeHrIdForAccess } from "@/lib/hr-id";
 import {
   judgeLaterSignboardReading,
@@ -739,6 +740,9 @@ export async function rebuildWindows(windows: readonly RankWindow[], todayIso: s
     const standings = rankWindow(factsForWindow(data, window, indexed), window.kind);
     written.push({ kind: window.kind, key: window.key, ranked: await writeWindow(window, standings) });
   }
+  // The board and the profiles are remembered for an hour (read.ts); the one writer drops them, so the
+  // morning's first open reads tonight's standings.
+  invalidateRepRanksCache(`rep ranks rebuilt: ${written.map((window) => `${window.kind}/${window.key}`).join(", ")}`);
   return { reps: data.roster.length, windows: written };
 }
 

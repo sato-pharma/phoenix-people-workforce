@@ -4,21 +4,46 @@
 // on a transparent ground, square-edged): the head of that file.
 
 import { insigniaSvgInner } from "@/lib/rep-ranks/insignia-svg";
-import type { MilitaryRank } from "@/lib/rep-ranks/ladder";
+import { RANK_LADDER, type MilitaryRank } from "@/lib/rep-ranks/ladder";
 
-/** The insignia alone, on a transparent ground. `size` is the rendered width in pixels; the box is 2:1. */
+/** The sprite symbol every badge of one rank points at — one per ladder level, so no two ranks share a drawing. */
+export function insigniaSymbolId(rank: Pick<MilitaryRank, "level">): string {
+  return `phx-rank-insignia-${rank.level}`;
+}
+
+/**
+ * Every rank's insignia drawn ONCE, as a `<symbol>` the badges reference (2 Nov 2026, the speed root
+ * cause, Stage 2). The board used to carry the whole drawing inside each of its ~64 badges — the eagle
+ * alone is 21 KB of paths — which made the Ranks page 2.8 MB of HTML, and the same again in the RSC
+ * payload, for twelve distinct pictures. Rendered once per page, at the top of the board, ahead of the
+ * first badge. Hidden by size, never `display: none`: a hidden-by-display sprite leaves its gradients
+ * unrendered in some browsers.
+ */
+export function RankInsigniaSprite() {
+  return (
+    <svg aria-hidden="true" className="absolute h-0 w-0 overflow-hidden" focusable="false" height={0} width={0}>
+      {RANK_LADDER.map((rank) => (
+        <symbol
+          // The markup is built from the ladder's own constants, never from user input.
+          dangerouslySetInnerHTML={{ __html: insigniaSvgInner(rank.insignia) }}
+          id={insigniaSymbolId(rank)}
+          key={rank.level}
+          viewBox="0 0 64 32"
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * The insignia alone, on a transparent ground. `size` is the rendered width in pixels; the box is 2:1.
+ * A reference into `RankInsigniaSprite`, which the board renders once — the badge itself is a few bytes.
+ */
 export function RankInsigniaBadge({ rank, size = 48 }: { rank: MilitaryRank; size?: number }) {
   return (
-    <svg
-      aria-label={`${rank.english} insignia`}
-      className="shrink-0"
-      // The markup is built from the ladder's own constants, never from user input.
-      dangerouslySetInnerHTML={{ __html: insigniaSvgInner(rank.insignia) }}
-      height={size / 2}
-      role="img"
-      viewBox="0 0 64 32"
-      width={size}
-    />
+    <svg aria-label={`${rank.english} insignia`} className="shrink-0" height={size / 2} role="img" viewBox="0 0 64 32" width={size}>
+      <use href={`#${insigniaSymbolId(rank)}`} />
+    </svg>
   );
 }
 

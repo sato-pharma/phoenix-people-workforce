@@ -557,29 +557,24 @@ export async function loadMonthlyPlanner(
   // and the first open still mints before it reads.
   const ensured = ensureReferenceCustomersRecently(seat, isTest);
   const planPartsRead = (async () => {
-    const [headerResult, monthsResult, planRowsResult, leadingResult] = await Promise.all([
-      supabase.from("phoenix_crm_monthly_plans").select(MONTHLY_PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).eq("month_start", monthStart).maybeSingle(),
-      supabase.from("phoenix_crm_monthly_plans").select("month_start, status").eq("seat_id", seat.seatId).eq("is_test", isTest).in("month_start", months),
-      weeks.length > 0
-        ? supabase.from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weeks)
+    // TWO reads, not four (2 Nov 2026, the speed root cause, Stage 2 — each request is ~450 ms at
+    // Supabase's edge): the month's own header rides in the plannable months' read, and the leading week
+    // in the month's weeks' read. The same rows as before, each asked for once.
+    const monthStarts = [...new Set([...months, monthStart])];
+    const weekStarts = leadingWeek && !weeks.includes(leadingWeek) ? [...weeks, leadingWeek] : weeks;
+    const [monthsResult, weekRowsResult] = await Promise.all([
+      supabase.from("phoenix_crm_monthly_plans").select(MONTHLY_PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("month_start", monthStarts),
+      weekStarts.length > 0
+        ? supabase.from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weekStarts)
         : Promise.resolve({ data: [] as Row[], error: null }),
-      leadingWeek
-        ? supabase
-            .from("phoenix_crm_plans")
-            .select(PLAN_COLUMNS)
-            .eq("seat_id", seat.seatId)
-            .eq("is_test", isTest)
-            .eq("week_start", leadingWeek)
-            .maybeSingle()
-        : Promise.resolve({ data: null as Row | null, error: null }),
     ]);
-    throwIfError(headerResult.error);
     throwIfError(monthsResult.error);
-    throwIfError(planRowsResult.error);
-    throwIfError(leadingResult.error);
-    const headerRow = headerResult.data as Row | null;
-    const planRows = (planRowsResult.data ?? []) as Row[];
-    const leadingRow = (leadingResult.data as Row | null) ?? null;
+    throwIfError(weekRowsResult.error);
+    const monthRows = (monthsResult.data ?? []) as unknown as Row[];
+    const headerRow = monthRows.find((row) => String(row.month_start) === monthStart) ?? null;
+    const weekRows = (weekRowsResult.data ?? []) as Row[];
+    const planRows = weekRows.filter((row) => weeks.includes(String(row.week_start)));
+    const leadingRow = leadingWeek ? (weekRows.find((row) => String(row.week_start) === leadingWeek) ?? null) : null;
     // 🔴 ONE READ, TWO BAGS. The leading week's items ride along so its days can be drawn, and are
     // then taken OUT of `itemRows` — which is what every meter, tally and call rate below is built
     // from. Letting them through would move October's numbers by another month's week, silently.
@@ -628,7 +623,7 @@ export async function loadMonthlyPlanner(
     // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read. It needs the
     // places alone, so it follows the customer list inside the wave instead of trailing after it
     // (2026-10-16 speed audit).
-    customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
+    customersRead.then(({ placesByCustomer, venueNames }) => venueNamesOf(placesByCustomer, venueNames)),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -724,7 +719,7 @@ export async function loadMonthlyPlanner(
   const leadingView = leadingWeek ? buildMonthlyWeekView(weekInputs, leadingWeek, leadingRow, leadingItems, true) : null;
 
   const monthStatusByStart = new Map<string, PhoenixCrmPlanStatus>();
-  for (const row of (monthsResult.data ?? []) as Row[]) monthStatusByStart.set(String(row.month_start), statusOf(row.status));
+  for (const row of (monthsResult.data ?? []) as unknown as Row[]) monthStatusByStart.set(String(row.month_start), statusOf(row.status));
 
   const plan = headerRow ? mapMonthlyPlan(headerRow, names) : null;
   const status = plan?.status ?? null;

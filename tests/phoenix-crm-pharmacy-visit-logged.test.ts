@@ -427,6 +427,10 @@ export function runPhoenixCrmPharmacyVisitLoggedTests(): void {
     assert.doesNotMatch(screen, /LivePhotoCapture|PlaceEditor|TimingsEditor/, "no photo, no hours");
 
     // Pharmacy visit lists every pharmacy on his list — validated or not: the form reads pending ones too.
-    assert.match(list, /query\.in\("status", options\.includeOutside \? \["active", "pending", "outside"\] : \["active", "pending"\]\)/);
+    // The statuses are decided once and handed to both doors of the territory read (2 Nov 2026): the
+    // one-statement function and the page-walk fallback.
+    assert.match(list, /const statuses = options\.onListOnly \? \(options\.includeOutside \? \["active", "pending", "outside"\] : \["active", "pending"\]\) : null;/);
+    assert.match(list, /p_statuses: statuses,/, "the function is asked for the same statuses");
+    assert.match(list, /if \(statuses\) query = query\.in\("status", statuses\);/, "and so is the fallback");
   }
 }

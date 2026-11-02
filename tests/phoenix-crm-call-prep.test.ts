@@ -200,7 +200,8 @@ export function runPhoenixCrmCallPrepTests(): void {
   {
     const server = source("src/lib/phoenix-crm/server/call-prep.ts");
     assert.ok(server.includes("territoryForRepWrite("), "the gate is the rep's own seat — his plan and his own notes");
-    assert.ok(server.includes("plannedCustomersOn("), "the stops come from the module's own plan door, never a query of its own");
+    assert.ok(server.includes("loadPlannedDay("), "the stops come from the module's own plan door, never a query of its own");
+    assert.ok(!server.includes("plannedCustomersOn("), "and never a second door beside it — the day's rule is asked inside loadPlannedDay");
     assert.ok(server.includes("isPlanSentForReview("), "and the day's own standing decides, never the week's status column");
     assert.ok(
       server.includes('.from("phoenix_crm_visits")') && !server.includes("countable_visits"),
@@ -227,10 +228,16 @@ export function runPhoenixCrmCallPrepTests(): void {
       /loadPlannerInsights\(seatId, isTest, today, customersRead, \{ visitsRead \}\)/,
       "and the same rows handed to the insight, which cuts its own window",
     );
+    // The customer list is read for the day's stops alone, and for nobody on a day that is not sent —
+    // the rule now sits inside the one planned-day door (visits.ts, 2 Nov 2026), on both of its paths.
+    assert.match(server, /const customersRead = dayRead\.then\(\(\{ stops \}\) => stops\);/, "the stops' customers are the planned day's own");
+    const plannedDay = source("src/lib/phoenix-crm/server/visits.ts");
+    const door = plannedDay.slice(plannedDay.indexOf("export async function loadPlannedDay("), plannedDay.indexOf("export async function plannedCustomersOn("));
+    assert.match(door, /customerIds: isPlanSentForReview\(planned\.status\) \? planned\.customerIds : \[\],/, "the fallback reads nobody on a day that is not sent");
     assert.match(
-      server,
-      /customerIds: isPlanSentForReview\(planned\.status\) \? planned\.customerIds : \[\],/,
-      "the customer list is read for the day's stops alone, and for nobody on a day that is not sent",
+      door,
+      /stops: isPlanSentForReview\(planned\.status\) \? foldTerritoryCustomers\(day\.stops\) : emptyTerritoryCustomers\(\)/,
+      "and so does the one-statement door",
     );
     // Reuse, not re-derivation: all three picks are the module's own rules.
     for (const reused of ["pickLastVisitProducts(", "pickLastNextStep(", "pickLastObjection(", "loadPlannerInsights(", "buildCallPrep("]) {

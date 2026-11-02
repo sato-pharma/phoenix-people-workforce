@@ -248,6 +248,9 @@ export const TIMED_ROUTES = [
   { file: "app/api/phoenix-crm/list/route.ts", label: "crm_list" },
   { file: "app/api/phoenix-crm/list/board/route.ts", label: "crm_list_board" },
   { file: "app/api/phoenix-crm/visits/form/route.ts", label: "crm_visit_form" },
+  // 2 Nov 2026 (Stage 2): the call prep and the monthly planner — the last two CRM loaders with waves.
+  { file: "app/api/phoenix-crm/call-prep/route.ts", label: "crm_call_prep" },
+  { file: "app/api/phoenix-crm/monthly-plans/route.ts", label: "crm_monthly_plans" },
 ];
 
 /** What a timed route is missing. */

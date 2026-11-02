@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { validationError } from "@/lib/http/api-errors";
+import { startServerTimer } from "@/lib/http/server-timing";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadMonthlyPlanner, transitionMonthlyPlanAsRep } from "@/lib/phoenix-crm/server/monthly-plans";
@@ -18,13 +19,19 @@ export const dynamic = "force-dynamic";
 //        back to change it. The days themselves are saved a week at a time through /plans; this route
 //        never writes a placement. A manager's decision is /monthly-plans/reviews.
 export async function GET(request: Request) {
+  // Server-Timing (durations only): access, viewer and load, as on the List and the call prep, so the
+  // planner's open is read in the network panel and the process-health line (2 Nov 2026, Stage 2).
+  const timer = startServerTimer("crm_monthly_plans");
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
-    const viewer = await resolvePhoenixCrmViewer(access);
+    timer.lap("access");
+    const viewer = await timer.measure("viewer", () => resolvePhoenixCrmViewer(access));
     const search = searchOf(request);
-    const planner = await loadMonthlyPlanner(viewer, { seatId: search.get("seatId"), test: search.get("test"), month: search.get("month") });
-    return NextResponse.json({ planner, success: true });
+    const planner = await timer.measure("load", () =>
+      loadMonthlyPlanner(viewer, { seatId: search.get("seatId"), test: search.get("test"), month: search.get("month") }),
+    );
+    return NextResponse.json({ planner, success: true }, { headers: timer.headers() });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not open the monthly plan.");
   }

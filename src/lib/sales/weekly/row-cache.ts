@@ -22,6 +22,8 @@
  * budget; a read larger than the whole budget is served but not stored.
  */
 
+import { invalidateWeeklyStockCache } from "@/lib/dashboard/invalidation";
+
 export const WEEKLY_ROW_CACHE_TTL_MS = 60_000;
 export const WEEKLY_ROW_CACHE_MAX_ENTRIES = 4;
 // Measured 2026-10-04 on production data: the full validated history is 52,895 rows and holds 30.9 MB
@@ -36,9 +38,12 @@ const inFlight = new Map<string, Promise<{ rows: unknown[]; pages: number }>>();
 let generation = 0;
 
 /** Called by every app path that writes weekly rows or batches. */
-export function bumpWeeklyRowsGeneration(_reason: string): void {
+export function bumpWeeklyRowsGeneration(reason: string): void {
   generation += 1;
   entries.clear();
+  // The remembered Weekly Stock payloads (stock-dashboard-service.ts) are built from these rows, so the
+  // same writes drop them (2 Nov 2026). Best-effort, as every tag bust is.
+  invalidateWeeklyStockCache(reason);
 }
 
 export function weeklyRowCacheKey(input: {

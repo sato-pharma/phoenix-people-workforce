@@ -226,9 +226,24 @@ statement, not of the request, which cost ~450 ms at the peak.
   connected, the push viewer in the shell HTML with a registration skipped inside the week, page views
   batched every 30 s; the shell's data one wave and five pages' awaits pinned (item 19); every page's
   timing kept by the hour (item 20); the List, its board and the Add Visit form (items 21–23).
-- **Stage 2 (next):** call prep's and the monthly planner's waves, and the heavy pages remembered under
-  tags their writes drop. Still open from Stage 1, on purpose: `readOpenList` pages by OFFSET; only the
-  seven CRM routes carry `Server-Timing`; the shell does not yet embed its stage durations.
+- **Stage 2 (2 Nov 2026):** a seat's customers, places and venues from one function
+  (`phoenix_crm_territory_customers`, with the List's status filter and a day's customer-id filter), so
+  the List, Add Visit, both planners and the call prep read one request where they read three; the call
+  prep's whole day from another (`phoenix_crm_planned_day`: the week's plan row, the day's items, the
+  edit requests, the returns and the stops) where it stood on five sequential waves; the month
+  planner's first wave two reads, not four, and the sends read four chunks at a time; the venue names
+  taken from the territory read instead of a second read of the same rows; the Ranks board drawing each
+  insignia once (a sprite the badges `<use>`: 64 copies of a 21 KB eagle were the 2.8 MB) and
+  remembered per window and audience for an hour under a tag the nightly compute drops; Weekly Stock
+  remembered per scope and filters for five minutes under a tag every weekly write and a price edit
+  drop, stored gzipped like the Sales vs Target rows. Both planners' routes answer with
+  `Server-Timing`. Measured before, on production at 02:25 Cairo: Weekly Stock 10.7 s to the response
+  end (429 KB), Ranks 8.4 s (2.8 MB, 300 inline SVGs), call prep 1,150 ms; the after figures are read
+  the same way once it serves.
+- **Deliberately not remembered:** the Business Review (it reads the LIVE engine, AGENTS.md §4, and
+  its bundle is already cached), Source of Sales (a whole-line read is a sales-rules change), ROI
+  Tracker and Coverage (KPI rules, 1.8 s and 4.6 s), Territory Drilldown. Still open from Stage 1, on
+  purpose: `readOpenList` pages by OFFSET; the shell does not yet embed its stage durations.
 
 ### The compute question
 

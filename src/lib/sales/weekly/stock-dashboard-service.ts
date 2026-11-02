@@ -7,7 +7,14 @@
 // caller cannot widen past their role by editing the URL. The screen and the export call this one
 // function with the same filters, which is what keeps the download identical to the page.
 
+import { promisify } from "node:util";
+import { gunzip, gzip } from "node:zlib";
+
+import { unstable_cache } from "next/cache.js";
+
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { serveWithoutCaching, unwrapServedWithoutCaching } from "@/lib/cache/serve-uncached";
+import { WEEKLY_STOCK_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { resolveWeeklyAccessScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { narrowStockRowsToGovernorate, viewerGovernorates } from "@/lib/sales/weekly/branch-governorate-scope";
@@ -164,6 +171,70 @@ export function buildStockScopeSummary(
   return parts.join(" · ");
 }
 
+/**
+ * How long one Weekly Stock payload is remembered (2 Nov 2026, the speed root cause, Stage 2). On
+ * production the page spent 12.9 s of server render per open: every weekly row of the viewer's scope
+ * read, re-priced, de-cumulated and folded into the view, for a screen whose numbers change only
+ * when a distributor sheet is uploaded or a price is edited. Five minutes is the backstop; the real
+ * freshness is the tag, dropped by every weekly write (bumpWeeklyRowsGeneration in row-cache.ts) and
+ * by a Product Master price edit (invalidatePriceDependentSalesCaches).
+ */
+export const WEEKLY_STOCK_CACHE_SECONDS = 300;
+
+/**
+ * The largest packed payload the data cache may keep; a bigger one is served and NOT stored (the
+ * Sales vs Target cache set the precedent: Next refuses an entry over 2 MB, and refuses it loudly on
+ * every render). Stored gzipped and base64, as that cache stores its rows, so a 400 KB view is a
+ * ~40 KB entry and the size checked here is the size Next measures.
+ */
+export const WEEKLY_STOCK_CACHE_MAX_BYTES = 1_500_000;
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+/**
+ * The data-cache key of one Weekly Stock payload: the viewer's SCOPE and filters, never the viewer.
+ * Two reps on one seat, or a DM and the NSM over the same region, read one entry. Everything the
+ * build below reads from the viewer is here — the role (the scope line names it, and a Marketing
+ * Manager sees the line filter), the scope tier with its sets, the Head Office flag, his own-area
+ * keys, whether the load is lifted, and every filter with its mode. Exported so a test can pin that
+ * the HR id never enters it. The array order IS the key — do not reorder casually.
+ */
+export function weeklyStockCacheKeyParts(
+  role: PhoenixRole,
+  scope: WeeklyAccessScope,
+  ownAreaKeys: ReadonlySet<string>,
+  liftGrain: boolean,
+  filters: WeeklyStockRequestFilters,
+): string[] {
+  const list = (values: Iterable<string> | null | undefined): string => (values ? [...values].sort().join(",") : "*");
+  const tierParts =
+    scope.tier === "full"
+      ? [`restricted:${scope.canViewRestricted}`]
+      : scope.tier === "product"
+        ? [`scope-products:${list(scope.productCodes)}`]
+        : scope.tier === "territory"
+          ? [`scope-lines:${list(scope.allowedLineNames)}`, `scope-regions:${list(scope.allowedRegionCodes)}`, `scope-areas:${list(scope.allowedAreaCodes)}`]
+          : [];
+  return [
+    "weekly-stock-payload",
+    `role:${role}`,
+    `tier:${scope.tier}`,
+    `head-office:${scope.canViewHeadOffice}`,
+    ...tierParts,
+    `own-areas:${list(ownAreaKeys)}`,
+    `lift:${liftGrain}`,
+    `as-of:${filters.asOfWeekStart ?? ""}`,
+    `distributors:${filters.distributorFilterMode ?? "include"}:${list(filters.distributorCodes)}`,
+    `regions:${filters.regionFilterMode ?? "include"}:${list(filters.regionCodes)}`,
+    `products:${filters.productFilterMode ?? "include"}:${list(filters.productCodes)}`,
+    `lines:${filters.lineFilterMode ?? "include"}:${list(filters.lineCodes)}`,
+    `areas:${list(filters.areaCodes)}`,
+    `depots:${list(filters.branchKeys)}`,
+    `statuses:${list(filters.statuses)}`,
+  ];
+}
+
 export async function loadWeeklyStockDashboard(
   filters: WeeklyStockRequestFilters,
   ctx: AccessContext,
@@ -184,99 +255,121 @@ export async function loadWeeklyStockDashboard(
   // product list can still offer every product his depots carry while one of them is chosen.
   const productFilterInLoad = !liftGrain;
 
-  const [data, areaNames, areaSplit, regionNames] = await Promise.all([
-    loadWeeklyDashboard({
-      // Every week: the snapshot is each distributor's own latest stock upload, and the cover average
-      // looks back across month boundaries.
-      allWeeks: true,
-      // Owner rule for every weekly report and export: unmapped products never reach a total.
-      excludeUnmapped: true,
-      includeStockRows: true,
-      distributorCodes: filters.distributorCodes,
-      distributorFilterMode: filters.distributorFilterMode,
-      regionCodes: filters.regionCodes,
-      regionFilterMode: filters.regionFilterMode,
-      productCodes: productFilterInLoad ? filters.productCodes : undefined,
-      productFilterMode: productFilterInLoad ? filters.productFilterMode : undefined,
-      lineCodes: filters.lineCodes,
-      lineFilterMode: filters.lineFilterMode,
-      accessScope,
-      liftRowGrainGeography: liftGrain,
-    }),
-    loadAreaNames(),
-    // The owner's depot-split rule, which says which areas a depot serves. Fails soft to no index, which
-    // leaves only depots mapped by hand to one of his areas.
-    liftGrain ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
-    // The scope line's region name, from the organogram: a depot keeps the region label it was mapped with, so
-    // the load's own region options never name Upper Egypt 1, Upper Egypt 2 or Delta (3). Fails soft.
-    loadWeeklyScopeRegionNames(accessScope),
-  ]);
-
-  const liftedStockRows =
-    liftGrain && accessScope.tier === "territory"
-      ? admitWeeklyStockRows(data.stockRows ?? [], { bound: accessScope, ownAreaKeys, areaSplit })
-      : (data.stockRows ?? []);
-  // Governorate scope (owner, 2026-09-23): a territory viewer sees only the depots in his OWN
-  // governorate, not his whole region. Kibar Omala depots and depots whose name states no
-  // governorate stay visible. Visibility only — attribution is untouched. A viewer with no
-  // governorate bound (full/product/region-only) is not narrowed. See branch-governorate-scope.ts.
-  // Narrowed here so the product filter and the option lists below still read the scoped rows.
-  const scopedStockRows = narrowStockRowsToGovernorate(
-    liftedStockRows,
-    viewerGovernorates(accessScope, ownAreaKeys),
+  // The scope above is resolved on every open — it is the viewer's and it is cheap. Everything from
+  // here on is the heavy build, remembered per scope and filters (weeklyStockCacheKeyParts) for
+  // WEEKLY_STOCK_CACHE_SECONDS and dropped by the writes that change its numbers. A payload too large
+  // to store is served to this viewer without being kept (serve-uncached.ts).
+  const remembered = unstable_cache(
+    async (): Promise<string> => {
+      const payload = await buildWeeklyStockPayload();
+      const packed = (await gzipAsync(JSON.stringify(payload))).toString("base64");
+      if (packed.length > WEEKLY_STOCK_CACHE_MAX_BYTES) {
+        serveWithoutCaching(payload, `the Weekly Stock payload is ${packed.length} bytes packed, over WEEKLY_STOCK_CACHE_MAX_BYTES`);
+      }
+      return packed;
+    },
+    weeklyStockCacheKeyParts(ctx.role, accessScope, ownAreaKeys, liftGrain, filters),
+    { revalidate: WEEKLY_STOCK_CACHE_SECONDS, tags: [WEEKLY_STOCK_CACHE_TAG] },
   );
-  const stockRows = productFilterInLoad ? scopedStockRows : scopedStockRows.filter(weeklyStockProductPredicate(filters));
+  const served = await unwrapServedWithoutCaching<string | WeeklyStockPayload>(remembered());
+  if (typeof served !== "string") return served;
+  return JSON.parse((await gunzipAsync(Buffer.from(served, "base64"))).toString("utf8")) as WeeklyStockPayload;
 
-  const view = buildWeeklyStockView(stockRows, areaNames, {
-    asOfWeekStart: filters.asOfWeekStart,
-    areaCodes: filters.areaCodes,
-    branchKeys: filters.branchKeys,
-    statuses: filters.statuses,
-  });
+  async function buildWeeklyStockPayload(): Promise<WeeklyStockPayload> {
+    const [data, areaNames, areaSplit, regionNames] = await Promise.all([
+      loadWeeklyDashboard({
+        // Every week: the snapshot is each distributor's own latest stock upload, and the cover average
+        // looks back across month boundaries.
+        allWeeks: true,
+        // Owner rule for every weekly report and export: unmapped products never reach a total.
+        excludeUnmapped: true,
+        includeStockRows: true,
+        distributorCodes: filters.distributorCodes,
+        distributorFilterMode: filters.distributorFilterMode,
+        regionCodes: filters.regionCodes,
+        regionFilterMode: filters.regionFilterMode,
+        productCodes: productFilterInLoad ? filters.productCodes : undefined,
+        productFilterMode: productFilterInLoad ? filters.productFilterMode : undefined,
+        lineCodes: filters.lineCodes,
+        lineFilterMode: filters.lineFilterMode,
+        accessScope,
+        liftRowGrainGeography: liftGrain,
+      }),
+      loadAreaNames(),
+      // The owner's depot-split rule, which says which areas a depot serves. Fails soft to no index, which
+      // leaves only depots mapped by hand to one of his areas.
+      liftGrain ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
+      // The scope line's region name, from the organogram: a depot keeps the region label it was mapped with, so
+      // the load's own region options never name Upper Egypt 1, Upper Egypt 2 or Delta (3). Fails soft.
+      loadWeeklyScopeRegionNames(accessScope),
+    ]);
 
-  // Option universes trimmed to the viewer's scope, the same way the portal Weekly Sales trims them.
-  const allowedRegions = accessScope.tier === "territory" ? accessScope.allowedRegionCodes : null;
-  const allowedProducts = accessScope.tier === "product" ? accessScope.productCodes : null;
-  const regions = allowedRegions
-    ? data.availableRegions.filter((region) => allowedRegions.has(region.code.toUpperCase()))
-    : data.availableRegions;
-  const scopedProducts = allowedProducts
-    ? data.availableProducts.filter((product) => allowedProducts.has(product.code.toUpperCase()))
-    : data.availableProducts;
-  // The load's option lists are the region-bound ones, so a lifted viewer also gets what his narrowed
-  // depots carry — read before the product filter, so choosing one product never hides the others.
-  const products = liftGrain
-    ? withExtraWeeklyOptions(
-        scopedProducts,
-        scopedStockRows.map((row) => ({ code: row.productCode, name: row.productName })),
-      )
-    : scopedProducts;
-  const distributorUniverse = liftGrain
-    ? withExtraWeeklyOptions(
-        data.distributors,
-        scopedStockRows.map((row) => ({ code: row.distributorCode, name: row.distributorName })),
-      )
-    : data.distributors;
-  const showLines = accessScope.tier === "full" || ctx.role === "Marketing Manager";
+    const liftedStockRows =
+      liftGrain && accessScope.tier === "territory"
+        ? admitWeeklyStockRows(data.stockRows ?? [], { bound: accessScope, ownAreaKeys, areaSplit })
+        : (data.stockRows ?? []);
+    // Governorate scope (owner, 2026-09-23): a territory viewer sees only the depots in his OWN
+    // governorate, not his whole region. Kibar Omala depots and depots whose name states no
+    // governorate stay visible. Visibility only — attribution is untouched. A viewer with no
+    // governorate bound (full/product/region-only) is not narrowed. See branch-governorate-scope.ts.
+    // Narrowed here so the product filter and the option lists below still read the scoped rows.
+    const scopedStockRows = narrowStockRowsToGovernorate(
+      liftedStockRows,
+      viewerGovernorates(accessScope, ownAreaKeys),
+    );
+    const stockRows = productFilterInLoad ? scopedStockRows : scopedStockRows.filter(weeklyStockProductPredicate(filters));
 
-  return {
-    view,
-    options: {
-      // Only distributors that actually carry stock in scope — POS and Direct report none.
-      distributors: distributorUniverse.filter((distributor) =>
-        view.distributors.some((row) => row.code === distributor.code.toUpperCase()) ||
-        (filters.distributorCodes ?? []).some((code) => code.toUpperCase() === distributor.code.toUpperCase()),
-      ),
-      regions,
-      products,
-      lines: showLines ? data.availableLines : [],
-    },
-    scope: {
-      summary: buildStockScopeSummary(accessScope, ctx.role, regionNames),
-      visibility: {
-        line: showLines,
-        region: !(allowedRegions !== null && allowedRegions.size === 1),
+    const view = buildWeeklyStockView(stockRows, areaNames, {
+      asOfWeekStart: filters.asOfWeekStart,
+      areaCodes: filters.areaCodes,
+      branchKeys: filters.branchKeys,
+      statuses: filters.statuses,
+    });
+
+    // Option universes trimmed to the viewer's scope, the same way the portal Weekly Sales trims them.
+    const allowedRegions = accessScope.tier === "territory" ? accessScope.allowedRegionCodes : null;
+    const allowedProducts = accessScope.tier === "product" ? accessScope.productCodes : null;
+    const regions = allowedRegions
+      ? data.availableRegions.filter((region) => allowedRegions.has(region.code.toUpperCase()))
+      : data.availableRegions;
+    const scopedProducts = allowedProducts
+      ? data.availableProducts.filter((product) => allowedProducts.has(product.code.toUpperCase()))
+      : data.availableProducts;
+    // The load's option lists are the region-bound ones, so a lifted viewer also gets what his narrowed
+    // depots carry — read before the product filter, so choosing one product never hides the others.
+    const products = liftGrain
+      ? withExtraWeeklyOptions(
+          scopedProducts,
+          scopedStockRows.map((row) => ({ code: row.productCode, name: row.productName })),
+        )
+      : scopedProducts;
+    const distributorUniverse = liftGrain
+      ? withExtraWeeklyOptions(
+          data.distributors,
+          scopedStockRows.map((row) => ({ code: row.distributorCode, name: row.distributorName })),
+        )
+      : data.distributors;
+    const showLines = accessScope.tier === "full" || ctx.role === "Marketing Manager";
+
+    return {
+      view,
+      options: {
+        // Only distributors that actually carry stock in scope — POS and Direct report none.
+        distributors: distributorUniverse.filter((distributor) =>
+          view.distributors.some((row) => row.code === distributor.code.toUpperCase()) ||
+          (filters.distributorCodes ?? []).some((code) => code.toUpperCase() === distributor.code.toUpperCase()),
+        ),
+        regions,
+        products,
+        lines: showLines ? data.availableLines : [],
       },
-    },
-  };
+      scope: {
+        summary: buildStockScopeSummary(accessScope, ctx.role, regionNames),
+        visibility: {
+          line: showLines,
+          region: !(allowedRegions !== null && allowedRegions.size === 1),
+        },
+      },
+    };
+  }
 }

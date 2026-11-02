@@ -146,8 +146,8 @@ export async function runCacheAuditP3Tests() {
     const invalidation = source("src/lib/dashboard/invalidation.ts");
     assert.match(
       invalidation,
-      /export function invalidatePriceDependentSalesCaches\(reason: string\) \{\s*for \(const tag of \[CLOSING_STORE_SPLIT_CACHE_TAG, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG\]\) \{\s*try \{\s*revalidateTag\(tag, \{ expire: 0 \}\);/,
-      "both price-blind tags are expired at once, so the editor's next screen shows the new price",
+      /export function invalidatePriceDependentSalesCaches\(reason: string\) \{\s*for \(const tag of \[CLOSING_STORE_SPLIT_CACHE_TAG, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG, WEEKLY_STOCK_CACHE_TAG\]\) \{\s*try \{\s*revalidateTag\(tag, \{ expire: 0 \}\);/,
+      "all three price-blind tags are expired at once — Weekly Stock joined on 2 Nov 2026, its values being units at the factory price — so the editor's next screen shows the new price",
     );
     for (const [file, label] of [
       ["src/lib/sales/vs-target.ts", "the achievement month"],
