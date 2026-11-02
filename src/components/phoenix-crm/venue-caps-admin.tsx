@@ -44,10 +44,10 @@ import {
 } from "@/lib/phoenix-crm/venue-cap-rules";
 
 const VENUE_COLUMNS = [
-  { head: "Polyclinic or centre", width: "34%" },
-  { head: "Customers", width: "10%" },
-  { head: "No cap", width: "20%" },
-  { head: "Visits a day", width: "36%" },
+  { head: "Polyclinic or centre", width: "33%" },
+  { head: "Customers", width: "15%" },
+  { head: "No cap", width: "18%" },
+  { head: "Visits a day", width: "34%" },
 ] as const;
 
 function whenText(name: string | null, at: string | null): string {
@@ -261,7 +261,12 @@ export function VenueCapsAdmin({ view }: { view: VenueCapsAdminView }) {
                   accent={venue.lifted ? "border-l-orange-500" : venue.dailyCap !== null ? "border-l-amber-500" : "border-l-slate-300"}
                   key={venue.sharedPlaceId}
                   meta={venue.seated === 1 ? "1 customer" : `${venue.seated} customers`}
-                  status={venue.held ? <CrmPill tone="warn">On hold</CrmPill> : <CrmPill tone="info">{venueKindLabel(venue.kind)}</CrmPill>}
+                  status={
+                    <>
+                      <CrmPill tone="info">{venueKindLabel(venue.kind)}</CrmPill>
+                      {venue.held ? <CrmPill tone="warn">On hold</CrmPill> : null}
+                    </>
+                  }
                   title={venueName(venue)}
                 >
                   <div className="grid min-w-0 gap-3">
