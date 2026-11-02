@@ -139,6 +139,8 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readPlaceSchedule, recordPlaceSchedule } from "@/lib/phoenix-crm/server/schedule-check";
 import {
   SCHEDULE_RETAKE_CODE,
+  SCHEDULE_UPLOAD_TOO_EARLY,
+  scheduleUploadAllowed,
   scheduleDoorAction,
   scheduleHoldRecord,
   type PhoenixCrmScheduleCheck,
@@ -2043,15 +2045,23 @@ async function scanSeatedTimetable(input: {
   subject: ValidationSubject | null;
   venue: SeatingVenue;
   seatedPhoto: { path: string; reused: boolean };
+  /** The phone says this photo was uploaded on the last try. Refused unless two were refused today. */
+  uploaded: boolean;
   seatId: string;
   repHrId: string;
   isTest: boolean;
 }): Promise<SeatedSchedule> {
   const { subject, venue, seatedPhoto } = input;
+  // A reused board was never sent by this phone, so nothing about this seating was uploaded.
+  const uploaded = input.uploaded && !seatedPhoto.reused;
+  if (uploaded) {
+    const refused = await countTimetableRefusals({ sharedPlaceId: venue.sharedPlaceId, repHrId: input.repHrId, isTest: input.isTest });
+    if (!scheduleUploadAllowed(refused)) throw validationError(SCHEDULE_UPLOAD_TOO_EARLY, SCHEDULE_RETAKE_CODE);
+  }
   // `signboardNameIsUsable` is the SAME guard the signboard read is given, deliberately: a name too
   // short or too generic to match ("Dr", a single initial) judged against a wall of forty names could
   // only produce noise — and a refusal the rep could never pass.
-  const check =
+  const reading =
     subject && signboardNameIsUsable(subject.name)
       ? await readPlaceSchedule({
           customerName: subject.name,
@@ -2062,10 +2072,11 @@ async function scanSeatedTimetable(input: {
           seatId: input.seatId,
         })
       : null;
-  if (!check) return { check: null, hold: null, heldBecause: null };
+  if (!reading) return { check: null, hold: null, heldBecause: null };
+  const check = uploaded ? { ...reading, uploaded: true } : reading;
   // Counted only when the reading could ask for a retake — a match or a lost call never pays a read.
   const asksForAPhoto = check.verdict === "no_schedule" || (check.verdict === "unjudged" && check.reason === "unreadable");
-  const earlierTries = asksForAPhoto
+  const earlierTries = asksForAPhoto || uploaded
     ? await countTimetableRefusals({ sharedPlaceId: venue.sharedPlaceId, repHrId: input.repHrId, isTest: input.isTest })
     : 0;
   const action = scheduleDoorAction(check, earlierTries);
@@ -2463,7 +2474,7 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     // The scanner (owner, 2026-10-17) refuses a photograph that is not a readable timetable BEFORE
     // anything is written, and holds what it must hold on the SAME atomic `hold_review` a Google or
     // signboard hold rides: the customer stays under To validate and one review row is raised.
-    const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
+    const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, uploaded: seated.photoUploaded, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
     schedule = scanned.check;
     heldBecause = scanned.heldBecause;
     if (scanned.hold) payload.hold_review = scanned.hold;
@@ -2851,7 +2862,7 @@ export async function addPlace(
     // The timetable is the BUILDING's and is read from the venue, not from the body — the same rule,
     // and the same scanner at the door (owner, 2026-10-17).
     const seatedPhoto = effectiveSeatedPhoto(venue, seated);
-    const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
+    const scanned = await scanSeatedTimetable({ subject, venue, seatedPhoto, uploaded: seated.photoUploaded, seatId: seat.seatId, repHrId: viewer.hrId, isTest });
     schedule = scanned.check;
     heldBecause = scanned.heldBecause;
     holdRecord = scanned.hold;

@@ -175,13 +175,15 @@ export type ScheduleBoardReading =
       problem: ScheduleProblem | null;
       schedulePresent: boolean | null;
       scheduleText: string | null;
+      /** A stored reading of a board that was uploaded: the mark travels to everybody seated behind it. */
+      uploaded?: boolean;
     };
 
 /** One customer's verdict on a board already read. Never throws, as `readPlaceSchedule` never did. */
 export function judgeScheduleBoard(board: ScheduleBoardReading, customerName: string): PhoenixCrmScheduleCheck {
   if (board.kind === "unread") return { ...board.check };
   try {
-    return judgeSchedule({
+    const judged = judgeSchedule({
       croppedFraction: board.croppedFraction,
       customerName,
       hoursRead: board.hoursRead,
@@ -192,6 +194,7 @@ export function judgeScheduleBoard(board: ScheduleBoardReading, customerName: st
       schedulePresent: board.schedulePresent,
       scheduleText: board.scheduleText,
     });
+    return board.uploaded ? { ...judged, uploaded: true } : judged;
   } catch {
     // Swallowed on purpose. A partial verdict on evidence is worse than none, because the board would
     // render it as though it had been read.
@@ -343,6 +346,7 @@ async function storedBoardReading(photoPath: string, isTest: boolean): Promise<S
         // It saw a board, or it would not have said clear or partial.
         schedulePresent: true,
         scheduleText,
+        uploaded: check.uploaded === true,
       };
     }
     return null;

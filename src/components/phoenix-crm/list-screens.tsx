@@ -541,7 +541,7 @@ function savedFromResult(result: ValidateResult): SavedPlace {
  */
 function retakeTimetable(photo: CapturedPhoto | null) {
   if (photo) releaseCapturedPhoto(photo);
-  return (current: SeatedDraftState): SeatedDraftState => ({ ...current, photo: null, replacingTimetable: true });
+  return (current: SeatedDraftState): SeatedDraftState => ({ ...current, photo: null, replacingTimetable: true, timetableRetakes: current.timetableRetakes + 1 });
 }
 
 export function ValidateScreen({

@@ -98,6 +98,11 @@ export type PhoenixCrmScheduleCheck = {
   problem?: ScheduleProblem | null;
   /** On a seating the scanner HELD: how many photographs of this board were tried that day. */
   tries?: number;
+  /**
+   * The photo was chosen from the phone's files on the last try, not taken with the camera (owner,
+   * 2026-11-02). It wears the same stamp, so this record is the only thing that tells them apart.
+   */
+  uploaded?: boolean;
   /** What the timetable reads, verbatim, in its own script. Arabic stays Arabic. */
   scheduleText: string | null;
   /** The names read on it as the names of PEOPLE. */
@@ -218,6 +223,21 @@ export const SCHEDULE_MAX_TRIES = 3;
  */
 export const SCHEDULE_RETAKE_CODE = "phoenix_crm_photo_timetable_retake";
 
+/**
+ * 🔴 THE LAST TRY MAY BE AN UPLOAD (owner, 2026-11-02: "after 2 failed live capture try the third i am
+ * able to upload"). Two refused photographs of this building today open it, for this rep, on the
+ * server's own count: the phone is only ever told, and a body that claims an upload sooner is refused.
+ */
+export function scheduleUploadAllowed(refusedToday: number): boolean {
+  return Number.isFinite(refusedToday) && refusedToday >= SCHEDULE_MAX_TRIES - 1;
+}
+
+/** Over the upload button. */
+export const SCHEDULE_UPLOAD_NOTE =
+  "Two photos could not be read. For this last try you can take a photo or upload one from your phone. An uploaded photo gets the same place and time printed on it.";
+/** A phone that sent an upload before two photos were refused. */
+export const SCHEDULE_UPLOAD_TOO_EARLY = "Take a live photo of the timetable. Uploading opens after two photos could not be read.";
+
 /** Why the scanner held a seating — the sentence the rep reads is keyed by it. */
 export type ScheduleHeldBecause = "name_not_on_timetable" | "timetable_unreadable" | "timetable_missing" | "timetable_on_a_screen";
 
@@ -291,7 +311,10 @@ export function scheduleDoorAction(check: PhoenixCrmScheduleCheck, earlierTries:
   if (check.problem === "on_a_screen") return { kind: "hold", heldBecause: "timetable_on_a_screen", tries: tried + 1 };
   if (check.verdict === "other_name") return { kind: "hold", heldBecause: "name_not_on_timetable", tries: tried + 1 };
   const photoProblem = check.verdict === "no_schedule" || (check.verdict === "unjudged" && check.reason === "unreadable");
-  if (!photoProblem) return { kind: "save" };
+  // 🔴 AN UPLOAD NOBODY READ IS NEVER SAVED AS IF IT PASSED. A lost call saves a live photo because the
+  // rep stood at the wall to take it; a file proves nothing until its names are read, so it goes to the
+  // administrator. Only an upload, so a dead key still stops nobody in the field.
+  if (!photoProblem) return check.uploaded ? { kind: "hold", heldBecause: "timetable_unreadable", tries: tried + 1 } : { kind: "save" };
   const missing = check.verdict === "no_schedule";
   if (tried + 1 >= SCHEDULE_MAX_TRIES) {
     return { kind: "hold", heldBecause: missing ? "timetable_missing" : "timetable_unreadable", tries: tried + 1 };
@@ -331,6 +354,7 @@ export function scheduleHoldRecord(
     croppedFraction: check.croppedFraction,
     legibility: check.legibility ?? null,
     problem: check.problem ?? null,
+    uploaded: check.uploaded === true,
     heldBecause: held?.heldBecause ?? null,
     tries: held?.tries ?? null,
     // The point is the VENUE's, taken once at its door — a seated capture has no reading of its own,

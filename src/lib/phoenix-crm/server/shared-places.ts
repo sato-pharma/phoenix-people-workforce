@@ -50,7 +50,7 @@ import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { tellDecisionComment } from "@/lib/phoenix-crm/server/place-notes";
-import { recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
+import { countTimetableRefusalsByVenue, recordRefusedReading } from "@/lib/phoenix-crm/server/refused-readings";
 import { readPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { signboardDoorHolds, signboardHoldRecord, type PhoenixCrmSignboardCheck } from "@/lib/phoenix-crm/signboard-rules";
 import {
@@ -117,6 +117,8 @@ export type SharedPlaceRow = {
   schedulePhotoPath: string | null;
   /** When that board was photographed — the date the rep is shown in place of the camera. */
   schedulePhotoCapturedAtText: string | null;
+  /** This viewer's refused photographs of this board today: two open the upload on the last try. */
+  timetableRefusedToday: number;
 };
 
 export function kindOf(value: unknown): SharedPlaceKind {
@@ -129,7 +131,7 @@ function statusOf(value: unknown): SharedPlaceRow["status"] {
   return value === "held" || value === "retired" ? value : "active";
 }
 
-function mapSharedPlace(row: Row, seated: number): SharedPlaceRow {
+function mapSharedPlace(row: Row, seated: number, timetableRefusedToday = 0): SharedPlaceRow {
   const kind = kindOf(row.kind);
   return {
     sharedPlaceId: String(row.id),
@@ -149,6 +151,7 @@ function mapSharedPlace(row: Row, seated: number): SharedPlaceRow {
     schedulePhotoCapturedAtText: text(row.schedule_photo_captured_at)
       ? formatPhoenixDateTime(String(row.schedule_photo_captured_at))
       : null,
+    timetableRefusedToday,
   };
 }
 
@@ -315,8 +318,12 @@ export async function loadSharedPlacesFor(viewer: PhoenixCrmViewer, raw: unknown
   // `GenericStringError[]`, which does not overlap `Row[]`, and the compiler is right to refuse the
   // direct cast. The shape is proven by `SHARED_PLACE_COLUMNS` and the mapper below, not by this cast.
   const rows = (data ?? []) as unknown as Row[];
-  const counts = await seatedCounts(rows.map((row) => String(row.id)));
-  return rows.map((row) => mapSharedPlace(row, counts.get(String(row.id)) ?? 0));
+  const ids = rows.map((row) => String(row.id));
+  const [counts, refused] = await Promise.all([
+    seatedCounts(ids),
+    countTimetableRefusalsByVenue({ sharedPlaceIds: ids, repHrId: viewer.hrId, isTest }),
+  ]);
+  return rows.map((row) => mapSharedPlace(row, counts.get(String(row.id)) ?? 0, refused.get(String(row.id)) ?? 0));
 }
 
 // ── Capturing one ───────────────────────────────────────────────────────────────────────────────

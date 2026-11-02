@@ -51,6 +51,8 @@ export type SeatedTimetable = {
   problem?: ScheduleProblem | null;
   /** Set when the scanner held the seating after its tries. */
   heldBecause?: ScheduleHeldBecause | null;
+  /** The photo was uploaded on the last try, not taken live. */
+  uploaded?: boolean;
 };
 
 export type SeatedCustomer = ValidationReviewFilterable & {
@@ -101,6 +103,7 @@ function timetableOfReview(row: ValidationReviewRow): SeatedTimetable | null {
     legibility: row.evidence.legibility,
     problem: row.evidence.problem,
     heldBecause: row.evidence.heldBecause,
+    ...(row.evidence.uploaded ? { uploaded: true } : {}),
   };
   if (row.reason === "schedule_other_name") return { verdict: "other_name", scheduleText: row.signText, hoursRead: row.hoursRead, ...evidence };
   if (row.reason === "schedule_missing") return { verdict: "no_schedule", scheduleText: row.signText, hoursRead: row.hoursRead, ...evidence };
