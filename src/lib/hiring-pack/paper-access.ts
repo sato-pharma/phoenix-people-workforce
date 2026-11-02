@@ -2,49 +2,41 @@
 // WHO MAY USE THE HR FORMS, AND WHICH PAPERS — the one server-side answer for every hiring-pack
 // route and both HR Forms pages.
 //
-// Two kinds of viewer reach these screens:
+// Two kinds of viewer can reach these screens:
 //
-//   - Everyone who did before: an HR authority seat holding `employee_documents` (HR Operations,
-//     the Super Admin). Nothing about them changes — every helper below falls through to the exact
-//     `employee_documents` check the routes made before this file existed.
+//   - A seat holding `employee_documents`: HR Operations, the Super Admin, and since 2026-11-02 the
+//     HR Operations Specialist (`HR Administration`; owner: "OPEN HR FORMS FULL MODULE TO AYA").
+//     Every helper below falls through to the plain `employee_documents` check for them.
 //
-//   - A seat named in SEAT_PRINTABLE_DOCUMENTS (document-registry.ts). Today that is the HR
-//     Operations Specialist (`HR Administration`, owner, 2026-10-20): she prepares the contract
-//     renewal and follows a resignation through to the clearance, so she prints exactly those
-//     papers. She is outside `hrAuthorityRoles`, which strips employee_documents from her on
-//     purpose, so the key cannot be her door. Her door is the business grant each paper belongs to
-//     — `contracts` for the renewal pair, `resignations` for the leaving papers — which the
-//     access-control screen can still take away from her like any other grant.
+//   - A seat named in SEAT_PRINTABLE_DOCUMENTS (document-registry.ts), which prints only its listed
+//     papers on the business grant each paper belongs to. No seat is named today.
 //
-// AND SHE IS SALARY-BLIND (`isSalaryBlindRole`). The pack these routes return carries the base
-// salary, the gross and the insurance wage; `packForViewer` blanks all three for her, and
-// `factsInputForViewer` drops a salary she might send. The one money exception the owner made is
-// the renewal annex itself, which prints the salary — and that is rendered on the server from the
-// full record, never from what her browser holds.
-//
-// THE PAPERS ARE DRAWN FROM THE BLANKED PACK TOO (`packForPaper`, called in renderHiringPaper — the
-// one place print, `inventory=1`, the hand-typed paper and the signed-copy filing all render). Her
-// other seven papers print no salary in their own text, but every renderer still puts the figure in
-// its values map (BASE_SALARY on a house paper, SALARY_FIGURES on the non-renewal notice), and a
-// field the Super Admin places in the layout editor prints whatever that map holds. Drawn from the
-// blanked pack, such a field prints nothing for her; the annex alone is drawn from the full record.
+// THE SALARY-BLIND SEAT SEES AND PRINTS THE SALARY HERE, AND DOES NOT CHANGE IT. HR Forms is the one
+// screen where the HR Operations Specialist sees a figure; `isSalaryBlindRole` still withholds it
+// from her on the Employee Master, its import and export, the organogram and resignations. Changing
+// pay was not part of what the owner opened, and payroll reads the field, so `factsInputForViewer`
+// drops a salary she sends and `salaryReadOnly` locks the box and the paper's field on her screen.
+// THE CONTRACT TERMS ARE THE SAME (owner, 2026-11-02: "lock contract terms for aya, she only prints
+// them"): `profileInputForViewer` keeps the terms on record, and `contractTermsReadOnly` locks them.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import {
   assertPermission,
   canAccess,
-  isHrAuthorityRole,
+  isHiringPaperworkRole,
   type AccessContext,
   type PermissionResource,
 } from "@/lib/auth/permissions";
 import { isPaperOpenToRole, seatPapersFor } from "@/lib/hiring-pack/document-registry";
 import type { PaperIssue } from "@/lib/hiring-pack/paper-register-store";
 import {
+  HIRING_CONTRACT_TERM_FIELDS,
   isBuiltInDocument,
   type HiringPackData,
   type HiringPackDocument,
   type HiringPackEmployeeFactsInput,
+  type HiringPackProfileInput,
 } from "@/lib/hiring-pack/types";
 
 type FormsAction = "read" | "update";
@@ -82,7 +74,7 @@ async function seatHoldsAny(access: AccessContext, action: FormsAction): Promise
 /**
  * The HR Forms screen and the routes that serve it as a whole (the pack, the register, the facts and
  * exit-details saves). A seat in the table passes on its contracts or resignations grant; everyone
- * else needs employee_documents, exactly as before.
+ * else needs employee_documents.
  */
 export async function assertMayUseHrForms(access: AccessContext, action: FormsAction = "read"): Promise<void> {
   if (isSeatPaperViewer(access)) {
@@ -94,18 +86,21 @@ export async function assertMayUseHrForms(access: AccessContext, action: FormsAc
 
 /**
  * The "What Phoenix already knows" save, which writes the `employees` row itself. A seat in the
- * table also needs employees:update for that — the Employee Master's own grant — so the HR Forms
- * screen is never a back door into a record the seat could not edit on the Employee Master.
+ * table, and the salary-blind seat, also need employees:update for that — the Employee Master's own
+ * grant — so the HR Forms screen is never a back door into a record they could not edit on the
+ * Employee Master.
  */
 export async function assertMaySaveEmployeeFacts(access: AccessContext): Promise<void> {
   await assertMayUseHrForms(access, "update");
-  if (isSeatPaperViewer(access)) await assertPermission(access, "employees", "update");
+  if (isSeatPaperViewer(access) || isSalaryBlindRole(access.role)) {
+    await assertPermission(access, "employees", "update");
+  }
 }
 
 /**
  * One paper. A seat in the table may use ONLY its listed built-in papers — never a company template
- * — and only while it holds the grant that paper belongs to. Everyone else needs employee_documents,
- * exactly as before (and a company template still checks its own role list in renderHiringPaper).
+ * — and only while it holds the grant that paper belongs to. Everyone else needs employee_documents
+ * (and a company template still checks its own role list in renderHiringPaper).
  */
 export async function assertMayPrintPaper(
   access: AccessContext,
@@ -129,19 +124,27 @@ export type HrFormsAccess = {
   canManage: boolean;
   /** The papers this viewer is limited to, or null for every paper (the employee_documents holders). */
   paperScope: readonly HiringPackDocument[] | null;
-  /** True for the salary-blind seat: the screen hides the salary and insurance-wage boxes. */
-  withholdSalary: boolean;
+  /** True for the salary-blind seat: the salary shows and prints, and its box takes no change. */
+  salaryReadOnly: boolean;
+  /** True for the same seat: the contract terms show and print, and take no change. */
+  contractTermsReadOnly: boolean;
 };
+
+/** The seat that prints the contract terms and does not change them. */
+export function areContractTermsReadOnly(access: Pick<AccessContext, "role">): boolean {
+  return isSalaryBlindRole(access.role);
+}
 
 export async function hrFormsAccessFor(access: AccessContext): Promise<HrFormsAccess> {
   const paperScope = seatPapersFor(access.role);
-  const withholdSalary = isSalaryBlindRole(access.role);
+  const salaryReadOnly = isSalaryBlindRole(access.role);
+  const contractTermsReadOnly = areContractTermsReadOnly(access);
   if (paperScope) {
     const [canRead, canManage] = await Promise.all([
       seatHoldsAny(access, "read"),
       seatHoldsAny(access, "update"),
     ]);
-    return { canManage: canRead && canManage, canRead, paperScope, withholdSalary };
+    return { canManage: canRead && canManage, canRead, contractTermsReadOnly, paperScope, salaryReadOnly };
   }
   const [read, canManage] = await Promise.all([
     canAccess(access, "employee_documents", "read"),
@@ -149,57 +152,26 @@ export async function hrFormsAccessFor(access: AccessContext): Promise<HrFormsAc
   ]);
   return {
     canManage,
-    canRead: isHrAuthorityRole(access.role) && read,
+    canRead: isHiringPaperworkRole(access.role) && read,
+    contractTermsReadOnly,
     paperScope: null,
-    withholdSalary,
+    salaryReadOnly,
   };
 }
 
 /**
- * The pack as this viewer may see it. For the salary-blind seat the three money fields are blanked;
- * for a seat in the table the gap list keeps only the papers it prints. Everyone else gets the pack
- * untouched — the same object, not a copy.
+ * The pack as this viewer may see it. For a seat in the table the gap list keeps only the papers it
+ * prints. Everyone else gets the pack untouched — the same object, not a copy.
  */
 export function packForViewer(access: Pick<AccessContext, "role">, pack: HiringPackData): HiringPackData {
   const scope = seatPapersFor(access.role);
-  const blind = isSalaryBlindRole(access.role);
-  if (!scope && !blind) return pack;
+  if (!scope) return pack;
   return {
     ...pack,
-    employee: blind
-      ? { ...pack.employee, baseSalary: null, grossSalary: null, socialInsuranceWage: null }
-      : pack.employee,
-    gaps: scope
-      ? pack.gaps
-          .map((gap) => ({ ...gap, documents: gap.documents.filter((document) => scope.includes(document)) }))
-          .filter((gap) => gap.documents.length > 0)
-      : pack.gaps,
+    gaps: pack.gaps
+      .map((gap) => ({ ...gap, documents: gap.documents.filter((document) => scope.includes(document)) }))
+      .filter((gap) => gap.documents.length > 0),
   };
-}
-
-/**
- * The one paper the salary-blind seat is shown a salary on: the contract renewal ANNEX (ملحق تجديد
- * سنوي), which renews on the base salary — the owner's one money exception for her, 2026-10-20. NOT
- * the non-renewal notice (`contractNonRenewal`), whose values map carries the same figures.
- */
-export const SALARY_BLIND_MONEY_PAPER: HiringPackDocument = "contractRenewal";
-
-/**
- * The pack a paper is DRAWN from for this viewer — what renderHiringPaper renders, and what the
- * print route's `inventory=1` and the hand-typed paper's inputs are read from.
- *
- * For the salary-blind seat every paper but the renewal annex is drawn from `packForViewer`, so no
- * value a renderer builds — and no field placed on the layout — can carry a salary, a gross or an
- * insurance wage to her. Every other viewer, and the annex itself, gets the pack untouched (the
- * same object, not a copy).
- */
-export function packForPaper(
-  access: Pick<AccessContext, "role">,
-  document: string,
-  pack: HiringPackData,
-): HiringPackData {
-  if (!isSalaryBlindRole(access.role) || document === SALARY_BLIND_MONEY_PAPER) return pack;
-  return packForViewer(access, pack);
 }
 
 /**
@@ -214,6 +186,24 @@ export function factsInputForViewer(
   if (!isSalaryBlindRole(access.role) || !input || typeof input !== "object") return input;
   const { baseSalary: _dropped, ...rest } = input;
   return rest;
+}
+
+/**
+ * What a hiring-profile save may carry from this viewer. The save writes every column, so leaving a
+ * term out would blank it: for the read-only seat each term is put back to what is on record, whatever
+ * was sent, and the rest of the profile (nationality, address, Form 1 codes) saves as usual.
+ */
+export function profileInputForViewer(
+  access: Pick<AccessContext, "role">,
+  input: HiringPackProfileInput,
+  onRecord: HiringPackProfileInput,
+): HiringPackProfileInput {
+  if (!areContractTermsReadOnly(access)) return input;
+  const kept: HiringPackProfileInput = { ...input };
+  for (const field of HIRING_CONTRACT_TERM_FIELDS) {
+    (kept as Record<string, unknown>)[field] = onRecord[field] ?? null;
+  }
+  return kept;
 }
 
 /** The register rows a viewer may read: a seat in the table sees only its own papers' issues. */

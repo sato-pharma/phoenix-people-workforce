@@ -580,6 +580,19 @@ export function isHrAuthorityRole(role: PhoenixRole): boolean {
 }
 
 /**
+ * Who may OPEN Hiring Documents and HR Forms: the HR authority seats, and the HR Operations
+ * Specialist (`HR Administration`) since the owner's word on 2026-11-02 ("Receive the hiring papers
+ * / OPEN HR FORMS FULL MODULE TO AYA").
+ *
+ * A SEPARATE PREDICATE ON PURPOSE. She stays outside hrAuthorityRoles, because that set also carries
+ * recruitment, candidates, offers, CV Lookup and the request desks, none of which he gave her. A page
+ * still needs employee_documents:read beside this; the two are asked together.
+ */
+export function isHiringPaperworkRole(role: PhoenixRole): boolean {
+  return isHrAuthorityRole(role) || role === "HR Administration";
+}
+
+/**
  * Who may OPEN the personal candidate inbox at /recruitment/candidates.
  *
  * This widens who can reach the screen, never what any of them can see. The page is a per-person
@@ -848,6 +861,11 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       // app. Super Admin (the owner) only; no other role, ever.
       return role === "Super Admin" ? allActions : [];
     case "employee_documents":
+      // The HR Operations Specialist receives the hiring papers and works the whole of HR Forms (owner,
+      // 2026-11-02). Read, create, update and export only: nothing asserts a delete on this resource,
+      // and she stays out of hrAuthorityRoles, so the three cases below stay shut to her.
+      if (role === "HR Administration") return ["read", "create", "update", "export"];
+      return isHrAuthorityRole(role) ? allActions : [];
     case "recruitment":
     case "candidates":
     case "offers":

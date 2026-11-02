@@ -396,6 +396,26 @@ export type ExitRoute = "resignation" | "mutualTermination";
  * missing a graduation certificate on Tuesday still needs the contract on Tuesday. What a missing
  * value must never do is print a guess — see `HiringPackGap`.
  */
+/**
+ * The contract's own terms on the hiring profile. The HR Operations Specialist prints them and does
+ * not change them (owner, 2026-11-02: "lock contract terms for aya, she only prints them").
+ */
+export const HIRING_CONTRACT_TERM_FIELDS = [
+  "contractStartDate",
+  "contractEndDate",
+  "contractDurationMonths",
+  "underperformanceThresholdPct",
+  "underperformanceMonths",
+  "trainingBondMonths",
+  "contractSignatoryNameAr",
+  "contractSignatoryTitleAr",
+  "contractObjectiveReasonCode",
+] as const;
+
+export function isContractTermField(field: string): boolean {
+  return (HIRING_CONTRACT_TERM_FIELDS as readonly string[]).includes(field);
+}
+
 export type HiringPackProfileInput = {
   nationality?: string | null;
   qualification?: string | null;

@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { assertMayUseHrForms, packForViewer } from "@/lib/hiring-pack/paper-access";
+import {
+  areContractTermsReadOnly,
+  assertMayUseHrForms,
+  packForViewer,
+  profileInputForViewer,
+} from "@/lib/hiring-pack/paper-access";
 import {
   getHiringPack,
   hiringPackErrorMessage,
@@ -41,8 +46,7 @@ function apiError(error: unknown) {
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
     const access = await resolveAccessContext(request);
-    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its own papers' grants
-    // — which for the salary-blind seat means the pack comes back with every money field blanked.
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its own papers' grants.
     await assertMayUseHrForms(access, "read");
     const { hrId } = await params;
 
@@ -59,11 +63,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    // STILL employee_documents, deliberately — the HR Operations Specialist is NOT let in here. The
-    // hiring profile is the contract's own terms (duration, dates, the underperformance and
-    // training-bond clauses) and Form 1's registration codes, and changing a contract stays his
-    // decision (owner, 2026-10-20). Her papers' facts and exit details save through /facts and
-    // /offboarding, which she may use.
+    // STILL employee_documents. The hiring profile is the contract's own terms (duration, dates, the
+    // underperformance and training-bond clauses) and Form 1's registration codes. The HR Operations
+    // Specialist comes in here too since the owner opened the whole module to her on 2026-11-02, for
+    // everything but those terms: she only prints them, so profileInputForViewer keeps what is on record.
     await assertPermission(access, "employee_documents", "update");
     const { hrId } = await params;
     const payload = (await request.json()) as HiringPackProfileInput;
@@ -71,7 +74,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     // The saved pack is returned rather than an acknowledgement, so the screen redraws from what
     // the database actually holds — including the recalculated gap list — instead of from what the
     // form believed it sent.
-    return NextResponse.json(await saveHiringPackProfile(hrId, payload, access.hrId ?? null));
+    const input = areContractTermsReadOnly(access)
+      ? profileInputForViewer(access, payload, (await getHiringPack(hrId)).profile)
+      : payload;
+    return NextResponse.json(await saveHiringPackProfile(hrId, input, access.hrId ?? null));
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "hiring_pack_save_failed", message }, { status });

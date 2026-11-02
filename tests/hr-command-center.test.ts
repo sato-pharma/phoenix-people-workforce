@@ -264,6 +264,8 @@ const FUNCTIONS_WITH_NO_TILES = new Set([
   "hr_communication",
   "cv_lookup",
   "hiring_paperwork",
+  // The HR Operations Specialist's papers and forms (2026-11-02): a grant with no queue of its own.
+  "hiring_desk",
   "workforce_context",
   "recognition",
   // HR Reminders is the team's own notes page, not a queue this dashboard counts.

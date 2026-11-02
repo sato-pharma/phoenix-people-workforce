@@ -711,18 +711,16 @@ export const accessRegistry = [
   // cannot fill in.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PUT", "POST", "DELETE"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
-  // The routes the HR Operations Specialist (`HR Administration`, owner 2026-10-20) also reaches.
-  // Each is gated by src/lib/hiring-pack/paper-access.ts, hence domain-helper: every role that held
-  // employee_documents still passes on it exactly as declared above, and a seat named in
-  // SEAT_PRINTABLE_DOCUMENTS passes on the business grant of its own papers instead — contracts for
-  // the renewal pair, resignations for the leaving papers — and only for those papers. The pack and
-  // every response carrying it come back blanked of money for her (packForViewer).
+  // The routes a seat named in SEAT_PRINTABLE_DOCUMENTS also reaches. Each is gated by
+  // src/lib/hiring-pack/paper-access.ts, hence domain-helper: every role that holds
+  // employee_documents passes on it exactly as declared above (the HR Operations Specialist too since
+  // 2026-11-02), and a named seat passes on the business grant of its own papers instead.
   //
   // The pack itself (GET /api/hiring-pack/:hrId) has NO entry of its own on purpose: a one-segment
   // `:hrId` pattern is longer than `**` and would capture every sibling GET — custom-templates,
   // document-fields, company-details, signature, field-fill-rate — and wave them through as
-  // domain-helper. It stays on the read entry above, and its handler admits her through the same
-  // assertMayUseHrForms. Its profile PUT stays employee_documents:update — closed to her.
+  // domain-helper. It stays on the read entry above, and its handler admits through the same
+  // assertMayUseHrForms. Its profile PUT stays employee_documents:update.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/:hrId/print", permission: [{ resource: "employee_documents", action: "read" }, { resource: "contracts", action: "read" }, { resource: "resignations", action: "read" }], guard: "domain-helper" }),
   sessionApi({ methods: ["PUT"], pattern: "/api/hiring-pack/:hrId/facts", permission: [{ resource: "employee_documents", action: "update" }, { resource: "employees", action: "update" }], guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["PUT"], pattern: "/api/hiring-pack/:hrId/offboarding", permission: [{ resource: "employee_documents", action: "update" }, { resource: "contracts", action: "update" }, { resource: "resignations", action: "update" }], guard: "domain-helper", csrfRequired: true }),
