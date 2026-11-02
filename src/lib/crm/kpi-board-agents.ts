@@ -31,7 +31,7 @@
 
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { queryVisits } from "@/lib/crm/reads";
-import { scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
+import { scanPlanEntries, type PlanChunkMemo } from "@/lib/crm/rep-doctor-lists";
 import { logWarning } from "@/lib/observability/log";
 
 /** A district manager's team fits; a whole line does not, and keeps the company-wide read. */
@@ -92,6 +92,27 @@ export async function resolveKpiBoardAgents(
     });
     return null;
   }
+}
+
+/**
+ * The discovery ONE board asks: the same window answers once, and its plan read lands in the board's own
+ * memo, so the doctor lists and the Phoenix half need not read those rows again (2 Nov 2026, "fix the
+ * portal home slow opens"). The board's scope is fixed, so the window is the whole key.
+ */
+export function kpiBoardDiscovery(planChunks: PlanChunkMemo) {
+  const readers: KpiBoardAgentReaders = {
+    ...DOOR_READERS,
+    plans: (from, to, filter) => scanPlanEntries(from, to, { ...filter, memo: planChunks }),
+  };
+  const held = new Map<string, Promise<KpiBoardAgents | null>>();
+  return (scope: DoctorCoverageScope, window: { from: string; to: string }): Promise<KpiBoardAgents | null> => {
+    const key = `${window.from}|${window.to}`;
+    const known = held.get(key);
+    if (known) return known;
+    const read = resolveKpiBoardAgents(scope, window, readers);
+    held.set(key, read);
+    return read;
+  };
 }
 
 /**

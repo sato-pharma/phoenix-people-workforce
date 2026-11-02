@@ -63,3 +63,14 @@ third of what it did.
 - **Do not drop the id sort** — chain visits are resolved in the whole-window read's order.
 - **Do not count the probationers before the slice** — only the eight shown are looked up, so a ninth
   probationer's count would be partial.
+
+## The field set stays out of this read (2 Nov 2026, "fix the portal home slow opens")
+
+The panel counts visits and prints none, yet each request still carried `PHOENIX_VISIT_DETAIL_COLUMNS`:
+one week came back at 494 KB and 317 ms with those columns, 219 KB and 246 ms without. So
+`getDoubleVisitPortalFocus` passes `withoutVisitDetail: true`. Half the bytes, but only about a fifth of the
+time, so the panel is still the slowest card on a manager's landing (28 requests, four at a time). It streams
+under its own boundary, so the page paints without it. The next step, if the `home.card.double_visit_focus`
+timer says it is worth one, is a count on the database rather than rows.
+
+- **Do not pass `withoutVisitDetail` from anywhere else** — the report prints these columns, through this loader.

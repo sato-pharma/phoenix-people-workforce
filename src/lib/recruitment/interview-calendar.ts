@@ -1353,7 +1353,23 @@ export async function getInterviewBooking(caller: InterviewCalendarCaller, booki
  * daily). A person always sees their own, so it is keyed on their hr id, not the calendar view gate.
  */
 export async function listMyUpcomingInterviews(caller: InterviewCalendarCaller, now: Date = new Date()): Promise<InterviewBooking[]> {
-  const me = canonicalHrIdKey(caller.access.hrId);
+  return hydrate(await myUpcomingBookingRows(caller.access, now), caller, now);
+}
+
+/**
+ * The same list for the portal landing, where almost nobody has an interview (2 Nov 2026, "fix the portal
+ * home slow opens"): the bookings are read FIRST, and the person's calendar level — shares, then whether
+ * they were chosen, then their record, three reads in turn — only when there is a booking to dress with
+ * it. That chain is what a rep with no interviews waited on.
+ */
+export async function listMyUpcomingInterviewsFor(access: AccessContext, now: Date = new Date()): Promise<InterviewBooking[]> {
+  const rows = await myUpcomingBookingRows(access, now);
+  if (rows.length === 0) return [];
+  return hydrate(rows, await interviewCalendarCaller(access), now);
+}
+
+async function myUpcomingBookingRows(access: AccessContext, now: Date): Promise<BookingRow[]> {
+  const me = canonicalHrIdKey(access.hrId);
   if (!me) return [];
   const from = cairoLocalToUtc(cairoDateKey(now), 0);
   const to = new Date(from.getTime() + 21 * 24 * 60 * 60 * 1000);
@@ -1365,7 +1381,7 @@ export async function listMyUpcomingInterviews(caller: InterviewCalendarCaller, 
         isOnPanel(me, row.panelist_hr_ids) ||
         isOnPanel(me, row.shared_with_hr_ids)),
   );
-  return hydrate(rows.slice(0, 50), caller, now);
+  return rows.slice(0, 50);
 }
 
 /** One interview as the .ics calendar feed shows it — names resolved; it is the person's own, so no reveal gate. */

@@ -158,7 +158,7 @@ export function runKpisCallRateThroughYesterdayTests() {
     );
     // The scope's reps may ride along (2026-10-01, crm/kpi-board-agents.ts); the window may not move.
     assert.ok(
-      /loadCallRateReport\(\{\s*dateFrom: callRange\.dateFrom,\s*dateTo: callRange\.dateTo(?:,\s*reuseRecentWindow: true)?(?:,\s*\.\.\.\(agents \? \{ agents \} : \{\}\))?,?\s*\}\)/.test(board),
+      /loadCallRateReport\(\{\s*dateFrom: callRange\.dateFrom,\s*dateTo: callRange\.dateTo(?:,\s*reuseRecentWindow: true)?(?:,\s*startedWindows: startedRead)?(?:,\s*\.\.\.\(agents \? \{ agents \} : \{\}\))?,?\s*\}\)/.test(board),
       "the call-rate report — every row's rate and working days — reads it",
     );
     assert.equal(

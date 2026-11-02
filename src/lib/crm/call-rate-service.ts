@@ -13,6 +13,7 @@ import { loadCallRateHolidays, type CallRateHolidayLookup } from "@/lib/crm/call
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { kpiRulesFor, phoenixRuleRepKeys } from "@/lib/crm/phoenix-kpi-rules";
 import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
+import type { StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -64,6 +65,9 @@ export type CallRateInput = {
    * approval or a notification. A read narrowed to `agents` always reads live.
    */
   reuseRecentWindow?: boolean;
+  /** Who is counted from Phoenix CRM, when the caller is already reading it — the KPIs board. Omitted, the
+   * report reads its own. */
+  startedWindows?: Promise<StartedRepWindow[]>;
 };
 
 /**
@@ -135,7 +139,7 @@ export async function loadCallRateReport(
     // and a team start never sets it, so asking it alone judged a started rep's submitted visits
     // against the vendor's GPS rule. Fails OPEN — an unreadable answer is "no started team", which
     // leaves every row exactly where it was.
-    loadStartedRepWindows(),
+    input.startedWindows ?? loadStartedRepWindows(),
   ]);
   const rules = kpiRulesFor(cutover, input.dateFrom, input.dateTo);
   // Per rep, so one report can hold both rules: his team's go-live decides his row.

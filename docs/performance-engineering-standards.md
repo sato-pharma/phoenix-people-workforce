@@ -262,3 +262,34 @@ median against 453 ms; session-bundle calls against 3,495 per half hour; CPU idl
 - [Migrations](migrations.md) - migration policy
 - [Observability](observability.md) - error capture, alerting, cron dead-man's-switch
 - [Editing Guide](editing-guide.md) - where to make edits, quality gate workflow
+
+## The portal home's cards (2 Nov 2026, "fix the portal home slow opens")
+
+**Who opens it**, 08:00 to 11:40 Cairo on Monday 2 Nov, from `activity_events`: 130 opens. Medical Rep 95 (37 people),
+District Manager 21 (9), National Sales Manager 6, Manager 5, Product Manager 2, Regional Manager 1. So the rep's
+landing is the one to fix first.
+
+**What a real open costs**, Railway's HTTP rows, the same hours, Sunday 1 Nov against Monday 2 Nov, after the speed
+Stages 1 and 2. A real open is one of 30 KB or more: the log's path carries no query string, so a prefetch reads
+like an open. 150 → 115 opens; median 3.8 → 3.2 s; p90 8.0 → 6.4 s; over 3 s 71% → 59%. Real browsers, about 30 of
+the 115: first byte 1.7 s, first paint 2.2 s, main content 2.8 s. On the visits page the server total was 743 ms
+against the browser's first byte of 1,718 ms, so **about 1 s of first byte looks to be outside the server** (the
+road from Egypt to Europe), and no change here reaches it.
+
+**What each card costs**, a trace on the laptop with the caches working, off-peak. Trust the order, never the times.
+
+| Open | Before | After |
+| --- | --- | --- |
+| Rep: all cards | 2,456 to 2,877 ms, 35 to 40 reads, 255 KB | 1,374 to 1,427 ms, 26 to 31 reads, 163 KB |
+| Rep: plan rows read | 6 in turn | 2 side by side |
+| Manager: repeat open, all cards | 5,265 to 5,508 ms, 83 to 96 reads, 11.3 MB | 4,749 ms, 80 reads, 6.1 MB |
+
+**Why it was slow.** A rep's KPI tile did its work twice in turn: discovery, then the doctor lists and call rate, then
+a Phoenix half that repeated the discovery and read the same plan rows. The interview card walked three reads in turn
+for a person with no interview. A manager's double-visit panel carried a field set it never prints.
+
+**Still open, on purpose.** A manager's plan adherence (four `computeManagerReports`) and the double-visit panel's 28
+requests are left for the `home.card.<name>` timers in `process_health` to rank on production. The Medium compute
+upgrade is the owner's, on the Supabase dashboard; the database host's memory did not improve with fewer requests
+(lowest free 229 MB of 1,932, swap 871 MB). `domInteractive` tracks a streamed page arriving, not tapping, so the
+beacon's "ready to tap" reads later than a person could really tap (reasoned from the code, not tested).

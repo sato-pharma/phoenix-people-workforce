@@ -286,16 +286,16 @@ export async function runKpiBoardAgentsTests() {
   const board = readFileSync("src/lib/crm/kpis-board.ts", "utf8");
   assert.match(
     board,
-    /const agentsRead = input\.coverageDoctors\s*\?\s*Promise\.resolve\(null\)\s*:\s*resolveKpiBoardAgents\(scope, \{/,
+    /const discover = kpiBoardDiscovery\(planChunks\);\s*const agentsRead = input\.coverageDoctors\s*\?\s*Promise\.resolve\(null\)\s*:\s*discover\(scope, \{/,
     "the board resolves its reps once — and never for the Coverage tab, whose off-plan doctors are named from other reps' plans",
   );
-  assert.match(board, /loadCallRateReport\(\{\s*dateFrom: callRange\.dateFrom,\s*dateTo: callRange\.dateTo,\s*reuseRecentWindow: true,\s*\.\.\.\(agents \? \{ agents \} : \{\}\),?\s*\}\)/, "the call rate reads only them");
+  assert.match(board, /loadCallRateReport\(\{\s*dateFrom: callRange\.dateFrom,\s*dateTo: callRange\.dateTo,\s*reuseRecentWindow: true,\s*startedWindows: startedRead,\s*\.\.\.\(agents \? \{ agents \} : \{\}\),?\s*\}\)/, "the call rate reads only them");
   assert.match(board, /getRepDoctorLists\(\{[\s\S]{0,700}?\.\.\.\(agents \? \{ agents \} : \{\}\),\s*\}\)/, "and so do the doctor lists");
   const rate = readFileSync("src/lib/crm/call-rate-service.ts", "utf8");
   assert.match(rate, /agentCrmOrHrIds: \{ crmIds: input\.agents\.crmIds, hrIds: input\.agents\.hrIds \}/, "the call rate narrows by either id");
   assert.equal((rate.match(/\.\.\.narrowTo/g) ?? []).length, 2, "both its visits and its check-ins");
   const lists = readFileSync("src/lib/crm/rep-doctor-lists.ts", "utf8");
-  assert.match(lists, /agentCrmIds: agents\.crmIds, agentHrIds: agents\.hrIds \}\)\.then\(inPlanEntryOrder\)/, "the narrowed plan union is re-ordered");
+  assert.match(lists, /agentCrmIds: agents\.crmIds, agentHrIds: agents\.hrIds, memo: input\.planChunks \}\)\.then\(inPlanEntryOrder\)/, "the narrowed plan union is re-ordered");
   assert.match(lists, /\.\.\.\(agents \? \{ agentCrmOrHrIds: \{ crmIds: agents\.crmIds, hrIds: agents\.hrIds \} \} : \{\}\)/, "the doctor-list visits narrow by either id");
 
   console.log("kpi board agents: OK");
