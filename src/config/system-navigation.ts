@@ -4733,6 +4733,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    // One rep's polyclinics, a switch and a number on each (owner, 2026-11-02: "I can remove the cap for a rep in
+    // the chosen polyclinic, or I can increase the ceiling of the cap"). The Super Admin's ALONE:
+    // `canManageVenueCaps` is the enforcing gate inside the page and the route; this card only draws the link.
+    href: "/admin/field-crm/venue-caps",
+    icon: Building2,
+    label: "Polyclinic Caps",
+    description: "Choose a rep, then switch the daily cap off at any of that rep's polyclinics or raise its number.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // Load a territory's customer list from a sheet — the SFE's third route onto a list (the owner's
     // ask, 2026-10-02): he sends the rep a sheet, the rep fills it in, he uploads it.
     //
@@ -5371,6 +5382,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm/validation-reviews",
           // The visit recordings a chosen rep makes: field evidence, the Super Admin's alone.
           "/admin/field-crm/visit-recording",
+          // A rep's polyclinics and their daily number: the same Super Admin's own controls over a rep's field work.
+          "/admin/field-crm/venue-caps",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a
           // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).

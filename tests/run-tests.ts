@@ -2156,6 +2156,7 @@ import { runPhoenixCrmBlindPayloadTests } from "./phoenix-crm-blind-payloads.tes
 import { runPhoenixCrmVisitReportTests } from "./phoenix-crm-visit-report.test.ts";
 import { runPhoenixCrmVisitDetailEditTests } from "./phoenix-crm-visit-detail-edit.test.ts";
 import { runPhoenixCrmVisitRecordingTests } from "./phoenix-crm-visit-recording.test.ts";
+import { runPhoenixCrmVenueCapsTests } from "./phoenix-crm-venue-caps.test.ts";
 import { runPhoenixCrmDoubleVisitRequestsTests } from "./phoenix-crm-double-visit-requests.test.ts";
 import { runPhoenixCrmMyMapTests } from "./phoenix-crm-my-map.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
@@ -7746,6 +7747,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: the visit recording the Super Admin requires of the reps chosen on one page (owner, 2026-10-16 — \"this only works to who the admin choose not everyone\"). The server claims the recording BEFORE the save writes anything, for the territory's own rep only, and a failed read of the switch throws rather than letting a visit through unrecorded; only a switched-on rep's Add visit opens with the recorder; the Super Admin, the SFE managers and the territory's own managers hear it and the rep never does; the page, the five routes and every service refuse everybody but the Super Admin; the bounds are 30 seconds to 15 minutes, a blocked microphone says how to allow it, a download is named after the rep, the customer and the day, and a delete goes through the Storage API and keeps who and when",
   runPhoenixCrmVisitRecordingTests,
+);
+
+await runTest(
+  "PHOENIX CRM: the Super Admin's Polyclinic Caps page (owner, 2026-11-02 — \"I can remove the cap for a rep in the chosen polyclinic, or I can increase the ceiling of the cap\"). A raised venue holds its own number on the plan's save and send and at the door, can only widen the company number, and leaves every other venue and seat alone; the switch is a row naming the venue that reaches what a name key row reaches; switching one venue off never switches a second off; the page, the route and the service refuse everybody but the Super Admin",
+  runPhoenixCrmVenueCapsTests,
 );
 
 await runTest(
