@@ -2143,6 +2143,7 @@ import { runPhoenixCrmVisitFarRefusalTests } from "./phoenix-crm-visit-far-refus
 import { runPhoenixCrmUnvalidatedVisitCapTests } from "./phoenix-crm-unvalidated-visit-cap.test.ts";
 import { runPhoenixCrmPhotoReadingTests } from "./phoenix-crm-photo-reading.test.ts";
 import { runPhoenixCrmTimetableScannerTests } from "./phoenix-crm-timetable-scanner.test.ts";
+import { runPhoenixCrmTimetableUploadTests } from "./phoenix-crm-timetable-upload.test.ts";
 import { runPhoenixCrmHeldSignboardTests } from "./phoenix-crm-held-signboard.test.ts";
 import { runPhoenixCrmPlaceCheckAdviceTests } from "./phoenix-crm-place-check-advice.test.ts";
 import { runPhotoRotationTests } from "./photo-rotation.test.ts";
@@ -7699,6 +7700,11 @@ await runTest(
 await runTest(
   "the Phoenix CRM polyclinic TIMETABLE SCANNER (owner, 2026-10-17: read the timetable on the spot \"like a scanner\", never accept it and call it unreadable afterwards, \"3 tries then held to confirmation by admin\", and a readable board without the name is saved, held, and the rep told why. Measured that morning: 0 of 70 seated customers passed, 45 unreadable photos let through as matches. Pinned: every verdict × every try — a match saves, a clear board without him holds at once, not-a-timetable and unreadable are refused with what to fix and 'Try N of 3' until the third failure is saved and held; a lost call, a missing key or missing bytes never refuse and never hold; 'not on it' is said only of a board the reader could see all of; both seating paths go through one scanner that FILES the refusal before refusing and scans before anything is written; the rep's screens open the camera on a retake and print the hold sentence; the reader has no hidden SDK retry and reuses a stored reading of the same board; and the counter is per building, rep, Cairo day and world)",
   runPhoenixCrmTimetableScannerTests,
+);
+
+await runTest(
+  "the Phoenix CRM timetable's LAST TRY MAY BE AN UPLOAD (owner, 2026-11-02: after two refused live photos the third may be a file, with the same place and time stamped; a file naming the customer validates; the timetable only). Pinned: it opens at two refusals on the server's count and a sooner claim is refused; a file nobody read is held while a live photo on a lost call still saves; the stamp goes under the picture so the reader's crop takes none of it, against the real crop on ten shapes; no reading means no photo; the one uploadOffer in the code is the timetable's camera; and the mark reaches the review row, the validated place, the next customer on the same board and the advice",
+  runPhoenixCrmTimetableUploadTests,
 );
 
 await runTest(

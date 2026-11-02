@@ -548,6 +548,21 @@ The reader (`server/schedule-check.ts`) now returns how legible the board is (`c
 
 **This is his named exception to golden rule #1.** The rep is told, in so many words, that a seating is held for admin approval. Everything else he is told stays what is wrong with the photograph.
 
+### The last try may be an upload — owner, 2026-11-02
+
+His words: *"make after 2 failed live capture try the third i am able to upload and when upload the same location and timestamp as capture also are put"*. Asked what a file naming the customer should do, he chose **"Validate it"** over holding it; asked which photos, he chose **the timetable only**, so a signboard and a visit stay camera-only.
+
+| Point | What it does |
+| --- | --- |
+| When it opens | Two refused photos of this building, this rep, this Cairo day, on the server's count. `loadSharedPlacesFor` tells the phone (`timetableRefusedToday`), so a rep returning later the same day still sees it; a refusal re-reads the count. A body that claims an upload sooner is refused and sent back to the camera (`SCHEDULE_UPLOAD_TOO_EARLY`). |
+| The stamp | The same helpers as a capture: the time now, the place read now, the sharper of the running reading and a fresh one, a cold reading overruled. **It says when and where the file was uploaded, not when the picture was taken.** No reading, no photo. |
+| Where the stamp goes | **Under the picture, never over it** (`uploadedPhotoCanvasSize`). The reader crops 18% to 49% off the bottom of a stored photo; on a file that would cut away the names at its foot on the last try. |
+| What the door does | The same ruling as the third live try: the name read saves and validates; a clear board without the name holds; unreadable or no timetable holds. |
+| Two things it does not do | A file nobody read (a lost call, no key, no bytes) is **held**, where a live photo saves: a live photo at least proves the rep stood at the wall. A picture of a phone or computer screen is still held, under his 2026-10-28 ruling. |
+| Who is told | `uploaded: true` on `schedule_check` and the review row, carried to every customer judged against that stored reading. The recommendation on Place checks says it in one sentence; only the deciders read that. A held building still keeps its customers out of KPIs until it is approved. |
+
+The standalone timetable door (`venue-timetable-screen.tsx`) runs no scanner tries, so it has nothing to open and stays camera-only.
+
 ### Choosing the model — calibrated on the 40 production photographs, read-only
 
 The 40 distinct photographs behind the 74 production seatings were replayed through the door's own question (`readScheduleBytes`): `gpt-5.4-nano` read about 5; `gpt-5.4-mini` read 17, at a p95 of 6.2 s, inside the 8-second door. `gpt-5.4-mini` was the door's model until 2026-10-19 (see the next section; it is now the fallback). At 900 output tokens the stronger readers ran out of room on exactly the photographs that are real boards (a 25-name directory), so the ceiling is 1,600 and the transcription is kept short. Replayed through `scheduleDoorAction` as first tries, the 74 seatings would have been 11 save, 2 hold, 1 lost call (saved), 28 retake for no timetable and 32 retake for an unreadable one.

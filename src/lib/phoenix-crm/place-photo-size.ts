@@ -34,3 +34,24 @@ export function placePhotoCanvasSize(sourceWidth: number, sourceHeight: number):
     width: Math.max(1, Math.round(width * scale)),
   };
 }
+
+/** `SIGNBOARD_STAMP_WORST_CASE_LINES` and `SIGNBOARD_CROP_MIN_FRACTION`, here because this module is a leaf. */
+const STAMP_WORST_CASE_LINES = 8;
+const STAMP_CROP_FLOOR = 0.18;
+
+/**
+ * The canvas an UPLOADED timetable is drawn on (owner, 2026-11-02): the same size as a framed capture,
+ * plus room UNDER the picture for the stamp.
+ *
+ * 🔴 THE STAMP GOES BELOW AN UPLOAD, NEVER OVER IT, BECAUSE THE READER'S CROP WOULD EAT THE PICTURE.
+ * `stampBandFraction` takes 18% to 49% off the bottom of a stored photo before it is read. A rep frames a
+ * live photo while looking at it; a file already exists, and on the last try the names at its foot would
+ * be cut away unread. So the canvas grows until that crop removes only the added room.
+ * `tests/phoenix-crm-timetable-upload.test.ts` holds this against the real crop.
+ */
+export function uploadedPhotoCanvasSize(sourceWidth: number, sourceHeight: number): { width: number; imageHeight: number; height: number } {
+  const { width, height: imageHeight } = placePhotoCanvasSize(sourceWidth, sourceHeight);
+  const fontSize = Math.max(16, Math.round(width * 0.022));
+  const band = STAMP_WORST_CASE_LINES * Math.round(fontSize * 1.38) + Math.round(fontSize * 0.75) * 2;
+  return { width, imageHeight, height: Math.max(imageHeight + band, Math.ceil(imageHeight / (1 - STAMP_CROP_FLOOR))) };
+}

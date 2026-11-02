@@ -420,6 +420,7 @@ export type ValidationReviewRow = {
     heldBecause: ScheduleHeldBecause | null;
     legibility: ScheduleLegibility | null;
     problem: ScheduleProblem | null;
+    uploaded?: boolean;
     signboard: {
       verdict: "match" | "other_name" | "no_name" | "unjudged";
       reason: string | null;
@@ -628,6 +629,7 @@ export async function loadValidationReviews(
         heldBecause: schedule ? parseScheduleHeldBecause(google.heldBecause) : null,
         legibility: schedule ? parseScheduleLegibility(google.legibility) : null,
         problem: schedule ? parseScheduleProblem(google.problem) : null,
+        uploaded: schedule && google.uploaded === true,
         signboard: signboardOf(place.signboard_check),
       },
       signText: signboard || schedule ? text(signboard ? google.signText : google.scheduleText) : null,
@@ -892,6 +894,7 @@ export type ValidatedPlaceRow = {
     reason?: string | null;
     legibility?: ScheduleLegibility | null;
     problem?: ScheduleProblem | null;
+    uploaded?: boolean;
   } | null;
 };
 
@@ -1055,6 +1058,7 @@ function scheduleOf(value: unknown): ValidatedPlaceRow["schedule"] {
     reason: text(check.reason),
     legibility: parseScheduleLegibility(check.legibility),
     problem: parseScheduleProblem(check.problem),
+    uploaded: check.uploaded === true,
   };
 }
 

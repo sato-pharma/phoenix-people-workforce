@@ -70,6 +70,8 @@ export type TimetableEvidence = {
   legibility?: ScheduleLegibility | null;
   problem?: ScheduleProblem | null;
   heldBecause?: ScheduleHeldBecause | null;
+  /** The photo was uploaded from the phone on the last try, not taken live. */
+  uploaded?: boolean;
 } | null;
 
 function approve(reason: string, quote: string | null = null): PlaceCheckAdvice {
@@ -160,6 +162,12 @@ export function adviseOnSign(sign: SignEvidence, subject: "customer" | "building
  * timetable a fault and recommending a rejection the rep would be told is about his photo.
  */
 export function adviseOnTimetable(timetable: TimetableEvidence, buildingHasNone = false): PlaceCheckAdvice {
+  const advice = timetableAdvice(timetable, buildingHasNone);
+  // Said whatever the reading was: the stamp on an upload looks exactly like a capture's (owner, 2026-11-02).
+  return timetable?.uploaded ? { ...advice, reason: `${advice.reason} This photo was uploaded from the phone, after two live photos could not be read.` } : advice;
+}
+
+function timetableAdvice(timetable: TimetableEvidence, buildingHasNone: boolean): PlaceCheckAdvice {
   if (buildingHasNone) {
     return look("This building has no timetable, so none can show this customer's name. You validate its customers yourself, as an exception.");
   }
@@ -238,6 +246,7 @@ export type HeldRowEvidence = {
     legibility: ScheduleLegibility | null;
     problem: ScheduleProblem | null;
     signboard: SignEvidence;
+    uploaded?: boolean;
   };
 };
 
@@ -251,6 +260,7 @@ export function adviseOnHeldRow(row: HeldRowEvidence): PlaceCheckAdvice {
       legibility: row.evidence.legibility,
       problem: row.evidence.problem,
       heldBecause: row.evidence.heldBecause,
+      uploaded: row.evidence.uploaded,
     });
   }
   if (row.reason === "sign_other_name") return reject("The sign in the photo names somebody else, not the customer.", row.signText, "wrong_name");

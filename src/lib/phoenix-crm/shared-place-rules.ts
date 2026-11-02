@@ -164,6 +164,11 @@ export type SeatedPlaceDraft = {
    * photograph this venue already has.
    */
   photoPath: string | null;
+  /**
+   * The phone says that photo was uploaded rather than taken live. The server takes it only after two
+   * refused photographs (`scheduleUploadAllowed`), and it means nothing without a photo.
+   */
+  photoUploaded: boolean;
   timings: PhoenixCrmTiming[];
   label: string | null;
   /**
@@ -209,6 +214,7 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
     value: {
       sharedPlaceId,
       photoPath,
+      photoUploaded: photoPath !== null && body.photoUploaded === true,
       timings: timings.timings,
       label: cleanText(body.label, 80),
       session: rawSession === "" ? null : (rawSession as "AM" | "PM"),

@@ -338,6 +338,38 @@ export async function countTimetableRefusals(input: { sharedPlaceId: string; rep
   }
 }
 
+/**
+ * The same count for every building on the rep's picker, in one read, so the phone knows where the
+ * last try may be an upload (`scheduleUploadAllowed`). An empty map on any error: the camera stays the
+ * only door, which is what an unreadable count must mean.
+ */
+export async function countTimetableRefusalsByVenue(input: { sharedPlaceIds: string[]; repHrId: string; isTest: boolean; now?: Date }): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (input.sharedPlaceIds.length === 0) return counts;
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .select("shared_place_id")
+      .in("shared_place_id", input.sharedPlaceIds)
+      .eq("rep_hr_id", input.repHrId.toUpperCase())
+      .eq("visit_date", cairoBusinessDay(input.now ?? new Date()))
+      .in("reason", ["timetable_unreadable", "timetable_missing"])
+      .eq("is_test", input.isTest);
+    if (error) {
+      console.error("[phoenix-crm] timetable refusal counts failed", { message: error.message });
+      return counts;
+    }
+    for (const row of (data ?? []) as Array<{ shared_place_id: unknown }>) {
+      const id = String(row.shared_place_id);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  } catch (error) {
+    console.error("[phoenix-crm] timetable refusal counts failed", { error });
+    return counts;
+  }
+}
+
 export type SignboardRefusalInput = {
   reason: SignboardRetakeReason;
   /** `signboardRefusalKey`: the place, the customer, or a new customer's folded name — the count's key. */

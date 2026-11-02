@@ -56,6 +56,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
+import { SCHEDULE_UPLOAD_NOTE, scheduleUploadAllowed } from "@/lib/phoenix-crm/schedule-rules";
 import {
   SEATED_PLACE_NO_PHOTO,
   SEATED_PLACE_NO_SESSION,
@@ -90,6 +91,8 @@ export type SharedPlaceChoice = {
   /** Set once the building's timetable has been photographed — then the rep is not asked again. */
   schedulePhotoPath: string | null;
   schedulePhotoCapturedAtText: string | null;
+  /** This rep's refused photographs of this board today: two open the upload on the last try. */
+  timetableRefusedToday?: number;
 };
 
 /** What the rep fills in to seat a customer. No photo of a sign, no pin, no location. */
@@ -108,6 +111,8 @@ export type SeatedDraftState = {
   label: string;
   /** AM or PM: the session he receives in at this building (owner, 2026-10-10). Null until chosen. */
   session: "AM" | "PM" | null;
+  /** Timetable photos refused on this screen. Each one re-reads the server's count of today's refusals. */
+  timetableRetakes: number;
 };
 
 /** The customer's own list as the first answer to "AM or PM here?" — a pharmacy or an unknown list gives none. */
@@ -116,7 +121,7 @@ export function seatedSessionOf(listType: string | null | undefined): "AM" | "PM
 }
 
 export function emptySeatedDraft(timings: ReadonlyArray<PhoenixCrmTiming> = [], session: "AM" | "PM" | null = null): SeatedDraftState {
-  return { sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "", session };
+  return { sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false, timings: [...timings], label: "", session, timetableRetakes: 0 };
 }
 
 /**
@@ -152,6 +157,7 @@ export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftSta
     // own `schedule_photo_path` — never from anything sent here. So a phone cannot name another rep's
     // photograph, and a photo sent here is always a REPLACEMENT of the board on the wall.
     photoPath: photo?.path ?? null,
+    photoUploaded: photo?.uploaded === true,
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
     session: draft.session,
@@ -425,6 +431,11 @@ export function SharedPlaceEditor({
   const venues = useCrmGet<SharedPlaceChoice[]>(crmUrl("/api/phoenix-crm/shared-places", { seatId, test }), "sharedPlaces");
   const list = venues.data ?? [];
   const chosen = list.find((venue) => venue.sharedPlaceId === value.sharedPlaceId) ?? null;
+  // A refused photo moves the server's count, and the count is what opens the upload on the last try.
+  const reloadVenues = venues.reload;
+  useEffect(() => {
+    if (value.timetableRetakes > 0) reloadVenues();
+  }, [reloadVenues, value.timetableRetakes]);
   // The picker's own answer, which is the live one: `value.timetableOnFile` was written when the
   // choice was made and a reload can have brought a board in since.
   const timetableOnFile = Boolean(chosen?.schedulePhotoPath) || value.timetableOnFile;
@@ -587,6 +598,7 @@ export function SharedPlaceEditor({
                 seatId={seatId}
                 test={test}
                 title={`Phoenix CRM ${SHARED_PLACE_TITLE.toLowerCase()}: ${chosen.name}`}
+                uploadOffer={scheduleUploadAllowed(chosen.timetableRefusedToday ?? 0) ? { note: SCHEDULE_UPLOAD_NOTE } : undefined}
                 value={value.photo}
               />
             </>

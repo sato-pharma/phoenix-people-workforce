@@ -32,13 +32,17 @@
  * So the receiver is held on from the moment the camera's screen is drawn (location-receiver.ts), and a
  * reading that arrived while it was still cold is overruled by a later one that contradicts it, the
  * stamp then naming the later one (photo-reading-rules.ts). Nothing waits longer and nothing is shown.
+ *
+ * THE ONE GALLERY DOOR (owner, 2026-11-02): after two refused photos of a polyclinic's timetable the last
+ * try may be a file from the phone (`uploadOffer`, set by that screen alone and enforced by the server).
+ * It gets the capture's stamp: the place and time read now, as the file is chosen.
  */
 
 import type { ReactNode } from "react";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { useEffect, useRef, useState } from "react";
-import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
+import { Camera, ImagePlus, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { noteReading } from "@/components/phoenix-crm/location-reader";
@@ -55,7 +59,7 @@ import {
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { laterReadingOverrules } from "@/lib/phoenix-crm/photo-reading-rules";
-import { PLACE_PHOTO_CAMERA_IDEAL, placePhotoCanvasSize } from "@/lib/phoenix-crm/place-photo-size";
+import { PLACE_PHOTO_CAMERA_IDEAL, placePhotoCanvasSize, uploadedPhotoCanvasSize } from "@/lib/phoenix-crm/place-photo-size";
 import { openRearCamera } from "@/lib/phoenix-crm/rear-camera";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
@@ -113,6 +117,8 @@ export type CapturedPhoto = {
   shutterLon: number | null;
   shutterAccuracyMeters: number | null;
   shutterCapturedAt: string | null;
+  /** A file from the phone rather than the camera (`uploadOffer`). The stamp alone cannot tell them apart. */
+  uploaded?: boolean;
 };
 
 // `releaseCapturedPhoto` lives in captured-photo.ts, a leaf module, so the app shell can free a
@@ -143,9 +149,28 @@ type Shot = {
   shutterFix: ShutterFix;
   /** When that reading was taken. */
   shutterCapturedAt: string | null;
+  uploaded?: boolean;
 };
 
 type Stage = "idle" | "starting" | "live" | "stamping" | "uploading" | "failed";
+
+/** The file the rep chose, decoded, or null when this phone's browser cannot open it. */
+function openPickedImage(file: File): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    // Drawing it needs only the decoded picture, so the address can go as soon as it has loaded.
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    image.src = url;
+  });
+}
 
 /** A shutter reading that came back with a position. */
 function hasPosition(fix: ShutterFix): fix is ShutterFix & { latitude: number; longitude: number } {
@@ -223,6 +248,7 @@ export function LivePhotoCapture({
   seatId,
   test,
   title,
+  uploadOffer,
   value,
 }: {
   disabled?: boolean;
@@ -248,6 +274,11 @@ export function LivePhotoCapture({
   test: boolean;
   /** The first line burned into the photo, e.g. "Phoenix CRM visit: Dr Ahmed Samir". */
   title: string;
+  /**
+   * Offers a file from the phone beside the camera, with the line that explains it. Absent means the
+   * camera only, which is every capture but a polyclinic timetable's last try (owner, 2026-11-02).
+   */
+  uploadOffer?: { note: string };
   value: CapturedPhoto | null;
   /**
    * Accepted and ignored since 2026-09-29. It drove the "location is rough" line, which told the rep
@@ -256,6 +287,7 @@ export function LivePhotoCapture({
   weakGpsMeters?: number;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const watchRef = useRef<number | null>(null);
@@ -443,6 +475,7 @@ export function LivePhotoCapture({
         shutterCapturedAt: working.shutterCapturedAt,
         shutterLat: working.shutterFix.latitude,
         shutterLon: working.shutterFix.longitude,
+        uploaded: working.uploaded === true,
       });
     } catch (uploadError) {
       setStage("failed");
@@ -566,7 +599,100 @@ export function LivePhotoCapture({
     if (shot) URL.revokeObjectURL(shot.previewUrl);
     setShot(null);
     onChange(null);
+    // With a file on offer the choice is the rep's again, so neither door opens by itself.
+    if (uploadOffer) {
+      stopLocation();
+      setStage("idle");
+      return;
+    }
     void start();
+  }
+
+  function chooseFile() {
+    setError(null);
+    // Started with the press, so the place is being read by the time the rep comes back with a file.
+    if (!startLocation()) return;
+    fileRef.current?.click();
+  }
+
+  /**
+   * The chosen file, stamped the way `takePhoto` stamps a frame: the time now, the place read now, the
+   * sharper of the running reading and a fresh one unless the fresh one overrules a cold one. It needs a
+   * real reading, because a file with no place on it is exactly what this door must never let through.
+   */
+  async function stampChosenFile(file: File) {
+    setStage("stamping");
+    const stoppedWith = (message: string) => {
+      stopLocation();
+      setStage("idle");
+      setError(message);
+    };
+    const image = await openPickedImage(file);
+    if (!image || image.naturalWidth === 0 || image.naturalHeight === 0) {
+      stoppedWith("This file could not be opened. Choose a photo saved as JPG or PNG.");
+      return;
+    }
+    const size = uploadedPhotoCanvasSize(image.naturalWidth, image.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      stoppedWith("This phone could not prepare the photo. Choose it again.");
+      return;
+    }
+    // The room under the picture holds the stamp (`uploadedPhotoCanvasSize`), so none of the file is covered.
+    context.fillStyle = "#0f172a";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, size.width, size.imageHeight);
+
+    const stampedAt = new Date().toISOString();
+    const running = fix;
+    const since = receiverRunningSince();
+    const fresh = await readShutterFix();
+    const freshArrivedAt = Date.now();
+    stopLocation();
+    const freshReading: Fix | null = hasPosition(fresh)
+      ? { lat: fresh.latitude, lon: fresh.longitude, accuracyMeters: fresh.accuracy, at: stampedAt, arrivedAt: freshArrivedAt }
+      : null;
+    const freshWins =
+      freshReading !== null &&
+      (running === null ||
+        running.accuracyMeters === null ||
+        (freshReading.accuracyMeters !== null && freshReading.accuracyMeters <= running.accuracyMeters) ||
+        laterReadingOverrules(running, freshReading, since));
+    const reading = freshWins ? freshReading : running;
+    if (!reading) {
+      stoppedWith("Your location was not found, so the photo cannot be stamped. Stand outside or near a window, then choose the photo again.");
+      return;
+    }
+
+    const payload = await fetchEvidenceLocation(LOCATION_ENDPOINT, reading.lat, reading.lon, null);
+    const stamp = readEvidenceLocationStamp(payload, reading.lat, reading.lon, null);
+    const detail = payload?.location && typeof payload.location === "object" ? (payload.location as Record<string, unknown>) : null;
+    const components = detail?.components && typeof detail.components === "object" ? (detail.components as Record<string, unknown>) : null;
+    drawStamp(context, canvas, buildEvidenceStampLines({ capturedAt: stampedAt, locationCapturedAt: reading.at, locationLines: stamp.lines, title }));
+    const blob = await jpegUnder(canvas, MAX_UPLOAD_BYTES);
+    if (!blob) {
+      stoppedWith("This photo is too large to send. Choose another one.");
+      return;
+    }
+    if (shot) URL.revokeObjectURL(shot.previewUrl);
+    const next: Shot = {
+      blob,
+      previewUrl: URL.createObjectURL(blob),
+      fix: reading,
+      address: textField(detail, "address"),
+      zone: textField(components, "area"),
+      locationLabel: stamp.label,
+      slot: null,
+      deviceClock: null,
+      shutterFix: { latitude: reading.lat, longitude: reading.lon, accuracy: reading.accuracyMeters },
+      shutterCapturedAt: reading.at,
+      uploaded: true,
+    };
+    setShot(next);
+    await upload(next);
   }
 
   const showVideo = !value && (stage === "starting" || stage === "live");
@@ -681,6 +807,29 @@ export function LivePhotoCapture({
           <Camera aria-hidden className="h-4 w-4" />
           Open the camera
         </CrmButton>
+      ) : null}
+
+      {!value && stage === "idle" && uploadOffer ? (
+        <>
+          <p className="break-words text-sm font-semibold leading-6 text-slate-700">{uploadOffer.note}</p>
+          <CrmButton disabled={disabled} onClick={chooseFile} variant="secondary">
+            <ImagePlus aria-hidden className="h-4 w-4" />
+            Upload a photo from your phone
+          </CrmButton>
+          {/* No `capture`, so the phone offers its files and gallery rather than its camera. */}
+          <input
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              // Cleared so the same file can be chosen again after a refusal.
+              event.target.value = "";
+              if (file) void stampChosenFile(file);
+            }}
+            ref={fileRef}
+            type="file"
+          />
+        </>
       ) : null}
 
       {!value && (stage === "stamping" || stage === "uploading" || stage === "failed") ? (

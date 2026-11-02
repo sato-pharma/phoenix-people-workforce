@@ -217,8 +217,8 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   if (seated.ok) {
     assert.deepEqual(
       Object.keys(seated.value).sort(),
-      ["label", "photoPath", "session", "sharedPlaceId", "timings"],
-      "🔴 FIVE KEYS, NO FIX — a seated draft cannot carry a location even when the body sends one",
+      ["label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "timings"],
+      "🔴 SIX KEYS, NO FIX — a seated draft cannot carry a location even when the body sends one",
     );
     assert.equal(seated.value.session, null, "a build that names no session leaves it null, and the database seats him in his own list");
     assert.equal(seated.value.timings.length, 1);

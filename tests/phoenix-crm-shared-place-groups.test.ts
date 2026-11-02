@@ -58,6 +58,7 @@ function venue(overrides: Partial<SharedPlaceBoardRow>): SharedPlaceBoardRow {
     areaName: "Qalubeya",
     point: { lat: 30, lon: 31 },
     seated: 0,
+    timetableRefusedToday: 0,
     capturedAt: "2026-10-10T08:00:00.000Z",
     capturedAtText: "10 Oct 2026, 11:00",
     photoPath: "cairo/sign.jpg",
