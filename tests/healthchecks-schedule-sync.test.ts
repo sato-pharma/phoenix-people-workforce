@@ -85,6 +85,19 @@ export async function runHealthchecksScheduleSyncTests() {
     assert.equal(check.externalSync, false, `${slug} must be marked in-house only in ${DOC}`);
   }
 
+  // One slot moved on 2 Nov 2026, on the owner's word: the fraud scan handed its check to the re-ask.
+  // Marking the fraud scan's row external again would ask for a slot the project does not have.
+  assert.equal(
+    bySlug.get("phoenix-recruitment-whatsapp-reask")?.externalSync,
+    true,
+    "the WhatsApp re-ask holds a Healthchecks check, so its row must not be marked in-house only",
+  );
+  assert.equal(
+    bySlug.get("phoenix-crm-fraud-scan")?.externalSync,
+    false,
+    "the fraud scan gave its check to the WhatsApp re-ask, so its row must stay in-house only",
+  );
+
   // The negative control. Without it, a marker regex that matched every row would pass the two
   // assertions above while silently switching the whole project off.
   assert.equal(
