@@ -178,7 +178,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     if (!joiner.startKey) {
       return (
         <>
-          <p className="text-sm font-black text-phx-ink">No readable date</p>
+          <p className="break-words text-sm font-black text-phx-ink">No readable date</p>
           <p className="text-phx-xs font-semibold text-phx-ink-soft">Check the offer letter</p>
         </>
       );
@@ -231,7 +231,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
         </p>
         {canManage && progress.firstOutstandingId ? (
           <Button
-            className="h-9"
+            className="h-auto min-h-9 w-full whitespace-normal px-2 py-1.5 leading-tight"
             onClick={() => onReceivePapers(employee.hrId, progress.firstOutstandingId as string)}
             variant="secondary"
           >
@@ -346,10 +346,10 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
             <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
               <colgroup>
                 <col className="w-[20%]" />
-                <col className="w-[22%]" />
-                <col className="w-[11%]" />
+                <col className="w-[20%]" />
                 <col className="w-[13%]" />
-                <col className="w-[34%]" />
+                <col className="w-[15%]" />
+                <col className="w-[32%]" />
               </colgroup>
               <thead>
                 <tr>

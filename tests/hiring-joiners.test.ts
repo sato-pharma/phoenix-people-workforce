@@ -155,6 +155,8 @@ function testTheReadCarriesNoMoneyAndTheWriteIsGated() {
 
   const panel = stripComments(readFileSync("src/components/hiring-documents/hiring-joiners-panel.tsx", "utf8"));
   assert.ok(panel.includes('className="w-full table-fixed'), "the table fits its width");
+  // Measured: a one-line button ran past its column on a 1366px laptop, and 35px past it at 768px.
+  assert.ok(panel.includes('className="h-auto min-h-9 w-full whitespace-normal'), "Receive papers wraps inside its column");
   assert.ok(panel.includes("The joiners list could not be read"), "a failed read says so");
   assert.ok(panel.includes("href={`tel:${joiner.mobile}`}"), "contact opens the viewer's own phone");
   const manager = readFileSync("src/components/hiring-documents/hiring-documents-manager.tsx", "utf8");
