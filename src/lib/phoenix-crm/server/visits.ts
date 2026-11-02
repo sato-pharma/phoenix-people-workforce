@@ -495,14 +495,7 @@ function mapVisitRow(
     photoPath: textOrNull(row.photo_path),
     voiceNotePath: textOrNull(row.voice_note_path),
     voiceNoteSeconds: numberOrNull(row.voice_note_seconds),
-    ...visitLocationFor(
-      options.sight,
-      flag,
-      numberOrNull(row.distance_meters),
-      numberOrNull(row.accuracy_meters),
-      enteredByAdmin,
-      numberOrNull(row.lat) !== null && numberOrNull(row.lon) !== null,
-    ),
+    ...visitLocationFor(options.sight, flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters), enteredByAdmin, numberOrNull(row.lat) !== null && numberOrNull(row.lon) !== null),
     // The phone's clock is a reading, not a distance: the Super Admin's and the SFE Manager's alone.
     clockOff: options.sight === "full" && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     // The same value #5171 computed inline, read from the one `const` above — `countsInKpi` below
