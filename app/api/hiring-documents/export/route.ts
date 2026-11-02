@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { assertPermission, isHrAuthorityRole } from "@/lib/auth/permissions";
+import { assertPermission, isHiringPaperworkRole } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   buildHiringDocumentsWorkbook,
@@ -37,16 +37,16 @@ const XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadshe
  * can be trusted to agree is for one predicate to serve both.
  *
  * THE ROLE GATE IS THE PAGE'S, repeated. `assertPermission` alone is not it: the page also requires
- * an HR authority role before it renders anything, and a route that asked for less would be a way
+ * a hiring-paperwork role before it renders anything, and a route that asked for less would be a way
  * to download by URL what the screen refuses to show.
  */
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employee_documents", "read");
-    if (!isHrAuthorityRole(access.role)) {
+    if (!isHiringPaperworkRole(access.role)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Hiring documents are limited to HR authority roles." },
+        { error: "forbidden", message: "Hiring documents are limited to the HR seats that receive them." },
         { status: 403 },
       );
     }

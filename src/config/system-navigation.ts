@@ -2299,15 +2299,10 @@ const hrNavigationSectionSeeds = [
       // Recruitment where they belong for a recruiting seat. `excludedRoles` keeps the Super Admin
       // there too — navigationItemVisible waives the `roles` check for that role but never
       // `excludedRoles`, so without it these rows would silently relocate on his rail as well.
-      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
-      // HR Forms for the HR Operations Specialist (owner, 2026-10-20). She prints eight papers — the
-      // renewal pair and the leaving papers — and holds no employee_documents (she is outside
-      // hrAuthorityRoles, which strips it), so the row above can never render for her. No
-      // permission: the page's own gate (hrFormsAccessFor, src/lib/hiring-pack/paper-access.ts)
-      // admits her on her contracts/resignations grants and shows her only her own papers, and every
-      // API route asserts the same rule. `excludedRoles` keeps the Super Admin's row where it was.
-      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", roles: ["HR Administration"], excludedRoles: ["Super Admin"] },
+      // The HR Operations Specialist shares both rows since 2026-11-02 (owner: "Receive the hiring
+      // papers / OPEN HR FORMS FULL MODULE TO AYA"); she holds employee_documents through hiring_desk.
+      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
       { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       // The Interview Calendar, for HR Operations — the owner made her its admin on 2026-09-21 ("full
       // access and control to it as admin"), so isInterviewCalendarOwner admits her seat. The
@@ -2403,9 +2398,11 @@ const hrNavigationSectionSeeds = [
       // sidebar-label-width stopped charging it the reason for the short name went away. The full
       // name measures 153px against this rail's 157px budget, so it fits and the drift is closed.
       { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager CV Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Resourcing"] },
-      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
-      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
-      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }] },
+      // Not the HR Operations Specialist's copies: hers are the People rows above, she is shown no
+      // "Recruitment" heading, and Business Cards was not opened to her (canPrintBusinessCards).
+      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], excludedRoles: ["HR Administration"] },
+      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], excludedRoles: ["HR Administration"] },
+      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], excludedRoles: ["HR Administration"] },
       // NO Returned CVs and NO CV Sheet Links row here since 2026-10-08. Both were the HR Business
       // Partner's, and recruiting moved off her seat that day; the Talent Acquisition seat holds the
       // key but the owner fenced both pages off it (src/lib/auth/seat-page-fences.ts). No HR seat can

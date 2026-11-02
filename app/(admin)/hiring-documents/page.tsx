@@ -3,13 +3,15 @@ import { Suspense } from "react";
 
 import { HiringDocumentsManager } from "@/components/hiring-documents/hiring-documents-manager";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
+import { canAccess, isHiringPaperworkRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   filterHiringDocumentsForAccess,
   getHiringDocumentsDashboard,
   hiringDocumentsErrorMessage,
   isHiringDocumentsSchemaMissing,
+  mayEditHiringChecklist,
+  mayRemoveHiringDocumentFile,
 } from "@/lib/hiring-documents/service";
 import type { HiringDocumentsDashboardData } from "@/lib/hiring-documents/types";
 
@@ -30,7 +32,7 @@ export default async function HiringDocumentsPage() {
     canAccess(access, "employee_documents", "update"),
   ]);
 
-  if (!isHrAuthorityRole(access.role) || !canRead) {
+  if (!isHiringPaperworkRole(access.role) || !canRead) {
     redirect("/employee-portals");
   }
 
@@ -66,6 +68,8 @@ async function HiringDocumentsContent({
 
   return (
     <HiringDocumentsManager
+      canEditChecklist={canManage && mayEditHiringChecklist(access)}
+      canRemoveFiles={canManage && mayRemoveHiringDocumentFile(access)}
       canManage={canManage}
       initialData={initialData}
       initialError={initialError}

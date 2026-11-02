@@ -380,40 +380,20 @@ export function asPrintableDocument(value: string): PrintableDocument | null {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // WHICH PAPERS A SEAT MAY PRINT — for a seat that prints papers WITHOUT holding employee_documents.
 //
-// The HR Operations Specialist (`HR Administration`, owner, 2026-10-20) prepares the contract
-// renewal and follows a resignation up "until he comes to office to fulfil the resignation cycle",
-// so she prints the papers of those two moments and nothing else. She is outside
-// `hrAuthorityRoles`, so `hardBoundaryAllowedActions` strips employee_documents from her and the
-// key cannot be the answer: it would open every paper, the company templates and the template
-// studio with it. A seat named here therefore prints exactly its listed BUILT-IN papers — never a
-// company template (`custom:<uuid>`), which may print anything at all — and every seat NOT named
-// here keeps the employee_documents check it had before.
+// A seat named here prints exactly its listed BUILT-IN papers — never a company template
+// (`custom:<uuid>`), which may print anything at all — and every seat NOT named here keeps the
+// employee_documents check it had before.
 //
-// The renewal annex prints the salary, and that is the owner's one money exception for her. None of
-// the other seven prints an amount: the non-renewal notice, the deemed-resignation notice, the
-// handover record and the resignation carry no money field, the mutual-termination agreement fills
-// names, dates and the contract's start but no figure, and both clearances leave the settlement
-// line blank by design.
+// EMPTY SINCE 2026-11-02. The HR Operations Specialist (`HR Administration`) was listed here with
+// eight papers from 2026-10-20; the owner then opened the whole module to her ("OPEN HR FORMS FULL
+// MODULE TO AYA"), and she now holds employee_documents like the other seats that fill these forms.
 //
 // Pure and dependency-free on purpose (a TYPE import only): the HR Forms screen reads it in the
 // browser, and the print, sign and paper-register routes read it on the server — one list, both
 // sides.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-export const SEAT_PRINTABLE_DOCUMENTS: Readonly<Partial<Record<PhoenixRole, readonly HiringPackDocument[]>>> = {
-  "HR Administration": [
-    "contractRenewal",
-    "contractNonRenewal",
-    "resignation",
-    "clearanceEmployee",
-    "clearanceCompany",
-    "handoverRecord",
-    // Added the same day by the owner: the absence-based notice that ends a service, and the
-    // agreed-exit alternative to a resignation.
-    "deemedResignation",
-    "mutualTermination",
-  ],
-};
+export const SEAT_PRINTABLE_DOCUMENTS: Readonly<Partial<Record<PhoenixRole, readonly HiringPackDocument[]>>> = {};
 
 /**
  * The papers `role` is limited to, or null when the role has no entry — which means "this table

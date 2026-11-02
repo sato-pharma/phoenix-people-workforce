@@ -108,6 +108,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   hiring_document_note: true,
   hiring_document_status: true,
   hiring_documents_export: true,
+  hiring_joiner_contact: true,
   hr_ops_report: true,
   hr_ops_report_bridge_run: true,
   hr_retention_conversation: true,

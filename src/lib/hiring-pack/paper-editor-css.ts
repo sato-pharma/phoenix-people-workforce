@@ -82,6 +82,7 @@ export const EDITOR_CSS = `
     cursor: text;
   }
   body.hp-free-edit { caret-color: #b45309; }
+  body.hp-free-edit [data-hp-locked][contenteditable="false"] { cursor: not-allowed; }
 
   /* Layout mode replaces value-editing with position-editing: every dashed box becomes something to
      pick up rather than type into, and "add a field" turns the whole page into a drop target. */

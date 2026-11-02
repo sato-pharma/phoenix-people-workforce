@@ -132,7 +132,7 @@ export async function runHiringPackBankAccountLetterTests() {
 
   // ── 6. the route: its gate, and the audit row before the file ─────────────────────────────────
   const route = readFileSync(join(process.cwd(), "app/api/hiring-pack/bank-account-letter/route.ts"), "utf8");
-  assert.match(route, /forms\.paperScope !== null \|\| forms\.withholdSalary/, "a paper-scoped or salary-blind seat is refused");
+  assert.match(route, /forms\.paperScope !== null\)/, "a paper-scoped seat is refused");
   const audit = route.indexOf("writeRequiredAuditLog({");
   const file = route.indexOf("new Response(");
   assert.ok(audit > 0 && file > audit, "the audit row is written BEFORE the file is returned");

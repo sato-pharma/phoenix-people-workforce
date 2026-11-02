@@ -21,8 +21,9 @@ export const dynamic = "force-dynamic";
 //
 // GET for both, like the rest of `/api/hiring-pack/**`, whose registry gate is `employee_documents`
 // read. The letter carries every chosen person's national ID, mobile, address and base salary, so
-// it is HR's alone: a seat that reaches HR Forms through a paper grant (`paperScope`) or a
-// salary-blind seat never gets it. Every file is audited BEFORE it is returned. No row, no file.
+// it is HR's alone: a seat that reaches HR Forms through a paper grant (`paperScope`) never gets it.
+// The HR Operations Specialist has it with the rest of HR Forms (owner, 2026-11-02, "FULL MODULE").
+// Every file is audited BEFORE it is returned. No row, no file.
 
 const MAX_PEOPLE = 500;
 
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employee_documents", "read");
     const forms = await hrFormsAccessFor(access);
-    if (!forms.canRead || forms.paperScope !== null || forms.withholdSalary) {
+    if (!forms.canRead || forms.paperScope !== null) {
       return fail(403, "forbidden", "The bank account letter is prepared by HR.");
     }
 

@@ -36,7 +36,6 @@ import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { loadDocumentFieldLayout } from "@/lib/hiring-pack/field-layout-store";
 import { loadHrSignatureUri } from "@/lib/hiring-pack/hr-signature";
 import { isPaperOpenToRole, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
-import { packForPaper } from "@/lib/hiring-pack/paper-access";
 import {
   renderClearanceCompanyHtml,
   renderClearanceEmployeeHtml,
@@ -400,7 +399,7 @@ export async function renderHiringPaper(input: {
   // THE SEAT'S OWN PAPER LIST — the choke point. A seat named in SEAT_PRINTABLE_DOCUMENTS prints its
   // listed built-in papers and nothing else, before the pack is even read: the print, hand-typed
   // and sign routes all render through here, so a route that forgot its own check still cannot
-  // hand her another paper (owner, 2026-10-20). Every other role passes untouched.
+  // hand it another paper. Every other role passes untouched.
   if (!isPaperOpenToRole(access.role, requested)) {
     return {
       code: "forbidden_paper_for_seat",
@@ -432,19 +431,9 @@ export async function renderHiringPaper(input: {
     }
   }
 
-  // THE SALARY-BLIND SEAT IS DRAWN FROM THE BLANKED PACK, here at the choke point (owner, 2026-10-20).
-  // Every renderer puts the salary into its values map whether or not its own text prints it, and a
-  // field placed in the layout editor prints whatever that map holds — so for the HR Operations
-  // Specialist every paper but the renewal annex renders from `packForPaper`, which carries no
-  // salary, gross or insurance wage. Print, `inventory=1`, the hand-typed paper and the signed-copy
-  // filing all render through this line, and all read `data` back from what it returns.
-  const data = packForPaper(
-    access,
-    requested,
-    withPrintAddress(
-      input.data ?? (await getHiringPack(hrId, input.custodyDeviceId ?? null)),
-      parsePrintAddress(input.address),
-    ),
+  const data = withPrintAddress(
+    input.data ?? (await getHiringPack(hrId, input.custodyDeviceId ?? null)),
+    parsePrintAddress(input.address),
   );
 
   // A COMPANY TEMPLATE IS RESOLVED FROM THE DATABASE, not from a table in this file. Everything

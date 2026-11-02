@@ -291,14 +291,15 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/admin/support-requests": "hoisted const canRead = await canAccess(access, support_requests, read) — true for both",
   "/hr/admin/business-card-requests": "hoisted const canRead = await canAccess(access, business_card_requests, read) — true for both",
   "/hr/offers": "destructured Promise.all, gate is !canRead = offers:read — true for Advisory, the only seat offered it",
-  "/hr/hiring-documents": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
+  "/hr/hiring-documents":
+    "destructured Promise.all, gate is isHiringPaperworkRole && employee_documents:read — true for " +
+    "HR Operations and, since 2026-11-02, the HR Operations Specialist (hiring_desk)",
   "/hr/hiring-pack":
     "hrFormsAccessFor(access).canRead — for the HR authority seats the same isHrAuthorityRole && " +
     "employee_documents:read as before — true for HR Operations; HR Resourcing holds no " +
-    "employee_documents and is not offered the row. Since 2026-10-20 it is " +
-    "ALSO true for the HR Operations Specialist (HR Administration), who is named in " +
-    "SEAT_PRINTABLE_DOCUMENTS and opens it on contracts:read or resignations:read; the page then " +
-    "shows only her eight papers with no salary, and every hiring-pack route re-checks the paper",
+    "employee_documents and is not offered the row. Since 2026-11-02 it is ALSO true for the HR " +
+    "Operations Specialist (HR Administration), who holds employee_documents through hiring_desk and " +
+    "works the whole module; isHiringPaperworkRole admits her and her salary box is read only",
   // Both added 2026-08-29 with the owner's company-scope ruling, and both verified by CALLING the
   // predicate for each seat rather than by reading it: Operations true, Advisory false, on both.
   // Neither predicate is admitting her by scope — each short-circuits on scope === "system" only,

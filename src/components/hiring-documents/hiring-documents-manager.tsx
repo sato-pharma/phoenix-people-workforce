@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
+import { HiringJoinersPanel } from "@/components/hiring-documents/hiring-joiners-panel";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
@@ -58,6 +59,9 @@ import { cn } from "@/lib/utils";
 
 
 type Props = {
+  /** False for the seat that receives the papers but does not change what the checklist asks for. */
+  canEditChecklist: boolean;
+  canRemoveFiles: boolean;
   canManage: boolean;
   initialData: HiringDocumentsDashboardData | null;
   initialError: string | null;
@@ -126,7 +130,7 @@ function getCompletionPercent(data: HiringDocumentsDashboardData | null) {
 // screen shows, and the completion filter narrows both by the same number.
 const employeeCompletion = hiringDocumentCompletionPercent;
 
-export function HiringDocumentsManager({ canManage, initialData, initialError }: Props) {
+export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveFiles, initialData, initialError }: Props) {
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("documents");
   const [data, setData] = React.useState<HiringDocumentsDashboardData | null>(initialData);
   const [error, setError] = React.useState<string | null>(initialError);
@@ -591,6 +595,13 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           <AdminStatCard description="Missing documents with due date today or earlier." icon={<AlertTriangle className="h-5 w-5" />} label="Due" value={data?.summary.dueDocuments ?? 0} tone="orange" />
         </div>
 
+        <HiringJoinersPanel
+          canManage={canManage}
+          documents={documents}
+          employees={employees}
+          onReceivePapers={openCapture}
+        />
+
         <div className="flex flex-wrap gap-2  border border-phx-line bg-white p-2 shadow-sm">
           <Button
             className="h-10 "
@@ -606,13 +617,15 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           >
             Scan &amp; Upload
           </Button>
-          <Button
-            className="h-10 "
-            onClick={() => setActiveTab("control")}
-            variant={activeTab === "control" ? "default" : "ghost"}
-          >
-            Hiring Documents Control
-          </Button>
+          {canEditChecklist ? (
+            <Button
+              className="h-10 "
+              onClick={() => setActiveTab("control")}
+              variant={activeTab === "control" ? "default" : "ghost"}
+            >
+              Hiring Documents Control
+            </Button>
+          ) : null}
         </div>
 
         {activeTab === "capture" ? (
@@ -622,6 +635,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           >
             <HiringDocumentCapture
               canManage={canManage}
+              canRemoveFiles={canRemoveFiles}
               documents={documents}
               employees={employees}
               initialDocumentId={captureTarget?.documentId ?? null}

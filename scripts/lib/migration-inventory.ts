@@ -2061,6 +2061,14 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // touched the table. cifwmndunmlxjhyjugxa: to_regclass null, 0 policies, 0 bucket rows. ZERO ledger rows on either
   // project carry this version or name.
   "20261101203000_retire_phoenix_crm_touch_trail.sql",
+  // WHAT HR AGREED WITH A JOINER (owner, 2 Nov 2026: "Contact the joiner, confirm papers and attendance time") —
+  // applied to staging and then PRODUCTION at about 13:10 Cairo, 2 Nov 2026, through scripts/apply-sql-file.mjs
+  // (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of AGENTS.md §8: apply_migration
+  // declined the file on staging, over its `drop policy if exists` and `revoke` lines. The route writes no ledger row,
+  // hence this entry. Read live right after: on ozucdzovmcqvepbozvqf and on cifwmndunmlxjhyjugxa alike,
+  // public.hiring_joiner_contacts has row security on, 8 columns, 1 policy, select for service_role only (anon false,
+  // authenticated false), 0 rows, and ZERO ledger rows carry this version or name.
+  "20261102120000_hiring_joiner_contacts.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

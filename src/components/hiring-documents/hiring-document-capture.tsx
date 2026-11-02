@@ -30,6 +30,8 @@ import { phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   canManage: boolean;
+  /** Removing a scan is permanent, so it is narrower than receiving one (mayRemoveHiringDocumentFile). */
+  canRemoveFiles: boolean;
   documents: HiringDocumentDefinition[];
   employees: HiringDocumentEmployeeRow[];
   /** Set when the panel was opened from a grid cell, so it lands on that exact pair. */
@@ -85,6 +87,7 @@ function formatUploadedAt(value: string) {
 
 export function HiringDocumentCapture({
   canManage,
+  canRemoveFiles,
   documents,
   employees,
   initialDocumentId,
@@ -576,20 +579,22 @@ export function HiringDocumentCapture({
                       <Download className="h-4 w-4" />
                     </a>
                   </Button>
-                  <Button
-                    aria-label={`Remove ${file.fileName}`}
-                    className="h-8 w-8 rounded-lg p-0"
-                    disabled={!canManage || busy !== null}
-                    onClick={() => void deleteFile(file)}
-                    title="Remove"
-                    variant="destructive"
-                  >
-                    {busy === `delete:${file.id}` ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </Button>
+                  {canRemoveFiles ? (
+                    <Button
+                      aria-label={`Remove ${file.fileName}`}
+                      className="h-8 w-8 rounded-lg p-0"
+                      disabled={!canManage || busy !== null}
+                      onClick={() => void deleteFile(file)}
+                      title="Remove"
+                      variant="destructive"
+                    >
+                      {busy === `delete:${file.id}` ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  ) : null}
                 </div>
               </li>
             ))}

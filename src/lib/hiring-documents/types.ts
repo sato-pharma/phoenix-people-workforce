@@ -192,6 +192,46 @@ export type UpdateHiringDocumentNotesInput = {
   notes: string | null;
 };
 
+/**
+ * One person arriving: an ACCEPTED offer whose joining day is today or later, with what HR agreed
+ * with them. No money: the letter's figures never reach this screen.
+ */
+export type HiringJoiner = {
+  /** The day HR agreed they attend, `YYYY-MM-DD`. Null until it is agreed. */
+  attendanceDate: string | null;
+  /** The time HR agreed they attend, `HH:MM` on the 24-hour clock, Cairo local. */
+  attendanceTime: string | null;
+  email: string | null;
+  /** Null until the joining form or Add Employee creates the record; papers are filed against it. */
+  employeeHrId: string | null;
+  mobile: string | null;
+  name: string;
+  notes: string | null;
+  offerId: string;
+  /** HR confirmed with the joiner which papers to bring. */
+  papersConfirmed: boolean;
+  /** The joining day, `YYYY-MM-DD`: the employee record's hire date once there is one, else the letter's. */
+  startKey: string;
+  territory: string | null;
+  title: string | null;
+  /** When the last confirmation was saved. Null means nobody has recorded contact yet. */
+  updatedAt: string | null;
+  updatedByName: string | null;
+};
+
+export type HiringJoinersData = {
+  joiners: HiringJoiner[];
+  todayKey: string;
+};
+
+export type UpdateHiringJoinerInput = {
+  attendanceDate: string | null;
+  attendanceTime: string | null;
+  notes: string | null;
+  offerId: string;
+  papersConfirmed: boolean;
+};
+
 export type CreateHiringDocumentDefinitionInput = {
   description?: string | null;
   name: string;

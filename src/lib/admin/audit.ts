@@ -288,6 +288,9 @@ export type AuditEntityType =
   | "hiring_document_file"
   | "hiring_document_note"
   | "hiring_document_status"
+  // What HR agreed with one joiner before their first day (2026-11-02), keyed by the offer because
+  // no employee record exists yet: papers confirmed, attendance day and time, a note.
+  | "hiring_joiner_contact"
   // The readiness workbook leaving the building (2026-09-29). ITS OWN TYPE rather than folded into
   // the four above, which each record one person's one document changing: this row records a FILE
   // that names many employees, their hire dates and what paperwork each of them is missing. The

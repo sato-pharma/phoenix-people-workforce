@@ -103,6 +103,7 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   // the reason cv_lookup is above.
   employee_requests: LifeBuoy,
   hiring_paperwork: FileSignature,
+  hiring_desk: FileSignature,
   workforce_context: Network,
   recognition: Award,
   team_reminders: StickyNote,

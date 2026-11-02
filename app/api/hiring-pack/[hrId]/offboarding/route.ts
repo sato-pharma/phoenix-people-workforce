@@ -52,9 +52,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its update grants: the
-    // HR Operations Specialist follows a resignation through to the clearance (owner, 2026-10-20),
-    // and these are the exit details her leaving papers print.
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its update grants. These
+    // are the exit details the leaving papers print.
     await assertMayUseHrForms(access, "update");
     const { hrId } = await params;
     const payload = (await request.json()) as OffboardingProfileInput;
