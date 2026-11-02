@@ -77,6 +77,7 @@ import {
   readJourneyStops,
   rebaseClaimOnNewFuel,
   withJourneyReason,
+  type ChainedJourneyInput,
   type ChainedJourneyPricing,
   type OutstationJourneyStop,
 } from "@/lib/outstation/chained-journey";
@@ -5552,7 +5553,8 @@ const JOURNEY_STOP_OPEN_STATUSES = OUTSTATION_UNDECIDED_STATUSES;
  * stop. A failed read throws: an unread sibling list must never price as "no other trip".
  */
 async function otherCarTripsByCairoDay(
-  request: OutstationExpenseRequest,
+  // `id: null` is a trip that has no row — a test account's rehearsal — so nothing is left out.
+  request: { employeeHrId: string; id: number | null },
   days: string[],
 ): Promise<Record<string, number[]>> {
   if (days.length === 0) return {};
@@ -5562,14 +5564,15 @@ async function otherCarTripsByCairoDay(
   const dayMs = 24 * 60 * 60 * 1000;
   const windowStart = new Date(Date.parse(`${sortedDays[0]}T00:00:00.000Z`) - dayMs).toISOString();
   const windowEnd = new Date(Date.parse(`${sortedDays[sortedDays.length - 1]}T00:00:00.000Z`) + 2 * dayMs).toISOString();
-  const { data, error } = await getSupabaseAdmin()
+  let query = getSupabaseAdmin()
     .from("outstation_expense_requests")
     .select("id, employee_hr_id, status, expense_type, transportation_type, trip_start_date, trip_end_date")
     // The lookup keys, never one spelling: the column can hold "B-12" or "b12" for one person.
     .in("employee_hr_id", hrIdLookupKeys(request.employeeHrId))
-    .neq("id", request.id)
     .lt("trip_start_date", windowEnd)
     .gte("trip_end_date", windowStart);
+  if (request.id != null) query = query.neq("id", request.id);
+  const { data, error } = await query;
   if (error) throw new Error(`The employee's other trips could not be read: ${error.message}`);
   const owner = normalizeHrIdForAccess(request.employeeHrId);
   const byDay: Record<string, number[]> = {};
@@ -5603,6 +5606,240 @@ async function journeysWithStopsForEmployee(employeeHrId: string): Promise<Array
     .filter((row) => !text(row.status).startsWith("rejected"))
     .map((row) => ({ id: Number(row.id), stopDays: journeyStopDays(readJourneyStops(row.journey_stops)) }))
     .filter((journey) => journey.stopDays.length > 0);
+}
+
+/**
+ * Measure one STOP of a chained journey: where the drive to it starts, Google's road km and time for
+ * that drive and for the drive home, and the governorate of every place involved. Shared by the real
+ * stop (captureOutstationJourneyStop) and a test account's rehearsal of one, so the two can never
+ * measure a stop differently. Throws only when no earlier photo carries a position.
+ */
+async function measureJourneyStop(input: {
+  accuracyMeters: number | null;
+  arrival: { capturedAt: string | null; latitude: number | null; longitude: number | null };
+  capturedAt: string;
+  departure: { capturedAt: string | null; latitude: number | null; longitude: number | null } | null;
+  existingStops: OutstationJourneyStop[];
+  fallbackArrivalGovernorate: () => string | null;
+  latitude: number;
+  locationLabel: string | null;
+  longitude: number;
+  residence: { latitude: number; longitude: number };
+  /** The arrival governorate already priced into the claim, so a later stop reads the same answer. */
+  storedArrivalGovernorate: string | null;
+}): Promise<{ arrivalGovernorate: string | null; stop: Omit<OutstationJourneyStop, "photoPath"> }> {
+  const origin = pickJourneyLegOrigin({
+    arrival: input.arrival,
+    departure: input.departure,
+    nowIso: input.capturedAt,
+    stops: input.existingStops,
+  });
+  if (!origin) {
+    throw new Error(
+      "The trip's earlier photos carry no location, so the drive to this stop cannot be measured. Ask a system administrator.",
+    );
+  }
+
+  const roadLeg = async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+    try {
+      const route = await googleDirectionsRoute(from, to);
+      const km = route.distanceMeters != null ? Number((route.distanceMeters / 1000).toFixed(2)) : null;
+      return {
+        error: km == null ? "Google returned no driving route." : null,
+        km,
+        minutes: minutesFromSeconds(route.durationInTrafficSeconds) ?? minutesFromSeconds(route.durationSeconds),
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "Google Routes API failed to calculate the driving route.",
+        km: null,
+        minutes: null,
+      };
+    }
+  };
+  const stopPoint = { lat: input.latitude, lng: input.longitude };
+  // Every governorate here is Google's reading of a GPS position, never a label the phone posted
+  // (risk review, 2026-10-18: a crafted departure label "Beni Suef" turned a Fayoum-only trip into
+  // a paid chain). The arrival's is read once and kept on the first leg of the stored pricing, so a
+  // later stop or an admin edit prices against the same answer.
+  const arrivalPoint = { lat: Number(input.arrival.latitude), lng: Number(input.arrival.longitude) };
+  const readGovernorate = async (point: { lat: number; lng: number }) => {
+    if (!usablePosition(point.lat, point.lng)) return null;
+    const found = await googleReverseGeocode(point).catch(() => null);
+    return resolveFirstGovernorate(found?.governorate, found?.formattedAddress, found?.city, found?.area);
+  };
+  const [reverse, leg, home, originGovernorate, arrivalReadGovernorate] = await Promise.all([
+    googleReverseGeocode(stopPoint).catch(() => null),
+    roadLeg({ lat: origin.latitude, lng: origin.longitude }, stopPoint),
+    roadLeg(stopPoint, { lat: input.residence.latitude, lng: input.residence.longitude }),
+    origin.kind === "departure"
+      ? readGovernorate({ lat: origin.latitude, lng: origin.longitude })
+      : Promise.resolve(null),
+    input.storedArrivalGovernorate ? Promise.resolve(input.storedArrivalGovernorate) : readGovernorate(arrivalPoint),
+  ]);
+
+  const arrivalGovernorate = arrivalReadGovernorate ?? input.fallbackArrivalGovernorate();
+  const governorate = resolveFirstGovernorate(
+    reverse?.governorate,
+    reverse?.formattedAddress,
+    reverse?.city,
+    reverse?.area,
+  );
+  const legFromGovernorate =
+    origin.kind === "stop"
+      ? input.existingStops.at(-1)?.governorate ?? null
+      : origin.kind === "departure"
+        ? originGovernorate
+        : arrivalGovernorate;
+
+  return {
+    arrivalGovernorate,
+    stop: {
+      accuracyMeters: input.accuracyMeters,
+      capturedAt: input.capturedAt,
+      governorate,
+      latitude: input.latitude,
+      legFrom: origin.kind,
+      legFromCapturedAt: origin.capturedAt,
+      legFromGovernorate,
+      legFromPreviousKm: leg.km,
+      legFromPreviousMinutes: leg.minutes,
+      locationLabel: reverse?.formattedAddress ?? input.locationLabel,
+      longitude: input.longitude,
+      returnHomeKm: home.km,
+      routeError: [leg.error, home.error].filter(Boolean).join(" ") || null,
+      stopNumber: Math.max(1, ...input.existingStops.map((entry) => entry.stopNumber)) + 1,
+    },
+  };
+}
+
+/** Price a journey's stops under the role's policy — shared by the real stop and the rehearsal. */
+async function priceJourneyStops(input: {
+  arrival: ChainedJourneyInput["arrival"];
+  employeeRole: string;
+  residenceGovernorate: string | null;
+  stops: OutstationJourneyStop[];
+  /** The trip the stops belong to; `id: null` for a rehearsal, which has no row. */
+  trip: { employeeHrId: string; id: number | null };
+  tripEndDate: string;
+  tripStartDate: string;
+}): Promise<ChainedJourneyPricing> {
+  const policy = await getActivePolicyForRole(resolveJobFunctionRole(input.employeeRole));
+  return priceChainedJourney({
+    arrival: input.arrival,
+    fuelRatePerKm: policy.fuelRatePerKm,
+    gpsAccuracyThresholdMeters: policy.gpsAccuracyThresholdMeters,
+    otherCarTripsByDay: await otherCarTripsByCairoDay(input.trip, journeyStopDays(input.stops)),
+    residenceGovernorate: input.residenceGovernorate,
+    stops: input.stops,
+    tripEndDate: input.tripEndDate,
+    tripStartDate: input.tripStartDate,
+  });
+}
+
+/** What a rehearsed stop carries instead of a photo path: nothing was stored. */
+export const REHEARSAL_STOP_PHOTO_PATH = "rehearsal:not-saved";
+
+/**
+ * A TEST ACCOUNT's rehearsal of a STOP (owner, 2026-11-03 — "try the process end to end … stop from
+ * Sohag to Assiut and from Assiut back home"). A test account's Submit saves no claim (the dry run in
+ * submitOutstationRequest), so the real stop has no trip to attach to. This runs the same
+ * measurement and the same pricing as a real stop, for the person the test account mirrors —
+ * her residence, her role's fuel rate, her other trips that day — and SAVES NOTHING: no row, no
+ * photo, no audit. The earlier rehearsed stops come back from the page, which is safe only because
+ * nothing here is ever paid; a real stop never reads its history from the browser.
+ *
+ * Every refusal a real stop makes before its first write is made here too: the trip window, the
+ * stop cap, a stop with no position, a residence that cannot be measured to.
+ */
+export async function rehearseOutstationJourneyStop(
+  access: AccessContext,
+  input: {
+    accuracyMeters?: number | null;
+    arrival: {
+      capturedAt?: string | null;
+      distanceFromResidenceKm?: number | null;
+      latitude?: number | null;
+      longitude?: number | null;
+    };
+    latitude?: number | null;
+    locationLabel?: string | null;
+    longitude?: number | null;
+    stops?: unknown;
+    tripEndDate?: string | null;
+    tripStartDate?: string | null;
+  },
+): Promise<{ pricing: ChainedJourneyPricing; stop: OutstationJourneyStop; stopsLeft: number }> {
+  if (!isTestAccount(access)) {
+    throw forbiddenError("Rehearsing a stop is for test accounts only. On a real trip, add the stop under My claims.");
+  }
+  const tripStartDate = String(input.tripStartDate ?? "").slice(0, 10);
+  const tripEndDate = String(input.tripEndDate ?? "").slice(0, 10) || tripStartDate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tripStartDate) || !/^\d{4}-\d{2}-\d{2}$/.test(tripEndDate)) {
+    throw new Error("The trip dates are missing, so the stop cannot be rehearsed. Submit the test claim again.");
+  }
+  const capturedAt = new Date().toISOString();
+  if (!isWithinDepartureWindow({ capturedAt, tripEndDate })) {
+    throw new Error(
+      `A stop can only be added while the trip is open, and it closed at the end of ${tripEndDate}.`,
+    );
+  }
+  const existingStops = readJourneyStops(input.stops);
+  if (existingStops.length >= MAX_JOURNEY_STOPS) {
+    throw new Error(`This trip already has ${MAX_JOURNEY_STOPS} stops, the most one trip may carry.`);
+  }
+  if (!usablePosition(input.latitude, input.longitude)) {
+    throw new Error(JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE);
+  }
+
+  const identity = await getEmployeeIdentity(access);
+  // persist: false — a rehearsal writes nothing, not even a residence geocode.
+  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: false });
+  if (!residence || !usablePosition(residence.residenceLatitude, residence.residenceLongitude)) {
+    throw new Error(
+      "Your registered residence location is missing or invalid, so the drive home cannot be measured. Please contact HR.",
+    );
+  }
+
+  const arrival = {
+    capturedAt: typeof input.arrival.capturedAt === "string" ? input.arrival.capturedAt : null,
+    latitude: input.arrival.latitude ?? null,
+    longitude: input.arrival.longitude ?? null,
+  };
+  const measured = await measureJourneyStop({
+    accuracyMeters: readAccuracyInput(input.accuracyMeters),
+    arrival,
+    capturedAt,
+    departure: null,
+    existingStops,
+    fallbackArrivalGovernorate: () => null,
+    latitude: Number(input.latitude),
+    locationLabel: text(input.locationLabel) || null,
+    longitude: Number(input.longitude),
+    residence: { latitude: Number(residence.residenceLatitude), longitude: Number(residence.residenceLongitude) },
+    // The first rehearsed stop reads the arrival's governorate from its position; later ones keep it.
+    storedArrivalGovernorate: existingStops[0]?.legFrom === "arrival" ? existingStops[0].legFromGovernorate : null,
+  });
+  const stop: OutstationJourneyStop = { ...measured.stop, photoPath: REHEARSAL_STOP_PHOTO_PATH };
+  const distanceFromResidenceKm = Number(input.arrival.distanceFromResidenceKm);
+  const pricing = await priceJourneyStops({
+    arrival: {
+      capturedAt: arrival.capturedAt,
+      distanceFromResidenceKm: Number.isFinite(distanceFromResidenceKm) ? distanceFromResidenceKm : null,
+      governorate: measured.arrivalGovernorate,
+    },
+    employeeRole: identity.employeeRole,
+    residenceGovernorate: resolveFirstGovernorate(
+      residence.residenceCity,
+      residence.residenceArea,
+      residence.residenceAddress,
+    ),
+    stops: [...existingStops, stop],
+    trip: { employeeHrId: identity.employeeHrId, id: null },
+    tripEndDate,
+    tripStartDate,
+  });
+  return { pricing, stop, stopsLeft: MAX_JOURNEY_STOPS - existingStops.length - 1 };
 }
 
 /**
@@ -5687,20 +5924,20 @@ export async function captureOutstationJourneyStop(
   }
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
-  const residenceLatitude = request.residenceLatitude;
-  const residenceLongitude = request.residenceLongitude;
-  if (!usablePosition(residenceLatitude, residenceLongitude)) {
+  if (!usablePosition(request.residenceLatitude, request.residenceLongitude)) {
     throw new Error(
       "Your registered residence location is missing or invalid, so the drive home cannot be measured. Please contact HR.",
     );
   }
 
-  const origin = pickJourneyLegOrigin({
+  const measured = await measureJourneyStop({
+    accuracyMeters: readAccuracyInput(input.accuracyMeters),
     arrival: {
       capturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt ?? null,
       latitude: request.carEvidenceMetadata?.capturedLatitude ?? request.capturedLatitude,
       longitude: request.carEvidenceMetadata?.capturedLongitude ?? request.capturedLongitude,
     },
+    capturedAt,
     departure: request.departureEvidenceImagePath
       ? {
           capturedAt: request.departureCapturedAt ?? request.departureEvidenceMetadata?.capturedAt ?? null,
@@ -5708,81 +5945,19 @@ export async function captureOutstationJourneyStop(
           longitude: request.departureEvidenceMetadata?.capturedLongitude ?? null,
         }
       : null,
-    nowIso: capturedAt,
-    stops: existingStops,
+    existingStops,
+    // The stored destination fields were themselves written from Google's reverse geocode at
+    // submit; they are the fallback only when the arrival position cannot be read now.
+    fallbackArrivalGovernorate: () =>
+      resolveFirstGovernorate(request.toCity, request.toArea, request.toLabel, request.toCountry),
+    latitude,
+    locationLabel: text(input.locationLabel) || null,
+    longitude,
+    residence: { latitude: Number(request.residenceLatitude), longitude: Number(request.residenceLongitude) },
+    storedArrivalGovernorate: request.journeyPricing?.legs[0]?.toGovernorate ?? null,
   });
-  if (!origin) {
-    throw new Error(
-      "The trip's earlier photos carry no location, so the drive to this stop cannot be measured. Ask a system administrator.",
-    );
-  }
-
-  const roadLeg = async (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
-    try {
-      const route = await googleDirectionsRoute(from, to);
-      const km = route.distanceMeters != null ? Number((route.distanceMeters / 1000).toFixed(2)) : null;
-      return {
-        error: km == null ? "Google returned no driving route." : null,
-        km,
-        minutes: minutesFromSeconds(route.durationInTrafficSeconds) ?? minutesFromSeconds(route.durationSeconds),
-      };
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : "Google Routes API failed to calculate the driving route.",
-        km: null,
-        minutes: null,
-      };
-    }
-  };
-  const stopPoint = { lat: latitude, lng: longitude };
-  // Every governorate here is Google's reading of a GPS position, never a label the phone posted
-  // (risk review, 2026-10-18: a crafted departure label "Beni Suef" turned a Fayoum-only trip into
-  // a paid chain). The arrival's is read once and kept on the first leg of the stored pricing, so a
-  // later stop or an admin edit prices against the same answer.
-  const storedArrivalGovernorate = request.journeyPricing?.legs[0]?.toGovernorate ?? null;
-  const arrivalPoint = {
-    lat: Number(request.carEvidenceMetadata?.capturedLatitude ?? request.capturedLatitude),
-    lng: Number(request.carEvidenceMetadata?.capturedLongitude ?? request.capturedLongitude),
-  };
-  const readGovernorate = async (point: { lat: number; lng: number }) => {
-    if (!usablePosition(point.lat, point.lng)) return null;
-    const found = await googleReverseGeocode(point).catch(() => null);
-    return resolveFirstGovernorate(found?.governorate, found?.formattedAddress, found?.city, found?.area);
-  };
-  const [reverse, leg, home, originGovernorate, arrivalReadGovernorate] = await Promise.all([
-    googleReverseGeocode(stopPoint).catch(() => null),
-    roadLeg({ lat: origin.latitude, lng: origin.longitude }, stopPoint),
-    roadLeg(stopPoint, { lat: Number(residenceLatitude), lng: Number(residenceLongitude) }),
-    origin.kind === "departure"
-      ? readGovernorate({ lat: origin.latitude, lng: origin.longitude })
-      : Promise.resolve(null),
-    storedArrivalGovernorate ? Promise.resolve(storedArrivalGovernorate) : readGovernorate(arrivalPoint),
-  ]);
-
-  const residenceGovernorate = resolveFirstGovernorate(
-    request.residenceCity,
-    request.residenceArea,
-    request.residenceAddress,
-  );
-  // The stored destination fields were themselves written from Google's reverse geocode at submit;
-  // they are the fallback only when the arrival position cannot be read now.
-  const arrivalGovernorate =
-    arrivalReadGovernorate ??
-    resolveFirstGovernorate(request.toCity, request.toArea, request.toLabel, request.toCountry);
-  const governorate = resolveFirstGovernorate(
-    reverse?.governorate,
-    reverse?.formattedAddress,
-    reverse?.city,
-    reverse?.area,
-  );
-  const legFromGovernorate =
-    origin.kind === "stop"
-      ? existingStops.at(-1)?.governorate ?? null
-      : origin.kind === "departure"
-        ? originGovernorate
-        : arrivalGovernorate;
-
-  const stopNumber = Math.max(1, ...existingStops.map((entry) => entry.stopNumber)) + 1;
+  const governorate = measured.stop.governorate;
+  const stopNumber = measured.stop.stopNumber;
   const photoPath = await uploadOutstationJourneyStopImage({
     capturedAtMs: new Date(capturedAt).getTime(),
     employeeHrId: request.employeeHrId,
@@ -5791,37 +5966,23 @@ export async function captureOutstationJourneyStop(
     stopNumber,
   });
 
-  const stop: OutstationJourneyStop = {
-    accuracyMeters: readAccuracyInput(input.accuracyMeters),
-    capturedAt,
-    governorate,
-    latitude,
-    legFrom: origin.kind,
-    legFromCapturedAt: origin.capturedAt,
-    legFromGovernorate,
-    legFromPreviousKm: leg.km,
-    legFromPreviousMinutes: leg.minutes,
-    locationLabel: reverse?.formattedAddress ?? (text(input.locationLabel) || null),
-    longitude,
-    photoPath,
-    returnHomeKm: home.km,
-    routeError: [leg.error, home.error].filter(Boolean).join(" ") || null,
-    stopNumber,
-  };
+  const stop: OutstationJourneyStop = { ...measured.stop, photoPath };
   const stops = [...existingStops, stop];
 
-  const policy = await getActivePolicyForRole(resolveJobFunctionRole(request.employeeRole));
-  const pricing = priceChainedJourney({
+  const pricing = await priceJourneyStops({
     arrival: {
       capturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt ?? null,
       distanceFromResidenceKm: request.distanceFromResidenceKm,
-      governorate: arrivalGovernorate,
+      governorate: measured.arrivalGovernorate,
     },
-    fuelRatePerKm: policy.fuelRatePerKm,
-    gpsAccuracyThresholdMeters: policy.gpsAccuracyThresholdMeters,
-    otherCarTripsByDay: await otherCarTripsByCairoDay(request, journeyStopDays(stops)),
-    residenceGovernorate,
+    employeeRole: request.employeeRole,
+    residenceGovernorate: resolveFirstGovernorate(
+      request.residenceCity,
+      request.residenceArea,
+      request.residenceAddress,
+    ),
     stops,
+    trip: { employeeHrId: request.employeeHrId, id: request.id },
     tripEndDate: request.tripEndDate,
     tripStartDate: request.tripStartDate,
   });

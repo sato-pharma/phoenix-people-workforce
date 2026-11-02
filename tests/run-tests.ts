@@ -2632,6 +2632,7 @@ import { runShareCardTests } from "./share-card.test.ts";
 import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
 import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
+import { runOutstationJourneyStopRehearsalTests } from "./outstation-journey-stop-rehearsal.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -10232,6 +10233,11 @@ await runTest(
 await runTest(
   "test-account expense dry run (owner 2026-10-28): a test account submits an expense through every check and nothing is saved — the stop comes before the first upload or row, and the capture and pricing write nothing as her",
   runTestAccountExpenseDryRunTests,
+);
+
+await runTest(
+  "outstation journey-stop rehearsal (owner 2026-11-03): a test account rehearses a stop end to end — measured and priced through the real stop's one measurement and one pricing, refused to anyone else, and nothing is saved",
+  runOutstationJourneyStopRehearsalTests,
 );
 
 await runTest(

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
+import { JourneyStopRehearsal, type RehearsalTrip } from "@/components/outstation/journey-stop-rehearsal";
 import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
@@ -157,15 +158,40 @@ const TEST_CLAIM_NOT_SAVED_TITLE = "Test claim — checked, not saved";
 const TEST_CLAIM_NOT_SAVED_DETAIL =
   "Every check ran exactly as it does for the real claim. Nothing was saved: no claim, no photo, no ticket, no payroll line and no email.";
 
+/**
+ * What a test account's stop rehearsal needs from its checked, unsaved car trip: the arrival photo's
+ * position and time (the phone's, exactly what a saved trip would store) and the distance from home.
+ */
+function rehearsalTripFrom(
+  payload: Record<string, unknown> | null,
+  carEvidence: { capturedAt: string; capturedLatitude: number; capturedLongitude: number } | null,
+): RehearsalTrip | null {
+  const tripStartDate = typeof payload?.tripStartDate === "string" ? payload.tripStartDate.slice(0, 10) : "";
+  const tripEndDate = typeof payload?.tripEndDate === "string" ? payload.tripEndDate.slice(0, 10) : tripStartDate;
+  if (!tripStartDate) return null;
+  const finite = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  return {
+    arrival: {
+      capturedAt: carEvidence?.capturedAt ?? (typeof payload?.capturedAt === "string" ? payload.capturedAt : null),
+      distanceFromResidenceKm: finite(payload?.distanceFromResidenceKm),
+      latitude: carEvidence?.capturedLatitude ?? finite(payload?.capturedLatitude),
+      longitude: carEvidence?.capturedLongitude ?? finite(payload?.capturedLongitude),
+    },
+    tripEndDate: tripEndDate || tripStartDate,
+    tripStartDate,
+  };
+}
+
 /** What the screen after Submit names: the claim, and where the trip went. */
 type SubmittedClaim = {
   arrivalPhotoOwed: boolean;
   destination: string | null;
   /**
    * A test account's claim: every check ran and NOTHING was saved (owner, 2026-10-28 — "Runs fully,
-   * saves nothing"; the stop is in submitOutstationRequest). Carries the total Phoenix priced it at.
+   * saves nothing"; the stop is in submitOutstationRequest). Carries the total Phoenix priced it at,
+   * and for a car trip what its stop rehearsal needs (journey-stop-rehearsal.tsx, owner 2026-11-03).
    */
-  dryRun: { expectedTotal: number | null } | null;
+  dryRun: { expectedTotal: number | null; rehearsal: RehearsalTrip | null } | null;
   id: number | null;
   /** A car trip can add stops on the way (chained-journey.ts) — the screen after Submit says how. */
   isCarTrip: boolean;
@@ -1434,7 +1460,10 @@ export function MobileOutstationWizard({
         arrivalPhotoOwed,
         dryRun:
           payload?.dryRun === true
-            ? { expectedTotal: Number.isFinite(expectedTotal) ? expectedTotal : null }
+            ? {
+                expectedTotal: Number.isFinite(expectedTotal) ? expectedTotal : null,
+                rehearsal: !isNonTravel && transportationType === "car" ? rehearsalTripFrom(payload, carEvidence) : null,
+              }
             : null,
         destination:
           (typeof payload?.toLabel === "string" && payload.toLabel.trim()) ||
@@ -2145,6 +2174,7 @@ export function MobileOutstationWizard({
       {submitted ? (
         <SubmittedClaimPanel
           claim={submitted}
+          employeeHrId={employeeHrId}
           onAnother={() => {
             setSubmitted(null);
             showStep(1);
@@ -2372,8 +2402,25 @@ function NextSteps({ items }: { items: ReadonlyArray<AfterSubmitItem> }) {
  * The screen after Submit (owner, 2026-10-22). It replaces a form that reset in silence: the claim's
  * number, and what is still owed on it, in order — the departure photo first when the trip owes one.
  */
-function SubmittedClaimPanel({ claim, onAnother }: { claim: SubmittedClaim; onAnother: () => void }) {
-  if (claim.dryRun) return <TestClaimPanel expectedTotal={claim.dryRun.expectedTotal} onAnother={onAnother} />;
+function SubmittedClaimPanel({
+  claim,
+  employeeHrId,
+  onAnother,
+}: {
+  claim: SubmittedClaim;
+  employeeHrId: string;
+  onAnother: () => void;
+}) {
+  if (claim.dryRun) {
+    return (
+      <TestClaimPanel
+        employeeHrId={employeeHrId}
+        expectedTotal={claim.dryRun.expectedTotal}
+        onAnother={onAnother}
+        rehearsal={claim.dryRun.rehearsal}
+      />
+    );
+  }
   const items = afterSubmitGuidance(claim);
   return (
     <section aria-label="Claim submitted" className="border border-slate-200 bg-white shadow-sm">
@@ -2404,7 +2451,17 @@ function SubmittedClaimPanel({ claim, onAnother }: { claim: SubmittedClaim; onAn
 }
 
 /** A test account's Submit: the same panel, saying the claim was checked and nothing was kept. */
-function TestClaimPanel({ expectedTotal, onAnother }: { expectedTotal: number | null; onAnother: () => void }) {
+function TestClaimPanel({
+  employeeHrId,
+  expectedTotal,
+  onAnother,
+  rehearsal,
+}: {
+  employeeHrId: string;
+  expectedTotal: number | null;
+  onAnother: () => void;
+  rehearsal: RehearsalTrip | null;
+}) {
   return (
     <section aria-label="Test claim checked" className="border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
@@ -2419,6 +2476,7 @@ function TestClaimPanel({ expectedTotal, onAnother }: { expectedTotal: number | 
         ) : null}
       </div>
       <div className="px-5 pb-5 sm:px-8">
+        {rehearsal ? <JourneyStopRehearsal employeeHrId={employeeHrId} trip={rehearsal} /> : null}
         <div className="mt-5 flex flex-wrap gap-2">
           <button className={cn(phxButtonGhostClassName, "min-h-12 justify-center")} onClick={onAnother} type="button">
             Submit another expense

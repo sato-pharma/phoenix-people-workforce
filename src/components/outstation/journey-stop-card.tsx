@@ -11,6 +11,40 @@ import {
 import { JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE } from "@/lib/outstation/journey-stop-location";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
 
+/** What the card hands its saver: the photo and the fix taken at the shutter. */
+export type JourneyStopCapture = {
+  accuracyMeters: number | null;
+  imageDataUrl: string;
+  latitude: number;
+  locationLabel: string | null;
+  longitude: number;
+};
+
+/** What a saver reports back: the line to show, and whether the approver will look at the journey. */
+export type JourneyStopSaveResult = { flagged: boolean; message: string };
+
+/** The real save: the stop joins the employee's own trip (POST /api/outstation/[id]/journey-stop). */
+async function saveStopToTrip(
+  requestId: number,
+  nextStopNumber: number,
+  capture: JourneyStopCapture,
+): Promise<JourneyStopSaveResult> {
+  const response = await fetch(`/api/outstation/${requestId}/journey-stop`, {
+    body: JSON.stringify(capture),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload?.message || `Upload failed (${response.status})`);
+  const place = typeof payload?.stopGovernorate === "string" ? ` in ${payload.stopGovernorate}` : "";
+  return {
+    flagged: payload?.flagged === true,
+    message: `Stop ${payload?.stopNumber ?? nextStopNumber}${place} saved. ${
+      typeof payload?.modeReason === "string" ? payload.modeReason : ""
+    }`.trim(),
+  };
+}
+
 type CaptureState =
   | { kind: "idle" }
   | { kind: "opening" }
@@ -34,12 +68,19 @@ export function JourneyStopCard({
   employeeHrId,
   nextStopNumber,
   onSaved,
+  rehearsal,
   requestId,
 }: {
   employeeHrId: string;
   nextStopNumber: number;
   onSaved?: (requestId: number) => void;
-  requestId: number;
+  /**
+   * A test account's rehearsal (owner, 2026-11-03): the same camera and the same GPS rule, but the
+   * stop goes to this saver instead of a trip — its claim was never saved, so there is none.
+   */
+  rehearsal?: { save: (capture: JourneyStopCapture) => Promise<JourneyStopSaveResult> };
+  /** The trip the stop joins; null only for a rehearsal. */
+  requestId: number | null;
 }) {
   const [state, setState] = useState<CaptureState>({ kind: "idle" });
   const streamRef = useRef<MediaStream | null>(null);
@@ -133,50 +174,50 @@ export function JourneyStopCard({
         employeeHrId,
         label: `Stop ${nextStopNumber}`,
         locationLines: location.lines,
-        reference: `Request: ${requestId}`,
+        reference: requestId != null ? `Request: ${requestId}` : "Test claim — not saved",
       });
 
-      const response = await fetch(`/api/outstation/${requestId}/journey-stop`, {
-        body: JSON.stringify({
-          accuracyMeters,
-          imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
-          latitude,
-          locationLabel: location.label,
-          longitude,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.message || `Upload failed (${response.status})`);
+      const stopCapture: JourneyStopCapture = {
+        accuracyMeters,
+        imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
+        latitude,
+        locationLabel: location.label,
+        longitude,
+      };
+      let result: JourneyStopSaveResult;
+      if (rehearsal) {
+        result = await rehearsal.save(stopCapture);
+      } else if (requestId != null) {
+        result = await saveStopToTrip(requestId, nextStopNumber, stopCapture);
+      } else {
+        throw new Error("This stop has no trip to join.");
+      }
 
       stopCamera();
-      const place = typeof payload?.stopGovernorate === "string" ? ` in ${payload.stopGovernorate}` : "";
-      setState({
-        flagged: payload?.flagged === true,
-        kind: "done",
-        message: `Stop ${payload?.stopNumber ?? nextStopNumber}${place} saved. ${
-          typeof payload?.modeReason === "string" ? payload.modeReason : ""
-        }`.trim(),
-      });
-      onSaved?.(requestId);
+      setState({ flagged: result.flagged, kind: "done", message: result.message });
+      if (requestId != null) onSaved?.(requestId);
     } catch (error) {
       setState({
         kind: "error",
         message: error instanceof Error ? error.message : "The stop could not be saved.",
       });
     }
-  }, [employeeHrId, nextStopNumber, onSaved, requestId, stopCamera]);
+  }, [employeeHrId, nextStopNumber, onSaved, rehearsal, requestId, stopCamera]);
 
   const busy = state.kind === "opening" || state.kind === "saving";
 
   return (
     <section className="border border-sky-200 bg-sky-50/60 p-4 sm:p-5">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <MapPin className="h-4 w-4 text-sky-700" />
         <span className="bg-sky-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-sky-800">
           Add stop {nextStopNumber}
         </span>
+        {rehearsal ? (
+          <span className="bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
+            Test account · not saved
+          </span>
+        ) : null}
       </div>
       <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-sky-950">
         Moving on to work in another governorate before you go home? Take this photo when you get
@@ -236,7 +277,9 @@ export function JourneyStopCard({
           {state.flagged ? (
             <p className="flex items-start gap-2 text-phx-md leading-relaxed text-amber-800">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              Your approver will review this journey before it is paid.
+              {rehearsal
+                ? "On a real trip, the approver would review this journey before it is paid — the reasons are below."
+                : "Your approver will review this journey before it is paid."}
             </p>
           ) : null}
         </div>
