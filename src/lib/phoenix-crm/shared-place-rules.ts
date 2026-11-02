@@ -313,6 +313,12 @@ export function sharedPlanCapRefusal(input: {
    * there is counted, so the venue is never full.
    */
   liftedVenues?: ReadonlySet<string>;
+  /**
+   * A venue's own raised daily number (owner, 2026-11-02: "instead of making the cap 3, make it 5, make it 7"),
+   * `sharedPlaceId → number`, from `daily_cap`. It can only widen: the door holds the greater of the two, so
+   * this does too, and a venue left out of the map holds `cap`.
+   */
+  venueCaps?: ReadonlyMap<string, number>;
 }): string | null {
   const nameable = input.onlyDays ? new Set(input.onlyDays) : null;
   const lifted = input.liftedVenues;
@@ -325,14 +331,15 @@ export function sharedPlanCapRefusal(input: {
     if (!venues) continue;
     for (const sharedPlaceId of [...venues.keys()].sort()) {
       const placed = venues.get(sharedPlaceId) ?? 0;
-      if (placed <= input.cap) continue;
+      const capHere = Math.max(input.cap, input.venueCaps?.get(sharedPlaceId) ?? 0);
+      if (placed <= capHere) continue;
       const venue = input.venues.get(sharedPlaceId);
       const said = {
         name: venue?.name ?? SHARED_PLACE_TITLE,
         kind: venue?.kind ?? "polyclinic",
         dayLabel: input.dayLabel(day),
         placed,
-        cap: input.cap,
+        cap: capHere,
       };
       return input.forSend ? sharedPlaceSendCapRefusal(said) : sharedPlaceCapRefusal(said);
     }

@@ -60,6 +60,43 @@ DONOT FOLLOW THE CAP IN THIS POLYCLINIC ONLY"* — Mohamed Ahmed Mohamed Hassan 
 - Migration `20261101162433_phoenix_crm_al_raee_polyclinic_no_cap.sql`. Pinned by
   `tests/phoenix-crm-offplan-exemption.test.ts` (`runLiftedVenueTests`). To end it, set `ended_at` on the row.
 
+## The Super Admin's Polyclinic Caps page (owner, 2026-11-02)
+
+*"This module I filter by the medical rep. Then after I filter by the medical rep, all his polyclinics appear. Okay, I
+have the option to, for example, open or close the toggle. When I open the toggle, then no cap for this rep in this
+polyclinic. And also have the option to, for example, instead of making the cap 3, make it 5, make it 7."* From here on
+an exception of this kind needs no migration. The page is `/admin/field-crm/venue-caps`, the Super Admin's alone
+(`canManageVenueCaps`, on the page and in the service).
+
+- **The list:** every live venue of the rep's seats, all three kinds, held ones marked. Retired and test venues are not
+  listed. A venue appears as soon as the rep captures it.
+- **The switch:** a row on the exemptions table with `shared_place_id` (the exact venue, no name key) and
+  `lifts_venue_cap = true`, so it reaches what the rows above reach: the daily number for planned and unplanned visits,
+  on the plan and at the door, and the out-of-plan limit there.
+- **Switching off** ends every lifting row reaching the venue, a name key row included. If that key also reaches
+  another live venue of the seat, that venue first gets a row of its own, so one switch never turns a second one off.
+  A retired venue the key reaches keeps a row too, inert until the venue is restored. Ended rows stay, with
+  `ended_by_hr_id`.
+- **An account named on the row** (the hospital's own account on the Alexandria rows) goes with the venue when it is
+  switched off, and **switching back on brings it back**: `lift` reads the last ended row reaching the venue. If the key
+  also reaches a second venue, the account moves to that venue's row instead, unless the account sits in the venue being
+  switched off. One account comes back per venue; every row today names one.
+- **The number:** `phoenix_crm_shared_places.daily_cap`, above the company number and 20 at most, asked by the page, the
+  service and `phoenix_crm_venue_cap_set`. The door and the plan hold `greatest(setting, daily_cap)`, so a company number
+  raised later is never undercut. It moves the venue's daily number ONLY: the out-of-plan 2 a day and 8 a week still apply
+  there. That is the difference from the switch, and the page says so.
+- **A row that frees unplanned visits only** (the Air Force hospital's, `lifts_venue_cap = false`) is left alone by the
+  switch, shown as a note, and ended only by its own "End this exception", which asks first. The page cannot set one.
+- **Per seat**, like every row here: a successor on the seat inherits it. A customer moved to another seat keeps a place
+  in the old seat's venue, and that rep holds the company number there, plan and door alike. What stays is the same list
+  as above. No message or email goes out; the rep's allowance card names a lifted venue, as it does for the rows above.
+- **Lowering does not re-check a plan already sent.** Switching off or going back to a lower number leaves approved plans
+  as they are, so a visit past the new number is refused at the door that day. A company settings change behaves the same.
+- **The number keeps no history.** `raise` overwrites who and when, and `standard` clears them; switch rows keep theirs.
+- The read and the write are `phoenix_crm_venue_cap_board(seats)` and `phoenix_crm_venue_cap_set(...)`, so "is it lifted"
+  is answered by the door's own match. Migrations `20261102130045_phoenix_crm_venue_cap_admin.sql` and
+  `20261102133258_phoenix_crm_venue_cap_round_trip.sql`. Pinned by `tests/phoenix-crm-venue-caps.test.ts`.
+
 ## A new hire's first month (owner, 2026-10-26)
 
 *"Aya Mamdouh is a new hire — make her able to submit unplanned visits during her first hiring month with no cap, only
@@ -82,8 +119,9 @@ On 24 November the usual 2 a day and 8 a week apply again with no job and no han
 
 ## How it is built
 
-- Table `phoenix_crm_offplan_exemptions` — one row per **seat** and **customer or venue**. It is a named row, never a
-  raised cap: the settings are untouched, and no other seat is reached (`e.seat_id = p_seat`).
+- Table `phoenix_crm_offplan_exemptions` — one row per **seat** and **customer, venue name key or exact venue**. It is a
+  named row, and the settings are untouched, so no other seat is reached (`e.seat_id = p_seat`). A raised number is a
+  column on the one venue, `phoenix_crm_shared_places.daily_cap`, set on the Polyclinic Caps page.
 - `phoenix_crm_offplan_exempt(seat, customer, place)` answers whether a visit falls under a row;
   `phoenix_crm_offplan_exempt_customers(seat)` lists the customers it covers, for the rep's picker.
 - The cap trigger stamps `phoenix_crm_visits.offplan_exempt = true` and returns **before it counts anything**. The two
@@ -99,4 +137,5 @@ On 24 November the usual 2 a day and 8 a week apply again with no job and no han
 - The hospital is not a shared place today (no shared-place row; the hospital account has one place). Its doctors are
   covered once the rep seats them in a venue of his own whose folded name contains "الجوي". Until then only visits to the
   hospital account itself are exempt.
-- A new exception is a new row in `phoenix_crm_offplan_exemptions` with the owner's word — never a settings change.
+- A new exception is a row in `phoenix_crm_offplan_exemptions`, set by the Super Admin on the Polyclinic Caps page or
+  with the owner's word — never a settings change.

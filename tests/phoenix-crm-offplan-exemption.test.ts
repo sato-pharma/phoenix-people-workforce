@@ -126,7 +126,7 @@ function runLiftedVenueTests(): void {
   const plans = readFileSync("src/lib/phoenix-crm/server/plans.ts", "utf8");
   assert.ok(plans.includes("loadLiftedVenues(seat.seatId),\n  ]);"), "the save reads the lifted venues beside its other reads");
   assert.ok(plans.includes("sharedPlaces: planVenues,\n    liftedVenues,"), "and hands them to the plan rules");
-  assert.ok(plans.includes("overVenue = sharedPlanCapRefusal({ ...venueCheck, venues, liftedVenues });"), "🔴 the send counts without them too");
+  assert.ok(plans.includes("overVenue = sharedPlanCapRefusal({ ...venueCheck, venues, liftedVenues, venueCaps });"), "🔴 the send counts without them too");
   const rules = readFileSync("src/lib/phoenix-crm/plan-rules.ts", "utf8");
   assert.ok(rules.includes("liftedVenues: input.liftedVenues,"), "resolvePlanItems passes them to the venue cap");
   const loader = readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8");
