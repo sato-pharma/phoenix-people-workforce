@@ -49,9 +49,15 @@ Measured on production on 2 Nov 2026, revision `229ff7f8f`, 03:23 to 12:10 Cairo
 So the warning fired on every ping that worked. A refusal is an HTTP 200 reading `denied` or `not configured`, and a crashed script answers a 200 error page. Nothing read the answer, so those logged nothing.
 
 - A timeout now logs nothing.
-- An answer other than `ok` logs `direct_order_sheet_ping_refused`, with `answer` set to `denied`, `not configured` or `unexpected`. The page itself is never logged.
-- A non-2xx status or a network failure still logs `direct_order_sheet_ping_failed`. The 403 of 22 Oct 2026 is that case.
+- An answer other than `ok` logs `direct_order_sheet_ping_refused` or `marketing_sheet_ping_refused`, with `answer` set to `denied`, `not configured` or `unexpected`. The page itself is never logged.
+- A non-2xx status or a network failure still logs `direct_order_sheet_ping_failed` or `marketing_sheet_ping_failed`. The 403 of 22 Oct 2026 is that case.
 - The secret check comes before the feed read, so a refusal usually answers inside the 4 seconds. One that takes longer is missed, but a refusal is a lasting state, and the next ping reports it.
-- The `.gs` file did not change. The `/exec` address runs a saved version that only the owning Google account can move, so a change there would not reach the ping without his redeploy.
-- `pingMarketingRequestSheet` has the same code and was not changed. It sent no ping in the measured window, so nothing about it was measured.
-- Pinned by `tests/direct-orders-sheet-webhook.test.ts`.
+- Neither `.gs` file changed. An `/exec` address runs a saved version that only the owning Google account can move, so a change there would not reach the ping without his redeploy.
+- Pinned by `tests/direct-orders-sheet-webhook.test.ts`, which runs both pings through the same cases.
+
+`pingMarketingRequestSheet` had the same code and got the same fix. Measured on production over 20 deployments, 1 Nov 2026 19:50 to 2 Nov 2026 13:08 Cairo:
+
+- 4 `marketing_sheet_ping_failed` warnings, all on revision `d3bc5edd3`, every one a `TimeoutError` with no status: 1 validation, 3 submissions.
+- Google reads the Marketing feed on its timer near second 36 of each minute. Around these pings it also read at 22:41:16, 22:45:38, 22:49:13 and 22:53:14. Those are 1 to 5 seconds after the requests that sent the pings finished, at 22:41:15, 22:45:35, 22:49:11 and 22:53:09. The 22:45 minute shows two reads at second 38, the timer's and the ping's.
+- The 22:45 warning was logged at 22:45:47, 12 seconds after its request finished rather than about 4. The ping is sent before the response goes back, so the read at 22:45:38 still follows it. Why the warning was late was not measured.
+- How long the redraw takes was not measured. Neither refused warning has fired on production; only the test covers them.

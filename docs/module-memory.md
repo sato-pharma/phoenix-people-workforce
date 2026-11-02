@@ -94,7 +94,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `sales-imports` — Source of Sales — distributor imports, customer mapping and rollups | `src/lib/sales/{normalizer,master-data,master-map,ai}/**` and 5 more |
 | `sales-attribution` — Attribution, achievement, targets and sales territory | `src/lib/sales/territory/**` and 5 more |
 | `weekly-sales` — Weekly sales and stock | `src/lib/sales/weekly/**` and 3 more |
-| `direct-orders` — Direct orders | `src/lib/direct-orders/**` and 4 more |
+| `direct-orders` — Direct orders | `src/lib/direct-orders/**` and 5 more |
 | `incentives` — Incentives and targets payout | `src/lib/incentives/**` and 2 more |
 | `production-planning` — Production Planner (toll manufacturing — Ivyronc and Guamusin) | `src/lib/production-planning/**` and 5 more |
 | `phoenix-crm` — Phoenix CRM (the reps' own CRM) | `src/lib/phoenix-crm/**` and 4 more |

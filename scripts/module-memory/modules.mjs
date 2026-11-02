@@ -197,6 +197,8 @@ export const MODULES = [
     scope: "Direct orders from pharmacies, their pricing, the Finance booking month, the direct-order desk.",
     globs: [
       "src/lib/direct-orders/**",
+      // The Marketing sheet ping obeys this module's one sheet-ping rule; `marketing`'s pointer had no room for a copy.
+      "src/lib/marketing-requests/sheet-webhook.ts",
       "src/components/direct-orders/**",
       "app/**/{direct-orders,direct-orders-in-my-area}/**",
       "tests/*direct-order*",

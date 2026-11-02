@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { pingDirectOrderSheet } from "../src/lib/direct-orders/sheet-webhook.ts";
+import { pingMarketingRequestSheet } from "../src/lib/marketing-requests/sheet-webhook.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * One ping against a stubbed fetch, and what it logged. It reaches no network and no sheet. The ping
  * returns void, so the wait is what lets its promise chain land before the lines are read.
  */
-async function logLinesOfOnePing(answer: () => Response): Promise<string[]> {
+async function logLinesOfOnePing(ping: () => void, answer: () => Response): Promise<string[]> {
   const lines: string[] = [];
   let calls = 0;
   const realLog = console.log;
@@ -32,7 +33,7 @@ async function logLinesOfOnePing(answer: () => Response): Promise<string[]> {
     return answer();
   }) as typeof fetch;
   try {
-    pingDirectOrderSheet("collection_recorded");
+    ping();
     await new Promise((resolve) => setTimeout(resolve, 25));
   } finally {
     globalThis.fetch = realFetch;
@@ -218,73 +219,98 @@ export async function runDirectOrderSheetWebhookTests() {
   // doPost answers only after it has redrawn every tab, so Phoenix hangs up on every ping that works:
   // 44 order changes gave 44 timeouts that morning, and the sheet read its feed after each one. A
   // refusal is a 200 reading "denied", and nothing read the answer. So the warning sat on the wrong
-  // side: it fired on every success and on no refusal.
-  for (const word of ["ok", "denied", "not configured"]) {
-    assert.ok(
-      scriptSource.includes(`createTextOutput("${word}")`),
-      `doPost must still answer "${word}": the ping reads that word, so a new wording here would read as a refusal`,
-    );
-  }
-
+  // side: it fired on every success and on no refusal. The Marketing ping had the same code and the
+  // same result (4 timeouts on 1 Nov, the sheet reading its feed after each), so both run these cases.
   const url = "https://example.invalid/hook";
   const secret = "unit-test-sheet-secret";
-  process.env.SHEET_REFRESH_WEBHOOK_URL = url;
-  process.env.SHEET_REFRESH_WEBHOOK_SECRET = secret;
-  try {
-    // The runtime's own timeout reason, not a hand-built copy: its name and class are what the catch reads.
-    // Its timer does not hold the process open, so this interval does; waiting on the abort alone exits 13.
-    const expired = AbortSignal.timeout(1);
-    await new Promise<void>((resolve) => {
-      const hold = setInterval(() => {
-        if (!expired.aborted) return;
-        clearInterval(hold);
-        resolve();
-      }, 1);
-    });
-    const timeoutLines = await logLinesOfOnePing(() => {
-      throw expired.reason;
-    });
-    assert.deepEqual(timeoutLines, [], "A TIMED-OUT PING WAS DELIVERED: the script runs on after Phoenix hangs up, so it must log nothing");
-
-    const okLines = await logLinesOfOnePing(() => new Response("ok"));
-    assert.deepEqual(okLines, [], "a sheet that answers ok has refreshed, and logs nothing");
-
-    const refusalLines: string[] = [];
-    for (const word of ["denied", "not configured"]) {
-      const lines = await logLinesOfOnePing(() => new Response(word));
-      assert.equal(lines.length, 1, `A 200 READING "${word}" IS A REFUSAL: it must warn, or the sheet stops listening and nobody hears`);
-      const entry = JSON.parse(lines[0]);
-      assert.equal(entry.event, "direct_order_sheet_ping_refused", `"${word}" must log the refused event`);
-      assert.equal(entry.labels.answer, word, "the warning must say which refusal it was");
-      assert.equal(entry.labels.reason, "collection_recorded", "the warning must say which order change it was");
-      refusalLines.push(...lines);
+  for (const sheet of [
+    {
+      failedEvent: "direct_order_sheet_ping_failed",
+      name: "Direct Orders",
+      ping: () => pingDirectOrderSheet("collection_recorded"),
+      reason: "collection_recorded",
+      refusedEvent: "direct_order_sheet_ping_refused",
+      script: scriptSource,
+      secretEnv: "SHEET_REFRESH_WEBHOOK_SECRET",
+      urlEnv: "SHEET_REFRESH_WEBHOOK_URL",
+    },
+    {
+      failedEvent: "marketing_sheet_ping_failed",
+      name: "Marketing",
+      ping: () => pingMarketingRequestSheet("request_submitted"),
+      reason: "request_submitted",
+      refusedEvent: "marketing_sheet_ping_refused",
+      script: readFileSync(new URL("../docs/marketing-request-live-sheet.gs", import.meta.url), "utf8"),
+      secretEnv: "MARKETING_SHEET_REFRESH_WEBHOOK_SECRET",
+      urlEnv: "MARKETING_SHEET_REFRESH_WEBHOOK_URL",
+    },
+  ]) {
+    for (const word of ["ok", "denied", "not configured"]) {
+      assert.ok(
+        sheet.script.includes(`createTextOutput("${word}")`),
+        `${sheet.name}: doPost must still answer "${word}": the ping reads that word, so a new wording here would read as a refusal`,
+      );
     }
 
-    // A crashed script answers a 200 page. It is named, never logged as sent, and here it even echoes the secret.
-    const pageLines = await logLinesOfOnePing(
-      () => new Response(`<!DOCTYPE html><html><title>Script error</title>${secret}</html>`),
-    );
-    assert.equal(pageLines.length, 1, "A 200 ERROR PAGE IS NOT A REFRESH: it must warn");
-    assert.equal(JSON.parse(pageLines[0]).labels.answer, "unexpected", "an answer outside the fixed list is named unexpected");
-    assert.ok(!pageLines[0].includes("DOCTYPE"), "the page itself must never reach the log");
+    process.env[sheet.urlEnv] = url;
+    process.env[sheet.secretEnv] = secret;
+    try {
+      // The runtime's own timeout reason, not a hand-built copy: its name and class are what the catch reads.
+      // Its timer does not hold the process open, so this interval does; waiting on the abort alone exits 13.
+      const expired = AbortSignal.timeout(1);
+      await new Promise<void>((resolve) => {
+        const hold = setInterval(() => {
+          if (!expired.aborted) return;
+          clearInterval(hold);
+          resolve();
+        }, 1);
+      });
+      const timeoutLines = await logLinesOfOnePing(sheet.ping, () => {
+        throw expired.reason;
+      });
+      assert.deepEqual(timeoutLines, [], `${sheet.name}: A TIMED-OUT PING WAS DELIVERED: the script runs on after Phoenix hangs up, so it must log nothing`);
 
-    const statusLines = await logLinesOfOnePing(() => new Response("Forbidden", { status: 403 }));
-    assert.equal(statusLines.length, 1, "a non-2xx answer must still warn");
-    assert.equal(JSON.parse(statusLines[0]).event, "direct_order_sheet_ping_failed", "a non-2xx answer keeps the failed event");
-    assert.equal(JSON.parse(statusLines[0]).labels.status, "403", "a non-2xx answer must carry its status");
+      const okLines = await logLinesOfOnePing(sheet.ping, () => new Response("ok"));
+      assert.deepEqual(okLines, [], `${sheet.name}: a sheet that answers ok has refreshed, and logs nothing`);
 
-    const networkLines = await logLinesOfOnePing(() => {
-      throw new TypeError("fetch failed");
-    });
-    assert.equal(networkLines.length, 1, "ONLY A TIMEOUT IS SILENT: a network failure never reached the sheet, and must warn");
-    assert.equal(JSON.parse(networkLines[0]).event, "direct_order_sheet_ping_failed", "a network failure keeps the failed event");
+      const refusalLines: string[] = [];
+      for (const word of ["denied", "not configured"]) {
+        const lines = await logLinesOfOnePing(sheet.ping, () => new Response(word));
+        assert.equal(lines.length, 1, `${sheet.name}: A 200 READING "${word}" IS A REFUSAL: it must warn, or the sheet stops listening and nobody hears`);
+        const entry = JSON.parse(lines[0]);
+        assert.equal(entry.event, sheet.refusedEvent, `${sheet.name}: "${word}" must log the refused event`);
+        assert.equal(entry.labels.answer, word, `${sheet.name}: the warning must say which refusal it was`);
+        assert.equal(entry.labels.reason, sheet.reason, `${sheet.name}: the warning must say which change it was`);
+        refusalLines.push(...lines);
+      }
 
-    for (const line of [...refusalLines, ...pageLines, ...statusLines, ...networkLines]) {
-      assert.ok(!line.includes(secret), "the secret must never reach the log");
-      assert.ok(!line.includes(url), "the webhook URL must never reach the log");
+      // A crashed script answers a 200 page. It is named, never logged as sent, and here it even echoes the secret.
+      const pageLines = await logLinesOfOnePing(
+        sheet.ping,
+        () => new Response(`<!DOCTYPE html><html><title>Script error</title>${secret}</html>`),
+      );
+      assert.equal(pageLines.length, 1, `${sheet.name}: A 200 ERROR PAGE IS NOT A REFRESH: it must warn`);
+      assert.equal(JSON.parse(pageLines[0]).labels.answer, "unexpected", `${sheet.name}: an answer outside the fixed list is named unexpected`);
+      assert.ok(!pageLines[0].includes("DOCTYPE"), `${sheet.name}: the page itself must never reach the log`);
+
+      const statusLines = await logLinesOfOnePing(sheet.ping, () => new Response("Forbidden", { status: 403 }));
+      assert.equal(statusLines.length, 1, `${sheet.name}: a non-2xx answer must still warn`);
+      assert.equal(JSON.parse(statusLines[0]).event, sheet.failedEvent, `${sheet.name}: a non-2xx answer keeps the failed event`);
+      assert.equal(JSON.parse(statusLines[0]).labels.status, "403", `${sheet.name}: a non-2xx answer must carry its status`);
+
+      const networkLines = await logLinesOfOnePing(sheet.ping, () => {
+        throw new TypeError("fetch failed");
+      });
+      assert.equal(networkLines.length, 1, `${sheet.name}: ONLY A TIMEOUT IS SILENT: a network failure never reached the sheet, and must warn`);
+      assert.equal(JSON.parse(networkLines[0]).event, sheet.failedEvent, `${sheet.name}: a network failure keeps the failed event`);
+
+      for (const line of [...refusalLines, ...pageLines, ...statusLines, ...networkLines]) {
+        assert.ok(!line.includes(secret), `${sheet.name}: the secret must never reach the log`);
+        assert.ok(!line.includes(url), `${sheet.name}: the webhook URL must never reach the log`);
+      }
+    } finally {
+      delete process.env[sheet.urlEnv];
+      delete process.env[sheet.secretEnv];
     }
-  } finally {
-    delete process.env.SHEET_REFRESH_WEBHOOK_URL;
-    delete process.env.SHEET_REFRESH_WEBHOOK_SECRET;
   }
 }
