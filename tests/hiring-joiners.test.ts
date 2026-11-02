@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 
 import {
   HiringJoinerInputError,
+  joinerIsUrgent,
   joinerPapersProgress,
+  joinerStanding,
+  joinersSummary,
   parseHiringJoinerUpdate,
   upcomingJoinerOffers,
 } from "../src/lib/hiring-documents/joiners-logic.ts";
@@ -155,6 +158,12 @@ function testTheReadCarriesNoMoneyAndTheWriteIsGated() {
 
   const panel = stripComments(readFileSync("src/components/hiring-documents/hiring-joiners-panel.tsx", "utf8"));
   assert.ok(panel.includes('className="w-full table-fixed'), "the table fits its width");
+  assert.ok(panel.includes("<TableRowDetail"), "the form opens as the row's joined panel, not a tall cell in every row");
+  assert.ok(panel.includes("rowDetailToggleProps("), "the button says which panel it controls");
+  assert.ok(panel.includes("current[next.offerId] ?? draftOf(next)"), "saving one joiner keeps another joiner's unsaved edits");
+  assert.ok(panel.includes("!isDirty(joiner, draft)"), "Save waits for a change");
+  const page = stripComments(readFileSync("src/components/hiring-documents/hiring-documents-manager.tsx", "utf8"));
+  assert.ok(page.includes("captureSectionRef.current?.scrollIntoView"), "Receive papers follows the form down the page");
   // Measured: a one-line button ran past its column on a 1366px laptop, and 35px past it at 768px.
   assert.ok(panel.includes('className="h-auto min-h-9 w-full whitespace-normal'), "Receive papers wraps inside its column");
   assert.ok(panel.includes("The joiners list could not be read"), "a failed read says so");
@@ -163,9 +172,44 @@ function testTheReadCarriesNoMoneyAndTheWriteIsGated() {
   assert.ok(manager.includes("<HiringJoinersPanel"), "the panel is on the screen");
 }
 
+function testWhereAJoinerStands() {
+  const nothing = { attendanceDate: null, attendanceTime: null, papersConfirmed: false };
+  const all = { attendanceDate: "2026-11-10", attendanceTime: "09:30", papersConfirmed: true };
+  assert.deepEqual(joinerStanding(nothing), { kind: "open", missing: ["papers", "day", "time"] }, "nothing agreed");
+  assert.deepEqual(joinerStanding(all), { kind: "confirmed", missing: [] }, "all three agreed");
+  assert.deepEqual(
+    joinerStanding({ ...nothing, papersConfirmed: true }),
+    { kind: "partial", missing: ["day", "time"] },
+    "the papers alone are not a confirmation",
+  );
+
+  assert.equal(joinerIsUrgent({ ...nothing, startKey: "2026-11-05" }, TODAY), true, "three days out with nothing agreed");
+  assert.equal(joinerIsUrgent({ ...nothing, startKey: "2026-11-06" }, TODAY), false, "four days out can wait");
+  assert.equal(joinerIsUrgent({ ...all, startKey: "2026-11-03" }, TODAY), false, "tomorrow, and all agreed");
+  assert.equal(joinerIsUrgent({ ...nothing, startKey: "" }, TODAY), false, "no readable date has no countdown");
+
+  assert.deepEqual(
+    joinersSummary([
+      { ...all, mobile: "+201001234567" },
+      { ...nothing, mobile: null },
+      { ...nothing, mobile: "+201112223334" },
+    ]),
+    { arriving: 3, noMobile: 1, toConfirm: 2 },
+    "the counts above the list",
+  );
+}
+
+function testHrFormsSaysWhyABoxIsLocked() {
+  const forms = stripComments(readFileSync("src/components/hiring-pack/hiring-pack-manager.tsx", "utf8"));
+  assert.ok(/salaryReadOnly \? \(\s*<p[^>]*>\s*You print this figure\./.test(forms), "the salary box says why it is locked");
+  assert.ok(forms.includes('contractTermsReadOnly ? "You print these terms.'), "the contract terms say why they are locked");
+}
+
 export function runHiringJoinersTests() {
   testWhoCountsAsArriving();
   testWhatASaveMayHold();
   testHowFarThePapersHaveCome();
   testTheReadCarriesNoMoneyAndTheWriteIsGated();
+  testWhereAJoinerStands();
+  testHrFormsSaysWhyABoxIsLocked();
 }

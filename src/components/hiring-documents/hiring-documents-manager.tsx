@@ -149,6 +149,7 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
   const [busyKey, setBusyKey] = React.useState<string | null>(null);
   // Which employee x document pair the Scan & Upload tab opens on. Set by the paperclip in a grid
   // cell, so HR never has to re-find in two dropdowns the row she is already looking at.
+  const captureSectionRef = React.useRef<HTMLDivElement>(null);
   const [captureTarget, setCaptureTarget] = React.useState<{ documentId: string; employeeHrId: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState(false);
@@ -380,6 +381,12 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
     setError(null);
   }
 
+  // The scan form opens below the joiners list, off the screen on a laptop or a phone, so a press of
+  // Receive papers looked like nothing happened. Follow it down.
+  React.useEffect(() => {
+    if (captureTarget) captureSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [captureTarget]);
+
   async function updateDocumentStatus(
     employee: HiringDocumentEmployeeRow,
     document: HiringDocumentDefinition,
@@ -546,7 +553,11 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
               <AdminInsightChip tone="slate">{getCompletionPercent(data)}% complete</AdminInsightChip>
             </div>
           }
-          description="Track onboarding document submission by employee, mark delivered documents, set deadlines for missing items, and control the document checklist."
+          description={
+            canEditChecklist
+              ? "Track onboarding document submission by employee, mark delivered documents, set deadlines for missing items, and control the document checklist."
+              : "Track onboarding document submission by employee, mark delivered documents and set deadlines for missing items."
+          }
           eyebrow="People Operations"
           icon={<FileCheck2 className="h-3.5 w-3.5" />}
           title="Hiring Documents"
@@ -629,21 +640,23 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
         </div>
 
         {activeTab === "capture" ? (
-          <AdminTableShell
-            description="Photograph a document with the camera and Phoenix turns the pages into one clean PDF, or upload a file the office scanner already produced. Attaching a document ticks it on the checklist."
-            title="Scan & Upload"
-          >
-            <HiringDocumentCapture
-              canManage={canManage}
-              canRemoveFiles={canRemoveFiles}
-              documents={documents}
-              employees={employees}
-              initialDocumentId={captureTarget?.documentId ?? null}
-              initialEmployeeHrId={captureTarget?.employeeHrId ?? null}
-              key={`${captureTarget?.employeeHrId ?? ""}:${captureTarget?.documentId ?? ""}`}
-              onChanged={refreshDashboard}
-            />
-          </AdminTableShell>
+          <div className="scroll-mt-20" ref={captureSectionRef}>
+            <AdminTableShell
+              description="Photograph a document with the camera and Phoenix turns the pages into one clean PDF, or upload a file the office scanner already produced. Attaching a document ticks it on the checklist."
+              title="Scan & Upload"
+            >
+              <HiringDocumentCapture
+                canManage={canManage}
+                canRemoveFiles={canRemoveFiles}
+                documents={documents}
+                employees={employees}
+                initialDocumentId={captureTarget?.documentId ?? null}
+                initialEmployeeHrId={captureTarget?.employeeHrId ?? null}
+                key={`${captureTarget?.employeeHrId ?? ""}:${captureTarget?.documentId ?? ""}`}
+                onChanged={refreshDashboard}
+              />
+            </AdminTableShell>
+          </div>
         ) : null}
 
         {activeTab === "documents" ? (

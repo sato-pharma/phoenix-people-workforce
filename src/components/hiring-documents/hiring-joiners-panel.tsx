@@ -1,16 +1,20 @@
 "use client";
 
-import { AlertTriangle, Mail, Phone, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Mail, Phone, RefreshCw } from "lucide-react";
 import * as React from "react";
 
-import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { CheckTile, FieldLabel, FormError } from "@/components/ui/form-kit";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
+import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import {
   HIRING_JOINER_NOTES_MAX,
+  joinerIsUrgent,
   joinerPapersProgress,
+  joinerStanding,
+  joinersSummary,
   type JoinerPapersProgress,
 } from "@/lib/hiring-documents/joiners-logic";
 import type {
@@ -22,6 +26,7 @@ import type {
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { daysUntilLabel } from "@/lib/hr/talent-acquisition-logic";
+import { cn } from "@/lib/utils";
 
 type Draft = {
   attendanceDate: string;
@@ -60,6 +65,16 @@ function draftOf(joiner: HiringJoiner): Draft {
   };
 }
 
+function isDirty(joiner: HiringJoiner, draft: Draft): boolean {
+  const saved = draftOf(joiner);
+  return (
+    saved.attendanceDate !== draft.attendanceDate ||
+    saved.attendanceTime !== draft.attendanceTime ||
+    saved.notes !== draft.notes ||
+    saved.papersConfirmed !== draft.papersConfirmed
+  );
+}
+
 function formatDay(key: string): string {
   const date = new Date(`${key}T00:00:00`);
   if (Number.isNaN(date.getTime())) return key;
@@ -80,14 +95,19 @@ function formatSavedAt(iso: string): string {
   }).format(date);
 }
 
+const MISSING_LABEL = { day: "day", papers: "papers", time: "time" } as const;
+
 const headerClassName =
   "bg-phx-accent-soft px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
-const cellClassName = "border-b border-phx-line px-3 py-4 align-top";
+const cellClassName = "border-b border-phx-line px-3 py-3 align-top";
 
 /**
  * WHO IS ARRIVING, AND WHAT WAS AGREED WITH THEM (owner, 2026-11-02: "Contact the joiner, confirm
  * papers and attendance time"). The accepted offers from today on, each with the joiner's mobile and
  * email, how far their papers have come, and the day and time HR agreed.
+ *
+ * One line per joiner, so the list reads at a glance; the confirmation form opens beneath its own row
+ * as a joined panel, one at a time. It was a form in every row, which made each row a screen tall.
  *
  * It sends nothing: the mobile and the email are links that open the viewer's own phone and mail app.
  * A failed read says so and offers a retry, never "nobody is joining".
@@ -97,23 +117,20 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [drafts, setDrafts] = React.useState<Record<string, Draft>>({});
+  const [openId, setOpenId] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [rowError, setRowError] = React.useState<{ message: string; offerId: string } | null>(null);
   const [savedId, setSavedId] = React.useState<string | null>(null);
 
-  const accept = React.useCallback((next: HiringJoinersData) => {
-    setData(next);
-    setDrafts(Object.fromEntries(next.joiners.map((joiner) => [joiner.offerId, draftOf(joiner)])));
+  const applyRead = React.useCallback((result: JoinersRead) => {
+    if (result.data) {
+      const next = result.data;
+      setData(next);
+      setDrafts(Object.fromEntries(next.joiners.map((joiner) => [joiner.offerId, draftOf(joiner)])));
+    }
+    setLoadError(result.error);
+    setIsLoading(false);
   }, []);
-
-  const applyRead = React.useCallback(
-    (result: JoinersRead) => {
-      if (result.data) accept(result.data);
-      setLoadError(result.error);
-      setIsLoading(false);
-    },
-    [accept],
-  );
 
   React.useEffect(() => {
     void readJoiners().then(applyRead);
@@ -149,7 +166,16 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
       });
       const body = (await response.json().catch(() => null)) as (HiringJoinersData & { message?: string }) | null;
       if (!response.ok || !body?.joiners) throw new Error(body?.message ?? "That could not be saved. Try again.");
-      accept(body);
+      setData(body);
+      // Only the saved joiner takes the server's answer: another joiner's unsaved edits stay.
+      setDrafts((current) =>
+        Object.fromEntries(
+          body.joiners.map((next) => [
+            next.offerId,
+            next.offerId === joiner.offerId ? draftOf(next) : (current[next.offerId] ?? draftOf(next)),
+          ]),
+        ),
+      );
       setSavedId(joiner.offerId);
     } catch (error) {
       setRowError({
@@ -163,11 +189,12 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
 
   const joiners = data?.joiners ?? [];
   const todayKey = data?.todayKey ?? "";
+  const summary = joinersSummary(joiners);
 
   function renderPeople(joiner: HiringJoiner) {
     return (
       <>
-        <p className="break-words text-sm font-black text-phx-ink">{joiner.name}</p>
+        <p className="break-words text-sm font-black text-phx-ink" dir="auto">{joiner.name}</p>
         {joiner.title ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{joiner.title}</p> : null}
         {joiner.territory ? <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">{joiner.territory}</p> : null}
       </>
@@ -178,15 +205,18 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     if (!joiner.startKey) {
       return (
         <>
-          <p className="break-words text-sm font-black text-phx-ink">No readable date</p>
+          <p className="break-words text-sm font-black text-phx-warn">No readable date</p>
           <p className="text-phx-xs font-semibold text-phx-ink-soft">Check the offer letter</p>
         </>
       );
     }
+    const urgent = joinerIsUrgent(joiner, todayKey);
     return (
       <>
         <p className="text-sm font-black text-phx-ink">{formatDay(joiner.startKey)}</p>
-        <p className="text-phx-xs font-semibold text-phx-ink-soft">{daysUntilLabel(todayKey, joiner.startKey)}</p>
+        <p className={cn("text-phx-xs font-semibold", urgent ? "font-black text-phx-danger" : "text-phx-ink-soft")}>
+          {daysUntilLabel(todayKey, joiner.startKey)}
+        </p>
       </>
     );
   }
@@ -200,7 +230,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
             {joiner.mobile}
           </a>
         ) : (
-          <p className="text-phx-ink-faint">No mobile on file</p>
+          <p className="font-black text-phx-warn">No mobile on file</p>
         )}
         {joiner.email ? (
           <a className="flex items-start gap-1.5 break-all text-phx-accent hover:underline" href={`mailto:${joiner.email}`}>
@@ -223,12 +253,25 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
       return <p className="text-phx-xs font-semibold text-phx-ink-soft">Not on the checklist yet.</p>;
     }
     const progress: JoinerPapersProgress = joinerPapersProgress(documents, employee);
+    const percent = progress.total > 0 ? Math.round((progress.received / progress.total) * 100) : 0;
     return (
       <div className="space-y-2">
-        <p className="text-sm font-black tabular-nums text-phx-ink">
-          {progress.received} of {progress.total}
-          <span className="ml-1 text-phx-xs font-semibold text-phx-ink-soft">received</span>
-        </p>
+        <div>
+          <p className="text-sm font-black tabular-nums text-phx-ink">
+            {progress.received} of {progress.total}
+            <span className="ml-1 text-phx-xs font-semibold text-phx-ink-soft">received</span>
+          </p>
+          <div
+            aria-label="Papers received"
+            aria-valuemax={progress.total}
+            aria-valuemin={0}
+            aria-valuenow={progress.received}
+            className="mt-1 h-1 w-full bg-phx-line"
+            role="progressbar"
+          >
+            <div className="h-full bg-phx-accent" style={{ width: `${percent}%` }} />
+          </div>
+        </div>
         {canManage && progress.firstOutstandingId ? (
           <Button
             className="h-auto min-h-9 w-full whitespace-normal px-2 py-1.5 leading-tight"
@@ -242,19 +285,66 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     );
   }
 
+  function renderStanding(joiner: HiringJoiner) {
+    const standing = joinerStanding(joiner);
+    if (standing.kind === "confirmed") {
+      return (
+        <>
+          <p className="text-sm font-black text-phx-ok">Confirmed</p>
+          <p className="text-phx-xs font-semibold text-phx-ink-soft">
+            Attends {formatDay(joiner.attendanceDate as string)} at {joiner.attendanceTime}
+          </p>
+        </>
+      );
+    }
+    return (
+      <>
+        <p className={cn("text-sm font-black", standing.kind === "partial" ? "text-phx-warn" : "text-phx-ink")}>
+          {standing.kind === "partial" ? "In progress" : "Nothing agreed yet"}
+        </p>
+        {standing.kind === "partial" ? (
+          <p className="text-phx-xs font-semibold text-phx-ink-soft">
+            Still to agree: {standing.missing.map((item) => MISSING_LABEL[item]).join(", ")}
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  function renderToggle(joiner: HiringJoiner, panelId: string) {
+    const open = openId === joiner.offerId;
+    const Chevron = open ? ChevronUp : ChevronDown;
+    const label = !canManage ? "View" : joinerStanding(joiner).kind === "open" ? "Record" : "Change";
+    return (
+      <Button
+        {...rowDetailToggleProps(panelId, open)}
+        className="h-9 w-full gap-1.5"
+        onClick={() => setOpenId(open ? null : joiner.offerId)}
+        variant="secondary"
+      >
+        {open ? "Close" : label}
+        <Chevron className="h-4 w-4" />
+      </Button>
+    );
+  }
+
   function renderForm(joiner: HiringJoiner, draft: Draft, idPrefix: string, fieldsClassName: string) {
     const busy = busyId === joiner.offerId;
     return (
       <div className="space-y-3">
-        <CheckTile
-          checked={draft.papersConfirmed}
-          onChange={(next) => {
-            if (canManage) setDraft(joiner.offerId, { papersConfirmed: next });
-          }}
-        >
-          Papers confirmed
-        </CheckTile>
         <div className={fieldsClassName}>
+          <div className="flex items-end">
+            <div className="w-full">
+              <CheckTile
+                checked={draft.papersConfirmed}
+                onChange={(next) => {
+                  if (canManage) setDraft(joiner.offerId, { papersConfirmed: next });
+                }}
+              >
+                Papers confirmed
+              </CheckTile>
+            </div>
+          </div>
           <div>
             <FieldLabel htmlFor={`${idPrefix}-date-${joiner.offerId}`}>Attendance date</FieldLabel>
             <Input
@@ -291,7 +381,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
         {rowError?.offerId === joiner.offerId ? <FormError>{rowError.message}</FormError> : null}
         <div className="flex flex-wrap items-center gap-3">
           {canManage ? (
-            <Button className="h-10" disabled={busy} onClick={() => void save(joiner)}>
+            <Button className="h-10" disabled={busy || !isDirty(joiner, draft)} onClick={() => void save(joiner)}>
               {busy ? "Saving" : "Save"}
             </Button>
           ) : null}
@@ -308,10 +398,26 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
 
   return (
     <AdminTableShell
+      action={
+        !isLoading && !loadError && joiners.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            <AdminInsightChip>{summary.arriving} arriving</AdminInsightChip>
+            {summary.toConfirm > 0 ? <AdminInsightChip tone="orange">{summary.toConfirm} to confirm</AdminInsightChip> : null}
+            {summary.noMobile > 0 ? <AdminInsightChip tone="slate">{summary.noMobile} no mobile</AdminInsightChip> : null}
+          </div>
+        ) : undefined
+      }
       description="Everyone with an accepted offer who starts today or later. Contact them, confirm their papers and the time they attend."
       title="Joiners arriving"
     >
-      {isLoading ? <p className="p-4 text-sm font-semibold text-phx-ink-soft">Loading the joiners.</p> : null}
+      {isLoading ? (
+        <div aria-busy="true" className="space-y-2 p-4">
+          <span className="sr-only">Loading the joiners.</span>
+          <div className="h-12 animate-pulse bg-phx-line/40" />
+          <div className="h-12 animate-pulse bg-phx-line/40" />
+          <div className="h-12 animate-pulse bg-phx-line/40" />
+        </div>
+      ) : null}
 
       {!isLoading && loadError ? (
         <div className="p-4">
@@ -345,11 +451,11 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
           <div className="hidden md:block">
             <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
               <colgroup>
-                <col className="w-[20%]" />
-                <col className="w-[20%]" />
-                <col className="w-[13%]" />
-                <col className="w-[15%]" />
-                <col className="w-[32%]" />
+                <col className="w-[24%]" />
+                <col className="w-[24%]" />
+                <col className="w-[14%]" />
+                <col className="w-[16%]" />
+                <col className="w-[22%]" />
               </colgroup>
               <thead>
                 <tr>
@@ -363,16 +469,27 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
               <tbody>
                 {joiners.map((joiner) => {
                   const draft = drafts[joiner.offerId];
+                  const panelId = `joiner-row-panel-${joiner.offerId}`;
                   return (
-                    <tr key={joiner.offerId}>
-                      <td className={cellClassName}>{renderPeople(joiner)}</td>
-                      <td className={cellClassName}>{renderContact(joiner)}</td>
-                      <td className={cellClassName}>
-                        {renderStart(joiner)}
-                      </td>
-                      <td className={cellClassName}>{renderPapers(joiner)}</td>
-                      <td className={cellClassName}>{draft ? renderForm(joiner, draft, "joiner-desktop", "grid gap-3 xl:grid-cols-2") : null}</td>
-                    </tr>
+                    <React.Fragment key={joiner.offerId}>
+                      <tr>
+                        <td className={cellClassName}>{renderPeople(joiner)}</td>
+                        <td className={cellClassName}>{renderContact(joiner)}</td>
+                        <td className={cellClassName}>{renderStart(joiner)}</td>
+                        <td className={cellClassName}>{renderPapers(joiner)}</td>
+                        <td className={cellClassName}>
+                          <div className="space-y-2">
+                            <div>{renderStanding(joiner)}</div>
+                            {renderToggle(joiner, panelId)}
+                          </div>
+                        </td>
+                      </tr>
+                      {draft && openId === joiner.offerId ? (
+                        <TableRowDetail className="px-3 pb-4" colSpan={5} id={panelId}>
+                          {renderForm(joiner, draft, "joiner-desktop", "grid gap-3 lg:grid-cols-3")}
+                        </TableRowDetail>
+                      ) : null}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -382,6 +499,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
           <div className="space-y-3 p-4 md:hidden">
             {joiners.map((joiner) => {
               const draft = drafts[joiner.offerId];
+              const panelId = `joiner-card-panel-${joiner.offerId}`;
               return (
                 <div className="space-y-3 border border-phx-line bg-white p-4" key={joiner.offerId}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -392,7 +510,13 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
                   </div>
                   {renderContact(joiner)}
                   {renderPapers(joiner)}
-                  {draft ? renderForm(joiner, draft, "joiner-mobile", "grid gap-3 sm:grid-cols-2") : null}
+                  <div>{renderStanding(joiner)}</div>
+                  {renderToggle(joiner, panelId)}
+                  {draft && openId === joiner.offerId ? (
+                    <div className="border-t border-phx-line pt-3" id={panelId}>
+                      {renderForm(joiner, draft, "joiner-mobile", "grid gap-3 sm:grid-cols-3")}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

@@ -1674,6 +1674,11 @@ export function HiringPackManager({
                         type="number"
                         value={factsForm.baseSalary ?? ""}
                       />
+                      {salaryReadOnly ? (
+                        <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                          You print this figure. Only the HR Manager changes it.
+                        </p>
+                      ) : null}
                     </div>
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-insuranceWage">
@@ -1823,7 +1828,7 @@ export function HiringPackManager({
                       fields={TERM_FIELDS}
                       form={form}
                       onChange={setForm}
-                      subtitle={`Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
+                      subtitle={contractTermsReadOnly ? "You print these terms. Only the HR Manager changes them." : `Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
                       title="Contract terms"
                     />
                     <div>
