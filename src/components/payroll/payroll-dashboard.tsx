@@ -2837,12 +2837,12 @@ function GenerateReadyPayrollSheet({
           </div>
 
           {canGenerate ? (
-            <Link href={`/api/payroll/template?ready=1&month=${month}&year=${year}`}>
-              <Button className="mt-4 w-full gap-2">
+            <Button asChild className="mt-4 w-full gap-2">
+              <a href={`/api/payroll/template?ready=1&month=${month}&year=${year}`}>
                 <Download className="h-4 w-4" />
                 Download Ready Payroll Sheet
-              </Button>
-            </Link>
+              </a>
+            </Button>
           ) : (
             <Button className="mt-4 w-full gap-2" disabled>
               <Download className="h-4 w-4" />
@@ -3927,37 +3927,37 @@ export function PayrollDashboard({
             actions={(
               salaryReportBatch ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <Link href={`/api/payroll/template?ready=1&month=${salaryReportBatch.month}&year=${salaryReportBatch.year}&batchId=${salaryReportBatch.id}`}>
-                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                  <Button asChild className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    <a href={`/api/payroll/template?ready=1&month=${salaryReportBatch.month}&year=${salaryReportBatch.year}&batchId=${salaryReportBatch.id}`}>
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Ready payroll
-                    </Button>
-                  </Link>
-                  <Link href={`/api/payroll/${salaryReportBatch.id}/download`}>
-                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    </a>
+                  </Button>
+                  <Button asChild className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    <a href={`/api/payroll/${salaryReportBatch.id}/download`}>
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Flat export
-                    </Button>
-                  </Link>
-                  <Link href={`/api/payroll/${salaryReportBatch.id}/bank-file`}>
-                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    </a>
+                  </Button>
+                  <Button asChild className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    <a href={`/api/payroll/${salaryReportBatch.id}/bank-file`}>
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Bank file
-                    </Button>
-                  </Link>
-                  <Link href={`/api/payroll/${salaryReportBatch.id}/statutory-summary`}>
-                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    </a>
+                  </Button>
+                  <Button asChild className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    <a href={`/api/payroll/${salaryReportBatch.id}/statutory-summary`}>
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Statutory summary
-                    </Button>
-                  </Link>
+                    </a>
+                  </Button>
                   {publishedPayslipStatuses.has(salaryReportBatch.status) ? (
-                    <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
-                      <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                    <Button asChild className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
+                      <a href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
                         <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                         Payslips
-                      </Button>
-                    </Link>
+                      </a>
+                    </Button>
                   ) : (
                     <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" disabled variant="secondary">
                       <FileCheck2 className="mr-2 h-3.5 w-3.5" />
