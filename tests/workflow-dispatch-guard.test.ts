@@ -89,7 +89,7 @@ const NEVER_COUNTED = [
   "gh pr checks 4535",
   "gh workflow list",
   "gh workflow view ci.yml --yaml",
-  "gh api repos/it-gawish-hr/phoenix-people-workforce/actions/workflows",
+  "gh api repos/gawishtheit/phoenix-people-workforce/actions/workflows",
   'git grep -n "gh workflow run" -- docs',
   'git commit -m "docs(ci): a third gh workflow run in one session is refused"',
   'echo "never gh workflow run ci.yml twice - use gh run rerun <id>"',

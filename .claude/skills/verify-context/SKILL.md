@@ -26,13 +26,13 @@ point there. **This skill never changes infra, settings, or the database — it 
 
 3. **Deploy = push to main, via Railway** (§2)
    ```bash
-   gh api repos/it-gawish-hr/phoenix-people-workforce/deployments --jq '.[0] | {environment, description}'
+   gh api repos/gawishtheit/phoenix-people-workforce/deployments --jq '.[0] | {environment, description}'
    ```
    Expect `"Deployed to Railway"`. Any `gcloud`/Cloud Run deploy path in the docs is dead.
 
 4. **Branch protection** (§2)
    ```bash
-   gh api repos/it-gawish-hr/phoenix-people-workforce/branches/main/protection \
+   gh api repos/gawishtheit/phoenix-people-workforce/branches/main/protection \
      --jq '{checks:[.required_status_checks.checks[]|"\(.context) app=\(.app_id)"], reviews:.required_pull_request_reviews.required_approving_review_count}'
    ```
    Expect the 2 required checks (`validate`, `checks`), both of them `app=15368` (GitHub Actions —
