@@ -127,8 +127,8 @@ importers:
         specifier: 6.4.299
         version: 6.4.299
       pdfmake:
-        specifier: ^0.3.11
-        version: 0.3.12
+        specifier: ^0.3.13
+        version: 0.3.13
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -4551,8 +4551,8 @@ packages:
   pdfkit@0.20.2:
     resolution: {integrity: sha512-Q/w03ICAQyXfHNfTsg1udp0ADerdBN0s7a6XSPL7J7Ro6ABnafoBOCDBstIO9U02mvzHEV8HrvFIw5iV5ejIRA==}
 
-  pdfmake@0.3.12:
-    resolution: {integrity: sha512-Rhqr/IWpYeEzrKCaZJOfdNxMtBAaHb4NfVXRpTHtH8DRo++hUua9QjwP5UNau7rOsHpgE0xfQLqVtkxrpdNqJQ==}
+  pdfmake@0.3.13:
+    resolution: {integrity: sha512-Am2dbb5SuDwnpx1oNlCgZou91p9SMsyUs7Dws+yF6MmZbycfItt53MbyqdVUhFg6fWL3sWwu2acsJV7lzoRLlg==}
     engines: {node: '>=20'}
 
   peberminta@0.10.0:
@@ -9729,7 +9729,7 @@ snapshots:
       linebreak: 1.1.0
       png-js: 2.0.0
 
-  pdfmake@0.3.12:
+  pdfmake@0.3.13:
     dependencies:
       linebreak: 1.1.0
       pdfkit: 0.20.2
