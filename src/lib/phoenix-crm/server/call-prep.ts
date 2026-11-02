@@ -2,16 +2,18 @@
  * Phoenix CRM — the read behind tomorrow's call prep (the rules are call-prep.ts).
  *
  * STRICTLY READ-ONLY, and OFF THE PLAN-CHANGE PATH: it reads the plan as it stands through the
- * module's own door (`plannedCustomersOn`, the same one Today and Planned visit use, so the rep and
- * his manager never read two different plans) and writes nothing. There is no transition, no save, no
- * "move this stop" — a sent week changes only through "Ask to edit this week" (owner, 2026-10-01).
+ * module's own door (`loadPlannedDay`, which asks `plannedCustomersOn`'s rule — the same one Today and
+ * Planned visit use, so the rep and his manager never read two different plans) and writes nothing.
+ * There is no transition, no save, no "move this stop" — a sent week changes only through "Ask to edit
+ * this week" (owner, 2026-10-01).
  *
  * Four reads, all of them the module's own, none of them new:
  *
- *   - tomorrow's stops — `plannedCustomersOn(seat, isTest, tomorrow)`, which answers the DAY's own
- *     status (`planDayStatus`), so a week returned for one OTHER day still stands as sent on this one;
- *   - the names and list types — `loadTerritoryCustomers(..., { onListOnly: true })`, the planner's own
- *     customer read, asked for the day's stops alone once the plan names them;
+ *   - tomorrow's stops — `loadPlannedDay(seat, isTest, tomorrow)` (visits.ts), ONE request since
+ *     2 Nov 2026 that answers the DAY's own status (`planDayStatus`), so a week returned for one OTHER
+ *     day still stands as sent on this one, and carries the stops' customers with it;
+ *   - the names and list types — the customers `loadTerritoryCustomers(..., { onListOnly: true })`
+ *     reads, the planner's own customer read, for the day's stops alone — they ride in that same request;
  *   - when he was last seen — `loadPlannerInsights`, the plan board's own insight. It is the read that
  *     folds iReports360's history in beside his Phoenix visits, which matters most for exactly the
  *     customers this screen is for: a carried-over doctor he has not logged in Phoenix yet still has a
@@ -47,12 +49,12 @@ import { LAST_SEEN_WINDOW_DAYS } from "@/lib/phoenix-crm/plan-insight";
 import { isPlanSentForReview } from "@/lib/phoenix-crm/plan-rules";
 import { readTestFlag, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
-import { loadTerritoryCustomers, type ListPlace } from "@/lib/phoenix-crm/server/list";
+import type { ListPlace } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { loadPlannerInsights } from "@/lib/phoenix-crm/server/plan-insight";
 import { lineProductsByFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import { plannedCustomersOn } from "@/lib/phoenix-crm/server/visits";
+import { loadPlannedDay } from "@/lib/phoenix-crm/server/visits";
 import { pickLastNextStep, type LastNextStep, type LastNextStepRow, type VisitObjection } from "@/lib/phoenix-crm/visit-outcome";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -177,18 +179,15 @@ export async function loadCallPrep(viewer: PhoenixCrmViewer, raw: { seatId: unkn
   // form's own shape).
   //
   // 🔴 THE CUSTOMER LIST IS READ FOR THE DAY'S STOPS ALONE (2026-10-16 Phoenix CRM performance audit),
-  // the moment the plan says who they are — Today's own shape. Nothing on this screen names anyone
-  // else: the stops are looked up by id, and the insight is read only to be read back for them, so
-  // reading the whole territory (and iReports360's history behind every customer on it) bought rows
-  // nobody saw. Same filters, so a planned customer who has left the list is still not a stop, and a
-  // day that is not sent reads nobody — it shows no stops either way.
-  const plannedRead = plannedCustomersOn(seat.seatId, isTest, date);
-  const customersRead = plannedRead.then((planned) =>
-    loadTerritoryCustomers(seat.seatId, isTest, {
-      onListOnly: true,
-      customerIds: isPlanSentForReview(planned.status) ? planned.customerIds : [],
-    }),
-  );
+  // Today's own shape. Nothing on this screen names anyone else: the stops are looked up by id, and the
+  // insight is read only to be read back for them, so reading the whole territory (and iReports360's
+  // history behind every customer on it) bought rows nobody saw. Same filters, so a planned customer who
+  // has left the list is still not a stop, and a day that is not sent reads nobody — it shows no stops
+  // either way. Since 2 Nov 2026 the plan, the day's standing and the stops are ONE request
+  // (`loadPlannedDay`, visits.ts), where they were five waves of ~450 ms each.
+  const dayRead = loadPlannedDay(seat.seatId, isTest, date);
+  const plannedRead = dayRead.then(({ planned }) => planned);
+  const customersRead = dayRead.then(({ stops }) => stops);
   const lineProductsRead = lineProductsByFamily(seat.lineName).then((families) => families.map((entry) => entry.family));
   lineProductsRead.catch(() => undefined);
   const visitsRead = loadPrepVisits(seat.seatId, isTest, today);

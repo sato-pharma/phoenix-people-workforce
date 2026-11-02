@@ -1038,6 +1038,9 @@ const LATER_MIGRATIONS = [
   // function (the venues a seat's rows lift) and the shared-place day cap REPLACED — its earlier definer,
   // 20261017150000, sits above — so it appends at the end.
   "supabase/migrations/20261031170001_phoenix_crm_alex_hospitals_no_cap.sql",
+  // The territory bundle (2 Nov 2026, the speed root cause, Stage 2): two NEW functions that read a seat's customers,
+  // places and venues, and a day's plan with its stops, in one statement each; nothing replaced, so it appends.
+  "supabase/migrations/20261102040000_phoenix_crm_territory_bundle.sql",
 ];
 
 /**

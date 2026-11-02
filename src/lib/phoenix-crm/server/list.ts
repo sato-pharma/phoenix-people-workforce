@@ -29,6 +29,7 @@ import { loadBrickNames } from "@/lib/crm/brick-geo";
 // is: the sharing question can only be answered against the WHOLE company's contact roster, which
 // Phoenix CRM's own tables do not hold.
 import type { SharedWith } from "@/lib/crm/location-confidence";
+import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -146,6 +147,7 @@ import {
 import {
   canDecideSharedPlaces,
   effectiveSeatedPhoto,
+  kindOf,
   seatedDraftOf,
   seatedPlacePayload,
   sharedPlaceForSeating,
@@ -162,6 +164,7 @@ import {
 } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
+import type { SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
 import {
   addedPharmacyNameProblem,
@@ -855,6 +858,103 @@ export function forgetReferenceMints(seatIds: ReadonlyArray<string>): void {
 }
 
 /**
+ * The keys a PostgREST select string names — `a, b, alias:expr->path` reads `["a", "b", "alias"]` — so a
+ * row the bundle function hands over whole (`to_jsonb(row.*)`, every column of the table) is cut down to
+ * exactly the columns the select reads, and nothing the screens never saw reaches them. A comma inside
+ * parentheses belongs to an embedded resource and never splits.
+ */
+export function columnKeys(select: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const char of select) {
+    if (char === "(") depth += 1;
+    else if (char === ")") depth -= 1;
+    if (char === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.split(":")[0].trim());
+}
+
+const CUSTOMER_KEYS = columnKeys(CUSTOMER_COLUMNS);
+const PLACE_KEYS = columnKeys(PLACE_COLUMNS);
+
+/** A row cut to `keys`; a key the row did not carry reads null, as a select of it would. */
+function pickColumns(row: Row, keys: ReadonlyArray<string>): Row {
+  const out: Row = {};
+  for (const key of keys) out[key] = row[key] ?? null;
+  return out;
+}
+
+/** What `phoenix_crm_territory_customers` answers, and what the three-read fallback folds the same way. */
+export type TerritoryBundle = { customers: Row[]; places: Row[]; venues: Row[] };
+
+export function territoryBundleOf(data: unknown): TerritoryBundle {
+  const bag = record(data);
+  const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.map((item) => record(item)) : []);
+  return { customers: rows(bag.customers), places: rows(bag.places), venues: rows(bag.venues) };
+}
+
+export type TerritoryCustomers = {
+  customers: Row[];
+  placesByCustomer: Map<string, ListPlace[]>;
+  /**
+   * The buildings these places are seated in, by venue id — the same names `loadSharedPlaceNames` reads,
+   * already in hand, so the week planner, the month board and the plan save (plans.ts `venueNamesOf`)
+   * need no second read of the same rows.
+   */
+  venueNames: Map<string, SharedPlaceNamed>;
+};
+
+export function emptyTerritoryCustomers(): TerritoryCustomers {
+  return { customers: [], placesByCustomer: new Map<string, ListPlace[]>(), venueNames: new Map<string, SharedPlaceNamed>() };
+}
+
+/**
+ * The one fold both doors share — the bundle function's rows and the three-read fallback's — so the two
+ * cannot drift: each row cut to its select's own columns, the places grouped per customer in capture
+ * order with the two venue facts the rep keeps, and the venues named.
+ */
+export function foldTerritoryCustomers(bundle: TerritoryBundle): TerritoryCustomers {
+  const customers = bundle.customers.map((row) => pickColumns(row, CUSTOMER_KEYS));
+  // Which of the buildings these places are seated in already have their timetable on file, which are
+  // still waiting for the Super Admin, and what each is called.
+  const boardOnFile = new Map<string, boolean>();
+  const venueHeld = new Map<string, boolean>();
+  const venueNames = new Map<string, SharedPlaceNamed>();
+  for (const venue of bundle.venues) {
+    const venueId = String(venue.id);
+    boardOnFile.set(venueId, text(venue.schedule_photo_path) !== null);
+    venueHeld.set(venueId, venue.status === "held");
+    venueNames.set(venueId, { sharedPlaceId: venueId, name: String(venue.name), kind: kindOf(venue.kind) });
+  }
+  const placesByCustomer = new Map<string, ListPlace[]>();
+  for (const raw of bundle.places) {
+    const row = pickColumns(raw, PLACE_KEYS);
+    const customerId = String(row.customer_id);
+    const list = placesByCustomer.get(customerId) ?? [];
+    const mapped = mapPlaceRow(row);
+    const venueId = text(row.shared_place_id);
+    if (venueId) {
+      mapped.venueTimetableOnFile = boardOnFile.get(venueId) === true;
+      mapped.venueHeld = venueHeld.get(venueId) === true;
+    }
+    list.push(mapped);
+    placesByCustomer.set(customerId, list);
+  }
+  for (const list of placesByCustomer.values()) list.sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
+  return { customers, placesByCustomer, venueNames };
+}
+
+/**
  * Every customer of a territory (on the list, outside it and in the Archive), with its active places.
  *
  * `onListOnly` keeps the list itself: validated, or carried over and waiting to be. `includeOutside`
@@ -865,16 +965,33 @@ export function forgetReferenceMints(seatIds: ReadonlyArray<string>): void {
  * needs — Today, whose stops are the day's planned customers and nobody else. Every other filter still
  * stands, so a planned customer who has left the list is still not on it. A list longer than
  * `CUSTOMER_IDS_READ_MAX` reads the whole territory as before: a superset, never a shorter answer.
+ *
+ * ONE REQUEST (2 Nov 2026, the speed root cause, Stage 2): `phoenix_crm_territory_customers`
+ * (20261102040000) answers the customers, their active places and the buildings they sit in from one
+ * statement with these same filters, where the reads below paid ~450 ms each at Supabase's edge — two
+ * side by side and the venues in a wave of their own. Until the function is applied (PGRST202) the
+ * reads stand as they were, folded by the same `foldTerritoryCustomers`.
  */
 export async function loadTerritoryCustomers(
   seatId: string,
   isTest: boolean,
   options: { onListOnly?: boolean; includeOutside?: boolean; customerIds?: readonly string[] } = {},
-): Promise<{ customers: Row[]; placesByCustomer: Map<string, ListPlace[]> }> {
+): Promise<TerritoryCustomers> {
   const supabase = getSupabaseAdmin();
   const wanted = options.customerIds ? [...new Set(options.customerIds)] : null;
   const only = wanted && wanted.length <= CUSTOMER_IDS_READ_MAX ? wanted : null;
-  if (only && only.length === 0) return { customers: [], placesByCustomer: new Map<string, ListPlace[]>() };
+  if (only && only.length === 0) return emptyTerritoryCustomers();
+  // On the list: validated, or carried over and waiting to be. A dropped customer is left out, and one
+  // waiting outside the list only when the caller asks for him.
+  const statuses = options.onListOnly ? (options.includeOutside ? ["active", "pending", "outside"] : ["active", "pending"]) : null;
+  const bundle = await supabase.rpc("phoenix_crm_territory_customers", {
+    p_seat_id: seatId,
+    p_is_test: isTest,
+    p_statuses: statuses,
+    p_customer_ids: only,
+  });
+  if (!bundle.error) return foldTerritoryCustomers(territoryBundleOf(bundle.data));
+  if (!isMissingCrmRpcError(bundle.error)) throwIfError(bundle.error);
   const [customers, places] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () => {
@@ -882,9 +999,7 @@ export async function loadTerritoryCustomers(
         // A "Campaign visit N" holder only files the old system's campaign visits (20261029212200): it is no
         // customer, so it is on neither the list nor the Archive.
         query = query.eq("campaign_visit_holder", false);
-        // On the list: validated, or carried over and waiting to be. A dropped customer is left out, and
-        // one waiting outside the list only when the caller asks for him.
-        if (options.onListOnly) query = query.in("status", options.includeOutside ? ["active", "pending", "outside"] : ["active", "pending"]);
+        if (statuses) query = query.in("status", statuses);
         if (only) query = query.in("id", only);
         return query;
       },
@@ -898,33 +1013,14 @@ export async function loadTerritoryCustomers(
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
   ]);
-  // Which of the buildings these places are seated in already have their timetable on file.
   const venueIds = [...new Set(places.map((row) => text(row.shared_place_id)).filter((id): id is string => id !== null))];
-  const boardOnFile = new Map<string, boolean>();
-  const venueHeld = new Map<string, boolean>();
+  let venues: Row[] = [];
   if (venueIds.length > 0) {
-    const venues = await supabase.from("phoenix_crm_shared_places").select("id, schedule_photo_path, status").in("id", venueIds);
-    throwIfError(venues.error);
-    for (const venue of (venues.data ?? []) as Row[]) {
-      boardOnFile.set(String(venue.id), text(venue.schedule_photo_path) !== null);
-      venueHeld.set(String(venue.id), venue.status === "held");
-    }
+    const read = await supabase.from("phoenix_crm_shared_places").select("id, name, kind, schedule_photo_path, status").in("id", venueIds);
+    throwIfError(read.error);
+    venues = (read.data ?? []) as Row[];
   }
-  const placesByCustomer = new Map<string, ListPlace[]>();
-  for (const row of places) {
-    const customerId = String(row.customer_id);
-    const list = placesByCustomer.get(customerId) ?? [];
-    const mapped = mapPlaceRow(row);
-    const venueId = text(row.shared_place_id);
-    if (venueId) {
-      mapped.venueTimetableOnFile = boardOnFile.get(venueId) === true;
-      mapped.venueHeld = venueHeld.get(venueId) === true;
-    }
-    list.push(mapped);
-    placesByCustomer.set(customerId, list);
-  }
-  for (const list of placesByCustomer.values()) list.sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
-  return { customers, placesByCustomer };
+  return foldTerritoryCustomers({ customers, places, venues });
 }
 
 /**

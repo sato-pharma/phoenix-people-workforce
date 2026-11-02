@@ -593,10 +593,10 @@ export function runPhoenixCrmPlanScreenExtrasTests(): void {
     assert.equal((save.match(/venueNamesOf\(|loadSharedPlaceNames\(/g) ?? []).length, 1, "the venue names are read once per save");
 
     const planner = bodyOf(plans, "export async function loadPlanner(");
-    assert.ok(planner.indexOf("venueNamesOf(placesByCustomer)") < planner.indexOf("] = await wave;"), "the week planner's venue names ride in its wave");
+    assert.ok(planner.indexOf("venueNamesOf(placesByCustomer, venueNames)") < planner.indexOf("] = await wave;"), "the week planner's venue names ride in its wave");
     assert.ok(planner.indexOf("loadPlanEditState(") < planner.indexOf("] = await wave;"), "and so does the week's request to edit it");
     const monthPlanner = bodyOf(source("src/lib/phoenix-crm/server/monthly-plans.ts"), "export async function loadMonthlyPlanner(");
-    assert.ok(monthPlanner.indexOf("venueNamesOf(placesByCustomer)") < monthPlanner.indexOf("] = await wave;"), "the month board's venue names ride in its wave");
+    assert.ok(monthPlanner.indexOf("venueNamesOf(placesByCustomer, venueNames)") < monthPlanner.indexOf("] = await wave;"), "the month board's venue names ride in its wave");
     assert.doesNotMatch(monthPlanner, /await loadSharedPlaceNames\(/, "never after it");
 
     const transition = bodyOf(plans, "export async function transitionPlan(");

@@ -119,7 +119,7 @@ export type SharedPlaceRow = {
   schedulePhotoCapturedAtText: string | null;
 };
 
-function kindOf(value: unknown): SharedPlaceKind {
+export function kindOf(value: unknown): SharedPlaceKind {
   // A row whose kind no longer parses is still shown, as the commonest of the four rather than hidden:
   // a venue that disappears from the picker is a rep who cannot work, and the kind is only wording.
   return parseSharedPlaceKind(value) ?? "polyclinic";

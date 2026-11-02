@@ -69,7 +69,7 @@ import {
   type PlanRuleCustomer,
 } from "@/lib/phoenix-crm/plan-rules";
 import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { sharedPlanCapRefusal } from "@/lib/phoenix-crm/shared-place-rules";
+import { sharedPlanCapRefusal, type SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
 import {
   assertCanReturnPlan,
   assertReviewer,
@@ -264,9 +264,22 @@ export function isStaleItem(row: Row): boolean {
  * The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
  * customer is in (owner, 2026-10-10). Wording only: no cap ever depends on this read. The week planner,
  * the month board and the save all ask it of the same places, so it is asked one way.
+ *
+ * `known` is what the territory read already named (list.ts `TerritoryCustomers.venueNames`, 2 Nov
+ * 2026): when it names every seated place's building the answer is in hand and nothing is read, so the
+ * same `phoenix_crm_shared_places` rows are no longer fetched twice per open. Any building it misses
+ * sends the whole question to `loadSharedPlaceNames`, as before.
  */
-export function venueNamesOf(placesByCustomer: ReadonlyMap<string, ReadonlyArray<Pick<ListPlace, "sharedPlaceId">>>) {
-  return loadSharedPlaceNames([...placesByCustomer.values()].flatMap((list) => list.map((place) => place.sharedPlaceId ?? null)));
+export function venueNamesOf(
+  placesByCustomer: ReadonlyMap<string, ReadonlyArray<Pick<ListPlace, "sharedPlaceId">>>,
+  known?: ReadonlyMap<string, SharedPlaceNamed>,
+): Promise<Map<string, SharedPlaceNamed>> {
+  const sharedPlaceIds = [...placesByCustomer.values()].flatMap((list) => list.map((place) => place.sharedPlaceId ?? null));
+  const seated = [...new Set(sharedPlaceIds.filter((id): id is string => id !== null))];
+  if (known && seated.every((id) => known.has(id))) {
+    return Promise.resolve(new Map(seated.map((id) => [id, known.get(id) as SharedPlaceNamed])));
+  }
+  return loadSharedPlaceNames(sharedPlaceIds);
 }
 
 export type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
@@ -544,7 +557,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     // The building each seated place sits in, by name, so the plan can say WHICH polyclinic or centre a
     // customer is in (owner, 2026-10-10). Wording only: the cap never depends on this read. It needs the
     // places alone, so it follows the customer list inside the wave, never after it (2026-10-16).
-    customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
+    customersRead.then(({ placesByCustomer, venueNames }) => venueNamesOf(placesByCustomer, venueNames)),
   ]);
   wave.catch(() => undefined);
   await ensured;
@@ -737,7 +750,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
     loadSeatDaysOff(seat, { from: weekStart, to: addDaysIso(weekStart, 5) }),
     // Three visits a day inside one polyclinic (owner, 2026-10-09) — the names only, so the refusal can
     // say "Nile Polyclinic". The COUNT is off the plan's own items, so this read can never widen the cap.
-    customersRead.then(({ placesByCustomer }) => venueNamesOf(placesByCustomer)),
+    customersRead.then(({ placesByCustomer, venueNames }) => venueNamesOf(placesByCustomer, venueNames)),
     // The venues the owner lifted outright for this seat (2026-10-31): any count on the plan there.
     loadLiftedVenues(seat.seatId),
   ]);

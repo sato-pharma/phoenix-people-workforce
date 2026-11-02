@@ -178,20 +178,25 @@ export type PlanEditState = { waiting: PlanEditRequestView | null; latest: PlanE
 export async function loadPlanEditState(
   planIds: ReadonlyArray<string>,
   isTest: boolean,
-  options: { names?: boolean } = {},
+  options: { names?: boolean; rows?: ReadonlyArray<Row> } = {},
 ): Promise<Map<string, PlanEditState>> {
   const state = new Map<string, PlanEditState>();
   if (planIds.length === 0) return state;
-  // A few batches at a time, never one after another (2026-10-16 speed audit), in batch order.
-  const pages = await mapWithConcurrency(chunk([...planIds]), PLAN_EDIT_READ_CONCURRENCY, async (batch) => {
-    const { data, error } = await getSupabaseAdmin()
-      .from("phoenix_crm_plan_edit_requests")
-      .select(REQUEST_COLUMNS)
-      .in("plan_id", batch)
-      .eq("is_test", isTest);
-    throwIfError(error);
-    return (data ?? []) as unknown as Row[];
-  });
+  const wanted = new Set(planIds);
+  // A caller that already holds the requests — the planned-day bundle reads them in the same statement as
+  // the plan (2 Nov 2026) — hands them in, each row in `REQUEST_COLUMNS`' shape, and nothing is read.
+  // Otherwise a few batches at a time, never one after another (2026-10-16 speed audit), in batch order.
+  const pages = options.rows
+    ? [options.rows.filter((row) => wanted.has(String(row.plan_id)) && row.is_test === isTest)]
+    : await mapWithConcurrency(chunk([...planIds]), PLAN_EDIT_READ_CONCURRENCY, async (batch) => {
+        const { data, error } = await getSupabaseAdmin()
+          .from("phoenix_crm_plan_edit_requests")
+          .select(REQUEST_COLUMNS)
+          .in("plan_id", batch)
+          .eq("is_test", isTest);
+        throwIfError(error);
+        return (data ?? []) as unknown as Row[];
+      });
   const rows = pages.flat();
   // The people who decided are the screen's to name; the server's own check needs no names.
   const names: PeopleNames = rows.length > 0 && options.names !== false ? await loadPeopleNames(planEditPeople(rows)) : new Map();

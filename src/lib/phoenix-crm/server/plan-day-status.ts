@@ -48,8 +48,19 @@ function planStatusOf(value: unknown): PhoenixCrmPlanStatus | null {
   return value === "draft" || value === "submitted" || value === "approved" || value === "returned" ? value : null;
 }
 
-/** Per plan id: its facts. `rows` carry `id` and `PLAN_DAY_COLUMNS`. */
-export async function loadPlanDayFacts(rows: ReadonlyArray<Row>, isTest: boolean): Promise<Map<string, PlanDayFacts>> {
+/**
+ * Per plan id: its facts. `rows` carry `id` and `PLAN_DAY_COLUMNS`.
+ *
+ * A caller that already holds the plans' edit requests and their 'returned' events — the planned-day
+ * bundle (visits.ts `loadPlannedDay`, 2 Nov 2026) reads them in the same statement as the plan — hands
+ * them in as `edits` and `returns`, and the rule is asked with no read of its own. `returns` must be
+ * newest first (created_at, then id), the order `loadReturnedFrom` reads them in.
+ */
+export async function loadPlanDayFacts(
+  rows: ReadonlyArray<Row>,
+  isTest: boolean,
+  options: { edits?: ReadonlyArray<Row>; returns?: ReadonlyArray<Row> } = {},
+): Promise<Map<string, PlanDayFacts>> {
   const facts = new Map<string, PlanDayFacts>();
   const oneDay: Row[] = [];
   for (const row of rows) {
@@ -61,7 +72,10 @@ export async function loadPlanDayFacts(rows: ReadonlyArray<Row>, isTest: boolean
   if (oneDay.length === 0) return facts;
 
   const ids = oneDay.map((row) => String(row.id));
-  const [edits, returnedFrom] = await Promise.all([loadPlanEditState(ids, isTest, { names: false }), loadReturnedFrom(ids)]);
+  const [edits, returnedFrom] = await Promise.all([
+    loadPlanEditState(ids, isTest, { names: false, rows: options.edits }),
+    options.returns ? foldReturnedFrom(options.returns) : loadReturnedFrom(ids),
+  ]);
   for (const row of oneDay) {
     const id = String(row.id);
     const entry = facts.get(id);
@@ -86,7 +100,6 @@ export async function loadPlanDayFacts(rows: ReadonlyArray<Row>, isTest: boolean
  * days would lose their approval on Today. Found 2026-10-02, before any plan was returned on production.
  */
 async function loadReturnedFrom(planIds: ReadonlyArray<string>): Promise<Map<string, PhoenixCrmPlanStatus | null>> {
-  const out = new Map<string, PhoenixCrmPlanStatus | null>();
   // Four chunks at a time, merged in chunk order (2026-10-31, "fix the slowest five pages"): on a wide scope the chunks
   // were read one after another.
   const answers = await mapWithConcurrency(chunk([...planIds], 50), 4, async (batch) =>
@@ -98,12 +111,20 @@ async function loadReturnedFrom(planIds: ReadonlyArray<string>): Promise<Map<str
       .order("created_at", { ascending: false })
       .order("id", { ascending: false }),
   );
+  const rows: Row[] = [];
   for (const { data, error } of answers) {
     throwIfError(error);
-    for (const row of (data ?? []) as Row[]) {
-      const id = String(row.plan_id);
-      if (!out.has(id)) out.set(id, planStatusOf(row.from_status));
-    }
+    rows.push(...((data ?? []) as Row[]));
+  }
+  return foldReturnedFrom(rows);
+}
+
+/** The first 'returned' event seen per plan wins — so `rows` are newest first, the read's own order. */
+export function foldReturnedFrom(rows: ReadonlyArray<Row>): Map<string, PhoenixCrmPlanStatus | null> {
+  const out = new Map<string, PhoenixCrmPlanStatus | null>();
+  for (const row of rows) {
+    const id = String(row.plan_id);
+    if (!out.has(id)) out.set(id, planStatusOf(row.from_status));
   }
   return out;
 }
