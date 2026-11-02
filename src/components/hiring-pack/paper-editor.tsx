@@ -2168,7 +2168,7 @@ export function HiringPackPaperEditor({
   );
 
   return (
-    <div className="rounded-[26px] border border-phx-line bg-white/80 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+    <div className="border border-phx-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-5 py-4">
         <div className="min-w-0">
           <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
@@ -2756,7 +2756,7 @@ export function HiringPackPaperEditor({
             }}
           >
             <iframe
-              className="block border-0 bg-white shadow-lg"
+              className="block border-0 bg-white outline outline-1 outline-phx-line"
               // The SAME key the load handler reports back, so "which document is showing" and
               // "which document has loaded" can never be answered from two different strings.
               key={frameKey}

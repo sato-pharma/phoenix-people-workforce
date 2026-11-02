@@ -7,11 +7,15 @@ import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
+  HiringJoiner,
   UpdateHiringJoinerInput,
 } from "@/lib/hiring-documents/types";
-import { joiningDayKey } from "@/lib/hr/talent-acquisition-logic";
+import { daysBetweenKeys, joiningDayKey } from "@/lib/hr/talent-acquisition-logic";
 import { isUuid } from "@/lib/http/uuid";
 import { isIsoDate } from "@/lib/offers/dates";
+
+/** A joiner who starts within this many days with something still to agree is called first. */
+export const HIRING_JOINER_SOON_DAYS = 3;
 
 /** A note is a line or two about one phone call; this is the point it stops being one. */
 export const HIRING_JOINER_NOTES_MAX = 1000;
@@ -108,5 +112,43 @@ export function joinerPapersProgress(
     firstOutstandingId: outstanding[0]?.id ?? null,
     received: owed.length - outstanding.length,
     total: owed.length,
+  };
+}
+
+export type JoinerStanding = {
+  kind: "confirmed" | "partial" | "open";
+  /** What is still to agree with them. */
+  missing: Array<"papers" | "day" | "time">;
+};
+
+/** Where one joiner stands: all three agreed, some of them, or none. A note alone agrees nothing. */
+export function joinerStanding(
+  joiner: Pick<HiringJoiner, "attendanceDate" | "attendanceTime" | "papersConfirmed">,
+): JoinerStanding {
+  const missing: JoinerStanding["missing"] = [];
+  if (!joiner.papersConfirmed) missing.push("papers");
+  if (!joiner.attendanceDate) missing.push("day");
+  if (!joiner.attendanceTime) missing.push("time");
+  if (missing.length === 0) return { kind: "confirmed", missing };
+  return { kind: missing.length === 3 ? "open" : "partial", missing };
+}
+
+/** True when they start within HIRING_JOINER_SOON_DAYS and something is still to agree. */
+export function joinerIsUrgent(
+  joiner: Pick<HiringJoiner, "attendanceDate" | "attendanceTime" | "papersConfirmed" | "startKey">,
+  todayKey: string,
+): boolean {
+  if (!joiner.startKey || joinerStanding(joiner).kind === "confirmed") return false;
+  return daysBetweenKeys(todayKey, joiner.startKey) <= HIRING_JOINER_SOON_DAYS;
+}
+
+/** The counts above the list. A joiner with no readable date is still someone to confirm. */
+export function joinersSummary(
+  joiners: ReadonlyArray<Pick<HiringJoiner, "attendanceDate" | "attendanceTime" | "mobile" | "papersConfirmed">>,
+): { arriving: number; noMobile: number; toConfirm: number } {
+  return {
+    arriving: joiners.length,
+    noMobile: joiners.filter((joiner) => !joiner.mobile).length,
+    toConfirm: joiners.filter((joiner) => joinerStanding(joiner).kind !== "confirmed").length,
   };
 }

@@ -45,7 +45,6 @@ import type { ReactNode } from "react";
 
 import {
   AdminCallout,
-  AdminInsightChip,
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
@@ -80,6 +79,7 @@ import { renewalObjectiveReasonOptions } from "@/lib/hiring-pack/renewal-reasons
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
+import { phxSelectClassName } from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -106,7 +106,7 @@ import { cn } from "@/lib/utils";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const inputClassName =
-  "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
+  "h-10 border-phx-line bg-white text-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
 const labelClassName =
   "mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 const factLabelClassName =
@@ -1366,12 +1366,12 @@ export function HiringPackManager({
   // it sticks to the viewport, and the corners are still clipped.
   return (
     <PaperScopeContext.Provider value={paperScope}>
-    <div className="relative overflow-clip rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative overflow-clip">
       <div className="flex flex-col gap-5">
         <AdminPageHero
           actions={
             bankLetterHref ? (
-              <Button asChild className="h-10 rounded-none" variant="outline">
+              <Button asChild className="h-10" variant="secondary">
                 <Link href={bankLetterHref}>
                   <Landmark />
                   Bank account letter
@@ -1379,35 +1379,27 @@ export function HiringPackManager({
               </Button>
             ) : null
           }
-          badges={
-            <>
-              <AdminInsightChip tone="orange">{currentCount} on staff</AdminInsightChip>
-              <AdminInsightChip tone="orange">{departedCount} left</AdminInsightChip>
-              <AdminInsightChip>
-                Joining · contract + Form 1
-              </AdminInsightChip>
-              <AdminInsightChip>
-                Leaving · Form 6 + one exit form
-              </AdminInsightChip>
-            </>
-          }
-          description="Open a folder and press the paper you need. Fill it from an employee's record, or type the details in while the company's own details fill themselves. Everything on the paper stays editable, and every print is numbered."
+          description={`Open a folder and press the paper you need. Fill it from an employee's record or type it in; every print is numbered. ${currentCount} on staff, ${departedCount} left.`}
           eyebrow="Employee documents"
           icon={<FileSignature className="h-5 w-5" />}
           title="HR Forms"
         />
 
-        {error ? (
-          <AdminCallout tone="danger">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </AdminCallout>
-        ) : null}
-        {notice ? (
-          <AdminCallout tone="success">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{notice}</span>
-          </AdminCallout>
+        {error || notice ? (
+          <div aria-live="polite" className="sticky top-28 z-20 flex flex-col gap-2">
+            {error ? (
+              <AdminCallout tone="danger">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </AdminCallout>
+            ) : null}
+            {notice ? (
+              <AdminCallout tone="success">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{notice}</span>
+              </AdminCallout>
+            ) : null}
+          </div>
         ) : null}
 
         {/*
@@ -1480,7 +1472,7 @@ export function HiringPackManager({
           `z-30` sits above the page body and below the SearchableSelect's dropdown, which portals
           to the document and carries its own stacking.
         */}
-        <div className="sticky top-2 z-30 rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:px-5">
+        <div className="sticky top-2 z-30 border border-phx-line bg-white px-4 py-3 shadow-none sm:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <label
               className="flex shrink-0 items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft"
@@ -1537,7 +1529,7 @@ export function HiringPackManager({
               gaps were never listed anywhere before, only counted, so this band shows strictly more
               than the row it replaces, in under half the height.
             */}
-            <div className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-5">
+            <div className="border border-phx-line bg-white p-4 shadow-none sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <SignaturePill
                   icon={<FileText className="h-4 w-4" />}
@@ -1552,7 +1544,7 @@ export function HiringPackManager({
               </div>
 
               {blockingGaps.length > 0 || advisoryGaps.length > 0 ? (
-                <div className="mt-4 flex flex-col gap-3 border-t border-slate-200/80 pt-4">
+                <div className="mt-4 flex flex-col gap-3 border-t border-phx-line pt-4">
                   {blockingGaps.length > 0 ? (
                     <div className="flex flex-col gap-1.5">
                       <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-rose-700">
@@ -1599,7 +1591,7 @@ export function HiringPackManager({
               action={
                 canManage ? (
                   <Button
-                    className="h-11 gap-2 rounded-2xl"
+                    className="h-10 gap-2"
                     disabled={busy === "save-facts"}
                     onClick={() => void saveFacts()}
                   >
@@ -1616,7 +1608,7 @@ export function HiringPackManager({
               title={`What Phoenix already knows · ${employee.fullName}`}
             >
               <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                <div className="rounded-xl border border-phx-line bg-white/95 px-3.5 py-2.5 shadow-sm sm:max-w-xs">
+                <div className="border-l-[3px] border-phx-accent pl-3 sm:max-w-xs">
                   <span className={factLabelClassName}>HR ID</span>
                   <p className="mt-1 text-sm font-bold text-phx-ink" dir="auto">
                     {employee.hrId}
@@ -1674,6 +1666,11 @@ export function HiringPackManager({
                         type="number"
                         value={factsForm.baseSalary ?? ""}
                       />
+                      {salaryReadOnly ? (
+                        <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                          You print this figure. Only the HR Manager changes it.
+                        </p>
+                      ) : null}
                     </div>
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-insuranceWage">
@@ -1764,7 +1761,7 @@ export function HiringPackManager({
                   action={
                     canManage ? (
                       <Button
-                        className="h-11 gap-2 rounded-2xl"
+                        className="h-10 gap-2"
                         disabled={busy === "save"}
                         onClick={() => void save()}
                       >
@@ -1823,7 +1820,7 @@ export function HiringPackManager({
                       fields={TERM_FIELDS}
                       form={form}
                       onChange={setForm}
-                      subtitle={`Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
+                      subtitle={contractTermsReadOnly ? "You print these terms. Only the HR Manager changes them." : `Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
                       title="Contract terms"
                     />
                     <div>
@@ -1845,7 +1842,7 @@ export function HiringPackManager({
                 </AdminTableShell>
                 )}
 
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="Contract and Form 1">
                   <DocumentCard
                     busy={busy === "sign-contract"}
                     canManage={canManage}
@@ -1883,7 +1880,7 @@ export function HiringPackManager({
                     subtitle="نموذج ١ — طلب اشتراك مؤمن عليه"
                     title="Social insurance Form 1"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   The worker-data form — استمارة بيانات العامل — is Sato's own service-file intake sheet,
@@ -1891,7 +1888,7 @@ export function HiringPackManager({
                   الخدمة"). It is not signature-tracked, for the same reason the custody receipts are not:
                   a paper filed in a drawer, where the honest record is none. See `SIGNABLE_DOCUMENTS`.
                 */}
-                <div className="grid gap-3 empty:hidden">
+                <PaperGroup title="Service file">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -1912,7 +1909,7 @@ export function HiringPackManager({
                     subtitle="استمارة بيانات العامل — تُحفظ بملف الخدمة"
                     title="Worker data form"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   THE CUSTODY RECEIPTS SIT BETWEEN THE TWO HALVES, because that is where they belong in
@@ -1924,7 +1921,7 @@ export function HiringPackManager({
                   devices, and somebody who is handed a laptop and a phone on his first morning needs
                   both papers on his first morning.
                 */}
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="Custody receipts">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -1965,7 +1962,7 @@ export function HiringPackManager({
                     subtitle="إقرار استلام عهدة — نموذج رقم ٢ (هاتف / جهاز لوحي)"
                     title="Custody receipt — phone or tablet"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   THE RENEWAL PAIR SITS BESIDE THE CUSTODY RECEIPTS, for the same reason: a contract
@@ -1976,7 +1973,7 @@ export function HiringPackManager({
                   together because the choice is made once, by one person, at one moment, and putting
                   the notice in the leaver tab would hide it until after the decision it announces.
                 */}
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="Renewal">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -2017,13 +2014,13 @@ export function HiringPackManager({
                     subtitle="إخطار بعدم تجديد عقد عمل محدد المدة"
                     title="Non-renewal notice"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   SATO'S OWN JOINING PAPERS — signed or completed on the day somebody arrives, beside
                   the contract and Form 1 rather than after them, because that is when they are used.
                 */}
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="First-day papers">
                   <DocumentCard
                     busy={busy === "sign-nda"}
                     canManage={canManage}
@@ -2064,9 +2061,6 @@ export function HiringPackManager({
                     subtitle="إيصال استلام مسوغات التعيين — 12 مستندًا"
                     title="Appointment documents receipt"
                   />
-                </div>
-
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -2087,7 +2081,7 @@ export function HiringPackManager({
                     subtitle="صحيفة الحالة الاجتماعية — المادة (92)"
                     title="Social status sheet"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   THE TWO ABSENCE NOTICES. They are NOT alternatives the way the exit forms are —
@@ -2095,7 +2089,7 @@ export function HiringPackManager({
                   is a precondition of the second. Both are shown so that is visible, and neither
                   carries a date Phoenix guessed.
                 */}
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="Attendance">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -2136,7 +2130,7 @@ export function HiringPackManager({
                     subtitle="إخطار باعتبار العامل مستقيلًا حكمًا — المادة (166)"
                     title="Deemed resignation notice"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   THE HR LETTER, in both languages. Asked for by somebody still employed — a bank, an
@@ -2144,7 +2138,7 @@ export function HiringPackManager({
                   on record (the Arabic one since 2026-09-20, the English one since 2026-10-28: "PUT
                   THE BASE NOT THE BASIC SALARY"), so a pair printed together states one figure.
                 */}
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="HR letters">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -2185,7 +2179,7 @@ export function HiringPackManager({
                     subtitle="شهادة راتب — باللغة العربية"
                     title="HR letter — base salary (Arabic)"
                   />
-                </div>
+                </PaperGroup>
 
                 <PackageCompanyTemplates
                   employeeSelected={Boolean(pack)}
@@ -2204,7 +2198,7 @@ export function HiringPackManager({
                   action={
                     canManage ? (
                       <Button
-                        className="h-11 gap-2 rounded-2xl"
+                        className="h-10 gap-2"
                         disabled={busy === "save-exit"}
                         onClick={() => void saveExit()}
                       >
@@ -2222,7 +2216,7 @@ export function HiringPackManager({
                 >
                   <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
                     {pack.exit ? (
-                      <div className="rounded-xl border border-phx-line bg-phx-paper px-3.5 py-2.5">
+                      <div className="border-l-[3px] border-phx-accent pl-3">
                         <span className={factLabelClassName}>Recorded departure</span>
                         <p className="mt-1 text-sm font-bold text-phx-ink">
                           Last working day {formatDate(pack.exit.lastWorkingDate)}
@@ -2251,9 +2245,9 @@ export function HiringPackManager({
                           return (
                             <button
                               className={cn(
-                                "rounded-2xl border px-4 py-3 text-left transition",
+                                "border px-4 py-3 text-left transition",
                                 selected
-                                  ? "border-phx-accent-line bg-phx-accent/10 shadow-sm"
+                                  ? "border-phx-accent-line bg-phx-accent/10"
                                   : "border-phx-line bg-white/95 hover:border-phx-accent-line",
                               )}
                               disabled={!canManage}
@@ -2320,7 +2314,7 @@ export function HiringPackManager({
                   </div>
                 </AdminTableShell>
 
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="Filing the departure">
                   <DocumentCard
                     busy={busy === "sign-form6"}
                     canManage={canManage}
@@ -2434,7 +2428,7 @@ export function HiringPackManager({
                     subtitle="إخلاء طرف شركة — يقر به الموظف، وتحتفظ به الشركة"
                     title="Company clearance"
                   />
-                </div>
+                </PaperGroup>
 
                 {/*
                   THE OTHER END OF THE APPOINTMENT-DOCUMENTS LOOP. Its sibling — the receipt taken
@@ -2442,7 +2436,7 @@ export function HiringPackManager({
                   files with almost the same name, and the one mistake worth designing against is
                   filing the wrong one at the wrong end of a career.
                 */}
-                <div className="grid gap-3 empty:hidden lg:grid-cols-2">
+                <PaperGroup title="Handing back and certifying">
                   <DocumentCard
                     busy={false}
                     canManage={canManage}
@@ -2525,7 +2519,7 @@ export function HiringPackManager({
                     subtitle="Certificate of Experience — English, for use abroad"
                     title="Certificate of experience — English"
                   />
-                </div>
+                </PaperGroup>
 
                 <PackageCompanyTemplates
                   employeeSelected={Boolean(pack)}
@@ -2639,7 +2633,7 @@ function FieldGroup({
                   offer one. Blank is a real answer: it prints the dotted rule for a pen.
                 */
                 <select
-                  className={inputClassName}
+                  className={phxSelectClassName}
                   disabled={disabled}
                   id={`hiring-pack-${field.key}`}
                   onChange={(event) =>
@@ -2752,7 +2746,7 @@ function TemplateArchive({
       action={
         <Button
           aria-expanded={open}
-          className="h-10 gap-2 rounded-xl"
+          className="h-10 gap-2"
           onClick={() => setOpen((current) => !current)}
           type="button"
           variant="outline"
@@ -2810,7 +2804,7 @@ function TemplateArchive({
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Button
-                    className="h-10 gap-2 rounded-xl"
+                    className="h-10 gap-2"
                     disabled={!employeeSelected}
                     onClick={() => onPreview(entry.document, entry.id)}
                     type="button"
@@ -2820,7 +2814,7 @@ function TemplateArchive({
                     Read it
                   </Button>
                   <Button
-                    className="h-10 gap-2 rounded-xl"
+                    className="h-10 gap-2"
                     disabled={!employeeSelected}
                     onClick={() => onPrint(entry.document, entry.id)}
                     type="button"
@@ -2871,10 +2865,10 @@ function SignaturePill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ring-1 ring-inset",
+        "inline-flex items-center gap-2 border px-3 py-2 text-sm font-bold",
         signed
-          ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok ring-phx-ok-line"
-          : "border-phx-warn-line bg-phx-warn-bg text-phx-warn ring-phx-warn-line",
+          ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
+          : "border-phx-warn-line bg-phx-warn-bg text-phx-warn",
       )}
     >
       {icon}
@@ -2924,7 +2918,7 @@ function PackageCompanyTemplates({
       <ul className="flex flex-col gap-2">
         {templates.map((template) => (
           <li
-            className="flex flex-col gap-2 rounded-2xl border border-phx-line bg-white/95 p-3 sm:flex-row sm:items-center sm:gap-3"
+            className="flex flex-col gap-2 border border-phx-line bg-white p-3 shadow-none sm:flex-row sm:items-center sm:gap-3"
             key={template.id}
           >
             <div className="min-w-0 flex-1">
@@ -2956,7 +2950,7 @@ function PackageCompanyTemplates({
             */}
             <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
               <Button
-                className="h-9 gap-2 rounded-xl"
+                className="h-9 gap-2"
                 disabled={!employeeSelected}
                 onClick={() => onOpen(template)}
                 title={employeeSelected ? undefined : "Choose an employee above first."}
@@ -2966,7 +2960,7 @@ function PackageCompanyTemplates({
                 Open
               </Button>
               <Button
-                className="h-9 gap-2 rounded-xl"
+                className="h-9 gap-2"
                 disabled={!employeeSelected}
                 onClick={() => onPrint(template)}
                 title={employeeSelected ? undefined : "Choose an employee above first."}
@@ -2980,6 +2974,16 @@ function PackageCompanyTemplates({
         ))}
       </ul>
     </AdminTableShell>
+  );
+}
+
+/** A heading over related papers. Gone when a paper scope leaves it none, so no heading sits over nothing. */
+function PaperGroup({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <section className="space-y-2 [&:not(:has(h3))]:hidden">
+      <h2 className={factLabelClassName}>{title}</h2>
+      <div className="grid gap-2">{children}</div>
+    </section>
   );
 }
 
@@ -3055,44 +3059,45 @@ function DocumentCardBody({
     is. The page-level guard stays as the backstop; this one is what anybody actually reads.
   */
   const [emptyDateWarning, setEmptyDateWarning] = useState(false);
+  // The signature line stays folded until it is wanted, or until the date it holds needs saying.
+  const [signOpen, setSignOpen] = useState(false);
+  const canSign = canManage && signable;
+  const SignChevron = signOpen ? ChevronUp : ChevronDown;
 
   return (
-    <AdminTableShell description={subtitle} title={title}>
-      <div className="flex flex-col gap-4 px-5 py-5 sm:px-6">
-        <div className="flex flex-wrap items-center gap-2">
-          {!signable ? null : signedDate ? (
-            <Badge variant="success">Signed {formatDate(signedDate)}</Badge>
-          ) : (
-            <Badge variant="warning">Not signed</Badge>
-          )}
-          {blocking > 0 ? (
-            <Badge variant="danger">{blocking} missing</Badge>
-          ) : (
-            <Badge variant="success">Complete</Badge>
-          )}
-          <span className="text-xs font-semibold text-phx-ink-soft">
-            Last printed: {formatStamp(printedAt)}
-          </span>
+    <div className="border border-phx-line bg-white shadow-none">
+      <div className="flex flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:gap-4">
+        <div className="min-w-0 flex-1">
+          <h3 className="break-words text-sm font-black text-phx-ink">{title}</h3>
+          <p className="break-words text-left text-phx-xs font-semibold text-phx-ink-soft" dir="auto">{subtitle}</p>
+          <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{printingNote}</p>
+          {footnote ? (
+            <p className="mt-1 flex items-start gap-1.5 text-phx-xs font-semibold text-phx-info">
+              <Archive className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>{footnote}</span>
+            </p>
+          ) : null}
         </div>
 
-        <p className="rounded-xl border border-phx-line bg-phx-paper px-3.5 py-2.5 text-xs font-bold text-phx-ink-2">
-          {printingNote}
-        </p>
+        <div className="text-phx-xs font-bold xl:w-44 xl:shrink-0">
+          {!signable ? null : signedDate ? (
+            <p className="text-phx-ok">Signed {formatDate(signedDate)}</p>
+          ) : (
+            <p className="text-phx-warn">Not signed</p>
+          )}
+          {blocking > 0 ? (
+            <p className="text-phx-danger">{blocking} missing</p>
+          ) : (
+            <p className="text-phx-ok">Complete</p>
+          )}
+          <p className="font-semibold text-phx-ink-soft">Last printed: {formatStamp(printedAt)}</p>
+        </div>
 
-        {footnote ? (
-          <p className="flex items-start gap-2 rounded-xl border border-phx-info-line bg-phx-info-bg px-3.5 py-2.5 text-xs font-bold text-phx-info">
-            <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{footnote}</span>
-          </p>
-        ) : null}
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className={labelClassName} htmlFor={`hiring-pack-copies-${slug}`}>
-              Copies
-            </label>
+        <div className="flex flex-wrap items-center gap-2 xl:shrink-0">
+          <label className="flex items-center gap-2 text-phx-xs font-bold text-phx-ink-soft" htmlFor={`hiring-pack-copies-${slug}`}>
+            Copies
             <Input
-              className={cn(inputClassName, "w-24")}
+              className={cn(inputClassName, "w-16")}
               id={`hiring-pack-copies-${slug}`}
               inputMode="numeric"
               max={20}
@@ -3101,92 +3106,99 @@ function DocumentCardBody({
               type="number"
               value={copies}
             />
-          </div>
+          </label>
           {/*
             PREVIEW LEADS, PRINT FOLLOWS. The preview is the same page the printer gets, so reading
             it costs nothing and catches a wrong value while it is still free to fix — which is the
             whole reason it exists. Print stays one click away for the case where nothing needs
             checking, and it is the button that stamps the document as printed.
           */}
-          <Button className="h-11 gap-2 rounded-2xl" onClick={onPreview} type="button">
+          <Button className="h-10 gap-2" onClick={onPreview} type="button">
             <FileText className="h-4 w-4" />
             Preview &amp; edit
           </Button>
-          <Button
-            className="h-11 gap-2 rounded-2xl"
-            onClick={onPrint}
-            type="button"
-            variant="outline"
-          >
+          <Button className="h-10 gap-2" onClick={onPrint} type="button" variant="secondary">
             <Printer className="h-4 w-4" />
             Print
           </Button>
-        </div>
-
-        {canManage && signable ? (
-          <div className="flex flex-wrap items-end gap-3 border-t border-phx-line pt-4">
-            <div>
-              <label className={labelClassName} htmlFor={`hiring-pack-signed-${slug}`}>
-                Date signed
-              </label>
-              <Input
-                aria-describedby={emptyDateWarning ? `hiring-pack-signed-${slug}-error` : undefined}
-                aria-invalid={emptyDateWarning || undefined}
-                className={cn(inputClassName, "w-44", emptyDateWarning && "border-phx-danger-line")}
-                id={`hiring-pack-signed-${slug}`}
-                onChange={(event) => {
-                  if (event.target.value) setEmptyDateWarning(false);
-                  onSignDateChange(event.target.value);
-                }}
-                type="date"
-                value={signDate}
-              />
-            </div>
+          {canSign ? (
             <Button
-              className="h-10 rounded-xl"
-              onClick={() => {
-                setEmptyDateWarning(false);
-                onSignDateChange(todayInCairo());
-              }}
+              aria-expanded={signOpen}
+              className="h-10 gap-1.5"
+              onClick={() => setSignOpen((open) => !open)}
               type="button"
-              variant="outline"
+              variant="ghost"
             >
-              Today
+              Signature
+              <SignChevron className="h-4 w-4" />
             </Button>
-            <Button
-              className="h-11 gap-2 rounded-2xl"
-              disabled={busy}
-              onClick={() => {
-                // Focus lands ON the empty box, so the fix is where the eye already went.
-                if (!signDate) {
-                  setEmptyDateWarning(true);
-                  document.getElementById(`hiring-pack-signed-${slug}`)?.focus();
-                  return;
-                }
-                setEmptyDateWarning(false);
-                onSign();
-              }}
-            >
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <FileSignature className="h-4 w-4" />
-              )}
-              {signedDate ? "Update signature date" : "Record signature"}
-            </Button>
-            {emptyDateWarning ? (
-              <p
-                className="w-full text-phx-xs font-semibold text-phx-danger"
-                id={`hiring-pack-signed-${slug}-error`}
-                role="alert"
-              >
-                Enter the date written on the signed paper first — or press Today. Nothing is
-                recorded until this box has a date.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
-    </AdminTableShell>
+
+      {canSign && signOpen ? (
+        <div className="flex flex-wrap items-end gap-3 border-t border-phx-line px-4 py-3">
+          <div>
+            <label className={labelClassName} htmlFor={`hiring-pack-signed-${slug}`}>
+              Date signed
+            </label>
+            <Input
+              aria-describedby={emptyDateWarning ? `hiring-pack-signed-${slug}-error` : undefined}
+              aria-invalid={emptyDateWarning || undefined}
+              className={cn(inputClassName, "w-44", emptyDateWarning && "border-phx-danger-line")}
+              id={`hiring-pack-signed-${slug}`}
+              onChange={(event) => {
+                if (event.target.value) setEmptyDateWarning(false);
+                onSignDateChange(event.target.value);
+              }}
+              type="date"
+              value={signDate}
+            />
+          </div>
+          <Button
+            className="h-10"
+            onClick={() => {
+              setEmptyDateWarning(false);
+              onSignDateChange(todayInCairo());
+            }}
+            type="button"
+            variant="secondary"
+          >
+            Today
+          </Button>
+          <Button
+            className="h-10 gap-2"
+            disabled={busy}
+            onClick={() => {
+              // Focus lands ON the empty box, so the fix is where the eye already went.
+              if (!signDate) {
+                setEmptyDateWarning(true);
+                document.getElementById(`hiring-pack-signed-${slug}`)?.focus();
+                return;
+              }
+              setEmptyDateWarning(false);
+              onSign();
+            }}
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSignature className="h-4 w-4" />
+            )}
+            {signedDate ? "Update signature date" : "Record signature"}
+          </Button>
+          {emptyDateWarning ? (
+            <p
+              className="w-full text-phx-xs font-semibold text-phx-danger"
+              id={`hiring-pack-signed-${slug}-error`}
+              role="alert"
+            >
+              Enter the date written on the signed paper first — or press Today. Nothing is
+              recorded until this box has a date.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

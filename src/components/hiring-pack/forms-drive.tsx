@@ -108,7 +108,7 @@ function AudienceBadges({ entry }: { entry: FormsDriveEntry }) {
         </span>
       ) : null}
       {entry.numberOnFace ? null : (
-        <span className="inline-flex items-center gap-1 border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-600">
+        <span className="inline-flex items-center gap-1 border border-phx-line bg-slate-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-600">
           <Lock className="h-3 w-3" /> Official form · number kept in the register
         </span>
       )}
@@ -185,7 +185,7 @@ export function FormsDrive({
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {folders.map((candidate) => (
               <button
-                className="flex min-w-0 items-start gap-3 border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-orange-300 hover:bg-orange-50/40 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                className="flex min-w-0 items-start gap-3 border border-phx-line bg-white px-4 py-4 text-left transition hover:border-orange-300 hover:bg-orange-50/40 focus:outline-none focus:ring-2 focus:ring-orange-200"
                 key={candidate.id}
                 onClick={() => {
                   setFolderId(candidate.id);
@@ -218,14 +218,14 @@ export function FormsDrive({
               {folder.labelEn}
             </div>
             {folder.entries.length === 0 ? (
-              <p className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-phx-ink-soft">
+              <p className="border border-phx-line bg-slate-50 px-4 py-3 text-sm text-phx-ink-soft">
                 No papers here yet. A paper uploaded in the Template Studio at the foot of this page, and
                 filed under no package, appears in this folder.
               </p>
             ) : (
-              <ul className="flex flex-col border border-slate-200">
+              <ul className="flex flex-col border border-phx-line">
                 {folder.entries.map((item) => (
-                  <li className="border-b border-slate-200 last:border-b-0" key={item.document}>
+                  <li className="border-b border-phx-line last:border-b-0" key={item.document}>
                     <button
                       className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left transition hover:bg-orange-50/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-orange-200"
                       onClick={() => {
@@ -277,7 +277,7 @@ export function FormsDrive({
                   Employee
                 </label>
                 <SearchableSelect
-                  className="h-10 w-full rounded-none text-sm"
+                  className="h-10 w-full text-sm"
                   disabled={loadingEmployee}
                   id="forms-drive-employee"
                   key={entry.document}
@@ -301,7 +301,7 @@ export function FormsDrive({
                 <div className="flex flex-wrap items-center gap-3">
                   {pickedHrId ? (
                     <Button
-                      className="gap-2 rounded-none"
+                      className="gap-2"
                       disabled={loadingEmployee}
                       onClick={() => onOpenForEmployee(entry, pickedHrId)}
                       type="button"
@@ -395,7 +395,7 @@ function PaperRegister() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-2 border-t border-slate-200 pt-4">
+    <div className="flex flex-col gap-2 border-t border-phx-line pt-4">
       <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
         <Hash className="h-4 w-4 text-phx-accent-press" />
         Paper register · latest numbers
@@ -424,7 +424,7 @@ function PaperRegister() {
               <col className="w-[18%]" />
             </colgroup>
             <thead>
-              <tr className="border-b border-slate-200 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+              <tr className="border-b border-phx-line text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                 <th className="px-2 py-2">Number</th>
                 <th className="px-2 py-2">Paper</th>
                 <th className="px-2 py-2">Issued to</th>
@@ -434,7 +434,7 @@ function PaperRegister() {
             </thead>
             <tbody>
               {state.rows.map((row) => (
-                <tr className="border-b border-slate-100 align-top" key={row.reference}>
+                <tr className="border-b border-phx-line align-top" key={row.reference}>
                   <td className="break-words px-2 py-2 font-mono text-phx-xs font-bold text-phx-ink">{row.reference}</td>
                   <td className="break-words px-2 py-2 text-phx-ink">
                     {row.documentLabel}
@@ -456,7 +456,7 @@ function PaperRegister() {
           </table>
           <ul className="flex flex-col gap-2 md:hidden">
             {state.rows.map((row) => (
-              <li className="border border-slate-200 bg-white px-3 py-2 text-sm" key={row.reference}>
+              <li className="border border-phx-line bg-white px-3 py-2 text-sm" key={row.reference}>
                 <p className="font-mono text-phx-xs font-bold text-phx-ink">{row.reference}</p>
                 <p className="break-words text-phx-ink">{row.documentLabel}</p>
                 <p className="break-words text-phx-ink-soft">
