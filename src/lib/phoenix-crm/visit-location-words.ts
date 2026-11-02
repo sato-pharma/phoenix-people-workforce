@@ -31,11 +31,17 @@ export type VisitLocationFlag = "ok" | "far" | "weak_gps" | "no_place";
  * 🔴 Never the rep's. The owner's polite sign on the rep's own visit (2026-09-26) was REMOVED on
  * 2026-09-29: the rep sees no distance, no flag and no check of any kind (Golden Rule #1). His rows
  * carry `BLIND_LOCATION` instead.
+ *
+ * 🔴 `no_place` IS ABOUT THE CUSTOMER, NOT THE READING, and it read as "nothing was captured" (owner,
+ * 2026-11-02). A visit to a customer with no validated place still carries the rep's location, so it now
+ * says so — but only when the row really holds one. A visit copied from the old system is `no_place`
+ * with no coordinates (69,046 of them on production that day), so `hasReading` defaults to false and
+ * such a row never claims a capture that did not happen.
  */
-export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: number | null, accuracyMeters: number | null): string {
+export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: number | null, accuracyMeters: number | null, hasReading = false): string {
   if (flag === "far") return `About ${formatDistance(distanceMeters)} from this customer's saved place`;
   if (flag === "weak_gps") return `The phone was not sure where it was (within ${formatDistance(accuracyMeters)})`;
-  if (flag === "no_place") return "No place saved for this customer yet";
+  if (flag === "no_place") return hasReading ? "Location captured; no saved place to compare it with yet" : "No place saved for this customer yet";
   return distanceMeters === null ? "At the saved place" : `At the saved place (${formatDistance(distanceMeters)})`;
 }
 
@@ -55,6 +61,7 @@ export function visitLocationFor(
   distanceMeters: number | null,
   accuracyMeters: number | null,
   enteredByAdmin = false,
+  hasReading = false,
 ): { locationFlag: VisitLocationFlag; locationLabel: string } {
   if (sight === "none") return BLIND_LOCATION;
   const shown: VisitLocationFlag = sight === "distance" && flag === "weak_gps" ? "ok" : flag;
@@ -64,6 +71,6 @@ export function visitLocationFor(
     // place saved for this customer" would be a sentence about the wrong thing.
     locationLabel: enteredByAdmin
       ? MISSED_VISIT_LOCATION_LABEL
-      : visitLocationLabel(shown, distanceMeters, sight === "full" ? accuracyMeters : null),
+      : visitLocationLabel(shown, distanceMeters, sight === "full" ? accuracyMeters : null, hasReading),
   };
 }
