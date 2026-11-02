@@ -11,6 +11,7 @@ import {
   type ResumeCandidateRow,
 } from "../src/lib/recruitment/inbound/whatsapp-classify-resume-plan.ts";
 import {
+  assertReaskReachedSomeone,
   isDueForReask,
   REASK_QUIET_MIN_MS,
   REASK_WINDOW_MARGIN_MS,
@@ -188,6 +189,20 @@ export function runRecruitmentWhatsAppAnswersSavedTests() {
   assert.ok(
     /if \(!isWhatsAppClassifyEnabled\(\) \|\| !\(await isWhatsAppReaskEnabled\(\)\)\) return result;/.test(reaskSource),
     "the re-ask sends nothing until he switches it on",
+  );
+  // A run where every send failed used to return normally, so the job read as a success and the route
+  // answered 200, while those applicants had spent their one re-ask. Nothing outside Phoenix watches
+  // this job, so the register is the only place a failure can land.
+  assert.throws(
+    () => assertReaskReachedSomeone({ failed: 3, reasked: 0 }),
+    /could not send any of its 3/,
+    "A RUN THAT REACHED NOBODY IS A FAILED RUN: it must throw so the job register records it",
+  );
+  assert.doesNotThrow(() => assertReaskReachedSomeone({ failed: 1, reasked: 4 }), "one person's failure among successes stays a warning");
+  assert.doesNotThrow(() => assertReaskReachedSomeone({ failed: 0, reasked: 0 }), "a run with nobody due is a clean run");
+  assert.ok(
+    /assertReaskReachedSomeone\(result\);\s*return result;\s*\}\s*$/.test(reaskSource),
+    "the run must make that check last, after every send, or a real failure still reads as a success",
   );
   const settings = read("../src/lib/recruitment/recruitment-settings-db.ts");
   assert.ok(

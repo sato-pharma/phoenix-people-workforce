@@ -17,7 +17,32 @@ import { stripComments } from "./support/comment-strip.ts";
 // awaiting it into the critical path, and the Apps Script accepting an unauthenticated caller.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function runDirectOrderSheetWebhookTests() {
+/**
+ * One ping against a stubbed fetch, and what it logged. It reaches no network and no sheet. The ping
+ * returns void, so the wait is what lets its promise chain land before the lines are read.
+ */
+async function logLinesOfOnePing(answer: () => Response): Promise<string[]> {
+  const lines: string[] = [];
+  let calls = 0;
+  const realLog = console.log;
+  const realFetch = globalThis.fetch;
+  console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return answer();
+  }) as typeof fetch;
+  try {
+    pingDirectOrderSheet("collection_recorded");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } finally {
+    globalThis.fetch = realFetch;
+    console.log = realLog;
+  }
+  assert.equal(calls, 1, "the ping must be attempted, or a silent result proves nothing");
+  return lines;
+}
+
+export async function runDirectOrderSheetWebhookTests() {
   const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
   const moduleSource = readFileSync(new URL("../src/lib/direct-orders/sheet-webhook.ts", import.meta.url), "utf8");
   const scriptSource = readFileSync(new URL("../docs/direct-orders-live-sheet.gs", import.meta.url), "utf8");
@@ -188,4 +213,78 @@ export function runDirectOrderSheetWebhookTests() {
     /UrlFetchApp\.fetch\(url,/,
     "the refresh must fetch the freshly resolved URL, not a constant",
   );
+
+  // ── A timeout is a delivered ping, and a 200 can be a refusal (2 Nov 2026) ───────────────────
+  // doPost answers only after it has redrawn every tab, so Phoenix hangs up on every ping that works:
+  // 44 order changes gave 44 timeouts that morning, and the sheet read its feed after each one. A
+  // refusal is a 200 reading "denied", and nothing read the answer. So the warning sat on the wrong
+  // side: it fired on every success and on no refusal.
+  for (const word of ["ok", "denied", "not configured"]) {
+    assert.ok(
+      scriptSource.includes(`createTextOutput("${word}")`),
+      `doPost must still answer "${word}": the ping reads that word, so a new wording here would read as a refusal`,
+    );
+  }
+
+  const url = "https://example.invalid/hook";
+  const secret = "unit-test-sheet-secret";
+  process.env.SHEET_REFRESH_WEBHOOK_URL = url;
+  process.env.SHEET_REFRESH_WEBHOOK_SECRET = secret;
+  try {
+    // The runtime's own timeout reason, not a hand-built copy: its name and class are what the catch reads.
+    // Its timer does not hold the process open, so this interval does; waiting on the abort alone exits 13.
+    const expired = AbortSignal.timeout(1);
+    await new Promise<void>((resolve) => {
+      const hold = setInterval(() => {
+        if (!expired.aborted) return;
+        clearInterval(hold);
+        resolve();
+      }, 1);
+    });
+    const timeoutLines = await logLinesOfOnePing(() => {
+      throw expired.reason;
+    });
+    assert.deepEqual(timeoutLines, [], "A TIMED-OUT PING WAS DELIVERED: the script runs on after Phoenix hangs up, so it must log nothing");
+
+    const okLines = await logLinesOfOnePing(() => new Response("ok"));
+    assert.deepEqual(okLines, [], "a sheet that answers ok has refreshed, and logs nothing");
+
+    const refusalLines: string[] = [];
+    for (const word of ["denied", "not configured"]) {
+      const lines = await logLinesOfOnePing(() => new Response(word));
+      assert.equal(lines.length, 1, `A 200 READING "${word}" IS A REFUSAL: it must warn, or the sheet stops listening and nobody hears`);
+      const entry = JSON.parse(lines[0]);
+      assert.equal(entry.event, "direct_order_sheet_ping_refused", `"${word}" must log the refused event`);
+      assert.equal(entry.labels.answer, word, "the warning must say which refusal it was");
+      assert.equal(entry.labels.reason, "collection_recorded", "the warning must say which order change it was");
+      refusalLines.push(...lines);
+    }
+
+    // A crashed script answers a 200 page. It is named, never logged as sent, and here it even echoes the secret.
+    const pageLines = await logLinesOfOnePing(
+      () => new Response(`<!DOCTYPE html><html><title>Script error</title>${secret}</html>`),
+    );
+    assert.equal(pageLines.length, 1, "A 200 ERROR PAGE IS NOT A REFRESH: it must warn");
+    assert.equal(JSON.parse(pageLines[0]).labels.answer, "unexpected", "an answer outside the fixed list is named unexpected");
+    assert.ok(!pageLines[0].includes("DOCTYPE"), "the page itself must never reach the log");
+
+    const statusLines = await logLinesOfOnePing(() => new Response("Forbidden", { status: 403 }));
+    assert.equal(statusLines.length, 1, "a non-2xx answer must still warn");
+    assert.equal(JSON.parse(statusLines[0]).event, "direct_order_sheet_ping_failed", "a non-2xx answer keeps the failed event");
+    assert.equal(JSON.parse(statusLines[0]).labels.status, "403", "a non-2xx answer must carry its status");
+
+    const networkLines = await logLinesOfOnePing(() => {
+      throw new TypeError("fetch failed");
+    });
+    assert.equal(networkLines.length, 1, "ONLY A TIMEOUT IS SILENT: a network failure never reached the sheet, and must warn");
+    assert.equal(JSON.parse(networkLines[0]).event, "direct_order_sheet_ping_failed", "a network failure keeps the failed event");
+
+    for (const line of [...refusalLines, ...pageLines, ...statusLines, ...networkLines]) {
+      assert.ok(!line.includes(secret), "the secret must never reach the log");
+      assert.ok(!line.includes(url), "the webhook URL must never reach the log");
+    }
+  } finally {
+    delete process.env.SHEET_REFRESH_WEBHOOK_URL;
+    delete process.env.SHEET_REFRESH_WEBHOOK_SECRET;
+  }
 }

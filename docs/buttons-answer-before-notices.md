@@ -113,8 +113,10 @@ no call to check fails instead of passing.
 - **Polling load.** `/api/approvals/badge-counts` (p50 1.06 s over 22 thousand calls),
   `/api/notifications/in-app` (p50 0.6 s over 43 thousand) and `/api/activity/track` (32 thousand
   calls) are the page's background traffic, not the button.
-- **The Direct Orders sheet ping** (`pingDirectOrderSheet`) times out at exactly 4,000 ms on every
-  call. It is fire-and-forget, so it does not hold the answer, but the sheet endpoint is dead or slow.
+- **The Direct Orders sheet ping** (`pingDirectOrderSheet`) times out at 4,000 ms on every call. It
+  is fire-and-forget, so it does not hold the answer. The sheet endpoint is not dead: measured on
+  2 Nov 2026, every ping reached it, and it answers only after its redraw
+  (`docs/share-link-management.md`, "A sheet ping that times out was delivered").
 - **The client.** `decision-actions.tsx` calls `router.push(backHref); router.refresh()` on
   success and leaves the button on "Submitting…" until the navigation lands. Not changed: it cannot
   be judged without running the app against the new server timings.

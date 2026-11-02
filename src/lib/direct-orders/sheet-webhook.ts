@@ -20,10 +20,26 @@ import { logWarning } from "@/lib/observability/log";
 // is not configured at all costs at most one minute of freshness by day and an hour overnight. That
 // is why every failure here is swallowed: a spreadsheet refresh must never be able to fail a
 // payroll-adjacent mutation.
+//
+// A TIMEOUT HERE IS NOT A FAILURE, AND THE REAL FAILURES USED TO BE SILENT (2 Nov 2026).
+// doPost answers only after it has read the feed and redrawn every tab, so Phoenix hangs up while
+// the script carries on to the end. That morning 44 order changes gave 44 timeouts, and between
+// 11:18 and 11:30 Cairo the sheet read its feed 42 times: 12 timer ticks, plus one read for each of
+// the 30 changes in that stretch. Meanwhile a refusal is an HTTP 200 reading "denied" or "not
+// configured", and a crashed script answers a 200 error page, and nothing read the answer. So the
+// warning fired on every ping that worked and on none that was turned away.
+// Account: docs/share-link-management.md, "A sheet ping that times out was delivered".
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Give up quickly. Apps Script can be slow, and nothing here is worth holding a request open for. */
+/**
+ * How long Phoenix stays on the line. The secret is checked before the script reads anything, so a
+ * refusal usually answers inside this; a refresh never does, and finishes after Phoenix hangs up.
+ */
 const PING_TIMEOUT_MS = 4000;
+
+/** What doPost answers once it has refreshed. Its two refusals are HTTP 200 as well. */
+const REFRESH_DONE_ANSWER = "ok";
+const REFUSAL_ANSWERS = new Set(["denied", "not configured"]);
 
 /**
  * Tell the sheet something changed. Fire-and-forget.
@@ -60,8 +76,22 @@ export function pingDirectOrderSheet(reason: string): void {
         logWarning("Direct Orders sheet refresh ping failed (non-fatal — the sheet still self-refreshes)", {
           labels: { event: "direct_order_sheet_ping_failed", reason, status: String(response.status) },
         });
+        return;
+      }
+      const answer = (await response.text()).trim();
+      if (answer !== REFRESH_DONE_ANSWER) {
+        // Named from a fixed list and never logged as sent: an unexpected answer can be a whole page.
+        logWarning("Direct Orders sheet refused the refresh ping (non-fatal — the sheet still self-refreshes)", {
+          labels: {
+            answer: REFUSAL_ANSWERS.has(answer) ? answer : "unexpected",
+            event: "direct_order_sheet_ping_refused",
+            reason,
+          },
+        });
       }
     } catch (error) {
+      // Phoenix stopped waiting; the script did not stop running. See the note at the top.
+      if (error instanceof Error && error.name === "TimeoutError") return;
       logWarning("Direct Orders sheet refresh ping failed (non-fatal — the sheet still self-refreshes)", {
         labels: { event: "direct_order_sheet_ping_failed", reason },
         error,

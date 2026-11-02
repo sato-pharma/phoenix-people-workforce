@@ -15,6 +15,8 @@
 // gets the very question it is parked on, through the same send a new CV's re-ask uses
 // (`reaskQuietSession`). At most 20 a run. `reasked_at` is stamped whatever the send did, so a
 // failure is never retried into a loop; a closed window closes the conversation as every send does.
+// A run with people to ask that reached none of them throws, so the job register reads it as failed
+// and the sweep alerts: those applicants have spent their one re-ask.
 //
 // `?dryRun=1` lists who would be asked and sends nothing.
 
@@ -67,6 +69,17 @@ export type WhatsAppReaskResult = {
   nothingToAsk: number;
   failed: number;
 };
+
+/**
+ * Pure: throws when a run tried and every send failed, which is what an expired token looks like. One
+ * failure among successes is that person's own, and stays a warning. A lone conversation whose window
+ * had closed also lands here; the 22-hour margin makes that rare, and the next clean run clears it.
+ */
+export function assertReaskReachedSomeone(result: Pick<WhatsAppReaskResult, "failed" | "reasked">): void {
+  if (result.failed > 0 && result.reasked === 0) {
+    throw new Error(`The WhatsApp re-ask could not send any of its ${result.failed} due question(s).`);
+  }
+}
 
 /** The applicant's last inbound message time per (line, number), from the WhatsApp Inbox. */
 async function lastInboundTimes(rows: readonly OpenSessionRow[]): Promise<Map<string, string>> {
@@ -149,5 +162,6 @@ export async function runWhatsAppReask(options: { dryRun?: boolean; now?: Date }
       });
     }
   }
+  assertReaskReachedSomeone(result);
   return result;
 }
