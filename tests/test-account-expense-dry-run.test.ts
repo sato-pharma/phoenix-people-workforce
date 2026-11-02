@@ -109,5 +109,5 @@ export function runTestAccountExpenseDryRunTests(): void {
   assert.match(wizard, /const TEST_CLAIM_NOT_SAVED_TITLE = "Test claim — checked, not saved";/);
   assert.match(wizard, /payload\?\.dryRun === true/, "Submit reads the dry run");
   assert.match(wizard, /replayed\?\.dryRun === true/, "the offline replay reads the dry run");
-  assert.match(wizard, /if \(claim\.dryRun\) return <TestClaimPanel/, "a dry run never shows 'Claim submitted'");
+  assert.match(wizard, /if \(claim\.dryRun\) \{\s*return \(\s*<TestClaimPanel/, "a dry run never shows 'Claim submitted'");
 }

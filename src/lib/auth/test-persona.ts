@@ -66,6 +66,9 @@ export const TEST_ACCOUNT_READONLY_POSTS = [
   // runs the whole expense form). Both price a trip and return it; neither stores anything.
   "/api/outstation/capture-location",
   "/api/outstation/calculate",
+  // A rehearsed journey stop (owner, 2026-11-03): measured and priced as a real stop, kept nowhere.
+  // Its Submit saved no claim, so this is the only way a test account reaches the stop at all.
+  "/api/outstation/rehearse-journey-stop",
 ] as const;
 
 /**

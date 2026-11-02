@@ -473,9 +473,20 @@ function runCaptureGuardPins() {
   // A not-eligible trip keeps its money exactly; the chain is only recorded and explained.
   assert.ok(at('const moneyMoves = request.eligibilityStatus !== "not_eligible";') < at("? rebaseClaimOnNewFuel({"));
   // Every governorate is Google's reading of a GPS position — never the label the phone posted.
-  assert.ok(!capture.includes("capturedLocationLabel"), "no governorate may be read from a posted location label");
-  assert.ok(!capture.includes("resolveGovernorate("), "governorates come from reverse geocodes only");
-  at("readGovernorate({ lat: origin.latitude, lng: origin.longitude })");
+  // The measurement lives in measureJourneyStop, shared with a test account's rehearsal
+  // (2026-11-03), so the capture must go through it and the helper is held to the same rule.
+  assert.ok(at("await measureJourneyStop({") < upload, "the stop is measured before its photo is stored");
+  const measureStart = service.indexOf("async function measureJourneyStop(");
+  assert.ok(measureStart > 0, "measureJourneyStop is the one measurement of a stop");
+  const measure = service.slice(measureStart, service.indexOf("\nasync function ", measureStart + 10));
+  for (const body of [capture, measure]) {
+    assert.ok(!body.includes("capturedLocationLabel"), "no governorate may be read from a posted location label");
+    assert.ok(!body.includes("resolveGovernorate("), "governorates come from reverse geocodes only");
+  }
+  assert.ok(
+    measure.includes("readGovernorate({ lat: origin.latitude, lng: origin.longitude })"),
+    "the departure origin's governorate is read from its position",
+  );
   // The submit-side double-pay check HOLDS on a failed read; it never refuses the submission.
   const overlapRead = service.indexOf("journeys: await journeysWithStopsForEmployee(calculation.employeeHrId)");
   const overlapCatch = service.indexOf('labels: { event: "outstation_journey_overlap_read_failed" }');
