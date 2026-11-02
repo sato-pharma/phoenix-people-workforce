@@ -879,7 +879,7 @@ policy):
    | `phoenix-direct-orders-probation` | `direct-orders` | The 90-day probation sweep: it promotes every provisional pharmacy that has earned a footprint and reports the ones whose window closed in silence, to the owner and the CEO. A red means neither happened. |
    | `phoenix-db-health-snapshot` | `platform` | Takes the query-statistics snapshot every six hours. A red means there is no recent baseline to compare a slow page against. |
    | `phoenix-territory-restamp` | `sales` | The nightly 03:20 territory restamp that keeps each customer's territory current against the master data. A red means sales rows are being attributed on a stale territory. |
-   | `phoenix-brick-move-drain` | `sales in-house-only` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. It is the one declared job with NO external check at all, so only the in-house register watches it. |
+   | `phoenix-brick-move-drain` | `sales in-house-only` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. It has no external check, so only the in-house register watches it. |
    | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 integrity checks. They store their report and write every breach into the System Audit ledger, which the 04:57 daily message carries; they send nothing of their own. A red means last night's checks were neither stored nor reported. |
    | `phoenix-system-audit-sweep` | `platform in-house-only silent-when-clean` | The nightly 04:57 System Audit sweep: every detector in turn, the verifier, then one in-app and Telegram message, sent only when an issue is new, newly shared or reopened, so a quiet morning is correct. A red means last night's findings were not collected and nobody was told. |
    | `phoenix-crm-contact-lists` | `crm` | Rebuilds the CRM doctor and pharmacy contact lists every five minutes through hour 5. It pings directly rather than through the wrapper, because this route answers 500 without throwing. |
@@ -1047,6 +1047,8 @@ it is firing (the register recorded a success at 13:19 Cairo on 2026-10-15), and
 being refused because the project is at its ceiling — so the drain is watched inside Phoenix only. A
 monitoring layer that overstates its own coverage is worse than one that admits a gap, so this
 paragraph exists instead of a green dashboard.
+
+🔴 **READ LIVE ON 2 NOV 2026, THE GAP IS 14 JOBS, NOT ONE.** 54 jobs are declared and Healthchecks holds 40 checks, all up. Six jobs ping and are refused with a 404, which is what a refused `?create=1` answers: `phoenix-recruitment-requisition-autopilot`, `phoenix-recruitment-manager-cv-reminders`, `phoenix-recruitment-archive-rejections`, `phoenix-recruitment-whatsapp-reask`, `phoenix-brick-move-drain` and `phoenix-system-audit-sweep`. Each one is marked `in-house only` above. Eight more run on `pg_cron` and never ping: the agent-CRM-ids, person-by-HR-key, contact-truth and rep-entry-days reconciles, data retention, the Marketing ROI refresh, the recovery snapshot and analyze-tables-without-statistics. So `deadmans_switch_ping_refused` with status 404 means a missing check, not a wrong address. The warning stays on purpose. The in-house sweep still watches all 54: at 12:00:03 Cairo that day it read 54 checked, 0 stranded, 0 failing.
 
 **One declared job reports from INSIDE the database (2026-10-23).** `phoenix-crm-agent-crm-ids-reconcile`
 is the pg_cron job that alone keeps the departed-agent CRM id cache current; its command,
