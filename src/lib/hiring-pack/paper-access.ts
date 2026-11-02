@@ -16,6 +16,8 @@
 // from her on the Employee Master, its import and export, the organogram and resignations. Changing
 // pay was not part of what the owner opened, and payroll reads the field, so `factsInputForViewer`
 // drops a salary she sends and `salaryReadOnly` locks the box and the paper's field on her screen.
+// THE CONTRACT TERMS ARE THE SAME (owner, 2026-11-02: "lock contract terms for aya, she only prints
+// them"): `profileInputForViewer` keeps the terms on record, and `contractTermsReadOnly` locks them.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
@@ -29,10 +31,12 @@ import {
 import { isPaperOpenToRole, seatPapersFor } from "@/lib/hiring-pack/document-registry";
 import type { PaperIssue } from "@/lib/hiring-pack/paper-register-store";
 import {
+  HIRING_CONTRACT_TERM_FIELDS,
   isBuiltInDocument,
   type HiringPackData,
   type HiringPackDocument,
   type HiringPackEmployeeFactsInput,
+  type HiringPackProfileInput,
 } from "@/lib/hiring-pack/types";
 
 type FormsAction = "read" | "update";
@@ -122,17 +126,25 @@ export type HrFormsAccess = {
   paperScope: readonly HiringPackDocument[] | null;
   /** True for the salary-blind seat: the salary shows and prints, and its box takes no change. */
   salaryReadOnly: boolean;
+  /** True for the same seat: the contract terms show and print, and take no change. */
+  contractTermsReadOnly: boolean;
 };
+
+/** The seat that prints the contract terms and does not change them. */
+export function areContractTermsReadOnly(access: Pick<AccessContext, "role">): boolean {
+  return isSalaryBlindRole(access.role);
+}
 
 export async function hrFormsAccessFor(access: AccessContext): Promise<HrFormsAccess> {
   const paperScope = seatPapersFor(access.role);
   const salaryReadOnly = isSalaryBlindRole(access.role);
+  const contractTermsReadOnly = areContractTermsReadOnly(access);
   if (paperScope) {
     const [canRead, canManage] = await Promise.all([
       seatHoldsAny(access, "read"),
       seatHoldsAny(access, "update"),
     ]);
-    return { canManage: canRead && canManage, canRead, paperScope, salaryReadOnly };
+    return { canManage: canRead && canManage, canRead, contractTermsReadOnly, paperScope, salaryReadOnly };
   }
   const [read, canManage] = await Promise.all([
     canAccess(access, "employee_documents", "read"),
@@ -141,6 +153,7 @@ export async function hrFormsAccessFor(access: AccessContext): Promise<HrFormsAc
   return {
     canManage,
     canRead: isHiringPaperworkRole(access.role) && read,
+    contractTermsReadOnly,
     paperScope: null,
     salaryReadOnly,
   };
@@ -173,6 +186,24 @@ export function factsInputForViewer(
   if (!isSalaryBlindRole(access.role) || !input || typeof input !== "object") return input;
   const { baseSalary: _dropped, ...rest } = input;
   return rest;
+}
+
+/**
+ * What a hiring-profile save may carry from this viewer. The save writes every column, so leaving a
+ * term out would blank it: for the read-only seat each term is put back to what is on record, whatever
+ * was sent, and the rest of the profile (nationality, address, Form 1 codes) saves as usual.
+ */
+export function profileInputForViewer(
+  access: Pick<AccessContext, "role">,
+  input: HiringPackProfileInput,
+  onRecord: HiringPackProfileInput,
+): HiringPackProfileInput {
+  if (!areContractTermsReadOnly(access)) return input;
+  const kept: HiringPackProfileInput = { ...input };
+  for (const field of HIRING_CONTRACT_TERM_FIELDS) {
+    (kept as Record<string, unknown>)[field] = onRecord[field] ?? null;
+  }
+  return kept;
 }
 
 /** The register rows a viewer may read: a seat in the table sees only its own papers' issues. */

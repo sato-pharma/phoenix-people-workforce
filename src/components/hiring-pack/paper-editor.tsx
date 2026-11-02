@@ -93,10 +93,11 @@ import {
 import { fieldWarnings, pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import { isBuiltInDocument } from "@/lib/hiring-pack/types";
-import type {
-  CustomHiringPackDocument,
-  HiringPackData,
-  HiringPackDocument,
+import {
+  isContractTermField,
+  type CustomHiringPackDocument,
+  type HiringPackData,
+  type HiringPackDocument,
 } from "@/lib/hiring-pack/types";
 import { cn } from "@/lib/utils";
 
@@ -324,6 +325,8 @@ type PaperEditorCommonProps = {
   readOnlyStores?: readonly PaperStore[];
   /** True for the salary-blind seat: the base salary on a paper shows locked, never editable. */
   salaryReadOnly?: boolean;
+  /** True for the same seat: a contract term on a paper shows locked, never editable. */
+  contractTermsReadOnly?: boolean;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
   /**
@@ -523,6 +526,7 @@ export function HiringPackPaperEditor({
   canEditLayout = true,
   readOnlyStores = NO_READ_ONLY_STORES,
   salaryReadOnly = false,
+  contractTermsReadOnly = false,
   onPackChange,
   onClose,
   onIssueReference,
@@ -1666,13 +1670,17 @@ export function HiringPackPaperEditor({
         continue;
       }
 
-      // The same rule for a store this viewer cannot save, and for the salary on the salary-blind
-      // seat: she prints it, the server drops one she sends, so it must not look typeable.
+      // The same rule for a store this viewer cannot save, and for the salary and the contract terms
+      // on the salary-blind seat: she prints them, the server keeps what is on record, so they must
+      // not look typeable. contenteditable="false" holds them under "Type anywhere" too, which makes
+      // the whole body editable and would otherwise print a typed figure.
       if (
         readOnlyStores.includes(binding.store) ||
-        (salaryReadOnly && binding.store === "employee" && binding.field === "baseSalary")
+        (salaryReadOnly && binding.store === "employee" && binding.field === "baseSalary") ||
+        (contractTermsReadOnly && binding.store === "profile" && isContractTermField(binding.field))
       ) {
         element.setAttribute("data-hp-locked", "true");
+        element.setAttribute("contenteditable", "false");
         element.title = `${binding.labelEn} — not changed from this seat. It prints as it stands on the record.`;
         continue;
       }
@@ -1747,7 +1755,7 @@ export function HiringPackPaperEditor({
     applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
 
     setLoadedKey(frameKey);
-  }, [canEditCompany, frameKey, onLayoutPointerDown, readOnlyStores, salaryReadOnly]);
+  }, [canEditCompany, contractTermsReadOnly, frameKey, onLayoutPointerDown, readOnlyStores, salaryReadOnly]);
 
   /** Turn free typing on or off, on the page and in the frame, in one action. */
   const toggleFreeEdit = useCallback(() => {

@@ -751,6 +751,8 @@ type Props = {
   paperScope?: readonly HiringPackDocument[] | null;
   /** True for the salary-blind seat: the salary shows and prints, and its box does not take a change. */
   salaryReadOnly?: boolean;
+  /** True for the same seat: the contract terms show and print, and take no change. */
+  contractTermsReadOnly?: boolean;
   /**
    * Where the bank account-opening letter lives, or null to offer no link. Passed only by the admin
    * page, and only for a viewer the letter's own gate admits (not a paper-scoped seat).
@@ -783,6 +785,7 @@ export function HiringPackManager({
   lines,
   paperScope = null,
   salaryReadOnly = false,
+  contractTermsReadOnly = false,
 }: Props) {
   const scoped = paperScope !== null;
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
@@ -1435,6 +1438,7 @@ export function HiringPackManager({
             canEditLayout={!scoped}
             readOnlyStores={scoped ? SCOPED_SEAT_READ_ONLY_STORES : undefined}
             salaryReadOnly={salaryReadOnly}
+            contractTermsReadOnly={contractTermsReadOnly}
             copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
             documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
             hrId={pack.employee.hrId}
@@ -1815,7 +1819,7 @@ export function HiringPackManager({
                       title="Form 1 details"
                     />
                     <FieldGroup
-                      disabled={!canManage}
+                      disabled={!canManage || contractTermsReadOnly}
                       fields={TERM_FIELDS}
                       form={form}
                       onChange={setForm}

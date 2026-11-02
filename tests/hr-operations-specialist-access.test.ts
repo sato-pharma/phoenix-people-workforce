@@ -38,9 +38,11 @@ import {
   isSeatPaperViewer,
   packForViewer,
   paperIssuesForViewer,
+  profileInputForViewer,
 } from "../src/lib/hiring-pack/paper-access.ts";
 import { renderContractNonRenewalHtml } from "../src/lib/hiring-pack/render-renewal.ts";
 import {
+  HIRING_CONTRACT_TERM_FIELDS,
   HIRING_PACK_DOCUMENTS,
   type HiringPackData,
   type HiringPackEmployeeFactsInput,
@@ -66,8 +68,9 @@ import { stripComments } from "./support/comment-strip.ts";
  *
  *   2. HIRING PAPERS AND HR FORMS (owner, 2026-11-02, reversing the eight-paper limit of 2026-10-20:
  *      "Receive the hiring papers / OPEN HR FORMS FULL MODULE TO AYA"). She holds employee_documents,
- *      works every paper and sees and prints the salary there, but a salary she sends is dropped and
- *      the checklist itself stays with the seats that held it. She stays salary-blind everywhere
+ *      works every paper and sees and prints the salary and the contract terms there, but changes
+ *      neither ("lock contract terms for aya, she only prints them"), and the checklist itself and
+ *      the removal of a scan stay with the seats that held them. She stays salary-blind everywhere
  *      else (tests/salary-blind-seat.test.ts) and stays outside hrAuthorityRoles, so recruitment,
  *      offers, candidates and Business Cards stay shut.
  *
@@ -226,13 +229,21 @@ async function testHrFormsIsTheFullModuleForHer() {
   await assertMayPrintPaper(seat, "custom:00000000-0000-0000-0000-000000000000", "read");
 
   const forms = await hrFormsAccessFor(seat);
-  assert.deepEqual(forms, { canManage: true, canRead: true, paperScope: null, salaryReadOnly: true }, "the whole screen, with the salary box locked");
+  assert.deepEqual(
+    forms,
+    { canManage: true, canRead: true, contractTermsReadOnly: true, paperScope: null, salaryReadOnly: true },
+    "the whole screen, with the salary and the contract terms locked",
+  );
   await assertMayUseHrForms(seat, "read");
   await assertMayUseHrForms(seat, "update");
   await assertMaySaveEmployeeFacts(seat);
 
   const operations = await hrFormsAccessFor(accessFor(HR_OPERATIONS));
-  assert.deepEqual(operations, { canManage: true, canRead: true, paperScope: null, salaryReadOnly: false }, "HR Operations is unchanged");
+  assert.deepEqual(
+    operations,
+    { canManage: true, canRead: true, contractTermsReadOnly: false, paperScope: null, salaryReadOnly: false },
+    "HR Operations is unchanged",
+  );
 
   // The control: a seat that holds no employee_documents is refused the same doors.
   const outsider = accessFor("Employee" as PhoenixRole);
@@ -290,6 +301,44 @@ function testSheSeesTheSalaryOnHrFormsAndCannotChangeIt() {
   ]);
   assert.ok(html.includes("18,000"), "a salary field placed on a paper prints the figure for her");
 
+  // Contract terms: she prints them and does not change them (owner, 2026-11-02). The save writes
+  // every column, so every term goes back to what is on record and nothing else she sent is lost.
+  const onRecord = {
+    contractDurationMonths: 12,
+    contractEndDate: "2027-01-01",
+    contractObjectiveReasonCode: "project",
+    contractSignatoryNameAr: "اسم",
+    contractSignatoryTitleAr: "صفة",
+    contractStartDate: "2026-01-01",
+    nationality: "old",
+    trainingBondMonths: 6,
+    underperformanceMonths: 3,
+    underperformanceThresholdPct: 70,
+  };
+  const profileSent = {
+    contractDurationMonths: 99,
+    contractEndDate: "2099-01-01",
+    contractObjectiveReasonCode: "other",
+    contractSignatoryNameAr: "x",
+    contractSignatoryTitleAr: "x",
+    contractStartDate: "2099-01-01",
+    nationality: "new",
+    trainingBondMonths: 99,
+    underperformanceMonths: 99,
+    underperformanceThresholdPct: 1,
+  };
+  assert.deepEqual(
+    profileInputForViewer(accessFor(SEAT), profileSent, onRecord),
+    { ...onRecord, nationality: "new" },
+    "every term stays as on record, and the rest of the profile saves",
+  );
+  assert.deepEqual(
+    profileInputForViewer(accessFor(SEAT), { nationality: "new" }, {}),
+    { ...Object.fromEntries(HIRING_CONTRACT_TERM_FIELDS.map((field) => [field, null])), nationality: "new" },
+    "a term never on record stays empty",
+  );
+  assert.equal(profileInputForViewer(accessFor(HR_OPERATIONS), profileSent, onRecord), profileSent, "HR Operations still changes them");
+
   // She stays salary-blind outside this module: the seat rule itself is untouched.
   assert.equal(isSalaryBlindRole(SEAT), true, "still the salary-blind seat everywhere else");
 }
@@ -309,6 +358,34 @@ function testEveryDoorGoesThroughTheHelpers() {
   ]) {
     assert.ok(code(route).includes("assertMayUseHrForms(access"), `${route} admits through assertMayUseHrForms`);
   }
+  const profileRoute = code("app/api/hiring-pack/[hrId]/route.ts");
+  assert.ok(
+    /const input = areContractTermsReadOnly\(access\)\s*\? profileInputForViewer\(access, payload,[\s\S]{0,120}saveHiringPackProfile\(hrId, input,/.test(profileRoute),
+    "the profile save goes through the contract-term lock",
+  );
+  const termKeys = [...code("src/components/hiring-pack/hiring-pack-manager.tsx")
+    .slice(0, code("src/components/hiring-pack/hiring-pack-manager.tsx").indexOf("const NUMBER_KEYS"))
+    .split("const TERM_FIELDS")[1]
+    .matchAll(/key: "(\w+)"/g)].map((match) => match[1]);
+  assert.deepEqual(
+    [...termKeys].sort(),
+    [...HIRING_CONTRACT_TERM_FIELDS].sort(),
+    "a new box under Contract terms must join the locked list",
+  );
+  assert.ok(
+    code("src/components/hiring-pack/hiring-pack-manager.tsx").includes("disabled={!canManage || contractTermsReadOnly}"),
+    "the contract term boxes are read only for her",
+  );
+  const editor = code("src/components/hiring-pack/paper-editor.tsx");
+  assert.ok(
+    editor.includes('(contractTermsReadOnly && binding.store === "profile" && isContractTermField(binding.field))'),
+    "a contract term on a paper shows locked",
+  );
+  assert.ok(editor.includes('element.setAttribute("contenteditable", "false")'), "and holds under Type anywhere");
+  for (const page of ["app/(admin)/hiring-pack/page.tsx", "app/employee-portals/hiring-pack/page.tsx"]) {
+    assert.ok(code(page).includes("contractTermsReadOnly={forms.contractTermsReadOnly}"), `${page} locks the terms on her screen`);
+  }
+
   const facts = code("app/api/hiring-pack/[hrId]/facts/route.ts");
   assert.ok(facts.includes("assertMaySaveEmployeeFacts(access)"), "the facts save still needs employees:update for her");
   assert.ok(facts.includes("factsInputForViewer(access"), "and drops a salary she sends");

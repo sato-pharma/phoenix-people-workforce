@@ -139,6 +139,7 @@ async function HiringPackContent({
       lines={lines}
       paperScope={forms.paperScope}
       salaryReadOnly={forms.salaryReadOnly}
+      contractTermsReadOnly={forms.contractTermsReadOnly}
     />
   );
 }
