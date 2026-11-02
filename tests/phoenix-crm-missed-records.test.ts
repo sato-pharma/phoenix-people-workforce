@@ -266,7 +266,7 @@ export async function runPhoenixCrmMissedRecordsTests(): Promise<void> {
     assert.match(words, /locationLabel: enteredByAdmin\s*\?\s*MISSED_VISIT_LOCATION_LABEL/, "a manager reads 'no location', never 'no place saved', on an entered visit");
     assert.match(
       visits,
-      /visitLocationFor\(options\.sight, flag, numberOrNull\(row\.distance_meters\), numberOrNull\(row\.accuracy_meters\), enteredByAdmin\)/,
+      /visitLocationFor\(options\.sight, flag, numberOrNull\(row\.distance_meters\), numberOrNull\(row\.accuracy_meters\), enteredByAdmin, /,
       "and mapVisitRow still hands that boolean to the one shaper, so the move cannot have dropped it",
     );
     const activities = source("src/lib/phoenix-crm/server/day-activities.ts");
