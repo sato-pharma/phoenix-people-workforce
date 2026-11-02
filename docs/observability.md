@@ -737,7 +737,11 @@ policy):
    already answered within minutes by `phoenix-inbound-intake` (2m),
    `phoenix-process-notifications` (5m) and `phoenix-ireports360-live-poll` (5m). **To give a withheld
    row its own check:** free a check in the Healthchecks project or raise the plan, delete
-   `· **in-house only**` from its row, and re-run the sync with `--apply`.
+   `· **in-house only**` from its row, and re-run the sync with `--apply`. **To free a check, hand it
+   over rather than delete it** (done 2 Nov 2026): pause it, rename its name and slug to the new job,
+   then sync. A delete loses its history and leaves an open slot that any refused job's `?create=1`
+   can take first. A rename without the pause holds a days-old last ping against the new schedule,
+   which can raise a false alarm.
 
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
@@ -752,7 +756,7 @@ policy):
    | `phoenix-recruitment-requisition-autopilot` | `27 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-manager-cv-reminders` | `41 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-archive-rejections` | `29 3 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
-   | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org job `8526396` · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org job `8525234` · **in-house only** |
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
@@ -853,7 +857,7 @@ policy):
    | `phoenix-recruitment-requisition-autopilot` | `recruitment in-house-only silent-when-clean` | The hourly requisition autopilot: an open requisition for every empty seat, and every requisition whose seat is filled closed as Filled. It sends nothing by design, so a red means seats stopped opening or closing on their own and Talent Acquisition is working from a stale list. |
    | `phoenix-recruitment-manager-cv-reminders` | `recruitment in-house-only silent-when-clean` | The hourly reminder to each manager holding CV folders about CVs sent to them and not yet opened, 08:00-21:59 Cairo, in-app, Telegram and push, never email. A manager with nothing unopened is told nothing, so a red means an unopened CV stopped being chased. |
    | `phoenix-recruitment-archive-rejections` | `recruitment in-house-only silent-when-clean` | Moves every rejection older than 30 days out of the Recruitment workspace's tabs into its archive — never deleted, still searchable. It tells nobody, so a red means old rejections are piling back into the tabs Talent Acquisition works from. |
-   | `phoenix-recruitment-whatsapp-reask` | `recruitment in-house-only silent-when-clean` | The in-window WhatsApp re-ask: while the switch on the Screening Questions screen is on, an applicant who went quiet mid-way through the questions is asked the question they stopped at, once, before WhatsApp's 24-hour window closes. It starts OFF and sends nothing while off, so a quiet run is correct; a red means quiet applicants stopped being asked again and their answers stay missing. |
+   | `phoenix-recruitment-whatsapp-reask` | `recruitment silent-when-clean` | The in-window WhatsApp re-ask: while the switch on the Screening Questions screen is on, an applicant who went quiet mid-way through the questions is asked the question they stopped at, once, before WhatsApp's 24-hour window closes. It starts OFF and sends nothing while off, so a quiet run is correct; a red means quiet applicants stopped being asked again and their answers stay missing. |
    | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
    | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |
    | `phoenix-crm-integrity-sweep` | `crm in-house-only` | Phoenix CRM's 03:35 photo-duplicate and integrity sweep. It notifies nobody by design and only writes evidence for the board, so a red here is the only way anyone learns it stopped. |
@@ -1048,7 +1052,9 @@ being refused because the project is at its ceiling — so the drain is watched 
 monitoring layer that overstates its own coverage is worse than one that admits a gap, so this
 paragraph exists instead of a green dashboard.
 
-🔴 **READ LIVE ON 2 NOV 2026, THE GAP IS 14 JOBS, NOT ONE.** 54 jobs are declared and Healthchecks holds 40 checks, all up. Six jobs ping and are refused with a 404, which is what a refused `?create=1` answers: `phoenix-recruitment-requisition-autopilot`, `phoenix-recruitment-manager-cv-reminders`, `phoenix-recruitment-archive-rejections`, `phoenix-recruitment-whatsapp-reask`, `phoenix-brick-move-drain` and `phoenix-system-audit-sweep`. Each one is marked `in-house only` above. Eight more run on `pg_cron` and never ping: the agent-CRM-ids, person-by-HR-key, contact-truth and rep-entry-days reconciles, data retention, the Marketing ROI refresh, the recovery snapshot and analyze-tables-without-statistics. So `deadmans_switch_ping_refused` with status 404 means a missing check, not a wrong address. The warning stays on purpose. The in-house sweep still watches all 54: at 12:00:03 Cairo that day it read 54 checked, 0 stranded, 0 failing.
+🔴 **READ LIVE ON 2 NOV 2026, THE GAP IS 14 JOBS, NOT ONE.** 54 jobs are declared and Healthchecks holds 40 checks, all up. Six jobs ping and are refused with a 404, which is what a refused `?create=1` answers: `phoenix-recruitment-requisition-autopilot`, `phoenix-recruitment-manager-cv-reminders`, `phoenix-recruitment-archive-rejections`, `phoenix-brick-move-drain`, `phoenix-system-audit-sweep` and, since the handover below, `phoenix-crm-fraud-scan`. Each one is marked `in-house only` above. Eight more run on `pg_cron` and never ping: the agent-CRM-ids, person-by-HR-key, contact-truth and rep-entry-days reconciles, data retention, the Marketing ROI refresh, the recovery snapshot and analyze-tables-without-statistics. So `deadmans_switch_ping_refused` with status 404 means a missing check, not a wrong address. The warning stays on purpose. The in-house sweep still watches all 54: at 12:00:03 Cairo that day it read 54 checked, 0 stranded, 0 failing.
+
+**The same day, on his word, the fraud scan's check went to `phoenix-recruitment-whatsapp-reask`.** The count stays at 40 checks and 14 jobs without one. The re-ask's switch is still off, so for now its check proves only that the job fires, not that anyone was asked. The fraud scan pings once a week, so it adds one 404 refusal each Thursday, and the in-house sweep still watches it.
 
 **One declared job reports from INSIDE the database (2026-10-23).** `phoenix-crm-agent-crm-ids-reconcile`
 is the pg_cron job that alone keeps the departed-agent CRM id cache current; its command,
