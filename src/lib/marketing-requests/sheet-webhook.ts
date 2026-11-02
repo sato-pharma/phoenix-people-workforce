@@ -20,10 +20,25 @@ import { logWarning } from "@/lib/observability/log";
 //
 // A SEPARATE SECRET FROM THE DIRECT ORDERS SHEET. Two different spreadsheets, two different
 // audiences; sharing one secret would mean revoking either one breaks both.
+//
+// A TIMEOUT HERE IS NOT A FAILURE, AND THE REAL FAILURES USED TO BE SILENT (2 Nov 2026).
+// Same as the Direct Orders ping: doPost answers only after it has read the feed and redrawn, so
+// Phoenix hangs up while the script carries on to the end. All four of this ping's warnings on 1 Nov
+// were timeouts, and the sheet read its feed off its timer within seconds of each ping. Meanwhile a
+// refusal is an HTTP 200 reading "denied" or "not configured", a crashed script answers a 200 error
+// page, and nothing read the answer.
+// Account: docs/share-link-management.md, "A sheet ping that times out was delivered".
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Give up quickly. Apps Script can be slow, and nothing here is worth holding a request open for. */
+/**
+ * How long Phoenix stays on the line. The secret is checked before the script reads anything, so a
+ * refusal usually answers inside this; a refresh rarely does, and finishes after Phoenix hangs up.
+ */
 const PING_TIMEOUT_MS = 4000;
+
+/** What doPost answers once it has refreshed. Its two refusals are HTTP 200 as well. */
+const REFRESH_DONE_ANSWER = "ok";
+const REFUSAL_ANSWERS = new Set(["denied", "not configured"]);
 
 /**
  * Tell the sheet something changed. Fire-and-forget.
@@ -60,8 +75,22 @@ export function pingMarketingRequestSheet(reason: string): void {
         logWarning("Marketing sheet refresh ping failed (non-fatal — the sheet still self-refreshes)", {
           labels: { event: "marketing_sheet_ping_failed", reason, status: String(response.status) },
         });
+        return;
+      }
+      const answer = (await response.text()).trim();
+      if (answer !== REFRESH_DONE_ANSWER) {
+        // Named from a fixed list and never logged as sent: an unexpected answer can be a whole page.
+        logWarning("Marketing sheet refused the refresh ping (non-fatal — the sheet still self-refreshes)", {
+          labels: {
+            answer: REFUSAL_ANSWERS.has(answer) ? answer : "unexpected",
+            event: "marketing_sheet_ping_refused",
+            reason,
+          },
+        });
       }
     } catch (error) {
+      // Phoenix stopped waiting; the script did not stop running. See the note at the top.
+      if (error instanceof Error && error.name === "TimeoutError") return;
       logWarning("Marketing sheet refresh ping failed (non-fatal — the sheet still self-refreshes)", {
         error,
         labels: { event: "marketing_sheet_ping_failed", reason },
