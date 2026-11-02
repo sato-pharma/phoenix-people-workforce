@@ -29,7 +29,7 @@ import {
 } from "@/lib/crm/phoenix-kpi-rules";
 import { KPI_NARROW_MAX_CRM_IDS, resolveKpiBoardAgents, type KpiBoardAgents } from "@/lib/crm/kpi-board-agents";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
-import { inPlanEntryOrder, scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
+import { inPlanEntryOrder, scanPlanEntries, type PlanChunkMemo } from "@/lib/crm/rep-doctor-lists";
 import { loadPanelRows, narrowListType } from "@/lib/crm/rep-kpi-reports-data";
 import type { RepKpiStandards } from "@/lib/crm/rep-kpi-reports";
 import { canonicalHrIdKey, hrIdAliasSources } from "@/lib/hr-id";
@@ -152,6 +152,11 @@ export async function loadPhoenixRepKpis(input: {
    * to a minute old (crm/reads.ts, "A dashboard may reuse a company window"). Defaults OFF, so the system
    * audit and any future reader that decides money read live; a narrowed read names people and never shares. */
   reuseRecentWindow?: boolean;
+  /** The KPIs board's own discovery and plan reads, so this half asks neither again (kpi-board-agents.ts). */
+  boardReads?: {
+    discover: (scope: DoctorCoverageScope, window: { from: string; to: string }) => Promise<KpiBoardAgents | null>;
+    planChunks: PlanChunkMemo;
+  };
 }): Promise<PhoenixKpiLoad> {
   const reuseRecentWindow = input.reuseRecentWindow === true;
   const hasWindow = input.window.dateTo >= input.month.start;
@@ -160,21 +165,28 @@ export async function loadPhoenixRepKpis(input: {
     loadCallRateHolidays(input.month.start, input.month.end),
   ]);
   const narrowed = input.narrowToScope
-    ? await narrowPhoenixKpiReads({
-        scope: input.scope,
-        window: {
-          from: input.month.start,
-          to: input.window.dateTo > input.month.end ? input.window.dateTo : input.month.end,
+    ? await narrowPhoenixKpiReads(
+        {
+          scope: input.scope,
+          window: {
+            from: input.month.start,
+            to: input.window.dateTo > input.month.end ? input.window.dateTo : input.month.end,
+          },
+          panelRows,
         },
-        panelRows,
-      })
+        input.boardReads?.discover,
+      )
     : null;
   const people = narrowed ? { agentCrmOrHrIds: { crmIds: narrowed.crmIds, hrIds: narrowed.hrIds } } : {};
   const [planRows, visitRows, checkinRows] = await Promise.all([
     narrowed
-      ? // Two passes (CRM ids, then hr ids) come back one after the other; the company-wide read
+      ? // Two passes (CRM ids, then hr ids) are folded one after the other; the company-wide read
         // comes back in entry-id order, so the union is put back into it.
-        scanPlanEntries(input.month.start, input.month.end, { agentCrmIds: narrowed.crmIds, agentHrIds: narrowed.hrIds }).then(inPlanEntryOrder)
+        scanPlanEntries(input.month.start, input.month.end, {
+          agentCrmIds: narrowed.crmIds,
+          agentHrIds: narrowed.hrIds,
+          memo: input.boardReads?.planChunks,
+        }).then(inPlanEntryOrder)
       : scanPlanEntries(input.month.start, input.month.end),
     hasWindow
       ? queryVisits<VisitRecord>({

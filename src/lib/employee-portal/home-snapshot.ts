@@ -8,7 +8,7 @@ import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 import { getEmployeeAnnualLeaveBalanceDays } from "@/lib/vacation/service";
-import { interviewCalendarCaller, listMyUpcomingInterviews } from "@/lib/recruitment/interview-calendar";
+import { listMyUpcomingInterviewsFor } from "@/lib/recruitment/interview-calendar";
 import type { ManagerFolderSummary } from "@/lib/recruitment/manager-cv-folders";
 import { loadManagerCvFolderSummary } from "@/lib/recruitment/manager-cv-folders-summary";
 import type { InterviewPlatform } from "@/lib/recruitment/interview-calendar-types";
@@ -52,6 +52,7 @@ import { resolveServingRoster, servingRosterManagers } from "@/lib/employee-port
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { logError } from "@/lib/observability/log";
+import { recordTiming } from "@/lib/observability/timings";
 import { loadPortalPlanAdherence, type PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
@@ -1073,6 +1074,18 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string, month: strin
   };
 }
 
+/**
+ * How long each card of the landing took, into the process-health line as `home.card.<name>`, so a slow
+ * landing is named by a card on production and never by a trace from a laptop (2 Nov 2026, "fix the portal
+ * home slow opens"). Durations only. A rejected read is timed too, and handed on as it came.
+ */
+export function timedCard<T>(name: string, read: Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  const stop = () => recordTiming(`home.card.${name}`, Date.now() - startedAt);
+  read.then(stop, stop);
+  return read;
+}
+
 const wrapPromise = <T,>(thenable: PromiseLike<T>): Promise<T> =>
   new Promise((resolve, reject) => thenable.then(resolve, reject));
 
@@ -1129,8 +1142,7 @@ export function resolvePlansAwaitingApproval(
  * when empty, so most dashboards show nothing extra.
  */
 async function loadMyUpcomingInterviews(access: AccessContext): Promise<PortalMyInterview[]> {
-  const caller = await interviewCalendarCaller(access);
-  const rows = await listMyUpcomingInterviews(caller);
+  const rows = await listMyUpcomingInterviewsFor(access);
   return rows.map((booking) => ({
     candidateName: booking.candidateName,
     dateKey: booking.dateKey,
@@ -1248,7 +1260,7 @@ export async function getPortalHomeSnapshot(
     : runningMonth;
 
   // One canonical load serves BOTH the hero and the 4-month trend — they are the same window.
-  const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId, kpiMonth) : Promise.resolve(null);
+  const mrSalesPromise = isMr && hrId ? timedCard("sales", loadMrCanonicalSales(hrId, kpiMonth)) : Promise.resolve(null);
   // The honour badges, started BESIDE the sales load, not after it. They rank the whole PUBLISHED
   // window — July and August today, July/August/September the day he publishes September (owner,
   // 2026-10-03) — so they depend on nothing this page computes and have no reason to wait. It costs
@@ -1257,12 +1269,12 @@ export async function getPortalHomeSnapshot(
   // filter is TTL-cached. Never rejects — a badge is an ornament on a landing page and must not be
   // able to fail one.
   const mrRankPromise: Promise<RepRankStanding | null> =
-    isMr && hrId ? loadRepRankStanding(hrId).catch(() => null) : Promise.resolve(null);
+    isMr && hrId ? timedCard("rank", loadRepRankStanding(hrId).catch(() => null)) : Promise.resolve(null);
   const fieldKpisPromise: Promise<MrFieldKpis | null> =
-    isMr && hrId ? loadMrFieldKpis(access, hrId, kpiMonth).catch(() => null) : Promise.resolve(null);
-  const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
+    isMr && hrId ? timedCard("field_kpis", loadMrFieldKpis(access, hrId, kpiMonth).catch(() => null)) : Promise.resolve(null);
+  const roleExtrasPromise = timedCard("role_extras", getRoleSpecificExtras(access, role, hrId));
   const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role) && !skippedOnLanding.dvFocus
-    ? getDoubleVisitPortalFocus(access).catch(() => null)
+    ? timedCard("double_visit_focus", getDoubleVisitPortalFocus(access).catch(() => null))
     : Promise.resolve(null);
   // STARTED HERE WITH THE REST (2026-10-01, "slow to transfer between page and page"). These four
   // were only started once every read above had been awaited, so the page paid for them AFTER the
@@ -1276,27 +1288,27 @@ export async function getPortalHomeSnapshot(
   // waiting for it there was pure cost.
   const earlyBirdStarsPromise: Promise<EarlyBirdsWinnerRecord[]> = streamRepCards || skippedOnLanding.earlyBirds
     ? Promise.resolve([])
-    : getLatestLineEarlyBirds().catch(() => []);
+    : timedCard("early_birds", getLatestLineEarlyBirds().catch(() => []));
   // Also outside the role branches, and for a stronger reason: the plan module's population does not
   // follow the role map. It is DSM, NSM, Product Manager, Group Product Manager AND Training Manager
   // today, and an acting DSM keeps the job title "Medical Representative" (her authority is her app
   // role, not her title). Gating this on a role list would silently drop her. Whether a person has
   // plans is the only honest test, so that is the test — the loader returns null for everyone who
   // has none.
-  const planAdherencePromise = hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null);
+  const planAdherencePromise = hrId ? timedCard("plan_adherence", loadPortalPlanAdherence(hrId).catch(() => null)) : Promise.resolve(null);
   // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
   const leaveDaysRemainingPromise = hrId && !skippedOnLanding.leaveLeft
-    ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null)
+    ? timedCard("leave_left", getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null))
     : Promise.resolve(null);
   // The CV folders on a sales manager's shelf (owner, 2026-10-16). Started here with the rest; a failed
   // read degrades to no row, because a landing page must never fail over a folder summary.
   const cvFoldersPromise: Promise<ManagerFolderSummary | null> = CV_FOLDER_ROLES.has(role) && hrId
-    ? loadManagerCvFolderSummary(hrId).catch(() => null)
+    ? timedCard("cv_folders", loadManagerCvFolderSummary(hrId).catch(() => null))
     : Promise.resolve(null);
   // The person's own upcoming interviews — outside the role branches, data-driven like plan
   // adherence: whether they have any interview is the only honest test, so that is the test.
   const myInterviewsPromise: Promise<PortalMyInterview[]> = hrId
-    ? loadMyUpcomingInterviews(access).catch(() => [])
+    ? timedCard("my_interviews", loadMyUpcomingInterviews(access).catch(() => []))
     : Promise.resolve([]);
 
   // Double-visit rows for this MR — most recent first so [0] is the latest visit. Reads via the

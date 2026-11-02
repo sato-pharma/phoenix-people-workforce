@@ -153,7 +153,7 @@ export async function runPhoenixKpiNarrowingTests() {
   // ── 3. The loader and the board are wired to it ───────────────────────────────────────────────
   const loader = readFileSync(new URL("../src/lib/crm/phoenix-kpi-data.ts", import.meta.url), "utf8");
   assert.equal((loader.match(/\.\.\.people,/g) ?? []).length, 2, "the visit and check-in reads both take the narrowing");
-  assert.match(loader, /scanPlanEntries\(input\.month\.start, input\.month\.end, \{ agentCrmIds: narrowed\.crmIds, agentHrIds: narrowed\.hrIds \}\)\.then\(inPlanEntryOrder\)/);
+  assert.match(loader, /scanPlanEntries\(input\.month\.start, input\.month\.end, \{\s*agentCrmIds: narrowed\.crmIds,\s*agentHrIds: narrowed\.hrIds,\s*memo: input\.boardReads\?\.planChunks,\s*\}\)\.then\(inPlanEntryOrder\)/);
   const board = readFileSync(new URL("../src/lib/crm/kpis-board.ts", import.meta.url), "utf8");
   assert.match(board, /narrowToScope: !input\.coverageDoctors,/, "the Coverage tab keeps the company-wide read");
 
