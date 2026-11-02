@@ -550,6 +550,8 @@ export function resolvePlanItems(input: {
   sharedPlaces?: ReadonlyMap<string, SharedPlaceNamed>;
   /** The venues lifted outright for this seat (owner, 2026-10-31): never held to the venue's daily number. */
   liftedVenues?: ReadonlySet<string>;
+  /** A venue's own raised daily number (owner, 2026-11-02), `sharedPlaceId → number`. */
+  venueCaps?: ReadonlyMap<string, number>;
   /** The week's public holidays, `day → name`: a day named here holds no customer (owner, 2026-10-02). */
   holidays?: ReadonlyMap<string, string>;
   /** The rep's own full days of approved leave, `day → its name` (server/leave-days.ts): days off too. */
@@ -638,6 +640,7 @@ export function resolvePlanItems(input: {
     items: resolved,
     venues: input.sharedPlaces ?? new Map(),
     liftedVenues: input.liftedVenues,
+    venueCaps: input.venueCaps,
   });
   if (overVenue) return { ok: false, error: overVenue };
 

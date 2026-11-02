@@ -223,6 +223,29 @@ export async function loadLiftedVenues(seatId: string): Promise<Set<string>> {
 }
 
 /**
+ * The venues of one seat with their own raised daily number (owner, 2026-11-02: "instead of making the cap 3,
+ * make it 5, make it 7"), `sharedPlaceId → number`. The door reads the same column. A failed read answers none:
+ * the plan then holds the company number, which is never a wider door than the database's.
+ */
+export async function loadVenueCaps(seatId: string): Promise<Map<string, number>> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("phoenix_crm_shared_places")
+      .select("id, daily_cap")
+      .eq("seat_id", seatId)
+      .not("daily_cap", "is", null);
+    if (error) throw error;
+    return new Map(((data ?? []) as Array<{ id: string; daily_cap: number }>).map((row) => [String(row.id), Number(row.daily_cap)]));
+  } catch (error) {
+    logError("Phoenix CRM venue caps could not be read", {
+      error,
+      labels: { event: "phoenix_crm_venue_caps_read_failed" },
+    });
+    return new Map();
+  }
+}
+
+/**
  * Which venue each of these PLACES sits in, `placeId → sharedPlaceId`, for places seated in one.
  *
  * The plan's SEND needs exactly this and cannot get it any other way: it re-counts the whole stored

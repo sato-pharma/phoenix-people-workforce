@@ -205,6 +205,9 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/shared-place", "approve"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
   post("validation-reviews/shared-place/restore", "approve"),
+  // The Polyclinic Caps page (owner, 2026-11-02): one switch or one number on one rep's venue. `update` at the route,
+  // and `setVenueCap` narrows it to the Super Admin alone before a row is read.
+  post("venue-caps", "update"),
   // The third tab of Place checks (owner, 2026-10-17): places several reps validated, side by side, and
   // his answer to "are these the same place?". `read` to open it and `approve` to answer, the Super Admin and the SFE Manager
   // only — the loader and the service refuse everyone else before a row is read.
@@ -1041,6 +1044,12 @@ const LATER_MIGRATIONS = [
   // The territory bundle (2 Nov 2026, the speed root cause, Stage 2): two NEW functions that read a seat's customers,
   // places and venues, and a day's plan with its stops, in one statement each; nothing replaced, so it appends.
   "supabase/migrations/20261102040000_phoenix_crm_territory_bundle.sql",
+  // The Super Admin's Polyclinic Caps page (owner, 2026-11-02): columns on two of its own tables, two widened CHECKs,
+  // two NEW functions (the page's read and write), and four functions REPLACED with their live bodies, whose earlier
+  // definers sit above (20261017150000 and 20261031170001). It is the latest to replace them, so it appends at the end.
+  "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql",
+  // The same page's door and write, replaced again the same day: a number stays on its own seat, and a switch is a round trip.
+  "supabase/migrations/20261102133258_phoenix_crm_venue_cap_round_trip.sql",
 ];
 
 /**
