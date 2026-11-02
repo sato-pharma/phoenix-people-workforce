@@ -96,7 +96,14 @@ jobs:
       - name: Create the standby app in Frankfurt if it does not exist
         run: |
           set -euo pipefail
-          if flyctl status -a "$FLY_APP" > /dev/null 2>&1; then
+          # Asked of Fly's API, not `flyctl status`: an organisation token reads the app there while flyctl answers 401
+          # (2 Nov 2026), and a failed status here reads as "no app", which then tries to create one that exists.
+          app_http="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${FLY_API_TOKEN}" "https://api.machines.dev/v1/apps/${FLY_APP}")"
+          echo "Fly API on ${FLY_APP}: HTTP ${app_http}"
+          flyctl version
+          flyctl status -a "$FLY_APP" 2>&1 | tail -n 3 || true
+          flyctl orgs list 2>&1 | tail -n 3 || true
+          if [ "$app_http" = "200" ]; then
             echo "- Fly app ${FLY_APP} already exists" >> "$GITHUB_STEP_SUMMARY"
           else
             flyctl apps create "$FLY_APP" --org "$FLY_ORG"
