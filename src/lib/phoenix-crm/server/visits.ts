@@ -331,7 +331,8 @@ const VISIT_COLUMNS =
   // visit filed has no detail of its own to fill in, so its card offers nothing, and nor does a visit
   // copied from the old system, which is history.
   "detail_comment, detail_edited_at, linked_from_visit_id, imported_from_ireports360_at, " +
-  "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
+  // `lat` and `lon` are read only to say whether the row holds a reading; `mapVisitRow` passes no coordinate on.
+  "lat, lon, accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
   // `validated_at` and `list_type` are the other half of "does this count" (`visitCountsInKpi`): the approval half is
   // the embedded `unplanned` row, and a reader of the raw table has to ask for both by name.
@@ -494,7 +495,7 @@ function mapVisitRow(
     photoPath: textOrNull(row.photo_path),
     voiceNotePath: textOrNull(row.voice_note_path),
     voiceNoteSeconds: numberOrNull(row.voice_note_seconds),
-    ...visitLocationFor(options.sight, flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters), enteredByAdmin),
+    ...visitLocationFor(options.sight, flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters), enteredByAdmin, numberOrNull(row.lat) !== null && numberOrNull(row.lon) !== null),
     // The phone's clock is a reading, not a distance: the Super Admin's and the SFE Manager's alone.
     clockOff: options.sight === "full" && skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     // The same value #5171 computed inline, read from the one `const` above — `countsInKpi` below
@@ -1881,7 +1882,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       : null;
   // The rep is told his visit is saved and nothing about where he was (Golden Rule #1); a manager who
   // entered it reads the distance only (owner, 2026-10-02).
-  const location = visitLocationFor(locationSight(viewer, seat), flag, distance, visit.accuracyMeters);
+  // `parseVisitDraft` refuses a save with no reading, so this visit always holds one.
+  const location = visitLocationFor(locationSight(viewer, seat), flag, distance, visit.accuracyMeters, false, true);
   return {
     visitId: String(result.id),
     visitDate: String(result.visit_date),

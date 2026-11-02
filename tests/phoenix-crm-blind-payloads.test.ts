@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { phoenixVisitDetail } from "../src/lib/crm/phoenix-visit-detail.ts";
 import { groupVisitsByRep, type ByList, type VisitCounts } from "../src/lib/phoenix-crm/report-rules.ts";
 import type { OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import {
@@ -341,6 +342,20 @@ function checkVisitLocation(): void {
   assert.match(visitLocationFor("distance", "far", 900, 260).locationLabel, /^About .* from this customer's saved place$/, "far stays far, by its distance");
   assert.deepEqual(visitLocationFor("none", "far", 900, 260), { locationFlag: "ok", locationLabel: "Visit saved" }, "the rep reads that it is saved, and nothing else");
 
+  // A visit to a customer with no saved place says the location was captured, only when the row holds one.
+  const capturedLine = "Location captured; no saved place to compare it with yet";
+  assert.equal(visitLocationFor("distance", "no_place", null, 12, false, true).locationLabel, capturedLine, "a manager reads that the location was captured");
+  assert.equal(visitLocationFor("full", "no_place", null, 12, false, true).locationLabel, capturedLine, "and so do SFE and the Super Admin");
+  assert.equal(visitLocationFor("distance", "no_place", null, null).locationLabel, "No place saved for this customer yet", "a copied visit with no coordinates never claims a capture");
+  assert.equal(visitLocationFor("full", "no_place", null, null, true, false).locationLabel, "No location: entered later by the Super Admin", "a visit the Super Admin entered still says it has no location");
+  assert.deepEqual(visitLocationFor("none", "no_place", null, 12, false, true), { locationFlag: "ok", locationLabel: "Visit saved" }, "the rep still reads nothing about a location");
+  const reportRow = { visit_kind: "single", location_flag: "no_place", distance_meters: null, accuracy_meters: 12 };
+  assert.equal(phoenixVisitDetail({ ...reportRow, lat: 30.1, lon: 31.2 }, "distance").location, capturedLine, "the CRM report row reads its own coordinates");
+  assert.equal(phoenixVisitDetail({ ...reportRow, lat: null, lon: null }, "distance").location, "No place saved for this customer yet", "and a report row with none never claims a capture");
+  const hasReadingArgument = /enteredByAdmin,\s*numberOrNull\(row\.lat\) !== null && numberOrNull\(row\.lon\) !== null,?\s*\)/;
+  assert.match(stripComments(bodyOf(source("src/lib/phoenix-crm/server/visits.ts"), "function mapVisitRow(")), hasReadingArgument, "the day page's rows answer from their own coordinates");
+  assert.match(/const VISIT_COLUMNS =[^;]*;/.exec(stripComments(source("src/lib/phoenix-crm/server/visits.ts")))?.[0] ?? "", /"lat, lon, /, "and the visit read selects them, or every row would look as if it had no reading");
+
   // The off-plan approval cards.
   assert.equal(offPlanLocationFlag("none", "far"), null, "the rep's own waiting visit carries no flag");
   assert.equal(offPlanLocationFlag("distance", "weak_gps"), "ok", "a manager's card says nothing about the signal");
@@ -352,7 +367,7 @@ function checkVisitLocation(): void {
   const mapper = bodyOf(visits, "function mapVisitRow(");
   assert.match(mapper, /\.\.\.visitLocationFor\(options\.sight, /, "every visit row's location goes through visitLocationFor");
   assert.match(mapper, /clockOff: options\.sight === "full" && /, "the phone-clock warning is the Super Admin's and SFE's alone");
-  assert.match(visits, /const location = visitLocationFor\(locationSight\(viewer, seat\), flag, distance, visit\.accuracyMeters\);/, "and so does the saved visit");
+  assert.match(visits, /const location = visitLocationFor\(locationSight\(viewer, seat\), flag, distance, visit\.accuracyMeters, false, true\);/, "and so does the saved visit, which always holds a reading");
   assert.ok(!/blind: |options\.blind/.test(visits), "no boolean blind flag is left beside the three levels");
   assert.match(source("src/lib/phoenix-crm/server/today.ts"), /\{ sight: locationSight\(viewer, seat\), org: viewer\.org \}/, "the Today screen asks the same rule");
   assert.match(
