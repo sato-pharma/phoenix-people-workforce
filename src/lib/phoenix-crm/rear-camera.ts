@@ -9,8 +9,16 @@
  * `exact`; only an answer that says "no lens matches" (a laptop's one webcam, a phone that reports no
  * facing) falls back to the preference. A refused permission is never retried: it is the rep's answer.
  *
+ * THE REP MAY SWITCH TO THE FRONT LENS (owner, 2026-11-02: "when live camera is open to be able to
+ * switch front camera to back camera"). The camera still OPENS on the rear lens every time; the switch is
+ * the rep's own press, offered only on a phone that has more than one lens (`hasSecondCamera`). The front lens
+ * is asked for the same way — `exact` first, the preference only when no lens matches — and the frame is
+ * never mirrored, so the letters on a sign read the right way round in the stored photo.
+ *
  * A leaf module with no imports, so the camera component and its test both reach it.
  */
+
+export type CameraFacing = "environment" | "user";
 
 type VideoSize = { height: number; width: number };
 
@@ -55,5 +63,25 @@ export async function openRearCamera(devices: CameraDevices, ideal: VideoSize): 
     return rearStream;
   } catch {
     return stream;
+  }
+}
+
+/** The selfie lens, opened only when the rep presses Switch camera. A refused permission is never retried. */
+export async function openFrontCamera(devices: CameraDevices, ideal: VideoSize): Promise<MediaStream> {
+  const sizes = { height: { ideal: ideal.height }, width: { ideal: ideal.width } };
+  try {
+    return await devices.getUserMedia({ audio: false, video: { facingMode: { exact: "user" }, ...sizes } });
+  } catch (error) {
+    if (!NO_MATCHING_LENS.has(errorName(error))) throw error;
+    return devices.getUserMedia({ audio: false, video: { facingMode: { ideal: "user" }, ...sizes } });
+  }
+}
+
+/** True when the phone has a second lens to switch to. A failed read answers no, so no dead button is drawn. */
+export async function hasSecondCamera(devices: Pick<MediaDevices, "enumerateDevices">): Promise<boolean> {
+  try {
+    return (await devices.enumerateDevices()).filter((device) => device.kind === "videoinput").length > 1;
+  } catch {
+    return false;
   }
 }

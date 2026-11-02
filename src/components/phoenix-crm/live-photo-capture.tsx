@@ -36,13 +36,18 @@
  * THE ONE GALLERY DOOR (owner, 2026-11-02): after two refused photos of a polyclinic's timetable the last
  * try may be a file from the phone (`uploadOffer`, set by that screen alone and enforced by the server).
  * It gets the capture's stamp: the place and time read now, as the file is chosen.
+ *
+ * SWITCH CAMERA (owner, 2026-11-02). The camera always opens on the rear lens; while it is live the rep
+ * may press Switch camera to go to the front lens and back. Offered only on a phone with a second lens
+ * (rear-camera.ts). The choice holds for a retake inside the same screen and nothing else changes: the
+ * same frame, the same stamp, the same location.
  */
 
 import type { ReactNode } from "react";
 import { BROWSER_PLACEHOLDER } from "@/lib/phoenix-crm/browser-name";
 import { readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
+import { Camera, ImagePlus, LoaderCircle, LocateFixed, RotateCcw, SwitchCamera, UploadCloud, X } from "lucide-react";
 
 import { crmPost, messageOf } from "@/components/phoenix-crm/api";
 import { noteReading } from "@/components/phoenix-crm/location-reader";
@@ -60,7 +65,7 @@ import {
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { laterReadingOverrules } from "@/lib/phoenix-crm/photo-reading-rules";
 import { PLACE_PHOTO_CAMERA_IDEAL, placePhotoCanvasSize, uploadedPhotoCanvasSize } from "@/lib/phoenix-crm/place-photo-size";
-import { openRearCamera } from "@/lib/phoenix-crm/rear-camera";
+import { hasSecondCamera, openFrontCamera, openRearCamera, type CameraFacing } from "@/lib/phoenix-crm/rear-camera";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -298,6 +303,13 @@ export function LivePhotoCapture({
 
   const [stage, setStage] = useState<Stage>("idle");
   const [cameraReady, setCameraReady] = useState(false);
+  /** Which lens is open. The rear one first, always; the front one only by the rep's own Switch camera press. */
+  const facingRef = useRef<CameraFacing>("environment");
+  /** The same side, for the button's label — a ref is never read while drawing. */
+  const [facing, setFacing] = useState<CameraFacing>("environment");
+  /** True once the phone is known to have a second lens, so Switch camera is never a dead button. */
+  const [canSwitch, setCanSwitch] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [fix, setFix] = useState<Fix | null>(null);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -390,24 +402,35 @@ export function LivePhotoCapture({
     return true;
   }
 
+  /** Opens the lens on `facing` and shows it. Throws what the browser threw. */
+  async function openLens(facing: CameraFacing) {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("No camera", "NotSupportedError");
+    // A signboard capture asks for more, so a nameplate a few metres away keeps its letters
+    // (place-photo-size.ts); every other capture asks for what it always did.
+    const ideal = frameGuide ? PLACE_PHOTO_CAMERA_IDEAL : { height: 1080, width: 1920 };
+    // The rear lens is required, not preferred: a phone ranked its selfie lens higher on the size
+    // wishes alone (rear-camera.ts). The front lens only ever by the rep's own Switch camera press.
+    const stream =
+      facing === "user" ? await openFrontCamera(navigator.mediaDevices, ideal) : await openRearCamera(navigator.mediaDevices, ideal);
+    streamRef.current = stream;
+    facingRef.current = facing;
+    setFacing(facing);
+    const video = videoRef.current;
+    if (video) {
+      video.srcObject = stream;
+      await video.play();
+    }
+    setCameraReady(true);
+    setStage("live");
+    // Asked after the camera is allowed, when the phone will list its lenses; never awaited.
+    void hasSecondCamera(navigator.mediaDevices).then(setCanSwitch);
+  }
+
   async function startCamera() {
     try {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("No camera", "NotSupportedError");
-      // A signboard capture asks for more, so a nameplate a few metres away keeps its letters
-      // (place-photo-size.ts); every other capture asks for what it always did.
-      const ideal = frameGuide ? PLACE_PHOTO_CAMERA_IDEAL : { height: 1080, width: 1920 };
-      // The rear lens is required, not preferred: a phone ranked its selfie lens higher on the size
-      // wishes alone (rear-camera.ts).
-      const stream = await openRearCamera(navigator.mediaDevices, ideal);
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
-        await video.play();
-      }
-      setCameraReady(true);
-      setStage("live");
+      await openLens(facingRef.current);
     } catch (cameraError) {
       stopCamera();
       stopLocation();
@@ -427,6 +450,31 @@ export function LivePhotoCapture({
       // The camera's own refusal, reported the same way and for the same reason: a blocked camera
       // ends the capture in the browser and reached no board before this line.
       if (blocked) reportBlockedPermission({ permission: "camera", seatId, subjectKind: purpose, test });
+    }
+  }
+
+  /**
+   * Front to back and back again. A lens that will not open puts the previous one back, so a failed switch
+   * never leaves the rep without a camera; only when neither opens does the camera close with its message.
+   */
+  async function switchCamera() {
+    if (switching) return;
+    const from = facingRef.current;
+    const to: CameraFacing = from === "user" ? "environment" : "user";
+    setError(null);
+    setSwitching(true);
+    setCameraReady(false);
+    try {
+      await openLens(to);
+    } catch {
+      try {
+        await openLens(from);
+        setError("The other camera could not open on this phone.");
+      } catch {
+        await startCamera();
+      }
+    } finally {
+      setSwitching(false);
     }
   }
 
@@ -790,11 +838,22 @@ export function LivePhotoCapture({
             </p>
           )}
           {fix && locationNote ? <p className="text-xs font-semibold text-amber-800">{locationNote}</p> : null}
-          <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div className={cn("grid gap-2", canSwitch ? "grid-cols-[1fr_auto_auto]" : "grid-cols-[1fr_auto]")}>
             <CrmButton disabled={disabled || !cameraReady || !fix} onClick={() => void takePhoto()} variant="primary">
               <Camera aria-hidden className="h-4 w-4" />
               Take the photo
             </CrmButton>
+            {canSwitch ? (
+              <CrmButton
+                aria-label={facing === "user" ? "Switch to the back camera" : "Switch to the front camera"}
+                disabled={switching || !cameraReady}
+                onClick={() => void switchCamera()}
+                title="Switch camera"
+                variant="secondary"
+              >
+                <SwitchCamera aria-hidden className="h-4 w-4" />
+              </CrmButton>
+            ) : null}
             <CrmButton aria-label="Close the camera" onClick={cancel} variant="secondary">
               <X aria-hidden className="h-4 w-4" />
             </CrmButton>
