@@ -191,8 +191,8 @@ export function runRecruitmentWhatsAppAnswersSavedTests() {
     "the re-ask sends nothing until he switches it on",
   );
   // A run where every send failed used to return normally, so the job read as a success and the route
-  // answered 200, while those applicants had spent their one re-ask. Nothing outside Phoenix watches
-  // this job, so the register is the only place a failure can land.
+  // answered 200, while those applicants had spent their one re-ask. A throw is what makes the job's
+  // wrapper report the run as failed.
   assert.throws(
     () => assertReaskReachedSomeone({ failed: 3, reasked: 0 }),
     /could not send any of its 3/,
