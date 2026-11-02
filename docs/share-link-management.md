@@ -36,3 +36,22 @@ Measured on production on the night of 30–31 Oct 2026, 23:00–07:00 Cairo: Ph
 - Expected saving: about 2,000 requests an hour for nine hours, roughly 18,000 a day.
 - The CV Lifecycle sheet is left alone. Its timer runs every 5 minutes, and it was not a measured night load.
 - Pinned by `tests/live-sheet-night-pacing.test.ts`. That suite drives both real `.gs` files through a fake clock: 540 night ticks fetch 9 times, an hour of day ticks fetches 60 times, and the 22:59 / 23:00 / 07:59 / 08:00 edges are checked. It also checks that a push, a rotation, Refresh now and `installTrigger` each fetch at 03:00, 30 seconds after the last fetch.
+
+## A sheet ping that times out was delivered (2 Nov 2026)
+
+`doPost` answers only after it has read the feed and redrawn every tab, so `pingDirectOrderSheet` hangs up at 4 seconds while the script carries on to the end. The ping carries no business data: only the secret and a reason, telling the sheet to read the feed again. It is sent after the order's own writes, is not awaited, and is not retried. A lost ping costs at most a minute by day and an hour overnight, until the sheet's timer next fetches.
+
+Measured on production on 2 Nov 2026, revision `229ff7f8f`, 03:23 to 12:10 Cairo:
+
+- 44 rows in `direct_order_events` (15 collections, 15 sales months, 10 approvals, 4 submissions) and 44 `direct_order_sheet_ping_failed` warnings with the same split, every one a `TimeoutError`.
+- From 11:18:19 to 11:30:00 Cairo, Google read the Direct Orders feed 42 times: 12 on the timer's 60-second rhythm and 30 off it. Those 30 reads line up one to one with the 30 order events in that stretch, each 1 to 4 seconds after its event.
+
+So the warning fired on every ping that worked. A refusal is an HTTP 200 reading `denied` or `not configured`, and a crashed script answers a 200 error page. Nothing read the answer, so those logged nothing.
+
+- A timeout now logs nothing.
+- An answer other than `ok` logs `direct_order_sheet_ping_refused`, with `answer` set to `denied`, `not configured` or `unexpected`. The page itself is never logged.
+- A non-2xx status or a network failure still logs `direct_order_sheet_ping_failed`. The 403 of 22 Oct 2026 is that case.
+- The secret check comes before the feed read, so a refusal usually answers inside the 4 seconds. One that takes longer is missed, but a refusal is a lasting state, and the next ping reports it.
+- The `.gs` file did not change. The `/exec` address runs a saved version that only the owning Google account can move, so a change there would not reach the ping without his redeploy.
+- `pingMarketingRequestSheet` has the same code and was not changed. It sent no ping in the measured window, so nothing about it was measured.
+- Pinned by `tests/direct-orders-sheet-webhook.test.ts`.
