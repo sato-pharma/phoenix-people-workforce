@@ -280,7 +280,7 @@ export function phoenixVisitDetail(row: PhoenixVisitDetailRow, sight: PhoenixDet
   // of a merged cell saying nothing while reading, to anyone scanning the column, like a verdict.
   const location =
     flag && sight !== "none"
-      ? visitLocationFor(sight, flag, count(row.distance_meters), count(row.accuracy_meters)).locationLabel
+      ? visitLocationFor(sight, flag, count(row.distance_meters), count(row.accuracy_meters), false, count(row.lat) !== null && count(row.lon) !== null).locationLabel
       : null;
 
   // The photo's own fix and the dwell are the Super Admin's and SFE's (golden rule #1, tier 2): a
