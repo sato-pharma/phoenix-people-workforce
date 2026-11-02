@@ -10,6 +10,7 @@ import {
   parseHiringJoinerUpdate,
   upcomingJoinerOffers,
 } from "../src/lib/hiring-documents/joiners-logic.ts";
+import { employeePapersStanding } from "../src/lib/hiring-documents/readiness-signal.ts";
 import type { HiringDocumentDefinition, HiringDocumentEmployeeRow } from "../src/lib/hiring-documents/types.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -205,6 +206,48 @@ function testHrFormsSaysWhyABoxIsLocked() {
   assert.ok(forms.includes('contractTermsReadOnly ? "You print these terms.'), "the contract terms say why they are locked");
 }
 
+function testOneLineForEachEmployee() {
+  const definition = (id: string, isExitDocument = false) =>
+    ({ documentGroup: "required", id, isExitDocument, name: id }) as unknown as HiringDocumentDefinition;
+  const employee = {
+    documents: {
+      filed: { dueDate: null, fileCount: 1, status: "submitted" },
+      late: { dueDate: "2026-10-20", fileCount: 0, status: "missing" },
+      marked: { dueDate: "2026-11-20", fileCount: 0, status: "missing" },
+      ticked: { dueDate: null, fileCount: 0, status: "submitted" },
+    },
+    employmentStatus: "active",
+  } as unknown as HiringDocumentEmployeeRow;
+  assert.deepEqual(
+    employeePapersStanding(
+      ["filed", "ticked", "marked", "late", "untouched"].map((id) => definition(id)).concat(definition("exit", true)),
+      employee,
+      new Date("2026-11-03T00:00:00"),
+    ),
+    { missing: 1, noScan: 1, overdue: 1, received: 2, total: 5 },
+    "a tick with no scan is received and still needs filing, a passed deadline is overdue and not also missing, an exit paper does not count",
+  );
+
+  const page = stripComments(readFileSync("src/components/hiring-documents/hiring-documents-manager.tsx", "utf8"));
+  // Measured: as the else of the Documents tab, this drew six Delete buttons and an Add for a seat the
+  // server refuses, under Scan & Upload.
+  assert.ok(page.includes('activeTab === "control" && canEditChecklist'), "the checklist editor shows on its own tab, to the seat that may edit it");
+  assert.ok(page.includes('React.useState<ActiveTab>("joiners")'), "the screen opens on the people arriving");
+  assert.ok(page.includes('activeTab === "joiners" ? undefined : "hidden"'), "the joiners panel stays mounted, so a typed note survives a trip to another tab");
+  assert.ok(page.includes("openHrId === employee.hrId") && page.includes("<TableRowDetail"), "one person's papers open beneath their row, one at a time");
+  assert.ok(/\{data \? \(\s*<dl/.test(page), "a failed read shows no row of zeros");
+}
+
+function testHrFormsReadsAsALedger() {
+  const forms = stripComments(readFileSync("src/components/hiring-pack/hiring-pack-manager.tsx", "utf8"));
+  // Measured at 375: 413px wide in a 309px column, with no border at all.
+  assert.ok(/<select\s+className=\{phxSelectClassName\}/.test(forms), "the fixed-term reason wears the form skin and fits its column");
+  assert.ok(forms.includes("canSign && signOpen"), "the signature line stays folded until it is wanted");
+  assert.ok(forms.includes("[&:not(:has(h3))]:hidden"), "a heading with no paper under it for this seat does not show");
+  assert.equal(forms.split("<PaperGroup ").length - 1, 9, "every paper sits under a heading");
+  assert.ok(!forms.includes("grid gap-2 empty:hidden"), "no group of papers was left without one");
+}
+
 export function runHiringJoinersTests() {
   testWhoCountsAsArriving();
   testWhatASaveMayHold();
@@ -212,4 +255,6 @@ export function runHiringJoinersTests() {
   testTheReadCarriesNoMoneyAndTheWriteIsGated();
   testWhereAJoinerStands();
   testHrFormsSaysWhyABoxIsLocked();
+  testOneLineForEachEmployee();
+  testHrFormsReadsAsALedger();
 }

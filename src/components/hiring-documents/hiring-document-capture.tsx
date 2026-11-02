@@ -85,6 +85,13 @@ function formatUploadedAt(value: string) {
   }).format(date);
 }
 
+/** One outstanding paper. Pressing it points the form at that paper. */
+function outstandingChoiceClassName(active: boolean): string {
+  return active
+    ? "border border-phx-accent bg-phx-accent-soft px-2.5 py-1 text-phx-xs font-black text-phx-ink"
+    : "border border-phx-line bg-white px-2.5 py-1 text-phx-xs font-bold text-phx-ink hover:border-phx-accent-line";
+}
+
 export function HiringDocumentCapture({
   canManage,
   canRemoveFiles,
@@ -318,7 +325,7 @@ export function HiringDocumentCapture({
         </AdminCallout>
       ) : null}
 
-      <Card className="space-y-4 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
+      <Card className="space-y-4 border border-phx-line bg-white p-4 shadow-none">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={panelLabelClassName}>Employee</span>
@@ -353,36 +360,44 @@ export function HiringDocumentCapture({
         </div>
 
         {selectedEmployee ? (
-          <div className="rounded-xl border border-phx-line bg-phx-paper p-3">
+          <div className="border-t border-phx-line pt-3">
             <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
               Still outstanding for {selectedEmployee.fullName}
             </p>
-            <div className="mt-2 overflow-x-auto">
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                {outstanding.notSubmitted.length === 0 ? (
-                  <Badge variant="success">Every document is submitted</Badge>
-                ) : (
-                  outstanding.notSubmitted.map((document) => (
-                    <Badge key={document.id} variant="warning">
-                      {document.name}
-                    </Badge>
-                  ))
-                )}
-              </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {outstanding.notSubmitted.length === 0 ? (
+                <p className="text-sm font-bold text-phx-ok">Every document is submitted</p>
+              ) : (
+                outstanding.notSubmitted.map((document) => (
+                  <button
+                    aria-pressed={document.id === documentId}
+                    className={outstandingChoiceClassName(document.id === documentId)}
+                    key={document.id}
+                    onClick={() => setDocumentId(document.id)}
+                    type="button"
+                  >
+                    {document.name}
+                  </button>
+                ))
+              )}
             </div>
             {outstanding.tickedWithNothingOnFile.length > 0 ? (
               <div className="mt-3">
                 <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-[#B45309]">
                   Ticked, but no scan on file
                 </p>
-                <div className="mt-2 overflow-x-auto">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    {outstanding.tickedWithNothingOnFile.map((document) => (
-                      <Badge key={document.id} variant="danger">
-                        {document.name}
-                      </Badge>
-                    ))}
-                  </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {outstanding.tickedWithNothingOnFile.map((document) => (
+                    <button
+                      aria-pressed={document.id === documentId}
+                      className={outstandingChoiceClassName(document.id === documentId)}
+                      key={document.id}
+                      onClick={() => setDocumentId(document.id)}
+                      type="button"
+                    >
+                      {document.name}
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : null}
@@ -390,8 +405,9 @@ export function HiringDocumentCapture({
         ) : null}
       </Card>
 
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* ── Scan with the camera ──────────────────────────────────────────────────────────── */}
-      <Card className="space-y-4 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
+      <Card className="space-y-4 border border-phx-line bg-white p-4 shadow-none">
         <div>
           <h3 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Scan with the camera</h3>
           <p className="mt-1 text-sm text-phx-ink-soft">
@@ -403,9 +419,9 @@ export function HiringDocumentCapture({
         <div className="grid gap-3 sm:grid-cols-3">
           {scanModeOptions.map((option) => (
             <button
-              className={`rounded-xl border p-3 text-left transition ${
+              className={`border p-3 text-left transition ${
                 scanMode === option.value
-                  ? "border-phx-accent bg-phx-accent-soft shadow-sm"
+                  ? "border-phx-accent bg-phx-accent-soft"
                   : "border-phx-line bg-white hover:border-phx-accent-line"
               }`}
               key={option.value}
@@ -463,17 +479,17 @@ export function HiringDocumentCapture({
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {stagedPages.map((page, index) => (
-                <div className="relative overflow-hidden rounded-xl border border-phx-line bg-phx-paper" key={page.id}>
+                <div className="relative overflow-hidden border border-phx-line bg-phx-paper" key={page.id}>
                   {/* A staged page is a local object URL, never a remote asset, so next/image would
                       add a loader for nothing. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img alt={`Page ${index + 1}`} className="h-32 w-full object-cover" src={page.previewUrl} />
-                  <span className="absolute left-2 top-2 rounded-lg bg-phx-ink/80 px-2 py-0.5 text-phx-2xs font-black text-white">
+                  <span className="absolute left-2 top-2 bg-phx-ink px-2 py-0.5 text-phx-2xs font-black text-white">
                     Page {index + 1}
                   </span>
                   <button
                     aria-label={`Remove page ${index + 1}`}
-                    className="absolute right-2 top-2 rounded-lg bg-white/90 p-1 text-[#B91C1C] shadow-sm"
+                    className="absolute right-2 top-2 bg-white p-1 text-[#B91C1C]"
                     onClick={() => removeStagedPage(page.id)}
                     type="button"
                   >
@@ -500,7 +516,7 @@ export function HiringDocumentCapture({
       </Card>
 
       {/* ── Upload a file as it is ────────────────────────────────────────────────────────── */}
-      <Card className="space-y-3 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
+      <Card className="space-y-3 border border-phx-line bg-white p-4 shadow-none">
         <div>
           <h3 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Upload a file as it is</h3>
           <p className="mt-1 text-sm text-phx-ink-soft">
@@ -531,8 +547,10 @@ export function HiringDocumentCapture({
         </Button>
       </Card>
 
+      </div>
+
       {/* ── What is already on file ───────────────────────────────────────────────────────── */}
-      <Card className="space-y-3 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
+      <Card className="space-y-3 border border-phx-line bg-white p-4 shadow-none">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">On file</h3>
           {isLoadingFiles ? <Loader2 className="h-4 w-4 animate-spin text-phx-ink-soft" /> : null}
@@ -546,7 +564,7 @@ export function HiringDocumentCapture({
           <ul className="space-y-2">
             {files.map((file) => (
               <li
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-phx-line bg-phx-paper px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-3 border border-phx-line bg-phx-paper px-3 py-2"
                 key={file.id}
               >
                 {/*
@@ -569,12 +587,12 @@ export function HiringDocumentCapture({
                   <Badge tone={FILE_SOURCE_BADGE[file.source].tone}>
                     {FILE_SOURCE_BADGE[file.source].label}
                   </Badge>
-                  <Button asChild className="h-8 w-8 rounded-lg p-0" title="View" variant="secondary">
+                  <Button asChild className="h-8 w-8 p-0" title="View" variant="secondary">
                     <a href={`/api/hiring-documents/files/${file.id}`} rel="noreferrer" target="_blank">
                       <Eye className="h-4 w-4" />
                     </a>
                   </Button>
-                  <Button asChild className="h-8 w-8 rounded-lg p-0" title="Download" variant="secondary">
+                  <Button asChild className="h-8 w-8 p-0" title="Download" variant="secondary">
                     <a href={`/api/hiring-documents/files/${file.id}?download=1`}>
                       <Download className="h-4 w-4" />
                     </a>
@@ -582,7 +600,7 @@ export function HiringDocumentCapture({
                   {canRemoveFiles ? (
                     <Button
                       aria-label={`Remove ${file.fileName}`}
-                      className="h-8 w-8 rounded-lg p-0"
+                      className="h-8 w-8 p-0"
                       disabled={!canManage || busy !== null}
                       onClick={() => void deleteFile(file)}
                       title="Remove"

@@ -163,3 +163,36 @@ export function hiringDocumentDaysOverdue(
   const days = Math.round((today.getTime() - due.getTime()) / 86_400_000);
   return days > 0 ? days : null;
 }
+
+export type EmployeePapersStanding = {
+  /** Handed in and ticked, whether or not a scan is on file. */
+  received: number;
+  total: number;
+  /** Marked missing by HR, deadline not yet passed. */
+  missing: number;
+  /** Not handed in, and the deadline is today or earlier. */
+  overdue: number;
+  /** Ticked with nothing on file: filing, not chasing, so it never counts against "received". */
+  noScan: number;
+};
+
+/** What one employee's row says about their papers, counted from the same signal as the workbook. */
+export function employeePapersStanding(
+  documents: HiringDocumentDefinition[],
+  employee: Pick<HiringDocumentEmployeeRow, "documents" | "employmentStatus">,
+  today: Date = startOfToday(),
+): EmployeePapersStanding {
+  const standing: EmployeePapersStanding = { missing: 0, noScan: 0, overdue: 0, received: 0, total: 0 };
+  for (const document of hiringDocumentsFor(documents, employee)) {
+    standing.total += 1;
+    const signal = hiringDocumentSignal(
+      employee.documents[document.id] ?? { dueDate: null, fileCount: 0, status: "pending" },
+      today,
+    );
+    if (signal === "complete" || signal === "unevidenced") standing.received += 1;
+    if (signal === "unevidenced") standing.noScan += 1;
+    if (signal === "missing") standing.missing += 1;
+    if (signal === "overdue") standing.overdue += 1;
+  }
+  return standing;
+}

@@ -3,7 +3,7 @@
 import { AlertTriangle, ChevronDown, ChevronUp, Mail, Phone, RefreshCw } from "lucide-react";
 import * as React from "react";
 
-import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { CheckTile, FieldLabel, FormError } from "@/components/ui/form-kit";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
@@ -39,6 +39,8 @@ type Props = {
   canManage: boolean;
   documents: HiringDocumentDefinition[];
   employees: HiringDocumentEmployeeRow[];
+  /** How many are arriving, once known, for the tab that holds this panel. */
+  onArrivingCount?: (count: number) => void;
   onReceivePapers: (employeeHrId: string, documentId: string) => void;
 };
 
@@ -112,7 +114,7 @@ const cellClassName = "border-b border-phx-line px-3 py-3 align-top";
  * It sends nothing: the mobile and the email are links that open the viewer's own phone and mail app.
  * A failed read says so and offers a retry, never "nobody is joining".
  */
-export function HiringJoinersPanel({ canManage, documents, employees, onReceivePapers }: Props) {
+export function HiringJoinersPanel({ canManage, documents, employees, onArrivingCount, onReceivePapers }: Props) {
   const [data, setData] = React.useState<HiringJoinersData | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -190,6 +192,11 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
   const joiners = data?.joiners ?? [];
   const todayKey = data?.todayKey ?? "";
   const summary = joinersSummary(joiners);
+  const arrivingCount = data ? joiners.length : null;
+
+  React.useEffect(() => {
+    if (arrivingCount !== null) onArrivingCount?.(arrivingCount);
+  }, [arrivingCount, onArrivingCount]);
 
   function renderPeople(joiner: HiringJoiner) {
     return (
@@ -400,11 +407,11 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     <AdminTableShell
       action={
         !isLoading && !loadError && joiners.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            <AdminInsightChip>{summary.arriving} arriving</AdminInsightChip>
-            {summary.toConfirm > 0 ? <AdminInsightChip tone="orange">{summary.toConfirm} to confirm</AdminInsightChip> : null}
-            {summary.noMobile > 0 ? <AdminInsightChip tone="slate">{summary.noMobile} no mobile</AdminInsightChip> : null}
-          </div>
+          <p className="text-phx-xs font-bold tabular-nums text-phx-ink-soft">
+            {summary.arriving} arriving
+            {summary.toConfirm > 0 ? <span className="text-phx-warn"> · {summary.toConfirm} to confirm</span> : null}
+            {summary.noMobile > 0 ? <span className="text-phx-warn"> · {summary.noMobile} no mobile</span> : null}
+          </p>
         ) : undefined
       }
       description="Everyone with an accepted offer who starts today or later. Contact them, confirm their papers and the time they attend."
@@ -501,7 +508,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
               const draft = drafts[joiner.offerId];
               const panelId = `joiner-card-panel-${joiner.offerId}`;
               return (
-                <div className="space-y-3 border border-phx-line bg-white p-4" key={joiner.offerId}>
+                <div className="space-y-3 border border-phx-line bg-white p-4 shadow-none" key={joiner.offerId}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">{renderPeople(joiner)}</div>
                     <div className="text-right">
