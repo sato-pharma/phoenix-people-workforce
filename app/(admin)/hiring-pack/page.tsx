@@ -40,9 +40,8 @@ export default async function HiringPackPage({
   searchParams: Promise<{ hrId?: string }>;
 }) {
   const access = await resolveAccessContextFromPage();
-  // An HR authority seat holding employee_documents, exactly as before — or a seat named in
-  // SEAT_PRINTABLE_DOCUMENTS (the HR Operations Specialist, owner 2026-10-20), who opens it on her
-  // contracts/resignations grants and sees only her own papers, with no salary on screen.
+  // An HR seat holding employee_documents (the HR Operations Specialist too since 2026-11-02), or a
+  // seat named in SEAT_PRINTABLE_DOCUMENTS on its own papers' grants.
   const forms = await hrFormsAccessFor(access);
 
   if (!forms.canRead) {
@@ -98,7 +97,6 @@ async function HiringPackContent({
   // whole screen.
   if (hrId) {
     try {
-      // Blanked of money for the salary-blind seat, the same as the pack route answers her.
       initialPack = packForViewer(access, await getHiringPack(hrId));
     } catch (error) {
       initialError = hiringPackPageError(error);
@@ -107,14 +105,14 @@ async function HiringPackContent({
 
   return (
     <HiringPackManager
-      bankLetterHref={forms.paperScope === null && !forms.withholdSalary ? BANK_LETTER_PAGE.href : null}
+      bankLetterHref={forms.paperScope === null ? BANK_LETTER_PAGE.href : null}
       canManage={forms.canManage}
       candidates={candidates}
       initialError={initialError}
       initialPack={initialPack}
       lines={lines}
       paperScope={forms.paperScope}
-      withholdSalary={forms.withholdSalary}
+      salaryReadOnly={forms.salaryReadOnly}
     />
   );
 }

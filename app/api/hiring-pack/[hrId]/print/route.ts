@@ -79,8 +79,8 @@ function apiError(error: unknown) {
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
     const access = await resolveAccessContext(request);
-    // employee_documents for everyone it always was; a seat in SEAT_PRINTABLE_DOCUMENTS (the HR
-    // Operations Specialist, owner 2026-10-20) on its own papers' grants instead — see paper-access.
+    // employee_documents for everyone it always was; a seat in SEAT_PRINTABLE_DOCUMENTS on its own
+    // papers' grants instead — see paper-access.
     await assertMayUseHrForms(access, "read");
     const { hrId } = await params;
 

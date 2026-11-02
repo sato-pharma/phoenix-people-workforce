@@ -255,15 +255,8 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // 2026-10-20), and creating, renewing, not renewing or cancelling one stays his. contracts:delete
   // stays a boundary.
   "src/lib/contracts/service.ts",
-  // Names HR Administration in SEAT_PRINTABLE_DOCUMENTS, added 2026-10-20. Reviewed verdict: it GRANTS
-  // reach — eight BUILT-IN papers she may print without holding employee_documents (which the hard
-  // boundary strips from her, since she is outside hrAuthorityRoles). It hands her nothing her brief
-  // withholds and is NARROWER than the key: no company template (`custom:<uuid>`), no template studio,
-  // and only the papers of the two moments the owner gave her — the contract renewal she prepares and
-  // the resignation she follows up. The renewal annex prints the salary, and that is the owner's one
-  // money exception for her; none of the other seven prints an amount. Every seat not named keeps the
-  // employee_documents check it had before.
-  "src/lib/hiring-pack/document-registry.ts",
+  // src/lib/hiring-pack/document-registry.ts left this list on 2026-11-02: its table of printable
+  // papers is empty since the owner opened the whole of HR Forms to the HR Operations Specialist.
   // src/lib/distribution-lists/access.ts left this list on 2026-10-08: it named only the retired HR Advisory seat.
   // Names HR Operations in isDeductionsReadActor, added 2026-09-03 with the page above. Reviewed
   // verdict: it GRANTS reach, and it is the wider half of the two — the page is a door, this is the

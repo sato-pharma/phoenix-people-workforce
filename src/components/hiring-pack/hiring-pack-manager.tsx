@@ -743,18 +743,17 @@ type Props = {
   lines: { id: number; name: string }[];
   /**
    * The papers this viewer is limited to, or null (the default) for every paper. Set for a seat
-   * named in SEAT_PRINTABLE_DOCUMENTS — the HR Operations Specialist, owner 2026-10-20 — from
-   * `hrFormsAccessFor` on the server. Every card, the drive and the package lists show only these;
+   * named in SEAT_PRINTABLE_DOCUMENTS (none today) from `hrFormsAccessFor` on the server. Every card, the drive and the package lists show only these;
    * the company templates, the Archive, the Template Studio, the contract's own "What you fill in"
    * and the layout editor are not offered. The server refuses everything else regardless — this is
    * so nothing on her screen 403s her halfway.
    */
   paperScope?: readonly HiringPackDocument[] | null;
-  /** True for the salary-blind seat: no salary or insurance-wage box on screen. */
-  withholdSalary?: boolean;
+  /** True for the salary-blind seat: the salary shows and prints, and its box does not take a change. */
+  salaryReadOnly?: boolean;
   /**
    * Where the bank account-opening letter lives, or null to offer no link. Passed only by the admin
-   * page, and only for a viewer the letter's own gate admits (not a paper-scoped or salary-blind seat).
+   * page, and only for a viewer the letter's own gate admits (not a paper-scoped seat).
    */
   bankLetterHref?: string | null;
 };
@@ -783,7 +782,7 @@ export function HiringPackManager({
   initialPack,
   lines,
   paperScope = null,
-  withholdSalary = false,
+  salaryReadOnly = false,
 }: Props) {
   const scoped = paperScope !== null;
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
@@ -1431,11 +1430,11 @@ export function HiringPackManager({
             // guessed from a role in the browser. Changing what every future contract states about
             // the employer is that class of act, not the class of correcting one person's ID.
             canEditCompany={companyTemplates.canManage}
-            // A seat limited to its own papers: no layout editing (that route is not hers), the
-            // hiring profile locked, and the salary locked on the salary-blind seat.
+            // A seat limited to its own papers: no layout editing and the hiring profile locked.
+            // The salary is locked on the salary-blind seat, which sees and prints it.
             canEditLayout={!scoped}
             readOnlyStores={scoped ? SCOPED_SEAT_READ_ONLY_STORES : undefined}
-            withholdSalary={withholdSalary}
+            salaryReadOnly={salaryReadOnly}
             copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
             documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
             hrId={pack.employee.hrId}
@@ -1642,7 +1641,7 @@ export function HiringPackManager({
 
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
-                    {withholdSalary ? "Line and department" : "Salary, line and department"}
+                    Salary, line and department
                   </h3>
                   <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
                     {employee.departed
@@ -1651,19 +1650,18 @@ export function HiringPackManager({
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {/*
-                      NOT SHOWN TO THE SALARY-BLIND SEAT (owner, 2026-10-20: the HR Operations
-                      Specialist never sees a salary or an insurance wage). The server already sends
-                      her no figure and drops one she sends; this keeps an empty box from asking.
+                      READ ONLY ON THE SALARY-BLIND SEAT. The HR Operations Specialist sees and prints
+                      the salary here (owner, 2026-11-02, "FULL MODULE"), but payroll reads this field
+                      and changing pay was not named, so the server drops one she sends
+                      (factsInputForViewer) and the box says so by being locked.
                     */}
-                    {withholdSalary ? null : (
-                    <>
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-baseSalary">
                         Base salary <span className="text-phx-ink-faint">الأجر الأساسي · EGP</span>
                       </label>
                       <Input
                         className={inputClassName}
-                        disabled={!canManage || employee.departed}
+                        disabled={!canManage || employee.departed || salaryReadOnly}
                         id="hiring-pack-fact-baseSalary"
                         inputMode="decimal"
                         onChange={(event) =>
@@ -1691,8 +1689,6 @@ export function HiringPackManager({
                         salary and this follows.
                       </p>
                     </div>
-                    </>
-                    )}
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-lineId">
                         Line <span className="text-phx-ink-faint">الخط</span>

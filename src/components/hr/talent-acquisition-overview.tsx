@@ -127,6 +127,7 @@ const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
   employee_requests: LifeBuoy,
   engagement_retention: HeartPulse,
   hiring_paperwork: FileSignature,
+  hiring_desk: FileSignature,
   hr_communication: Mail,
   hr_governance: ShieldCheck,
   payroll_inputs: FileSpreadsheet,

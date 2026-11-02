@@ -7,13 +7,14 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { canAccess, isHrAuthorityRole, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { canAccess, isHiringPaperworkRole, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   filterHiringDocumentsForAccess,
   getHiringDocumentsDashboard,
   hiringDocumentsErrorMessage,
   isHiringDocumentsSchemaMissing,
+  mayEditHiringChecklist,
 } from "@/lib/hiring-documents/service";
 import type { HiringDocumentsDashboardData } from "@/lib/hiring-documents/types";
 
@@ -36,10 +37,10 @@ export default async function EmployeePortalHiringDocumentsPage() {
     canAccess(access, "employee_documents", "read"),
     canAccess(access, "employee_documents", "update"),
   ]);
-  if (!isHrAuthorityRole(access.role) || !canRead) {
+  if (!isHiringPaperworkRole(access.role) || !canRead) {
     return (
       <EmployeePortalEmptyState
-        message="Hiring documents are available to the HR Generalist and the Super Admin only."
+        message="Hiring documents are available to the HR Generalist, the HR Operations Specialist and the Super Admin only."
         title="Hiring Documents Unavailable"
       />
     );
@@ -84,6 +85,7 @@ async function HiringDocumentsContent({
 
   return (
     <HiringDocumentsManager
+      canEditChecklist={canManage && mayEditHiringChecklist(access)}
       canManage={canManage}
       initialData={initialData}
       initialError={initialError}

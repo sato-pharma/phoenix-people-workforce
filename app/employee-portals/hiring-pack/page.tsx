@@ -58,7 +58,7 @@ export default async function EmployeePortalHiringPackPage({
   if (!forms.canRead) {
     return (
       <EmployeePortalEmptyState
-        message="The hiring pack is available to the HR Generalist and the Super Admin only."
+        message="The hiring pack is available to the HR Generalist, the HR Operations Specialist and the Super Admin only."
         title="HR Forms Unavailable"
       />
     );
@@ -138,7 +138,7 @@ async function HiringPackContent({
       initialPack={initialPack}
       lines={lines}
       paperScope={forms.paperScope}
-      withholdSalary={forms.withholdSalary}
+      salaryReadOnly={forms.salaryReadOnly}
     />
   );
 }

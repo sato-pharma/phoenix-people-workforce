@@ -41,8 +41,7 @@ function apiError(error: unknown) {
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
     const access = await resolveAccessContext(request);
-    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its own papers' grants
-    // — which for the salary-blind seat means the pack comes back with every money field blanked.
+    // employee_documents as before, or a seat in SEAT_PRINTABLE_DOCUMENTS on its own papers' grants.
     await assertMayUseHrForms(access, "read");
     const { hrId } = await params;
 

@@ -385,9 +385,21 @@ export async function runPhase22RoleMatrixSecurityTests() {
     "user_admin",
   ];
   const blockedActions: PermissionAction[] = ["read", "create", "update", "delete", "approve", "export", "import"];
+  // The HR Operations Specialist alone holds employee_documents outside the authority set (owner,
+  // 2026-11-02, "Receive the hiring papers / OPEN HR FORMS FULL MODULE"), pinned to exactly these four.
+  const specialistDocumentActions: PermissionAction[] = ["create", "export", "read", "update"];
+  assert.deepEqual(
+    [...(permissionMatrix["HR Administration"].employee_documents ?? [])].sort(),
+    specialistDocumentActions,
+    "the HR Operations Specialist holds employee_documents without delete, approve or import",
+  );
   for (const role of phoenixRoles.filter((candidate) => !hrAuthorityRoles.has(candidate))) {
     for (const resource of blockedResources) {
       for (const action of blockedActions) {
+        if (role === "HR Administration" && resource === "employee_documents" && specialistDocumentActions.includes(action)) {
+          assert.equal(isRolePermissionWithinHardBoundary(role, resource, action), true, `${role} holds ${action} ${resource}`);
+          continue;
+        }
         assert.equal(
           isRolePermissionWithinHardBoundary(role, resource, action),
           false,

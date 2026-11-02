@@ -57,7 +57,8 @@ export type HrFunctionKey =
   | "recognition"
   | "team_reminders"
   | "attendance_review"
-  | "people_master";
+  | "people_master"
+  | "hiring_desk";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -606,6 +607,21 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       resignations: ["read", "update"],
     },
   },
+  {
+    key: "hiring_desk",
+    label: "Hiring Papers and HR Forms",
+    summary:
+      "Contact the joiner, confirm their papers and attendance time, receive the hiring papers, and work every HR Form.",
+    // Owner, 2026-11-02: "OPEN IN HER ACCOUNT Contact the joiner, confirm papers and attendance time/
+    // Receive the hiring papers/ OPEN HR FORMS FULL MODULE TO AYA".
+    //
+    // NOT hiring_paperwork: that function also switches a joiner's portal login on (account_activation),
+    // which he did not name, so it stays on UNASSIGNED_HR_FUNCTIONS.
+    jdSections: ["owner 2026-11-02 — HR Operations Specialist: joiner contact, hiring papers, full HR Forms"],
+    grants: {
+      employee_documents: MAINTAIN,
+    },
+  },
 ] as const;
 
 /**
@@ -670,11 +686,13 @@ export const HR_ROLE_BUNDLES = {
     "recognition",
     "team_reminders",
   ],
-  // Shown as HR Operations Specialist (owner, 2026-10-20). Salary-blind by name — isSalaryBlindRole.
+  // Shown as HR Operations Specialist (owner, 2026-10-20). Salary-blind by name — isSalaryBlindRole,
+  // with HR Forms the one screen where she sees the salary since 2026-11-02 (hiring_desk).
   "HR Administration": [
     "attendance_review",
     "people_master",
     "team_reminders",
+    "hiring_desk",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 
@@ -729,8 +747,9 @@ export const HR_OPERATIONS_SPECIALIST_SEAT = "HR Administration" as const satisf
 
 /**
  * The seat that never sees a salary, an allowance, an insurance or a tax amount — anywhere (owner,
- * 2026-10-20: "she never touches payroll or salary"). The one exception he made is the contract
- * renewal annex she prepares. Bank name, account and payment mode stay visible to her.
+ * 2026-10-20: "she never touches payroll or salary"). The one exception is HR Forms, which he opened
+ * to her whole on 2026-11-02: she sees and prints the salary there and cannot change it
+ * (src/lib/hiring-pack/paper-access.ts). Bank name, account and payment mode stay visible to her.
  *
  * Every server path that returns or accepts a money field asks this, so the withholding is
  * enforced where the data leaves the server — the screens only follow it.

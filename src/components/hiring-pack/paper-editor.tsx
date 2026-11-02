@@ -323,7 +323,7 @@ type PaperEditorCommonProps = {
    */
   readOnlyStores?: readonly PaperStore[];
   /** True for the salary-blind seat: the base salary on a paper shows locked, never editable. */
-  withholdSalary?: boolean;
+  salaryReadOnly?: boolean;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
   /**
@@ -522,7 +522,7 @@ export function HiringPackPaperEditor({
   canEditCompany,
   canEditLayout = true,
   readOnlyStores = NO_READ_ONLY_STORES,
-  withholdSalary = false,
+  salaryReadOnly = false,
   onPackChange,
   onClose,
   onIssueReference,
@@ -1666,12 +1666,11 @@ export function HiringPackPaperEditor({
         continue;
       }
 
-      // The same rule for a store this viewer cannot save (the HR Operations Specialist cannot write
-      // the hiring profile — the contract's own terms), and for the salary on a salary-blind seat:
-      // the server drops a salary she sends, so the figure must not look like one she can type over.
+      // The same rule for a store this viewer cannot save, and for the salary on the salary-blind
+      // seat: she prints it, the server drops one she sends, so it must not look typeable.
       if (
         readOnlyStores.includes(binding.store) ||
-        (withholdSalary && binding.store === "employee" && binding.field === "baseSalary")
+        (salaryReadOnly && binding.store === "employee" && binding.field === "baseSalary")
       ) {
         element.setAttribute("data-hp-locked", "true");
         element.title = `${binding.labelEn} — not changed from this seat. It prints as it stands on the record.`;
@@ -1748,7 +1747,7 @@ export function HiringPackPaperEditor({
     applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
 
     setLoadedKey(frameKey);
-  }, [canEditCompany, frameKey, onLayoutPointerDown, readOnlyStores, withholdSalary]);
+  }, [canEditCompany, frameKey, onLayoutPointerDown, readOnlyStores, salaryReadOnly]);
 
   /** Turn free typing on or off, on the page and in the frame, in one action. */
   const toggleFreeEdit = useCallback(() => {

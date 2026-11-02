@@ -336,6 +336,7 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // The Talent Acquisition seat's three non-recruiting functions (2026-10-08). The support desk is
   // the one queue among them; documents and context reading have no backlog to show.
   hiring_paperwork: [],
+  hiring_desk: [],
   employee_requests: ["supportRequests"],
   /**
    * TWO sources since 2026-10-13, and both are for the Talent Acquisition seat's OWN overview page
@@ -781,6 +782,7 @@ const TILES_BY_FUNCTION: Record<
   employee_requests: (loaded) => supportRequestTiles(loaded),
   // NONE, for the reason hr_governance has none: documents and a login switch are not a queue.
   hiring_paperwork: () => [],
+  hiring_desk: () => [],
   // NONE. Reading the chart, the calendars and the boards is context for her recruiting, not a
   // backlog — a tile here could only be invented.
   workforce_context: () => [],
@@ -993,6 +995,7 @@ const CHARTS_BY_FUNCTION: Record<
   // No chart for three of the Talent Acquisition seat's functions: none has a population to plot,
   // and none contributes a tile, so none has a group for a chart to sit in.
   hiring_paperwork: () => [],
+  hiring_desk: () => [],
   workforce_context: () => [],
   recognition: () => [],
   team_reminders: () => [],

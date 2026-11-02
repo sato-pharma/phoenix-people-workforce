@@ -281,8 +281,8 @@ const OFFERS_HREF = "/hr/offers";
  * letter went out (measured 2026-10-16: a letter said 17 October while the employee record said
  * 24 October). Until there is a record, the letter's own start date stands.
  */
-function joiningDayKey(
-  offer: OfferRecord,
+export function joiningDayKey(
+  offer: Pick<OfferRecord, "employeeHrId" | "startDate">,
   hireDateByHrId: ReadonlyMap<string, string> | undefined,
 ): string {
   const key = canonicalHrIdKey(offer.employeeHrId);

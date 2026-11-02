@@ -382,10 +382,26 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   return result;
 }
 
+/**
+ * Who may change the checklist ITSELF (add or remove a tracked document, company-wide). The HR
+ * Operations Specialist receives the papers (owner, 2026-11-02, "Receive the hiring papers"); what
+ * the checklist asks of everybody stays with the seats that held it before.
+ */
+export function mayEditHiringChecklist(access: Pick<AccessContext, "role">): boolean {
+  return access.role !== "HR Administration";
+}
+
+function assertMayEditHiringChecklist(access: AccessContext) {
+  if (!mayEditHiringChecklist(access)) {
+    throw new Error(`Forbidden: ${access.role} does not change the hiring documents checklist.`);
+  }
+}
+
 export async function createHiringDocumentDefinition(
   access: AccessContext,
   input: CreateHiringDocumentDefinitionInput,
 ) {
+  assertMayEditHiringChecklist(access);
   const name = cleanText(input.name);
   if (!name) throw new Error("Document name is required.");
 
@@ -424,6 +440,7 @@ export async function createHiringDocumentDefinition(
 }
 
 export async function deleteHiringDocumentDefinition(access: AccessContext, documentId: string) {
+  assertMayEditHiringChecklist(access);
   const id = cleanText(documentId);
   if (!id) throw new Error("Document id is required.");
 
@@ -578,10 +595,14 @@ export function filterHiringDocumentsForAccess(
   // self-only default and seeing only her own row (HR-009), which silently contradicted the
   // company scope she already holds for attendance, leave and payroll (see
   // hr-operations-company-scope.test.ts).
+  //
+  // The HR Operations Specialist too (owner, 2026-11-02): she receives the hiring papers of every
+  // joiner, so a self-only board would be an empty desk.
   if (
     access.scope === "system" ||
     access.role === "Super Admin" ||
-    access.role === "HR Operations"
+    access.role === "HR Operations" ||
+    access.role === "HR Administration"
   ) {
     return dashboard;
   }
@@ -668,7 +689,8 @@ async function assertCanReachEmployeeDocuments(access: AccessContext, employeeHr
   if (
     access.scope === "system" ||
     access.role === "Super Admin" ||
-    access.role === "HR Operations"
+    access.role === "HR Operations" ||
+    access.role === "HR Administration"
   ) {
     return;
   }

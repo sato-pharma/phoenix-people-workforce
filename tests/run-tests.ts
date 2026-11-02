@@ -1147,6 +1147,7 @@ import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
+import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -5100,9 +5101,16 @@ await runTest(
 await runTest(
   "HR Operations Specialist access (the salary-blind seat is refused the company Fingerprint Report, "
   + "the Monthly Summary, Attendance Setup and the machine sync while every other holder of the key keeps "
-  + "them; her attendance report is her own; she prints exactly her eight papers and never a company "
-  + "template; the pack reaches her without salary, gross or insurance wage, and a salary she sends is dropped)",
+  + "them; her attendance report is her own; she holds the hiring papers and the whole of HR Forms and "
+  + "stays outside recruitment and Business Cards; she sees and prints the salary there, and a salary she "
+  + "sends is dropped)",
   runHrOperationsSpecialistAccessTests,
+);
+await runTest(
+  "Hiring joiners panel (accepted offers from today on with free-text letter dates read and the record's "
+  + "hire date winning; a save must carry every field; papers progress skips exit documents; the read "
+  + "carries no money, and both routes assert before they touch anything)",
+  runHiringJoinersTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "

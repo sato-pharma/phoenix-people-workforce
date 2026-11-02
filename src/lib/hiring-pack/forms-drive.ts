@@ -256,8 +256,8 @@ export type DriveTemplate = {
  * and listing it here would put two editions of one paper side by side with nothing saying which is
  * in force. The same rule the package tabs follow.
  *
- * `paperScope` — the papers a viewer is limited to (SEAT_PRINTABLE_DOCUMENTS, the HR Operations
- * Specialist, owner 2026-10-20), or null for every paper. With a scope the drive holds only those
+ * `paperScope` — the papers a viewer is limited to (SEAT_PRINTABLE_DOCUMENTS, no seat today), or
+ * null for every paper. With a scope the drive holds only those
  * built-in papers, no company template, and no folder left empty by the filter.
  */
 export function buildFormsDrive(
