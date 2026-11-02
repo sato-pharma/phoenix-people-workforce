@@ -392,6 +392,7 @@
   "claude-code-effort-max-got-slow-xhigh-is-the-balance": "sessions",
   "claude-code-settings-are-machine-wide-not-per-account": "sessions",
   "claude-config-audit-2026-07-31": "history",
+  "claude-in-chrome-javascript-blocks-query-strings-and-cookie-words": "phoenix-crm",
   "claude-json-keeps-two-project-entries-per-folder": "sessions",
   "claude-project-dir-is-the-sessions-own-worktree": "git-worktrees",
   "claude-worktree-sad-hopper-5d16b0-is-corrupt": "git-worktrees",
