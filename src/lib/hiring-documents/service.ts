@@ -397,6 +397,15 @@ function assertMayEditHiringChecklist(access: AccessContext) {
   }
 }
 
+/**
+ * She RECEIVES papers; she does not remove what is on file (owner, 2026-11-02: "Receive the hiring
+ * papers"). The route asks employee_documents:update, the grant she holds, so withholding :delete from
+ * her would not stop this on its own, and removing a scan is permanent: the row and the stored object go.
+ */
+export function mayRemoveHiringDocumentFile(access: Pick<AccessContext, "role">): boolean {
+  return access.role !== "HR Administration";
+}
+
 export async function createHiringDocumentDefinition(
   access: AccessContext,
   input: CreateHiringDocumentDefinitionInput,
@@ -918,6 +927,9 @@ export async function attachHiringDocumentFiles(
  * this only fires when a file that DID exist has just been removed.
  */
 export async function removeHiringDocumentFile(access: AccessContext, fileId: string) {
+  if (!mayRemoveHiringDocumentFile(access)) {
+    throw new Error(`Forbidden: ${access.role} does not remove a hiring document file.`);
+  }
   const id = cleanText(fileId);
   if (!id) throw new Error("File id is required.");
 

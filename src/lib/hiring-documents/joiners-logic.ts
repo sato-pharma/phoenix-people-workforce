@@ -32,6 +32,9 @@ export type JoinerOfferRow = {
  * Acquisition page's joiners panel (`joiningDayKey`): an accepted offer only, and the employee
  * record's hire date beats the letter's once there is a record. `start_date` is free text on the
  * letter ("25 October 2026"), so a comparison in SQL cannot do this.
+ *
+ * A letter whose date cannot be read ("", "1/11/2026") with no record yet stays on the list, FIRST and
+ * with an empty `startKey`: dropping it would hide a real joiner behind a list that looks complete.
  */
 export function upcomingJoinerOffers<T extends JoinerOfferRow>(
   offers: readonly T[],
@@ -39,8 +42,11 @@ export function upcomingJoinerOffers<T extends JoinerOfferRow>(
 ): Array<{ offer: T; startKey: string }> {
   return offers
     .filter((offer) => offer.status === "accepted")
-    .map((offer) => ({ offer, startKey: joiningDayKey(offer, input.hireDateByHrId) }))
-    .filter(({ startKey }) => Boolean(startKey) && startKey >= input.todayKey)
+    .map((offer) => ({
+      offer,
+      startKey: joiningDayKey({ employeeHrId: offer.employeeHrId, startDate: offer.startDate ?? "" }, input.hireDateByHrId),
+    }))
+    .filter(({ offer, startKey }) => (startKey ? startKey >= input.todayKey : !offer.employeeHrId))
     .sort((left, right) => left.startKey.localeCompare(right.startKey) || left.offer.name.localeCompare(right.offer.name));
 }
 

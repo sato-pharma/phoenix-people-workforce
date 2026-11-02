@@ -11,6 +11,7 @@ import {
   hiringDocumentsErrorMessage,
   isHiringDocumentsSchemaMissing,
   mayEditHiringChecklist,
+  mayRemoveHiringDocumentFile,
 } from "@/lib/hiring-documents/service";
 import type { HiringDocumentsDashboardData } from "@/lib/hiring-documents/types";
 
@@ -68,6 +69,7 @@ async function HiringDocumentsContent({
   return (
     <HiringDocumentsManager
       canEditChecklist={canManage && mayEditHiringChecklist(access)}
+      canRemoveFiles={canManage && mayRemoveHiringDocumentFile(access)}
       canManage={canManage}
       initialData={initialData}
       initialError={initialError}

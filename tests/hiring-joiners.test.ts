@@ -28,7 +28,11 @@ function testWhoCountsAsArriving() {
     offer("letter-text-upcoming", "25 November 2026"),
     offer("letter-iso-today", TODAY),
     offer("letter-yesterday", "01 November 2026"),
+    // No readable date and no record yet: kept, first, so a real joiner is never hidden.
     offer("no-date", null),
+    offer("slash-date", "1/11/2026"),
+    // No readable date but a record exists: that person has already joined the system, not listed.
+    offer("no-date-with-record", null, { employeeHrId: "B-9003" }),
     offer("not-accepted", "25 November 2026", { status: "sent" }),
     // The record's hire date beats the letter, both ways.
     offer("moved-later", "01 October 2026", { employeeHrId: "B-9001" }),
@@ -45,11 +49,13 @@ function testWhoCountsAsArriving() {
   assert.deepEqual(
     upcoming.map(({ offer: row, startKey }) => [row.id, startKey]),
     [
+      ["no-date", ""],
+      ["slash-date", ""],
       ["letter-iso-today", TODAY],
       ["moved-later", "2026-11-10"],
       ["letter-text-upcoming", "2026-11-25"],
     ],
-    "accepted only, from today on, nearest first, the record's date winning, free-text letter dates read",
+    "accepted only, unreadable dates first, then from today on, nearest first, the record's date winning, free-text letter dates read",
   );
 }
 

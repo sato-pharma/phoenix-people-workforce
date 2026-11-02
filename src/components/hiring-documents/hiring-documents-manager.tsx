@@ -61,6 +61,7 @@ import { cn } from "@/lib/utils";
 type Props = {
   /** False for the seat that receives the papers but does not change what the checklist asks for. */
   canEditChecklist: boolean;
+  canRemoveFiles: boolean;
   canManage: boolean;
   initialData: HiringDocumentsDashboardData | null;
   initialError: string | null;
@@ -129,7 +130,7 @@ function getCompletionPercent(data: HiringDocumentsDashboardData | null) {
 // screen shows, and the completion filter narrows both by the same number.
 const employeeCompletion = hiringDocumentCompletionPercent;
 
-export function HiringDocumentsManager({ canEditChecklist, canManage, initialData, initialError }: Props) {
+export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveFiles, initialData, initialError }: Props) {
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("documents");
   const [data, setData] = React.useState<HiringDocumentsDashboardData | null>(initialData);
   const [error, setError] = React.useState<string | null>(initialError);
@@ -634,6 +635,7 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, initialDat
           >
             <HiringDocumentCapture
               canManage={canManage}
+              canRemoveFiles={canRemoveFiles}
               documents={documents}
               employees={employees}
               initialDocumentId={captureTarget?.documentId ?? null}

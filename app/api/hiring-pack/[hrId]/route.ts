@@ -58,11 +58,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ hrId
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    // STILL employee_documents, deliberately — the HR Operations Specialist is NOT let in here. The
-    // hiring profile is the contract's own terms (duration, dates, the underperformance and
-    // training-bond clauses) and Form 1's registration codes, and changing a contract stays his
-    // decision (owner, 2026-10-20). Her papers' facts and exit details save through /facts and
-    // /offboarding, which she may use.
+    // STILL employee_documents. The hiring profile is the contract's own terms (duration, dates, the
+    // underperformance and training-bond clauses) and Form 1's registration codes. The HR Operations
+    // Specialist comes in here too since the owner opened the whole module to her on 2026-11-02; this
+    // saves what the papers print, in employee_hiring_profile, and does not touch the contracts table.
     await assertPermission(access, "employee_documents", "update");
     const { hrId } = await params;
     const payload = (await request.json()) as HiringPackProfileInput;

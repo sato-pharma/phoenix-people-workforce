@@ -161,12 +161,32 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     }
   }
 
+  const joiners = data?.joiners ?? [];
+  const todayKey = data?.todayKey ?? "";
+
   function renderPeople(joiner: HiringJoiner) {
     return (
       <>
         <p className="break-words text-sm font-black text-phx-ink">{joiner.name}</p>
         {joiner.title ? <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{joiner.title}</p> : null}
         {joiner.territory ? <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">{joiner.territory}</p> : null}
+      </>
+    );
+  }
+
+  function renderStart(joiner: HiringJoiner) {
+    if (!joiner.startKey) {
+      return (
+        <>
+          <p className="text-sm font-black text-phx-ink">No readable date</p>
+          <p className="text-phx-xs font-semibold text-phx-ink-soft">Check the offer letter</p>
+        </>
+      );
+    }
+    return (
+      <>
+        <p className="text-sm font-black text-phx-ink">{formatDay(joiner.startKey)}</p>
+        <p className="text-phx-xs font-semibold text-phx-ink-soft">{daysUntilLabel(todayKey, joiner.startKey)}</p>
       </>
     );
   }
@@ -222,7 +242,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     );
   }
 
-  function renderForm(joiner: HiringJoiner, draft: Draft, idPrefix: string) {
+  function renderForm(joiner: HiringJoiner, draft: Draft, idPrefix: string, fieldsClassName: string) {
     const busy = busyId === joiner.offerId;
     return (
       <div className="space-y-3">
@@ -234,7 +254,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
         >
           Papers confirmed
         </CheckTile>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={fieldsClassName}>
           <div>
             <FieldLabel htmlFor={`${idPrefix}-date-${joiner.offerId}`}>Attendance date</FieldLabel>
             <Input
@@ -286,9 +306,6 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
     );
   }
 
-  const joiners = data?.joiners ?? [];
-  const todayKey = data?.todayKey ?? "";
-
   return (
     <AdminTableShell
       description="Everyone with an accepted offer who starts today or later. Contact them, confirm their papers and the time they attend."
@@ -325,7 +342,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
 
       {!isLoading && !loadError && joiners.length > 0 ? (
         <>
-          <div className="hidden lg:block">
+          <div className="hidden md:block">
             <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
               <colgroup>
                 <col className="w-[20%]" />
@@ -351,11 +368,10 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
                       <td className={cellClassName}>{renderPeople(joiner)}</td>
                       <td className={cellClassName}>{renderContact(joiner)}</td>
                       <td className={cellClassName}>
-                        <p className="text-sm font-black text-phx-ink">{formatDay(joiner.startKey)}</p>
-                        <p className="text-phx-xs font-semibold text-phx-ink-soft">{daysUntilLabel(todayKey, joiner.startKey)}</p>
+                        {renderStart(joiner)}
                       </td>
                       <td className={cellClassName}>{renderPapers(joiner)}</td>
-                      <td className={cellClassName}>{draft ? renderForm(joiner, draft, "joiner-desktop") : null}</td>
+                      <td className={cellClassName}>{draft ? renderForm(joiner, draft, "joiner-desktop", "grid gap-3 xl:grid-cols-2") : null}</td>
                     </tr>
                   );
                 })}
@@ -363,7 +379,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
             </table>
           </div>
 
-          <div className="space-y-3 p-4 lg:hidden">
+          <div className="space-y-3 p-4 md:hidden">
             {joiners.map((joiner) => {
               const draft = drafts[joiner.offerId];
               return (
@@ -371,13 +387,12 @@ export function HiringJoinersPanel({ canManage, documents, employees, onReceiveP
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">{renderPeople(joiner)}</div>
                     <div className="text-right">
-                      <p className="text-sm font-black text-phx-ink">{formatDay(joiner.startKey)}</p>
-                      <p className="text-phx-xs font-semibold text-phx-ink-soft">{daysUntilLabel(todayKey, joiner.startKey)}</p>
+                      {renderStart(joiner)}
                     </div>
                   </div>
                   {renderContact(joiner)}
                   {renderPapers(joiner)}
-                  {draft ? renderForm(joiner, draft, "joiner-mobile") : null}
+                  {draft ? renderForm(joiner, draft, "joiner-mobile", "grid gap-3 sm:grid-cols-2") : null}
                 </div>
               );
             })}

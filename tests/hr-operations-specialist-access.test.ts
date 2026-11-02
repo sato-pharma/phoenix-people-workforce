@@ -48,6 +48,8 @@ import {
 import {
   filterHiringDocumentsForAccess,
   mayEditHiringChecklist,
+  mayRemoveHiringDocumentFile,
+  removeHiringDocumentFile,
 } from "../src/lib/hiring-documents/service.ts";
 import type { HiringDocumentsDashboardData } from "../src/lib/hiring-documents/types.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -184,6 +186,14 @@ async function testSheHoldsTheHiringPapersGrantAndNothingBesideIt() {
   // She receives papers; what the checklist asks of everybody stays with the seats that held it.
   assert.equal(mayEditHiringChecklist(seat), false, "she does not change the checklist");
   assert.equal(mayEditHiringChecklist(accessFor(HR_OPERATIONS)), true, "HR Operations still does");
+  // Removing a scan is permanent and its route asks only :update, so the service refuses her itself.
+  // The call never reaches the database: the refusal is its first line.
+  assert.equal(mayRemoveHiringDocumentFile(seat), false, "she does not remove a file on record");
+  assert.equal(mayRemoveHiringDocumentFile(accessFor(HR_OPERATIONS)), true, "HR Operations still does");
+  await rejectsForbidden(() => removeHiringDocumentFile(seat, "any-file"), "the service refuses her before it reads anything");
+  for (const page of ["app/(admin)/hiring-documents/page.tsx", "app/employee-portals/hiring-documents/page.tsx"]) {
+    assert.ok(code(page).includes("canManage && mayRemoveHiringDocumentFile(access)"), `${page} hides the remove button from her`);
+  }
   const service = code("src/lib/hiring-documents/service.ts");
   for (const fn of ["createHiringDocumentDefinition", "deleteHiringDocumentDefinition"]) {
     const body = service.slice(service.indexOf(`export async function ${fn}(`));
