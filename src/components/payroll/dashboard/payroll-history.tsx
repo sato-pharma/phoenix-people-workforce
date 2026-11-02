@@ -1,5 +1,4 @@
 import { Download, FileCheck2, Loader2, Trash2, Upload } from "lucide-react";
-import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -109,19 +108,19 @@ export function PayrollHistory({
 
   const renderActions = (batch: SalaryBatch) => (
     <div className="flex flex-wrap gap-2">
-      <Link href={`/api/payroll/${batch.id}/download`}>
-        <Button className="px-3 py-1.5 text-xs" variant="secondary">
+      <Button asChild className="px-3 py-1.5 text-xs" variant="secondary">
+        <a href={`/api/payroll/${batch.id}/download`}>
           <Download className="mr-2 h-3.5 w-3.5" />
           Download
-        </Button>
-      </Link>
+        </a>
+      </Button>
       {publishedPayslipStatuses.has(batch.status) ? (
-        <Link href={`/api/payroll/${batch.id}/payslips`} target="_blank">
-          <Button className="px-3 py-1.5 text-xs" variant="secondary">
+        <Button asChild className="px-3 py-1.5 text-xs" variant="secondary">
+          <a href={`/api/payroll/${batch.id}/payslips`} target="_blank">
             <FileCheck2 className="mr-2 h-3.5 w-3.5" />
             Payslips
-          </Button>
-        </Link>
+          </a>
+        </Button>
       ) : (
         <Button className="px-3 py-1.5 text-xs" disabled variant="secondary">
           <FileCheck2 className="mr-2 h-3.5 w-3.5" />
