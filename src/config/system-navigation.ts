@@ -2538,7 +2538,8 @@ const hrNavigationSectionSeeds = [
       // Her view of the Interview Calendar (2026-10-20, the owner's "She can view it only");
       // seesWholeInterviewCalendar admits her, read only. No permission: the calendar is its own gate.
       { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Administration"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/admin/private-calendars", icon: CalendarFold, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // The HR Operations Specialist shares it since 2026-11-03 (the owner's "Open it for her").
+      { href: "/hr/admin/private-calendars", icon: CalendarFold, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing", "HR Administration"], excludedRoles: ["Super Admin"] },
       // Last of the calendars on purpose (2026-10-16): the three above are the company's own — official,
       // events, private — and this one is the field force's submitted plans, a different thing.
       // Owner instruction 2026-09-01 for HR Operations, and independently added for HR Advisory

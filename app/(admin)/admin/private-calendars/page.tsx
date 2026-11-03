@@ -25,7 +25,7 @@ const MONTHS = [
 
 // Every employee is reachable from this desk (owner, 2026-10-08: "make me able to filter on any
 // emp here"). The surface is already gated to a private-calendar global viewer — Super Admin, CEO,
-// system scope or a configured HR id — and such a viewer may read ANY employee's calendar
+// Talent Acquisition, the HR Operations Specialist, system scope or a configured HR id — and such a viewer may read ANY employee's calendar
 // (canReadPrivateCalendarEmployee), so the old NSM/PM/GPM/TM-or-head-office shortlist narrowed the
 // picker and nothing else. Do not reintroduce a role shortlist here: it hid field reps and district
 // managers whose calendars this desk is allowed to open.
