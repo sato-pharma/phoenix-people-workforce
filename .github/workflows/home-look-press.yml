@@ -46,8 +46,6 @@ jobs:
           test "$NEXT_PUBLIC_SUPABASE_URL" = "https://cifwmndunmlxjhyjugxa.supabase.co"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           ! env | grep -q ozucdzovmcqvepbozvqf
-      - name: The fix's own test, unbroken and broken
-        run: node --no-warnings scripts/ci-press/back-mutants.mjs
       - name: Start the server
         run: |
           sudo fallocate -l 6G /mnt/phx-look-swap && sudo chmod 600 /mnt/phx-look-swap && sudo mkswap /mnt/phx-look-swap >/dev/null && sudo swapon /mnt/phx-look-swap || echo "no extra swap"
@@ -72,6 +70,8 @@ jobs:
       - name: Server errors
         if: always()
         run: |
+          echo "=== server probe lines"
+          grep -n "first-read-probe" server.log | cut -c1-900 || true
           wc -l server.log
           grep -E '⨯|Server is approaching' server.log | cut -c1-200 | sort | uniq -c | sort -rn | head -20 || true
           grep -n -E "Server is approaching|preloadEntriesOnStart|reading 'call'" server.log | cut -c1-120 || true

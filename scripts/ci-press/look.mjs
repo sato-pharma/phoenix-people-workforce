@@ -67,7 +67,10 @@ const calls = [];
 const warnings = [];
 // The router asking the server for a page again: the page's own read starts anew inside it, so a Back with one of these is fresh without the browser reading Visits.
 const pageRequests = [];
+const lookStart = Date.now();
+const stamp = () => `+${((Date.now() - lookStart) / 1000).toFixed(1)}s`;
 page.on("console", (m) => {
+  if (m.text().includes("first-read-probe")) console.log(`  ${stamp()} ${m.text()}`);
   if (m.type() === "warning") warnings.push(m.text().slice(0, 400));
   if (m.type() === "error" && !/net::ERR_FAILED|Failed to fetch/.test(m.text())) errors.push(m.text().slice(0, 1800));
 });
@@ -80,6 +83,16 @@ page.on("response", (r) => {
 page.on("request", (r) => {
   const url = new URL(r.url());
   if (url.pathname.startsWith("/api/phoenix-crm/") && r.method() === "GET") calls.push(url.pathname + url.search);
+  if (url.searchParams.has("_rsc") || r.headers().rsc === "1") {
+    const rawTree = r.headers()["next-router-state-tree"];
+    let top = "none";
+    try {
+      top = rawTree ? String(JSON.parse(decodeURIComponent(rawTree))[3]) : "none";
+    } catch {
+      top = "unreadable";
+    }
+    console.log(`  ${stamp()} [page request] ${url.pathname} prefetch=${r.headers()["next-router-prefetch"] ?? "no"} treeTop=${top}`);
+  }
   if (url.searchParams.has("_rsc") || r.headers().rsc === "1") pageRequests.push(`${url.pathname}${r.headers()["next-router-prefetch"] ? " (prefetch)" : ""}`);
   else if (r.isNavigationRequest() && r.frame() === page.mainFrame()) pageRequests.push(url.pathname);
 });
@@ -163,6 +176,7 @@ try {
     await report("visits-from-chooser", mark);
     console.log(`  VERDICT chooser: the browser asked for the Visits read itself ${calls.slice(mark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length} time(s); 0 means the page handed it over`);
     const pressBack = async (label, waitUntil) => {
+      console.log(`  ${stamp()} --- about to press Back (${label})`);
       await page.waitForTimeout(Math.max(0, waitUntil - Date.now()));
       console.log(`  pressing Back ${Math.round((Date.now() - drawnAt) / 1000)} s after Visits first drew (${label})`);
       const readMark = calls.length;

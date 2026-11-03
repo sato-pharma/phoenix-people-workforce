@@ -32,17 +32,24 @@ export const FIRST_READ_LIFETIME_MS = 30_000;
 // restore reuses it. A real browser disproved that on 3 Nov 2026: Back 35 s after Visits drew, the screen remounted,
 // no read and no page request, the day from before on screen. Back hands over the same read in another object.
 const firstMet = new Map<string, number>();
+const probeSeen = new WeakSet<object>();
 
 /** The handed-over read, when it is this screen's and can still be used. */
 export function firstReadFor(firstRead: CrmFirstRead | null, url: string, key: string, now: number = Date.now()): CrmFirstRead | null {
   if (firstRead === null || firstRead.url !== url || firstRead.key !== key) return null;
-  const met = firstMet.get(firstRead.id) ?? now;
+  const had = firstMet.get(firstRead.id);
+  const sameObject = probeSeen.has(firstRead);
+  probeSeen.add(firstRead);
+  const met = had ?? now;
   firstMet.set(firstRead.id, met);
-  return now - met <= FIRST_READ_LIFETIME_MS ? firstRead : null;
+  const handed = now - met <= FIRST_READ_LIFETIME_MS;
+  console.info(`[first-read-probe] for id=${firstRead.id.slice(0, 8)} known=${had !== undefined} spent=${had === Number.NEGATIVE_INFINITY} sameObject=${sameObject} ageMs=${had === undefined || had === Number.NEGATIVE_INFINITY ? "-" : now - had} handed=${handed}`);
+  return handed ? firstRead : null;
 }
 
 /** The screen has drawn it, so nothing may draw it again. Not before: Strict Mode runs an effect twice. */
 export function firstReadSpent(firstRead: CrmFirstRead): void {
+  console.info(`[first-read-probe] spent id=${firstRead.id.slice(0, 8)}`);
   firstMet.set(firstRead.id, Number.NEGATIVE_INFINITY);
 }
 

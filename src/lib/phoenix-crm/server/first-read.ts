@@ -226,8 +226,16 @@ export async function startPhoenixCrmFirstRead(
   requested: string | null,
   surface: PhoenixCrmSurface,
 ): Promise<CrmFirstRead | null> {
-  if (!pageRequestWantsFirstRead(await headers())) return null;
+  const probeHeaders = await headers();
+  const probeWants = pageRequestWantsFirstRead(probeHeaders);
+  const probeTree = probeHeaders.get("next-router-state-tree");
+  if (!probeWants) {
+    console.log(`[first-read-probe] server declined requested=${requested} tree=${probeTree ? decodeURIComponent(probeTree).slice(0, 700) : "none"}`);
+    return null;
+  }
   const target = phoenixCrmFirstReadTarget(overview, requested, surface);
   if (target === null) return null;
-  return { body: runFirstRead(access, target), id: randomUUID(), key: target.key, url: target.url };
+  const probeId = randomUUID();
+  console.log(`[first-read-probe] server started id=${probeId.slice(0, 8)} requested=${requested} prefetch=${probeHeaders.get("next-router-prefetch")} rsc=${probeHeaders.get("rsc")} tree=${probeTree ? decodeURIComponent(probeTree).slice(0, 700) : "none"}`);
+  return { body: runFirstRead(access, target), id: probeId, key: target.key, url: target.url };
 }
