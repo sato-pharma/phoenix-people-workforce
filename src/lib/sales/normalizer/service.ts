@@ -12,9 +12,10 @@ import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
 import type { MappingReferences } from "@/lib/sales/normalizer/brick-area";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
-import { pickBestSheet } from "@/lib/sales/normalizer/engine";
+import { pickBestSheet, profileForWorkbook } from "@/lib/sales/normalizer/engine";
 import { HEADER_SCAN_ROWS } from "@/lib/sales/normalizer/header-normalize";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
+import { withSecondTemplates } from "@/lib/sales/normalizer/distributor-templates";
 import { PHOENIX_TEMPLATE_CODE, PHOENIX_TEMPLATE_NAME } from "@/lib/sales/normalizer/phoenix-template-code";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
@@ -64,14 +65,15 @@ const PHOENIX_PRODUCT_COLUMNS = ["Product ID"];
 const PHOENIX_BRICK_COLUMNS = ["Brick ID", "Brick ID2"];
 
 export async function learnFromCleanedFile(distributorCode: string, file: File): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
-  const profile = await resolveDistributorProfile(distributorCode);
-  if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
+  const storedProfile = await resolveDistributorProfile(distributorCode);
+  if (!storedProfile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
   const [refs, buffer] = await Promise.all([loadSalesReferenceData({ includeCustomerBricks: false }), file.arrayBuffer()]);
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
   const brickIds = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  const profile = profileForWorkbook(workbook, storedProfile);
   // Pick the richest worksheet (not just the first) and scan deep, consistent with the importer engine.
   const sheet = pickBestSheet(workbook, profile);
   if (!sheet) return { invalid: 0, saved: 0, scannedRows: 0, skipped: 0 };
@@ -229,7 +231,7 @@ export function listNormalizerDistributors(): NormalizerDistributorOption[] {
  * profiled distributor and must never appear there.
  */
 export function listNormalizerSourceOptions(): NormalizerDistributorOption[] {
-  return [{ code: PHOENIX_TEMPLATE_CODE, name: PHOENIX_TEMPLATE_NAME }, ...listNormalizerDistributors()];
+  return [{ code: PHOENIX_TEMPLATE_CODE, name: PHOENIX_TEMPLATE_NAME }, ...withSecondTemplates(listNormalizerDistributors())];
 }
 
 // ── Coded XLSX (the format the user produces by hand today; Phoenix-branded) ──

@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { HEADER_SCAN_ROWS, normalizeHeaderKey } from "@/lib/sales/normalizer/header-normalize";
 import { needsAGuess, normalizeNumberText } from "@/lib/sales/normalizer/number-text";
+import { secondLayoutProfile } from "@/lib/sales/normalizer/profiles";
 import { deriveHierarchy, normalizeCodeKey, numericCanonicalKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type CellCorrection, type CodedRow, type Crosswalks, type CustomerBrickCorrection, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
@@ -713,6 +714,19 @@ export function pickBestSheet(workbook: ExcelJS.Workbook, profile?: DistributorP
     if (hits > bestHits) { bestHits = hits; best = ws; }
   }
   return best;
+}
+
+/**
+ * The layout a workbook actually wears, for a distributor that has a second template. The old layout
+ * keeps its place when the sheet carries it, and the second is taken only when the sheet carries all
+ * of its required columns, so a sheet that fits neither is still refused against the old template.
+ */
+export function profileForWorkbook(workbook: ExcelJS.Workbook, profile: DistributorProfile): DistributorProfile {
+  const second = secondLayoutProfile(profile.distributorCode);
+  if (!second) return profile;
+  const sheet = pickBestSheet(workbook, second);
+  if (!sheet || validateSheetHeaders(sheet, profile, []).valid) return profile;
+  return validateSheetHeaders(sheet, second, []).valid ? second : profile;
 }
 
 export async function normalizeRawWorkbook(
