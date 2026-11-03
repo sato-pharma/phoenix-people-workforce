@@ -1,4 +1,5 @@
 import { assertPermission } from "@/lib/auth/permissions";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -16,13 +17,14 @@ export const dynamic = "force-dynamic";
 /**
  * The CEO's signature for the award cheques - whether one is stored, replace it, remove it.
  *
- * `spotlight:export` on every verb: the Super Admin and the CEO. The image is a transparent PNG kept
- * in a private bucket (`cheque-signature.ts`), and the browser only ever gets it back as a thumbnail
- * for the person who is allowed to print it.
+ * `spotlight:export` and the page's seat fence on every verb: the Super Admin and the CEO. The image
+ * is a transparent PNG kept in a private bucket (`cheque-signature.ts`), and the browser only ever
+ * gets it back as a thumbnail for the person who is allowed to print it.
  */
 async function gate(request: Request) {
   const access = await resolveAccessContext(request);
   await assertPermission(access, "spotlight", "export");
+  assertPageOpenForRole(access.role, "/spotlight/cheques");
 }
 
 function failure(error: unknown) {

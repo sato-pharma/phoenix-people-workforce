@@ -2979,6 +2979,7 @@ import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconcil
 import { runCrmIReports360HoldoutsTests } from "./crm-ireports360-holdouts.test.ts";
 import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
 import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
+import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fence.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11828,6 +11829,7 @@ await runTest("approved expenses against the payslips (3 Nov 2026): four finding
 await runTest("who still records only in iReports360 (3 Nov 2026): vendor rows and real partners only, a day Phoenix holds is not only there, leave is its own line, and the tab offers no action", runCrmIReports360HoldoutsTests);
 await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
 await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
+await runTest("Award Cheques refuses the Talent Acquisition seat on the page and every API verb, and her Spotlight read and print stay", runSpotlightChequesSeatFenceTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

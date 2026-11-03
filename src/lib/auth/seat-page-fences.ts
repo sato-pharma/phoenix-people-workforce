@@ -54,6 +54,9 @@ export const SEAT_PAGE_FENCES: Partial<Record<PhoenixRole, readonly string[]>> =
     // Payroll — the Payslips Center, carried in by the payslips:read every seat holds for itself.
     // He did not tick it; her own payslip is on My Workspace.
     "/admin/payslips-center",
+    // Award Cheques — carried in by the spotlight:export her Spotlight sheet is printed with. He gave
+    // her Spotlight (2026-10-08), not this page, which is the Super Admin's and the CEO's alone.
+    "/spotlight/cheques",
   ],
   // The HR Operations Specialist seat (`HR Administration`), built 2026-10-20 from the owner's
   // answers: she reviews attendance through her own Daily & Weekly Reports and never sees a salary,
