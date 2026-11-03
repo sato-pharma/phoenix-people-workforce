@@ -157,8 +157,11 @@ export default defineRailway(() => {
   // The nightly code backup (owner, 2026-11-03). Created directly, never through a whole-project apply.
   // Its schedule, `17 0 * * *` UTC, has no setting here: Railway documents no cron option for service(),
   // so it is set with GraphQL `serviceInstanceUpdate { cronSchedule }`. See infra/code-backup/README.md.
+  // Its watch pattern stops every merge to `main` rebuilding it: a rebuild replaces the container, which
+  // could cut off a night's run (owner, 2026-11-03; 45 rebuilds in its first 17 hours).
   const phoenixCodeBackup = service("phoenix-code-backup", {
     source: github("gawishtheit/phoenix-people-workforce", { checkSuites: false, rootDirectory: "infra/code-backup" }),
+    build: { watchPatterns: ["infra/code-backup/**"] },
     replicas: { "europe-west4-drams3a": 1 },
     deploy: { restartPolicyType: "NEVER" },
     env: { CODE_BACKUP_AGE_RECIPIENT: preserve(), CODE_BACKUP_MIN_REPOS: preserve(), GITHUB_BACKUP_TOKEN: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_ID: preserve(), GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: preserve(), GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: preserve() },

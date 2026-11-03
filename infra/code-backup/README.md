@@ -3,6 +3,8 @@
 A one-shot Railway service, `phoenix-code-backup`, in Europe. Railway starts it at `17 0 * * *` UTC and it
 exits when done. Railway's schedule has no setting in `.railway/railway.ts`, so it is set with GraphQL
 `serviceInstanceUpdate { cronSchedule }`. Railway skips a run while the last one is still going.
+Its watch pattern, `infra/code-backup/**`, means only a change in this folder rebuilds it; every other merge
+shows as skipped. A rebuild does not start a backup.
 
 Each night it makes one file on the app's Drive, `phoenix-code-backup/daily/code-backup-YYYY-MM-DD.tar.age`:
 a verified `git bundle` of every repository the token can see, the `hmdm-android` release files, and a
