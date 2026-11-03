@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // THE ONE READ OF DEPENDABOT'S OPEN ALERTS, AND THE ONE JUDGEMENT OF WHICH OF THEM WILL FREEZE CI.
 //
-// WHY THIS EXISTS. `validate`'s dependency-audit step runs `pnpm audit --audit-level=high --prod`, so a
+// WHY THIS EXISTS. The dependency-audit step behind `checks` runs `pnpm audit --audit-level=high --prod`, so a
 // HIGH-or-worse advisory against a package in the PRODUCTION tree fails every pull request the moment
 // the audit's data source learns about it — and by AGENTS.md §2.3 a red check suite on a `main` commit
 // makes Railway mark that production deploy SKIPPED. Measured 2026-09-30: `next` passed that step at
@@ -152,7 +152,7 @@ export function alertsEnabled() {
 export const AUDITED_MANIFESTS = new Set(['package.json', 'pnpm-lock.yaml']);
 
 /**
- * Why this alert cannot turn `validate` red — or `null` when it can, which is deliberately also the
+ * Why this alert cannot turn `checks` red — or `null` when it can, which is deliberately also the
  * answer whenever the reason could not be positively read.
  *
  * @param {{ scope: string, manifest: string }} row
@@ -321,7 +321,7 @@ export function describeAlert(row, decisions) {
       //
       // 🔴 ONLY FOR AN ALERT THAT CANNOT REACH THE GATE. A reachable one keeps the bare bump
       // instruction however recent its decision: a recorded acceptance must never read as a reason to
-      // leave something that will turn `validate` red — and through it withhold a production deploy
+      // leave something that will turn `checks` red — and through it withhold a production deploy
       // (AGENTS.md §2.3). Fails closed in the same direction as every other grading here.
       row.outOfAuditReach && decided
       ? `bump to ${row.patchedVersion} — but risk ACCEPTED, recorded ${decided.recorded} in ${DECISIONS_DOC}`
@@ -400,7 +400,7 @@ export function judgeAlerts(read, enabled, decisions) {
 
   for (const row of failing) errors.push(`WILL FAIL CI: ${describeAlert(row, decisions)}`);
   // Printed, never silent: these are real open alerts and a reader must still see them. What changed
-  // is only the verdict attached — they cannot turn `validate` red, so they must not block a merge.
+  // is only the verdict attached — they cannot turn `checks` red, so they must not block a merge.
   for (const row of unreachable) {
     notes.push(`open, but CANNOT fail the gate — ${row.outOfAuditReach}: ${describeAlert(row, decisions)}`);
   }
