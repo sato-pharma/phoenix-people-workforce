@@ -327,3 +327,11 @@ decision still parses out of this file, so a restyle that breaks it goes red rat
 🔴 **`skipped — …` is still not a pass.** It means nothing was read — no `gh`, not authenticated, no
 network, or a token without `security_events`. A zero from a repo with alerts switched off still
 exits 1. Neither of those changed here.
+
+🔴 **A 403 can mean the alerts are off, not that the token is short.** The endpoint answers
+`Dependabot alerts are disabled for this repository. (HTTP 403)` when the setting is off. The check
+now reports that as `SWITCHED OFF` and exits 1. Until 3 Nov 2026 it blamed the token and exited 0,
+which hid that alerts had never been turned on after the 2 Nov move to
+`gawishtheit/phoenix-people-workforce`: a repository setting does not come across with the code.
+Turning them on is the owner's click, in the repository's Security settings. It is not a bump, and
+`validate`'s audit is still the gate.

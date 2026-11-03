@@ -9,11 +9,15 @@ import { VacationAdminControls } from "@/components/approvals-hub/vacation-admin
 import { VacationAttachmentLinks } from "@/components/approvals-hub/vacation-attachment-links";
 import { VacationAttachmentHistory } from "@/components/vacation/vacation-attachment-history";
 import { VacationEvidenceReviewActions } from "@/components/approvals-hub/vacation-evidence-review";
+import { WhoElseIsOffPanel } from "@/components/approvals-hub/who-else-is-off-panel";
 import { requestStatusLabel } from "@/lib/approvals-hub/request-status-label";
+import type { WhoElseIsOff } from "@/lib/vacation/who-else-is-off";
 
 type Props = {
   detail: VacationApprovalDetail;
   backHref: string;
+  /** Who else on the team is off on these dates. Null when there is no decision for it to inform. */
+  whoElseIsOff?: WhoElseIsOff | null;
 };
 
 function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
@@ -25,7 +29,7 @@ function Row({ label, value }: { label: string; value: string | number | null | 
   );
 }
 
-export function VacationRequestDetail({ detail, backHref }: Props) {
+export function VacationRequestDetail({ detail, backHref, whoElseIsOff }: Props) {
   const r = detail.record;
   if (detail.notFound || !r) {
     return (
@@ -124,6 +128,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
             slaModule="leave"
             fallbackStatusLabel={`Status: ${requestStatusLabel(r.status)}`}
           />
+          {whoElseIsOff ? <WhoElseIsOffPanel data={whoElseIsOff} /> : null}
           {!detail.readOnly ? (
             <DecisionActions
               endpoint={`/api/vacations/requests/${encodeURIComponent(r.id)}/decision`}

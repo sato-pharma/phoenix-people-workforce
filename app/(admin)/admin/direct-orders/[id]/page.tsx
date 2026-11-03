@@ -9,6 +9,8 @@ import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-
 import { getDirectOrderInvoiceValidationSlots } from "@/lib/direct-orders/pharmacy-validation";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { directOrderCustomer360Href } from "@/lib/customer-360/hrefs";
+import { canOpenCustomer360 } from "@/lib/customer-360/open-link";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 import { resolveDirectOrderReturnHref } from "@/lib/direct-orders/workspace-data";
 
@@ -61,6 +63,9 @@ export default async function AdminMyDirectOrderDetailPage({
   // raised. Same shared predicate as the portal twin, for the same reason as the capture above.
   const showCancel = canCancelHeldDirectOrder({ hrId: access.hrId, role: access.role }, detail);
 
+  const canOpenCustomer = detail?.pharmacy ? await canOpenCustomer360(access) : false;
+  const customer360Href = canOpenCustomer && detail?.pharmacy ? directOrderCustomer360Href(detail.pharmacy.id) : null;
+
   return (
     <div className="space-y-5">
       {/* Back to the LIST THEY CAME FROM — tab, filter, search and page intact. An approver works
@@ -71,6 +76,7 @@ export default async function AdminMyDirectOrderDetailPage({
         detail={detail}
         backHref={resolveDirectOrderReturnHref(from, "/admin/direct-orders")}
         backLabel="Back to My Direct Orders"
+        customer360Href={customer360Href}
       />
       {showValidation && detail?.pharmacy ? (
         <PharmacyValidationCapture

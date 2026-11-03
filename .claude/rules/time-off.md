@@ -25,6 +25,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔒 **WHO ELSE IS OFF SHOWS AND NEVER DECIDES, AND NEVER NAMES THE LEAVE TYPE** (owner, 2026-11-03). `src/lib/vacation/who-else-is-off.ts`: teammates under the same CURRENT manager with filed leave overlapping a request still waiting, on the approval page and the email-link decision page, hidden from the requester. Name, dates, half day and approved or waiting only: a sick day is private, and the select does not read `vacation_type`. A failed read or a person with no manager is SAID, never "nobody". Pinned by `tests/approver-context.test.ts`.
+
 ### Production hooks (moved from AGENTS.md §2.3)
 
 

@@ -6,6 +6,7 @@ import {
   pageHeaderRuleClassName,
   pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
+import { canOpenCustomer360 } from "@/lib/customer-360/open-link";
 import { getMarketingFinanceAgeing } from "@/lib/marketing-requests/finance-ageing-service";
 
 import { assertMarketingFinanceAgeingAdminPageAccess } from "../admin-access";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminMarketingFinanceAgeingPage() {
   const access = await assertMarketingFinanceAgeingAdminPageAccess();
   const report = await getMarketingFinanceAgeing(access);
+  const canOpenCustomer = await canOpenCustomer360(access);
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
@@ -35,7 +37,7 @@ export default async function AdminMarketingFinanceAgeingPage() {
           </p>
         </div>
       </div>
-      <MarketingFinanceAgeingDesk report={report} />
+      <MarketingFinanceAgeingDesk canOpenCustomer360={canOpenCustomer} report={report} />
     </div>
   );
 }
