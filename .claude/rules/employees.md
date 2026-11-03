@@ -22,6 +22,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔴 **THE HR OPERATIONS SPECIALIST HAS HER OWN LANDING PAGE, BUILT FROM THE TALENT ACQUISITION PAGE'S OWN PARTS (owner, 2026-11-03: "identical in design and identy") — NEVER COPY A CARD INTO IT, AND NEVER READ THE OFFERS THERE.** `src/components/hr/hr-operations-overview.tsx` imports every part; `listOffers` selects the letter's money, so its joiners come from `getHiringJoiners`, and a row leaves the server as name, title and date only. Her Interview Calendar stays view only. Her calendars arrive with keys that carry in pages she was not given, so `seat-page-fences.ts` closes Workforce Compliance, CRM tools, the plans list, plan approvals and PM products. Spotlight (EGP), Milestones (his 2026-09-23 narrowing) and Private Calendars stay shut unless he names them. Her seat files no interview request: `mayRequestInterviews` refuses it. Pinned by `tests/hr-operations-overview.test.ts`.
+
 ### Production hooks (moved from AGENTS.md §2.3)
 
 - 🔴 **A `TEST-…` login is a TEST ACCOUNT (`app_auth_users.is_test_persona`): it READS as the real employee in `test_persona_of_hr_id` and must never WRITE as her.** `resolveAccessContext` refuses its writes outside `/api/phoenix-crm/` and `/api/auth/`; never widen that list — give a module a test world first. Its Phoenix CRM rows carry HER hr id with `is_test = true`, so every `phoenix_crm_*` read keyed by a person must filter `is_test`. Account: `docs/test-accounts.md`.

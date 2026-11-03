@@ -121,7 +121,7 @@ export type TalentAcquisitionIdentity = {
  * runtime crash on somebody's home page. Only `recruiting` is ever drawn here, because
  * `RECRUITING_TASK_KEYS` is the only set of tasks this page passes.
  */
-const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
+export const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
   attendance_review: Fingerprint,
   cv_lookup: FileSearch,
   employee_requests: LifeBuoy,
@@ -129,6 +129,7 @@ const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
   hiring_paperwork: FileSignature,
   hiring_desk: FileSignature,
   hr_communication: Mail,
+  hr_calendars: CalendarDays,
   hr_governance: ShieldCheck,
   payroll_inputs: FileSpreadsheet,
   people_master: IdCard,
@@ -158,7 +159,7 @@ const KEY_CARD_ORDER = ["interview-to-offer", "offer-acceptance", "offer-to-join
  * those columns a group takes: one per card, so every card on the row is the same width whichever
  * group it is in ("two card styles", "eight cards wrap into two rows of four" — both fixed here).
  */
-const GROUP_GRID_BY_TOTAL: Record<number, string> = {
+export const GROUP_GRID_BY_TOTAL: Record<number, string> = {
   1: "@min-[1120px]:grid-cols-1",
   2: "@min-[1120px]:grid-cols-2",
   3: "@min-[1120px]:grid-cols-3",
@@ -170,7 +171,7 @@ const GROUP_GRID_BY_TOTAL: Record<number, string> = {
   9: "@min-[1120px]:grid-cols-9",
   10: "@min-[1120px]:grid-cols-10",
 };
-const GROUP_SPAN_BY_COUNT: Record<number, string> = {
+export const GROUP_SPAN_BY_COUNT: Record<number, string> = {
   1: "@min-[1120px]:col-span-1",
   2: "@min-[1120px]:col-span-2",
   3: "@min-[1120px]:col-span-3",
@@ -178,7 +179,7 @@ const GROUP_SPAN_BY_COUNT: Record<number, string> = {
   5: "@min-[1120px]:col-span-5",
 };
 /** Inside one group: its cards side by side at every width, a fourth or fifth wrapping in pairs. */
-const GROUP_CARDS_BY_COUNT: Record<number, string> = {
+export const GROUP_CARDS_BY_COUNT: Record<number, string> = {
   1: "grid-cols-1",
   2: "grid-cols-2",
   3: "grid-cols-3",
@@ -222,7 +223,7 @@ const KPI_ICONS: Record<string, LucideIcon> = {
  * so the only thing that differs from card to card is the figure's own colour, which is its meaning
  * (amber waiting, rose a problem, emerald good). Every word wraps; nothing is ever cut.
  */
-function MetricTile({ tile }: { tile: HrCommandTile }) {
+export function MetricTile({ tile }: { tile: HrCommandTile }) {
   const toneClass = {
     amber: "text-amber-700",
     emerald: "text-emerald-700",
@@ -278,10 +279,10 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
  * the named halves at its right — one compact row per measure, three rows side by side once the band
  * holds 600px, stacked under that.
  */
-function KpiCard({ kpi }: { kpi: TalentKpi }) {
+function KpiCard({ icon, kpi }: { icon?: LucideIcon; kpi: TalentKpi }) {
   const measured = kpi.rate !== null;
   const meter = rateMeterPercent(kpi.rate);
-  const Icon = KPI_ICONS[kpi.key];
+  const Icon = icon ?? KPI_ICONS[kpi.key];
   // The accessible name carries the FIGURE and both halves, because an aria-label replaces the
   // card's content: without them a screen reader never hears the percentage it is on.
   const spokenFigure = measured
@@ -356,7 +357,7 @@ function KpiCard({ kpi }: { kpi: TalentKpi }) {
  * Named rather than counted. A dashboard quietly short one figure reads as "nothing to do today",
  * which is the one wrong answer a queue of people waiting can give.
  */
-function UnavailableNotice({ sources }: { sources: string[] }) {
+export function UnavailableNotice({ sources }: { sources: string[] }) {
   return (
     <div className="mx-5 mt-4 flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
       <TriangleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -368,8 +369,73 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
   );
 }
 
+/**
+ * THE SCOREBOARD — the one dark band on the page, standing in the air beside the portrait. The
+ * Phoenix hero's black deepening into ember, the platform hero's grid and glows, light falling across
+ * its top edge, so it reads as the identity bar continuing. Sized to the reserve: one header line and
+ * up to three lying-down cards; it fills the column, so a taller reserve gives it air, never a gap
+ * under it. On a phone there is no portrait and it stands under the rail full width.
+ */
+export function TaScoreboard({
+  caption,
+  icons,
+  kpis,
+  label,
+}: {
+  caption: string;
+  /** A card's watermark, by its key; a key not named here takes the conversion measures' own map. */
+  icons?: Readonly<Record<string, LucideIcon>>;
+  kpis: readonly TalentKpi[];
+  label: string;
+}) {
+  return (
+    <section
+      aria-label={label}
+      className="relative flex flex-auto shrink-0 flex-col overflow-hidden border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] px-3 pb-2.5 pt-2 shadow-[0_10px_28px_rgba(0,0,0,0.22)]"
+    >
+      <span aria-hidden="true" className={adminHeroGridOverlayClassName} />
+      <span aria-hidden="true" className={adminHeroGlowOrangeClassName} />
+      <span aria-hidden="true" className={adminHeroGlowAmberClassName} />
+      <span aria-hidden="true" className={adminHeroAccentBarClassName} />
+      <div className="@container relative flex flex-auto shrink-0 flex-col">
+        <div className="mb-1.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 shrink-0 rotate-45 bg-orange-500" />
+          <span className={`${TA_CAPS_CLASS} text-white`}>{label}</span>
+          <span className="break-words text-[10px] font-semibold text-slate-300">{caption}</span>
+        </div>
+        <div className={`grid flex-auto shrink-0 grid-cols-1 gap-2 ${KEY_CARDS_BY_COUNT[kpis.length] ?? ""}`}>
+          {kpis.map((kpi) => (
+            <KpiCard icon={icons?.[kpi.key]} key={kpi.key} kpi={kpi} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /** How often the open overview re-reads its figures from the server while the tab is in front. */
 const OVERVIEW_REFRESH_MS = 60_000;
+
+/**
+ * The page is rendered fresh on every load, but its holder leaves it open all day. Every figure on it
+ * — the cards, the pendings, today's panels — is re-read from the server once a minute while the tab
+ * is in front, and the moment she comes back to it. `router.refresh()` keeps what she has open (the
+ * pendings panel, the calendar tab) and swaps only the server data.
+ */
+export function useOverviewRefresh() {
+  const refreshRouter = useRouter();
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") refreshRouter.refresh();
+    };
+    const timer = window.setInterval(refreshIfVisible, OVERVIEW_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [refreshRouter]);
+}
 
 export function TalentAcquisitionOverview({
   data,
@@ -384,23 +450,7 @@ export function TalentAcquisitionOverview({
   identity: TalentAcquisitionIdentity;
 }) {
   const [showPendings, setShowPendings] = useState(false);
-
-  // The page is rendered fresh on every load, but she leaves it open all day. Every figure on it —
-  // the cards, the pendings, today's panels — is re-read from the server once a minute while the tab
-  // is in front, and the moment she comes back to it. `router.refresh()` keeps what she has open
-  // (the pendings panel, the calendar tab) and swaps only the server data.
-  const refreshRouter = useRouter();
-  useEffect(() => {
-    const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") refreshRouter.refresh();
-    };
-    const timer = window.setInterval(refreshIfVisible, OVERVIEW_REFRESH_MS);
-    document.addEventListener("visibilitychange", refreshIfVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refreshIfVisible);
-    };
-  }, [refreshRouter]);
+  useOverviewRefresh();
 
   const pendingCount = data.tasks.reduce((total, task) => total + task.count, 0);
   const overdueCount = data.tasks
@@ -418,38 +468,16 @@ export function TalentAcquisitionOverview({
 
   /**
    * ── 1b. CONVERSION — THE SCOREBOARD, standing IN THE AIR BESIDE HER PORTRAIT, under the notice
-   * rail (owner, 2026-10-16, circling that air: "fit the keycards where i marked"). The one dark band
-   * on her page: the Phoenix hero's black deepening into ember, the platform hero's grid and glows,
-   * light falling across its top edge — so it reads as the identity bar continuing, and the three
-   * numbers she is measured on sit level with her name. Sized to the reserve: one header line and
-   * three lying-down cards; it fills the column, so a taller reserve (a wider window) gives it air,
-   * never a gap under it. On a phone there is no portrait and it stands under the rail full width.
+   * rail (owner, 2026-10-16, circling that air: "fit the keycards where i marked"), so the three
+   * numbers she is measured on sit level with her name.
    */
   const conversionBand =
     keyCards.length > 0 ? (
-      <section
-        aria-label="Conversion"
-        className="relative flex flex-auto shrink-0 flex-col overflow-hidden border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] px-3 pb-2.5 pt-2 shadow-[0_10px_28px_rgba(0,0,0,0.22)]"
-      >
-        <span aria-hidden="true" className={adminHeroGridOverlayClassName} />
-        <span aria-hidden="true" className={adminHeroGlowOrangeClassName} />
-        <span aria-hidden="true" className={adminHeroGlowAmberClassName} />
-        <span aria-hidden="true" className={adminHeroAccentBarClassName} />
-        <div className="@container relative flex flex-auto shrink-0 flex-col">
-          <div className="mb-1.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span aria-hidden="true" className="inline-block h-1.5 w-1.5 shrink-0 rotate-45 bg-orange-500" />
-            <span className={`${TA_CAPS_CLASS} text-white`}>Conversion</span>
-            <span className="break-words text-[10px] font-semibold text-slate-300">
-              Last {KPI_WINDOW_DAYS} days · each figure names what it divides by
-            </span>
-          </div>
-          <div className={`grid flex-auto shrink-0 grid-cols-1 gap-2 ${KEY_CARDS_BY_COUNT[keyCards.length] ?? ""}`}>
-            {keyCards.map((kpi) => (
-              <KpiCard key={kpi.key} kpi={kpi} />
-            ))}
-          </div>
-        </div>
-      </section>
+      <TaScoreboard
+        caption={`Last ${KPI_WINDOW_DAYS} days · each figure names what it divides by`}
+        kpis={keyCards}
+        label="Conversion"
+      />
     ) : null;
 
   return (

@@ -658,7 +658,9 @@ export function assertSystemAdministratorWorkspaceAccess(
 // her, and this line is the only thing that does. READ and export; the one write this report can
 // perform (turning a CRM Signal row into a balance-deducting request) keeps its Super-Admin-only
 // gate below, untouched.
-export const companyVacationReportReaderRoles = ["Super Admin", "SFE Manager", "HR Operations"] as const satisfies readonly PhoenixRole[];
+// The HR Operations Specialist joined 2026-11-03 (owner: "add some relevent modules"): the report is
+// days and dates, no amount, and the review control stays with the system administrator.
+export const companyVacationReportReaderRoles = ["Super Admin", "SFE Manager", "HR Operations", "HR Administration"] as const satisfies readonly PhoenixRole[];
 const companyVacationReportReaderRoleSet = new Set<PhoenixRole>(companyVacationReportReaderRoles);
 
 export function canReadCompanyVacationReport(context: Pick<AccessContext, "role" | "scope">): boolean {

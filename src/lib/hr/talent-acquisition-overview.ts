@@ -99,6 +99,7 @@ import {
   toTalentInterview,
   type TalentCalendar,
   type TalentCvToday,
+  type TalentJoiner,
   type TalentJoiners,
   type TalentKpi,
   type TalentToday,
@@ -225,11 +226,16 @@ async function listMonthInterviews(caller: InterviewCalendarCaller, access: Acce
  * leave and leaves the month grid standing; no role at all costs the week and says that too.
  * Nothing here renders an absence as an empty day.
  */
-async function loadCalendar(
+export async function loadCalendar(
   access: AccessContext,
   offers: readonly OfferRecord[] | undefined,
   options: {
     hireDates?: ReadonlyMap<string, string>;
+    /**
+     * The joining days, already read. For the salary-blind seat: `listOffers` selects the letter's
+     * money with `*`, so her page reads Hiring Documents' narrow joiners and hands them in here.
+     */
+    joiners?: readonly TalentJoiner[];
     month?: { month: number; year: number } | null;
     now: Date;
     week?: string | null;
@@ -289,12 +295,11 @@ async function loadCalendar(
   const { failedWeeks: failedMonthWeeks, interviews: monthInterviews } = caller
     ? await listMonthInterviews(caller, access, monthWeekStarts)
     : { failedWeeks: 0, interviews: [] };
-  const monthJoiners = joinersBetween(
-    offers ?? [],
-    gridDates[0] ?? `${year}-${String(month).padStart(2, "0")}-01`,
-    gridDates[gridDates.length - 1] ?? gridDates[0] ?? "",
-    options.hireDates,
-  );
+  const gridFrom = gridDates[0] ?? `${year}-${String(month).padStart(2, "0")}-01`;
+  const gridTo = gridDates[gridDates.length - 1] ?? gridDates[0] ?? "";
+  const monthJoiners = options.joiners
+    ? options.joiners.filter((joiner) => joiner.dateKey >= gridFrom && joiner.dateKey <= gridTo)
+    : joinersBetween(offers ?? [], gridFrom, gridTo, options.hireDates);
   const calendar: TalentCalendar = {
     interviewCalendar: role
       ? { abilities, canReadRequests: readsInterviewRequestInbox(access), canRequest, role, zoomConnected: isZoomConfigured() }

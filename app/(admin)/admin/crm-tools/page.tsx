@@ -5,6 +5,7 @@ import { ArrowRight, Database } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { crmPageItems } from "@/config/system-navigation";
 import { buildPermissionLookup, canAccess, getPermissionMatrix, resolveNavigationMode } from "@/lib/auth/permissions";
+import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { navigationItemVisible } from "@/lib/navigation/active-path";
@@ -22,6 +23,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function CrmToolsPage() {
   const access = await resolveAccessContextFromPage();
+  guardSeatPage(access, "/admin/crm-tools");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
 
   if (

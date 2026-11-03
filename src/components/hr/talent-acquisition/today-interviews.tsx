@@ -32,7 +32,16 @@ import { TA_ROW_LINK_CLASS, TaChip, TaCouldNotLoad, TaEmpty, TaPanel, TaQuietLin
 
 const CALENDAR_HREF = "/hr/recruitment/interview-calendar";
 
-export function TaTodayInterviews({ className = "", today }: { className?: string; today: TalentToday }) {
+export function TaTodayInterviews({
+  className = "",
+  readOnly = false,
+  today,
+}: {
+  className?: string;
+  /** A seat that only views the calendar (owner, 2026-10-20) is never told to book on it. */
+  readOnly?: boolean;
+  today: TalentToday;
+}) {
   const rows = orderTodaysInterviews(today.interviews, today.nowMinutes);
   const ended = rows.filter((row) => row.done).length;
   const toCome = rows.length - ended;
@@ -62,7 +71,7 @@ export function TaTodayInterviews({ className = "", today }: { className?: strin
         <TaCouldNotLoad what="Today's interviews" />
       ) : rows.length === 0 ? (
         <TaEmpty
-          action={<TaQuietLink href={CALENDAR_HREF}>Book on the calendar</TaQuietLink>}
+          action={<TaQuietLink href={CALENDAR_HREF}>{readOnly ? "Open the calendar" : "Book on the calendar"}</TaQuietLink>}
           icon={CalendarX2}
           line="Nothing is booked today. The week below shows what is coming."
           title="No interviews today"

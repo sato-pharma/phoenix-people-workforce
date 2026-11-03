@@ -57,6 +57,7 @@ const LANDING_SURFACES: readonly { file: string; seat: string; wears: Identity }
   { file: "src/components/admin/system-admin-overview.tsx", seat: "Super Admin (/admin)", wears: "strip" },
   { file: "src/components/hr/hr-command-center.tsx", seat: "HR Advisory / HR Operations", wears: "strip" },
   { file: "src/components/hr/talent-acquisition-overview.tsx", seat: "Talent Acquisition", wears: "strip" },
+  { file: "src/components/hr/hr-operations-overview.tsx", seat: "HR Operations Specialist", wears: "strip" },
   { file: "src/components/admin/ceo-command-center.tsx", seat: "CEO and SFE Manager", wears: "band" },
   { file: "src/components/admin/finance-command-center.tsx", seat: "Finance Manager", wears: "band" },
 ];
@@ -148,8 +149,8 @@ export function runAdminLandingIdentityStripTests() {
   // assertions running against fewer surfaces with nothing to say about it.
   assert.equal(
     LANDING_SURFACES.length,
-    5,
-    "five files draw the admin landing identities: /admin, the two components behind the HR " +
+    6,
+    "six files draw the admin landing identities: /admin, the three components behind the HR " +
       "address, Finance, and the one the CEO and SFE boards share. A shorter list is a check that " +
       "stopped watching, not a rule that changed",
   );

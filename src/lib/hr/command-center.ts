@@ -337,6 +337,8 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // the one queue among them; documents and context reading have no backlog to show.
   hiring_paperwork: [],
   hiring_desk: [],
+  // Names who is off today on her page; the row carries a leave type and dates, never an amount.
+  hr_calendars: ["vacationsToday"],
   employee_requests: ["supportRequests"],
   /**
    * TWO sources since 2026-10-13, and both are for the Talent Acquisition seat's OWN overview page
@@ -783,6 +785,7 @@ const TILES_BY_FUNCTION: Record<
   // NONE, for the reason hr_governance has none: documents and a login switch are not a queue.
   hiring_paperwork: () => [],
   hiring_desk: () => [],
+  hr_calendars: () => [],
   // NONE. Reading the chart, the calendars and the boards is context for her recruiting, not a
   // backlog — a tile here could only be invented.
   workforce_context: () => [],
@@ -996,6 +999,7 @@ const CHARTS_BY_FUNCTION: Record<
   // and none contributes a tile, so none has a group for a chart to sit in.
   hiring_paperwork: () => [],
   hiring_desk: () => [],
+  hr_calendars: () => [],
   workforce_context: () => [],
   recognition: () => [],
   team_reminders: () => [],

@@ -58,7 +58,8 @@ export type HrFunctionKey =
   | "team_reminders"
   | "attendance_review"
   | "people_master"
-  | "hiring_desk";
+  | "hiring_desk"
+  | "hr_calendars";
 
 export type HrFunction = {
   key: HrFunctionKey;
@@ -622,6 +623,24 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       employee_documents: MAINTAIN,
     },
   },
+  {
+    key: "hr_calendars",
+    label: "HR Calendars and Office Boards",
+    summary:
+      "Read the company and planning calendars and follow the empty seats on the Vacancies Report. Nothing here carries a salary or an amount.",
+    // Owner, 2026-11-03: "add hr calen dars and interview  calendar and add some relevent modules in
+    // her account and side bar". Each key below was read for money first. Spotlight stays out: it
+    // prints sales in EGP. Milestones stays out: he narrowed it on 2026-09-23 and it widens only on
+    // his words naming it. The Interview Calendar needs no grant: she views it (owner, 2026-10-20).
+    jdSections: ["owner 2026-11-03 — HR Operations Specialist: HR calendars and relevant modules"],
+    grants: {
+      // Both carry in pages she was not given, and hr_calendar one that prices days in EGP. Those are
+      // fenced by page (src/lib/auth/seat-page-fences.ts).
+      hr_calendar: READ_ONLY,
+      weekly_plans: READ_ONLY,
+      vacancies: READ_ONLY,
+    },
+  },
 ] as const;
 
 /**
@@ -693,6 +712,7 @@ export const HR_ROLE_BUNDLES = {
     "people_master",
     "team_reminders",
     "hiring_desk",
+    "hr_calendars",
   ],
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 

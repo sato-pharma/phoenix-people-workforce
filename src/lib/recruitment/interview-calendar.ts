@@ -209,6 +209,9 @@ export function isInterviewRequesterSeat(access: AccessContext, person: Intervie
 /** May this caller ask for an interview: an owner, or a requester-eligible seat. */
 export async function mayRequestInterviews(access: AccessContext): Promise<boolean> {
   if (!isSignedInCaller(access)) return false;
+  // "She can view it only" (owner, 2026-10-20). Her role starts "HR", so the seat test below would
+  // say yes; the page and the request route both ask this one question.
+  if (access.role === "HR Administration") return false;
   if (isInterviewCalendarOwner(access)) return true;
   if (!access.hrId) return false;
   const person = (await loadPeople([access.hrId])).get(canonicalHrIdKey(access.hrId) ?? "") ?? null;

@@ -157,8 +157,8 @@ export function runSfeVacationSourceReportTests() {
   const readers = phoenixRoles.filter((role) => canReadCompanyVacationReport(context(role)));
   assert.deepEqual(
     [...readers].sort(),
-    ["HR Operations", "SFE Manager", "Super Admin"],
-    "exactly three roles may read the company vacation report - a fourth arriving here is a widening nobody asked for",
+    ["HR Administration", "HR Operations", "SFE Manager", "Super Admin"],
+    "exactly four roles may read the company vacation report - a fifth arriving here is a widening nobody asked for",
   );
   const approvers = phoenixRoles.filter((role) => canApproveCompanyVacationReportRow(context(role)));
   assert.deepEqual([...approvers].sort(), ["Super Admin"], "approving from this report stays Super Admin only");

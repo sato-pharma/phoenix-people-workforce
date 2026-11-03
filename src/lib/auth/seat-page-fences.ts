@@ -72,13 +72,27 @@ export const SEAT_PAGE_FENCES: Partial<Record<PhoenixRole, readonly string[]>> =
     "/leave-management/vacation-request",
     // Payroll — the Payslips Center, carried in by the payslips:read every seat holds for itself.
     "/admin/payslips-center",
+    // Carried in by hr_calendar:read and weekly_plans:read (owner, 2026-11-03: "add hr calen dars").
+    // The two calendars are hers; Workforce Compliance prices days in EGP, and the rest is the sales
+    // ladder's plan approval and CRM desks.
+    "/admin/field-workforce-compliance",
+    "/admin/crm-tools",
+    "/admin/weekly-plans",
+    "/admin/approvals/plan",
+    "/admin/pm-products",
   ],
 };
 
 /** Fenced paths whose sub-pages are fenced too (a detail page of a fenced list). */
 const FENCED_SUBTREES: Partial<Record<PhoenixRole, readonly string[]>> = {
   "HR Resourcing": ["/admin/approvals/plan", "/admin/field-workforce-compliance"],
-  "HR Administration": ["/attendance", "/employee-360", "/admin/deductions"],
+  "HR Administration": [
+    "/attendance",
+    "/employee-360",
+    "/admin/deductions",
+    "/admin/approvals/plan",
+    "/admin/field-workforce-compliance",
+  ],
 };
 
 /** `/hr/probation?x=1` -> `/probation`. The `/hr` namespace serves the same pages. */
