@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: c898391b-8a9f-42ea-badf-0e6e8162c8ba
-  modified: 2026-11-03T10:55:09.797Z
+  modified: 2026-11-03T12:19:28.887Z
 ---
 
 Read from Railway's HTTP rows, 08:00 to 10:48 Cairo, the stretch with no release inside it on either day:
@@ -14,6 +14,8 @@ Read from Railway's HTTP rows, 08:00 to 10:48 Cairo, the stretch with no release
 - The control did not move, so the day was not easier: `/api/auth/pulse` median 373 then 363 ms, `/api/phoenix-crm/visits` 579 then 585 ms, on more traffic (10,943 then 12,439 rows).
 
 So the ordinary open improved and the slow tail did not.
+
+🔴 The double-visit panel's shared read merged 3 Nov 13:55 Cairo (pull request 54), after these figures and still on Small. Any later morning carries it, and only managers see that panel, so split managers' opens from the rest before crediting Medium with a gain.
 
 Tuesday's card timers, typical minute's median: double-visit panel 5.8 s (28 reads, managers), field KPIs 2.0 s (worst 17.6 s), early birds 1.7 s, CV folders 1.3 s, rank 1.0 s, leave balance 1.0 s.
 
