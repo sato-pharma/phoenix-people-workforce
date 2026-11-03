@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
+import { onSignOutStart } from "@/lib/auth/sign-out-client";
+
 const ENDPOINT = "/api/activity/track";
 // Ignore pass-through navigations shorter than this (redirect chains, mis-taps).
 const MIN_DWELL_MS = 1000;
@@ -20,7 +22,8 @@ type QueuedPageView = { path: string; enteredAt: string | null; durationMs: numb
  * module-level queue and go together: when the queue fills (the route's own batch limit), when the
  * tab is hidden or unloaded (keepalive, so the batch survives the close), and otherwise every
  * ACTIVITY_FLUSH_INTERVAL_MS. Each entry carries its own `enteredAt`, so the server records the true
- * time however long it waited; the route already accepts `{events: [...]}`.
+ * time however long it waited; the route already accepts `{events: [...]}`. A sign-out sends the queue
+ * before its logout request, because the route drops anything that arrives after the session has gone.
  */
 const queue: QueuedPageView[] = [];
 let flushTimer: number | null = null;
@@ -49,6 +52,8 @@ function flushActivityQueue() {
   }
   while (queue.length > 0) sendBatch(queue.splice(0, ACTIVITY_BATCH_LIMIT));
 }
+
+onSignOutStart(flushActivityQueue);
 
 function queueActivityBeacon(path: string, enteredAtIso: string | null, durationMs: number) {
   if (!path || durationMs < MIN_DWELL_MS) return;

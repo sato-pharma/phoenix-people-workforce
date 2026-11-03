@@ -40,8 +40,9 @@ export type PageTimingKind = "hard" | "soft";
 export type PageTimingDevice = "high" | "low" | "unknown";
 /**
  * ttfb: the first byte · fcp: the first content painted · lcp: the largest content painted (the page looks
- * ready) · interactive: the document is parsed and the app can take a tap · first_data: the first /api/
- * answer landed · soft: a tap inside the app to its page rendering. All in milliseconds.
+ * ready) · interactive: the document is parsed and the app can take a tap · first_data: the first answer
+ * to the page's own data read landed (isPageDataRequest) · soft: a tap inside the app to its page rendering.
+ * All in milliseconds.
  */
 export type PageTimingMetric = "fcp" | "first_data" | "interactive" | "lcp" | "soft" | "ttfb";
 export const PAGE_TIMING_METRICS: readonly PageTimingMetric[] = ["ttfb", "fcp", "lcp", "interactive", "first_data", "soft"];
@@ -52,6 +53,28 @@ export type PageTimingReport = {
   metrics: Partial<Record<PageTimingMetric, number>>;
   path: string;
 };
+
+/** The API families the shell calls on every page, whatever page it is. */
+const SHELL_API_FAMILIES = ["/api/auth", "/api/activity", "/api/telemetry", "/api/notifications", "/api/messages", "/api/navigation"];
+/** The sidebar's badges: `/api/approvals-hub/pending-count`, `/api/direct-orders/unbooked-count`. */
+const SHELL_BADGE_ENDPOINT = /-count$/;
+
+/**
+ * True when this resource is the page's own data read: an API call on this site that is not the shell's
+ * heartbeat, activity beacon, bell, envelope, navigation or sidebar badges. Those answer first on every
+ * page, so counting them would report the heartbeat's speed as the moment the page had its data.
+ */
+export function isPageDataRequest(resourceUrl: string, origin: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(resourceUrl, origin);
+  } catch {
+    return false;
+  }
+  if (url.origin !== origin || !url.pathname.startsWith("/api/")) return false;
+  if (SHELL_BADGE_ENDPOINT.test(url.pathname)) return false;
+  return !SHELL_API_FAMILIES.some((family) => url.pathname === family || url.pathname.startsWith(`${family}/`));
+}
 
 /** Four cores or fewer, or 4 GB or less, is a rep's phone. Neither figure offered: unknown, never a guess. */
 export function deviceClassOf(reading: { deviceMemory?: unknown; hardwareConcurrency?: unknown }): PageTimingDevice {

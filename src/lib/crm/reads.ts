@@ -8,6 +8,7 @@
  * type as the generic (the `CrmVisitRow` / `CrmCheckinRow` defaults describe a `select("*")`).
  */
 
+import { isMissingRpcError } from "@/lib/supabase/missing-rpc";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
@@ -207,14 +208,7 @@ const CRM_AGENT_CRM_IDS_RPC = "phx_crm_agent_crm_ids_for_hr_ids";
  * every departed rep across Double Visit Analytics, Field Workforce Compliance and the payroll
  * no-activity detector. Exported so that ordering is pinned by a test, not by reading order.
  */
-export function isMissingCrmRpcError(error: unknown): boolean {
-  if (!error) return false;
-  const shape = error as { code?: string | null; message?: string | null };
-  const code = String(shape.code ?? "");
-  if (code === "PGRST202" || code === "42883") return true;
-  const message = String(shape.message ?? (error instanceof Error ? error.message : ""));
-  return /could not find the function|function .*does not exist/i.test(message);
-}
+export const isMissingCrmRpcError = isMissingRpcError;
 
 /** Fold scanned rows into the distinct crm_id set. Shared by the RPC and the page-walk fallback so
  * the two paths cannot drift apart. The `Number.isFinite` guard is the only addition to the

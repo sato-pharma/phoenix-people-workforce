@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { PAGE_TIMING_SOFT_BATCH_LIMIT, deviceClassOf, type PageTimingDevice } from "@/lib/observability/page-timing-intake";
+import { PAGE_TIMING_SOFT_BATCH_LIMIT, deviceClassOf, isPageDataRequest, type PageTimingDevice } from "@/lib/observability/page-timing-intake";
 
 // Reports how long this page took, once, when the tab is hidden or closed — and, since 1 Nov 2026, how
 // long each TAP inside the app took to reach its page. It sends page paths (no query, no hash),
@@ -53,11 +53,11 @@ export function reportSoftNavigation(path: string, ms: number): void {
   if (softQueue.length >= PAGE_TIMING_SOFT_BATCH_LIMIT) flushSoftNavigations();
 }
 
-/** The first /api/ answer of this document, from the browser's own resource entries. */
+/** The first answer to this page's own data read, from the browser's own resource entries. */
 function firstApiResponseEnd(): number | null {
   let first: number | null = null;
   for (const entry of performance.getEntriesByType("resource") as PerformanceResourceTiming[]) {
-    if (!entry.name.includes("/api/") || !(entry.responseEnd > 0)) continue;
+    if (!isPageDataRequest(entry.name, window.location.origin) || !(entry.responseEnd > 0)) continue;
     if (first === null || entry.responseEnd < first) first = entry.responseEnd;
   }
   return first;

@@ -1,3 +1,4 @@
+import { isMissingRpcError } from "@/lib/supabase/missing-rpc";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -376,14 +377,6 @@ export type InAppNoticeBundle = {
 /** The admin client's two doors the bundle read uses, so a test can hand in a fake. */
 export type NoticeReadClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from" | "rpc">;
 
-/** The RPC is not on this database yet (the migration has not run): PGRST202 / 42883. */
-function rpcMissing(error: unknown): boolean {
-  const code = typeof error === "object" && error !== null ? String((error as { code?: unknown }).code ?? "") : "";
-  if (code === "PGRST202" || code === "42883") return true;
-  const text = (error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`).toLowerCase();
-  return text.includes("could not find the function") || text.includes("function public.phx_in_app_notices");
-}
-
 type NoticeRpcPayload = {
   events?: unknown;
   states?: unknown;
@@ -645,6 +638,11 @@ export async function listInAppNoticeBundleForViewer(
     let readStates: (rowIds: string[]) => Promise<NotificationUserStateRow[]>;
     let unreadMessages: number | null = null;
 
+    // The list resolves a missing id from the auth row or the employee record (resolveSender), which
+    // this statement does not read. A session holding only one id could count fewer messages than the
+    // list shows, so it offers no count and the menu reads its own once.
+    const sessionHoldsBothMessageIds = Boolean(normalizeHrId(access.hrId) && cleanText(access.loginId));
+
     const rpc = await supabase.rpc("phx_in_app_notices", {
       p_hr_id: employeeHrId,
       p_user_id: identity.userId ?? "",
@@ -659,7 +657,7 @@ export async function listInAppNoticeBundleForViewer(
       p_flooding_event_type: TALENT_ACQUISITION_FLOODING_EVENT_TYPE,
     });
 
-    if (rpc.error && !rpcMissing(rpc.error)) throw rpc.error;
+    if (rpc.error && !isMissingRpcError(rpc.error)) throw rpc.error;
     if (rpc.error) {
       const legacy = await legacyNoticeReads({ access, allowedCategories, client: supabase, employeeHrId, readLimit, today });
       events = legacy.events;
@@ -669,7 +667,10 @@ export async function listInAppNoticeBundleForViewer(
       events = Array.isArray(payload.events) ? (payload.events as InAppNotificationEventRow[]) : [];
       const states = Array.isArray(payload.states) ? (payload.states as NotificationUserStateRow[]) : [];
       readStates = async () => states;
-      unreadMessages = typeof payload.unread_messages === "number" && Number.isFinite(payload.unread_messages) ? payload.unread_messages : null;
+      unreadMessages =
+        sessionHoldsBothMessageIds && typeof payload.unread_messages === "number" && Number.isFinite(payload.unread_messages)
+          ? payload.unread_messages
+          : null;
     }
 
     const newestFirst = events

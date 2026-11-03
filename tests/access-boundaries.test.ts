@@ -10,7 +10,7 @@ import {
   isPageFencedForRole,
   SEAT_PAGE_FENCES,
 } from "../src/lib/auth/seat-page-fences.ts";
-import { SIGN_OUT_FAILED_MESSAGE, signOutAndLeave } from "../src/lib/auth/sign-out-client.ts";
+import { SIGN_OUT_FAILED_MESSAGE, onSignOutStart, signOutAndLeave } from "../src/lib/auth/sign-out-client.ts";
 import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { clientAddress, isCloudflareAddress, isInternalAddress } from "../src/lib/security/client-address.ts";
 import { ilikeContainsValue, ilikeExactValue } from "../src/lib/supabase/search-filter.ts";
@@ -253,9 +253,18 @@ export async function runAccessBoundariesTests() {
     globalThis.fetch = (async () => new Response(JSON.stringify({ message: "Forbidden." }), { status: 403 })) as typeof fetch;
     assert.equal(await signOutAndLeave(), false);
     assert.deepEqual(navigated, [], "nor does one the server refused");
-    globalThis.fetch = (async () => new Response(JSON.stringify({ success: true }), { status: 200 })) as typeof fetch;
+    const order: string[] = [];
+    onSignOutStart(() => order.push("queued page views sent"));
+    onSignOutStart(() => {
+      throw new Error("a broken task");
+    });
+    globalThis.fetch = (async () => {
+      order.push("logout requested");
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }) as typeof fetch;
     assert.equal(await signOutAndLeave(), true);
     assert.deepEqual(navigated, ["/login"], "a signed-out browser goes to /login");
+    assert.deepEqual(order, ["queued page views sent", "logout requested"], "work queued for the session leaves before the logout, and a broken task never stops the sign-out");
   } finally {
     globalThis.fetch = realFetch;
     (globalThis as { window?: unknown }).window = realWindow;

@@ -307,7 +307,8 @@ export function runTestAccountTests(): void {
 
     // MEDIUM: no push identity — OneSignal.login(her id) would move the device onto HER push user.
     assert.ok(
-      /const hrId = isReadOnlyViewer\(access\) \? null :/.test(source("app/api/notifications/push/context/route.ts")),
+      /const hrId = pushIdentityOf\(access\);/.test(source("app/api/notifications/push/context/route.ts")) &&
+        /return isReadOnlyViewer\(access\) \? null :/.test(source("src/lib/notifications/push-identity.ts")),
       "a test login is given no push identity",
     );
 

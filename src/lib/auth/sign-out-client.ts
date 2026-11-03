@@ -8,6 +8,16 @@ import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 export const SIGN_OUT_FAILED_MESSAGE =
   "Sign-out did not reach the server, so you are still signed in. Check the connection and press Logout again.";
 
+const signOutStartTasks = new Set<() => void>();
+
+/**
+ * Work that must leave this browser while the session still exists, run as a sign-out starts. The
+ * activity tracker's queued page views use it: posted after the logout, the track route drops them.
+ */
+export function onSignOutStart(task: () => void): void {
+  signOutStartTasks.add(task);
+}
+
 /**
  * EVERY SIGN-OUT BUTTON CALLS THIS (technical audit, 2026-10-23, P7-03).
  *
@@ -26,6 +36,13 @@ export const SIGN_OUT_FAILED_MESSAGE =
  * and wait for their owner (src/lib/browser-storage/owner-scoped.ts).
  */
 export async function signOutAndLeave(): Promise<boolean> {
+  for (const task of signOutStartTasks) {
+    try {
+      task();
+    } catch {
+      // Nothing queued for the session may stop the person signing out.
+    }
+  }
   logoutOneSignal();
   let response: Response;
   try {
