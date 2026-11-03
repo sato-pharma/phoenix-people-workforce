@@ -31,6 +31,7 @@ import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
+import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 
 /** The server keeps a speciality to this length (entry-rules.ts parseOutsideCustomer). */
 const SPECIALITY_TEXT_MAX = 80;
@@ -202,7 +203,7 @@ export function OutOfListEntry({
                 <li key={customer.customerId}>
                   <button
                     className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={customer.visitedToday}
+                    disabled={customer.visitedToday || customer.waitingToSend === true}
                     onClick={() => onPick(customer.customerId)}
                     type="button"
                   >
@@ -213,7 +214,7 @@ export function OutOfListEntry({
                         <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
                       </span>
                       <span className="flex max-w-full flex-wrap gap-1">
-                        {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : <CrmPill tone="orange">Waiting to be added</CrmPill>}
+                        {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : customer.waitingToSend ? <CrmPill tone="orange">{VISIT_WAITING_PILL}</CrmPill> : <CrmPill tone="orange">Waiting to be added</CrmPill>}
                       </span>
                     </span>
                     {customer.brickName ? <span className="mt-1 block break-words text-xs font-semibold text-slate-600">{customer.brickName}</span> : null}

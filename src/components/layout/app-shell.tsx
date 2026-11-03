@@ -31,6 +31,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { SeatViewBanner } from "@/components/layout/seat-view-banner";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
+import { VisitOutboxRunner } from "@/components/phoenix-crm/visit-outbox-runner";
 import { resolvePushIdentity } from "@/lib/notifications/push-identity";
 import { personalMailboxConnected } from "@/lib/personal-mailbox/service";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
@@ -191,6 +192,7 @@ export async function AppShell({
       <div className={`min-h-screen text-phx-ink ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-phx-paper"}`}>
         <SessionSecurityGuard />
         <OneSignalProvider pushHrId={pushHrId} />
+        <VisitOutboxRunner ownerHrId={pushHrId} />
         {/* Suspense because DocumentTitleSync reads useSearchParams. Names the tab on
             in-app navigation only — the FIRST paint is named by generateMetadata in
             app/(admin)/layout.tsx, through the same resolver. */}

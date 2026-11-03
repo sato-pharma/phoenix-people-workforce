@@ -80,6 +80,7 @@ const PINNED = [
   "scripts/analyze-distributor-file.ts",
   "scripts/apply-migrations-to-staging.ts",
   "scripts/apply-sql-file.mjs",
+  "scripts/approvals/submit-urgent-reminder-template.ts",
   "scripts/apps-script-authorize.mjs",
   "scripts/audit-notification-email-identity.ts",
   "scripts/backfill-attribution-store-split.ts",

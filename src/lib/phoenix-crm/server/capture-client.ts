@@ -10,9 +10,10 @@
  * with its own two readings — and it is deliberately NOT bounded from below, because a small elapsed
  * time is exactly what an honest capture taken moments after anchoring looks like.
  *
- * **Only the app has that queue.** The web app has none: every save it sends is made at the moment
- * the rep presses Log visit, nothing under `src/components/phoenix-crm` has ever sent an `offline`
- * body, and nothing there asks for an anchor. So in a browser the claim is a field with no honest
+ * **Only the app may make that claim.** The web app's one queue (`visit-outbox.ts`, the visit retry,
+ * owner 3 Nov 2026) sends a held press again dated at ARRIVAL, inside two hours and never across 02:00:
+ * nothing under `src/components/phoenix-crm` has ever sent an `offline` body, and nothing there asks
+ * for an anchor. So in a browser the claim is a field with no honest
  * sender and one dishonest one — a rep with devtools can take an anchor on Monday afternoon and
  * post `offline: { anchorId, elapsedMs: 0 }` on Tuesday, and the visit is filed, counted and read as
  * Monday's. Monday is a day whose plan is closed and whose figures have been read.
@@ -28,7 +29,7 @@
  * grants nothing a cookie does not). `resolveAccessContext` tries the COOKIE FIRST and returns on
  * it, so a request that presents one was identified by it — it is the web app, whatever else it also
  * sends. That includes the app's own WebView, which holds a cookie of its own and renders the web
- * portal's pages: those pages are the web app and have no queue either.
+ * portal's pages: those pages are the web app and make no such claim either.
  *
  * 🔴 **It fails towards `browser`, which is the safe direction.** A caller that is neither — a local
  * dev-auth role sweep, a system caller — reads as a browser here and gets the arrival time. Losing

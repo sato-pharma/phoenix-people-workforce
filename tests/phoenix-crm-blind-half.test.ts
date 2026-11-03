@@ -134,6 +134,9 @@ const SILENT_COLUMNS: ReadonlyArray<string> = [
   "fix_age_seconds",
   "device_install_id",
   "app_revision",
+  // How long the phone held a save for want of signal (2026-11-03). Filed after the save, read by the travel
+  // check and the Visit report, and never answered back to a rep.
+  "queued_seconds",
 ];
 
 /** Tables only the blind readers may touch. */

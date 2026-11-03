@@ -143,6 +143,11 @@ export const needsYouSourceIds = [
   // view omits them because it starts from the seated and joins outward. Widening this to "has no
   // seat" would put all sixteen on the board on every load, for ever.
   "organogram-seat-drift",
+  // Added 2026-11-03, after GitHub suspended the account on 2 Nov and no board said so. Three sources rather
+  // than one, so one failed read cannot hide another or print a false all-clear (vendor-accounts-rules.ts).
+  "vendor-github",
+  "vendor-whatsapp",
+  "vendor-telegram",
 ] as const;
 
 export type NeedsYouSourceId = (typeof needsYouSourceIds)[number];
@@ -178,6 +183,9 @@ export const needsYouSourceLabels: Record<NeedsYouSourceId, string> = {
   "closing-publication-drift": "Published closings that have moved",
   "office-allocation-drift": "Office allocation that no longer matches the rule",
   "organogram-seat-drift": "Employee records that disagree with the organogram",
+  "vendor-github": "The GitHub account",
+  "vendor-whatsapp": "The WhatsApp account",
+  "vendor-telegram": "The Telegram bot",
 };
 
 /**
@@ -238,6 +246,11 @@ export const needsYouDestinations: Record<NeedsYouSourceId, { href: `/${string}`
   // the SEAT — is an organogram change, which is the owner's alone to initiate, so the board never
   // offers it: which side is wrong is a human judgement, and on 2026-10-15 it was the record.
   "organogram-seat-drift": { href: "/employees", screen: "Employee Master" },
+  // An account is settled on the vendor's own site, and no Phoenix screen can do it. System Audit is where the
+  // failed runs behind these rows are recorded, so that is where the board sends him to read more.
+  "vendor-github": { href: "/admin/system-audit", screen: "System Audit" },
+  "vendor-whatsapp": { href: "/admin/system-audit", screen: "System Audit" },
+  "vendor-telegram": { href: "/admin/system-audit", screen: "System Audit" },
 };
 
 /**

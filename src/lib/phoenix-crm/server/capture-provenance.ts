@@ -51,6 +51,8 @@ export type CaptureProvenanceInput = {
   /** The phone's clock at the TAP, which is what makes the age above measurable. */
   deviceCapturedAt: string | null;
   deviceInstallId: string | null;
+  /** How long the phone held this save before it arrived (visit-resend-rules.ts). Null for a save never held. */
+  queuedSeconds: number | null;
   isTest: boolean;
 };
 
@@ -104,6 +106,7 @@ export async function recordCaptureProvenance(input: CaptureProvenanceInput): Pr
           captured_at: input.capturedAt.toISOString(),
           fix_taken_at: input.fixTakenAt,
           fix_age_seconds: fixAgeSeconds(input.fixTakenAt, input.deviceCapturedAt),
+          queued_seconds: input.queuedSeconds,
           device_install_id: input.deviceInstallId,
           app_revision: getDeployRevision(),
           user_agent: await userAgent(),

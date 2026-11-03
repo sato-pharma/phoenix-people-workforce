@@ -1,4 +1,10 @@
 import { logError, logWarning } from "@/lib/observability/log";
+import {
+  SYNTHETIC_DISPATCH_TOKEN_UNSET,
+  SYNTHETIC_DISPATCH_UNREACHABLE,
+  syntheticDispatchOtherStatus,
+  syntheticDispatchRefused,
+} from "@/lib/observability/synthetic-dispatch-reasons";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trigger the Synthetic Journeys workflow on GitHub Actions.
@@ -52,12 +58,7 @@ export type SyntheticDispatchResult =
 export async function dispatchSyntheticJourneys(ref = "main"): Promise<SyntheticDispatchResult> {
   const token = process.env.GITHUB_ACTIONS_DISPATCH_TOKEN?.trim();
   if (!token) {
-    return {
-      dispatched: false,
-      reason:
-        "GITHUB_ACTIONS_DISPATCH_TOKEN is not set; nothing to dispatch. Create a fine-grained PAT " +
-        "scoped to this repository with Actions: read and write, and set it in Railway.",
-    };
+    return { dispatched: false, reason: SYNTHETIC_DISPATCH_TOKEN_UNSET };
   }
 
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
@@ -80,7 +81,7 @@ export async function dispatchSyntheticJourneys(ref = "main"): Promise<Synthetic
       labels: { event: "synthetic_dispatch_unreachable" },
       error,
     });
-    return { dispatched: false, reason: "could not reach the GitHub API" };
+    return { dispatched: false, reason: SYNTHETIC_DISPATCH_UNREACHABLE };
   }
 
   // 204 No Content is success for this endpoint. Anything else is worth naming, but never with the
@@ -94,12 +95,12 @@ export async function dispatchSyntheticJourneys(ref = "main"): Promise<Synthetic
       labels: { event: "synthetic_dispatch_forbidden" },
       error: new Error(`GitHub returned ${response.status}`),
     });
-    return { dispatched: false, reason: `GitHub refused the dispatch (${response.status})` };
+    return { dispatched: false, reason: syntheticDispatchRefused(response.status) };
   }
 
   logWarning("Synthetic journeys dispatch returned an unexpected status", {
     labels: { event: "synthetic_dispatch_unexpected_status" },
     error: new Error(`GitHub returned ${response.status}`),
   });
-  return { dispatched: false, reason: `GitHub returned ${response.status}` };
+  return { dispatched: false, reason: syntheticDispatchOtherStatus(response.status) };
 }

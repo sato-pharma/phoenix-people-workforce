@@ -34,6 +34,7 @@ import {
   type NeedsYouSection,
 } from "@/lib/needs-you/render/sections";
 import type { NeedsYouBoard } from "@/lib/needs-you/types";
+import { NEEDS_YOU_VENDORS_NOT_READ_LINE } from "@/lib/needs-you/vendor-accounts-rules";
 
 /** The four column heads, beside the widths they are measured against. Four, never five. */
 const COLUMN_HEADS = ["What needs you", "How many", "Who / since", "Where to do it"] as const;
@@ -240,6 +241,7 @@ export function NeedsYouBoardView({ board }: { board: NeedsYouBoard }) {
       {sections.map((section) => (
         <Band key={section.id} section={section} />
       ))}
+      <p className="break-words text-phx-xs font-bold text-slate-600">{NEEDS_YOU_VENDORS_NOT_READ_LINE}</p>
     </div>
   );
 }

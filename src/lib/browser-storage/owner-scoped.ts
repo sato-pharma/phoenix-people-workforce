@@ -60,6 +60,14 @@ export const EXPENSE_DECISION_DRAFT_KEY_BASE = "phoenix.outstation.expense-appro
 export const PUSH_REGISTRATION_MEMO_KEY_BASE = "phoenix.push.registration.v1";
 
 /**
+ * The visits a phone holds for want of signal (owner, 3 Nov 2026, src/lib/phoenix-crm/visit-outbox.ts). A queue,
+ * not a draft: the rep was told it is safe, so sign-out leaves it, and the owner check is what keeps it his.
+ */
+export const VISIT_OUTBOX_KEY_BASE = "phoenix.crm.visit-outbox.v1";
+/** Told on this page when that list changes; a second tab hears the browser's own `storage` event. */
+export const VISIT_OUTBOX_CHANGED_EVENT = "phoenix-crm:visit-outbox-changed";
+
+/**
  * Keys from before the owner rule. Each one holds a draft that cannot say whose it is, so each page
  * removes its own on load and sign-out removes them all.
  */

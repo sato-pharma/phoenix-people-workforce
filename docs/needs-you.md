@@ -89,7 +89,29 @@ the identical 14 / 9 / 1 lanes.
 `resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags` ·
 `phoenix-crm-decisions` · `orphaned-requests` ·
 `uncollected-leaver-deductions` · `calendar-review-requests` · `closing-publication-drift` ·
-`office-allocation-drift` · `organogram-seat-drift`
+`office-allocation-drift` · `organogram-seat-drift` · `vendor-github` · `vendor-whatsapp` · `vendor-telegram`
+
+`vendor-github`, `vendor-whatsapp` and `vendor-telegram` joined on 2026-11-03, after GitHub suspended the account on
+2 Nov and Supabase showed outstanding invoices, and neither reached any board. **Three sources, not one**, so one failed
+read cannot hide another or print a false all-clear. All three are his alone (`ownerOnlyQueue`), link to System Audit,
+and say a fixed sentence, never the vendor's text (`src/lib/needs-you/vendor-accounts-rules.ts`).
+
+| Source | What it reads | Nothing on the board | A row in his lane | "Could not be read" |
+| --- | --- | --- | --- | --- |
+| `vendor-github` | the hourly dispatch's heartbeat, no network call | the last run dispatched | GitHub answered 4xx, or the key is missing | GitHub unreachable, 5xx or 429, or no report for 12 hours |
+| `vendor-whatsapp` | one read of every configured line | every line answers | Meta answered 4xx, a line is not connected, or the key is missing | network failure, 5xx or 429 |
+| `vendor-telegram` | the bot's webhook read | Telegram answered | 401 or 404, or the key is missing | network failure or any other status |
+
+A missing key on staging is `not-applicable`; on production it is a row.
+
+The third WhatsApp number, used only for approval reminders, is asked as well, but it is deliberately not in
+`WHATSAPP_PHONE_NUMBER_IDS`, so a fault on it can never read as the recruitment intake being down.
+
+🔴 **What this cannot see is printed on the board and the Sunday email, as a fixed line:** Supabase invoices, Railway
+standing, GitHub billing, OneSignal, Google Maps, Sentry and cron-job.org. Production holds no key that can read the
+first two, and putting an account-wide key in production is not proposed. **It would have caught GitHub on 2 Nov, and it
+would not have caught the Supabase banner.** The line is a constant rather than an item, so it can never block the
+all-clear for ever.
 
 `orphaned-requests` joined on 2026-10-04: a request in ANY chain (marketing, direct orders, vacation)
 stranded because the one person who must act next has resigned — a `returned` request whose requester

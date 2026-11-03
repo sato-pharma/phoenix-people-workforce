@@ -553,7 +553,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   // Read when its category was chosen, and whenever an off-plan visit is in the choice: the tiles count only what
   // the KPIs count, and an off-plan visit counts only once it is approved (re-audit, 2026-10-22).
   const needsUnplanned = categories.has("approval") || visits.some((visit) => visit.is_unplanned === true);
-  const needsProvenance = has("fixAgeSeconds", "deviceInstall", "appRevision", "browser") || has("speedKmh");
+  const needsProvenance = has("fixAgeSeconds", "sentLateMinutes", "deviceInstall", "appRevision", "browser") || has("speedKmh");
   const needsEvidence = has("integrityDetectors", "integrityStrength", "mockDevice", "caseSettled");
   const needsEdits = has("editedBySuperAdmin");
   const needsDay = categories.has("day");
@@ -594,7 +594,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     needsProvenance
       ? readSeatRange(
           "phoenix_crm_visit_capture_provenance",
-          "visit_id, fix_taken_at, fix_age_seconds, device_install_id, app_revision, user_agent",
+          "visit_id, fix_taken_at, fix_age_seconds, queued_seconds, device_install_id, app_revision, user_agent",
           "visit_id",
           seatIds,
           range,

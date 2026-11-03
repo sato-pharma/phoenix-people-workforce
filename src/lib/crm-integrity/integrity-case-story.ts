@@ -478,6 +478,7 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
   const signals = input.signals;
   const replay = asRecord(signals.replay);
   const travel = asRecord(signals.travel);
+  const heldWait = asRecord(signals.heldWait);
   const day = asRecord(signals.day);
   const coarse = asRecord(signals.coarse);
   const metresApart = asNumber(signals.metresApart);
@@ -507,6 +508,19 @@ function flagFact(flag: string, input: CaseStoryInput): string | null {
       const kmh = asNumber(travel.kmh);
       if (metres === null || minutes === null) return "The distance from the previous reading is further than the time between them allows.";
       return `The reading is ${formatDistance(metres)} from the previous one, ${spokenGap(minutes * 60)} earlier — about ${kmh ?? "?"} km/h.`;
+    }
+    case "travel_rests_on_held_wait": {
+      const metres = asNumber(travel.meters);
+      const minutes = asNumber(travel.minutes);
+      const kmh = asNumber(travel.kmh);
+      const claimed = Math.max(asNumber(heldWait.claimedSeconds) ?? 0, asNumber(heldWait.priorClaimedSeconds) ?? 0);
+      const gap = minutes !== null && minutes < 1 ? "less than a minute" : spokenGap((minutes ?? 0) * 60);
+      const trip =
+        metres === null || minutes === null
+          ? "The two readings reached Phoenix closer together than the distance between them allows."
+          : `The two readings reached Phoenix ${gap} apart and ${formatDistance(metres)} apart, about ${kmh ?? "?"} km/h.`;
+      const wait = claimed > 0 ? `, for up to ${spokenGap(claimed)}` : "";
+      return `${trip} That fits only if the phone really held the visit without signal${wait}, and Phoenix cannot confirm when an offline phone was pressed.`;
     }
     case "zero_jitter": {
       const fixes = asNumber(day.fixes);
@@ -653,6 +667,8 @@ function flagOrdinaryCause(flag: string): string | null {
       return "A phone that cannot get a fresh reading indoors commonly hands back the last one it held.";
     case "impossible_travel":
       return "A reading taken in a moving car, or one of the two being the phone's cached position, produces this.";
+    case "travel_rests_on_held_wait":
+      return "A phone with no signal holds visits and sends them together when signal returns, so visits made hours apart can reach Phoenix seconds apart.";
     case "zero_jitter":
       return "A phone left on an approximate reading repeats the same point all day, whatever the person does.";
     case "constant_accuracy":

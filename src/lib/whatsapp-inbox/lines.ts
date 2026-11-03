@@ -69,3 +69,34 @@ export function whatsAppInboxLineLabel(phoneNumberId: string | null | undefined,
   if (line) return line.label;
   return displayNumber?.trim() ? `WhatsApp ${displayNumber.trim()}` : "Another WhatsApp line";
 }
+
+// ── The third number (owner, 3 Nov 2026) ──
+//
+// The number the approval reminders go out from (src/lib/approvals/urgent-whatsapp-rules.ts). 🔴 IT IS DELIBERATELY NOT
+// IN whatsAppInboxLines ABOVE, and it has no default: HR Resourcing reads that list, and nobody reads this number.
+// `postToGraph` and the webhook both ask isApprovalsLine, because neither the inbox nor the outbound report filters by
+// line on its own.
+
+/**
+ * 🔴 NEVER A LINE PEOPLE WRITE TO. The webhook drops everything delivered to this number and still answers 200, so Meta
+ * never redelivers. Set by mistake to a line in use, it would silently lose every applicant, so such a value reads as
+ * unset: the reminders stay off, which is the loud and harmless failure.
+ */
+export function approvalsLinePhoneNumberId(): string | null {
+  const id = process.env.WHATSAPP_APPROVALS_PHONE_NUMBER_ID?.trim();
+  if (!id) return null;
+  const intake = [process.env.WHATSAPP_PHONE_NUMBER_ID ?? "", ...(process.env.WHATSAPP_PHONE_NUMBER_IDS ?? "").split(",")].map((entry) => entry.trim());
+  return intake.includes(id) || findWhatsAppInboxLine(id) ? null : id;
+}
+
+/** Null until both ids are set: a template belongs to one business account, so the number alone cannot send. */
+export function whatsAppApprovalsLine(): { phoneNumberId: string; businessAccountId: string } | null {
+  const phoneNumberId = approvalsLinePhoneNumberId();
+  const businessAccountId = process.env.WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID?.trim();
+  return phoneNumberId && businessAccountId ? { businessAccountId, phoneNumberId } : null;
+}
+
+export function isApprovalsLine(phoneNumberId: string | null | undefined): boolean {
+  const line = approvalsLinePhoneNumberId();
+  return Boolean(line) && phoneNumberId?.trim() === line;
+}

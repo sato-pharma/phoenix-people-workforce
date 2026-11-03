@@ -5320,8 +5320,10 @@ throw away real work. So `capturedAt = anchor.issuedAt + elapsed`, and a SMALL e
 freely. The anchor may be 20 hours old (`ANCHOR_MAX_AGE_SECONDS`) and anchors are minted on demand,
 60 an hour, by `POST /api/phoenix-crm/time-anchor`.
 
-**The web app has no offline queue at all.** Nothing under `src/components/phoenix-crm` has ever sent
-an `offline` body or asked for an anchor; the queue that needs one lives in the app. So in a browser
+**The web app makes no offline claim at all.** Nothing under `src/components/phoenix-crm` has ever sent
+an `offline` body or asked for an anchor; the queue that needs one lives in the app. (It had no queue of any kind
+when this was written. Since 3 Nov 2026 it holds a press that lost signal and sends it again, dated at arrival:
+see "The visit retry". That queue makes no claim either, so everything here still stands.) So in a browser
 that field had no honest sender and one dishonest one: mint an anchor on Monday afternoon, post a visit
 on Tuesday with `offline: { anchorId, elapsedMs: 0 }`, and `phoenix_crm_save_visit` — which accepts any
 `offline_captured_at` within a day — files and counts it as Monday's.
@@ -9151,6 +9153,133 @@ serves the merged revision.
 `SEAT-PED-DM-D2`. **If Hany leaves,** a new Regional Manager does not inherit the seat by himself: occupy it.
 
 **Pinned by** `tests/pedia-sharkia-hany-saad-hold.test.ts`.
+
+## The visit retry — owner, 3 Nov 2026
+
+> "build 1 & 2 & 3 &4 & 5 & 7"
+
+Item 1 of the list he was answering was a retry for a visit whose save loses signal. Until now a browser save that
+failed lost the whole visit, comment included, with nothing to press afterwards. At least 13 presses by 12 people got
+no server answer in the 14 days before, a floor, because that capture skips offline phones and hidden tabs.
+
+**What the rep gets.** The press is written to the phone before the request goes. If the signal fails, the form closes
+and the customer reads "Waiting to send", with one line: "Saved on this phone. It sends when you have signal and
+Phoenix is open." It sends by itself while any Phoenix page is open, oldest first, a few seconds apart.
+
+**What it asks of the rep, and only when it must.** "This visit could not be sent" with the server's own sentence, or "Not
+sent in time", each with Log it again and Remove. Log it again opens the form on the rep's own comment and products.
+
+**Why two hours and 02:00.** The server dates every browser save at ARRIVAL, as it always has, and the retry does not
+change that. Past two hours, or across the 02:00 close of the visit day, an arrival-dated visit is no longer the same
+visit: it lands on the wrong day, or off plan, and a manager is told something nobody earned. So the rep is asked instead,
+one tap, in a case that should be rare. Elapsed time is measured on the phone's clock and the day on the server's,
+because each is right about only that one thing.
+
+**What protects the evidence.** A held save is never dated by the phone and never reads as impossible travel. It can
+still lower the rank until settled, by his ruling below.
+
+- `queuedSeconds` is a duration, bounded 1 to 7,200, parsed by `parseVisitDraft`, and never sent to
+  `phoenix_crm_save_visit`. Only a browser may carry it.
+- It is filed as `queued_seconds` on `phoenix_crm_visit_capture_provenance`, after the save.
+- The phone-clock check adds it to the tap before comparing, so a phone that merely waited reads true and a phone whose
+  clock is truly wrong still shows.
+- The travel check runs twice, at arrival and at the moment the rep was there (`checkHeldLocationIntegrity`). What is filed
+  keeps the arrival.
+- The SFE Manager's Visit report shows it as Sent late (min), so a forged value is visible. A rep and a district manager
+  never read it.
+
+**What is accepted.** The first-visit board, the hourly roll-up and the save-time behaviour flags read arrival time, so
+a held visit reads up to two hours late on them.
+
+**A refusal does not prove a visit is unsaved.** The pre-checks run before the save function's "this id is on file"
+answer, so a visit that landed and lost only its reply can be refused on the second press. The id is read again before
+any refusal is shown, and an already-visited refusal settles in silence.
+
+**The off switch.** `visit_resend_enabled` on Phoenix CRM settings, no merge needed. Off, nothing sends by itself, and
+what a phone holds asks to be logged again rather than vanishing.
+
+**The count nobody had.** Every held press ends in one row of `phoenix_crm_visit_resend_log`. Joined to
+`phoenix_crm_visits` it answers how many were pressed and never saved. A phone that never reopens undercounts it, and a
+rep's own Remove counts, so it reads "no visit saved", never "lost".
+
+**Who has a queue.** A rep on their own territory and day. A seat view and a test login have none, and behave as before.
+No service worker: the push provider holds that scope, so a visit sends only while Phoenix is open, which is what the
+rep is told.
+
+**Where the sending runs.** The runner sits beside the portal's top bar and never inside it, because app mode has no top
+bar. The sending code is fetched when the Visits screen and the form open, because it cannot be fetched on the press that
+lost the signal, and the runner looks again when signal returns. A tab left open for another person stops rather than
+sends under the new sign-in.
+
+**A wait may correct a reading and never erase it.** The first build believed the phone's claimed wait, so a forged wait
+could hide an impossible-travel reading. Told that, he answered:
+
+> "this rsik is not accpeted at all must fix"
+
+Asked how to treat a case Phoenix cannot tell apart from a forged wait, he chose:
+
+> "Lower rank until settled (Recommended)"
+
+- The check runs at arrival, on the server's clock, and again at the door, with each side moved back by the wait the server
+  believes (`checkHeldLocationIntegrity`). Every finding from either pass stands, so a wait cannot hide a replayed
+  coordinate or a day with no drift.
+- A trip impossible at the door is `impossible_travel`. Even on the phone's word, nobody made it.
+- A trip impossible only at arrival is `travel_rests_on_held_wait`, which is strong. No software can prove when an offline
+  phone was pressed, so an honest drained queue and a forged wait both land here. It costs the rank until he settles the
+  case, an honest rep's included, and his settle clears it. Never demote it to weak.
+- Only a drain of two or more, or a next visit soon after a held one, can trip it, and only at 2 km or more net of accuracy
+  and over 150 km/h. A lone held visit cannot, because arriving late only widens its gap.
+- A claim is void, all of it, if one of the rep's own arrivals sits inside the wait and more than five minutes before this
+  one landed (`creditedHeldSeconds`), because an online Phoenix would have sent the visit then. A save by a manager or an
+  admin is not that phone online, and a place's `captured_at` is not confirmed to be a receipt, so neither counts.
+- `device_skew_minutes` is still corrected by the wait, on the save path, because reading the history there would slow the
+  save. The SFE Manager's report shows Sent late (min) beside it.
+- How many honest cases this makes is unmeasured until real use. Count the board's cases carrying the flag.
+
+**Pinned by** `tests/phoenix-crm-visit-resend-rules.test.ts`, `tests/phoenix-crm-visit-outbox.test.ts` and
+`tests/phoenix-crm-queued-evidence.test.ts`.
+
+## The approval reminders on WhatsApp — owner, 3 Nov 2026
+
+> "build 1 & 2 & 3 &4 & 5 & 7"
+
+Item 7 of the list he was answering. Asked in plain words who should get it and from which number, he chose "All 25
+people" and "A new third number". Of 350 leave decisions in 90 days, the median took 13.3 hours and the slowest tenth took
+72.9 hours or more. Of the 25 recent approvers, 12 can be reached on Telegram, 22 hold a push subscription and 2 have
+neither. Direct orders have no scheduled reminder to an approver at all.
+
+**What it does.** Once a working day, between 10:00 and 11:59 Cairo, each approver holding something for more than three
+days gets one WhatsApp message with the count and a fixed link. The message carries no name and no reason. The chains are
+leave, excuses, marketing and direct orders. Phoenix CRM has its own morning nudge and weekly plans are left out.
+
+**What counts, and why it is narrow.** Live on 3 Nov, every one of the 123 pending direct-order steps was a dead row on a
+closed request, and 9 of the 31 pending leave steps sat on rejected requests. Counted loosely, those would nag someone for
+ever. So only an open request counts, only the step that could decide right now counts, and the clock starts when the step
+reached that person. A departed person, someone who cannot sign in and a role with no excuse authority are never told, and
+what nobody can be told about is counted in the run's result, never dropped.
+
+**The third number stays out of recruitment.** The WhatsApp Inbox and the recruitment outbound report do not filter by
+line, so "not in the inbox's list" alone would have shown reminders and replies to HR Resourcing. The webhook therefore
+removes that number's changes before anything reads the delivery, per change and not per delivery, because an applicant's
+CV can arrive in the same one. The shared sender returns before the recruitment report for that number too. The number is
+not in `WHATSAPP_PHONE_NUMBER_IDS`, so a fault on it cannot read as the intake being down. The Needs You read asks about
+it directly.
+
+**Off until he says, by three locks that need no merge:** the switch on the recipients screen, the number being set up,
+and Meta's approval of the message. Production-only and the working-day window sit beside them. The working days, Sunday
+to Thursday, were my decision. 🔴 No test send is ever fired; `?dryRun=1` counts and sends nothing.
+
+**One message a person a day.** The row is claimed before the send and never retried that day, and each morning has five
+ticks with a cap of 8 a tick, so the list finishes. Meta's delivery ticks update the row, so a number not on WhatsApp reads
+failed. A failed read or every send refused turns the job red rather than reporting a calm zero.
+
+**His parts:** the SIM and the number in WhatsApp Manager, his word to submit the message
+(`scripts/approvals/submit-urgent-reminder-template.ts`, dry run unless told otherwise), Meta's expectation that each
+recipient agreed to messages, and the switch. 🔴 Set `WHATSAPP_APPROVALS_PHONE_NUMBER_ID` before anyone can message the
+number, because its replies are dropped only once it is known.
+
+**Pinned by** `tests/approval-whatsapp-rules.test.ts`, `tests/approval-whatsapp-send.test.ts` and
+`tests/approval-whatsapp-reply-exit.test.ts`.
 
 ## The doctor-list check (owner, 2026-10-27 and 2026-11-03)
 

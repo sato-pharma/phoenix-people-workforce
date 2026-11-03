@@ -41,6 +41,7 @@ export const notificationRoleKeys = [
   "service_milestone_notice",
   "activity_inactivity_digest",
   "accepted_offer_alert",
+  "approval_whatsapp_reminder",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -256,6 +257,17 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
       "Who is told, in-app, by push and on Telegram, the moment a job offer is marked accepted, so the new hire can be seated. The notice carries the candidate's name, the agreed start date and the seat the offer named, and links to the organogram where an accepted offer is now one press to hire. Defaults to Super Admin, HR Operations and Talent Acquisition — the owner's choice, 2026-10-02, with Talent Acquisition added 2026-10-16.",
     roles: ["Super Admin", "HR Operations", "HR Resourcing"],
     enabled: true,
+  },
+  // Owner, 3 Nov 2026. A master switch only: the recipients are whoever holds an approval past three days, so `roles` is
+  // empty. Off until he turns it on, and the third number and Meta's approval must also be in place
+  // (src/lib/approvals/urgent-whatsapp.ts).
+  approval_whatsapp_reminder: {
+    key: "approval_whatsapp_reminder",
+    label: "WhatsApp reminder for waiting approvals",
+    description:
+      "Once a working day, each approver holding a leave, excuse, marketing or direct-order request for more than three days gets one WhatsApp message with the count.",
+    roles: [],
+    enabled: false,
   },
 };
 

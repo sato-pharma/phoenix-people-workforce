@@ -206,7 +206,7 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("content", "voiceNoteSeconds", "Voice note length (sec)", "seconds", 12, { sparse: true }),
   F("content", "visitPhoto", "Visit photo", "yesno", 10),
 
-  // ── Location on the visit (17) ──
+  // ── Location on the visit (18) ──
   F("location", "visitLat", "Visit latitude", "coordinate", 12),
   F("location", "visitLon", "Visit longitude", "coordinate", 12),
   F("location", "visitAccuracy", "Visit accuracy (m)", "meters", 12, { sight: "sfe" }),
@@ -217,6 +217,9 @@ export const VISIT_REPORT_FIELDS: ReadonlyArray<VisitReportField> = [
   F("location", "photoAccuracy", "Photo accuracy (m)", "meters", 12, { sight: "sfe" }),
   F("location", "photoTakenAt", "Photo taken at (Cairo time)", "datetime", 20, { sight: "sfe" }),
   F("location", "fixAgeSeconds", "Fix age (sec)", "seconds", 10, { sight: "sfe" }),
+  // How long the phone held this save for want of signal (owner, 3 Nov 2026). The visit is dated at arrival, so
+  // a long wait or an odd one is read here. Blank is a save that was never held, the normal case.
+  F("location", "sentLateMinutes", "Sent late (min)", "minutes", 10, { sight: "sfe", sparse: true }),
   F("location", "deviceInstall", "Device install id", "text", 18, { sight: "sfe" }),
   F("location", "appRevision", "App revision", "text", 14, { sight: "sfe" }),
   F("location", "browser", "Browser", "text", 28, { sight: "sfe" }),

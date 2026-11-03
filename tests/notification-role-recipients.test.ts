@@ -108,6 +108,8 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // 24th key, added 2026-09-26. The daily inactive-colleague digest. Super Admin ALONE —
   // the owner asked for it to reach him, in-app and on Telegram, and never by email.
   activity_inactivity_digest: { roles: ["Super Admin"], enabled: true },
+  // Owner, 3 Nov 2026: off until he turns it on, and the recipients are per request, so `roles` stays empty.
+  approval_whatsapp_reminder: { roles: [], enabled: false },
   // 25th key, added 2026-10-02. Fires the moment a job offer is marked accepted, so the new hire
   // can be seated. Owner chose Super Admin + HR Operations, in-app + push + Telegram (he added
   // Telegram when asked), and never email. Talent Acquisition (HR Resourcing) added 2026-10-16.
@@ -115,7 +117,7 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 24, "expected exactly the 24 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 25, "expected exactly the 25 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),

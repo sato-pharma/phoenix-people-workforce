@@ -63,10 +63,12 @@ const ROLE_RECIPIENTS_HYBRID_NOTICE: Partial<Record<NotificationRoleKey, string>
 };
 
 const ROLE_RECIPIENTS_NOT_CONFIGURABLE: Partial<Record<NotificationRoleKey, string>> = {
+  approval_whatsapp_reminder: "Recipients are whoever holds an approval for more than three days — not role-configurable. This is the on and off switch.",
   marketing_sla_reminder: "Recipients are always the specific request's assigned approver and requester — not role-configurable. This switch only turns the reminder on or off.",
 };
 
 const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
+  approval_whatsapp_reminder: "Approvals",
   holiday_confirmation_reminder: SYSTEM_HEALTH_MODULE,
   vacation_sla_hr_escalation: "Leave Management",
   telegram_daily_hr_digest: SYSTEM_HEALTH_MODULE,

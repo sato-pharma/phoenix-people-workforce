@@ -35,6 +35,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { buildNeedsYouSections, needsYouHeroDescription } from "../render/sections";
 import { getNeedsYouBoard } from "../service";
 import type { NeedsYouBoard } from "../types";
+import { NEEDS_YOU_VENDORS_NOT_READ_LINE } from "../vendor-accounts-rules";
 
 import { NEEDS_YOU_BOARD_PATH } from "./daily";
 
@@ -150,6 +151,7 @@ export function buildNeedsYouWeeklyEmail(input: { board: NeedsYouBoard; boardUrl
     out.push("");
   }
 
+  out.push(NEEDS_YOU_VENDORS_NOT_READ_LINE, "");
   out.push(`The full board: ${boardUrl}`);
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }

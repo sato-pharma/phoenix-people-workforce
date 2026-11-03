@@ -98,6 +98,7 @@ import {
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
+import { VisitOutboxRunner } from "@/components/phoenix-crm/visit-outbox-runner";
 import { signOutAndLeave } from "@/lib/auth/sign-out-client";
 import { DisplayScaleControl } from "@/components/layout/display-scale-control";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -2492,6 +2493,8 @@ export function EmployeePortalChrome({
             The 2026-09-29 command bar, shortcuts card and focus-mode button all respect this: each
             is an overlay or floats over the page — none of them is a row between the header and
             `main`. */}
+        {/* Beside the top bar and never inside it: app mode has no top bar, and a held visit still has to send. */}
+        <VisitOutboxRunner ownerHrId={data.pushHrId} />
         {/* The fixed top bar. Gone in app mode — the native screen supplies the header. */}
         {appShell ? null : (
           <EmployeePortalTopNav

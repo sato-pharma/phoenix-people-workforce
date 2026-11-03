@@ -171,6 +171,9 @@ const variables = [
     // whatsapp-health.ts falls back to the singular above when this is unset, so a second line is
     // invisible to the silence alert until it is listed here.
     { railway: "WHATSAPP_PHONE_NUMBER_IDS", github: ["WHATSAPP_PHONE_NUMBER_IDS"], required: false },
+    // Added 2026-11-03: the third number, used only for approval reminders. Unset until he sets it up, and the job stays off.
+    { railway: "WHATSAPP_APPROVALS_PHONE_NUMBER_ID", github: ["WHATSAPP_APPROVALS_PHONE_NUMBER_ID"], required: false },
+    { railway: "WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID", github: ["WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID"], required: false },
     { railway: "WHATSAPP_WEBHOOK_VERIFY_TOKEN", github: ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"], required: true },
 
     // Added 2026-08-08: the owner created a fresh token and both Railway and GitHub now hold

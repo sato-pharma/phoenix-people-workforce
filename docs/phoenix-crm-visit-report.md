@@ -21,7 +21,7 @@ Account behind the one-line cue in `.claude/rules/phoenix-crm-boards.md` (owner,
 
 `manager` (the default), `sfe`, `superAdmin`.
 
-- The district manager is offered **97 of the 115 fields**. He never gets the 17 `sfe`-sight ones — the
+- The district manager is offered **97 of the 116 fields**. He never gets the 18 `sfe`-sight ones — the
   measurement behind a distance (accuracy, phone clock, a place's accuracy, where its point came from), per
   "District Managers see the distance only" (2 Oct 2026), plus the integrity cases, the device telemetry and
   the speed that come from silent tables — nor `mockDevice`.
@@ -66,7 +66,7 @@ The owner asked for a deep audit of the report on 16 Oct 2026 and then for five 
   fitted again only when the day or the shown visits change. Markers are numbered, and routes drawn, per
   person per day.
 - **Two wording errors.** The page headings count the fields the viewer is actually offered
-  (`visitReportFieldsFor(scope.sight).length`) instead of a hard-coded 113. The real totals are 115 in all
+  (`visitReportFieldsFor(scope.sight).length`) instead of a hard-coded 113. The real totals were 115 in all (116 since Sent late (min) joined on 3 Nov 2026)
   and 97 for a district manager. A visit the Super Admin entered later for a rep (`isEnteredForRep`, 18 on
   production) reads *No location: entered later by the Super Admin*, the wording every other screen uses,
   instead of "No validated place".

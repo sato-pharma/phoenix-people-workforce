@@ -31,6 +31,10 @@
  * of what a phone in a pocket in Cairo traffic actually does. A flag here is evidence for a human to
  * read, never a verdict and never an action.
  *
+ * 🔴 ONE EXCEPTION, ON THE OWNER'S OWN WORD: `travel_rests_on_held_wait`. No software can prove when an
+ * offline phone was pressed, so an honest drained queue and a forged wait read the same. He ruled that the
+ * risk is not accepted, and that such a case lowers the rank until he settles it. See `checkHeldLocationIntegrity`.
+ *
  * 🔴 AND THE FIRST THING TO ASK OF A FIX IS WHETHER IT IS A RECEIVER READING AT ALL. With Android's
  * "Precise location" switched off the OS hands back a grid-snapped tile centre with a fixed
  * accuracy — a number that repeats and never drifts by construction — and four of the five
@@ -179,7 +183,16 @@ export type PhoenixCrmIntegrityFlag =
   // same way; the board's ordinary-cause line says so, and the settle click is how a case that turns
   // out to be that stops costing the rep.
   /** The page reported that the browser's own location reader had been replaced. */
-  | "location_reader_replaced";
+  | "location_reader_replaced"
+  // ── A trip that is possible only if the phone's own claim of a wait is true (3 Nov 2026) ───────
+  //
+  // 🔴 STRONG, ON THE OWNER'S OWN WORD. Told a forged wait could hide an impossible-travel reading: "this
+  // rsik is not accpeted at all must fix". Asked how to treat a case Phoenix cannot tell apart from a forged
+  // wait: "Lower rank until settled (Recommended)". It therefore moves the rep's Phoenix Ranks Integrity
+  // score through `countedIntegrityFlags`, an honest rep's included, and the settle click is what clears it.
+  // It is NOT a precision flag, so an approximate fix does not excuse it.
+  /** The two readings fit only if the phone truly held one of them for want of signal. */
+  | "travel_rests_on_held_wait";
 
 export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFlag[] = [
   "mock_provider",
@@ -189,6 +202,7 @@ export const PHOENIX_CRM_STRONG_INTEGRITY_FLAGS: readonly PhoenixCrmIntegrityFla
   "photo_pin_disagrees",
   "sign_other_name",
   "location_reader_replaced",
+  "travel_rests_on_held_wait",
 ];
 
 /**
@@ -209,6 +223,7 @@ export const PHOENIX_CRM_INTEGRITY_LABELS: Record<PhoenixCrmIntegrityFlag, strin
   mock_provider: "The phone reported a mock location app",
   coordinate_replay: "This exact coordinate was used before",
   impossible_travel: "Could not have travelled that far in the time",
+  travel_rests_on_held_wait: "This trip is possible only if the phone really held a visit without signal",
   zero_jitter: "The position never moved all day",
   constant_accuracy: "Every reading had identical accuracy",
   typed_coordinate: "The coordinate looks typed, not measured",
@@ -367,6 +382,17 @@ export const COARSE_ACCURACY_METERS = 500;
 
 // ── Input ───────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A fix at the moment he was there rather than the moment it arrived (the visit retry, owner, 3 Nov 2026). A save
+ * the phone held for want of signal has a late `captured_at`, and compared raw a drained queue reads as visits
+ * seconds apart. Both sides of a comparison go through this, each with its own wait. A save never held is
+ * returned as it is, which is every save before this existed.
+ */
+export function atTheDoor<T extends { capturedAt: Date }>(fix: T, queuedSeconds: number | null | undefined): T {
+  if (!queuedSeconds || !Number.isFinite(queuedSeconds)) return fix;
+  return { ...fix, capturedAt: new Date(fix.capturedAt.getTime() - queuedSeconds * 1000) };
+}
+
 /** One fix already on record, as the history query returns it. */
 export type PhoenixCrmPriorFix = GeoPoint & {
   accuracyMeters: number | null;
@@ -392,6 +418,18 @@ export type PhoenixCrmIntegrityInput = {
    * matter; the caller decides how far back to look.
    */
   history: readonly PhoenixCrmPriorFix[];
+};
+
+/** A fix on record with the wait its phone claimed for it, compared at arrival and again at the door. */
+export type PhoenixCrmHeldPriorFix = PhoenixCrmPriorFix & { queuedSeconds?: number | null };
+
+export type PhoenixCrmHeldIntegrityInput = Omit<PhoenixCrmIntegrityInput, "history"> & {
+  /** How long the phone says it held THIS save. Null on a save that never waited. */
+  queuedSeconds: number | null | undefined;
+  /** Raw, every side at its arrival. This function does the moving, so nothing is shifted twice. */
+  history: readonly PhoenixCrmHeldPriorFix[];
+  /** When the rep's own saves reached the server, the capture's own included. A manager's save is not one. */
+  ownArrivals: readonly Date[];
 };
 
 export type PhoenixCrmIntegrityVerdict = {
@@ -609,6 +647,75 @@ export function checkLocationIntegrity(input: PhoenixCrmIntegrityInput): Phoenix
     flags: ordered,
     strong: ordered.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)),
     signals,
+  };
+}
+
+/**
+ * How close to an arrival a contact may sit without contradicting a claimed wait. The sender is oldest first
+ * and a few seconds apart, so a held visit and a fresh press land together the moment signal returns.
+ */
+export const HELD_WAIT_CONTACT_GRACE_MINUTES = 5;
+
+/**
+ * How much of a claimed wait the server will believe: all of it, or none.
+ *
+ * A wait is only the phone's word, but one thing can contradict it from the server's own clock. If this rep's
+ * phone reached Phoenix in the middle of the wait, an online Phoenix would have sent the held visit then. So
+ * one of their own arrivals inside the wait voids it. A contact inside the grace does not, or the save that
+ * ended the wait would count against it.
+ */
+export function creditedHeldSeconds(claimedSeconds: number | null | undefined, arrivalAt: Date, ownArrivals: readonly Date[]): number {
+  if (!claimedSeconds || !Number.isFinite(claimedSeconds) || claimedSeconds <= 0) return 0;
+  const arrival = arrivalAt.getTime();
+  const waitBegan = arrival - claimedSeconds * 1000;
+  const graceBegins = arrival - HELD_WAIT_CONTACT_GRACE_MINUTES * 60_000;
+  const contradicted = ownArrivals.some((contact) => contact.getTime() > waitBegan && contact.getTime() < graceBegins);
+  return contradicted ? 0 : claimedSeconds;
+}
+
+/**
+ * The check for a capture when a wait is claimed on either side. A wait may correct the comparison, and it may
+ * never make a reading disappear (owner, 3 Nov 2026: "this rsik is not accpeted at all must fix").
+ *
+ * It runs twice. At ARRIVAL, on the server's own clock, nothing the phone says moves anything. At the DOOR, each
+ * side moved back by the wait the server will credit.
+ *
+ *   - Every finding from either pass stands, so a wait cannot hide a replay or a day with no drift.
+ *   - A trip impossible at the door is `impossible_travel`: even taking the phone's word, nobody made it.
+ *   - A trip impossible only at arrival is `travel_rests_on_held_wait`: it fits only if the claim is true. An honest
+ *     drained queue and a forged wait both land here and cannot be told apart, so a person reads it, and until
+ *     they settle it the rank carries it.
+ *
+ * A capture with no claim on either side gets exactly what `checkLocationIntegrity` always gave it.
+ */
+export function checkHeldLocationIntegrity(input: PhoenixCrmHeldIntegrityInput): PhoenixCrmIntegrityVerdict {
+  const { queuedSeconds, history, ownArrivals, ...capture } = input;
+  const arrival = checkLocationIntegrity({ ...capture, history });
+  if (!queuedSeconds && !history.some((prior) => prior.queuedSeconds)) return arrival;
+
+  const creditedSeconds = creditedHeldSeconds(queuedSeconds, capture.fix.capturedAt, ownArrivals);
+  const door = checkLocationIntegrity({
+    ...capture,
+    fix: atTheDoor(capture.fix, creditedSeconds),
+    history: history.map((prior) => atTheDoor(prior, creditedHeldSeconds(prior.queuedSeconds, prior.capturedAt, ownArrivals))),
+  });
+
+  const flags = new Set<PhoenixCrmIntegrityFlag>([...door.flags, ...arrival.flags.filter((flag) => flag !== "impossible_travel")]);
+  if (arrival.flags.includes("impossible_travel") && !door.flags.includes("impossible_travel")) flags.add("travel_rests_on_held_wait");
+
+  const previous = history
+    .filter((prior) => prior.repHrId === capture.repHrId && prior.capturedAt.getTime() < capture.fix.capturedAt.getTime())
+    .sort((left, right) => right.capturedAt.getTime() - left.capturedAt.getTime())[0];
+  const ordered = [...flags].sort();
+  return {
+    flags: ordered,
+    strong: ordered.some((flag) => PHOENIX_CRM_STRONG_INTEGRITY_FLAGS.includes(flag)),
+    // The arrival pass's `travel` survives when the door's has none, because the case story prints those numbers.
+    signals: {
+      ...arrival.signals,
+      ...door.signals,
+      heldWait: { claimedSeconds: queuedSeconds ?? 0, creditedSeconds, priorClaimedSeconds: previous?.queuedSeconds ?? 0 },
+    },
   };
 }
 

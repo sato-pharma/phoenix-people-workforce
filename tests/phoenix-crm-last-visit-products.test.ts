@@ -129,7 +129,7 @@ export function runPhoenixCrmLastVisitProductsTests(): void {
       assert.ok(body.includes("lastVisit"), `${path} must carry the last visit's products over`);
       assert.match(
         code,
-        /const \[products, setProducts\] = useState<string\[\]>\(\(\) => carriedProducts\(customer\)\);/,
+        /const \[products, setProducts\] = useState<string\[\]>\(\(\) => \{[^}]*carriedProducts\(customer\)/,
         `${path} must fill the products in when the form opens, not merely read them`,
       );
       assert.ok(

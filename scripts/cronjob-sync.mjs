@@ -229,6 +229,16 @@ const JOBS = {
     // One indexed read of the open sessions, then at most 20 sends — none while the switch is off.
     requestTimeout: 300,
   },
+  "approval-whatsapp-reminders": {
+    title: "Phoenix — WhatsApp approval reminders",
+    path: "/api/cron/approval-whatsapp-reminders",
+    // Five ticks at 10:xx Cairo, every day (owner, 3 Nov 2026). Sends nothing on a Friday or Saturday, and nothing at all
+    // until the switch, the third number and Meta's approval are in place. --hold does not hold: cron-autoarm.yml arms a
+    // new row on merge, so the off position lives in the code. Odd minutes no other job holds. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [10], minutes: [9, 11, 17, 29, 47], mdays: [-1], months: [-1], wdays: [-1] },
+    // Six reads, then at most eight sends a tick and none while it is off.
+    requestTimeout: 300,
+  },
   "marketing-pharmacy-code-sync": {
     title: "Phoenix — pharmacy-code sync",
     path: "/api/cron/marketing-pharmacy-code-sync",

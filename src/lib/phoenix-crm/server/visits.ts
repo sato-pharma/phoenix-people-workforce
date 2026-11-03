@@ -577,6 +577,11 @@ export type VisitDayView = {
   /** The rep's own day to describe; a manager enters his visits but never how he spent his day on a rep's seat. */
   canSetDayActivity: boolean;
   /**
+   * Whose held visits to show on this screen (owner, 3 Nov 2026): his own, on his own current day, with the
+   * off switch either way, so a visit the switch stopped from sending still tells him to log it again.
+   */
+  heldVisitsOwnerHrId: string | null;
+  /**
    * A DISTRICT manager describing HIS OWN day from a rep's territory (owner, 2026-10-20): true only
    * today, only for him, and never where `canSetDayActivity` already is. It lands on his own seat, so
    * `ownDayActivity` is what HE recorded — never the rep's, which `dayActivity` keeps.
@@ -659,6 +664,7 @@ export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unkn
     canAdd: date === today && canEnterVisits(viewer, seat.seatId, isTest),
     dayActivity: activity,
     canSetDayActivity: date === today && canWriteAsRep(viewer, seat, isTest),
+    heldVisitsOwnerHrId: date === today && !isTest && canWriteAsRep(viewer, seat, isTest) ? viewer.hrId : null,
     canSetOwnDayActivity: ownSeat !== null,
     ownDayActivity,
     canAddVisitDetail: canWriteAsRep(viewer, seat, isTest),
@@ -720,6 +726,8 @@ export type VisitCustomerOption = {
    */
   plannedOtherDays: string[];
   visitedToday: boolean;
+  /** His visit is already on this phone, waiting for signal. Set on the screen, never by the server. */
+  waitingToSend?: boolean;
   visitsThisMonth: number;
   target: number | null;
   /**
@@ -867,6 +875,11 @@ export type VisitFormView = {
    * entering a visit is never asked. The save refuses a chosen rep's visit with no recording either way.
    */
   recordingRequired: boolean;
+  /**
+   * Whose phone may hold this visit if the signal drops (owner, 3 Nov 2026), or null when none may: a manager
+   * entering, a test login, or the off switch. Null is the save exactly as it was before the queue existed.
+   */
+  visitQueueOwnerHrId: string | null;
 };
 
 /**
@@ -1352,6 +1365,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     blockedReason,
     offPlan: offPlanAllowance({ rows: offPlanRows, day: today, caps: settings, exemptions: offPlanExemptions }),
     recordingRequired,
+    visitQueueOwnerHrId: enteredAs === "rep" && !isTest && settings.visitResendEnabled ? viewer.hrId : null,
     doubleVisitDays: enteredAs === "rep" ? doubleVisitDayChoices(viewer.cairoToday, doubleVisitHolidays) : [],
   });
 }
@@ -1509,6 +1523,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     throw validationError(draft.error);
   }
   const visit = draft.value;
+  // How long the phone held this save (visit-resend-rules.ts). Only a browser has that queue, and a presenting
+  // client that is not one simply has no such claim to make. 🔴 It reaches the evidence below and never
+  // `phoenix_crm_save_visit`: the visit stays dated at arrival.
+  const queuedSeconds = client === "browser" ? visit.queuedSeconds : null;
   // The line's products are started here and awaited where they always were (2026-10-24, "performance
   // acceleration"), so they load while the participants and the double-visit ask are checked, and a
   // refusal from either still reaches the rep first. Handled at once, so an early refusal never leaves
@@ -1821,7 +1839,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
       location_flag: flag,
       // Against the photo slot's issue time when there is a photo, else against the moment the save
       // arrived — which is what dates a one-tap visit. Managers read it; the rep never does.
-      device_skew_minutes: deviceClockSkewMinutes(visit.deviceCapturedAt, issuedAt ? new Date(issuedAt) : new Date()),
+      device_skew_minutes: deviceClockSkewMinutes(visit.deviceCapturedAt, issuedAt ? new Date(issuedAt) : new Date(), queuedSeconds),
       // 🔴 A1. DERIVED ABOVE, never read from `body`. The database then re-checks it against now()
       // and a one-day floor, so the value passes two independent fences before it dates anything.
       offline_captured_at: offlineCapturedAt,
@@ -1851,6 +1869,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         customerId: visit.customerId,
         isTest,
         fix: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters, capturedAt },
+        queuedSeconds,
         deviceMocked: visit.deviceMocked,
         readerReplaced: visit.readerReplaced ?? null,
         readerFindings: visit.readerFindings ?? [],
@@ -1869,6 +1888,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
         fixTakenAt: visit.fixTakenAt,
         deviceCapturedAt: visit.deviceCapturedAt,
         deviceInstallId: visit.deviceInstallId,
+        queuedSeconds,
         isTest,
       });
     });
