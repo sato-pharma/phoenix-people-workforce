@@ -2087,6 +2087,41 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // after: unchanged, service_role still holds both, and the trigger still fires the renamed function. The same test
   // asks for a service-role policy on the table, so that one statement was also run live on both projects.
   "20261103091500_phoenix_crm_visit_comment_readings.sql",
+  // 2026-11-03, applied to production about 11:14 Cairo with `node scripts/apply-sql-file.mjs <file>
+  // production` (PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), straight after #38 merged,
+  // and to staging with the same script before the pull request opened. It is the standing route: both
+  // MCP doors refuse a body holding the rebuild's own `delete from marketing_roi_*` statements. That route
+  // writes NO ledger row, so production holds none for this version or name; staging holds one, from the
+  // staging applier on merge.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.phx_refresh_marketing_roi_facts reads f370c4ba115c8a677e10a0feece86a1c over 31,497 chars on
+  // ozucdzovmcqvepbozvqf and on cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file
+  // (as-is LF), and this file is the function's LAST definer. The pre-image is
+  // 20261016223000_marketing_roi_refresh_skips_through_periods.sql, c8d100c116c188021443fa91f0b32c90 on
+  // both projects before the apply, which makes that file the one-command rollback. `prosecdef` true,
+  // `proconfig` {search_path=public,statement_timeout=60s} and proacl
+  // {postgres=X/postgres,service_role=X/postgres} were read in the same query. Its effect, measured on
+  // production by a full rebuild on each body: customer total 88,051.558415 and 864 units on 36 rows both
+  // ways, 0 customers differ, and exact_sales_rows 72 before and 40 after. Re-applying it is a no-op
+  // (`create or replace`).
+  "20261103120201_marketing_roi_customer_counts_each_sale_once.sql",
+  // 2026-11-03, applied to staging and then production (about 11:35 Cairo) with `node
+  // scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), the standing route: both MCP doors refuse
+  // a body holding the rebuild's own `delete from marketing_roi_*` statements. That route writes NO ledger
+  // row, so production holds none for this version or name.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.phx_refresh_marketing_roi_facts reads bddeae52ff73e414f6528f8633463b7e over 31,344 chars on
+  // ozucdzovmcqvepbozvqf and on cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file
+  // (as-is LF), and this file is the function's LAST definer. The pre-image is
+  // 20261103120201_marketing_roi_customer_counts_each_sale_once.sql, f370c4ba115c8a677e10a0feece86a1c on
+  // both projects before the apply, which makes that file the one-command rollback. `prosecdef` true,
+  // `proconfig` {search_path=public,statement_timeout=60s} and proacl
+  // {postgres=X/postgres,service_role=X/postgres} were read in the same query. Its effect, measured on
+  // production by replaying the 10:54 Cairo import in a rolled-back transaction: 61 requests and EGP
+  // 79,951.56 on the six summary tables before, 81 requests and EGP 88,051.56 after, identical to a full
+  // rebuild. Re-applying it is a no-op (`create or replace`).
+  "20261103120202_marketing_roi_import_rebuilds_every_request.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

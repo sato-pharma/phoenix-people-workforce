@@ -21,6 +21,8 @@
 //       run BEFORE the push so a key never reaches the remote history at all. Replaces the
 //       per-PR secret-scan (owner, 2026-09-29), which billed a full minute on ~186 runs a day
 //       for a 23s job. Not installed = warn and ALLOW; the daily scan over main is the backstop.
+//       One command that commits AND pushes is refused outright: this runs before it starts, so the
+//       new commit does not exist to be scanned. Commit first, then push as a second command.
 //       PHX_SECRETS_OK=1 stands it down for a finding you have read and judged a fixture.
 //   C13 a MERGE of a PR that is a MEMBER of an open roll-up — the one merge that destroys the
 //       roll-up built to replace it — and, on the roll-up ITSELF, a merge carrying a member that
@@ -80,7 +82,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { gitLayout } from '../../scripts/lib/git-layout.mjs';
-import { commitsAhead, pushTargetDir, scanBranchCommits, SECRET_SCAN_TIMEOUT_MS } from './lib/secret-scan.mjs';
+import { commitsAhead, commitsThenPushes, pushTargetDir, scanBranchCommits, SECRET_SCAN_TIMEOUT_MS } from './lib/secret-scan.mjs';
 import { REPO as PHOENIX_REPO } from '../../scripts/required-check-names.mjs';
 
 function deny(reason) {
@@ -1698,6 +1700,12 @@ try {
   // budget, and each of those took EVERY guard's answer down with it. The account, and the run that
   // can never outlast its caller, are in `lib/secret-scan.mjs`. A timed-out scan warns and allows.
   //
+  // 🔴 ONE COMMAND THAT COMMITS AND PUSHES IS REFUSED BEFORE THE SCAN, BECAUSE THE SCAN CANNOT READ IT.
+  // This hook runs before the whole command starts, so the new commit does not exist: the range is
+  // empty on a fresh branch (3 Nov 2026, a JWT went out that way) and short of that commit on any
+  // other. Splitting the command is the fix, and the second command's scan reads the commit. The
+  // reading ignores the `--help` test below, which a commit message naming a flag would trip.
+  //
   // `PHX_SECRETS_OK=1 <cmd>` pushes anyway — for a finding you have read and judged to be a fixture
   // or a test vector, which is the only honest reason to override a secret scanner.
   const SECRETS_STAND_DOWN =
@@ -1706,17 +1714,22 @@ try {
     /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*git(?:\.exe)?\s+(?:-[^\s]+\s+|--[^\s]+\s+)*push(?:\s|$)/i;
 
   const pushText = withoutHeredocBodies(cmd);
+  const secretsStoodDown = SECRETS_STAND_DOWN.test(cmd) || process.env.PHX_SECRETS_OK === '1';
+  // Whole-line comments go first: an apostrophe in one would otherwise open a quote and hide the rest.
+  const commitThenPush =
+    !secretsStoodDown &&
+    /\bpush\b/.test(pushText) &&
+    commitsThenPushes(commandSegments(withoutHereStringBodies(pushText).replace(/^[ \t]*#.*$/gm, '')));
   if (
-    GIT_PUSH.test(pushText) &&
-    !/--dry-run|--help|(?:^|\s)-h(?:\s|$)/.test(pushText) &&
-    !SECRETS_STAND_DOWN.test(cmd) &&
-    process.env.PHX_SECRETS_OK !== '1'
+    commitThenPush ||
+    (GIT_PUSH.test(pushText) && !/--dry-run|--help|(?:^|\s)-h(?:\s|$)/.test(pushText) && !secretsStoodDown)
   ) {
     let scanRoot = '';
     const pushMatch = GIT_PUSH.exec(pushText);
-    const cdTarget = pushMatch
-      ? pushTargetDir(pushText.slice(0, pushMatch.index + pushMatch[0].length), String(input?.cwd || process.cwd()))
-      : null;
+    const cdTarget = pushTargetDir(
+      pushMatch ? pushText.slice(0, pushMatch.index + pushMatch[0].length) : pushText,
+      String(input?.cwd || process.cwd()),
+    );
     for (const candidate of [cdTarget, input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
       if (!candidate) continue;
       try {
@@ -1731,7 +1744,24 @@ try {
 
     // `.gitleaks.toml` at the root is what identifies THIS repo; the hook is global and must not
     // scan someone else's checkout. A branch with no commits past origin/main has nothing to scan.
-    if (scanRoot && existsSync(join(scanRoot, '.gitleaks.toml')) && commitsAhead(scanRoot) !== 0) {
+    const isThisRepo = Boolean(scanRoot) && existsSync(join(scanRoot, '.gitleaks.toml'));
+    if (isThisRepo && commitThenPush) {
+      deny(
+        'C12 — this command both commits and pushes, so it is refused before any of it runs. Nothing ' +
+          'has been staged, committed or pushed.\n\n' +
+          'The secret scan runs before the whole command starts, when the commit it has to read does ' +
+          'not exist yet, so it would check everything except what this push adds. On 3 Nov 2026 that ' +
+          'let a JWT out, and the next push was refused for it, too late.\n\n' +
+          'Run them as two commands: commit first, then a plain `git push` on its own, and the scan ' +
+          'reads the new commit.\n\n' +
+          'The stand-down also skips the scan and sends the commit unread, so it is only for a finding ' +
+          'you have already read and judged a fixture:\n  ' +
+          (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+            ? '$env:PHX_SECRETS_OK=1; <the same command>'
+            : 'PHX_SECRETS_OK=1 <the same command>'),
+      );
+    }
+    if (isThisRepo && commitsAhead(scanRoot) !== 0) {
       const scan = scanBranchCommits(scanRoot);
       const output = scan.output;
       const found = scan.status === 'found';

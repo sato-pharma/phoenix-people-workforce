@@ -115,15 +115,27 @@ function fakeGitleaksEnv(root: string, log: string): NodeJS.ProcessEnv {
   return env;
 }
 
-function runGuard(cwd: string, command: string, env: NodeJS.ProcessEnv): string {
+function runGuard(cwd: string, command: string, env: NodeJS.ProcessEnv, toolName = "Bash"): string {
   return execFileSync(process.execPath, [guardPath], {
     cwd,
-    input: JSON.stringify({ tool_name: "Bash", cwd, tool_input: { command } }),
+    input: JSON.stringify({ tool_name: toolName, cwd, tool_input: { command } }),
     encoding: "utf8",
     env,
     stdio: ["pipe", "pipe", "pipe"],
     timeout: 60000,
   });
+}
+
+/** The reason bash-guard refused with, or "" when it let the command through. */
+function refusalOf(stdout: string): string {
+  const start = stdout.indexOf('{"hookSpecificOutput"');
+  if (start < 0) return "";
+  const parsed = JSON.parse(stdout.slice(start)) as {
+    hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string };
+  };
+  return parsed.hookSpecificOutput?.permissionDecision === "deny"
+    ? String(parsed.hookSpecificOutput.permissionDecisionReason ?? "")
+    : "";
 }
 
 function scannedFolders(log: string): string[] {
@@ -235,6 +247,83 @@ export function runSecretScanPushGuardTests(): void {
     rmSync(log, { force: true });
     runGuard(elsewhere, `PHX_SECRETS_OK=1 cd "${ahead}" && git push`, env);
     assert.deepEqual(scannedFolders(log), [], "PHX_SECRETS_OK=1 skips the scan");
+
+    // 8. The gap of 3 Nov 2026: one command that commits AND pushes. The hook runs before any of it,
+    // when the new commit does not exist, so the range scan reads zero commits on a fresh branch (the
+    // shape that carried a JWT out, and the next push was refused for it) and everything but the new
+    // commit on a branch already ahead. `behind` and `ahead` are those two states.
+    const exactShape = 'git add leak.ts && git commit -m "add it" && git push -u origin codex/probe';
+    for (const [state, repo] of [["a branch with nothing past origin/main", behind], ["a branch already ahead", ahead]]) {
+      rmSync(log, { force: true });
+      const reason = refusalOf(runGuard(repo, exactShape, env));
+      assert.match(reason, /C12/, `git add && git commit && git push must be refused on ${state}`);
+      assert.match(reason, /two commands/i, "the refusal must say how to get past it");
+      assert.deepEqual(scannedFolders(log), [], "there is nothing worth scanning yet, so it refuses without scanning");
+    }
+
+    // ...in every spelling sessions really use. Measured over the Phoenix sessions on 3 Nov 2026.
+    const heredocCommit = "git add leak.ts && git commit -q -F - <<'EOF'\nfix: a message\n\nmore words\nEOF\ngit push";
+    const refused: Array<[string, string, string?]> = [
+      ["a semicolon chain", 'git add leak.ts; git commit -m "add it"; git push'],
+      ["one command per line", 'git add leak.ts\ngit commit -m "add it"\ngit push -u origin HEAD'],
+      ["a heredoc commit message", heredocCommit],
+      ["a substituted commit message", "git commit -m \"$(cat <<'EOF'\nfix: a message\nEOF\n)\" && git push"],
+      ["a flag on the commit", 'git -c commit.gpgsign=false commit -m "add it" && git push'],
+      ["the push hung up in a timeout", 'git commit -m "add it" && timeout 60 git push -u origin HEAD'],
+      ["the push piped on", 'git commit -m "add it" 2>&1 | tail -1 && git push 2>&1 | tail -2'],
+      ["an `if` block", 'git commit -m "add it"; if [ $? -eq 0 ]; then git push; fi'],
+      ["a commit message naming --help, which stands the scan down", 'git commit -m "document --help" && git push'],
+      ["a commit message naming --dry-run", 'git commit -m "add --dry-run" && git push'],
+      ["git -C on both", 'git -C "$WT" commit -m "add it" && git -C "$WT" push'],
+      ["git -C on a folder with a space", 'git -C "F:/a b" commit -m "add it" && git -C "F:/a b" push'],
+      ["a cherry-pick, which also makes the commit", "git cherry-pick abc1234 && git push"],
+      ["a merge, which also makes the commit", "git merge --no-edit some-branch && git push"],
+      ["PowerShell's here-string message", "git add leak.ts; git commit -q -m @'\nfix: it's a message\n'@; git push", "PowerShell"],
+      ["PowerShell's own success chain", 'git add leak.ts; git commit -m "add it"; if ($?) { git push }', "PowerShell"],
+      ["PowerShell's try block", 'try { git commit -m "add it"\n git push -u origin HEAD } finally { Pop-Location }', "PowerShell"],
+      ["a comment holding an apostrophe, which reads as an open quote", `# don't forget\ngit commit -m "add it"\ngit push`],
+    ];
+    for (const [label, command, tool] of refused) {
+      assert.match(refusalOf(runGuard(ahead, command, env, tool)), /C12/, `commit then push must be refused: ${label}`);
+    }
+
+    // A `cd` into the repo counts, because that is where the push runs.
+    assert.match(
+      refusalOf(runGuard(elsewhere, `cd "${ahead}" && ${exactShape}`, env)),
+      /C12/,
+      "cd <repo> && git add && git commit && git push must be refused from another folder",
+    );
+
+    // 9. Everything that is not a commit followed by a push still goes through.
+    const allowed: Array<[string, string, string?]> = [
+      ["a commit on its own", 'git add leak.ts && git commit -m "add it"'],
+      ["a push on its own", "git push -u origin codex/probe"],
+      ["a push before the commit, which carries only what the scan already read", 'git push && git commit -m "next"'],
+      ["a commit message that says `git push`", 'git commit -m "then; git push it"'],
+      ["a commit message that says `git push` on its own line", 'git commit -m "first\ngit push"'],
+      ["a heredoc message that says `git push`", "git commit -q -F - <<'EOF'\nfix: a message\n\ngit push\nEOF"],
+      ["a here-string message that says `git push`", "git commit -q -m @'\nfix: a message\ngit push\n'@", "PowerShell"],
+      ["a comment that says `git commit` above a push", "# after the git commit landed\ngit push"],
+      ["a trailing comment that says `git commit` above a push", "git status # after the git commit\ngit push"],
+      ["an echo that says `git push` after the commit", 'git commit -m "add it" && echo "now git push"'],
+      ["an echo that says `git commit` before the push", 'echo "after the git commit"; git push'],
+      ["a dry-run push", 'git commit -m "add it" && git push --dry-run'],
+      ["a push that only deletes a branch", 'git commit -m "add it" && git push origin --delete old-branch'],
+      ["a dry-run commit", "git commit --dry-run && git push"],
+      ["an abandoned merge, which makes no commit", "git merge --abort; git push"],
+      ["fetching and pulling, which bring only what the remote already holds", "git pull --rebase && git push"],
+      ["the stand-down", `PHX_SECRETS_OK=1 ${exactShape}`],
+      ["the PowerShell stand-down", '$env:PHX_SECRETS_OK=1; git commit -m "add it"; git push', "PowerShell"],
+    ];
+    for (const [label, command, tool] of allowed) {
+      assert.equal(refusalOf(runGuard(ahead, command, env, tool)), "", `must not be refused: ${label}`);
+    }
+    assert.equal(
+      refusalOf(runGuard(ahead, exactShape, { ...env, PHX_SECRETS_OK: "1" })),
+      "",
+      "the stand-down set in the environment still skips the clause",
+    );
+    assert.equal(refusalOf(runGuard(elsewhere, exactShape, env)), "", "a repository with no .gitleaks.toml is not ours to refuse");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
