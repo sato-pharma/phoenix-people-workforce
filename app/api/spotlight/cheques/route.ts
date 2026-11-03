@@ -1,4 +1,5 @@
 import { assertPermission } from "@/lib/auth/permissions";
+import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -15,8 +16,9 @@ export const dynamic = "force-dynamic";
  * The award cheque generator - a preview (`format: "html"`) or the PDF (`format: "pdf"`).
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * WHO MAY CALL IT. `spotlight:export`, the Super Admin and the CEO only. THE GATE IS HERE AND NOT
- * ONLY IN THE SIDEBAR: hiding the link is UX, this route is the security boundary.
+ * WHO MAY CALL IT. The Super Admin and the CEO only: `spotlight:export`, and the page's seat fence
+ * for the Talent Acquisition seat, which holds that permission for her Spotlight sheet. THE GATE IS
+ * HERE AND NOT ONLY IN THE SIDEBAR: hiding the link is UX, this route is the security boundary.
  *
  * WHAT IT DOES NOT DO. It records nothing and moves no money - the cheque is a presentation sheet
  * built from whatever the caller typed, and the amount on it is not read from, or written to, payroll.
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "spotlight", "export");
+    assertPageOpenForRole(access.role, "/spotlight/cheques");
 
     const parsed = parseChequeRequest(await request.json().catch(() => null));
     // A preview is called on every pause in typing, so only the PDF - the render that costs a browser

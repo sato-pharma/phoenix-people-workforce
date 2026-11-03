@@ -149,6 +149,7 @@ export async function runHrResourcingSeatTests() {
     "/attendance/weekly-review",
     "/leave-management/vacation-request",
     "/admin/payslips-center",
+    "/spotlight/cheques",
   ];
   assert.deepEqual(
     [...(SEAT_PAGE_FENCES["HR Resourcing"] ?? [])].sort(),
