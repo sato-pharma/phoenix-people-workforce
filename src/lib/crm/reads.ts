@@ -8,6 +8,7 @@
  * type as the generic (the `CrmVisitRow` / `CrmCheckinRow` defaults describe a `select("*")`).
  */
 
+import { isMissingRpcError } from "@/lib/supabase/errors";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
@@ -196,25 +197,7 @@ let excludedAgentsInFlight: Promise<EffectiveExclusion> | null = null;
  * PostgREST has no DISTINCT, so the one-statement answer has to be an RPC. */
 const CRM_AGENT_CRM_IDS_RPC = "phx_crm_agent_crm_ids_for_hr_ids";
 
-/**
- * True when an error means "this database has no such FUNCTION" — the distinct-scan migration has
- * not been applied here yet (a fresh clone, staging before it lands, a rollback).
- *
- * MUST be tested BEFORE {@link isCrmSchemaMissingError}. PostgREST reports a missing function as
- * PGRST202 "Could not find the function public.… in the schema cache", and the phrase "schema
- * cache" also matches the mirror-missing pattern — so checking in the other order would read a
- * missing FUNCTION as a missing MIRROR and degrade to an EMPTY live exclusion, silently resurfacing
- * every departed rep across Double Visit Analytics, Field Workforce Compliance and the payroll
- * no-activity detector. Exported so that ordering is pinned by a test, not by reading order.
- */
-export function isMissingCrmRpcError(error: unknown): boolean {
-  if (!error) return false;
-  const shape = error as { code?: string | null; message?: string | null };
-  const code = String(shape.code ?? "");
-  if (code === "PGRST202" || code === "42883") return true;
-  const message = String(shape.message ?? (error instanceof Error ? error.message : ""));
-  return /could not find the function|function .*does not exist/i.test(message);
-}
+export { isMissingRpcError as isMissingCrmRpcError };
 
 /** Fold scanned rows into the distinct crm_id set. Shared by the RPC and the page-walk fallback so
  * the two paths cannot drift apart. The `Number.isFinite` guard is the only addition to the
@@ -299,7 +282,13 @@ export async function scanDepartedAgentCrmIds(
     );
     return Array.from(collectAgentCrmIds(rows, new Set<number>()));
   } catch (error) {
-    if (isMissingCrmRpcError(error)) return pageWalkDepartedAgentCrmIds(keys, supabase);
+    // MUST be tested BEFORE isCrmSchemaMissingError. PostgREST reports a missing function as PGRST202
+    // "Could not find the function public.… in the schema cache", and the phrase "schema cache" also
+    // matches the mirror-missing pattern — so checking in the other order would read a missing FUNCTION
+    // as a missing MIRROR and degrade to an EMPTY live exclusion, silently resurfacing every departed
+    // rep across Double Visit Analytics, Field Workforce Compliance and the payroll no-activity
+    // detector. tests/crm-departed-agent-scan.test.ts pins the ordering.
+    if (isMissingRpcError(error)) return pageWalkDepartedAgentCrmIds(keys, supabase);
     if (isCrmSchemaMissingError(error)) return [];
     // toQueryError, not `new Error(String(error))`: supabase-js reports network-level failures as a
     // plain { message, code } object, and stringifying one yields "[object Object]" — which lands in
@@ -2557,7 +2546,7 @@ export async function readContactVisitHistory(
   try {
     return await readContactVisitHistoryCounted(ids, daysSince);
   } catch (error) {
-    if (!isMissingCrmRpcError(error)) {
+    if (!isMissingRpcError(error)) {
       // A missing mirror costs this one line, as it always did.
       if (isCrmSchemaMissingError(error)) return new Map<number, CrmContactVisitHistory>();
       throw toQueryError(error);

@@ -10,6 +10,7 @@ import {
   isPageFencedForRole,
   SEAT_PAGE_FENCES,
 } from "../src/lib/auth/seat-page-fences.ts";
+import { SIGN_OUT_FLUSH_CAP_MS, endPageView, flushActivityQueue, startPageView } from "../src/lib/activity/page-view-queue.ts";
 import { SIGN_OUT_FAILED_MESSAGE, signOutAndLeave } from "../src/lib/auth/sign-out-client.ts";
 import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { clientAddress, isCloudflareAddress, isInternalAddress } from "../src/lib/security/client-address.ts";
@@ -243,7 +244,12 @@ export async function runAccessBoundariesTests() {
   const realFetch = globalThis.fetch;
   const realWindow = (globalThis as { window?: unknown }).window;
   const navigated: string[] = [];
-  (globalThis as { window?: unknown }).window = { location: { assign: (url: string) => navigated.push(url) } };
+  (globalThis as { window?: unknown }).window = {
+    clearTimeout: (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer),
+    location: { assign: (url: string) => navigated.push(url) },
+    setTimeout: (run: () => void, ms: number) => setTimeout(run, ms),
+  };
+  const realNow = Date.now;
   try {
     globalThis.fetch = (async () => {
       throw new TypeError("Failed to fetch");
@@ -256,7 +262,66 @@ export async function runAccessBoundariesTests() {
     globalThis.fetch = (async () => new Response(JSON.stringify({ success: true }), { status: 200 })) as typeof fetch;
     assert.equal(await signOutAndLeave(), true);
     assert.deepEqual(navigated, ["/login"], "a signed-out browser goes to /login");
+
+    // The page views leave while the session exists: the track route drops anything after the logout.
+    const TRACK = "/api/activity/track";
+    const LOGOUT = "/api/auth/logout";
+    const PAGE = "/employee-portals/phoenix-crm";
+    const calls: Array<{ body: string; url: string }> = [];
+    const called = () => calls.map((call) => call.url);
+    let trackAnswers: "at once" | "never" | "when told" = "when told";
+    let logoutStatus = 200;
+    let answerTrack: () => void = () => {};
+    globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
+      const url = String(input);
+      calls.push({ body: String(init?.body ?? ""), url });
+      if (url === TRACK && trackAnswers !== "at once") {
+        await new Promise<void>((resolve) => {
+          if (trackAnswers === "when told") answerTrack = resolve;
+        });
+      }
+      return new Response(JSON.stringify({ success: url === TRACK || logoutStatus === 200 }), { status: url === TRACK ? 200 : logoutStatus });
+    }) as unknown as typeof fetch;
+    const minutesLater = (minutes: number) => {
+      const shifted = realNow() + minutes * 60_000;
+      Date.now = () => shifted;
+    };
+
+    startPageView(PAGE);
+    minutesLater(5);
+    const leaving = signOutAndLeave();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(called(), [TRACK], "the logout waits for the page views to be answered");
+    assert.ok(calls[0]!.body.includes(`"path":"${PAGE}"`) && calls[0]!.body.includes('"durationMs":300'), "the page the person signs out from is in the batch, five minutes of it");
+    answerTrack();
+    assert.equal(await leaving, true);
+    assert.deepEqual(called(), [TRACK, LOGOUT], "and only then is the session ended");
+    endPageView();
+    await flushActivityQueue();
+    assert.deepEqual(called(), [TRACK, LOGOUT], "the page hiding afterwards posts nothing, because its time has already gone");
+
+    calls.length = 0;
+    trackAnswers = "never";
+    startPageView(PAGE);
+    minutesLater(10);
+    const waitStarted = realNow();
+    assert.equal(await signOutAndLeave(), true, "a track request that never answers does not stop the sign-out");
+    assert.deepEqual(called(), [TRACK, LOGOUT]);
+    assert.ok(realNow() - waitStarted >= SIGN_OUT_FLUSH_CAP_MS - 100, "it holds the logout for the cap");
+    assert.ok(realNow() - waitStarted < SIGN_OUT_FLUSH_CAP_MS + 1_000, "and no longer");
+
+    calls.length = 0;
+    trackAnswers = "at once";
+    logoutStatus = 403;
+    startPageView(PAGE);
+    minutesLater(15);
+    assert.equal(await signOutAndLeave(), false);
+    logoutStatus = 200;
+    minutesLater(20);
+    assert.equal(await signOutAndLeave(), true);
+    assert.deepEqual(called(), [TRACK, LOGOUT, TRACK, LOGOUT], "a refused sign-out leaves the person on the page, and its clock runs again");
   } finally {
+    Date.now = realNow;
     globalThis.fetch = realFetch;
     (globalThis as { window?: unknown }).window = realWindow;
   }

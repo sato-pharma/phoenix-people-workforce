@@ -125,6 +125,27 @@ export async function runShellChatterTests() {
     assert.equal(bundle.unreadMessages, null, "no count is null, never zero — zero would clear a badge that may be lit");
   }
 
+  // A session with no HR id (an admin account): the list finds the employee by the login id, so the
+  // statement is asked under that same key, and the badge stays live on every pulse.
+  {
+    const { client, rpcCalls } = fakeClient({ data: { events: [], states: [], unread_messages: 2 }, error: null });
+    const loginOnly = await listInAppNoticeBundleForViewer({ ...REP, hrId: null }, 8, client);
+    assert.equal(loginOnly.unreadMessages, 2, "a session with only a login id keeps its live count");
+    assert.equal(rpcCalls[0].args.p_msg_hr_id, "pd0030", "asked under the employee key the list resolves from the login id");
+    assert.equal(rpcCalls[0].args.p_login_id, "pd0030", "and by the login itself");
+  }
+
+  // A session with no login id: the list would read the login from the auth row, and this statement
+  // cannot, so it is asked for no count at all. The migration answers null when both ids are blank.
+  {
+    const { client, rpcCalls } = fakeClient({ data: { events: [], states: [], unread_messages: null }, error: null });
+    const hrOnly = await listInAppNoticeBundleForViewer({ ...REP, loginId: null }, 8, client);
+    assert.equal(hrOnly.unreadMessages, null, "the menu reads its own count once");
+    assert.equal(rpcCalls[0].args.p_msg_hr_id, "", "no HR id is sent, so the statement scans no messages for a count nobody would use");
+    assert.equal(rpcCalls[0].args.p_login_id, "", "and no login");
+    assert.equal(rpcCalls[0].args.p_hr_id, "pd-0030", "the bell's own read is untouched");
+  }
+
   // ── 1b. A database the migration has not reached: the four reads, exactly as before ──────────
   {
     const { client, rpcCalls, tableCalls } = fakeClient({
@@ -179,7 +200,10 @@ export async function runShellChatterTests() {
     const inApp = code("src/lib/notifications/in-app.ts");
     const bundle = functionBody(inApp, "export async function listInAppNoticeBundleForViewer(");
     assert.match(bundle, /supabase\.rpc\("phx_in_app_notices", \{/, "the bundle asks the one function");
-    assert.match(bundle, /if \(rpc\.error && !rpcMissing\(rpc\.error\)\) throw rpc\.error;/, "only a MISSING function falls back — any other error is the bell's error");
+    assert.match(bundle, /if \(rpc\.error && !isMissingRpcError\(rpc\.error\)\) throw rpc\.error;/, "only a MISSING function falls back — any other error is the bell's error");
+    assert.doesNotMatch(inApp, /PGRST202/, "the bell asks the one shared rule and keeps no copy of it");
+    assert.match(code("src/lib/crm/reads.ts"), /export \{ isMissingRpcError as isMissingCrmRpcError \};/, "the CRM's name for it is one line, never a second rule");
+    assert.doesNotMatch(code("src/lib/supabase/errors.ts"), /^import /m, "the rule's file imports nothing, so a reader on the shell's path loads no domain");
     assert.match(bundle, /await legacyNoticeReads\(/, "the fallback is the old reads, kept in one place");
     assert.doesNotMatch(bundle, /await archiveStaleApprovalNotifications\(/, "the approver archive is never awaited on the bell's path again");
     assert.match(bundle, /scheduleStaleApprovalArchive\(/, "it is scheduled after the response instead");
@@ -291,13 +315,12 @@ export async function runShellChatterTests() {
     assert.equal(pushIdentityOf({ hrId: "PD-0030", seatView: null, testPersona: { loginId: "test.rep" } as never }), null, "a test login gets no identity — its device must never move onto the mirrored person");
     assert.equal(pushIdentityOf({ hrId: "B-10", seatView: { seatId: "SEAT" } as never, testPersona: null }), null, "View as Seat gets none — the owner's device never moves onto the person he is viewing");
     assert.equal(pushIdentityOf({ hrId: null, seatView: null, testPersona: null }), null);
-    // A blank id answers "" exactly as the route does — the two are the SAME expression on purpose, and
-    // the provider's `if (identity)` already treats "" as nobody to log in as.
-    assert.equal(pushIdentityOf({ hrId: "   ", seatView: null, testPersona: null }), "", "the pure rule never diverges from the route's answer");
+    // A blank id answers "": the provider's `if (identity)` already treats it as nobody to log in as.
+    assert.equal(pushIdentityOf({ hrId: "   ", seatView: null, testPersona: null }), "", "a blank id is nobody to log in as");
 
-    const RULE = "isReadOnlyViewer(access) ? null : access.hrId ? access.hrId.trim().toUpperCase() : null";
-    assert.ok(code("src/lib/notifications/push-identity.ts").includes(RULE), "the pure rule is the route's expression, word for word");
-    assert.ok(code("app/api/notifications/push/context/route.ts").includes(RULE), "and the route the phone app still calls keeps it");
+    const route = code("app/api/notifications/push/context/route.ts");
+    assert.match(route, /const hrId = pushIdentityOf\(access\);/, "the context route answers through the ONE rule");
+    assert.doesNotMatch(route, /isReadOnlyViewer|toUpperCase/, "and keeps no copy of it");
 
     const provider = code("src/components/notifications/onesignal-provider.tsx");
     assert.match(provider, /export function OneSignalProvider\(\{ pushHrId \}: \{ pushHrId\?: string \| null \} = \{\}\)/, "the provider takes the identity from the shell");
@@ -330,31 +353,46 @@ export async function runShellChatterTests() {
     assert.equal(parsePushRegistrationMemo(null), null);
 
     const provider = code("src/components/notifications/onesignal-provider.tsx");
-    assert.match(provider, /writeRegistrationMemo\(memoKey, \{ at: Date\.now\(\), id: subscriptionId, optedIn \}\);/, "every report rewrites the memo");
+    assert.match(provider, /if \(response\.ok\) writeRegistrationMemo\(memoKey, \{ at: Date\.now\(\), id: subscriptionId, optedIn \}\);/, "only a report the server accepted rewrites the memo");
+    assert.ok(
+      provider.indexOf('fetch("/api/notifications/push/register"') < provider.indexOf("writeRegistrationMemo(memoKey,"),
+      "the memo is written after the request, never before it",
+    );
     assert.match(provider, /if \(!alreadyReported\) \{\s*reportSubscriptionState\(OneSignal\.User\.PushSubscription\.optedIn, OneSignal\.User\.PushSubscription\.id, memoKey\);/, "the mount report is skipped while the memo says the same thing");
     assert.match(provider, /addEventListener\("change", \(event\) => \{\s*reportSubscriptionState\(event\.current\.optedIn, event\.current\.id, memoKey\);/, "a change is always reported — the memo is never consulted for it");
     const storage = code("src/lib/browser-storage/owner-scoped.ts");
     assert.match(storage, /export const PUSH_REGISTRATION_MEMO_KEY_BASE = "phoenix\.push\.registration\.v1";/);
   }
 
+  // ── 5b. The interview calendar's two reads wait for the role ─────────────────────────────────
+  {
+    const page = code("app/employee-portals/interview-calendar/page.tsx");
+    const refused = page.indexOf("if (!role) {");
+    assert.ok(refused > 0 && page.indexOf("interviewCalendarAbilities(access)") > refused, "a viewer the calendar is not shared with never starts the abilities read");
+    assert.ok(page.indexOf("mayRequestInterviews(access)") > refused, "nor the request read");
+  }
+
   // ── 6. Page views go to /api/activity/track in one batch per tab ─────────────────────────────
   {
     const tracker = code("src/components/activity/activity-tracker.tsx");
+    const pageViews = code("src/lib/activity/page-view-queue.ts");
     const route = code("app/api/activity/track/route.ts");
+    assert.doesNotMatch(pageViews, /^import /m, "the queue is a leaf, so the sign-out can call it directly");
+    assert.doesNotMatch(tracker, /fetch\(/, "the tracker sends nothing itself");
     const routeLimit = /const MAX_EVENTS_PER_REQUEST = (\d+);/.exec(route);
-    const trackerLimit = /export const ACTIVITY_BATCH_LIMIT = (\d+);/.exec(tracker);
+    const trackerLimit = /export const ACTIVITY_BATCH_LIMIT = (\d+);/.exec(pageViews);
     assert.ok(routeLimit && trackerLimit, "both sides name their batch limit");
     assert.equal(trackerLimit?.[1], routeLimit?.[1], "a full queue is exactly what the route accepts in one request — never a dropped tail");
-    assert.match(tracker, /export const ACTIVITY_FLUSH_INTERVAL_MS = 30_000;/, "one request per tab every thirty seconds");
-    assert.match(tracker, /body: JSON\.stringify\(\{ events \}\),\s*keepalive: true,/, "the batch is the route's `events` array, sent keepalive so a closing tab still delivers it");
-    assert.equal((tracker.match(/fetch\(ENDPOINT/g) ?? []).length, 1, "ONE fetch in the file — the one that sends a batch");
-    const queueFn = functionBody(tracker, "function queueActivityBeacon(");
+    assert.match(pageViews, /export const ACTIVITY_FLUSH_INTERVAL_MS = 30_000;/, "one request per tab every thirty seconds");
+    assert.match(pageViews, /body: JSON\.stringify\(\{ events \}\),\s*keepalive: true,/, "the batch is the route's `events` array, sent keepalive so a closing tab still delivers it");
+    assert.equal((pageViews.match(/fetch\(ENDPOINT/g) ?? []).length, 1, "ONE fetch in the file — the one that sends a batch");
+    const queueFn = functionBody(pageViews, "function queueActivityBeacon(");
     assert.doesNotMatch(queueFn, /fetch\(/, "queueing a page view sends nothing by itself");
     assert.match(queueFn, /if \(queue\.length >= ACTIVITY_BATCH_LIMIT\) \{\s*flushActivityQueue\(\);\s*return;\s*\}/, "a full queue goes at once");
     assert.match(queueFn, /flushTimer = window\.setTimeout\(\(\) => \{\s*flushTimer = null;\s*flushActivityQueue\(\);\s*\}, ACTIVITY_FLUSH_INTERVAL_MS\);/, "otherwise the first entry starts the thirty-second clock");
-    assert.match(tracker, /queue\.push\(\{ path, enteredAt: enteredAtIso, durationMs: Math\.round\(durationMs\) \}\)/, "each entry carries its own enteredAt, so the server records the true time however long it waited");
-    const flush = functionBody(tracker, "function flushActivityQueue(");
-    assert.match(flush, /while \(queue\.length > 0\) sendBatch\(queue\.splice\(0, ACTIVITY_BATCH_LIMIT\)\);/, "a flush sends everything, in route-sized batches");
+    assert.match(pageViews, /queue\.push\(\{ path, enteredAt: enteredAtIso, durationMs: Math\.round\(durationMs\) \}\)/, "each entry carries its own enteredAt, so the server records the true time however long it waited");
+    const flush = functionBody(pageViews, "function flushActivityQueue(");
+    assert.match(flush, /while \(queue\.length > 0\) sending\.push\(sendBatch\(queue\.splice\(0, ACTIVITY_BATCH_LIMIT\)\)\);/, "a flush sends everything, in route-sized batches");
     assert.match(tracker, /function flush\(\) \{[\s\S]*?flushActivityQueue\(\);\s*\}/, "hiding or leaving the tab flushes the queue — a hidden tab may never get its tick");
     assert.match(tracker, /window\.addEventListener\("pagehide", flush\);/);
     assert.match(route, /const events = extractEvents\(body\)\.slice\(0, MAX_EVENTS_PER_REQUEST\);/, "the route already reads the array");

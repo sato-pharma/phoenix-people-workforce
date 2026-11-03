@@ -168,5 +168,7 @@ export async function runMobilePushLinkTests() {
     /data:\s*\{\s*appId:\s*onesignalAppId\(\),\s*hrId\s*\}/,
     "the push context route returns the OneSignal app ID alongside the HR ID, from the same env var the server sends with",
   );
-  assert.match(route, /access\.hrId\.trim\(\)\.toUpperCase\(\)/, "the HR ID stays in the uppercased form pushes are addressed to");
+  assert.match(route, /const hrId = pushIdentityOf\(access\);/, "the route answers through the one push-identity rule");
+  const pushIdentity = readFileSync(new URL("../src/lib/notifications/push-identity.ts", import.meta.url), "utf8");
+  assert.match(pushIdentity, /access\.hrId\.trim\(\)\.toUpperCase\(\)/, "the HR ID stays in the uppercased form pushes are addressed to");
 }
