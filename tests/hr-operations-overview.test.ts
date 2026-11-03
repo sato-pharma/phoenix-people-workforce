@@ -14,6 +14,7 @@ import {
   peopleLeaving,
 } from "../src/lib/hr/hr-operations-overview-logic.ts";
 import { getSections } from "../src/lib/navigation/active-path.ts";
+import { isPrivateCalendarGlobalViewer } from "../src/lib/private-calendar/logic.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
 /**
@@ -159,6 +160,7 @@ function testHerSidebarHoldsTheCalendarsAndTheModules() {
     "/hr/hr-calendar",
     "/hr/admin/company-calendar",
     "/hr/recruitment/interview-calendar",
+    "/hr/admin/private-calendars",
     "/hr/admin/weekly-plans/calendar",
     "/hr/reports/vacancies",
     "/hr/admin/vacation-report",
@@ -174,12 +176,27 @@ function testHerSidebarHoldsTheCalendarsAndTheModules() {
   );
   // Every door on her page is a page on her sidebar.
   const doors = [...code(PAGE).matchAll(/\{ href: "([^"]+)", icon:/g)].map((match) => match[1]);
-  assert.equal(doors.length, 4, "the four calendar doors");
+  assert.equal(doors.length, 5, "the five calendar doors");
   for (const door of doors) assert.ok(rail.includes(door), `${door} is a door she can walk through`);
 
-  for (const href of ["/hr/spotlight", "/hr/admin/private-calendars", "/hr/admin/early-birds", "/hr/business-cards", "/hr/workspace"]) {
+  for (const href of ["/hr/spotlight", "/hr/admin/early-birds", "/hr/business-cards", "/hr/workspace"]) {
     assert.ok(!rail.includes(href), `${href} is not on her sidebar`);
   }
+}
+
+// The owner's "Open it for her" (2026-11-03). The row alone would land her on her own calendar, so the
+// page's own rule must admit her, and it must not spread to the two seats that were never offered it.
+function testPrivateCalendarsOpensForHerAndNoOtherNewSeat() {
+  const viewer = (role: string) =>
+    isPrivateCalendarGlobalViewer({ hrId: "TEST-1", loginId: "TEST-1", role, scope: "company" } as never, []);
+  assert.equal(viewer(SEAT), true, "the page's own rule admits her, or the row bounces");
+  assert.equal(viewer("HR Operations"), false, "HR Operations was not offered it");
+  assert.equal(viewer("HR Advisory"), false, "HR Advisory was not offered it");
+  assert.doesNotMatch(
+    code("src/lib/private-calendar/export.ts"),
+    /EGP|salary/i,
+    "the calendar she can now export for anyone carries no pay",
+  );
 }
 
 function testWhatTheNewGrantsCarryInStaysFenced() {
@@ -214,5 +231,6 @@ export async function runHrOperationsOverviewTests() {
   testTheSixFiguresStandInThreeGroups();
   testSheOnlyViewsTheInterviewCalendar();
   testHerSidebarHoldsTheCalendarsAndTheModules();
+  testPrivateCalendarsOpensForHerAndNoOtherNewSeat();
   testWhatTheNewGrantsCarryInStaysFenced();
 }

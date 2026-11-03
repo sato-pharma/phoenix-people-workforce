@@ -324,7 +324,8 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "A read: neither is in CALENDAR_MANAGER_ROLES, so /api/calendar refuses their edits",
   "/hr/admin/private-calendars":
     "canUsePrivateCalendarAdminSurface(access) -> isPrivateCalendarGlobalViewer — TRUE for HR " +
-    "Resourcing, the only seat offered it, FALSE for Advisory and Operations",
+    "Resourcing and the HR Operations Specialist, the two seats offered it, FALSE for Advisory and " +
+    "Operations",
   "/hr/probation/analytics":
     "canViewProbationAnalytics(access) — TRUE for all three seats through canReadAllProbation; offered " +
     "to HR Resourcing only. Read-only outcomes; the export gate (canExportProbation) is not hers",

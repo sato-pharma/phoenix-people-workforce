@@ -30,6 +30,7 @@ import {
   CalendarCheck2,
   CalendarClock,
   CalendarDays,
+  CalendarFold,
   CalendarHeart,
   CalendarRange,
   ClipboardCheck,
@@ -86,6 +87,7 @@ export const HR_OPERATIONS_CALENDAR_DOORS: readonly {
   { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", line: "Holidays and HR dates" },
   { href: "/hr/admin/company-calendar", icon: CalendarHeart, label: "Events Calendar", line: "Company events" },
   { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", line: "To view" },
+  { href: "/hr/admin/private-calendars", icon: CalendarFold, label: "Private Calendars", line: "Any employee's month" },
   { href: "/hr/admin/weekly-plans/calendar", icon: CalendarRange, label: "Planning Calendar", line: "The field force's plans" },
 ];
 
@@ -93,7 +95,7 @@ function CalendarDoors() {
   return (
     <section aria-label="HR calendars" className="@container border-t border-slate-100 px-5 py-5">
       <TaCaption caption="Each one in full" label="HR calendars" />
-      <div className="grid grid-cols-1 gap-2 @min-[480px]:grid-cols-2 @min-[960px]:grid-cols-4">
+      <div className="grid grid-cols-1 gap-2 @min-[480px]:grid-cols-2 @min-[720px]:grid-cols-3 @min-[1080px]:grid-cols-5">
         {HR_OPERATIONS_CALENDAR_DOORS.map((door) => {
           const Icon = door.icon;
           return (
