@@ -1027,6 +1027,23 @@ export const MODULES = [
     keywords: ["hiring pack", "hiring documents", "contract", "contracts", "hr forms", "business card", "business cards", "spotlight", "seal", "stamp", "document identity", "premium identity", "عقد"],
     tables: ["hiring_", "contract", "business_card", "spotlight"],
   },
+  // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the Record Gaps rule took
+  // `employees` to 4,094 bytes of pointer, over the 4,000-byte margin. Employee 360 is the clean cut: its
+  // report rules are not read while working the master, a resignation or a hire. `employees` KEEPS EVERY
+  // GLOB IT HAD, so these files load the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "employee-360",
+    title: "Employee 360 — one person's report, its figures and who may open it",
+    scope: "The Employee 360 list and report: who may open whom, the manager filter, the sections each role gets, and every figure on it, which comes from the source screen's own domain function.",
+    globs: [
+      "src/lib/employee-360/**",
+      "src/components/employee-360/**",
+      "app/**/employee-360/**",
+      "tests/*employee-360*",
+    ],
+    keywords: ["employee 360", "e360", "360 report"],
+    tables: [],
+  },
   {
     id: "employees",
     title: "Employees and the HR lifecycle",
