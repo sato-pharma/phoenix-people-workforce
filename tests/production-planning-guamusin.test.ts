@@ -672,6 +672,28 @@ export async function runProductionPlanningGuamusinTests() {
     );
   }
 
+  // ── Guamusin's leaflet, 2026-11-03 ───────────────────────────────────────────────────────────
+  //
+  // "in guamusin no field for pamphlets", answered "One per box" when asked. 🔴 per_box, never
+  // per_packaging_set: on Guamusin that is the twelve-fold gap in defect 1, 120,000 leaflets where
+  // six runs need 10,000.
+  const leafletCode = stripSqlComments(
+    readFileSync("supabase/migrations/20261103153203_production_planning_guamusin_leaflet.sql", "utf8"),
+  );
+  assert.match(
+    leafletCode,
+    /m\.unit_kind, 'per_box', 1\.000000, 'sato', 0, date '2026-11-03'/,
+    "one leaflet per box, from Sato, with Guamusin's explicit zero waste rather than a null that inherits 3%",
+  );
+  assert.match(leafletCode, /not exists/, "and a re-run cannot open a second line, which would double the requirement");
+  assert.ok(
+    !/prodplan_stock_entries/.test(leafletCode),
+    "no stock row — nobody has counted them, and a zero would say counted and none",
+  );
+  for (const code of [...leafletCode.matchAll(/p\.code = '([A-Z0-9_]+)'/g)].map((m) => m[1]!)) {
+    assert.equal(code, "GUAMUSIN", "and it is linked to Guamusin alone");
+  }
+
   // The aluminium film's stock, which the formula migration below deliberately does NOT touch: the
   // owner identified the 16,667 beside his 0.018 as boxes per run, not a holding, so 230.95 kg
   // stands.
