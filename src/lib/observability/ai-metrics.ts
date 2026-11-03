@@ -41,6 +41,9 @@ export type AiCallComponent =
   // and it is its own entry for the same reason: a different feature at a different volume — one call
   // per SEATING, not one per visit — so its cost and its failures are answered on their own line.
   | "phoenix_crm_schedule"
+  // `phoenix_crm_comment_reading` reads visit comments in hourly batches (2026-11-03): one call per 25
+  // comments in the background, so nobody waits on it and its cost is answered on its own line.
+  | "phoenix_crm_comment_reading"
   | "phoenix_crm_signboard"
   | "sales_ai_provider"
   | "sales_normalizer_ai_suggest"
@@ -107,6 +110,7 @@ const COMPONENT_LABELS: Record<AiCallComponent, string> = {
   groq_transcription: "CRM spoken comment — Groq speech to text",
   needs_you_summary: "What needs you — the written summary on the daily board",
   openai_client: "Shared OpenAI client",
+  phoenix_crm_comment_reading: "Phoenix CRM — reading visit comments for stock, price and follow-ups",
   phoenix_crm_schedule: "Phoenix CRM — reading the timetable in a polyclinic photo",
   phoenix_crm_signboard: "Phoenix CRM — reading the signboard in a place photo",
   sales_ai_provider: "Sales AI provider",

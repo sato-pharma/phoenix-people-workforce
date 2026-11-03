@@ -4,6 +4,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError, logInfo } from "@/lib/observability/log";
+import { runCommentReadingFire } from "@/lib/phoenix-crm/server/comment-reading";
 import { runHeldSignboardRecheck } from "@/lib/phoenix-crm/server/signboard-holds";
 import { runPhoenixCrmVisitRollup } from "@/lib/phoenix-crm/server/visit-rollup";
 import { VISIT_ROLLUP_JOB_SLUG } from "@/lib/phoenix-crm/visit-rollup-rules";
@@ -27,6 +28,15 @@ export async function GET(request: Request) {
       logInfo("Phoenix CRM held signboards re-read", {
         labels: { event: "phoenix_crm_held_signboard_recheck" },
         context: { ...recheck },
+      });
+    });
+    // The hourly read of new visit comments (owner, 2026-11-03: "build 3"), on the same terms: after the
+    // reply, no cron of its own, and its failure is logged and never fails the roll-up.
+    await afterResponse("phoenix_crm_comment_reading", async () => {
+      const reading = await runCommentReadingFire();
+      logInfo("Phoenix CRM visit comments read", {
+        labels: { event: "phoenix_crm_comment_reading" },
+        context: { ...reading },
       });
     });
     return NextResponse.json({ success: true, ...result });

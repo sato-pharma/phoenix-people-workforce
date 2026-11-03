@@ -29,6 +29,7 @@ import {
   crmTdClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
+import { commentFollowUpsOlderNote, type CommentFollowUp } from "@/lib/phoenix-crm/comment-reading";
 import {
   COMMITMENTS_EMPTY_NOTE,
   commitmentsNotListedNote,
@@ -88,6 +89,60 @@ function CommitmentTable({ group }: { group: CommitmentGroup }) {
 }
 
 /**
+ * What the rep wrote in a visit comment about doing next, word for word. Nothing here is a task the rep was
+ * given: it closes the same way, by going back to the customer, and it carries no count and no verdict.
+ */
+function CommentFollowUps({ followUps }: { followUps: ReadonlyArray<CommentFollowUp> }) {
+  return (
+    <CrmBlock className="border-t border-slate-100" title="From your visit comments">
+      <div className="-mx-4 min-w-0 sm:-mx-5">
+        <CrmCardsOnPhone>
+          {followUps.map((entry) => (
+            <CrmCard accent="border-l-sky-500" key={entry.visitId} meta={`You wrote this on ${dayLabel(entry.writtenOn)}`} title={<span dir="auto">{entry.customerName}</span>}>
+              <p className="break-words text-xs font-bold leading-5 text-slate-700" dir="auto">
+                {entry.quote}
+              </p>
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+        <CrmTable columns={["34%", "34%", "32%"]}>
+          <thead>
+            <tr>
+              <th className={crmThClassName} scope="col">
+                Customer
+              </th>
+              <th className={crmThClassName} scope="col">
+                What you wrote
+              </th>
+              <th className={crmThClassName} scope="col">
+                When
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {followUps.map((entry) => (
+              <tr key={entry.visitId}>
+                <td className={crmTdClassName}>
+                  <span className="block break-words font-black text-slate-900" dir="auto">
+                    {entry.customerName}
+                  </span>
+                </td>
+                <td className={crmTdClassName}>
+                  <span className="block break-words" dir="auto">
+                    {entry.quote}
+                  </span>
+                </td>
+                <td className={crmTdClassName}>{`You wrote this on ${dayLabel(entry.writtenOn)}`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </CrmTable>
+      </div>
+    </CrmBlock>
+  );
+}
+
+/**
  * The read is handed in, not made here: the Visits tab starts it beside the day's own read on the
  * rep's own territory (`useCommitments`), so the panel no longer waits for the day to answer first.
  */
@@ -102,6 +157,9 @@ export function commitmentsUrl(seatId: string, test: boolean): string {
 export function CommitmentsPanel({ commitments }: { commitments: CrmResource<RepCommitmentsView> }) {
   const view = commitments.data;
   const notListed = view ? commitmentsNotListedNote(view) : null;
+  const fromComments = view?.fromComments ?? null;
+  const olderNote = fromComments ? commentFollowUpsOlderNote(fromComments.older) : null;
+  const hasFollowUps = (fromComments?.followUps.length ?? 0) > 0;
 
   return (
     <CrmPanel
@@ -114,7 +172,7 @@ export function CommitmentsPanel({ commitments }: { commitments: CrmResource<Rep
       {view ? (
         <>
           {commitments.error ? <CrmLoadError message={commitments.error} onRetry={commitments.reload} /> : null}
-          {view.groups.length === 0 ? (
+          {view.groups.length === 0 && !hasFollowUps ? (
             <CrmBlock>
               <p className="break-words text-sm font-semibold leading-6 text-slate-600">{COMMITMENTS_EMPTY_NOTE}</p>
             </CrmBlock>
@@ -128,9 +186,12 @@ export function CommitmentsPanel({ commitments }: { commitments: CrmResource<Rep
               </CrmBlock>
             ))
           )}
-          {notListed ? (
+          {fromComments && hasFollowUps ? <CommentFollowUps followUps={fromComments.followUps} /> : null}
+          {notListed || olderNote || fromComments === null ? (
             <CrmBlock className="border-t border-slate-100">
-              <p className="break-words text-xs font-semibold leading-5 text-slate-500">{notListed}</p>
+              {notListed ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{notListed}</p> : null}
+              {olderNote ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{olderNote}</p> : null}
+              {fromComments === null ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">What you wrote in your visit comments could not be loaded just now.</p> : null}
             </CrmBlock>
           ) : null}
         </>

@@ -2069,6 +2069,24 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // public.hiring_joiner_contacts has row security on, 8 columns, 1 policy, select for service_role only (anon false,
   // authenticated false), 0 rows, and ZERO ledger rows carry this version or name.
   "20261102120000_hiring_joiner_contacts.sql",
+  // Verified: phoenix_crm_visit_comment_readings, its queue and its trigger were applied to staging and then
+  // PRODUCTION on 3 Nov 2026 through scripts/apply-sql-file.mjs (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1), the standing route of AGENTS.md §8: apply_migration declined the file.
+  // The route writes no ledger row, hence this entry. Read live right after, on ozucdzovmcqvepbozvqf and on
+  // cifwmndunmlxjhyjugxa alike: md5(pg_proc.prosrc) of phoenix_crm_comment_reading_queue is
+  // b54befe30d1fe9e1368811b16230dca5 and of phoenix_crm_comment_changed is f9a0ccb9233270a55b73e5df55c8e2f1, each equal
+  // to md5 of the file's own dollar-quoted body; both functions are new, so there is no pre-image. Trigger enabled,
+  // row security on, 1 policy (service_role, all), 0 rows, and ZERO ledger rows carry this version or name. On production, 9 columns,
+  // anon and authenticated false on the table and the queue, service_role true on the queue.
+  // Applied under the version 20261103090000 and renamed before merge, because another open PR held that version. The
+  // two revoke lines were also reworded from "all" to "execute", the same privilege on a function, after applying. The
+  // module's hygiene test then asked for begin, a lock timeout, a schema reload and commit around it, and create or
+  // replace on the trigger in place of drop and create: none of these changes what the applied file left behind.
+  // The two functions were first named phx_crm_*; the same test asks for phoenix_crm_*, so both were renamed live with
+  // alter function on staging and then production before anything called them, and the digests above were read again
+  // after: unchanged, service_role still holds both, and the trigger still fires the renamed function. The same test
+  // asks for a service-role policy on the table, so that one statement was also run live on both projects.
+  "20261103091500_phoenix_crm_visit_comment_readings.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

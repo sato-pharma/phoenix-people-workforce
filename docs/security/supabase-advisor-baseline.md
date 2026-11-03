@@ -150,7 +150,12 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED - `rls_enabled_no_policy` (277 as of 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+### ACCEPTED - `rls_enabled_no_policy` (280 as of 2026-11-03; 277 on 2026-11-01; 275 on 2026-10-30; 274 on 2026-10-27; 272 on 2026-10-26; 260 on 2026-10-23; 212 on 2026-10-13; 210 on 2026-10-09; 176 on 2026-09-29)
+
+**Raised 277 to 280 on 2026-11-03 — three from other work.** Production read 280; the three that join
+are, by oid, the newest three, all on the same server-only pattern: `public.marketing_customer_merges`
+(595417), `public.approval_whatsapp_reminders` (595126) and `public.marketing_customer_list_checks`
+(594331). Re-proved live the same day: 0 of all 280 grant `anon`, `authenticated` or `PUBLIC` anything.
 
 **Raised 275 to 277 on 2026-11-01 — the page timings, and a 1 Nov pre-image.** Production read 277 on
 2 Nov 2026; the two that join are, by oid, the newest two. `public.page_timings` (oid 580441,

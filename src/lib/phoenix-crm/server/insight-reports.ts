@@ -68,6 +68,7 @@ import {
   type HeardProductBasis,
   type HeardVisit,
 } from "@/lib/phoenix-crm/field-heard";
+import { commentPriceRows, commentStockRows, type CommentPriceRow, type CommentStockRow } from "@/lib/phoenix-crm/comment-reading";
 import { buildMissingStock, type MissingStockResult, type StockAnswer, type StockChase } from "@/lib/phoenix-crm/missing-stock";
 import { buildObjectionsByCustomer, type ObjectionsByCustomerResult, type ObjectionVisit } from "@/lib/phoenix-crm/objections-by-customer";
 import { resolveReportMonth, type ReportMonth, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
@@ -75,6 +76,7 @@ import { buildSamplesReport, type SamplesReportResult } from "@/lib/phoenix-crm/
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadHeardCommentReadings } from "@/lib/phoenix-crm/server/comment-reading";
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { groupCustomerPharmacies, normalizePharmacyName, type PharmacyFeedback } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -361,6 +363,8 @@ export type FieldHeardView = FieldHeardResult & {
   audience: "team" | "products";
   /** A product or marketing manager's own products, and where that list came from; null for the team. */
   products: { names: string[]; basis: HeardProductBasis } | null;
+  /** Price complaints read from visit comments, apart from every figure above; null when they could not be read. */
+  priceFromComments: CommentPriceRow[] | null;
 };
 
 /**
@@ -417,6 +421,7 @@ async function heardVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, 
   return rows.map((row) => {
     const seat = seatsById.get(String(row.seat_id));
     return {
+      visitId: String(row.id),
       visitDate: String(row.visit_date ?? "").slice(0, 10),
       listType: parseListType(row.list_type),
       products: Array.isArray(row.products) ? row.products.map((entry) => String(entry)) : [],
@@ -427,6 +432,20 @@ async function heardVisits(seats: ReadonlyArray<OrgSeat>, period: ReportPeriod, 
       area: seat ? (seat.areaName ?? seat.regionName ?? null) : null,
     };
   });
+}
+
+/** The price readings of the visits this report counts, on the same product and area terms as the report. */
+async function priceReadingsOf(
+  visits: ReadonlyArray<HeardVisit>,
+  seats: ReadonlyArray<OrgSeat>,
+  period: ReportPeriod,
+  options: { products: ReadonlySet<string> | null; withArea: boolean },
+): Promise<CommentPriceRow[] | null> {
+  if (seats.length === 0) return [];
+  const readings = await loadHeardCommentReadings(seats.map((seat) => seat.seatId), period);
+  if (readings === null) return null;
+  const byVisit = new Map(visits.map((visit) => [String(visit.visitId), { listType: visit.listType, speciality: visit.speciality, area: visit.area }]));
+  return commentPriceRows(readings, byVisit, options);
 }
 
 export async function loadFieldHeardReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<FieldHeardView> {
@@ -440,6 +459,7 @@ export async function loadFieldHeardReport(viewer: PhoenixCrmViewer, raw: Report
       audience: "team",
       includeTest: chosen.includeTest,
       period,
+      priceFromComments: await priceReadingsOf(visits, chosen.seats, period, { products: null, withArea: true }),
       products: null,
     };
   }
@@ -452,6 +472,7 @@ export async function loadFieldHeardReport(viewer: PhoenixCrmViewer, raw: Report
     audience: "products",
     includeTest: chosen.includeTest,
     period,
+    priceFromComments: await priceReadingsOf(visits, chosen.seats, period, { products: scope.families, withArea: false }),
     products: { names: scope.families ? [...scope.families].sort((left, right) => left.localeCompare(right)) : [], basis: scope.basis },
   };
 }
@@ -478,7 +499,12 @@ export async function productOwnerFamilies(viewer: Pick<PhoenixCrmViewer, "acces
 
 // ── 3. The missing-stock board ──────────────────────────────────────────────────────────────────
 
-export type MissingStockView = MissingStockResult & { period: ReportPeriod; includeTest: boolean };
+export type MissingStockView = MissingStockResult & {
+  period: ReportPeriod;
+  includeTest: boolean;
+  /** Stock mentions read from visit comments, apart from every figure above; null when they could not be read. */
+  fromComments: CommentStockRow[] | null;
+};
 
 /** The key the per-territory, per-product grouping is made under; a seat id never holds this character. */
 const KEY_SEPARATOR = "\u0000";
@@ -552,16 +578,25 @@ export function stockChasesOf(rows: ReadonlyArray<Row>, customerNames: ReadonlyM
 export async function loadMissingStockReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<MissingStockView> {
   const { seats, includeTest } = insightTerritories(viewer, raw);
   const period = periodOf(viewer, raw);
-  if (seats.length === 0) return { ...buildMissingStock([], [], () => ""), includeTest, period };
+  if (seats.length === 0) return { ...buildMissingStock([], [], () => ""), fromComments: [], includeTest, period };
 
-  const rows = await heardAndStockVisits(seats, period, includeTest);
+  const [rows, readings] = await Promise.all([
+    heardAndStockVisits(seats, period, includeTest),
+    loadHeardCommentReadings(seats.map((seat) => seat.seatId), period),
+  ]);
+  const readVisitIds = new Set((readings ?? []).filter((reading) => reading.stock.length > 0).map((reading) => reading.visitId));
 
-  // The customers named on a chase, by name — never an id on the screen.
+  // The customers named on a chase or beside a reading, by name — never an id on the screen.
   const customerNames = new Map<string, string>();
-  const chaseCustomerIds = [
-    ...new Set(rows.filter((row) => row.next_step === "pharmacy_stock").map((row) => textOrNull(row.customer_id)).filter((id): id is string => id !== null)),
+  const namedCustomerIds = [
+    ...new Set(
+      rows
+        .filter((row) => row.next_step === "pharmacy_stock" || readVisitIds.has(String(row.id)))
+        .map((row) => textOrNull(row.customer_id))
+        .filter((id): id is string => id !== null),
+    ),
   ];
-  const nameBatches = await mapWithConcurrency(chunk(chaseCustomerIds, 200), 4, async (part) => {
+  const nameBatches = await mapWithConcurrency(chunk(namedCustomerIds, 200), 4, async (part) => {
     const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, name").in("id", part);
     throwIfError(error);
     return (data ?? []) as Row[];
@@ -569,11 +604,25 @@ export async function loadMissingStockReport(viewer: PhoenixCrmViewer, raw: Repo
   for (const row of nameBatches.flat()) customerNames.set(String(row.id), textOrNull(row.name) ?? "Unnamed customer");
 
   const seatsById = new Map(seats.map((seat) => [seat.seatId, seat]));
+  const territoryOf = (seatId: string): string => {
+    const seat = seatsById.get(seatId);
+    return seat ? territoryName(seat) : "Territory";
+  };
+  const visitsRead = new Map(
+    rows
+      .filter((row) => readVisitIds.has(String(row.id)))
+      .map((row) => [
+        String(row.id),
+        {
+          customerName: customerNames.get(String(row.customer_id)) ?? "Unnamed customer",
+          territoryName: territoryOf(String(row.seat_id)),
+          listType: parseListType(row.list_type),
+        },
+      ]),
+  );
   return {
-    ...buildMissingStock(latestStockAnswers(rows), stockChasesOf(rows, customerNames), (seatId) => {
-      const seat = seatsById.get(seatId);
-      return seat ? territoryName(seat) : "Territory";
-    }),
+    ...buildMissingStock(latestStockAnswers(rows), stockChasesOf(rows, customerNames), territoryOf),
+    fromComments: readings === null ? null : commentStockRows(readings, visitsRead),
     includeTest,
     period,
   };

@@ -1231,6 +1231,7 @@ async function runWorkbookTests(): Promise<void> {
     includeTest: false,
     audience: "team",
     products: null,
+    priceFromComments: [],
   };
   const heardOwn: FieldHeardView = {
     ...buildFieldHeard(HEARD, { products: new Set(["Saginko"]), withArea: false }),
@@ -1238,11 +1239,13 @@ async function runWorkbookTests(): Promise<void> {
     includeTest: false,
     audience: "products",
     products: { names: ["Saginko"], basis: "assigned" },
+    priceFromComments: [],
   };
   const stock: MissingStockView = {
     ...buildMissingStock(latestStockAnswers(STOCK_ROWS), stockChasesOf(STOCK_ROWS, new Map([["c-1", "Amal Fathy"]])), (seatId) => TERRITORY_NAMES[seatId] ?? "Territory"),
     period: PERIOD,
     includeTest: false,
+    fromComments: [],
   };
   const samples: SamplesReportView = {
     ...buildSamplesReport(SAMPLE_VISITS, SAMPLE_TERRITORIES),
