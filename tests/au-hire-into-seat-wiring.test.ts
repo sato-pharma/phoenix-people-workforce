@@ -149,4 +149,60 @@ export function runAuHireIntoSeatWiringTests() {
       `${fnSig} must grant execute to service_role — otherwise even the intended (trigger-invoked) path has no explicit grant to fall back on`,
     );
   }
+
+  // ── 5. The seat starts on the job offer's start date, never the day they accepted ──
+  // Owner, 2026-11-03: "the start date must follow the date, the start date in the job offer, not the
+  // date when he accepted". filled_at is the moment the record is created at acceptance.
+  assert.ok(
+    /select e\.hire_date, .*from public\.employees e/.test(trg),
+    "HEADLINE: the seat date must be read from the Employee Master's hire_date, which carries the job offer's start date",
+  );
+  assert.ok(
+    /v_effective_date := v_hire_date/.test(trg),
+    "HEADLINE: the Master's hire date must be the date handed to au.hire_into_seat for someone arriving",
+  );
+  assert.ok(
+    !/v_effective_date date := coalesce\( \(new\.filled_at/.test(trg),
+    "HEADLINE: the seat date must not default to filled_at, which is the acceptance day",
+  );
+  assert.ok(
+    /v_created_day >= v_fill_day or v_has_accepted_offer/.test(trg),
+    "only someone arriving through this fill takes a date before it — a long-standing employee's hire date of years ago must not backdate the seat",
+  );
+
+  // A start before the vacant row began closes that row empty, and leaving before the start leaves an
+  // empty span: readers treat spans as half-open, so an inverted row would match nothing and read wrong.
+  const hire = flat("au.hire_into_seat");
+  assert.ok(
+    /set effective_to = greatest\(p_effective_date, v_cur\.effective_from\)/.test(hire),
+    "HEADLINE: au.hire_into_seat must close the vacant row at the start date, never before that row began",
+  );
+  assert.ok(
+    /values \(p_seat_id,p_hr_id,'person',p_effective_date,'hire'/.test(hire),
+    "au.hire_into_seat must keep the person's own date as their start, unclamped — a start before the predecessor's last day is a real hand-over",
+  );
+  const resign = flat("au.resign_occupant");
+  assert.ok(
+    /v_end := greatest\(p_effective_date, v_cur\.effective_from\)/.test(resign) &&
+      /set effective_to = v_end/.test(resign) &&
+      /values \(p_seat_id,null,'vacant_placeholder',v_end,'resign'/.test(resign),
+    "HEADLINE: au.resign_occupant must never write an end before the span began — someone who declines before their start leaves an empty span",
+  );
+
+  // A later Master correction moves the seat, or the mismatch returns the first time HR corrects a date.
+  const follow = flat("public.phx_seat_start_follows_hire_date");
+  for (const [pattern, why] of [
+    [/set effective_from = new\.hire_date/, "must move the seat's start to the corrected hire date"],
+    [/effective_to is null/, "must move only an open span — a closed one is history"],
+    [/event_type = 'hire'/, "must move only a hire — a transfer's date is the day of the move"],
+    [/old\.hire_date is null or oh\.effective_from = old\.hire_date/, "must move only a span that was following the Master, so a long-standing employee seated on a fill day keeps that day"],
+    [/insert into public\.audit_logs/, "must leave an audit row — a hire-date save writes none of its own"],
+    [/exception when others/, "must never fail a Master save"],
+  ] as Array<[RegExp, string]>) {
+    assert.ok(pattern.test(follow), `public.phx_seat_start_follows_hire_date ${why}`);
+  }
+  assert.ok(
+    /after update of hire_date on public\.employees/.test(flat("trigger:trg_employees_seat_start_follows_hire_date")),
+    "HEADLINE: a change to the Master's hire date must fire the seat-start trigger",
+  );
 }

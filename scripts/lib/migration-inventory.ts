@@ -2138,6 +2138,18 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 12:33, plus 18,740.40 from 5 direct orders; verdicts unchanged at 78, 1 and 2; 0 of 81 requests differ
   // from View Sales. Re-applying it is a no-op (`create or replace`).
   "20261103124320_marketing_roi_direct_orders_reach_the_facts.sql",
+  // 2026-11-03, applied to staging and production about 13:15 Cairo with `node scripts/apply-sql-file.mjs <file>
+  // <env>` (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), the standing route:
+  // supabase-production answered {"status":"declined"} and a read straight after showed nothing had landed.
+  // That route writes NO ledger row, so production holds none for this version or name.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) reads the same on
+  // ozucdzovmcqvepbozvqf and cifwmndunmlxjhyjugxa and equals the dollar-quoted bodies in this file:
+  // public.phx_hire_into_seat_on_vacancy_filled 8334ef5d206efee08c69eb93e53315ec, au.hire_into_seat
+  // 60d867c2a802bc5ad6b08fda6a16f595, au.resign_occupant 5dd62ed3989c7b2214e1a91f0c04d812,
+  // public.phx_seat_start_follows_hire_date fe30482ac8b2666435955b6a7c556444. Trigger
+  // trg_employees_seat_start_follows_hire_date is present and `authenticated` cannot execute the new function,
+  // both read in the same query. Re-applying it is a no-op (`create or replace`, `drop trigger if exists`).
+  "20261103133000_seat_start_follows_the_job_offer.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
