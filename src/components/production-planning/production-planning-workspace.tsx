@@ -162,6 +162,9 @@ function measureOf(product: WireProduct | null | undefined): ProductMeasure {
     goodUnit: formatNumberLatin(product?.goodUnitMl ?? "0"),
     measureUnit: product?.measureUnit ?? "ml",
     sampleUnit: formatNumberLatin(product?.sampleUnitMl ?? "0"),
+    unitsInOwnSampleBox: product?.sampleInOwnBox
+      ? formatNumberLatin(Number(product.sampleUnitMl) / Number(product.goodUnitMl))
+      : undefined,
   };
 }
 
