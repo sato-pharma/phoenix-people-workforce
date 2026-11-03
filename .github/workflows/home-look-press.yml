@@ -25,7 +25,7 @@ jobs:
       PHOENIX_EMAIL_FORCE_TESTING: "true"
       NOTIFICATION_TEST_MODE: "true"
       NEXT_TELEMETRY_DISABLED: "1"
-      PHOENIX_DEV_HEAP_MB: "5632"
+      PHOENIX_DEV_HEAP_MB: "7168"
       LOOK_BASE: "http://localhost:3011"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -47,7 +47,9 @@ jobs:
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           ! env | grep -q ozucdzovmcqvepbozvqf
       - name: Start the server
-        run: nohup node scripts/dev-server.mjs --port 3011 > server.log 2>&1 &
+        run: |
+          sudo fallocate -l 6G /mnt/phx-look-swap && sudo chmod 600 /mnt/phx-look-swap && sudo mkswap /mnt/phx-look-swap >/dev/null && sudo swapon /mnt/phx-look-swap || echo "no extra swap"
+          nohup node scripts/dev-server.mjs --port 3011 > server.log 2>&1 &
       - name: Compile the pages before the look
         run: |
           B=http://localhost:3011
@@ -75,3 +77,5 @@ jobs:
         run: |
           wc -l server.log
           grep -E '⨯|Server is approaching' server.log | cut -c1-200 | sort | uniq -c | sort -rn | head -20 || true
+          grep -n -E "Server is approaching|preloadEntriesOnStart|reading 'call'" server.log | cut -c1-120 || true
+          grep -n -A12 "reading 'call'" server.log | grep -E "^[0-9]+-? +at |webpack|\.next|digest" | cut -c1-160 | head -14 || true

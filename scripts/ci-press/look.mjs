@@ -65,6 +65,8 @@ const errors = [];
 const failures = [];
 const calls = [];
 const warnings = [];
+// The router asking the server for a page again: the page's own read starts anew inside it, so a Back with one of these is fresh without the browser reading Visits.
+const pageRequests = [];
 page.on("console", (m) => {
   if (m.type() === "warning") warnings.push(m.text().slice(0, 400));
   if (m.type() === "error" && !/net::ERR_FAILED|Failed to fetch/.test(m.text())) errors.push(m.text().slice(0, 1800));
@@ -74,6 +76,7 @@ page.on("response", (r) => r.status() >= 500 && failures.push(`${r.status()} ${n
 page.on("request", (r) => {
   const url = new URL(r.url());
   if (url.pathname.startsWith("/api/phoenix-crm/") && r.method() === "GET") calls.push(url.pathname + url.search);
+  if (url.searchParams.has("_rsc") || r.headers().rsc === "1") pageRequests.push(`${url.pathname}${r.headers()["next-router-prefetch"] ? " (prefetch)" : ""}`);
 });
 
 const settle = async (extra = 3000) => {
@@ -130,7 +133,7 @@ try {
   const q = new URLSearchParams({ next: "/api/healthz" });
   if (who.role) q.set("role", who.role);
   if (who.hrId) q.set("hrId", who.hrId);
-  const signIn = await page.goto(`${BASE}/api/dev-auth?${q}`, { timeout: 180_000 });
+  const signIn = await go(`/api/dev-auth?${q}`);
   console.log(`signed in ${flow}: ${signIn?.status()} ${((await page.textContent("body")) ?? "").slice(0, 120).replace(/\s+/g, " ")}`);
 
   if (flow === "manager-team") {
@@ -154,10 +157,14 @@ try {
     await clientGo("/employee-portals/field-crm/plan");
     await report("plan-from-visits", mark);
     mark = calls.length;
+    const pageMark = pageRequests.length;
     await page.goBack({ timeout: 180_000 });
     await settle();
     await report("browser-back-to-visits", mark);
-    console.log(`  VERDICT back: the browser read Visits afresh ${calls.slice(mark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length} time(s); 1 or more means fresh`);
+    const ownReads = calls.slice(mark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length;
+    const askedAgain = pageRequests.slice(pageMark).filter((p) => p.endsWith("/field-crm/visits"));
+    console.log(`  VERDICT back: the browser read Visits itself ${ownReads} time(s); the router asked the server for the Visits page ${askedAgain.length} time(s). Either one above 0 is fresh; both 0 is the day from before.`);
+    console.log(`  page requests on Back: ${pageRequests.slice(pageMark).join(" | ") || "none"}`);
   } else {
     const landing = await go("/employee-portals");
     console.log(`home ${landing?.status()}`);
