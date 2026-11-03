@@ -76,4 +76,9 @@ export async function runCodeBackupVerifyTests() {
   // 🔴 Listing a missing folder fails, so weekly/ must exist or every night fails until the first Sunday.
   const madeWeekly = script.indexOf('rclone mkdir "backup:$FOLDER/weekly"');
   assert.ok(madeWeekly > 0 && madeWeekly < script.indexOf('prune weekly "$KEEP_WEEKLY"'), "weekly/ is made before it is listed");
+
+  // 🔴 Without its watch pattern every merge to main rebuilds the service and can cut off a night's run.
+  const iac = readFileSync(".railway/railway.ts", "utf8");
+  const declared = iac.slice(iac.indexOf('service("phoenix-code-backup"'), iac.indexOf('service("headwind-db-eu"'));
+  assert.match(declared, /watchPatterns:\s*\[\s*"infra\/code-backup\/\*\*"\s*\]/, "only its own folder rebuilds the backup service");
 }
