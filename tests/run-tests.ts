@@ -2584,6 +2584,7 @@ import { runLineVacanciesManagerReadableReasonTests } from "./line-vacancies-man
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runEmployeeAreaLineOptionsTests } from "./employee-area-line-options.test.ts";
 import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
+import { runVacanciesEmptySeatsTests } from "./vacancies-empty-seats.test.ts";
 import { runOrganogramTileEmployeeActionsTests } from "./organogram-tile-employee-actions.test.ts";
 import { runOrganogramAsOfMonthTests } from "./organogram-as-of-month.test.ts";
 import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test.ts";
@@ -9858,6 +9859,11 @@ await runTest(
 await runTest(
   "organogram open seat -> Add Employee pre-filled (line, area, position and manager travel; gated on employees:update)",
   runOrganogramVacancyHireLinkTests,
+);
+
+await runTest(
+  "empty seats board -> no row is never zero, an area counts once, the seats stop at the sales bound",
+  runVacanciesEmptySeatsTests,
 );
 
 await runTest(

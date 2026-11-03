@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Card } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
+import { canViewEmptySeatsBoard } from "@/lib/reports/empty-seats";
 import {
   formatVacancyDate,
   formatVacancyLabel,
@@ -130,6 +132,7 @@ export default async function EmployeePortalVacanciesPage({
   // `vacancies:create`, which is exactly Super Admin and the HR offboarding function — every other
   // role holds `read` (or `read,export`) alone.
   const canSeeVacancyJournal = await canAccess(access, "vacancies", "create");
+  const canViewEmptySeats = await canViewEmptySeatsBoard(access);
 
   const isNsm = data.roleView === "nsm";
   const params = await searchParams;
@@ -206,6 +209,15 @@ export default async function EmployeePortalVacanciesPage({
 
       <div className="flex flex-wrap items-center gap-2">
         <ScopeBadge scope={access.scope} />
+        {canViewEmptySeats ? (
+          <Link
+            className="inline-flex items-center border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            data-no-print
+            href="/employee-portals/vacancies/empty-seats"
+          >
+            Which to fill first
+          </Link>
+        ) : null}
       </div>
 
       <div

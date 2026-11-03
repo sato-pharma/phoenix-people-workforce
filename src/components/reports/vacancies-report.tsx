@@ -13,6 +13,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 
@@ -52,6 +53,8 @@ type VacanciesReportProps = {
    * report is readable by roles that may not hire.
    */
   canAddEmployee?: boolean;
+  /** Holds both `vacancies:read` and `sales:read`. Decided on the server (`canViewEmptySeatsBoard`). */
+  canViewEmptySeats?: boolean;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
 };
@@ -203,6 +206,7 @@ function SelectFilter({
 
 export function VacanciesReport({
   canAddEmployee = false,
+  canViewEmptySeats = false,
   initialError = null,
   initialReport = null,
 }: VacanciesReportProps) {
@@ -418,6 +422,14 @@ export function VacanciesReport({
       <AdminPageHero
         actions={
           <div className="flex flex-wrap gap-2">
+            {canViewEmptySeats ? (
+              <Link
+                className="inline-flex items-center border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                href="/reports/vacancies/empty-seats"
+              >
+                Which to fill first
+              </Link>
+            ) : null}
             <Button
               className="rounded-2xl px-3 py-2 text-xs shadow-sm"
               disabled={!report || filteredRows.length === 0}
