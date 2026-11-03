@@ -206,7 +206,7 @@ export async function sendNewHireAccount(
       byName: viewer.hrId ? nameOf(names, viewer.hrId) : null,
       ...lastSendOf({
         deliveryMode: result.deliveryMode,
-        delivery: delivered ? "email_sent" : "link_generated_only",
+        delivery: delivered ? "email_sent" : result.emailQueuedForRetry ? "email_queued_for_retry" : "link_generated_only",
         emailTo: channel === "private_email" ? "private" : channel === "sato_email" ? "work" : null,
       }),
     },

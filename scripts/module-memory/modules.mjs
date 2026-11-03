@@ -1190,6 +1190,22 @@ export const MODULES = [
     keywords: ["email", "emails", "notification", "notifications", "telegram", "outbox", "mailbox", "distribution list", "resend", "turbify", "email composer", "ceo email"],
     tables: ["notification", "email", "outbox", "mailbox"],
   },
+  // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `notifications` measured a
+  // 4,036-byte pointer against the 4,000 margin with its 31st rule. The six rules about the two composers
+  // move together; `notifications` keeps every glob it had, so a composer file loads the PAIR.
+  {
+    id: "email-composers",
+    title: "The two email composers — Sato and CEO",
+    scope: "The Sato and CEO composer screens: one component with a variant, attachments, the CEO's signature, his assistant and mic, and the sanitizer that ends the body.",
+    globs: [
+      "src/lib/{sato-email,ceo-email}/**",
+      "src/components/admin/{sato-email-composer,ceo-email-composer,email-body-editor}.tsx",
+      "app/**/{sato-email,ceo-email}/**",
+      "tests/{sato-email,ceo-email}*",
+    ],
+    keywords: ["email composer", "sato composer", "ceo composer", "ceo email", "composer", "dictation", "closing line"],
+    tables: ["ceo_email", "sato_email"],
+  },
   // ── The Turbify console is ONE console driven by TWO robots, so it gets its own module ──
   //
   // Found 2026-10-02: `src/lib/turbify/**` was claimed by NO module, so the four files holding the

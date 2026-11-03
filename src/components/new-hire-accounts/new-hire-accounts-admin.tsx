@@ -126,7 +126,7 @@ export function NewHireAccountsAdmin({ view }: { view: NewHireAccountsView }) {
     }
     return (
       <div className="grid min-w-0 justify-items-start gap-1">
-        <CrmPill tone={last.outcome === "not_delivered" ? "warn" : "info"}>{lastSendOutcomeText(last.outcome)}</CrmPill>
+        <CrmPill tone={last.outcome === "not_delivered" || last.outcome === "not_confirmed" ? "warn" : "info"}>{lastSendOutcomeText(last.outcome)}</CrmPill>
         <p className="break-words text-sm font-semibold text-slate-800">{last.how}</p>
         <p className="break-words text-xs font-semibold text-slate-500">{whenText(last.at)}</p>
         {last.byName ? <p className="break-words text-xs font-semibold text-slate-500" dir="auto">{`By ${last.byName}`}</p> : null}

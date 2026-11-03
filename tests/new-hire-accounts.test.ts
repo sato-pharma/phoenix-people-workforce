@@ -6,6 +6,7 @@ import {
   firstNewHireDate,
   isNewHireAccount,
   lastSendOf,
+  lastSendOutcomeText,
   NEW_HIRE_ACCOUNTS_EXPLAINER,
   newHireAddress,
   newHireMissingText,
@@ -72,6 +73,8 @@ function runChannelRules(): void {
 
   assert.deepEqual(lastSendOf({ deliveryMode: "email", emailTo: "private", delivery: "email_sent" }), { how: "Private email", outcome: "sent" });
   assert.deepEqual(lastSendOf({ deliveryMode: "email", emailTo: "work", delivery: "link_generated_only" }), { how: "Sato email", outcome: "not_delivered" }, "🔴 a mail that did not leave never reads as sent");
+  assert.deepEqual(lastSendOf({ deliveryMode: "email", emailTo: "private", delivery: "email_queued_for_retry" }), { how: "Private email", outcome: "not_confirmed" }, "🔴 a first try that went to the outbox never reads as sent");
+  assert.equal(lastSendOutcomeText("not_confirmed"), "Not confirmed");
   assert.deepEqual(lastSendOf({ deliveryMode: "email", delivery: "email_sent" }), { how: "Email", outcome: "sent" }, "an older row names no mailbox");
   assert.deepEqual(lastSendOf({ deliveryMode: "whatsapp", delivery: "whatsapp_link_prepared" }), { how: "WhatsApp", outcome: "prepared" }, "🔴 WhatsApp says prepared: Phoenix cannot know the chat was sent");
 
@@ -86,6 +89,17 @@ function runSenderRules(): void {
     "🔴 with no choice the mailbox is resolved exactly as before, so the Super Admin's page is untouched",
   );
   assert.ok(sender.includes('emailTo === "private" ? row?.personal_email : row?.work_email'), "🔴 each choice reads its own column and no other");
+
+  // The chosen mailbox must reach the guard from the press, through the queue. Each hop is one line, and losing any one
+  // refuses the email again while every record still reads as a send (3 Nov 2026).
+  assert.ok(sender.includes("chosenMailbox: input.emailTo ? deliverableEmail : null"), "🔴 only a press that chose a mailbox names one");
+  assert.ok(stripComments(read("src/lib/notifications/system.ts")).includes("chosenMailbox: input.email?.chosenMailbox ?? null"), "🔴 the channel input carries it into the outbox payload");
+  assert.ok(stripComments(read("src/lib/notifications/email.ts")).includes("chosenMailbox: input.chosenMailbox ?? null"), "🔴 the email's origin carries it to the send");
+  assert.ok(stripComments(read("src/lib/email/send-phoenix-email.ts")).includes("chosenMailbox: input.origin?.chosenMailbox ?? null"), "🔴 and the send hands it to the guard");
+  assert.ok(stripComments(read("src/lib/email-templates/service.ts")).includes("...(input.origin ?? {})"), "🔴 the templated path passes the origin through");
+
+  assert.ok(sender.includes('delivery.status === "sent" && !delivery.queuedForRetry'), "🔴 a first try handed to the outbox is not a send");
+  assert.ok(sender.includes('"email_queued_for_retry"'), "🔴 and the audit row says so");
 
   const update = sender.slice(sender.indexOf('.from("app_auth_users")\n    .update({\n      force_password_reset: true'));
   const written = update.slice(update.indexOf("{") + 1, update.indexOf("}")).trim().split(/,\s*/).filter(Boolean).map((line) => line.split(":")[0].trim());
