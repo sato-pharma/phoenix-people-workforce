@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Merge an approved PR and prove it reached production — read the required checks live from branch protection (never a count from a doc), merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge, read whether it brought a new error (the app's own error table and Sentry), and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
+description: Merge an approved PR and prove it reached production — read the required checks live from branch protection (never a count from a doc), merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge, read whether it brought a new error (the app's own error table and Sentry), and read main's own CI run (a PR's green checks never ran the login smoke test, and usually no build). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
 argument-hint: '[PR number, e.g. 3947]'
 ---
 
@@ -133,18 +133,25 @@ re-run does not resurrect. An open HIGH alert is that failure with the clock alr
   It is a read: it never merges anything, and **auto-merging these bumps was offered on 2026-09-30
   and declined** — every merge stays the owner's own word.
 
-## 3 · Docs-only? Then the green checks proved nothing
+## 3 · Docs-only or not, the green checks skipped the same things
 
 ```bash
-gh pr diff <n> --name-only
+gh pr diff <n> --name-only | node scripts/ci-build-risk.mjs
 ```
 
-`ci.yml`'s `detect` step answers `docs_only=true` when **every** changed path matches `*.md`,
-`docs/`, `.github/ISSUE_TEMPLATE/` or `.github/PULL_REQUEST_TEMPLATE/`, and then skips node setup,
-the tests, the build and the login smoke test — every required check still reports green, in seconds. On a
-push to `main` the same step answers `false` ("not a pull_request — always run everything"), so for
-a docs-only PR **the tests first run after the merge** (phase 8). Say that in the report instead of
-implying they passed.
+**A docs-only PR gets no fast path.** Its `static` and `unit` jobs run in full, the whole suite
+included, so a red one is real: many tests read `docs/` and `.claude/`. `ci.yml` used to skip them for
+a diff of docs, and that let a PR of seven markdown files go green and then fail on `main`, withholding
+three production deploys. It was removed on 2026-10-06, and its account is in `ci.yml`'s header.
+
+What a green PR has not run is the same for docs and code, and it first runs after the merge (phase 8):
+
+- **The login smoke test, the canvas check and the standalone assembly** are `main`-only, for every PR.
+- **The build** runs on a PR only when a changed path is a route or a build config file. The command
+  above prints that answer, `build=true` or `build=false`, with its reason. It lists a renamed file's
+  new path only, while CI's own step reads both, so a rename can build when this says it will not.
+
+Say in the report what did not run, instead of implying it passed.
 
 ## 4 · Migrations are applied BY HAND, BEFORE the merge
 
@@ -308,8 +315,8 @@ had already passed. The sha endpoint answered correctly for the same commit at t
 
 Runs on `main` are grouped by commit and never cancelled, so every merge has its own verdict — and
 **a red `main` still builds, ships and serves perfectly**, so this is the only place that failure
-appears. For a docs-only PR it is the first time the tests ran at all. The verifier reads this too;
-do it by hand only when it could not.
+appears. It is the first time the login smoke test ran, and for a PR that touched no route or build
+config the first time the build ran. The verifier reads this too; do it by hand only when it could not.
 
 ## 9 · Report, in Cairo time
 
