@@ -53,8 +53,11 @@ export type UnitKind = "mass" | "count";
  * `run_volume_ml % dose_ml = 0` CHECK behind it — so grams would have to store 0.155 and the row
  * would not insert at all. In milligrams the batch is 31,000,000 and the dose 155, which divides
  * to exactly 200,000 tablets. The LARGE label is still the kilogram, so the tile reads 31 kg.
+ *
+ * `mg_capsule` IS THE SAME ARITHMETIC AS `mg`, AND SAYS "CAPSULE" INSTEAD OF "TABLET". This column picks
+ * the words as well as the unit, so Saginkgo under `mg` would read "30,000 tablets".
  */
-export type MeasureUnit = "ml" | "g" | "mg";
+export type MeasureUnit = "ml" | "g" | "mg" | "mg_capsule";
 
 /** What a composition's `qty_per_basis` is measured against. Matches the migration's CHECK. */
 export type CompositionBasis =
@@ -89,7 +92,7 @@ export const COMPOSITION_BASES: readonly CompositionBasis[] = [
   "per_box",
 ] as const;
 
-export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g", "mg"] as const;
+export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g", "mg", "mg_capsule"] as const;
 
 /**
  * How many of a measure unit make up the LARGE unit its big figures are read in — a litre, or a
@@ -103,6 +106,7 @@ export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g", "mg"] as const;
 export const MEASURE_UNITS_PER_LARGE: Record<MeasureUnit, bigint> = {
   g: BigInt(1000),
   mg: BigInt(1_000_000),
+  mg_capsule: BigInt(1_000_000),
   ml: BigInt(1000),
 };
 

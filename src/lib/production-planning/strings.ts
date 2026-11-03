@@ -173,6 +173,7 @@ export const PP = {
   unitBottle: "زجاجة",
   unitSachet: "كيس",
   unitTablet: "قرص",
+  unitCapsule: "كبسولة",
   unitSample: "عينة",
   roundedUpNote: "التشغيلات بأعداد صحيحة، فتم التقريب لأعلى",
   exactRunsNote: "الاحتياج الدقيق",
@@ -507,6 +508,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   unitBottle: "bottle",
   unitSachet: "sachet",
   unitTablet: "tablet",
+  unitCapsule: "capsule",
   unitSample: "sample",
   roundedUpNote: "Runs are whole, so this is rounded up",
   exactRunsNote: "Exact requirement",
@@ -961,6 +963,7 @@ export function measureUnitLabelsAr(unit: MeasureUnit): { small: string; large: 
     g: { large: PP.unitKilogram, small: PP.unitGram },
     // A milligram geometry is still READ in kilograms: 31,000,000 mg is the owner's own "31 kg".
     mg: { large: PP.unitKilogram, small: PP.unitMilligram },
+    mg_capsule: { large: PP.unitKilogram, small: PP.unitMilligram },
     ml: { large: PP.unitLitre, small: PP.unitMl },
   };
   return labels[unit];
@@ -970,6 +973,7 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
   const labels: Record<MeasureUnit, { small: string; large: string }> = {
     g: { large: PP_EN.unitKilogram, small: PP_EN.unitGram },
     mg: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
+    mg_capsule: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
     ml: { large: PP_EN.unitLitre, small: PP_EN.unitMl },
   };
   return labels[unit];
@@ -986,7 +990,12 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
  * sachets"*).
  */
 export function saleableUnitWordAr(unit: MeasureUnit): string {
-  const words: Record<MeasureUnit, string> = { g: PP.unitSachet, mg: PP.unitTablet, ml: PP.unitBox };
+  const words: Record<MeasureUnit, string> = {
+    g: PP.unitSachet,
+    mg: PP.unitTablet,
+    mg_capsule: PP.unitCapsule,
+    ml: PP.unitBox,
+  };
   return words[unit];
 }
 
@@ -994,6 +1003,7 @@ export function saleableUnitWordEn(unit: MeasureUnit): string {
   const words: Record<MeasureUnit, string> = {
     g: PP_EN.unitSachet,
     mg: PP_EN.unitTablet,
+    mg_capsule: PP_EN.unitCapsule,
     ml: PP_EN.unitBox,
   };
   return words[unit];
@@ -1061,6 +1071,7 @@ export function runActualLabelAr(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: "الأكياس الناتجة فعليًا",
     mg: "الأقراص الناتجة فعليًا",
+    mg_capsule: "الكبسولات الناتجة فعليًا",
     ml: PP.runActualGoodUnits,
   };
   return labels[unit];
@@ -1070,6 +1081,7 @@ export function runActualLabelEn(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: "Sachets actually produced",
     mg: "Tablets actually produced",
+    mg_capsule: "Capsules actually produced",
     ml: PP_EN.runActualGoodUnits,
   };
   return labels[unit];
@@ -1089,6 +1101,7 @@ export function runSizeLabelAr(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: PP.tileRunWeight,
     mg: PP.tileRunWeight,
+    mg_capsule: PP.tileRunWeight,
     ml: PP.tileRunVolume,
   };
   return labels[unit];
@@ -1098,6 +1111,7 @@ export function runSizeLabelEn(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: PP_EN.tileRunWeight,
     mg: PP_EN.tileRunWeight,
+    mg_capsule: PP_EN.tileRunWeight,
     ml: PP_EN.tileRunVolume,
   };
   return labels[unit];

@@ -20,7 +20,7 @@ export type WireBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "pe
  * The unit a product's geometry is counted in: `ml` for a syrup, `g` for a powder in sachets, `mg`
  * for a tablet (155 mg is not a whole gram, and the geometry columns are integers).
  */
-export type WireMeasureUnit = "ml" | "g" | "mg";
+export type WireMeasureUnit = "ml" | "g" | "mg" | "mg_capsule";
 export type WireRequestMode = "total_boxes" | "good_units" | "runs";
 export type WireCurrency = "USD" | "EGP";
 export type WireOverageSource = "measured" | "material" | "default";

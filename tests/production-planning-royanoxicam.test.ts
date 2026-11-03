@@ -400,7 +400,7 @@ export async function runProductionPlanningRoyanoxicamTests() {
   assert.equal(MEASURE_UNITS_PER_LARGE.mg, BigInt(1_000_000), "a kilogram is a million milligrams");
   assert.equal(MEASURE_UNITS_PER_LARGE.g, BigInt(1_000), "and still a thousand grams");
   assert.equal(MEASURE_UNITS_PER_LARGE.ml, BigInt(1_000), "and a litre a thousand millilitres");
-  assert.deepEqual([...MEASURE_UNITS], ["ml", "g", "mg"], "three units, and every one of them carries a divisor");
+  assert.deepEqual([...MEASURE_UNITS], ["ml", "g", "mg", "mg_capsule"], "four units, and every one of them carries a divisor");
 
   const data = planningData();
   const plan = computePlan(data, {
