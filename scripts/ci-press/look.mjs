@@ -77,6 +77,7 @@ page.on("request", (r) => {
   const url = new URL(r.url());
   if (url.pathname.startsWith("/api/phoenix-crm/") && r.method() === "GET") calls.push(url.pathname + url.search);
   if (url.searchParams.has("_rsc") || r.headers().rsc === "1") pageRequests.push(`${url.pathname}${r.headers()["next-router-prefetch"] ? " (prefetch)" : ""}`);
+  else if (r.isNavigationRequest() && r.frame() === page.mainFrame()) pageRequests.push(url.pathname);
 });
 
 const settle = async (extra = 3000) => {
@@ -151,15 +152,22 @@ try {
     await page.locator('a[href$="/field-crm/visits"]').first().click();
     await page.waitForURL("**/field-crm/visits", { timeout: 180_000 });
     await settle();
+    // Let the screen finish first: a read is spent only once it has drawn.
+    await page.waitForFunction(() => document.querySelectorAll('[class*="animate-pulse"]').length === 0, null, { timeout: 60_000 }).catch(() => console.log("  Visits still shows a skeleton after 60 s"));
+    await page.waitForTimeout(5000);
+    const drawnAt = Date.now();
     await report("visits-from-chooser", mark);
     console.log(`  VERDICT chooser: the browser asked for the Visits read itself ${calls.slice(mark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length} time(s); 0 means the page handed it over`);
     mark = calls.length;
     await clientGo("/employee-portals/field-crm/plan");
     await report("plan-from-visits", mark);
+    await page.waitForTimeout(Math.max(0, 35_000 - (Date.now() - drawnAt)));
+    console.log(`  pressing Back ${Math.round((Date.now() - drawnAt) / 1000)} s after Visits drew`);
     mark = calls.length;
     const pageMark = pageRequests.length;
     await page.goBack({ timeout: 180_000 });
     await settle();
+    await page.waitForTimeout(5000);
     await report("browser-back-to-visits", mark);
     const ownReads = calls.slice(mark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length;
     const askedAgain = pageRequests.slice(pageMark).filter((p) => p.endsWith("/field-crm/visits"));
