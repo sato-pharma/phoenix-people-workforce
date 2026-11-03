@@ -995,12 +995,19 @@ calls it in the branch that already found a problem.
 
 What it does, and each limit is deliberate:
 
-- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is `phoenix-notify-daily` alone. A job joins
-  the list only after its sub-jobs were read for what a second run on the same day does. For the daily
-  route that was done on 2026-10-16: every delivery goes through `claimDelivery`, an insert that does
-  nothing on a duplicate of the unique `notification_deliveries.idempotency_key`, and each of the 30
-  sub-jobs passes an explicit key made of the recipient and a Cairo or UTC day (or a once-ever key), so a
-  repeat completes a half-finished fan-out and sends nobody a second message.
+- **Only a job named in `JOB_REFIRE_POLICIES`.** Today that is `phoenix-notify-daily` and
+  `phoenix-reconciliation-check`. A job joins the list only after its sub-jobs were read for what a second
+  run on the same day does. For the daily route that was done on 2026-10-16: every delivery goes through
+  `claimDelivery`, an insert that does nothing on a duplicate of the unique
+  `notification_deliveries.idempotency_key`, and each of the 30 sub-jobs passes an explicit key made of the
+  recipient and a Cairo or UTC day (or a once-ever key), so a repeat completes a half-finished fan-out and
+  sends nobody a second message.
+- **The nightly integrity checks joined on 2026-11-03**, after the merge at 04:40 Cairo removed the container
+  about 42 seconds into a run of about 48 seconds. The audit: `runReconciliationChecks` only reads; the
+  route sends no notification (breaches go to System Audit and the one daily message); `nextEpisode`
+  returns the previous episode unchanged when the night is the same night, so a repeat does not count a
+  night twice; `sink.write` uses `merge: "max"` on a stable `findingDedupeKey`, so occurrences do not add
+  up; a killed run's row has no report, and the read of the previous run filters on `report is not null`.
 - **Stranded only.** A job that ran and reported failure is left alone.
 - **Once per Cairo day, claimed first.** The claim is the atomic `api_rate_limit_consume` bucket
   (`job-refire:<slug>:<day>`, limit 1), taken before anything starts. A claim that is lost means nothing

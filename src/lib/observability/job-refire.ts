@@ -36,6 +36,7 @@ export type JobRefirePolicy = {
 
 export const JOB_REFIRE_POLICIES: Readonly<Record<string, JobRefirePolicy>> = {
   "phoenix-notify-daily": { latestCairoMinutes: 12 * 60, path: "/api/notifications/daily" },
+  "phoenix-reconciliation-check": { latestCairoMinutes: 12 * 60, path: "/api/cron/reconciliation-check" },
 };
 
 /** How long a day's claim lives. Longer than a day on purpose: the key already carries the date. */

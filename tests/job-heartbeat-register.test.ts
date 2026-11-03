@@ -538,8 +538,17 @@ export async function runJobHeartbeatRegisterTests() {
     assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "notify-daily is the first job with a re-fire policy");
     assert.deepEqual(
       Object.keys(JOB_REFIRE_POLICIES),
-      [NOTIFY],
+      [NOTIFY, "phoenix-reconciliation-check"],
       "a job joins this list only after its sub-jobs were read for a same-day repeat (docs/observability.md)",
+    );
+    // 2026-11-03: a merge at 04:40 removed the container 42 seconds into the nightly integrity checks.
+    assert.deepEqual(
+      decideJobRefires(
+        [{ overdueSince: "2026-11-03T04:40:00.000Z", slug: "phoenix-reconciliation-check" }],
+        at("2026-11-03T05:00:00.000Z"),
+      ).due,
+      [{ day: "2026-11-03", path: "/api/cron/reconciliation-check", slug: "phoenix-reconciliation-check" }],
+      "the nightly integrity checks killed by a deploy are re-fired once the sweep sees them stranded",
     );
 
     const due = decideJobRefires([{ overdueSince: overdue, slug: NOTIFY }], at("2026-10-16T04:51:00.000Z"));
