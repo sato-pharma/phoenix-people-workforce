@@ -8,10 +8,6 @@
  * Each loader is imported when its module opens, so the page does not carry all of them.
  */
 
-import { randomUUID } from "node:crypto";
-
-import { headers } from "next/headers";
-
 import { assertPermission, type AccessContext, type PermissionAction } from "@/lib/auth/permissions";
 import { assertSeatViewMayRun } from "@/lib/auth/seat-view";
 import { assertTestAccountMayRun } from "@/lib/auth/test-persona";
@@ -184,25 +180,6 @@ export function phoenixCrmFirstReadTarget(overview: PhoenixCrmOverview, requeste
   }
 }
 
-/**
- * Is anybody going to use it? 🔴 NOT ON A REFRESH: a saved visit calls `router.refresh()` to empty the
- * browser's copy of the page, the screen is already on its data and reads its own day again, so starting the
- * read here would be one more for every visit logged. Next asks for a refresh by marking the top of the tree it
- * sends ("refetch"; a move between pages marks only the segment that changed). Should a later Next stop doing
- * that, this answers true and the cost is that spare read, never a wrong screen.
- */
-export function pageRequestWantsFirstRead(headerStore: Pick<Headers, "get">): boolean {
-  if (headerStore.get("next-router-prefetch")) return false;
-  const tree = headerStore.get("next-router-state-tree");
-  if (!tree) return true;
-  try {
-    const parsed: unknown = JSON.parse(decodeURIComponent(tree));
-    return !(Array.isArray(parsed) && parsed[3] === "refetch");
-  } catch {
-    return true;
-  }
-}
-
 /** Never rejects: a failure of any kind is null, and the screen's own read then says what went wrong. */
 async function runFirstRead(access: AccessContext, target: FirstReadTarget): Promise<string | null> {
   try {
@@ -219,15 +196,21 @@ async function runFirstRead(access: AccessContext, target: FirstReadTarget): Pro
   }
 }
 
-/** Starts the read and hands it back still running: the page never waits for it, and neither does its first paint. */
+/**
+ * Starts the read and hands it back still running: the page never waits for it, and neither does its first paint.
+ *
+ * 🔴 A REFRESH STARTS IT TOO. Next hides its own request marks from `headers()` (`HIDDEN_REQUEST_HEADERS`,
+ * next/dist/server/async-storage/request-store.js), so a page cannot tell a refresh from a move between pages. A check
+ * on those marks stood here from 1 to 3 Nov 2026 and could never fire. So a refresh costs one spare read, and the
+ * browser, which does know, keeps it from being drawn (`firstReadArrived`).
+ */
 export async function startPhoenixCrmFirstRead(
   access: AccessContext,
   overview: PhoenixCrmOverview,
   requested: string | null,
   surface: PhoenixCrmSurface,
 ): Promise<CrmFirstRead | null> {
-  if (!pageRequestWantsFirstRead(await headers())) return null;
   const target = phoenixCrmFirstReadTarget(overview, requested, surface);
   if (target === null) return null;
-  return { body: runFirstRead(access, target), id: randomUUID(), key: target.key, url: target.url };
+  return { body: runFirstRead(access, target), key: target.key, startedAt: Date.now(), url: target.url };
 }

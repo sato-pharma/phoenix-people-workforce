@@ -14,36 +14,45 @@
 export type CrmFirstRead = {
   /** The answer as JSON, the same text the route would send; null when the screen must read for itself. */
   body: Promise<string | null>;
-  /** Stamped by the page on this one read. What "already used" is remembered by. */
-  id: string;
   key: string;
+  /** When the page started it, by the server's clock. */
+  startedAt: number;
   url: string;
 };
 
-/** How long after a screen first meets the read it may still use it. */
+/** How long after the page started the read, and after a screen first met it, it may still be used. */
 export const FIRST_READ_LIFETIME_MS = 30_000;
 
 // 🔴 USED ONCE, AND NEVER LATE. Browser Back restores this page from the router's own copy, the read inside
 // it included, so a rep who logs a visit elsewhere and presses Back would be handed the day as it stood
 // before the visit. Kept outside React for that reason: the restored page mounts a fresh screen, and
-// everything held in component state starts again.
+// everything held in component state starts again. Keyed by the read's own object, which the restore reuses.
 //
-// 🔴 REMEMBERED BY THE PAGE'S ID, NEVER BY THE OBJECT. It used to be a WeakMap on the object, on the belief that the
-// restore reuses it. A real browser disproved that on 3 Nov 2026: Back 35 s after Visits drew, the screen remounted,
-// no read and no page request, the day from before on screen. Back hands over the same read in another object.
-const firstMet = new Map<string, number>();
+// 🔴 A REFRESH BRINGS ITS OWN READ, AND BACK MOUNTS THAT ONE (3 Nov 2026, seen in a real browser). The page cannot
+// tell a refresh from a move between pages (server/first-read.ts), so the refreshed copy carries a read the screen
+// on display never takes. Back then mounted that copy, met its read for the first time and drew it, with no read and
+// no page request, however old it was. Hence `firstReadArrived` below, and the age check in `firstReadFor`.
+const firstMet = new WeakMap<CrmFirstRead, number>();
 
 /** The handed-over read, when it is this screen's and can still be used. */
 export function firstReadFor(firstRead: CrmFirstRead | null, url: string, key: string, now: number = Date.now()): CrmFirstRead | null {
   if (firstRead === null || firstRead.url !== url || firstRead.key !== key) return null;
-  const met = firstMet.get(firstRead.id) ?? now;
-  firstMet.set(firstRead.id, met);
+  // Covers a refresh that landed after the rep left, which no screen was there to mark. By the phone's clock: one
+  // running ahead costs a read, one running behind loses only this check.
+  if (now - firstRead.startedAt > FIRST_READ_LIFETIME_MS) return null;
+  const met = firstMet.get(firstRead) ?? now;
+  firstMet.set(firstRead, met);
   return now - met <= FIRST_READ_LIFETIME_MS ? firstRead : null;
 }
 
 /** The screen has drawn it, so nothing may draw it again. Not before: Strict Mode runs an effect twice. */
 export function firstReadSpent(firstRead: CrmFirstRead): void {
-  firstMet.set(firstRead.id, Number.NEGATIVE_INFINITY);
+  firstMet.set(firstRead, Number.NEGATIVE_INFINITY);
+}
+
+/** A read reaching a screen already up came with a refresh. That screen will never draw it, so nothing else may. */
+export function firstReadArrived(held: CrmFirstRead | null, arriving: CrmFirstRead | null): void {
+  if (arriving !== null && arriving !== held) firstReadSpent(arriving);
 }
 
 /**

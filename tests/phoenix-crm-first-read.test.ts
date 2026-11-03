@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { crmUrl } from "../src/lib/phoenix-crm/crm-url.ts";
-import { FIRST_READ_LIFETIME_MS, firstReadFor, firstReadSpent, readFirst, type CrmFirstRead } from "../src/lib/phoenix-crm/first-read.ts";
-import { pageRequestWantsFirstRead, phoenixCrmFirstReadTarget } from "../src/lib/phoenix-crm/server/first-read.ts";
+import { FIRST_READ_LIFETIME_MS, firstReadArrived, firstReadFor, firstReadSpent, readFirst, type CrmFirstRead } from "../src/lib/phoenix-crm/first-read.ts";
+import { phoenixCrmFirstReadTarget } from "../src/lib/phoenix-crm/server/first-read.ts";
 import type { PhoenixCrmOverview } from "../src/lib/phoenix-crm/view-types.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -15,8 +15,7 @@ const code = (file: string) => stripComments(read(file));
 const squeeze = (text: string) => text.replace(/\s+/g, " ");
 
 function testHandOverRules() {
-  let minted = 0;
-  const firstRead = (): CrmFirstRead => ({ body: Promise.resolve("{}"), id: `read-${(minted += 1)}`, key: "day", url: "/api/phoenix-crm/visits?seatId=S-1" });
+  const firstRead = (): CrmFirstRead => ({ body: Promise.resolve("{}"), key: "day", startedAt: 1_000, url: "/api/phoenix-crm/visits?seatId=S-1" });
 
   const own = firstRead();
   assert.equal(firstReadFor(null, own.url, own.key), null, "with nothing handed over the screen reads for itself");
@@ -32,18 +31,18 @@ function testHandOverRules() {
   firstReadSpent(back);
   assert.equal(firstReadFor(back, back.url, back.key, 1_001), null, "RED browser Back must read afresh, never redraw the day from before the visit he logged");
 
-  // What a real browser does (3 Nov 2026, Back 35 s after Visits drew): the same read comes back in ANOTHER object.
-  const drawn = firstRead();
-  assert.equal(firstReadFor(drawn, drawn.url, drawn.key, 1_000), drawn);
-  firstReadSpent(drawn);
-  assert.equal(firstReadFor({ ...drawn }, drawn.url, drawn.key, 1_001), null, "RED Back restores the read in a new object, and it is still the read already drawn");
+  // What a real browser did on 3 Nov 2026: a refresh brought a new read under a screen already up, and Back later
+  // mounted that copy and drew its read, with no read and no page request.
+  const held = firstRead();
+  const refreshed = firstRead();
+  firstReadArrived(held, held);
+  assert.equal(firstReadFor(held, held.url, held.key, 1_000), held, "the screen's own first read is left alone");
+  firstReadArrived(held, null);
+  firstReadArrived(held, refreshed);
+  assert.equal(firstReadFor(refreshed, refreshed.url, refreshed.key, 1_001), null, "RED a read that arrived under a screen already up is never drawn, or Back redraws an old day");
 
-  const unmet = firstRead();
-  assert.equal(firstReadFor(unmet, unmet.url, unmet.key, 1_000), unmet);
-  assert.equal(firstReadFor({ ...unmet }, unmet.url, unmet.key, 1_001 + FIRST_READ_LIFETIME_MS), null, "RED and a read met long ago is too old in a new object as well");
-
-  const nextRender = firstRead();
-  assert.equal(firstReadFor(nextRender, nextRender.url, nextRender.key, 1_000), nextRender, "a new render of the page is a new read, and it is handed over");
+  const leftBehind = firstRead();
+  assert.equal(firstReadFor(leftBehind, leftBehind.url, leftBehind.key, 1_001 + FIRST_READ_LIFETIME_MS), null, "RED a read this old is refused the first time it is met, which covers a refresh that landed after the rep left");
 
   const late = firstRead();
   assert.equal(firstReadFor(late, late.url, late.key, 1_000), late);
@@ -57,7 +56,7 @@ async function testAnswerOrItsOwnRead() {
     reads += 1;
     return { from: "route" };
   };
-  const base = { id: "read-1", key: "day", url: "/x" };
+  const base = { key: "day", startedAt: 0, url: "/x" };
 
   assert.deepEqual(await readFirst({ ...base, body: Promise.resolve('{"from":"page"}') }, readItself), { from: "page" }, "the answer is parsed as the route's own JSON");
   assert.equal(reads, 0, "RED and the browser does not ask a second time");
@@ -74,18 +73,11 @@ async function testAnswerOrItsOwnRead() {
   assert.equal(reads, 2);
 }
 
-function testWhenThePageStartsIt() {
-  const asked = (headers: Record<string, string>) => pageRequestWantsFirstRead({ get: (name: string) => headers[name] ?? null });
-  const tree = (value: unknown) => encodeURIComponent(JSON.stringify(value));
-
-  assert.equal(asked({}), true, "a hard load starts it");
-  assert.equal(asked({ "next-router-prefetch": "1" }), false, "RED a prefetch draws nothing, so it starts nothing");
-  assert.equal(asked({ "next-router-state-tree": tree(["", { children: ["employee-portals", {}, null, "refetch"] }, null, null]) }), true, "a move between pages starts it");
-  assert.equal(asked({ "next-router-state-tree": tree(["", {}, null, "refetch"]) }), false, "RED a refresh does not: it would be one spare read for every visit logged");
-  assert.equal(asked({ "next-router-state-tree": "%E0%A4%A" }), true, "and a header it cannot read costs a read, never the screen");
-
-  const next = read("node_modules/next/dist/client/components/render-tree.js");
-  assert.match(next, /if \(!parentNeedsDynamicRequest\) \{\s*dynamicRequestTree\[3\] = 'refetch';/, "Next still marks the top segment that needs data; if this moved, read how a refresh is asked for again");
+function testThePageCannotTellARefresh() {
+  const store = read("node_modules/next/dist/server/async-storage/request-store.js");
+  assert.ok(store.includes("HIDDEN_REQUEST_HEADERS") && store.includes("FLIGHT_HEADERS"), "Next still hides its request marks from headers(); if this moved, a page may be able to tell a refresh again");
+  const server = code("src/lib/phoenix-crm/server/first-read.ts");
+  assert.ok(!server.includes("next-router-"), "RED a check on Next's request marks can never fire: a real refresh reached the page with none of them");
 }
 
 function overview(overrides: Record<string, unknown> = {}, viewer: Record<string, unknown> = {}): PhoenixCrmOverview {
@@ -247,7 +239,6 @@ function testEachLoadIsItsRoutesOwn() {
   assert.ok(code("app/api/phoenix-crm/settings/route.ts").includes('assertPermission(access, "phoenix_crm", "update")'), "Settings asks for update on its route");
   assert.ok(server.includes('permission: "update"'), "RED and on the page's read");
   assert.match(server, /body: runFirstRead\(access, target\)/, "RED handed over still running: the page never waits for it");
-  assert.ok(server.includes("id: randomUUID()"), "RED every read the page starts carries its own id, which is how Back is told from a first open");
   assert.ok(!/await runFirstRead/.test(server), "RED never awaited");
 }
 
@@ -268,12 +259,14 @@ function testThePagesAndTheHook() {
 
   const provider = code("src/components/phoenix-crm/first-read.ts");
   assert.match(provider, /const \[held\] = useState\(firstRead\);/, "RED held from the first render, so a refresh cannot run the screen's effect again");
+  assert.ok(squeeze(provider).includes("useEffect(() => { firstReadArrived(held, firstRead); }, [firstRead, held]);"), "RED a read arriving under a screen already up is marked, or Back draws it");
+  assert.ok(code("src/lib/phoenix-crm/server/first-read.ts").includes("startedAt: Date.now()"), "RED every read the page starts says when, which is how one left behind is refused");
 }
 
 export async function runPhoenixCrmFirstReadTests() {
   testHandOverRules();
   await testAnswerOrItsOwnRead();
-  testWhenThePageStartsIt();
+  testThePageCannotTellARefresh();
   testEachTabsAddress();
   testTabsStillAskForThoseAddresses();
   testEachLoadIsItsRoutesOwn();
