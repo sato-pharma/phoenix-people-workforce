@@ -364,7 +364,7 @@ export async function runHrResourcingSeatTests() {
   );
   assert.match(
     sidebarSource,
-    /standalone={!flatSidebar && !tiled && !plainSingleRow}/,
+    /standalone={!flatSidebar && !tiled && !plainSingleRow && !query}/,
     "a one-row section in the HR shell carries no hub arrow and no hub tint",
   );
   // KPIs: "Give her KPIs" — a company seat, admin shell, not the portal.

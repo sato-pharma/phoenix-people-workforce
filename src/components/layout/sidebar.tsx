@@ -705,6 +705,11 @@ function SortableSectionBlock({
   // treatment so it still reads as different from an ordinary single-destination
   // link. Section-level drag-to-reorder still works via the same overlay-on-hover
   // grip handle SortableNavRow uses for items.
+  //
+  // A search that leaves one match in a section lands here too, and that row is no hub: it is alone
+  // only because the query filtered out its neighbours. It stays an ordinary row, so it keeps the
+  // plain width budget the label is measured against. With the arrow it had 137px against that 157px,
+  // and "Manager CV Engagement" (148px) came out cut with an ellipsis.
   if (orderedItems.length === 1) {
     const soleItem = orderedItems[0];
     return (
@@ -732,7 +737,7 @@ function SortableSectionBlock({
           onTogglePin={() => onTogglePin(soleItem.href)}
           pinned={pinnedSet.has(soleItem.href)}
           rail={false}
-          standalone={!flatSidebar && !tiled && !plainSingleRow}
+          standalone={!flatSidebar && !tiled && !plainSingleRow && !query}
           tiled={tiled}
         />
       </div>

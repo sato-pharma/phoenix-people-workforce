@@ -104,8 +104,8 @@ function worstCaseRows(): Measured[] {
       // in full wherever a section really can collapse to one row.
       if (mode === "admin" && usesHrNamespace(role)) continue;
       for (const section of getSections(sections, mode, lookupForRole(role), role)) {
-        // The ↗ is what the +hub 20px buys, and `SortableSectionBlock` renders it as
-        // `standalone={!flatSidebar}` — so a role on the FLAT sidebar (SFE Manager) never sees one.
+        // The ↗ is what the +hub 20px buys, and `SortableSectionBlock` renders it only on a row that
+        // really is its section — so a role on the FLAT sidebar (SFE Manager) never sees one.
         // Charging it anyway is the same false positive the HR pairing above documents: it read a
         // single-row section of a rail whose only viewer gets no arrow, called that hub chrome, and
         // demanded a label be shortened to fit 20px it does not spend.
@@ -181,6 +181,16 @@ export function runSidebarLabelWidthTests() {
     clipped,
     [],
     `sidebar labels must never clip — the owner's rule is no ellipsis, no wrap:\n  ${clipped.join("\n  ")}`,
+  );
+
+  // A row's budget above comes from the section as its role sees it, with no search typed. A query can
+  // leave one match in a section of many, and if that row took the ↗ it would have 20px less than it
+  // was measured against: on 3 Nov 2026 six labels were cut in the rail's search results, and eleven
+  // more in Arial, with every row here passing. So the block must hold the arrow back while searching.
+  assert.match(
+    readFileSync("src/components/layout/sidebar.tsx", "utf8"),
+    /standalone=\{[^}]*&& !query\}/,
+    "a row left alone by a search is no hub: with the ↗ it gets 137px against the 157px its label was measured for",
   );
 
   // The budgets themselves must stay honest. If someone narrows a rail or grows an icon box
