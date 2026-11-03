@@ -542,7 +542,7 @@ function buildEmployeePortalSections({
         ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
         ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Marketing Inbox", icon: Inbox, navBadge: "marketing-approvals-pending" as const }] : []),
-        ...(showMarketAwarenessInboxTab ? [{ href: "/employee-portals/market-awareness/inbox", label: "Awareness Approvals", icon: Inbox, navBadge: "market-awareness-approvals-pending" as const }] : []),
+        ...(showMarketAwarenessInboxTab ? [{ href: "/employee-portals/market-awareness/inbox", label: "Awareness Inbox", icon: Inbox, navBadge: "market-awareness-approvals-pending" as const }] : []),
         ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox, navBadge: "approvals-hub-pending" as const }] : []),
       ],
     },

@@ -2312,7 +2312,7 @@ He set the new rules on 2026-09-15, first in his own words and then by choosing 
 
 The daily job (`app/api/cron/attendance-weekly-digest`, 06:23 and 13:23 Cairo) brings every started
 week of the review month up to date as **`awaiting_release`** and **sends nothing** (section 5). The week then waits on the admin page
-**Attendance › Weekly Attendance Review** (`/attendance/weekly-review`), which lists every
+**Attendance › Attendance Review** (`/attendance/weekly-review`), which lists every
 employee's flagged days by name.
 
 **He chooses the days (same day, second decision).** In his words: "I want to be able to select the

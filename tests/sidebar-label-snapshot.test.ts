@@ -7,6 +7,7 @@ import {
   hrNavigationSections,
 } from "../src/config/system-navigation.ts";
 import {
+  FALLBACK_LABEL_FONT_FAMILY,
   MEASURE_SIDEBAR_LABELS_COMMAND,
   MEASURE_SIDEBAR_LABELS_WORKTREE_COMMAND,
   SIDEBAR_LABEL_SNAPSHOT_PATH,
@@ -38,9 +39,10 @@ const SHELLS: [SidebarShell, string[]][] = [
 ];
 
 export function runSidebarLabelSnapshotTests() {
-  const widths = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as Partial<
-    Record<SidebarShell, Record<string, number>>
-  >;
+  type ShellWidths = Partial<Record<SidebarShell, Record<string, number>>>;
+  const widths = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as ShellWidths & {
+    fallback?: ShellWidths;
+  };
   const rerun = `run \`${MEASURE_SIDEBAR_LABELS_COMMAND}\` (from a worktree: \`${MEASURE_SIDEBAR_LABELS_WORKTREE_COMMAND}\`)`;
   assert.ok(widths.admin && widths.portal, `the snapshot must hold a per-shell map — ${rerun}`);
 
@@ -48,7 +50,10 @@ export function runSidebarLabelSnapshotTests() {
   assert.ok(total > 100, `expected the full nav to resolve, got ${total} labels`);
 
   const missing = SHELLS.flatMap(([shell, labels]) =>
-    labels.filter((label) => typeof widths[shell]?.[label] !== "number").map((label) => `${shell}: ${label}`),
+    labels.flatMap((label) => [
+      ...(typeof widths[shell]?.[label] === "number" ? [] : [`${shell}: ${label}`]),
+      ...(typeof widths.fallback?.[shell]?.[label] === "number" ? [] : [`${shell} in ${FALLBACK_LABEL_FONT_FAMILY}: ${label}`]),
+    ]),
   );
   assert.deepEqual(
     missing,

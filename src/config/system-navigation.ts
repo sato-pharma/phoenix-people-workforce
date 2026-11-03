@@ -629,7 +629,8 @@ export const adminNavigationSectionSeeds = [
       // fit a rail row that also carries a pending badge (150px against a 98px budget), and
       // renaming it "Marketing Approvals" under this heading would put that clip straight back.
       { href: "/admin/marketing-requests/inbox", icon: Inbox, label: "Marketing Inbox", navBadge: "marketing-approvals-pending", roles: ["CEO", "District Manager", "Super Admin", "SFE Manager", "Finance Manager"] },
-      { href: "/admin/market-awareness/inbox", icon: Inbox, label: "Awareness Approvals", navBadge: "market-awareness-approvals-pending", permissions: [{ resource: "market_awareness", action: "read" }], roles: ["CEO", "Super Admin"] },
+      // "Awareness Approvals" is 133px in Arial's metrics against this badge row's 125px.
+      { href: "/admin/market-awareness/inbox", icon: Inbox, label: "Awareness Inbox", navBadge: "market-awareness-approvals-pending", permissions: [{ resource: "market_awareness", action: "read" }], roles: ["CEO", "Super Admin"] },
       // "Other Approvals" is not a heading, so the only way to take the phrase off his sidebar is
       // to drop the row. No loss: this inbox carries resignation / contract / outstation items
       // only (getAwaitingMyActionItems), and the SFE Manager holds none of those grants — it was
@@ -967,7 +968,9 @@ export const adminNavigationSectionSeeds = [
       { href: "/admin/probation-tools", icon: Hourglass, label: "Probation Tools", permissions: [{ resource: "probation" }], excludedRoles: ["CEO"] },
       // Restored on 2026-08-08. Moved into the CRM hub on 2026-08-02 because it is judged on CRM
       // visit activity; it stays a card there for the SFE Manager, who is excluded here.
-      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["SFE Manager"] },
+      // "Workforce Compliance" is 139px in Arial's metrics against the 137px this row has when it is
+      // its section's only row and pays for the hub arrow.
+      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Field Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["SFE Manager"] },
     ],
     // Heading restored on owner instruction (2026-08-08), same treatment as Command Center.
     // SFE Manager still sees no heading — see flatSidebarRoles.
@@ -1954,7 +1957,8 @@ const employeePortalNavigationSectionSeeds = [
       {
         href: "/employee-portals/market-awareness/inbox",
         icon: Inbox,
-        label: "Awareness Approvals",
+        // "Awareness Approvals" is 125px in Arial's metrics against this badge row's 121px.
+        label: "Awareness Inbox",
         // Its own badge kind. Market Awareness is deliberately outside the consolidated approvals
         // hub (the owner asked for a separate queue), so "approvals-hub-pending" counts everything
         // EXCEPT this inbox — the link would sit silent while a decision waited behind it.
@@ -2583,17 +2587,16 @@ const hrNavigationSectionSeeds = [
       // HR Operations only — the org-wide leave register. It lives in peopleManagementPageItems,
       // a hub this catalogue has no row for, so without this line the seat passes the gate
       // (companyVacationReportReaderRoles) and still cannot find the page.
-      // Labelled "Company Vacation Report", the page's own hero, restored 2026-09-05. It was
-      // shortened to "Vacation Report" because the full name measured 158px against the admin rail's
-      // 157px budget; re-measured after the premium type pass it is 151px, so that reason is gone.
-      // And it now has to be the full name: /hr/leave-management/vacation-report joined this same
-      // section in that change and its own page is titled "Vacation Report", so two rows reading
-      // "Vacation Report" in one section would be a pair nobody can tell apart from the rail. The
-      // company-wide register is this one; the leave module's own report is the row above.
+      // Labelled "Company Vacations", so it still cannot be mistaken for the row above: the leave
+      // module's own report, /hr/leave-management/vacation-report, sits in this same section and is
+      // titled "Vacation Report", and two rows reading that would be a pair nobody can tell apart from
+      // the rail. The company-wide register is this one. The page's own hero, "Company Vacation
+      // Report", is 151px in Segoe UI and 159px in Arial's metrics against the rail's 157px, so the
+      // rail carries the shorter name.
       // The HR Operations Specialist shares it since 2026-11-03 (companyVacationReportReaderRoles).
       // It is the one row of this section on her rail, so it pays the hub arrow and the full name
       // would clip by 14px; nothing beside it needs telling apart, so the short name reads true.
-      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacation Report", labelByRole: { "HR Administration": "Vacation Report" }, permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations", "HR Administration"] },
+      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacations", labelByRole: { "HR Administration": "Vacation Report" }, permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations", "HR Administration"] },
       // "Other Approvals" IS NOT ON THIS RAIL AT ALL — retired from /hr on 2026-09-01, in two steps
       // on the same day and for two DIFFERENT reasons, which is why it is written down.
       //
@@ -3479,7 +3482,9 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/attendance/weekly-review",
     icon: CalendarCheck,
-    label: "Weekly Attendance Review",
+    // Shorter than the page's own title: the full name is 164px in Arial's metrics and 156px in
+    // Segoe UI, against a 157px row.
+    label: "Attendance Review",
     description:
       "Pick a week — it shows its flagged days up to yesterday — tick the days to deduct and set their days, then release the days so far at any time; unticked days are cleared, and nothing reaches an employee until it is released here.",
     permissions: [{ resource: "attendance", action: "read" }],
@@ -4222,7 +4227,8 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/vacation-report",
     icon: FileSpreadsheet,
-    label: "Company Vacation Report",
+    // Shorter than the page's hero: the full name is 159px in Arial's metrics, against a 157px row.
+    label: "Company Vacations",
     description: "Every HR-approved leave request alongside unverified CRM/attendance leave signals, org-wide.",
     permissions: [{ resource: "leave" }],
     // HR Operations added 2026-08-29 (owner) — see companyVacationReportReaderRoles, which is the
@@ -4465,7 +4471,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // beside the visit data it is computed from.
     href: "/admin/field-workforce-compliance",
     icon: ClipboardCheck,
-    label: "Workforce Compliance",
+    label: "Field Compliance",
     description: "Field activity compliance against the working-day calendar, from the CRM visit mirror.",
     permissions: [{ resource: "hr_calendar" }],
   },
@@ -4989,7 +4995,8 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/direct-orders/reconciliation",
     icon: Scale,
-    label: "Direct Sales Reconciliation",
+    // Shorter than the page's own title: the full name is 164px in Arial's metrics, against a 157px row.
+    label: "Direct Reconciliation",
     description: "Reconcile the manual Direct upload against module direct orders.",
     permissions: [{ resource: "direct_orders", action: "read" }],
     roles: ["Super Admin", "SFE Manager", "CEO"],

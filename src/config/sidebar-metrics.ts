@@ -250,11 +250,29 @@ export function labelBudgetPx({
   return budget;
 }
 
+/**
+ * A LIST, not a face. Which family draws the text depends on the machine, and getComputedStyle cannot
+ * say: it returns this list back, never the face it drew with. Probed 2026-11-03 in headless Chromium
+ * 153 on the Windows laptop, Aptos is not visible (`"Aptos",monospace` measures as monospace), so the
+ * stack lands on Segoe UI. A Mac or an iPhone takes Helvetica Neue, and Linux and ChromeOS reach Arial
+ * through Liberation Sans or Arimo.
+ */
 const LABEL_FONT_FAMILY =
   'font-family:"Aptos","Segoe UI Variable Text","Segoe UI Variable Display","Segoe UI","Inter","Helvetica Neue",Arial,sans-serif';
 
 /**
- * Admin label span: 13px / 600 / tracking -0.01em, in the app's resolved sans stack.
+ * The stack's last named family, and the second width every rail label has to fit.
+ *
+ * One measurement per label only ever described the machine that took it: "Double Visit Data Integrity"
+ * read 154px in Segoe UI and passed a 157px budget, and read 159px in Arial and showed an ellipsis.
+ * Arial's advances are the same wherever it or a metric twin is installed, so this half of the snapshot
+ * does not depend on who ran the script. It also stands in for Helvetica Neue, which is not installed
+ * anywhere the script runs.
+ */
+export const FALLBACK_LABEL_FONT_FAMILY = "Arial";
+
+/**
+ * Admin label span: 13px / 600 / tracking -0.01em, in the app's sans stack.
  *
  * Read off src/components/layout/sidebar.tsx: the nav row's label span carries only
  * `tracking-[-0.01em]` and inherits its size and weight from the enclosing <Link>, which is
@@ -287,6 +305,11 @@ export const BOTTOM_BAR_LABEL_FONT_CSS = `font-size:10px;font-weight:900;${LABEL
 
 export function labelFontCss(shell: SidebarShell): string {
   return shell === "portal" ? PORTAL_LABEL_FONT_CSS : LABEL_FONT_CSS;
+}
+
+/** The same size, weight and tracking as `labelFontCss`, in the fallback face alone. */
+export function fallbackLabelFontCss(shell: SidebarShell): string {
+  return labelFontCss(shell).replace(LABEL_FONT_FAMILY, `font-family:${FALLBACK_LABEL_FONT_FAMILY}`);
 }
 
 export const SIDEBAR_LABEL_SNAPSHOT_PATH = "tests/fixtures/sidebar-label-widths.json";

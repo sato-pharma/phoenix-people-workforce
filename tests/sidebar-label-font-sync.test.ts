@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { FALLBACK_LABEL_FONT_FAMILY } from "../src/config/sidebar-metrics.ts";
+
 /**
  * The sidebar width guard is only as honest as the font it measures.
  *
@@ -103,6 +105,13 @@ export function runSidebarLabelFontSyncTests() {
       `Every label width in tests/fixtures/sidebar-label-widths.json is therefore wrong, and the ` +
       `width test cannot fail no matter how badly labels overflow. Update ${METRICS} to match, then ` +
       `re-run \`pnpm run ui:measure-sidebar-labels\`.`,
+  );
+
+  // The snapshot's second face is only worth measuring while the stack can actually land on it.
+  assert.ok(
+    appFamilies.includes(FALLBACK_LABEL_FONT_FAMILY),
+    `${METRICS} measures every label a second time in ${FALLBACK_LABEL_FONT_FAMILY}, which --phx-font-ui no longer names. ` +
+      `Point FALLBACK_LABEL_FONT_FAMILY at the stack's last named family, then re-run \`pnpm run ui:measure-sidebar-labels\`.`,
   );
 
   // ── 2. no UI face may be webfont-loaded unless the harness loads it too ───────
