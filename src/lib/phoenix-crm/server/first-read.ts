@@ -8,6 +8,8 @@
  * Each loader is imported when its module opens, so the page does not carry all of them.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { headers } from "next/headers";
 
 import { assertPermission, type AccessContext, type PermissionAction } from "@/lib/auth/permissions";
@@ -227,5 +229,5 @@ export async function startPhoenixCrmFirstRead(
   if (!pageRequestWantsFirstRead(await headers())) return null;
   const target = phoenixCrmFirstReadTarget(overview, requested, surface);
   if (target === null) return null;
-  return { body: runFirstRead(access, target), key: target.key, url: target.url };
+  return { body: runFirstRead(access, target), id: randomUUID(), key: target.key, url: target.url };
 }
