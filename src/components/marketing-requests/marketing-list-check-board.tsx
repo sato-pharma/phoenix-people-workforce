@@ -11,7 +11,7 @@ import {
 } from "@/components/admin/admin-design-tokens";
 import { ListCheckTwoPhotos } from "@/components/marketing-requests/list-check-two-photos";
 import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
-import type { ListCheckBoard, ListCheckBoardRow, ListCheckBreakdownRow } from "@/lib/marketing-requests/crm-list-check-board";
+import { visitsSinceThen, type ListCheckBoard, type ListCheckBoardRow, type ListCheckBreakdownRow } from "@/lib/marketing-requests/crm-list-check-board";
 
 const money = (value: number): string => `EGP ${Math.round(value).toLocaleString("en-US")}`;
 
@@ -39,7 +39,7 @@ function AfterTheMoney({ row, showObjections }: { row: ListCheckBoardRow; showOb
       <p className="font-black text-slate-900">{row.approvedRequests > 0 ? money(row.approvedCost) : "No approved request"}</p>
       {row.requesterNames.length > 0 ? <p dir="auto">{row.requesterNames.join(", ")}</p> : null}
       {row.firstPayDate ? <p>Pay date {utcDate(row.firstPayDate)}</p> : null}
-      {row.visitsSincePay !== null ? <p>{row.visitsSincePay.toLocaleString("en-US")} visits since then</p> : null}
+      {row.visitsSincePay !== null ? <p>{visitsSinceThen(row.visitsSincePay)}</p> : null}
       {row.lastVisitDate ? <p>Last visit {utcDate(row.lastVisitDate)}</p> : null}
       {showObjections && row.latestObjection ? (
         <p dir="auto">

@@ -105,6 +105,10 @@ function finishBreakdown(map: Map<string, Tally>): ListCheckBreakdownRow[] {
 /** One request's share of a row, for the by-requester sums: who raised how much on this customer. */
 export type ListCheckRequesterShare = { checkId: string; cost: number; requesterName: string };
 
+export function visitsSinceThen(count: number): string {
+  return `${count.toLocaleString("en-US")} ${count === 1 ? "visit" : "visits"} since then`;
+}
+
 export function buildListCheckBoard(input: {
   canDecide: boolean;
   generatedAtIso: string;
