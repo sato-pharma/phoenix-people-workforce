@@ -844,6 +844,24 @@ export const MODULES = [
     keywords: ["marketing request", "marketing requests", "venue", "venues", "pharmacy code", "distributor code", "makhzan", "wholesaler", "marketing roi", "verified capture", "صيدلية"],
     tables: ["marketing_", "venue", "pharmacy", "customer_pharmacy"],
   },
+  // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the nightly pharmacy-code
+  // sync's rule took `marketing` to 4,074 bytes of pointer, over the 4,000-byte margin. How a distributor
+  // code reaches the sales master is the clean cut: the resolver, not-found codes and the sync are one
+  // family, read apart from a request's approval or a venue's validation. `marketing` KEEPS EVERY GLOB IT
+  // HAD, so these files load the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "marketing-pharmacy-codes",
+    title: "Marketing pharmacy codes — the resolver, not-found codes and the nightly sync",
+    scope: "How a distributor code on a marketing pharmacy reaches the sales master: the code resolver, why a code reads not found, typos against geography, zero padding, and the nightly pharmacy-code sync with its hidden vendors.",
+    globs: [
+      "src/lib/marketing-requests/sales-code-sync*",
+      "app/api/cron/marketing-pharmacy-code-sync/**",
+      "tests/marketing-pharmacy-code-sync*",
+      "supabase/migrations/*marketing_pharmacy*",
+    ],
+    keywords: ["pharmacy code sync", "pharmacy-code sync", "hidden vendor", "not found code", "code resolver", "marketing_pharmacy_distributor_codes"],
+    tables: ["marketing_pharmacy_distributor_codes"],
+  },
   // 🔴 SPLIT 2026-10-16, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: `marketing` had 85 bytes
   // of pointer left under the 4,000-byte margin `tests/module-memory.test.ts` holds (3,915), and the
   // hourly fact rebuild's period-read rule took it to 4,085. The ROI half is the clean cut — the verdict
@@ -883,6 +901,24 @@ export const MODULES = [
     ],
     keywords: ["doctor list check", "doctor-list check", "list check", "on the rep's list", "two photos", "finance ageing"],
     tables: ["marketing_customer_list_checks"],
+  },
+  // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: the careers-page rules took
+  // `recruitment` to 4,295 bytes of pointer, over the 4,000-byte margin. The Job Posts page and the careers
+  // page are the clean cut: none of it is read while working a candidate, a CV or an offer. `recruitment`
+  // KEEPS EVERY GLOB IT HAD, so these files load the PAIR and nothing that used to arrive stops arriving.
+  {
+    id: "recruitment-job-posts",
+    title: "Job Posts and the careers page — the picture, the Publish press and the guard",
+    scope: "The Job Posts page: titles, the drawn picture and its designs, the Publish press that makes one satopharma.com careers card, the Close press, the Arabic saved per title, and the guard of the careers page against open requisitions.",
+    globs: [
+      "src/lib/recruitment/job-posts/**",
+      "src/components/recruitment/job-post*",
+      "app/api/recruitment/job-posts/**",
+      "app/**/recruitment/job-posts/**",
+      "tests/recruitment-job-post*",
+    ],
+    keywords: ["job post", "job posts", "careers page", "careers card", "publish to careers", "integration token", "apply route"],
+    tables: ["ats_job_post_titles"],
   },
   {
     id: "recruitment",

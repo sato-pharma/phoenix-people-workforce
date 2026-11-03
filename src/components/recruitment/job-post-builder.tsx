@@ -28,7 +28,7 @@
 // 🔒 One form design (form-kit), square corners, the shared admin depth tokens, and no horizontal
 // scroll at any width. Every panel wears the dark header band (adminPanelHeaderClassName).
 
-import { ArrowDown, ArrowUp, Check, Download, FileArchive, PencilLine, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Download, FileArchive, PencilLine, Plus, RotateCcw, Save, Send, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -38,6 +38,7 @@ import {
   adminRecessedDepthClassName,
   adminSoftDepthClassName,
 } from "@/components/admin/admin-design-tokens";
+import { JobPostPublishDialog } from "@/components/recruitment/job-post-publish-dialog";
 import { patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { useCspNonce } from "@/components/security/csp-nonce-provider";
 import { CheckTile, FormError, FormField } from "@/components/ui/form-kit";
@@ -77,6 +78,7 @@ type Props = {
   areaGroups: Array<{ label: string; areas: string[] }>;
   lines: string[];
   apply: { whatsapp: string; careers: string };
+  canPublish: boolean;
 };
 
 const NEW = "__new__";
@@ -105,7 +107,7 @@ function emptyDraft(): JobPostTitleDraft {
 }
 
 function draftOf(title: JobPostTitle): JobPostTitleDraft {
-  const { id: _id, updatedAt: _updatedAt, ...draft } = title;
+  const { descriptionAr: _descriptionAr, id: _id, titleAr: _titleAr, updatedAt: _updatedAt, ...draft } = title;
   return { ...draft, duties: draft.duties.map((l) => ({ ...l })), needs: draft.needs.map((l) => ({ ...l })) };
 }
 
@@ -338,7 +340,7 @@ function LinesEditor({
   );
 }
 
-export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Props) {
+export function JobPostBuilder({ initialTitles, areaGroups, lines, apply, canPublish }: Props) {
   const [titles, setTitles] = useState(initialTitles);
   const [selectedId, setSelectedId] = useState<string>(initialTitles[0]?.id ?? NEW);
   const [draft, setDraft] = useState<JobPostTitleDraft>(initialTitles[0] ? draftOf(initialTitles[0]) : emptyDraft());
@@ -356,6 +358,7 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const [pickedArea, setPickedArea] = useState<string | null>(null);
   const [assets, setAssets] = useState<JobPostAssets | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [fits, setFits] = useState<Partial<Record<JobPostTemplateKey, PostFit>>>({});
   const [mainFit, setMainFit] = useState<PostFit | undefined>(undefined);
   // Words typed over the picture itself, this post only (see the header). `baked` is what the loaded
@@ -590,9 +593,24 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
   const dutiesReady = saveDraft.duties.length;
   const needsReady = saveDraft.needs.length;
   const templateName = JOB_POST_TEMPLATES.find((t) => t.key === template);
+  const savedTitle = titles.find((title) => title.id === selectedId) ?? null;
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      {publishing && savedTitle ? (
+        <JobPostPublishDialog
+          areaNoun={areaScope}
+          areas={areas}
+          draft={saveDraft}
+          edits={edits}
+          line={postLine}
+          onArabicSaved={(arabic) => setTitles((current) => current.map((title) => (title.id === savedTitle.id ? { ...title, ...arabic } : title)))}
+          onClose={() => setPublishing(false)}
+          regionOf={(area) => areaGroups.find((group) => group.areas.includes(area))?.label ?? null}
+          saved={savedTitle}
+          template={template}
+        />
+      ) : null}
       {/* ── The picture: large, as tall as the screen, typed on where it is printed ── */}
       <div className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:self-start">
         <section className={panelClassName}>
@@ -635,8 +653,14 @@ export function JobPostBuilder({ initialTitles, areaGroups, lines, apply }: Prop
                     <FileArchive aria-hidden className="h-4 w-4" /> {busy === "zip" ? `Drawing ${areas.length + 1}…` : "All (ZIP)"}
                   </button>
                 ) : null}
+                {canPublish ? (
+                  <button className={phxButtonPrimaryClassName} disabled={busy !== null || Boolean(mainFit?.limited) || problems.length > 0 || dirty || !savedTitle} onClick={() => setPublishing(true)} type="button">
+                    <Send aria-hidden className="h-4 w-4" /> Publish
+                  </button>
+                ) : null}
               </span>
             </div>
+            {canPublish && (dirty || !savedTitle) ? <p className="text-xs font-semibold text-slate-600">Save the job title to publish it to the careers page.</p> : null}
             {mainFit?.limited ? <p className="text-xs font-semibold text-red-700">{TOO_LONG_MESSAGE}</p> : null}
             {unmapped ? (
               <p className="text-xs font-semibold text-amber-700">

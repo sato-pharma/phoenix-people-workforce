@@ -2955,6 +2955,13 @@ import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold
 import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
 import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
+import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
+import { runWhatsappHandsetClockTests } from "./whatsapp-handset-clock.test.ts";
+import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-sync-job.test.ts";
+import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconciliation.test.ts";
+import { runCrmIReports360HoldoutsTests } from "./crm-ireports360-holdouts.test.ts";
+import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
+import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11737,6 +11744,13 @@ await runTest(
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
+await runTest("the checks on GitHub (3 Nov 2026): every scheduled workflow is watched, an overdue one alerts, and being blind fails rather than reading clean", runGithubWorkflowWatchTests);
+await runTest("the HR handset's 14-day clock (3 Nov 2026): the stages, him only, honest wording, and a lost echoes field is not a routing fault", runWhatsappHandsetClockTests);
+await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts hidden, both guards survive, and it refuses a mass retirement", runMarketingPharmacyCodeSyncJobTests);
+await runTest("approved expenses against the payslips (3 Nov 2026): four findings, held is not unpaid, carried is an inference, and the check reads three salary columns and writes nothing", runExpensePayslipReconciliationTests);
+await runTest("who still records only in iReports360 (3 Nov 2026): vendor rows and real partners only, a day Phoenix holds is not only there, leave is its own line, and the tab offers no action", runCrmIReports360HoldoutsTests);
+await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
+await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

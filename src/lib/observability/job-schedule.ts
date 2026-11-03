@@ -124,6 +124,20 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // minutes no other job holds (*/2 takes every even one). Must match scripts/cronjob-sync.mjs
   // exactly, and lands in the SAME sitting as its cron job. NO watchingSince: a new declaration.
   { slug: "phoenix-recruitment-whatsapp-reask", kind: "cron", schedule: "1,31 * * * *", graceSeconds: 1 * HOUR },
+  // 02:47 Cairo nightly (owner, 2026-11-03): the Sales -> Marketing pharmacy-code sync, until now run only
+  // by hand. A minute no other job holds. Must match scripts/cronjob-sync.mjs exactly, in the SAME sitting.
+  // NO watchingSince: a new declaration.
+  { slug: "phoenix-marketing-pharmacy-code-sync", kind: "cron", schedule: "47 2 * * *", graceSeconds: 2 * HOUR },
+  // 10:57 Cairo, every day (owner, 2026-11-03: the nightly code backup, read from Drive). Under the period.
+  { slug: "phoenix-code-backup-verify", kind: "cron", schedule: "57 10 * * *", graceSeconds: 2 * HOUR },
+  // 10:37 Cairo, every day including Friday (owner, 2026-11-03: the HR handset's 14-day reminder). Under
+  // seven days it says nothing and still reports, so a quiet run is correct. A minute no other job holds.
+  // Must match scripts/cronjob-sync.mjs exactly, in the SAME sitting. NO watchingSince: a new declaration.
+  { slug: "phoenix-whatsapp-handset-reminder", kind: "cron", schedule: "37 10 * * *", graceSeconds: 2 * HOUR },
+  // Hourly on :21 (owner, 2026-11-03): when each check on GitHub last succeeded. The grace is under the
+  // hour, so one missed fire stays quiet only if the next one lands. Must match scripts/cronjob-sync.mjs
+  // exactly, in the SAME sitting. NO watchingSince: a new declaration.
+  { slug: "phoenix-github-workflow-watch", kind: "cron", schedule: "21 * * * *", graceSeconds: 30 * MINUTE },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match

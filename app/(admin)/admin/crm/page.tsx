@@ -11,6 +11,7 @@ import { CrmAccountSetupPanel } from "@/components/crm/crm-account-setup-panel";
 import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
+import { CrmIReports360HoldoutsPanel } from "@/components/crm/crm-ireports360-holdouts-panel";
 import { CrmPhoenixTeamReadinessPanel } from "@/components/crm/crm-phoenix-team-readiness-panel";
 import { CrmPhoenixTeamStartsPanel } from "@/components/crm/crm-phoenix-team-starts-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
@@ -28,6 +29,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitRecoveredChains } from "@/lib/double-visit-analytics/service";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
+import { loadIReports360Holdouts, type IReports360HoldoutsData } from "@/lib/crm/ireports360-holdouts-server";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
@@ -51,8 +53,8 @@ function stringParam(value: string | string[] | undefined) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | null {
-  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" || value === "account_setup"
+function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | "ireports360_holdouts" | null {
+  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" || value === "account_setup" || value === "ireports360_holdouts"
     ? value
     : null;
 }
@@ -140,6 +142,10 @@ export default async function CrmHubPage({
     ]);
     syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
     derivedView = <CrmRecoveredChainsPanel chains={recoveredChains} />;
+  } else if (view === "ireports360_holdouts") {
+    // Its panel is built below, from the same team rows as the Start button.
+    activeTab = "ireports360_holdouts";
+    syncPanel = { configured: isIReports360Configured(), latestSyncRuns: await getLatestVisitsSyncRuns() };
   } else {
     // getCrmMasterData normalizes any unknown value back to "visits".
     const dataset = (typeof params.dataset === "string" ? params.dataset : "visits") as CrmMasterDataset;
@@ -207,6 +213,17 @@ export default async function CrmHubPage({
       return null;
     }),
   ]);
+
+  if (view === "ireports360_holdouts") {
+    let holdouts: IReports360HoldoutsData | null = null;
+    let holdoutsError: string | null = null;
+    try {
+      holdouts = await loadIReports360Holdouts({ teams: phoenixTeamStarts?.teams ?? null });
+    } catch (error) {
+      holdoutsError = error instanceof Error ? error.message : "Unable to read this right now.";
+    }
+    derivedView = <CrmIReports360HoldoutsPanel data={holdouts} error={holdoutsError} />;
+  }
 
   return (
     <div className="space-y-5">
