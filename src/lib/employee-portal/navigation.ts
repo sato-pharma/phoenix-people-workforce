@@ -1,4 +1,4 @@
-import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
+import { parseRoleStrict, permissionMatrix, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
@@ -14,6 +14,8 @@ export type EmployeePortalNavVisibility = {
   showExcusesTab?: boolean;
   showExpenseActionTab?: boolean;
   showExpenseDashboardTab?: boolean;
+  /** Only for someone who can read claims but cannot submit one: for everyone else My claims is on Submit Expense. */
+  showExpenseSubmissionsTab?: boolean;
   showMyVisitsTab?: boolean;
   showDeductionsTab?: boolean;
   showIncentiveTab?: boolean;
@@ -696,6 +698,14 @@ export function resolveEmployeePortalNavVisibility(
   // she has no outstation expenses of her own, so both expense tabs stay hidden for her.
   const showExpenseActionTab = !isMedicalRep && !isPortalHrOfficeStaff;
   const showExpenseDashboardTab = !isMedicalRep && !isPortalHrOfficeStaff;
+  // Owner, 2026-11-03: "regarding the tab called expense submissions is it relevant?" Not for anyone
+  // who can submit: its page only forwards them to Submit Expense, which holds My claims. It stays
+  // for the viewers who can read claims but not submit one, the Finance Manager and the CEO.
+  const rolePermissions = permissionMatrix[resolvedRole];
+  const showExpenseSubmissionsTab =
+    showExpenseDashboardTab &&
+    Boolean(rolePermissions?.expenses?.includes("read")) &&
+    !rolePermissions?.outstation?.includes("create");
   // "My Visits" (CRM field visits) and Deductions are owner-requested exclusions for
   // Talent Acquisition specifically — she is HR/office staff, not a field employee.
   const showMyVisitsTab = !isPortalHrOfficeStaff;
@@ -782,6 +792,7 @@ export function resolveEmployeePortalNavVisibility(
         isPortalHrOfficeStaff),
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
+    showExpenseSubmissionsTab: isA3Account ? false : showExpenseSubmissionsTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
     showMarketingAllRequestsTab,
     showMarketingCustomerDatabaseTab,

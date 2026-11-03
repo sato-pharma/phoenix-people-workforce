@@ -197,6 +197,13 @@ export function runEmployeePortalNavigationTests() {
   const plainEmployee = resolveEmployeePortalNavVisibility("Employee");
   assert.equal(plainEmployee.showExpenseActionTab, true, "Any non-Medical-Rep employee should see Submit Expense");
   assert.equal(plainEmployee.showExpenseDashboardTab, true, "Any non-Medical-Rep employee should see Expense Dashboard");
+  // Owner, 2026-11-03: the Expense Submissions tab is gone for anyone who can submit; My claims is on Submit Expense.
+  for (const role of ["Employee", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager", "Medical Rep"]) {
+    assert.equal(resolveEmployeePortalNavVisibility(role, role).showExpenseSubmissionsTab, false, `${role} can submit, so the tab is gone`);
+  }
+  for (const role of ["Finance Manager", "CEO"]) {
+    assert.equal(resolveEmployeePortalNavVisibility(role, role).showExpenseSubmissionsTab, true, `${role} reads claims without submitting, so the tab stays`);
+  }
   assert.equal(plainEmployee.showVacationApprovalsTab, false, "Plain Employee should not see Vacation Approvals");
   assert.equal(plainEmployee.showExcuseApprovalsTab, false, "Plain Employee should not see Excuse Approvals");
   assert.equal(plainEmployee.showPlanApprovalsTab, false, "Plain Employee should not see Plan Approvals");
