@@ -4769,6 +4769,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    // Any rep, a switch and the dates (owner, 2026-11-03: "open or close this feature by a toggle or be able to
+    // control duration for any rep"). The Super Admin's ALONE: `canManageRepExceptions` is the enforcing gate
+    // inside the page and the route; this card only draws the link.
+    href: "/admin/field-crm/rep-exceptions",
+    icon: CalendarClock,
+    label: "Rep Exceptions",
+    description: "Switch the unplanned visit limit off for any rep and set the dates it applies.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // One rep's polyclinics, a switch and a number on each (owner, 2026-11-02: "I can remove the cap for a rep in
     // the chosen polyclinic, or I can increase the ceiling of the cap"). The Super Admin's ALONE:
     // `canManageVenueCaps` is the enforcing gate inside the page and the route; this card only draws the link.
@@ -5421,6 +5432,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm/visit-recording",
           // A rep's polyclinics and their daily number: the same Super Admin's own controls over a rep's field work.
           "/admin/field-crm/venue-caps",
+          // Any rep's unplanned visit limit and its dates: the same Super Admin's controls.
+          "/admin/field-crm/rep-exceptions",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a
           // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).

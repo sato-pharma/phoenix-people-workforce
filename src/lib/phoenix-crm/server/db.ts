@@ -11,6 +11,7 @@ import { ApiError } from "@/lib/http/api-errors";
 import { CUSTOMER_PHONE_ERROR } from "@/lib/phoenix-crm/entry-rules";
 import { SHARED_PLACE_DAY_FULL_TEXT } from "@/lib/phoenix-crm/shared-place-rules";
 import { OFFPLAN_DAY_FULL_TEXT, OFFPLAN_WEEK_FULL_TEXT } from "@/lib/phoenix-crm/unplanned-rules";
+import { REP_EXCEPTION_DATES_TEXT } from "@/lib/phoenix-crm/rep-exception-rules";
 import { VENUE_CAP_OUT_OF_RANGE_TEXT } from "@/lib/phoenix-crm/venue-cap-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -65,6 +66,10 @@ const REFUSALS: Record<string, Refusal> = {
   // the number is not above the company's, both answered by phoenix_crm_venue_cap_set under the venue's lock.
   venue_not_on_seat: { status: 404, message: "This polyclinic is no longer on this rep's territory. Reload the page." },
   venue_cap_out_of_range: { status: 400, message: VENUE_CAP_OUT_OF_RANGE_TEXT },
+  // The Super Admin's Rep Exceptions page (owner, 2026-11-03), answered by phoenix_crm_rep_exception_set.
+  rep_exception_no_rep: { status: 404, message: "This person holds no rep territory now. Reload the page." },
+  rep_exception_action: { status: 400, message: "Reload the page and try again." },
+  rep_exception_dates: { status: 400, message: REP_EXCEPTION_DATES_TEXT },
   // The off-plan cap (owner, 2026-10-10): two doctors a day, eight a week, out of plan. The database's
   // own BEFORE INSERT trigger, so it answers the rep's save, a manager's entry and the Super Admin's.
   offplan_day_full: { status: 409, message: OFFPLAN_DAY_FULL_TEXT },
