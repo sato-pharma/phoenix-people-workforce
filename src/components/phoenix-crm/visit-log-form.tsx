@@ -820,6 +820,12 @@ export function VisitLogForm({
         // Only no signal is held. A refusal is an answer, and it is shown here as it always was.
         if (isRetryableFailure(error)) {
           leaveVisitWaiting(queueOwner, visitId);
+          // Log it again across 02:00 is a new visit under a new id, and the phone now holds that one, so the old
+          // row goes here. The pass walks only waiting rows, so nothing else would ever clear it.
+          if (retryOf && retryOf.visitId !== visitId) {
+            forgetHeldVisit(queueOwner, retryOf.visitId);
+            reportVisitResend(retryOf, "relogged");
+          }
           setSaving(false);
           onQueued?.();
           return;

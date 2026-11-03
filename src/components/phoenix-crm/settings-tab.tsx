@@ -979,7 +979,7 @@ export function SettingsTab({
           title="Visit retry"
         >
           {noticeNote("visit-resend", "mb-3")}
-          <p className="text-sm font-semibold text-slate-600">
+          <p className="break-words text-sm font-medium leading-6 text-slate-500">
             {view.settings.visitResendEnabled
               ? "On. A visit that loses signal stays on the rep's phone and sends itself for up to two hours, until 02:00."
               : "Off. A visit that loses signal asks the rep to try again, as it did before."}

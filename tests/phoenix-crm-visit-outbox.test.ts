@@ -144,6 +144,15 @@ function checkTheFormKeepsThePressFirst(): void {
   assert.ok(onlyNoSignal !== -1 && waiting > onlyNoSignal, "🔴 only no signal is held: a refusal on the first press is shown as it always was");
   assert.ok(form.indexOf("forgetHeldVisit(queueOwner, visitId);", sent) > sent, "a save that landed leaves the phone");
   assert.ok(form.includes('await crmPost<SavedVisit>("/api/phoenix-crm/visits", body, "visit")'), "not kept, the save behaves as it always did");
+  const replaced = form.indexOf("if (retryOf && retryOf.visitId !== visitId) {", waiting);
+  assert.ok(replaced !== -1 && form.indexOf("forgetHeldVisit(queueOwner, retryOf.visitId);", replaced) - replaced < 120, "a row logged again under a new id goes once the phone holds the new one, or it stays for ever");
+
+  const tab = stripComments(readFileSync("src/components/phoenix-crm/visits-tab.tsx", "utf8"));
+  assert.ok(tab.includes("if (waitingHere < waitingBefore.current) reloadDay();"), "🔴 a held visit that lands while the rep is looking appears in the day, it does not just vanish");
+
+  const row = stripComments(readFileSync("src/components/phoenix-crm/visit-outbox-note.tsx", "utf8"));
+  assert.ok(row.includes("heldRefusalSentence(entry.refusalMessage)"), "the row draws the sentence through the filter");
+  assert.ok(!row.includes("{entry.refusalMessage}"), "and never the server's sentence raw");
 }
 
 function checkTheList(): void {

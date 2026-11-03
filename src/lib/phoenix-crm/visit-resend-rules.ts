@@ -40,6 +40,22 @@ export const VISIT_TOO_LATE_TITLE = "Not sent in time";
 export const VISIT_LOG_AGAIN = "Log it again";
 export const VISIT_REMOVE = "Remove";
 
+/**
+ * The server's own sentence for the held row, or null when it must not be drawn there.
+ *
+ * 🔴 A SENTENCE ABOUT WHERE THE REP STANDS IS UNTRUE ON THIS ROW. Those refusals (`VISIT_AWAY_FROM_PLACE`,
+ * `NO_FIX_FOR_A_VISIT`, the rough-reading ones in `entry-rules.ts`) were written for the form, where a press has
+ * just read the phone. A resend carries the reading from the press, so "your location now" is false, and the row
+ * has no Log visit button to tap. The title and the two buttons stay; Log it again reads the phone afresh and the
+ * form says whatever is true then.
+ */
+const SPEAKS_OF_THE_READING = /location|log visit/iu;
+
+export function heldRefusalSentence(message: string | null): string | null {
+  const sentence = message?.trim();
+  return sentence && !SPEAKS_OF_THE_READING.test(sentence) ? sentence : null;
+}
+
 export type QueuedVisitStatus = "waiting" | "refused" | "too_late";
 
 /** How an entry ended, as the resend log files it. A CHECK on the table is the one list of these. */

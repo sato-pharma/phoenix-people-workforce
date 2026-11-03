@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 
-import { deviceClockSkewMinutes, parseQueuedSeconds } from "../src/lib/phoenix-crm/entry-rules.ts";
+import { deviceClockSkewMinutes, NO_FIX_FOR_A_VISIT, parseQueuedSeconds, ROUGH_FIX_FOR_A_VISIT, roughFixForAVisit, UNVALIDATED_CUSTOMER_VISIT_REFUSED, VISIT_AWAY_FROM_PLACE } from "../src/lib/phoenix-crm/entry-rules.ts";
 import {
   answerToRefusal,
+  heldRefusalSentence,
   isReadyToSend,
   isTooLateToSend,
   loggedAgainStart,
@@ -29,7 +30,18 @@ const MINUTE = 60_000;
 /** 3 Nov 2026 is winter time, so Cairo is two hours ahead and the 02:00 close of the visit day is 00:00 UTC. */
 const CLOSE_OF_DAY = Date.parse("2026-11-03T00:00:00.000Z");
 
+function checkTheSentenceOnTheRow(): void {
+  for (const untrueHere of [VISIT_AWAY_FROM_PLACE, NO_FIX_FOR_A_VISIT, ROUGH_FIX_FOR_A_VISIT, roughFixForAVisit({ accuracyMeters: 180 } as Parameters<typeof roughFixForAVisit>[0])]) {
+    assert.equal(heldRefusalSentence(untrueHere), null, `a resend carries the press's reading, so this is untrue on the row: ${untrueHere}`);
+  }
+  assert.equal(heldRefusalSentence(UNVALIDATED_CUSTOMER_VISIT_REFUSED), UNVALIDATED_CUSTOMER_VISIT_REFUSED, "a sentence about the rep's own work still shows");
+  assert.equal(heldRefusalSentence("This customer has left the list."), "This customer has left the list.");
+  assert.equal(heldRefusalSentence(null), null);
+  assert.equal(heldRefusalSentence("   "), null);
+}
+
 export function runPhoenixCrmVisitResendRulesTests(): void {
+  checkTheSentenceOnTheRow();
   checkTheDuration();
   checkTooLate();
   checkReady();

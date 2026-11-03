@@ -5,12 +5,13 @@
  *
  * 🔴 GOLDEN RULE #1. Everything here is about HIS work and what he can do next. Not a word about a check, a
  * distance, a clock or lateness: the sentences are the constants in `visit-resend-rules.ts`, and the only other
- * words on this screen are the server's own, shown as they came.
+ * words on this screen are the server's own, less any about where the rep stands (`heldRefusalSentence`).
  */
 
 import { CrmBlock, CrmButton, CrmNote, CrmPill } from "@/components/phoenix-crm/ui";
 import { forgetHeldVisit, reportVisitResend } from "@/components/phoenix-crm/visit-outbox-client";
 import {
+  heldRefusalSentence,
   VISIT_LOG_AGAIN,
   VISIT_REFUSED_TITLE,
   VISIT_REMOVE,
@@ -33,6 +34,7 @@ export function VisitOutboxNote({
 
   const waiting = entries.filter((entry) => entry.status === "waiting");
   const stuck = entries.filter((entry) => entry.status !== "waiting");
+  const sentenceOf = (entry: QueuedVisit) => (entry.status === "refused" ? heldRefusalSentence(entry.refusalMessage) : null);
 
   return (
     <CrmBlock className="border-b border-slate-100">
@@ -53,7 +55,7 @@ export function VisitOutboxNote({
         {stuck.map((entry) => (
           <CrmNote key={entry.visitId} title={entry.status === "refused" ? VISIT_REFUSED_TITLE : VISIT_TOO_LATE_TITLE} tone="warn">
             <p className="font-black">{entry.customerName}</p>
-            {entry.status === "refused" && entry.refusalMessage ? <p>{entry.refusalMessage}</p> : null}
+            {sentenceOf(entry) ? <p>{sentenceOf(entry)}</p> : null}
             <div className="mt-2 flex flex-wrap gap-2">
               <CrmButton onClick={() => onLogAgain(entry)} size="sm" variant="primary">
                 {VISIT_LOG_AGAIN}

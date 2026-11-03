@@ -19,7 +19,7 @@
  * AM and PM are counted apart on every figure and never added together (the call-rate rule).
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { AddPharmacyScreen } from "@/components/phoenix-crm/add-pharmacy";
@@ -1170,6 +1170,15 @@ export function VisitsTab({
   const heldOwner = view?.heldVisitsOwnerHrId ?? null;
   const allHeld = useHeldVisits(heldOwner);
   const held = allHeld.filter((entry) => entry.seatId === seatId);
+  // 🔴 A HELD VISIT THAT LANDS WHILE THE REP IS LOOKING MUST APPEAR, NOT VANISH. The row goes when the send lands, and
+  // nothing else reads the day again, so the visit and the AM and PM counts stayed stale until the rep left and came back.
+  const waitingHere = held.filter((entry) => entry.status === "waiting").length;
+  const waitingBefore = useRef(waitingHere);
+  const reloadDay = day.reload;
+  useEffect(() => {
+    if (waitingHere < waitingBefore.current) reloadDay();
+    waitingBefore.current = waitingHere;
+  }, [reloadDay, waitingHere]);
   const [retryOf, setRetryOf] = useState<QueuedVisit | null>(null);
 
   // 🔴 THE REP'S OWN READS START WITH THE DAY'S, NOT AFTER IT (performance work, 24 Oct 2026). The
