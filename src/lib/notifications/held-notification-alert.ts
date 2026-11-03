@@ -13,7 +13,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //
 // Deliberately IN-APP + TELEGRAM ONLY, never email: the gate lives inside sendPhoenixEmail, so
 // alerting by email could re-enter the gate and recurse. Passing explicit `channels` short-circuits
-// policy resolution in resolveBasePolicyChannels, so no email delivery is ever created here.
+// policy resolution in resolveBasePolicyChannels, and operator-watch-channel-guard.ts stops the
+// Telegram-failure re-send, so no email delivery is ever created here.
 //
 // Best-effort by contract: never throws, and never changes the hold decision. An alert failure must
 // not turn a held send into a second, self-inflicted outage — the hold itself is already recorded

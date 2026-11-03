@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: d96338c4-b2ab-41ed-aa4e-ed85e9af64ce
-  modified: 2026-10-05T19:06:15.264Z
+  modified: 2026-11-03T04:40:25.008Z
 ---
 
 Measured on production 2026-10-05 over every day Phoenix CRM has been live (3–5 Oct, 332 rep-saved
@@ -31,7 +31,9 @@ things; they just never open a folded step. `samples_given` is literally `{}` on
 form's fold, never a defect in the loader — do not "fix" the loader, and do not widen a query
 looking for rows that were never typed.
 
-**The fold itself is the owner's own ruling** (2026-10-02, `phoenix-crm` module memory: *"ADD VISIT
+**Corrected 2026-11-03: the fold is history.** `.claude/rules/phoenix-crm-visits.md` says objection and next step have been open and optional since 6 Oct 2026 (his word). Read that file, not this paragraph, for the form today; the figures above are the 3 to 5 Oct measure only.
+
+**The fold itself was the owner's own ruling** (2026-10-02, `phoenix-crm` module memory: *"ADD VISIT
 KEEPS EVERY POINT, AND ITS THREE OPTIONAL STEPS START FOLDED"* — "I don't need too many steps and too
 many clicks by the reps"), so unfolding one needs his word first. The trade it bought is real and
 measured: the visit form is fast, and the two fields that make a CRM a CRM are empty.

@@ -1,0 +1,22 @@
+---
+name: a-real-browser-press-can-run-on-a-github-runner
+description: "When the laptop's memory floor stops a dev server, a one-off job on a throwaway branch runs next dev and Playwright on a GitHub runner against staging only."
+metadata:
+  node_type: memory
+  type: reference
+  originSessionId: 0c04efb3-07cb-4951-a5b4-067a48ed21f3
+  modified: 2026-11-03T06:14:38.285Z
+---
+
+The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free memory fell to 2,018 MB), and hosted staging serves an old revision with `/api/dev-auth` answering 404. A workflow on a throwaway branch with no pull request did the press instead, about 10 minutes a run. Copies of both files: `~/.claude/docs/visit-press-2026-11-03/` (`visit-press.yml`, `press.mjs`). Used for [[visit-retry-post-deploy-reads-owed-2026-11-03]].
+
+**What keeps it safe:** `STAGING_SUPABASE_SERVICE_ROLE_KEY` and no email, Telegram or WhatsApp keys. A step decodes the anon key and refuses unless its ref is staging and its role is anon. Read that key from `ci.yml` at run time; written into a commit it trips gitleaks' `jwt` rule. Merge the code under test into the throwaway branch, and delete the branch afterwards.
+
+**What made it work:**
+- `PHOENIX_DEV_HEAP_MB: "5632"`. At the launcher's 4,096 MB cap the server restarted mid-run and pages stalled.
+- A warm-up step that compiles the pages with curl before the press.
+- One rep per day of off-plan presses: two are allowed, then the form stops. `dev-auth` answers 409 when the role and hr id disagree; read `app_auth_users` on staging first.
+- `context.setOffline(true)` to cut the network; `page.route` to stage a refusal, so no visit is saved.
+- Decide a landing from local storage and the day's own count. "The text went away" also happens while the page reloads, and that gave one false "landed".
+
+**Tooling traps:** commit and push in separate commands so the secret scan sees the commit.
