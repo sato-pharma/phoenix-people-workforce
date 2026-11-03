@@ -22,6 +22,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔒 **PROBATION SALES ARE THE TERRITORY'S FIGURE AND FEED NOTHING** (owner, 2026-11-03). `src/lib/probation/intelligence/sales-evidence.ts` reads through Employee 360's `getEmployeeSales` (published closing, credited by seat tenure, confidential products masked for the viewer), shown on the consolidated report and the evaluator's feedback page to a viewer with sales read. Never a score, readiness or `system_evidence` input. An unpublished month says "Not published yet", a missing target stays missing, a failed read is said. Pinned by `tests/approver-context.test.ts`.
+
 
 - 🔒 **THE "LEFT" WORD ONLY SAYS SO** (owner, 2026-11-03: "build 1 &3 & 4"; he was told it "will not close or decide any probation case"). `employeeLeftWord` beside a tracker name and `readProbationEmployeeLeft` on the case page report that someone left or declined while their case is open. Neither writes, and the decision path never reads them. The dashboard and the milestone emails already drop these people through `filterResolvedProbationCases`; never "tidy" the flag into closing the case. Pinned by `tests/hiring-leavers.test.ts`.
 ### Owner rules (moved from AGENTS.md §4)

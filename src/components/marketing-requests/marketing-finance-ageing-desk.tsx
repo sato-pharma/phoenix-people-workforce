@@ -6,6 +6,7 @@ import {
   adminPanelHeaderClassName,
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-tokens";
+import { marketingCustomer360Href } from "@/lib/customer-360/hrefs";
 import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 import {
   financeAgeingDaysLabel,
@@ -32,6 +33,16 @@ function DaysChip({ row }: { row: MarketingFinanceAgeingRow }) {
   );
 }
 
+/** Beside the customer's name, which itself opens the request: the second door goes to the customer. */
+function Customer360Link({ row, show }: { row: MarketingFinanceAgeingRow; show: boolean }) {
+  if (!show || !row.customerId) return null;
+  return (
+    <Link className="block text-phx-xs font-bold text-orange-700 hover:underline" href={marketingCustomer360Href(row.customerId)}>
+      Customer 360
+    </Link>
+  );
+}
+
 function RequestLink({ row }: { row: MarketingFinanceAgeingRow }) {
   return (
     <Link className="break-words font-bold text-slate-900 hover:text-orange-700 hover:underline" dir="auto" href={row.href}>
@@ -45,7 +56,13 @@ function RequestLink({ row }: { row: MarketingFinanceAgeingRow }) {
  * row does is link out to its request. Six columns because the fits-the-screen rule is merge, never
  * shrink or scroll: type rides with the customer, line with the requester.
  */
-export function MarketingFinanceAgeingDesk({ report }: { report: MarketingFinanceAgeing }) {
+export function MarketingFinanceAgeingDesk({
+  canOpenCustomer360 = false,
+  report,
+}: {
+  canOpenCustomer360?: boolean;
+  report: MarketingFinanceAgeing;
+}) {
   const { rows, totals } = report;
 
   if (rows.length === 0) {
@@ -136,6 +153,7 @@ export function MarketingFinanceAgeingDesk({ report }: { report: MarketingFinanc
                   <td className="px-3 py-2">
                     <RequestLink row={row} />
                     <p className="break-words text-phx-xs text-slate-500" dir="auto">{row.requestType}</p>
+                    <Customer360Link row={row} show={canOpenCustomer360} />
                   </td>
                   <td className="px-3 py-2">
                     <p className="break-words font-semibold text-slate-800">{row.requesterName}</p>
@@ -159,6 +177,7 @@ export function MarketingFinanceAgeingDesk({ report }: { report: MarketingFinanc
                 <span className="shrink-0"><DaysChip row={row} /></span>
               </div>
               <p className="mt-1 break-words text-phx-sm text-slate-600" dir="auto">{row.requestType}</p>
+              <Customer360Link row={row} show={canOpenCustomer360} />
               <p className="mt-2 break-words text-sm font-semibold text-slate-800">{row.requesterName}</p>
               <p className="break-words text-phx-xs text-slate-500">{row.lineName}</p>
               <p className="mt-2 text-sm font-bold text-slate-900">{money(row.estimatedCost)}</p>

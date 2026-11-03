@@ -94,6 +94,7 @@ import {
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError, logWarning } from "@/lib/observability/log";
+import { marketingInboxWaitingLabel, summarizeMarketingInboxWaiting } from "@/lib/marketing-requests/inbox-waiting";
 import {
   planRestartedApprovalSteps,
   resubmitBasisChanges,
@@ -9741,6 +9742,61 @@ export type MarketingApproverBadgeStep = {
   updatedAt: string | null;
   workflowStepId: number | null;
 };
+
+/**
+ * The Approvals hub's one line about this inbox (owner, 2026-11-03): how much waits there and for how
+ * long, never the requests themselves. Its count is the badge's, gating steps on live requests, so the
+ * two never disagree. No linked identity means no inbox to speak of. A failed read is said in the line.
+ */
+export async function getMarketingInboxQueueLink(
+  access: AccessContext,
+  href: string,
+): Promise<{ href: string; label: string } | null> {
+  const actorHrId = resolveEmployeeIdentityId(access);
+  if (!actorHrId) return null;
+  try {
+    const supabase = getSupabaseAdmin();
+    const gatingQuery = supabase
+      .from("marketing_request_approval_steps")
+      .select("request_id")
+      .eq("status", "current")
+      .eq("is_cc", false);
+    // The same gate as the badge below and the inbox's oversight section.
+    const gatingResult = await (canViewMarketingOversightQueue(access)
+      ? gatingQuery
+      : gatingQuery.in("assigned_hr_id", hrIdLookupKeys(actorHrId)));
+    if (gatingResult.error) throw gatingResult.error;
+    const gatingRows = (gatingResult.data ?? []) as Array<{ request_id: string }>;
+
+    const submittedAtById = new Map<string, string | null>();
+    for (const batch of chunk(Array.from(new Set(gatingRows.map((row) => row.request_id))))) {
+      const liveResult = await supabase
+        .from("marketing_requests")
+        .select("id, submitted_at")
+        .in("id", batch)
+        .eq("status", "pending_approval");
+      if (liveResult.error) throw liveResult.error;
+      for (const row of (liveResult.data ?? []) as Array<{ id: string; submitted_at: string | null }>) {
+        submittedAtById.set(row.id, row.submitted_at);
+      }
+    }
+
+    const label = marketingInboxWaitingLabel(
+      summarizeMarketingInboxWaiting({
+        count: gatingRows.filter((row) => submittedAtById.has(row.request_id)).length,
+        nowIso: new Date().toISOString(),
+        submittedAt: Array.from(submittedAtById.values()),
+      }),
+    );
+    return label ? { href, label } : null;
+  } catch (error) {
+    logWarning("Approvals hub could not read the Marketing inbox count; the line says so", {
+      context: { message: error instanceof Error ? error.message : String(error) },
+      labels: { event: "marketing_inbox_queue_link_unavailable" },
+    });
+    return { href, label: marketingInboxWaitingLabel(null) as string };
+  }
+}
 
 export type MarketingApproverBadge = { count: number; overdue: boolean };
 

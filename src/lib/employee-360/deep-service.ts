@@ -171,7 +171,7 @@ export function applyRestrictedProductFilter<T extends SalesRow>(
   return stripRestrictedRowsByName(rows, restrictedNames, (r) => r.product, true);
 }
 
-async function getEmployeeSales(subjectHrId: string, teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
+export async function getEmployeeSales(subjectHrId: string, teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
   // One window load for the whole company, then narrowed in memory (see sales-canonical.ts):
   // published closing months only, each month credited to whoever held the seat then, and a
   // manager's team taken from the seats he held — vacant rep seats included — not from his reps.

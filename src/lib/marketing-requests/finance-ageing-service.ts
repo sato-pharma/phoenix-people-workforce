@@ -128,6 +128,7 @@ export async function getMarketingFinanceAgeing(access: AccessContext): Promise<
     requestRows.map((row) => [
       row.id,
       {
+        customerId: row.customer_id,
         customerName: customerName.get(row.customer_id) ?? "Customer not on file",
         estimatedCost: Number(row.estimated_cost ?? 0),
         id: row.id,

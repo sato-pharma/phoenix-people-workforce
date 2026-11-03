@@ -227,6 +227,7 @@ const TWIN_RULES: readonly TwinRule[] = [
   // admin sales tool gives, and the destination both pages already name in their own source.
   { from: "/customer-360", to: SOS },
   { from: "/customer-360/:subjectId", to: SOS },
+  { from: "/customer-360/marketing-customer/:customerId", to: SOS },
   { from: "/sales", to: SOS },
   { from: "/sales/closing-corrections", to: SOS },
   { from: "/sales/customer-directory", to: SOS },

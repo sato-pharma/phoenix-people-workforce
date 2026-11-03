@@ -140,10 +140,13 @@ export function DirectOrderRequestDetail({
   // tracking their own order (reached from "My direct orders"). Only the return path differs —
   // sending a requester back to an approvals queue they may not even have would be a dead end.
   backLabel = "Back to Direct Orders Approvals",
+  customer360Href = null,
 }: {
   detail: DirectOrderApprovalDetail | null;
   backHref: string;
   backLabel?: string;
+  /** The pharmacy's Customer 360 page, for a viewer who may open it. The portal twin passes nothing. */
+  customer360Href?: string | null;
 }) {
   if (!detail) {
     return (
@@ -314,9 +317,16 @@ export function DirectOrderRequestDetail({
 
   return (
     <div className="space-y-5">
-      <Link href={backHref} className="text-sm font-bold text-orange-600 hover:text-orange-700">
-        ← {backLabel}
-      </Link>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <Link href={backHref} className="text-sm font-bold text-orange-600 hover:text-orange-700">
+          ← {backLabel}
+        </Link>
+        {customer360Href ? (
+          <Link href={customer360Href} className="break-words text-sm font-bold text-orange-600 hover:text-orange-700" dir="auto">
+            Open {detail.pharmacy?.pharmacyName ?? "this pharmacy"} in Customer 360
+          </Link>
+        ) : null}
+      </div>
 
       <section className={adminPanelClassName}>
         <header className={`flex flex-wrap items-center justify-between gap-2 ${adminPanelHeaderClassName} px-4 py-3`}>
