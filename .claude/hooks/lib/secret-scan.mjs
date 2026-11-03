@@ -20,6 +20,12 @@
 //
 // A TIMED-OUT SCAN WARNS AND ALLOWS, like a missing gitleaks does: a scanner that holds every push
 // for 90s is switched off within the hour, and the daily scheduled scan over `main` is the backstop.
+//
+// 🔴 A COMMAND THAT COMMITS AND PUSHES IS REFUSED, NOT SCANNED, BECAUSE NOTHING IT WILL SEND EXISTS YET.
+// This runs before the whole command starts. On 3 Nov 2026 `git add … && git commit … && git push`
+// read zero commits and carried a JWT out; the next push, with the commit in place, was refused for
+// it. `gitleaks git --staged` cannot answer it either, since that command's `git add` has not run:
+// on a JWT written but not yet added it exits 0, then 1 once added. Account: `docs/hook-dispatcher.md`.
 
 import { execFileSync } from 'node:child_process';
 import { statSync } from 'node:fs';
@@ -65,6 +71,36 @@ export function pushTargetDir(textBeforePush, baseCwd) {
     dir = resolve(dir ?? baseCwd ?? process.cwd(), p);
   }
   return dir && isDir(dir) ? dir : null;
+}
+
+// A quoted string names a command; it does not run one, and `-C "<a folder>"` is one word either way.
+const QUOTED = /"(?:\\.|[^"\\])*"|'[^']*'/g;
+
+// `git` anywhere in the segment rather than at its start: `timeout 60 git push`, `then git push` and
+// PowerShell's own `if ($?) { git push }` are all pushes. With quotes and comments gone, what is left
+// is one command's words, and a false refusal only costs splitting the command.
+const runsGit = (verbs) =>
+  new RegExp(String.raw`(?:^|[\s{])git(?:\.exe)?\s+(?:-[cC]\s+(?:\\\s|\S)+\s+|--?\S+\s+)*(?:${verbs})(?:\s|$)`, 'i');
+
+// `pull` and `rebase` are left out: they bring what the remote already holds, or rewrite commits the
+// scan can already read. These five make a commit whose content that scan has never seen.
+const MAKES_A_COMMIT = runsGit('commit|cherry-pick|revert|am|merge');
+const MAKES_NO_COMMIT = /\s(?:--dry-run|--abort|--quit|--help|-h)(?=\s|$)/;
+const PUSHES = runsGit('push');
+const SENDS_NO_COMMIT = /\s(?:--dry-run|--delete|--help|-[a-z]*[ndh][a-z]*)(?=\s|$)/;
+
+/**
+ * Does this command make a commit and then push it? `segments` is the command split at its command
+ * positions. A push BEFORE the commit carries only what the scan can read, so the order matters.
+ */
+export function commitsThenPushes(segments) {
+  let committed = false;
+  for (const segment of segments) {
+    const text = segment.replace(QUOTED, '""').replace(/(?:^|\s)#.*$/, '');
+    if (committed && PUSHES.test(text) && !SENDS_NO_COMMIT.test(text)) return true;
+    if (MAKES_A_COMMIT.test(text) && !MAKES_NO_COMMIT.test(text)) committed = true;
+  }
+  return false;
 }
 
 /** How many commits HEAD has that `origin/main` lacks; null when git cannot say. */
