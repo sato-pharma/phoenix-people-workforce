@@ -88,3 +88,19 @@ export function isCairoZone(timeZone: string | undefined): boolean {
 }
 
 export { CAIRO_ZONE_TABLE_RANGE };
+
+/**
+ * The form sends the stop's time as a Cairo wall clock ("2026-11-02T14:30", a datetime-local value).
+ * Read it as Cairo time: the offset is Cairo's own at that instant, from the shipped table.
+ */
+export function cairoWallClockToIso(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return "";
+  const asUtc = Date.parse(`${text}:00Z`);
+  if (!Number.isFinite(asUtc)) return "";
+  // Twice: the first guess reads the offset at the wrong instant (hours early), which matters only
+  // in the hours around a daylight-saving change; the second reads it at the real one.
+  const first = cairoOffsetMinutes(new Date(asUtc));
+  const offset = cairoOffsetMinutes(new Date(asUtc - first * 60_000));
+  return new Date(asUtc - offset * 60_000).toISOString();
+}

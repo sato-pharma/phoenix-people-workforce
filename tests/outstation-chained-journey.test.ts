@@ -467,11 +467,22 @@ function runCaptureGuardPins() {
     at("const capturedAt = new Date().toISOString();") < upload,
     "the capture time is the server's clock, never the phone's",
   );
-  at('.eq("updated_at", (token as { updated_at: string }).updated_at)');
-  at('.in("status", [...JOURNEY_STOP_OPEN_STATUSES])');
-  at("withJourneyReason(request.approvalReason, pricing, notEligibleNote)");
+  // The claim write is shared with a system administrator's missed stop (2026-11-03), so its guards
+  // are read in writeJourneyStopToClaim, and the capture must reach it only after the photo is stored.
+  assert.ok(at("await writeJourneyStopToClaim({") > upload, "the claim is written after the stop photo is stored");
+  const writerStart = service.indexOf("async function writeJourneyStopToClaim(");
+  assert.ok(writerStart > 0, "writeJourneyStopToClaim is the one write of a stop onto its claim");
+  const writer = service.slice(writerStart, service.indexOf("\n/**", writerStart + 10));
+  const inWriter = (needle: string) => {
+    const index = writer.indexOf(needle);
+    assert.ok(index > 0, `the stop's claim write must still contain: ${needle}`);
+    return index;
+  };
+  inWriter('.eq("updated_at", (token as { updated_at: string }).updated_at)');
+  inWriter('.in("status", [...JOURNEY_STOP_OPEN_STATUSES])');
+  inWriter("withJourneyReason(request.approvalReason, pricing, [...notEligibleNote, ...adminAddedStopNotes(stops)])");
   // A not-eligible trip keeps its money exactly; the chain is only recorded and explained.
-  assert.ok(at('const moneyMoves = request.eligibilityStatus !== "not_eligible";') < at("? rebaseClaimOnNewFuel({"));
+  assert.ok(inWriter('const moneyMoves = request.eligibilityStatus !== "not_eligible";') < inWriter("? rebaseClaimOnNewFuel({"));
   // Every governorate is Google's reading of a GPS position — never the label the phone posted.
   // The measurement lives in measureJourneyStop, shared with a test account's rehearsal
   // (2026-11-03), so the capture must go through it and the helper is held to the same rule.
@@ -495,7 +506,7 @@ function runCaptureGuardPins() {
     service.lastIndexOf("try {", overlapRead) > service.lastIndexOf("let journeyOverlapReason", overlapRead),
     "the overlap read sits inside its try",
   );
-  at("await writeRequiredAuditLog(");
+  inWriter("await writeRequiredAuditLog(");
   assert.ok(!capture.includes("upsert: true"), "a stop photo is never overwritten");
 
   const route = source("app/api/outstation/[id]/journey-stop/route.ts");

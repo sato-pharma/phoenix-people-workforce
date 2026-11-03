@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { cache } from "react";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import {
   OUTSTATION_CLAIM_CHANGED_CODE,
   OUTSTATION_CLAIM_REVISION_MISSING_MESSAGE,
@@ -67,8 +68,10 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import {
+  ADMIN_ADDED_STOP_PHOTO_PATH,
   JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE,
   MAX_JOURNEY_STOPS,
+  adminAddedStopNotes,
   journeyOverlapHoldReason,
   journeyStopDays,
   pickJourneyLegOrigin,
@@ -5843,6 +5846,122 @@ export async function rehearseOutstationJourneyStop(
 }
 
 /**
+ * Write a priced stop onto its claim: the money moves by exactly the fuel's change (never on a claim
+ * already found not eligible), the approval reason is rebuilt, the write is pinned to the row's
+ * exact `updated_at` and limited to undecided statuses, and an audit row records it. Shared by the
+ * employee's own stop and a system administrator's missed stop (2026-11-03), so both move money
+ * through one path.
+ */
+async function writeJourneyStopToClaim(input: {
+  access: AccessContext;
+  pricing: ChainedJourneyPricing;
+  request: OutstationExpenseRequest;
+  source: "employee_journey_stop" | "admin_journey_stop";
+  stop: OutstationJourneyStop;
+  stops: OutstationJourneyStop[];
+  token: { updated_at: string };
+  writtenAt: string;
+}): Promise<OutstationExpenseRequest> {
+  const { access, pricing, request, stops, token } = input;
+  const supabase = getSupabaseAdmin();
+  const capturedAt = input.writtenAt;
+  const governorate = input.stop.governorate;
+  const stopNumber = input.stop.stopNumber;
+  const existingStops = stops.filter((entry) => entry.stopNumber !== stopNumber);
+  // A trip the system already found NOT eligible keeps its money exactly as it is: a stop must
+  // never raise the payable on a claim the approver is being told not to pay (risk review,
+  // 2026-10-18 — the travel cost rose while the claim stood still). The chain is still priced and
+  // recorded, and the approver reads what it would have paid.
+  const moneyMoves = request.eligibilityStatus !== "not_eligible";
+  const notEligibleNote = moneyMoves
+    ? []
+    : [
+        `The trip is not eligible, so the stops did not change the claim; priced as a journey the fuel would be ${pricing.fuelAmount.toFixed(2)}.`,
+      ];
+  const amounts = moneyMoves
+    ? rebaseClaimOnNewFuel({
+        claimedTotalAmount: request.claimedTotalAmount,
+        expectedTotalAmount: request.expectedTotalAmount,
+        expectedTotalFor: (travelCost) =>
+          reportExpectedTotal({
+            allowanceAmount: request.allowanceAmount,
+            eligibilityStatus: request.eligibilityStatus,
+            meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
+            otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
+            travelCost,
+          }),
+        fuelAmount: request.fuelAmount,
+        newFuelAmount: pricing.fuelAmount,
+        reportTravelCost: request.reportTravelCost,
+        ticketAmount: request.ticketAmount,
+      })
+    : {
+        claimedTotalAmount: request.claimedTotalAmount,
+        expectedTotalAmount: request.expectedTotalAmount,
+        fuelAmount: request.fuelAmount,
+        reportTravelCost: request.reportTravelCost,
+      };
+
+  const { data, error } = await supabase
+    .from("outstation_expense_requests")
+    .update({
+      approval_reason: withJourneyReason(request.approvalReason, pricing, [...notEligibleNote, ...adminAddedStopNotes(stops)]),
+      ...(pricing.flags.length > 0 && request.approvalRecommendation === "auto_approve"
+        ? { approval_recommendation: "hr_review" }
+        : {}),
+      claimed_total_amount: amounts.claimedTotalAmount,
+      expected_total_amount: amounts.expectedTotalAmount,
+      fuel_amount: amounts.fuelAmount,
+      journey_pricing: pricing,
+      journey_stops: stops,
+      report_travel_cost: amounts.reportTravelCost,
+      updated_at: capturedAt,
+    })
+    .eq("id", request.id)
+    .eq("updated_at", (token as { updated_at: string }).updated_at)
+    .in("status", [...JOURNEY_STOP_OPEN_STATUSES])
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    // The photo is already stored under its own path; it is left, never deleted — an orphaned
+    // object is cheap, a deleted capture is evidence lost.
+    throw new Error(`The stop photo was uploaded but the trip could not be updated: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("This trip changed while the stop was being saved. Refresh and take the stop photo again.");
+  }
+  const updated = mapOutstationRequestRow(data as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: String(updated.id),
+    entityType: "outstation_request",
+    newValues: {
+      claimedTotalAmount: updated.claimedTotalAmount,
+      fuelAmount: updated.fuelAmount,
+      journeyFlags: pricing.flags,
+      journeyMode: pricing.mode,
+      paidKm: pricing.paidKm,
+      source: input.source,
+      ...(input.stop.addedByAdmin ? { adminReason: input.stop.addedByAdmin.reason } : {}),
+      stopGovernorate: governorate,
+      stopNumber,
+    },
+    oldValues: {
+      claimedTotalAmount: request.claimedTotalAmount,
+      fuelAmount: request.fuelAmount,
+      stopCount: existingStops.length,
+    },
+    summary:
+      `${input.source === "admin_journey_stop" ? "System administrator" : "Employee"} added stop ${stopNumber} (${governorate ?? "governorate unknown"}) to outstation request ${updated.id}: ` +
+      `fuel ${formatEgp(request.fuelAmount)} → ${formatEgp(updated.fuelAmount)}` +
+      (pricing.flags.length > 0 ? `, flagged: ${pricing.flags.join(", ")}.` : "."),
+  });
+
+  return updated;
+}
+
+/**
  * Add a STOP to a car trip: the next place of a chained journey (owner rule, 2026-10-18 —
  * "Minya → Fayoum × 1.8, Fayoum → Beni Suef × 1.8, Beni Suef → Minya × 1.8, only governorate to
  * governorate, over 40 km"; pricing in chained-journey.ts).
@@ -5986,95 +6105,158 @@ export async function captureOutstationJourneyStop(
     tripEndDate: request.tripEndDate,
     tripStartDate: request.tripStartDate,
   });
-  // A trip the system already found NOT eligible keeps its money exactly as it is: a stop must
-  // never raise the payable on a claim the approver is being told not to pay (risk review,
-  // 2026-10-18 — the travel cost rose while the claim stood still). The chain is still priced and
-  // recorded, and the approver reads what it would have paid.
-  const moneyMoves = request.eligibilityStatus !== "not_eligible";
-  const notEligibleNote = moneyMoves
-    ? []
-    : [
-        `The trip is not eligible, so the stops did not change the claim; priced as a journey the fuel would be ${pricing.fuelAmount.toFixed(2)}.`,
-      ];
-  const amounts = moneyMoves
-    ? rebaseClaimOnNewFuel({
-        claimedTotalAmount: request.claimedTotalAmount,
-        expectedTotalAmount: request.expectedTotalAmount,
-        expectedTotalFor: (travelCost) =>
-          reportExpectedTotal({
-            allowanceAmount: request.allowanceAmount,
-            eligibilityStatus: request.eligibilityStatus,
-            meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
-            otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
-            travelCost,
-          }),
-        fuelAmount: request.fuelAmount,
-        newFuelAmount: pricing.fuelAmount,
-        reportTravelCost: request.reportTravelCost,
-        ticketAmount: request.ticketAmount,
-      })
-    : {
-        claimedTotalAmount: request.claimedTotalAmount,
-        expectedTotalAmount: request.expectedTotalAmount,
-        fuelAmount: request.fuelAmount,
-        reportTravelCost: request.reportTravelCost,
-      };
-
-  const { data, error } = await supabase
-    .from("outstation_expense_requests")
-    .update({
-      approval_reason: withJourneyReason(request.approvalReason, pricing, notEligibleNote),
-      ...(pricing.flags.length > 0 && request.approvalRecommendation === "auto_approve"
-        ? { approval_recommendation: "hr_review" }
-        : {}),
-      claimed_total_amount: amounts.claimedTotalAmount,
-      expected_total_amount: amounts.expectedTotalAmount,
-      fuel_amount: amounts.fuelAmount,
-      journey_pricing: pricing,
-      journey_stops: stops,
-      report_travel_cost: amounts.reportTravelCost,
-      updated_at: capturedAt,
-    })
-    .eq("id", request.id)
-    .eq("updated_at", (token as { updated_at: string }).updated_at)
-    .in("status", [...JOURNEY_STOP_OPEN_STATUSES])
-    .select("*")
-    .maybeSingle();
-  if (error) {
-    // The photo is already stored under its own path; it is left, never deleted — an orphaned
-    // object is cheap, a deleted capture is evidence lost.
-    throw new Error(`The stop photo was uploaded but the trip could not be updated: ${error.message}`);
-  }
-  if (!data) {
-    throw new Error("This trip changed while the stop was being saved. Refresh and take the stop photo again.");
-  }
-  const updated = mapOutstationRequestRow(data as Record<string, unknown>);
-
-  await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
-    entityId: String(updated.id),
-    entityType: "outstation_request",
-    newValues: {
-      claimedTotalAmount: updated.claimedTotalAmount,
-      fuelAmount: updated.fuelAmount,
-      journeyFlags: pricing.flags,
-      journeyMode: pricing.mode,
-      paidKm: pricing.paidKm,
-      source: "employee_journey_stop",
-      stopGovernorate: governorate,
-      stopNumber,
-    },
-    oldValues: {
-      claimedTotalAmount: request.claimedTotalAmount,
-      fuelAmount: request.fuelAmount,
-      stopCount: existingStops.length,
-    },
-    summary:
-      `Employee added stop ${stopNumber} (${governorate ?? "governorate unknown"}) to outstation request ${updated.id}: ` +
-      `fuel ${formatEgp(request.fuelAmount)} → ${formatEgp(updated.fuelAmount)}` +
-      (pricing.flags.length > 0 ? `, flagged: ${pricing.flags.join(", ")}.` : "."),
+  const updated = await writeJourneyStopToClaim({
+    access,
+    pricing,
+    request,
+    source: "employee_journey_stop",
+    stop,
+    stops,
+    token: token as { updated_at: string },
+    writtenAt: capturedAt,
   });
 
+  return { pricing, request: updated, stop };
+}
+
+/**
+ * A SYSTEM ADMINISTRATOR adds a stop the employee missed (owner, 2026-11-03 — the stop refusals
+ * said "Ask a system administrator if this needs changing", and until now nothing let one). The
+ * employee's own stop closes at the end of the trip's last Cairo day; this is the way back for a
+ * claim nobody has decided yet.
+ *
+ * It is the employee's stop with three differences, each stated on the claim:
+ *   - no live photo: the position and the time are the administrator's, typed from what he
+ *     verified (a CRM visit, a call), so the stop is marked `addedByAdmin` and the approval reason
+ *     says so with his reason, through every later re-pricing;
+ *   - no trip-window cutoff (that is the gap it closes), but the time must fall inside the trip's
+ *     own days and not in the future;
+ *   - the reviewer's version is required (`expectedRevision`), like an approval: the stop moves money.
+ *
+ * Everything else is the employee's path: the same measurement (measureJourneyStop), the same
+ * pricing (priceJourneyStops), the same write (writeJourneyStopToClaim) — undecided claims only,
+ * never one in payroll, at most MAX_JOURNEY_STOPS, every suspicious shape flagged and never refused.
+ */
+export async function addOutstationJourneyStopAsAdmin(
+  requestId: number,
+  access: AccessContext,
+  input: {
+    expectedRevision: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    reason: string;
+    stoppedAt: string;
+  },
+): Promise<{ pricing: ChainedJourneyPricing; request: OutstationExpenseRequest; stop: OutstationJourneyStop }> {
+  await assertOutstationAdminAccess(access, "approve");
+
+  const supabase = getSupabaseAdmin();
+  const { data: token, error: tokenError } = await supabase
+    .from("outstation_expense_requests")
+    .select("updated_at")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (tokenError) throw new Error(tokenError.message);
+  const request = token ? await getOutstationRequestById(requestId) : null;
+  if (!token || !request) throw new Error("That outstation request is not available.");
+
+  // The reviewer's version first: a stop decided on figures that have since moved is refused.
+  assertOutstationClaimUnchanged({ current: (token as { updated_at: string }).updated_at, expected: input.expectedRevision });
+
+  if (request.expenseType !== "traveling" || request.transportationType !== "car") {
+    throw new Error("A stop can only be added to a car trip.");
+  }
+  if (!(JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status)) {
+    throw new Error("This trip has already been decided, so a stop can no longer be added.");
+  }
+  const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
+    throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+  const existingStops = request.journeyStops ?? [];
+  if (existingStops.length >= MAX_JOURNEY_STOPS) {
+    throw new Error(`This trip already has ${MAX_JOURNEY_STOPS} stops, the most one trip may carry.`);
+  }
+  const reason = cleanText(input.reason);
+  if (!reason) throw new Error("Say why the stop is being added: the reason is required.");
+  if (!usablePosition(input.latitude, input.longitude)) {
+    throw new Error("The stop's position is required: a latitude and a longitude.");
+  }
+  const stoppedAtMs = Date.parse(String(input.stoppedAt ?? ""));
+  if (!Number.isFinite(stoppedAtMs)) throw new Error("The time of the stop is invalid.");
+  if (stoppedAtMs > Date.now()) throw new Error("The time of the stop must not be in the future.");
+  const stoppedAt = new Date(stoppedAtMs).toISOString();
+  const stopDay = cairoDateOnly(stoppedAt);
+  const firstDay = String(request.tripStartDate).slice(0, 10);
+  const lastDay = String(request.tripEndDate).slice(0, 10) || firstDay;
+  if (!stopDay || stopDay < firstDay || stopDay > lastDay) {
+    throw new Error(`The stop must fall inside the trip's own days (${firstDay} to ${lastDay}, Cairo).`);
+  }
+  if (!usablePosition(request.residenceLatitude, request.residenceLongitude)) {
+    throw new Error("The employee's registered residence location is missing or invalid, so the drive home cannot be measured.");
+  }
+
+  const measured = await measureJourneyStop({
+    accuracyMeters: null,
+    arrival: {
+      capturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt ?? null,
+      latitude: request.carEvidenceMetadata?.capturedLatitude ?? request.capturedLatitude,
+      longitude: request.carEvidenceMetadata?.capturedLongitude ?? request.capturedLongitude,
+    },
+    capturedAt: stoppedAt,
+    departure: request.departureEvidenceImagePath
+      ? {
+          capturedAt: request.departureCapturedAt ?? request.departureEvidenceMetadata?.capturedAt ?? null,
+          latitude: request.departureEvidenceMetadata?.capturedLatitude ?? null,
+          longitude: request.departureEvidenceMetadata?.capturedLongitude ?? null,
+        }
+      : null,
+    existingStops,
+    fallbackArrivalGovernorate: () =>
+      resolveFirstGovernorate(request.toCity, request.toArea, request.toLabel, request.toCountry),
+    latitude: Number(input.latitude),
+    locationLabel: null,
+    longitude: Number(input.longitude),
+    residence: { latitude: Number(request.residenceLatitude), longitude: Number(request.residenceLongitude) },
+    storedArrivalGovernorate: request.journeyPricing?.legs[0]?.toGovernorate ?? null,
+  });
+
+  const adminName =
+    (await namesByHrId([access.hrId])).get(access.hrId) ?? access.loginId ?? "a system administrator";
+  const stop: OutstationJourneyStop = {
+    ...measured.stop,
+    addedByAdmin: { by: adminName, reason },
+    photoPath: ADMIN_ADDED_STOP_PHOTO_PATH,
+  };
+  const stops = [...existingStops, stop];
+  const pricing = await priceJourneyStops({
+    arrival: {
+      capturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt ?? null,
+      distanceFromResidenceKm: request.distanceFromResidenceKm,
+      governorate: measured.arrivalGovernorate,
+    },
+    employeeRole: request.employeeRole,
+    residenceGovernorate: resolveFirstGovernorate(
+      request.residenceCity,
+      request.residenceArea,
+      request.residenceAddress,
+    ),
+    stops,
+    trip: { employeeHrId: request.employeeHrId, id: request.id },
+    tripEndDate: request.tripEndDate,
+    tripStartDate: request.tripStartDate,
+  });
+
+  const updated = await writeJourneyStopToClaim({
+    access,
+    pricing,
+    request,
+    source: "admin_journey_stop",
+    stop,
+    stops,
+    token: token as { updated_at: string },
+    writtenAt: new Date().toISOString(),
+  });
   return { pricing, request: updated, stop };
 }
 

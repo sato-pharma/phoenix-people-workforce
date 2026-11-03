@@ -497,9 +497,11 @@ requireOriginHolds(branch, sha);
 // which is the one outcome this whole branch exists to avoid.
 let openPr = "";
 try {
+  // REST, never `gh pr list`: that one is GraphQL, which a Claude Code cloud session is refused (HTTP 403,
+  // measured 2026-11-03 on #11 — it read "no open PR" for a PR that existed and fell through to a dispatch).
   openPr = execFileSync(
     "gh",
-    ["pr", "list", "--head", branch, "--state", "open", "--json", "number", "--jq", ".[].number"],
+    ["api", "repos/{owner}/{repo}/pulls?state=open&per_page=100&head={owner}:" + encodeURIComponent(branch), "--jq", ".[].number"],
     { encoding: "utf8" },
   ).trim().split("\n")[0].trim();
 } catch {

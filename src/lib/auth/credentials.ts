@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 
 import { normalizeRole, type PhoenixRole } from "@/lib/auth/permissions";
 import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
+import { stagingTestSignInKeyMatches } from "@/lib/auth/staging-test-sign-in";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -219,14 +220,22 @@ export async function authenticateLoginId(loginIdInput: string, password: string
   const row = await findActiveAuthUserRow(loginId);
   if (!row) return null;
 
+  // On STAGING only, a TEST account may sign in with the owner's staging key instead of its own
+  // password (src/lib/auth/staging-test-sign-in.ts — three halves, all required; a real login never).
+  // The password is tried first, so a test account with a password of its own keeps it.
   const passwordMatches = await bcrypt.compare(password, row.password_hash);
-  if (!passwordMatches) return null;
+  const stagingKeyMatches =
+    !passwordMatches && stagingTestSignInKeyMatches({ isTestPersona: row.is_test_persona === true }, password);
+  if (!passwordMatches && !stagingKeyMatches) return null;
 
   // An employee whose departure has taken effect can never sign in, even if their login was left
-  // active. Someone serving out notice still can — the block is dated, not filed.
+  // active. Someone serving out notice still can — the block is dated, not filed. For a test account
+  // this reads the MIRRORED person, so the staging key never outlives her either.
   if (await isLinkedEmployeeAccessRevoked(lifecycleHrIdOf(row))) return null;
 
-  return mapAuthUserRow(row);
+  // A staging test account whose password was never set would be stopped at "set your password"; the
+  // key stands in for that password, so the set-up step is not asked of a key sign-in.
+  return stagingKeyMatches ? { ...mapAuthUserRow(row), forcePasswordReset: false } : mapAuthUserRow(row);
 }
 
 // Biometric (passkey) sign-in resolves the account AFTER the WebAuthn signature has already been

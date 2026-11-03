@@ -93,7 +93,26 @@ export type OutstationJourneyStop = {
   returnHomeKm: number | null;
   /** Why a road distance could not be read, when one could not. */
   routeError: string | null;
+  /**
+   * Set only on a stop a system administrator added after the employee missed it (2026-11-03):
+   * there is no live photo, the position and time are the administrator's, and the reason is said
+   * on the claim for the person deciding it. Absent on every stop an employee took.
+   */
+  addedByAdmin?: { by: string; reason: string } | null;
 };
+
+/** The photo path a stop added by a system administrator carries: there is no photo to sign. */
+export const ADMIN_ADDED_STOP_PHOTO_PATH = "admin-added:no-photo";
+
+/** One sentence per administrator-added stop, kept in the approval reason through later re-pricing. */
+export function adminAddedStopNotes(stops: OutstationJourneyStop[]): string[] {
+  return stops
+    .filter((stop) => stop.addedByAdmin)
+    .map(
+      (stop) =>
+        `Stop ${stop.stopNumber} was added by a system administrator (${stop.addedByAdmin?.by}), with no photo: ${stop.addedByAdmin?.reason}`,
+    );
+}
 
 export type ChainedJourneyFlag =
   | "chain_unpriceable"
@@ -492,6 +511,14 @@ function parseJson(raw: unknown): unknown {
   }
 }
 
+function readAddedByAdmin(raw: unknown): { addedByAdmin?: { by: string; reason: string } } {
+  if (!raw || typeof raw !== "object") return {};
+  const value = raw as Record<string, unknown>;
+  const by = textOrNull(value.by);
+  const reason = textOrNull(value.reason);
+  return by && reason ? { addedByAdmin: { by, reason } } : {};
+}
+
 /**
  * The stored `journey_stops` column, read defensively: anything that is not an array, and any entry
  * without a stop number, a capture time, a photo and a real position, is dropped rather than priced.
@@ -529,6 +556,7 @@ export function readJourneyStops(raw: unknown): OutstationJourneyStop[] {
       returnHomeKm: numberFieldOrNull(row.returnHomeKm),
       routeError: textOrNull(row.routeError),
       stopNumber,
+      ...readAddedByAdmin(row.addedByAdmin),
     });
   }
   return stops.sort((a, b) => a.stopNumber - b.stopNumber);

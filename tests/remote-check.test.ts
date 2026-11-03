@@ -287,7 +287,11 @@ export async function runRemoteCheckTests(): Promise<void> {
         "const argv = process.argv.slice(2);",
         'fs.appendFileSync(process.env.RC_LOG, argv.join(" ") + "\\n");',
         'const marker = process.env.RC_FIXTURE + ".dispatched";',
-        'if (argv[0] === "pr" && argv[1] === "list") { if (fx.openPr) process.stdout.write(String(fx.openPr) + "\\n"); process.exit(0); }',
+        // The open-PR lookup is REST (`gh api repos/{owner}/{repo}/pulls?…&head=…`) — `gh pr list` is
+        // GraphQL, which a cloud session is refused (2026-11-03). A `pr list` call is answered with an
+        // error, so a regression to it reads as "no PR" and fails the open-PR cases below.
+        'if (argv[0] === "pr" && argv[1] === "list") { console.error("HTTP 403: GraphQL is not available"); process.exit(1); }',
+        'if (argv[0] === "api" && /^repos\\/[^?]+\\/pulls\\?/.test(argv[1] || "")) { if (fx.openPr) process.stdout.write(String(fx.openPr) + "\\n"); process.exit(0); }',
         'if (argv[0] === "api") {',
         '  const jq = argv[argv.indexOf("--jq") + 1] || "";',
         '  const m = /\\.path == "([^"]+)" and \\.event == "([^"]+)"/.exec(jq);',
@@ -433,7 +437,7 @@ export async function runRemoteCheckTests(): Promise<void> {
       const r = run(dir, sha, { runs: [pushRun], jobs: green() }, "lint", "--dispatch");
       assert.equal(r.code, 0, `main's own green push run answers:\n${r.text}`);
       assert.equal(r.dispatched, false, "a dispatch on main joins the production deploy gate's concurrency group — never");
-      assert.doesNotMatch(r.calls.join("\n"), /pr list/, "main is not looked up as a PR branch");
+      assert.doesNotMatch(r.calls.join("\n"), /pr list|\/pulls\?/, "main is not looked up as a PR branch");
     }
     // k — the retired box flags and an unknown flag are refused before git or GitHub are touched.
     {

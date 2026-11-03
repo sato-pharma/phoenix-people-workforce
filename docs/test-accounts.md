@@ -100,3 +100,26 @@ prevent, and `tests/test-accounts.test.ts` pins it.
 Everything here is pinned in `tests/test-accounts.test.ts`, whose headline assertion is the plain
 one: **the real person never sees a test-world notice.** Each assertion was proved by breaking the
 code and watching that exact line fire.
+
+## The staging test sign-in
+
+**Owner, 2026-11-03:** a Claude session could not rehearse a flow as a test account — the password is
+his alone, and no session types a password on production — so the Sohag → Assiut stop rehearsal
+stopped twice at the sign-in. On **staging only**, a test account now signs in through the ordinary
+login form with a shared key in place of its own password.
+
+| Half | Refuses when |
+| --- | --- |
+| `APP_ENV` | it is anything but exactly `staging` (unset and mistyped open nothing) |
+| `PHOENIX_STAGING_TEST_SIGNIN_KEY` | it is missing or shorter than 32 characters |
+| `NEXT_PUBLIC_SUPABASE_URL` | it names the production project (`ozucdzovmcqvepbozvqf`) |
+| The account | it is not a test account (`is_test_persona`) — a real login never signs in with the key |
+
+All four are required. The account's own password is tried first; the departure check on the mirrored
+person still applies; failed attempts count against the same rate limit as any wrong password.
+
+**What the owner does, once:** set `PHOENIX_STAGING_TEST_SIGNIN_KEY` (32+ random characters) on the
+**staging** Railway service only, and make a test account on staging from `/admin/test-accounts` there.
+A session is then given the key in its own chat by him, never pasted into a shared one. **Never set
+the key on production.** Code: `src/lib/auth/staging-test-sign-in.ts`; pinned by
+`tests/staging-test-sign-in.test.ts`.
