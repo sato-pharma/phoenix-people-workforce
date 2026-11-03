@@ -356,7 +356,8 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // verdict: presentation only. `usesSectionDrawers` is read by the sidebar renderer AFTER
   // `getSections` has decided which rows exist, so it cannot add, remove or re-gate a row; the
   // seats' access is whatever the permission matrix already gave them. HR Administration (the HR
-  // Operations Specialist seat) joined the list on 2026-10-20 under the same verdict.
+  // Operations Specialist seat) joined the list on 2026-10-20 under the same verdict, and
+  // `drawersStartOpenRoles` (3 Nov 2026, her drawers all open by default) carries the same one.
   "src/lib/navigation/active-path.ts",
   // The offer joining form (owner, 2026-10-08). It names HR Operations only as the ACTOR of
   // provisionNewHireAccess, to take that seat's create-only, rank-bounded door: it can make one NEW
