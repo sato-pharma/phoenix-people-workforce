@@ -408,6 +408,7 @@ export const PP = {
   sheetTotalDoses: "إجمالي الجرعات",
   sheetPackagingSets: "إجمالي العبوات الكاملة",
   sheetTotalBoxes: "إجمالي العلب (الكراتين)",
+  sheetSaleableBoxes: "علب البيع بدون العينات",
   sheetColBasisLabel: "أساس الحساب",
   sheetColQtyPerBasis: "الكمية لكل أساس",
   sheetColBasisCount: "عدد الأساس",
@@ -738,6 +739,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   sheetTotalDoses: "Total doses",
   sheetPackagingSets: "Total full packaging sets",
   sheetTotalBoxes: "Total boxes (cartons)",
+  sheetSaleableBoxes: "Saleable boxes, without the samples",
   sheetColBasisLabel: "Basis",
   sheetColQtyPerBasis: "Quantity per basis",
   sheetColBasisCount: "Basis count",
@@ -942,6 +944,8 @@ export type ProductMeasure = {
   /** One free sample. */
   readonly sampleUnit: string;
   readonly measureUnit: MeasureUnit;
+  /** How many saleable units a sample box holds, on a product whose sample is its own box. */
+  readonly unitsInOwnSampleBox?: string;
 };
 
 /**
@@ -1173,6 +1177,12 @@ export function requestModeLabelsEn(parts: {
  */
 export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
   const u = measureUnitLabelsAr(measure.measureUnit);
+  if (measure.unitsInOwnSampleBox) {
+    return (
+      `العينة علبة مستقلة فيها ${measure.unitsInOwnSampleBox} ${saleableUnitWordAr(measure.measureUnit)} ` +
+      `من نفس حجم التشغيلة — تقلل عدد العلب القابلة للبيع`
+    );
+  }
   return (
     `العينة ${measure.sampleUnit} ${u.small} من نفس حجم التشغيلة — ` +
     `تقلل عدد الوحدات ${measure.goodUnit} ${u.small} وتستهلك عبوة كاملة`
@@ -1181,6 +1191,13 @@ export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
 
 export function buildSampleUnitsHintEn(measure: ProductMeasure): string {
   const u = measureUnitLabelsEn(measure.measureUnit);
+  if (measure.unitsInOwnSampleBox) {
+    return (
+      `A sample is its own box of ${measure.unitsInOwnSampleBox} ` +
+      `${pluralEn(saleableUnitWordEn(measure.measureUnit))} out of the same batch — ` +
+      `it reduces the saleable box count`
+    );
+  }
   return (
     `A ${measure.sampleUnit} ${u.small} sample comes out of the same run volume — ` +
     `it reduces the ${measure.goodUnit} ${u.small} unit count and still uses a full packaging set`

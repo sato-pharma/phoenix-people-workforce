@@ -38,6 +38,8 @@ export type WireProduct = {
   sampleUnitMl: string;
   wholeRunsOnly: boolean;
   unitsPerBox: string;
+  /** True when one sample is a whole box of its own, as Saginkgo's box of five capsules is. */
+  sampleInOwnBox?: boolean;
   /**
    * What the four `…Ml` figures above are counted in. The arithmetic never cared — a run is
    * `runVolumeMl / doseMl` whatever the unit — but the LABELS did, and a powder in 5 g sachets was

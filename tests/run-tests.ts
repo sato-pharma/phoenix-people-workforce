@@ -11426,7 +11426,7 @@ await runTest(
   runProductionPlanningCarvibradineTests,
 );
 await runTest(
-  "Saginkgo 120 mg arrives as a capsule made at Med Care's Badr factory, and its formula is the certificate to the microgram: the five weighed lines read back out of the migration add to exactly 300 mg, one batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg with nothing left over and the tile reads 9 kg rather than 9,000; Sato brings the extract, the empty capsule, the box and the aluminium, which stays a row with no composition rather than a zero, Med Care brings the four excipients, there is no leaflet, the shell is one bought item, and a capsule never reads as a tablet",
+  "Saginkgo 120 mg arrives as a capsule made at Med Care's Badr factory, and its formula is the certificate to the microgram: the five weighed lines read back out of the migration add to exactly 300 mg, one batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg with nothing left over and the tile reads 9 kg rather than 9,000; Sato brings the extract, the empty capsule, the box and the aluminium, which stays a row with no composition rather than a zero, Med Care brings the four excipients, there is no leaflet, the shell is one bought item, a capsule never reads as a tablet, and a free sample is a whole box of five capsules on its own box material, so 1,000 boxes with 100 samples is one batch of 29,500 saleable capsules, 984 boxes of 30 and 100 sample boxes, on the screen and through the sheet's own formulas, while a product without the flag keeps a sample as one saleable unit",
   runProductionPlanningSaginkgoTests,
 );
 await runTest(

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import ExcelJS from "exceljs";
+
 import { dosesPerRun, type RunGeometry, yieldForRuns } from "../src/lib/production-planning/geometry.ts";
 import {
   coerceMeasureUnit,
@@ -18,8 +20,11 @@ import {
   type ProductionPlanningData,
 } from "../src/lib/production-planning/service.ts";
 import {
+  buildSampleUnitsHintAr,
+  buildSampleUnitsHintEn,
   measureUnitLabelsAr,
   measureUnitLabelsEn,
+  PP_EN,
   requestModeLabelsEn,
   runActualLabelAr,
   runActualLabelEn,
@@ -29,6 +34,8 @@ import {
   unitsWithBoxesAr,
   unitsWithBoxesEn,
 } from "../src/lib/production-planning/strings.ts";
+import type { WireWorkspace } from "../src/lib/production-planning/wire.ts";
+import { buildProductionPlanningWorkbook } from "../src/lib/production-planning/workbook.ts";
 import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
@@ -48,9 +55,12 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  *  4. **The shell is one bought item**, not gelatin and titanium dioxide on a purchase order.
  *  5. **A capsule never reads "tablet"**, and `mg_capsule` keeps the milligram divisor: through a
  *     divisor of 1,000 the batch tile would read 9,000 kg.
+ *  6. **A free sample is a whole box of five capsules** (**"بوكس شريط واحد فيه خمسة"**), on the screen
+ *     and in the sheet's own formulas, and no other product's figures move.
  */
 
-const MIGRATION = "supabase/migrations/20261103154230_production_planning_saginkgo.sql";
+const MIGRATION = "supabase/migrations/20261103155601_production_planning_saginkgo_seed.sql";
+const SCHEMA_MIGRATION = "supabase/migrations/20261103155559_production_planning_sample_in_own_box.sql";
 
 const MEDCARE = "loc-medcare-badr";
 const HOCHSTER = "loc-hochster";
@@ -96,7 +106,7 @@ function linkedMaterials(sql: string): { code: string; sortOrder: number; suppli
 }
 
 function compositionRows(sql: string): { code: string; basis: LoadedComposition["basis"]; qty: string; supplier: LoadedComposition["supplier"] }[] {
-  const pattern = /\('([A-Z0-9_]+)',\s*'(per_dose|per_box)',\s*([0-9.]+),\s*'(sato|factory)'/g;
+  const pattern = /\('([A-Z0-9_]+)',\s*'(per_dose|per_box|per_sample_unit)',\s*([0-9.]+),\s*'(sato|factory)'/g;
   return [...sql.matchAll(pattern)].map((match) => ({
     basis: match[2] as LoadedComposition["basis"],
     code: match[1]!,
@@ -109,7 +119,8 @@ const GEOMETRY: RunGeometry = {
   doseMl: BigInt(300),
   goodUnitMl: BigInt(300),
   runVolumeMl: BigInt(9_000_000),
-  sampleUnitMl: BigInt(300),
+  sampleInOwnBox: true,
+  sampleUnitMl: BigInt(1_500),
   unitsPerBox: BigInt(30),
   wholeRunsOnly: true,
 };
@@ -210,13 +221,27 @@ function rowOf(plan: { rows: readonly { code: string }[] }, code: string) {
   return row as (typeof plan.rows)[number] & Record<string, string | boolean | null>;
 }
 
-export function runProductionPlanningSaginkgoTests() {
+/** The sheet's own arithmetic through its references: the only operators these cells use. */
+function evaluateCell(sheet: ExcelJS.Worksheet, address: string): number {
+  const value = sheet.getCell(address).value as number | { formula?: string } | null;
+  if (typeof value === "number") return value;
+  assert.ok(value && typeof value === "object" && value.formula, `${address} should hold a number or a formula`);
+  const expression = value.formula!
+    .replace(/ROUNDUP\(/g, "roundUp(")
+    .replace(/FLOOR\(/g, "floor(")
+    .replace(/\$?([A-Z]+)\$?(\d+)/g, (_, column: string, row: string) => String(evaluateCell(sheet, `${column}${row}`)));
+  const roundUp = (figure: number) => Math.ceil(figure);
+  const floor = (figure: number) => Math.floor(figure);
+  return new Function("roundUp", "floor", `return (${expression});`)(roundUp, floor) as number;
+}
+
+export async function runProductionPlanningSaginkgoTests() {
   const sql = sqlOf(MIGRATION);
 
   // ── The geometry: "1 batch = 1000 box , box = 30 capsula" ───────────────────────────────────
   assert.equal(dosesPerRun(GEOMETRY), BigInt(CAPSULES_A_BATCH), "1,000 boxes of 30");
   assert.equal(yieldForRuns(GEOMETRY, BigInt(1), BigInt(0)).leftoverMl, BigInt(0), "9,000,000 mg divides by 300 mg exactly");
-  assert.match(sql, /'mg_capsule',\s*9000000,\s*300,\s*300,\s*300,\s*true,\s*30,\s*0,/, "9 kg, 300 mg a capsule, 30 a box, no samples");
+  assert.match(sql, /'mg_capsule',\s*9000000,\s*300,\s*300,\s*1500,\s*true,\s*30,\s*true,\s*0,/, "9 kg, 300 mg a capsule, 30 a box, a sample box of five, none by default");
 
   // ── The formula, read back out of the migration ─────────────────────────────────────────────
   const seeded = compositionRows(sql);
@@ -237,8 +262,8 @@ export function runProductionPlanningSaginkgoTests() {
   // ── Who brings what: Sato's four, Med Care's four, and no leaflet ───────────────────────────
   assert.deepEqual(
     seeded.filter((row) => row.supplier === "sato").map((row) => row.code).sort(),
-    ["BOX_SAGINKGO", "CAPSULE_EMPTY_SAGINKGO", "GINKGO_EXTRACT"],
-    "the three Sato lines that HAVE a quantity; the aluminium is Sato's too and has no line yet",
+    ["BOX_SAGINKGO", "BOX_SAGINKGO_SAMPLE", "CAPSULE_EMPTY_SAGINKGO", "GINKGO_EXTRACT"],
+    "the four Sato lines that HAVE a quantity; the aluminium is Sato's too and has no line yet",
   );
   assert.deepEqual(
     seeded.filter((row) => row.supplier === "factory").map((row) => row.code).sort(),
@@ -246,7 +271,7 @@ export function runProductionPlanningSaginkgoTests() {
     "Med Care's four excipients",
   );
   const linked = linkedMaterials(sql);
-  assert.equal(linked.length, 8, "eight materials on Saginkgo's list");
+  assert.equal(linked.length, 9, "nine materials on Saginkgo's list");
   assert.equal(
     linked.some((row) => row.code.includes("LEAFLET")),
     false,
@@ -272,22 +297,25 @@ export function runProductionPlanningSaginkgoTests() {
       "CAPSULE_EMPTY_SAGINKGO",
       "BLISTER_ALU_SAGINKGO",
       "BOX_SAGINKGO",
+      "BOX_SAGINKGO_SAMPLE",
     ],
-    "the certificate's five, then the shell, the foil and the box",
+    "the certificate's five, then the shell, the foil and the two boxes",
   );
 
   // ── Shared rows are linked, never re-inserted ───────────────────────────────────────────────
   assert.deepEqual(
     insertedMaterialCodes(sql).sort(),
-    ["ASCORBIC_ACID", "BLISTER_ALU_SAGINKGO", "BOX_SAGINKGO", "CAPSULE_EMPTY_SAGINKGO", "GINKGO_EXTRACT"],
-    "five new materials",
+    ["ASCORBIC_ACID", "BLISTER_ALU_SAGINKGO", "BOX_SAGINKGO", "BOX_SAGINKGO_SAMPLE", "CAPSULE_EMPTY_SAGINKGO", "GINKGO_EXTRACT"],
+    "six new materials",
   );
 
   // ── The store, and the CHECK that lets the row in ───────────────────────────────────────────
   assert.match(sql, /set factory_location_id = l\.id[\s\S]*?where l\.code = 'MEDCARE_BADR'[\s\S]*?and p\.code = 'SAGINKGO'/, "made at Med Care's Badr factory");
   assert.match(sql, /'Med Care Badr',\s*'mg_capsule',/, "his name for it: there is another Med Care");
   assert.match(sql, /'At the factory \(Med Care Badr\)'/, "and the store carries the same name");
-  assert.match(sql, /check \(measure_unit = any \(array\['ml'::text, 'g'::text, 'mg'::text, 'mg_capsule'::text\]\)\)/, "every older unit stays allowed");
+  const schemaSql = sqlOf(SCHEMA_MIGRATION);
+  assert.match(schemaSql, /check \(measure_unit = any \(array\['ml'::text, 'g'::text, 'mg'::text, 'mg_capsule'::text\]\)\)/, "every older unit stays allowed");
+  assert.match(schemaSql, /add column if not exists sample_in_own_box boolean not null default false/, "every older product keeps its reading of a sample");
 
   // ── One batch, through the real engine ──────────────────────────────────────────────────────
   const plan = computePlan(planningData(sql), { mode: "runs", productId: "prod-saginkgo", requestedQty: "1", sampleUnits: "0" });
@@ -312,6 +340,92 @@ export function runProductionPlanningSaginkgoTests() {
   assert.equal(foil.supplier, "sato", "the aluminium is Sato's, from the link");
   assert.equal(foil.excludedReason, "no_composition", "and its weight per box has not been entered");
   assert.equal(foil.contributesToBuyList, false, "so nothing is bought until he gives the amount");
+
+  assert.equal(rowOf(plan, "BOX_SAGINKGO_SAMPLE").needed, "0", "no sample box until an order names samples");
+
+  // ── 🔴 A free sample is a whole box of five capsules, out of his total ──────────────────────
+  // 1,000 boxes with 100 samples: 900 boxes + 100 × 5 capsules = 27,500 capsules, one batch. That batch
+  // makes 30,000: 500 in samples, 29,500 saleable, 984 boxes of them because a part-box is a box.
+  const sampled = computePlan(planningData(sql), { mode: "total_boxes", productId: "prod-saginkgo", requestedQty: "1000", sampleUnits: "100" });
+  assert.equal(sampled.runs, "1", "the samples come out of the batch");
+  assert.equal(sampled.goodUnits, "29500", "five capsules a sample, not one");
+  assert.equal(sampled.packagingSets, "30000", "and the capsule tile still reads the whole batch");
+  assert.equal(sampled.totalBoxes, "1084", "984 boxes of 30 plus 100 sample boxes");
+  assert.equal(sampled.requestedBoxes, "1000", "his headline number stays his");
+  assert.equal(sampled.surplusBoxes, "84", "and the rest of the batch is reported");
+  assert.equal(rowOf(sampled, "BOX_SAGINKGO").basisCount, "984", "🔴 the 30-capsule box is never bought for a sample");
+  assert.equal(rowOf(sampled, "BOX_SAGINKGO_SAMPLE").basisCount, "100", "one sample box a sample");
+  assert.equal(rowOf(sampled, "CAPSULE_EMPTY_SAGINKGO").basisCount, "30000", "a sample's capsules are real shells");
+  assert.equal(rowOf(sampled, "GINKGO_EXTRACT").basisCount, "30000", "the fill does not change");
+
+  // "good units" adds the samples on top of the saleable boxes he named.
+  const onTop = computePlan(planningData(sql), { mode: "good_units", productId: "prod-saginkgo", requestedQty: "900", sampleUnits: "100" });
+  assert.equal(onTop.requestedBoxes, "1000", "900 saleable boxes and 100 sample boxes");
+  assert.throws(
+    () => computePlan(planningData(sql), { mode: "total_boxes", productId: "prod-saginkgo", requestedQty: "50", sampleUnits: "51" }),
+    /do not fit inside an order of 50/,
+    "51 sample boxes cannot come out of 50 boxes",
+  );
+
+  // 🔴 NO OTHER PRODUCT MOVES: without the flag the same numbers keep the older reading, a sample as
+  // one saleable unit. The Ivyronc, Guamusin and Royanoxicam suites pin those products' own figures.
+  const older = { ...GEOMETRY, sampleInOwnBox: false };
+  const olderYield = yieldForRuns(older, BigInt(1), BigInt(100));
+  assert.equal(olderYield.packagingSets, olderYield.goodUnits + BigInt(100), "a sample is one more unit");
+  assert.equal(olderYield.totalBoxes, BigInt(987), "and part of a box: (29,500 + 100) / 30, rounded up");
+  assert.equal(olderYield.perBoxCount, olderYield.totalBoxes, "and a per-box material counts them all");
+
+  assert.ok(
+    buildSampleUnitsHintEn({ dose: "300", goodUnit: "300", measureUnit: "mg_capsule", sampleUnit: "1,500", unitsInOwnSampleBox: "5" }).startsWith("A sample is its own box of 5 capsules"),
+    "the field says what a sample is",
+  );
+  assert.ok(
+    buildSampleUnitsHintAr({ dose: "300", goodUnit: "300", measureUnit: "mg_capsule", sampleUnit: "1,500", unitsInOwnSampleBox: "5" }).includes("علبة مستقلة فيها 5 كبسولة"),
+    "in both languages",
+  );
+
+  // ── The sheet's own formulas agree, evaluated through their references ──────────────────────
+  const { buffer } = await buildProductionPlanningWorkbook(
+    {
+      materials: [],
+      plan: sampled,
+      products: [
+        {
+          code: "SAGINKGO",
+          doseMl: "300",
+          factoryLocationId: MEDCARE,
+          goodUnitMl: "300",
+          id: "prod-saginkgo",
+          manufacturerName: "Med Care Badr",
+          measureUnit: "mg_capsule",
+          nameAr: "ساجنكو",
+          nameEn: "Saginkgo",
+          notes: null,
+          runVolumeMl: "9000000",
+          sampleInOwnBox: true,
+          sampleUnitMl: "1500",
+          unitsPerBox: "30",
+          wholeRunsOnly: true,
+        },
+      ],
+    } as unknown as WireWorkspace,
+    { lang: "en" },
+  );
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(buffer as unknown as ArrayBuffer);
+  const sheet = book.worksheets[0]!;
+  const cellLabelled = (label: string): number => {
+    for (let index = 1; index <= sheet.rowCount; index += 1) {
+      if (String(sheet.getCell(index, 1).value ?? "").startsWith(label)) return evaluateCell(sheet, `B${index}`);
+    }
+    throw new Error(`no row labelled ${label}`);
+  };
+  assert.equal(cellLabelled(PP_EN.sheetGoodUnitsRequested), 27_000, "(1,000 − 100) boxes of 30");
+  assert.equal(cellLabelled(PP_EN.tileRuns), 1, "one batch in the sheet too");
+  assert.equal(cellLabelled(PP_EN.sheetPackagingSets), 30_000, "the capsule count");
+  assert.equal(cellLabelled(PP_EN.sheetSaleableBoxes), 984, "the boxes the 30-capsule box material reads");
+  assert.equal(cellLabelled(PP_EN.sheetTotalBoxes), 1_084, "plus the sample boxes");
+  assert.equal(cellLabelled(PP_EN.tileSurplus), 84, "and the same surplus as the screen");
 
   // ── A shared material's stock belongs to the factory that holds it ──────────────────────────
   const aerosilElsewhere = computePlan(
