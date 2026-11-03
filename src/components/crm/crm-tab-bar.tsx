@@ -9,9 +9,9 @@ import { Database, Loader2 } from "lucide-react";
 // client" component's bundle.
 import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup";
+export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | "ireports360_holdouts";
 
-export type CrmExtraTab = { id: "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup"; label: string };
+export type CrmExtraTab = { id: "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | "ireports360_holdouts"; label: string };
 
 /** Aggregated/derived views that sit alongside the raw per-dataset tabs — not a CrmMasterDataset,
  * since they don't come from a paginated slice of one table (see CrmUnmappedIdentitiesPanel /
@@ -31,6 +31,7 @@ const DEFAULT_EXTRA_TABS: ReadonlyArray<CrmExtraTab> = [
   { id: "region_mapping", label: "Region Mapping" },
   { id: "customer_mapping", label: "Customer Mapping" },
   { id: "recovered", label: "Recovered Chains" },
+  { id: "ireports360_holdouts", label: "Still on iReports360" },
 ];
 
 /** One tab bar for the whole CRM hub — raw datasets + the two derived views — so switching between
@@ -66,7 +67,7 @@ export function CrmTabBar({
     for (const key of ["page", "search", "ampm", "visitType", "mappingStatus", "minDuration", "halfDaysOnly"]) {
       params.delete(key);
     }
-    if (tab === "unmapped" || tab === "recovered" || tab === "region_mapping" || tab === "customer_mapping" || tab === "account_setup") {
+    if (tab === "unmapped" || tab === "recovered" || tab === "region_mapping" || tab === "customer_mapping" || tab === "account_setup" || tab === "ireports360_holdouts") {
       params.delete("dataset");
       // The deep link from the "an employee was added" notice carries the person it is about.
       // Leaving it on while switching AWAY would spotlight somebody on an unrelated tab.

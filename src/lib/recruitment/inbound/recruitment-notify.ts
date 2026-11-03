@@ -24,7 +24,7 @@ import { cairoDateKey, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbou
 import { candidateHiddenFrom } from "@/lib/recruitment/workspace/fence";
 import { workspaceCandidateHref, workspaceHref } from "@/lib/recruitment/workspace/links";
 
-async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
+export async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.from("app_auth_users").select("hr_id").in("role", roles as string[]);
   if (error) return [];

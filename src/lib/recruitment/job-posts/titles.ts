@@ -30,9 +30,13 @@ export type JobPostTitle = {
   menuName: string | null;
   isActive: boolean;
   updatedAt: string | null;
+  // The Arabic a person typed in the Publish dialog. Not part of a draft: the editor saves a whole row,
+  // and a save that never carried these must never wipe them.
+  titleAr: string | null;
+  descriptionAr: string | null;
 };
 
-export type JobPostTitleDraft = Omit<JobPostTitle, "id" | "updatedAt">;
+export type JobPostTitleDraft = Omit<JobPostTitle, "descriptionAr" | "id" | "titleAr" | "updatedAt">;
 
 /** Eight lines a list is what one 1080×1350 picture holds at a readable size (the table says the same). */
 export const JOB_POST_MAX_LINES = 8;

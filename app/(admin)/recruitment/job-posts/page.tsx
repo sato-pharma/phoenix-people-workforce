@@ -1,13 +1,15 @@
 import { Megaphone } from "lucide-react";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { AdminInsightChip } from "@/components/admin/admin-design-system";
 import { JobPostBuilder } from "@/components/recruitment/job-post-builder";
+import { JobPostCareersGuard, JobPostCareersGuardLoading } from "@/components/recruitment/job-post-careers-guard";
 import { RecruitmentPageHeader } from "@/components/recruitment/recruitment-premium";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadMarketAwarenessLines } from "@/lib/market-awareness/lines";
-import { canBuildJobPosts } from "@/lib/recruitment/access";
+import { canBuildJobPosts, canPublishJobPosts } from "@/lib/recruitment/access";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { listJobPostTitles } from "@/lib/recruitment/job-posts/service";
@@ -58,6 +60,7 @@ export default async function JobPostsPage() {
     .map(([code, areas]) => ({ label: candidateRegionLabels[code as CandidateRegionCode] ?? code, areas }));
 
   const readyTitles = titles.filter((title) => title.isActive).length;
+  const canPublish = canPublishJobPosts(access);
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
@@ -75,9 +78,16 @@ export default async function JobPostsPage() {
         title="Job Posts"
       />
       <div className="pt-5">
+        {/* Its own boundary: a slow or unreachable website must never hold up the builder below. */}
+        <Suspense fallback={<JobPostCareersGuardLoading />}>
+          <JobPostCareersGuard access={access} canClose={canPublish} titles={titles.filter((title) => title.isActive).map((title) => title.title)} />
+        </Suspense>
+      </div>
+      <div className="pt-5">
         <JobPostBuilder
           apply={{ careers: JOB_POST_CAREERS, whatsapp: NEW_CHANNEL_APPLY_WHATSAPP_NUMBER }}
           areaGroups={areaGroups}
+          canPublish={canPublish}
           initialTitles={titles}
           lines={lines.map((line) => line.name)}
         />

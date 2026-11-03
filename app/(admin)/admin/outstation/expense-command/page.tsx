@@ -1,7 +1,15 @@
 import { ExpenseCommandDashboard } from "@/components/outstation/expense-command-dashboard";
 import { ExpenseCommandTabs } from "@/components/outstation/expense-command-tabs";
+import { ExpensePayslipReconciliationPanel } from "@/components/outstation/expense-payslip-reconciliation-panel";
 import { parseExpenseFiltersFromRecord } from "@/components/outstation/expense-shared/formatters";
 import { OutstationRequestsAdmin } from "@/components/outstation/outstation-requests-admin";
+import { pickExpenseMonth } from "@/lib/automated-payroll/expense-reconciliation";
+import {
+  expenseReconciliationMonths,
+  loadExpenseReconciliation,
+  newestPublishedExpenseMonth,
+  type ExpenseReconciliationResult,
+} from "@/lib/automated-payroll/expense-reconciliation-server";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -61,7 +69,26 @@ export default async function ExpenseCommandPage({
 
   const resolved = await searchParams;
   const tabParam = firstString(resolved.tab);
-  const active: "intelligence" | "queue" = tabParam === "queue" && canApprove ? "queue" : "intelligence";
+  const active: "intelligence" | "queue" | "reconcile" =
+    tabParam === "reconcile" ? "reconcile" : tabParam === "queue" && canApprove ? "queue" : "intelligence";
+
+  if (active === "reconcile") {
+    const months = expenseReconciliationMonths();
+    let selected = months[0];
+    let result: ExpenseReconciliationResult | null = null;
+    let reconcileError: string | null = null;
+    try {
+      selected = pickExpenseMonth(firstString(resolved.reconcileMonth), months) ?? (await newestPublishedExpenseMonth()) ?? months[0];
+      result = await loadExpenseReconciliation(selected);
+    } catch (error) {
+      reconcileError = error instanceof Error ? error.message : "Unable to read this month right now.";
+    }
+    return (
+      <ExpenseCommandTabs active="reconcile" canApprove={canApprove}>
+        <ExpensePayslipReconciliationPanel error={reconcileError} months={months} result={result} selected={selected} />
+      </ExpenseCommandTabs>
+    );
+  }
 
   if (active === "queue") {
     const requestIdParam = firstString(resolved.requestId);

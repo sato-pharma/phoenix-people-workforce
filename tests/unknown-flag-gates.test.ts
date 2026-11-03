@@ -158,6 +158,7 @@ const PINNED = [
   "scripts/rebuild-source-of-sales-rollups.ts",
   "scripts/reconcile-month-customer-map.ts",
   "scripts/reconcile-payroll-deductions.ts",
+  "scripts/reconcile-payroll-expenses.ts",
   "scripts/record-a10-vacation-2025-10-29.ts",
   "scripts/recruitment-apply-reread-fields.ts",
   "scripts/recruitment-cv-fact-corrections.ts",

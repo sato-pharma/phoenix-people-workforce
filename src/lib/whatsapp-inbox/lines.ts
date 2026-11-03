@@ -52,6 +52,11 @@ export function whatsAppInboxLines(): WhatsAppInboxLine[] {
   ];
 }
 
+/** The handset's line, the one whose app must be opened every 14 days. */
+export function hrHandsetInboxLine(): WhatsAppInboxLine {
+  return fromEnv(HR_HANDSET_LINE, "WHATSAPP_INBOX_HANDSET");
+}
+
 export function findWhatsAppInboxLine(phoneNumberId: string | null | undefined): WhatsAppInboxLine | null {
   const id = phoneNumberId?.trim();
   if (!id) return null;

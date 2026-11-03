@@ -113,6 +113,12 @@ export function canBuildJobPosts(access: Pick<AccessContext, "role" | "scope">):
   return access.scope === "system" || recruitmentWorkRoles.includes(access.role);
 }
 
+// Sending a job post to the public careers page, and closing a card there. Narrower than building one:
+// the Talent Acquisition seat builds and downloads, only the Super Admin presses publish (owner, 2026-11-03).
+export function canPublishJobPosts(access: Pick<AccessContext, "role">): boolean {
+  return access.role === "Super Admin";
+}
+
 // WhatsApp message templates — WRITING, EDITING and DELETING them.
 //
 // Narrower than sending, on purpose, and narrower than any other gate in this file: the Super Admin
