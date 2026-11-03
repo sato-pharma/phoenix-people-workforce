@@ -283,6 +283,7 @@ export function InboxThreadView({
               Candidate: {conversation.candidate.name}
             </ActionLink>
           ) : null}
+          {conversation.linkedByPhone ? <span className="text-[11px] font-semibold text-slate-500">Matched by phone number</span> : null}
           {conversation.employee ? (
             <span className="inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-2 py-1.5 text-[12px] font-bold leading-none text-orange-800 shadow-[0_1px_2px_rgba(249,115,22,0.10)]">
               <Link2 aria-hidden className="h-3.5 w-3.5" />
@@ -294,7 +295,7 @@ export function InboxThreadView({
             {linked ? "Link to someone else" : "Link to a candidate or employee"}
           </Action>
           {linked ? (
-            <Action disabled={busy} onClick={unlink} tone="ghost">
+            <Action disabled={busy} onClick={unlink} title="Phoenix will not link this chat by phone number again" tone="ghost">
               <Unlink aria-hidden className="h-3.5 w-3.5" />
               Unlink
             </Action>

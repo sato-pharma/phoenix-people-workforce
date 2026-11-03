@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewEmptySeatsBoard } from "@/lib/reports/empty-seats";
 import { getScopedVacancyReport } from "@/lib/reports/organogram";
 import {
   errorMessage,
@@ -52,10 +53,12 @@ export default async function VacanciesPage() {
   // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
   // the master but does not add to it, and POST /api/employees asserts create on every add.
   const canAddEmployee = await canAccess(access, "employees", "create");
+  const canViewEmptySeats = await canViewEmptySeatsBoard(access);
 
   return (
     <VacanciesReport
       canAddEmployee={canAddEmployee}
+      canViewEmptySeats={canViewEmptySeats}
       initialError={initialError}
       initialReport={initialReport}
     />

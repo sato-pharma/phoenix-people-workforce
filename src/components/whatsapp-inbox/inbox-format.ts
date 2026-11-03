@@ -32,6 +32,17 @@ export function formatListTime(iso: string | null, now = new Date()): string {
   });
 }
 
+/** How long a chat has waited for a reply: "Waiting under an hour", "Waiting 5 hours", "Waiting 3 days". */
+export function formatWaitingFor(iso: string | null, now = new Date()): string {
+  const date = parse(iso);
+  if (!date) return "";
+  const hours = Math.floor((now.getTime() - date.getTime()) / 3_600_000);
+  if (hours < 1) return "Waiting under an hour";
+  if (hours < 24) return `Waiting ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.floor(hours / 24);
+  return `Waiting ${days} ${days === 1 ? "day" : "days"}`;
+}
+
 /** The time printed under one message bubble. */
 export function formatMessageTime(iso: string | null): string {
   const date = parse(iso);

@@ -1156,6 +1156,7 @@ import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts"
 import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
 import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
 import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
+import { runEmployeeRecordGapsTests } from "./employee-record-gaps.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -2586,6 +2587,7 @@ import { runLineVacanciesManagerReadableReasonTests } from "./line-vacancies-man
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runEmployeeAreaLineOptionsTests } from "./employee-area-line-options.test.ts";
 import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
+import { runVacanciesEmptySeatsTests } from "./vacancies-empty-seats.test.ts";
 import { runOrganogramTileEmployeeActionsTests } from "./organogram-tile-employee-actions.test.ts";
 import { runOrganogramAsOfMonthTests } from "./organogram-as-of-month.test.ts";
 import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test.ts";
@@ -5148,6 +5150,10 @@ await runTest(
 await runTest(
   "the Leavers tab and the left word: who has left, what they owe, the scan queue stays current staff, and flagging closes and decides nothing",
   runHiringLeaversTests,
+);
+await runTest(
+  "record gaps: active employees missing a bank or insurance detail, in words and never the numbers",
+  runEmployeeRecordGapsTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
@@ -9875,6 +9881,11 @@ await runTest(
 await runTest(
   "organogram open seat -> Add Employee pre-filled (line, area, position and manager travel; gated on employees:update)",
   runOrganogramVacancyHireLinkTests,
+);
+
+await runTest(
+  "empty seats board -> no row is never zero, an area counts once, the seats stop at the sales bound",
+  runVacanciesEmptySeatsTests,
 );
 
 await runTest(
