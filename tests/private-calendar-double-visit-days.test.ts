@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { _resetSharedReadCache } from "../src/lib/cache/shared-read.ts";
 import {
   buildParticipantOrFilter,
   collapseDuplicateVisitSubmissions,
@@ -19,6 +20,8 @@ import {
   findDoubleVisitFocusDays,
   liveDoubleVisitRowsFromMirror,
   readListedDayRuns,
+  readListedDaysSharingSettledWeeks,
+  SETTLED_WEEK_READ_LIMITS,
   type DoubleVisitDayReaders,
   type MirrorVisitRow,
 } from "../src/lib/double-visit-analytics/service.ts";
@@ -395,6 +398,117 @@ async function runListedDayRunTests() {
   assert.equal(asked, 0, "and asks nothing");
 }
 
+// THE PANEL READ THE SAME OLD WEEKS FOR EVERY MANAGER ON EVERY OPEN (2026-11-03, "fix the manager's
+// double-visit panel on the home"): 28 requests and about 5.8 s. A week more than 7 days old now comes
+// from one copy up to an hour old, the owner's word, and everyone cuts it to their own days. WINDOW ends on
+// Wednesday 30 Sep, so the weeks of 31 Aug, 7 Sep and 14 Sep are settled, and 21 Sep onward is read live.
+type DoorFilter = { dateFrom: string; dateTo: string; visitDates?: string[] };
+
+function shareOver(table: readonly (typeof MONTH)[number][], days: readonly string[], calls: DoorFilter[] = [], now?: () => number) {
+  return readListedDaysSharingSettledWeeks(
+    days,
+    WINDOW,
+    async (filter) => {
+      calls.push(filter);
+      return doorRead([...table], filter);
+    },
+    "test",
+    now,
+  );
+}
+
+async function runSettledWeekTests() {
+  // The same rows as the live read, row for row and in order, for every panel, in both id orders, and
+  // whether the viewer filled the copy or found it there. So the same tallies follow.
+  const panels: Array<[string, string[]]> = [
+    ["B-311", ["B-301", "B-302", "B-306"]],
+    ["B-312", ["B-303", "B-305"]],
+    ["B-321", ["B-301", "B-303", "B-305", "B-306"]],
+    ["B-304", ["B-301"]],
+    ["B-321", ["B-301", "B-302", "B-303", "B-304", "B-305", "B-306", "B-399", "B-312"]],
+  ];
+  for (const [table, order] of [[MONTH, "in id order"], [BACKWARDS, "ids against the dates"]] as const) {
+    _resetSharedReadCache();
+    for (const [viewer, probationers] of panels) {
+      const found = await findDoubleVisitFocusDays([viewer, ...probationers], WINDOW, readersOver(table));
+      assert.ok(found, `${viewer}: the focus finds its days`);
+      const live = await readListedDayRuns(found.days, WINDOW, async (filter) => doorRead(table, filter));
+      const shared = await shareOver(table, found.days);
+      assert.deepEqual(shared, live, `${viewer}, ${order}: the shared weeks give the live read's rows, in its order`);
+      assert.deepEqual(
+        doubleVisitFocusTallies(liveDoubleVisitRowsFromMirror(shared, EMPLOYEES, found.resolutions), canonicalHrIdKey(viewer)),
+        doubleVisitFocusTallies(liveDoubleVisitRowsFromMirror(live, EMPLOYEES, found.resolutions), canonicalHrIdKey(viewer)),
+        `${viewer}, ${order}: and so the same tallies`,
+      );
+    }
+  }
+
+  // Each settled week is read once, whole, whoever asks. Everything from 21 Sep is read live on every open.
+  _resetSharedReadCache();
+  const firstManager: DoorFilter[] = [];
+  await shareOver(MONTH, ["2026-09-02", "2026-09-03", "2026-09-08", "2026-09-15", "2026-09-22", "2026-09-28"], firstManager);
+  assert.deepEqual(
+    firstManager.filter((call) => !call.visitDates).map((call) => [call.dateFrom, call.dateTo]).sort(),
+    [["2026-08-31", "2026-09-06"], ["2026-09-07", "2026-09-13"], ["2026-09-14", "2026-09-20"]],
+    "the first manager reads each settled week whole, a Monday to a Sunday",
+  );
+  assert.deepEqual(firstManager.flatMap((call) => call.visitDates ?? []), ["2026-09-22", "2026-09-28"], "and his recent days live");
+  const secondManager: DoorFilter[] = [];
+  const second = await shareOver(MONTH, ["2026-09-03", "2026-09-07", "2026-09-28"], secondManager);
+  assert.deepEqual(secondManager.flatMap((call) => call.visitDates ?? []), ["2026-09-28"], "another manager asks only for the recent day");
+  assert.equal(secondManager.length, 1, "and for no settled week");
+  assert.deepEqual([...new Set(second.map((row) => row.visit_date))].sort(), ["2026-09-03", "2026-09-07", "2026-09-28"], "a week's other days stay out of his rows");
+
+  // Up to an hour late, never later: his word, pinned to the millisecond.
+  assert.equal(SETTLED_WEEK_READ_LIMITS.ttlMs, 3_600_000, "the owner chose one hour on 3 Nov 2026");
+  _resetSharedReadCache();
+  let clock = 1_000;
+  const now = () => clock;
+  const growing = [...MONTH];
+  const beforeCorrection = await shareOver(growing, ["2026-09-03"], [], now);
+  const correction = visit({ agent: "B-305", date: "2026-09-03", double: "B-311" });
+  growing.push(correction);
+  clock += SETTLED_WEEK_READ_LIMITS.ttlMs - 1;
+  assert.deepEqual(await shareOver(growing, ["2026-09-03"], [], now), beforeCorrection, "a correction may wait inside the hour");
+  clock += 1;
+  assert.ok((await shareOver(growing, ["2026-09-03"], [], now)).some((row) => row.id === correction.id), "and shows the moment the hour is up");
+
+  // The last 7 days never come from the copy, whatever the clock says.
+  const newest = visit({ agent: "B-305", date: "2026-09-28", double: "B-311" });
+  growing.push(newest);
+  assert.ok((await shareOver(growing, ["2026-09-28"], [], now)).some((row) => row.id === newest.id), "a visit from this week shows on the next open");
+  const lastWeekDay = visit({ agent: "B-305", date: "2026-09-23", double: "B-311" });
+  await shareOver(growing, ["2026-09-23"], [], now);
+  growing.push(lastWeekDay);
+  assert.ok((await shareOver(growing, ["2026-09-23"], [], now)).some((row) => row.id === lastWeekDay.id), "and so does one from exactly 7 days ago");
+
+  // Nothing the door could not vouch for is kept.
+  _resetSharedReadCache();
+  assert.deepEqual(await shareOver([], ["2026-09-03"]), [], "a week the door answers empty for reads empty");
+  assert.ok((await shareOver(MONTH, ["2026-09-03"])).length > 0, "but is asked again on the next open, never held for an hour");
+  _resetSharedReadCache();
+  await assert.rejects(
+    readListedDaysSharingSettledWeeks(["2026-09-03"], WINDOW, async () => {
+      throw new Error("statement timeout");
+    }, "test"),
+    /statement timeout/,
+    "a failed read reaches the caller",
+  );
+  assert.ok((await shareOver(MONTH, ["2026-09-03"])).length > 0, "and leaves nothing behind");
+
+  // Two read shapes never share a copy, and a day outside the window is never handed back.
+  _resetSharedReadCache();
+  let otherShapeReads = 0;
+  await shareOver(MONTH, ["2026-09-03"]);
+  await readListedDaysSharingSettledWeeks(["2026-09-03"], WINDOW, async (filter) => {
+    otherShapeReads += 1;
+    return doorRead(MONTH, filter);
+  }, "another shape");
+  assert.equal(otherShapeReads, 1, "another shape reads for itself");
+  assert.deepEqual(await shareOver(MONTH, ["2026-08-31", "2026-10-01"]), [], "days outside the window are dropped");
+  _resetSharedReadCache();
+}
+
 function runDoorEmulationGuards() {
   // The emulated door above assumes the participant filters match the agent OR the partner, by hr id
   // (every casing) or by CRM id. Pin the expressions the real door sends.
@@ -435,6 +549,13 @@ function runWiringGuards() {
   );
   const focus = service.slice(service.indexOf("export async function getDoubleVisitPortalFocus"), service.indexOf("export function doubleVisitFocusTallies"));
   assert.ok(focus.length > 0, "the focus panel's body is located");
+  assert.match(focus, /shareSettledWeeks: true,/, "the panel takes its settled weeks from the shared copy");
+  assert.equal(service.split("shareSettledWeeks: true").length - 1, 1, "and it alone: the report, the calendar and the scoring engine read this loader live");
+  assert.match(
+    service,
+    /if \(options\?\.visitDates && options\.shareSettledWeeks\) \{/,
+    "the copy serves a listed-day read only, so a failed lookup still reads the whole window live",
+  );
   assert.match(focus, /const probationShown = probationOrdered\.slice\(0, FOCUS_PROBATION_DISPLAY_LIMIT\);/);
   assert.match(
     focus,
@@ -469,6 +590,7 @@ export async function runPrivateCalendarDoubleVisitDaysTests() {
   await runBoundsTests();
   await runSameFocusTests();
   await runListedDayRunTests();
+  await runSettledWeekTests();
   runOverrideTests();
   runDoorEmulationGuards();
   runWiringGuards();
