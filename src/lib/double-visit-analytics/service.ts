@@ -16,6 +16,7 @@ import type { DvProgress } from "@/lib/probation/intelligence/report-metrics";
 import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
+import { getOrLoadShared, sharedReadKey } from "@/lib/cache/shared-read";
 import { compareUuidText, dayScanRuns, DOUBLE_VISIT_SLICE_DAYS, getDoubleVisitRows, visitPartnerHrIds } from "@/lib/crm/reads";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { cairoTodayIso } from "@/lib/crm/dates";
@@ -574,7 +575,7 @@ function extractNameAreaLine(value: string | null | undefined) {
 async function paginateLiveMirrorVisits(
   dateFrom: string,
   dateTo: string,
-  options?: { includeResignedAgents?: boolean; visitDates?: readonly string[]; withoutVisitDetail?: boolean },
+  options?: { includeResignedAgents?: boolean; shareSettledWeeks?: boolean; visitDates?: readonly string[]; withoutVisitDetail?: boolean },
 ): Promise<MirrorVisitRow[]> {
   // Reads through the CRM single-door double-visit loader (keyset-paginated past the PostgREST
   // row cap, resigned/excluded agents removed by default). The canonical double-visit predicate —
@@ -604,6 +605,10 @@ async function paginateLiveMirrorVisits(
         (options?.withoutVisitDetail ? "" : `, ${PHOENIX_VISIT_DETAIL_COLUMNS}`),
     });
   // Whole days only (see findDoubleVisitCalendarDays): every row of each listed day, whoever it names.
+  if (options?.visitDates && options.shareSettledWeeks) {
+    const sharedKey = sharedReadKey({ includeResignedAgents: options.includeResignedAgents, withoutVisitDetail: options.withoutVisitDetail });
+    return readListedDaysSharingSettledWeeks(options.visitDates, { end: dateTo, start: dateFrom }, read, sharedKey);
+  }
   if (options?.visitDates) return readListedDayRuns(options.visitDates, { end: dateTo, start: dateFrom }, read);
   return read({ dateFrom, dateTo });
 }
@@ -636,6 +641,68 @@ export async function readListedDayRuns<Row extends { id: string }>(
     read({ dateFrom: run[0], dateTo: run[run.length - 1], visitDates: run }),
   );
   return parts.flat().sort((left, right) => compareUuidText(left.id, right.id));
+}
+
+const SETTLED_DOUBLE_VISIT_WEEKS = "double-visit-settled-weeks";
+
+/** A whole week is settled once its last day is more than this many days old. */
+const SETTLED_WEEK_AFTER_DAYS = 7;
+
+/** One hour is the owner's word (2026-11-03). The budget holds about two years of weeks: 17,897 rows in the 44 weeks to 3 Nov 2026. */
+export const SETTLED_WEEK_READ_LIMITS = { maxEntries: 120, maxRowsTotal: 40_000, ttlMs: 60 * 60 * 1000 };
+
+/**
+ * A read of listed whole days that takes its settled weeks from one copy every manager shares.
+ *
+ * WHY (2026-11-03, "fix the manager's double-visit panel on the home"). The portal focus panel was the
+ * slowest card on a manager's home: about 5.8 s and 28 requests in a typical minute on 3 Nov 2026. The typical
+ * manager had double-visited on 62 days since January, so each open read those whole days again, about 6,200
+ * rows with no probationer's days on top, and so did every other manager. A week more than 7 days old hardly
+ * changes, and the owner chose how late it may be: a correction to one may reach the panel up to an hour late.
+ * So each settled week is read whole, once an hour, and everyone filters it to their own days. The last 7 days
+ * are always read live.
+ *
+ * WHY THE SAME ROWS. The door's duplicate collapse works inside one day and the rows are cut to the listed
+ * days after it, so each listed day holds exactly what readListedDayRuns gives it; the sort puts them back in
+ * the same id order. Credit is decided from these rows on every open (liveDoubleVisitRowsFromMirror), with
+ * that open's identity overrides and directory, so only the visits themselves can be an hour old.
+ *
+ * An empty week is never kept: this door answers [] for a missing view, and an hour of that would read as
+ * nobody having visited. A failed read keeps nothing either. Exported for its unit test.
+ */
+export async function readListedDaysSharingSettledWeeks<Row extends { id: string; visit_date: string }>(
+  days: readonly string[],
+  window: { end: string; start: string },
+  read: (filter: { dateFrom: string; dateTo: string; visitDates?: string[] }) => Promise<Row[]>,
+  sharedKey: string,
+  now: () => number = Date.now,
+): Promise<Row[]> {
+  const listed = new Set(days.filter((day) => day >= window.start && day <= window.end));
+  const newestSettledDay = addDaysIso(window.end, -SETTLED_WEEK_AFTER_DAYS - 1);
+  const recentDays: string[] = [];
+  const settledWeeks = new Set<string>();
+  for (const day of listed) {
+    const week = isoWeekStart(day);
+    if (addDaysIso(week, 6) <= newestSettledDay) settledWeeks.add(week);
+    else recentDays.push(day);
+  }
+  const [recent, settled] = await Promise.all([
+    readListedDayRuns(recentDays, window, read),
+    mapWithConcurrency([...settledWeeks], LISTED_DAY_RUN_CONCURRENCY, async (week) => {
+      const { rows } = await getOrLoadShared(
+        SETTLED_DOUBLE_VISIT_WEEKS,
+        `${sharedKey}|${week}`,
+        async () => {
+          const weekRows = await read({ dateFrom: week, dateTo: addDaysIso(week, 6) });
+          return weekRows.length > 0 ? weekRows : null;
+        },
+        SETTLED_WEEK_READ_LIMITS,
+        now,
+      );
+      return (rows ?? []).filter((row) => listed.has(row.visit_date));
+    }),
+  ]);
+  return [...recent, ...settled.flat()].sort((left, right) => compareUuidText(left.id, right.id));
 }
 
 // RETIRED 2026-08-01: a hardcoded agent_crm_id -> hr_id corrections map used to live here, with two
@@ -874,6 +941,8 @@ export async function getLiveDoubleVisitRows(
     visitDates?: readonly string[];
     /** Leave the Phoenix field set out of the read, for a caller that prints no visit (the focus panel). */
     withoutVisitDetail?: boolean;
+    /** The focus panel only: listed days of a settled week come from a copy up to an hour old (readListedDaysSharingSettledWeeks). */
+    shareSettledWeeks?: boolean;
     /** The identity overrides the caller already read, so ONE snapshot decides both which days were
      * read and who each visit is credited to. */
     crmIdentityResolutions?: readonly CrmResolutionRow[];
@@ -2074,6 +2143,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     focusHrIds.length === 0
       ? []
       : await getLiveDoubleVisitRows(trendStart, periodTo, employees, {
+          shareSettledWeeks: true,
           withoutVisitDetail: true,
           ...(focusDays ? { crmIdentityResolutions: focusDays.resolutions, visitDates: focusDays.days } : {}),
         });

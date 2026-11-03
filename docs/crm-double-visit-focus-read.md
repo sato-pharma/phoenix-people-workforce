@@ -74,3 +74,34 @@ under its own boundary, so the page paints without it. The next step, if the `ho
 timer says it is worth one, is a count on the database rather than rows.
 
 - **Do not pass `withoutVisitDetail` from anywhere else** — the report prints these columns, through this loader.
+
+## Settled weeks come from one shared copy (3 Nov 2026, "fix the manager's double-visit panel on the home")
+
+Tuesday 3 Nov's card timers put the panel at about 5.8 s and 28 requests in a typical minute, on Small compute.
+Read from production that day: the company had 17,897 double-visit rows since January, and the typical manager had
+double-visited on 62 days, in 28 different weeks, whose whole days hold about 6,200 rows. Every manager read
+those rows again on every open, and most of them were the same rows.
+
+**The owner chose the freshness** (multiple-choice answer, 3 Nov 2026): "Yes, one hour is fine". A correction to a
+visit more than a week old may reach the panel up to an hour late. Everything else stays live.
+
+`readListedDaysSharingSettledWeeks`:
+
+- A week is settled when its Sunday is more than 7 days old. Listed days in any other week go through
+  `readListedDayRuns`, live, on every open.
+- A settled week is read whole, one Monday to Sunday request, into the `double-visit-settled-weeks` store for one
+  hour (`SETTLED_WEEK_READ_LIMITS`). Each viewer cuts it to their own days, then the rows go back in id order.
+- The identity overrides and the directory are still read on every open, and credit is decided from them, so an
+  override applies at once.
+- An empty week is never kept, because the door answers `[]` for a missing view. A failed read keeps nothing.
+- If the day lookup fails, the panel reads the whole window live, as before.
+
+**What it costs:** the first open after a deploy or an expired hour reads the weeks it needs, up to all of them,
+four at a time. Concurrent opens share that load. The copy holds about 18,000 rows in the web process; the
+budget is 40,000 and past it the oldest week goes first.
+
+- **Do not widen the hour.** It is his word, and a longer one needs his word again.
+- **Do not pass `shareSettledWeeks` from another reader.** The report, the private calendar and the scoring engine
+  read this loader live.
+- **Do not refresh this copy from a visit save.** A new visit is dated inside the last 7 days, which are live, and
+  hundreds of saves a day would empty the copy all day.

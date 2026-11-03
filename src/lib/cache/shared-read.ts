@@ -20,11 +20,20 @@
  *
  * One web process per service, so an in-process cache is coherent there. Opt-in by design: a read that
  * decides money, a deduction, an approval or a notification never comes through here.
+ *
+ * A longer lifetime (`ttlMs`) is the owner's to give, read by read. He has given one: the portal's double-visit
+ * panel may count weeks more than 7 days old from a copy up to an hour old (2026-11-03,
+ * readListedDaysSharingSettledWeeks in src/lib/double-visit-analytics/service.ts).
  */
 
 export const SHARED_READ_TTL_MS = 60_000;
 
-export type SharedReadLimits = { maxEntries: number; maxRowsTotal: number };
+export type SharedReadLimits = {
+  maxEntries: number;
+  maxRowsTotal: number;
+  /** How long a copy lives; SHARED_READ_TTL_MS when unset. */
+  ttlMs?: number;
+};
 
 type Entry = { rows: object[]; storedAt: number };
 
@@ -86,7 +95,7 @@ export async function getOrLoadShared<Row extends object>(
   const namespace = namespaceFor(name);
   const fullKey = `${namespace.generation}::${key}`;
   const cached = namespace.entries.get(fullKey);
-  if (cached && now() - cached.storedAt < SHARED_READ_TTL_MS) {
+  if (cached && now() - cached.storedAt < (limits.ttlMs ?? SHARED_READ_TTL_MS)) {
     // Re-insert so the Map's order stays least-recently-used first.
     namespace.entries.delete(fullKey);
     namespace.entries.set(fullKey, cached);

@@ -15,7 +15,8 @@ const code = (file: string) => stripComments(read(file));
 const squeeze = (text: string) => text.replace(/\s+/g, " ");
 
 function testHandOverRules() {
-  const firstRead = (): CrmFirstRead => ({ body: Promise.resolve("{}"), key: "day", url: "/api/phoenix-crm/visits?seatId=S-1" });
+  let minted = 0;
+  const firstRead = (): CrmFirstRead => ({ body: Promise.resolve("{}"), id: `read-${(minted += 1)}`, key: "day", url: "/api/phoenix-crm/visits?seatId=S-1" });
 
   const own = firstRead();
   assert.equal(firstReadFor(null, own.url, own.key), null, "with nothing handed over the screen reads for itself");
@@ -31,6 +32,19 @@ function testHandOverRules() {
   firstReadSpent(back);
   assert.equal(firstReadFor(back, back.url, back.key, 1_001), null, "RED browser Back must read afresh, never redraw the day from before the visit he logged");
 
+  // What a real browser does (3 Nov 2026, Back 35 s after Visits drew): the same read comes back in ANOTHER object.
+  const drawn = firstRead();
+  assert.equal(firstReadFor(drawn, drawn.url, drawn.key, 1_000), drawn);
+  firstReadSpent(drawn);
+  assert.equal(firstReadFor({ ...drawn }, drawn.url, drawn.key, 1_001), null, "RED Back restores the read in a new object, and it is still the read already drawn");
+
+  const unmet = firstRead();
+  assert.equal(firstReadFor(unmet, unmet.url, unmet.key, 1_000), unmet);
+  assert.equal(firstReadFor({ ...unmet }, unmet.url, unmet.key, 1_001 + FIRST_READ_LIFETIME_MS), null, "RED and a read met long ago is too old in a new object as well");
+
+  const nextRender = firstRead();
+  assert.equal(firstReadFor(nextRender, nextRender.url, nextRender.key, 1_000), nextRender, "a new render of the page is a new read, and it is handed over");
+
   const late = firstRead();
   assert.equal(firstReadFor(late, late.url, late.key, 1_000), late);
   assert.equal(firstReadFor(late, late.url, late.key, 1_000 + FIRST_READ_LIFETIME_MS), late, "still good at the very end of its life");
@@ -43,7 +57,7 @@ async function testAnswerOrItsOwnRead() {
     reads += 1;
     return { from: "route" };
   };
-  const base = { key: "day", url: "/x" };
+  const base = { id: "read-1", key: "day", url: "/x" };
 
   assert.deepEqual(await readFirst({ ...base, body: Promise.resolve('{"from":"page"}') }, readItself), { from: "page" }, "the answer is parsed as the route's own JSON");
   assert.equal(reads, 0, "RED and the browser does not ask a second time");
@@ -233,6 +247,7 @@ function testEachLoadIsItsRoutesOwn() {
   assert.ok(code("app/api/phoenix-crm/settings/route.ts").includes('assertPermission(access, "phoenix_crm", "update")'), "Settings asks for update on its route");
   assert.ok(server.includes('permission: "update"'), "RED and on the page's read");
   assert.match(server, /body: runFirstRead\(access, target\)/, "RED handed over still running: the page never waits for it");
+  assert.ok(server.includes("id: randomUUID()"), "RED every read the page starts carries its own id, which is how Back is told from a first open");
   assert.ok(!/await runFirstRead/.test(server), "RED never awaited");
 }
 

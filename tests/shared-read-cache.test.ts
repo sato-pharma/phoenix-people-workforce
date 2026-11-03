@@ -74,6 +74,22 @@ export async function runSharedReadCacheTests() {
     assert.equal(SHARED_READ_TTL_MS, 60_000, "the owner chose up to ONE minute (2026-10-16) — never widen it silently");
   }
 
+  // ── (1b) A read the owner gave longer keeps its own lifetime, and only that read ──
+  {
+    _resetSharedReadCache();
+    let clock = 1_000;
+    const now = () => clock;
+    const load = async () => [{ id: 1 }];
+    const longer = { ...LIMITS, ttlMs: 3_600_000 };
+    await getOrLoadShared("long", "k", load, longer, now);
+    await getOrLoadShared("t", "k", load, LIMITS, now);
+    clock += SHARED_READ_TTL_MS;
+    assert.equal((await getOrLoadShared("long", "k", load, longer, now)).cache, "hit", "past the minute, this one is still inside its hour");
+    assert.equal((await getOrLoadShared("t", "k", load, LIMITS, now)).cache, "miss", "RED every other read keeps the one minute");
+    clock += 3_600_000 - SHARED_READ_TTL_MS;
+    assert.equal((await getOrLoadShared("long", "k", load, longer, now)).cache, "miss", "RED and an hour is an hour");
+  }
+
   // ── (2) Two viewers missing at once share ONE load ────────────────────────────
   {
     _resetSharedReadCache();

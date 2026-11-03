@@ -700,6 +700,22 @@ export const MODULES = [
     keywords: ["shared window", "shared read cache", "getOrLoadShared", "reuseRecentWindow", "contact roster", "open assignments", "trade counterparties", "region brick map", "board read", "one statement", "check-in pins"],
     tables: ["crm_contact_assignments"],
   },
+  // 🔴 SPLIT, 3 Nov 2026, THE FOURTH TIME `crm` HAS HIT THE POINTER MARGIN: the settled-weeks rule took its injected
+  // pointer to 4,078 bytes against the 4,000 `tests/module-memory.test.ts` holds. The FOCUS PANEL is the clean cut:
+  // whose days it reads, the field set it leaves out and the one-hour copy it shares are one family, none of it is
+  // money, and none of it is read while editing a call rate or a scoring rule. `crm` KEEPS EVERY GLOB IT HAD, so a
+  // file of this panel loads the pair and nothing that used to arrive stops arriving. Account: `docs/module-memory.md`, "Limits".
+  {
+    id: "crm-double-visit-focus",
+    title: "Field CRM — the double-visit focus panel on a manager's home",
+    scope: "The double-visit panel on a District Manager's and a National Sales Manager's home: whose days it reads, the field set it leaves out, and the settled weeks it counts from a copy up to an hour old.",
+    globs: [
+      "src/lib/double-visit-analytics/service.ts",
+      "tests/private-calendar-double-visit-days*",
+    ],
+    keywords: ["double-visit focus", "focus panel", "double visit panel", "settled weeks", "withoutVisitDetail", "shareSettledWeeks", "getDoubleVisitPortalFocus", "double_visit_focus"],
+    tables: [],
+  },
   // 🔴 SPLIT 2026-10-23, FOR THE REASON `phoenix-crm-approvals` RECORDS, AND THE SECOND TIME `crm` HAS
   // HIT IT: its injected pointer measured 4,054 bytes against the 4,000-byte margin
   // `tests/module-memory.test.ts` holds, the moment the entry-days cache rule landed — the same squeeze
