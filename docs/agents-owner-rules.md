@@ -9175,15 +9175,16 @@ visit: it lands on the wrong day, or off plan, and a manager is told something n
 one tap, in a case that should be rare. Elapsed time is measured on the phone's clock and the day on the server's,
 because each is right about only that one thing.
 
-**What protects the evidence.** A held save must never become a mark against the rep.
+**What protects the evidence.** A held save is never dated by the phone and never reads as impossible travel. It can
+still lower the rank until settled, by his ruling below.
 
 - `queuedSeconds` is a duration, bounded 1 to 7,200, parsed by `parseVisitDraft`, and never sent to
   `phoenix_crm_save_visit`. Only a browser may carry it.
 - It is filed as `queued_seconds` on `phoenix_crm_visit_capture_provenance`, after the save.
 - The phone-clock check adds it to the tap before comparing, so a phone that merely waited reads true and a phone whose
   clock is truly wrong still shows.
-- The travel check compares both sides at the moment the rep was there (`atTheDoor`), or a drained queue reads as visits
-  seconds apart and the next normal visit reads as an impossible trip. What is filed keeps the arrival.
+- The travel check runs twice, at arrival and at the moment the rep was there (`checkHeldLocationIntegrity`). What is filed
+  keeps the arrival.
 - The SFE Manager's Visit report shows it as Sent late (min), so a forged value is visible. A rep and a district manager
   never read it.
 
@@ -9210,9 +9211,30 @@ bar. The sending code is fetched when the Visits screen and the form open, becau
 lost the signal, and the runner looks again when signal returns. A tab left open for another person stops rather than
 sends under the new sign-in.
 
-**What the review accepted (3 Nov).** A forged wait can hide an impossible-travel reading, up to two hours a save. It takes
-devtools, it must also backdate the tap or the phone-clock reading shows it, it is filed and shown as Sent late (min), and
-the same person could already forge the coordinates. It moves a rank at most, and no pay reads it.
+**A wait may correct a reading and never erase it.** The first build believed the phone's claimed wait, so a forged wait
+could hide an impossible-travel reading. Told that, he answered:
+
+> "this rsik is not accpeted at all must fix"
+
+Asked how to treat a case Phoenix cannot tell apart from a forged wait, he chose:
+
+> "Lower rank until settled (Recommended)"
+
+- The check runs at arrival, on the server's clock, and again at the door, with each side moved back by the wait the server
+  believes (`checkHeldLocationIntegrity`). Every finding from either pass stands, so a wait cannot hide a replayed
+  coordinate or a day with no drift.
+- A trip impossible at the door is `impossible_travel`. Even on the phone's word, nobody made it.
+- A trip impossible only at arrival is `travel_rests_on_held_wait`, which is strong. No software can prove when an offline
+  phone was pressed, so an honest drained queue and a forged wait both land here. It costs the rank until he settles the
+  case, an honest rep's included, and his settle clears it. Never demote it to weak.
+- Only a drain of two or more, or a next visit soon after a held one, can trip it, and only at 2 km or more net of accuracy
+  and over 150 km/h. A lone held visit cannot, because arriving late only widens its gap.
+- A claim is void, all of it, if one of the rep's own arrivals sits inside the wait and more than five minutes before this
+  one landed (`creditedHeldSeconds`), because an online Phoenix would have sent the visit then. A save by a manager or an
+  admin is not that phone online, and a place's `captured_at` is not confirmed to be a receipt, so neither counts.
+- `device_skew_minutes` is still corrected by the wait, on the save path, because reading the history there would slow the
+  save. The SFE Manager's report shows Sent late (min) beside it.
+- How many honest cases this makes is unmeasured until real use. Count the board's cases carrying the flag.
 
 **Pinned by** `tests/phoenix-crm-visit-resend-rules.test.ts`, `tests/phoenix-crm-visit-outbox.test.ts` and
 `tests/phoenix-crm-queued-evidence.test.ts`.

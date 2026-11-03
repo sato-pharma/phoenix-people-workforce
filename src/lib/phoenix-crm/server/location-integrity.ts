@@ -19,10 +19,10 @@
 import { assessCaptureTrust, fixesAreBitIdentical, type CaptureFix } from "@/lib/evidence/capture-trust";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import {
-  atTheDoor,
-  checkLocationIntegrity,
+  checkHeldLocationIntegrity,
   PHOENIX_CRM_STRONG_INTEGRITY_FLAGS,
   REPLAY_DECIMALS,
+  type PhoenixCrmHeldPriorFix,
   type PhoenixCrmIntegrityFlag,
   type PhoenixCrmPriorFix,
 } from "@/lib/phoenix-crm/location-integrity";
@@ -77,12 +77,14 @@ function toPriorFix(row: Row, customerKey: string): PhoenixCrmPriorFix | null {
   };
 }
 
+type LoadedHistory = { history: PhoenixCrmHeldPriorFix[]; ownArrivals: Date[] };
+
 /**
  * Everything the detectors compare one fix against: this rep's recent captures, plus any capture by
  * ANYONE that sits on the same coordinate. Visits and validated places both count as fixes — a rep
  * who spoofs a place and then visits it honestly is still a rep who spoofed a place.
  */
-async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, isTest: boolean): Promise<PhoenixCrmPriorFix[]> {
+async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, isTest: boolean): Promise<LoadedHistory> {
   const supabase = getSupabaseAdmin();
   const ownSince = new Date(Date.now() - OWN_HISTORY_DAYS * 86_400_000).toISOString();
   const replaySince = new Date(Date.now() - REPLAY_HISTORY_DAYS * 86_400_000).toISOString();
@@ -91,7 +93,7 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
   const lonLow = fix.lon - COORDINATE_BAND;
   const lonHigh = fix.lon + COORDINATE_BAND;
 
-  const visitColumns = "id, lat, lon, accuracy_meters, captured_at, rep_hr_id, customer_id";
+  const visitColumns = "id, lat, lon, accuracy_meters, captured_at, rep_hr_id, customer_id, entered_by_hr_id";
   // A place records who created it rather than a "rep", so it is aliased into the same shape.
   const placeColumns = "lat, lon, accuracy_meters, captured_at, rep_hr_id:created_by_hr_id, customer_id";
 
@@ -137,18 +139,27 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
       .limit(500),
   ]);
 
-  // 🔴 A HELD SAVE ARRIVED LATE, SO ITS `captured_at` IS NOT WHEN HE WAS THERE. Compared raw, a drained queue
-  // reads as several visits seconds apart, and the next normal visit reads as a trip made in the time since
-  // the last one arrived. A failed read here shifts nothing: the check runs as it did before the queue.
+  // 🔴 A HELD SAVE ARRIVED LATE, SO ITS `captured_at` IS NOT WHEN HE WAS THERE. Each row carries the wait its phone
+  // claimed and stays at its arrival; `checkHeldLocationIntegrity` decides what to believe. A failed read here
+  // claims nothing: the check runs as it did before the queue.
   const heldSeconds = new Map(((held.data ?? []) as Row[]).map((row) => [String(row.visit_id), Number(row.queued_seconds)]));
-  const out: PhoenixCrmPriorFix[] = [];
+  const history: PhoenixCrmHeldPriorFix[] = [];
   for (const result of [ownVisits, ownPlaces, replayVisits, replayPlaces]) {
     for (const row of (result.data ?? []) as Row[]) {
       const prior = toPriorFix(row, "customer_id");
-      if (prior) out.push(atTheDoor(prior, heldSeconds.get(String(row.id))));
+      if (prior) history.push({ ...prior, queuedSeconds: heldSeconds.get(String(row.id)) ?? null });
     }
   }
-  return out;
+
+  // When this rep's phone reached the server, for testing a claimed wait. Their own visits only, because a save by a
+  // manager or an admin is not this phone online, and a place's `captured_at` is not confirmed to be a receipt.
+  // On a visit it is: 5,686 of 5,694 sat within a second of `created_at` on production, 14 days to 3 Nov 2026.
+  const ownArrivals: Date[] = [];
+  for (const row of (ownVisits.data ?? []) as Row[]) {
+    const arrivedAt = new Date(String(row.captured_at));
+    if (String(row.entered_by_hr_id ?? "").toUpperCase() === repHrId && !Number.isNaN(arrivedAt.getTime())) ownArrivals.push(arrivedAt);
+  }
+  return { history, ownArrivals };
 }
 
 export type JudgeCaptureInput = {
@@ -178,11 +189,13 @@ export type JudgeCaptureInput = {
 export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
   try {
     const repHrId = input.repHrId.toUpperCase();
-    const history = await loadHistory(repHrId, input.fix, input.isTest).catch(() => [] as PhoenixCrmPriorFix[]);
+    const { history, ownArrivals } = await loadHistory(repHrId, input.fix, input.isTest).catch((): LoadedHistory => ({ history: [], ownArrivals: [] }));
     // The capture being judged is already on file by now, so it would otherwise match itself.
-    // Compared at the moment he was there. What is FILED below keeps the arrival: it must agree with the visit.
-    const verdict = checkLocationIntegrity({
-      fix: atTheDoor(input.fix, input.queuedSeconds),
+    // Judged at arrival and again at the door. What is FILED below keeps the arrival: it must agree with the visit.
+    const verdict = checkHeldLocationIntegrity({
+      fix: input.fix,
+      queuedSeconds: input.queuedSeconds,
+      ownArrivals,
       repHrId,
       customerId: input.customerId,
       deviceMocked: input.deviceMocked,
