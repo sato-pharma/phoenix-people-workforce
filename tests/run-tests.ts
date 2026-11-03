@@ -2983,6 +2983,7 @@ import { runCrmIReports360HoldoutsTests } from "./crm-ireports360-holdouts.test.
 import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
 import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
 import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fence.test.ts";
+import { runPhoenixCrmSeatAtBuildingTests } from "./phoenix-crm-seat-at-building.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11846,6 +11847,7 @@ await runTest("who still records only in iReports360 (3 Nov 2026): vendor rows a
 await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
 await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
 await runTest("Award Cheques refuses the Talent Acquisition seat on the page and every API verb, and her Spotlight read and print stay", runSpotlightChequesSeatFenceTests);
+await runTest("a rep seats a customer in a polyclinic only while standing in that building (3 Nov 2026): 3.9 km is refused at both doors before the timetable scan, no reading seats as before, a manager and the Super Admin's move are not asked, the building is filed for the SFE and the row keeps no reading", runPhoenixCrmSeatAtBuildingTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

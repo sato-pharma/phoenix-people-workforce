@@ -39,6 +39,7 @@
 // doctor: docs/phoenix-crm-shared-places.md.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { isUuid } from "@/lib/http/uuid";
 import {
   cleanText,
@@ -47,7 +48,13 @@ import {
   parseCapturedFix,
   placeReadingsPrecise,
   roughFixAtThePlace,
+  type ValidatedPlaceReading,
+  VISIT_MAX_ACCURACY_METERS,
+  visitAwayFromValidatedPlace,
+  type VisitPlaceVerdict,
+  withinAccuracy,
 } from "@/lib/phoenix-crm/entry-rules";
+import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
@@ -150,13 +157,19 @@ export function parseSharedPlaceDraft(raw: unknown): EntryRuleResult<SharedPlace
 /**
  * What the phone may say when it seats a customer: which venue, the TIMETABLE photo, and the hours.
  *
- * 🔴 NO FIX AT ALL, and that is the point of the whole design (owner, 2026-10-09: the polyclinic's
- * location is taken once, so there is no location when a customer is seated in it). The point, the
- * brick, the area and the region are copied from the venue on the server; the location of the visit
- * itself is taken on the visit, as always.
+ * 🔴 NO POINT OF ITS OWN, and that is the point of the whole design (owner, 2026-10-09: the polyclinic's
+ * location is taken once). The point, the brick, the area and the region are copied from the venue on
+ * the server; the location of the visit itself is taken on the visit, as always. The one reading a
+ * seating carries (`standingAt`, owner, 3 Nov 2026) answers one question at the door and is never stored
+ * on the place.
  */
 export type SeatedPlaceDraft = {
   sharedPlaceId: string;
+  /**
+   * Where the phone stood when Save was pressed, read in silence. Null is NOT MEASURED — location off,
+   * no reading in time, an older build, or one too rough to say — and it seats exactly as before.
+   */
+  standingAt: SeatingReading | null;
   /**
    * The BUILDING's timetable, photographed live — or null, which means "use the one already on file
    * for this venue" (owner, 2026-10-10). The server never takes reuse on the phone's word: it reads
@@ -177,6 +190,55 @@ export type SeatedPlaceDraft = {
    */
   session: "AM" | "PM" | null;
 };
+
+export type SeatingReading = { lat: number; lon: number; accuracyMeters: number | null };
+
+/**
+ * 🔴 A REP SEATS A CUSTOMER ONLY WHILE STANDING IN THAT BUILDING (owner, 3 Nov 2026, chose "Refuse at
+ * seating", amending his own 2026-10-09 "no location"). Hadeer Abdelnaser Osman Hassan's Dr Farid Shawky
+ * was seated in a look-alike building 3.9 km from the door they stood at, the far-visit rule then
+ * refused every visit at the real door, and only the Super Admin could undo it.
+ *
+ * The sentence is about HIS OWN work and the way out — never the line, his metres or a check, as
+ * `VISIT_AWAY_FROM_PLACE` — and it is Golden Rule #1's fourth exception, by his word. Measured over the
+ * 30 days before: of 315 seatings with a visit reading within 20 minutes, 299 (95%) sat inside the line.
+ */
+export const SEATING_AWAY_FROM_BUILDING =
+  "This customer can be added only while you are in their building, and your location now is not there. Choose the building you are in. If you are there, step outside, wait a moment for the location to settle, then save again.";
+
+/** Sends the rep's screen back to the building step, as `SCHEDULE_RETAKE_CODE` sends it to the timetable. */
+export const SEATING_AWAY_CODE = "phoenix_crm_seating_away_from_building";
+
+/**
+ * Read one reading off the wire, or null. Total: nothing here refuses, because a seating with no usable
+ * reading saves as it always did. A reading wider than the visit's own line (500 m) says nothing about
+ * which building he is in, so it is no reading at all and never a refusal.
+ */
+export function parseSeatingReading(raw: unknown): SeatingReading | null {
+  if (!raw || typeof raw !== "object") return null;
+  const reading = raw as Record<string, unknown>;
+  if (!isUsableFix(reading.lat, reading.lon)) return null;
+  const accuracy = readAccuracyInput(reading.accuracyMeters);
+  const accuracyMeters = accuracy !== null && accuracy >= 0 ? accuracy : null;
+  if (!withinAccuracy(accuracyMeters, VISIT_MAX_ACCURACY_METERS)) return null;
+  return { lat: Number(reading.lat), lon: Number(reading.lon), accuracyMeters };
+}
+
+/**
+ * Is this seating past the far line from the building? Null when there is no reading to ask with.
+ *
+ * It IS `visitAwayFromValidatedPlace`, never a second distance rule: the line is `visit_far_meters`, and
+ * the building's two door readings answer as a customer's two do, the nearer deciding. So a rep the
+ * seating lets through can log his visit there, because the visit is asked the same question.
+ */
+export function seatingAwayFromBuilding(input: {
+  building: ValidatedPlaceReading;
+  standingAt: SeatingReading | null;
+  farMeters: number;
+}): VisitPlaceVerdict | null {
+  if (input.standingAt === null) return null;
+  return visitAwayFromValidatedPlace({ fix: input.standingAt, places: [input.building], farMeters: input.farMeters });
+}
 
 export const SEATED_PLACE_NO_SESSION = "Choose whether this customer receives in the AM or the PM.";
 export const SEATED_PLACE_NO_VENUE = "Choose the polyclinic or centre this customer receives in.";
@@ -213,6 +275,7 @@ export function parseSeatedPlaceDraft(raw: unknown): EntryRuleResult<SeatedPlace
     ok: true,
     value: {
       sharedPlaceId,
+      standingAt: parseSeatingReading(body.standingAt),
       photoPath,
       photoUploaded: photoPath !== null && body.photoUploaded === true,
       timings: timings.timings,

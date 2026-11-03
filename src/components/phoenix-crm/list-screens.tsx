@@ -90,12 +90,13 @@ import {
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
+import { useSilentFix, type SilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { SCHEDULE_RETAKE_CODE, scheduleHeldText, type ScheduleHeldBecause } from "@/lib/phoenix-crm/schedule-rules";
 import { awaitsValidation, listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
-import { SEATED_PLACE_NO_SESSION, SEATED_PLACE_NO_VENUE, SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
+import { SEATED_PLACE_NO_SESSION, SEATED_PLACE_NO_VENUE, SEATING_AWAY_CODE, SHARED_PLACE_TITLE } from "@/lib/phoenix-crm/shared-place-rules";
 import { receivingDaysLabel, weekTimingsText } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView, ValidateResult } from "@/lib/phoenix-crm/view-types";
@@ -304,6 +305,16 @@ function withoutPhoto(photo: CapturedPhoto) {
 /** The same, for the timetable photo of a seating. */
 function withoutSeatedPhoto(photo: CapturedPhoto) {
   return (current: SeatedDraftState): SeatedDraftState => (current.photo?.path === photo.path ? { ...current, photo: null } : current);
+}
+
+/**
+ * Refused for standing away from the chosen building: he picks again, and the hours stay. A photo he took
+ * goes with the choice, because it was stamped with that building's name and sending it to another would
+ * replace that building's board.
+ */
+function chooseTheBuildingAgain(photo: CapturedPhoto | null) {
+  if (photo) releaseCapturedPhoto(photo);
+  return (current: SeatedDraftState): SeatedDraftState => ({ ...current, sharedPlaceId: null, photo: null, timetableOnFile: false, replacingTimetable: false });
 }
 
 function normalizedName(value: string): string {
@@ -585,7 +596,7 @@ export function ValidateScreen({
   // leaves here — the place is still only what he saw, which is the frozen-place rule untouched.
   const [draft, setDraft] = useState<PlaceDraftState>(() => ({ ...emptyPlaceDraft(), timings: listed?.intake?.timings ?? [] }));
   // Owner, 2026-10-09: a customer behind a shared door brings the venue, a timetable photo and his
-  // hours, and no location at all. The two drafts are held side by side so switching the door back and
+  // hours, and no point of his own. The two drafts are held side by side so switching the door back and
   // forth never loses what he already captured on the other one.
   const [door, setDoor] = useState<PlaceDoor>("own");
   const [seated, setSeated] = useState<SeatedDraftState>(() => emptySeatedDraft(listed?.intake?.timings ?? [], seatedSessionOf(listed?.listType)));
@@ -603,6 +614,7 @@ export function ValidateScreen({
   // The phone's location receiver warms from the first step, so the photo and the pin two steps later
   // are read from the satellites, not the network's first guess (location-receiver.ts, 2026-10-22).
   useLocationWarmUp();
+  const readFix = useSilentFix(door === "shared");
   // The "add the building" capture is open inside the polyclinic step; leaving then would lose its photo.
   const [venueAdding, setVenueAdding] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
@@ -655,12 +667,12 @@ export function ValidateScreen({
     return door === "shared" ? seatedDraftProblem(seated) : placeDraftProblem(draft, { needsPhoto: true });
   }
 
-  function payloadFor(photo: CapturedPhoto | null, allowSameName: boolean): Record<string, unknown> {
+  function payloadFor(photo: CapturedPhoto | null, allowSameName: boolean, standingAt: SilentFix | null): Record<string, unknown> {
     // 🔴 ONE KEY OR THE OTHER, NEVER BOTH. `validateCustomer` reads `body.seated` first and takes the
     // whole seating branch when it is there — no Google check, no signboard, the venue's own point —
     // so sending a `place` beside it would be a second answer the server would silently ignore.
     const at =
-      door === "shared" ? { seated: seatedPayload(photo, seated) } : { place: placePayload(photoAtOwnDoor(photo), draft) };
+      door === "shared" ? { seated: seatedPayload(photo, seated, standingAt) } : { place: placePayload(photoAtOwnDoor(photo), draft) };
     const phoneValue = phone.trim() || null;
     if (subject.mode === "reference")
       return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, ...at };
@@ -705,7 +717,8 @@ export function ValidateScreen({
     setProblem(null);
     setSameName(null);
     try {
-      const result = await crmPost<ValidateResult>("/api/phoenix-crm/list/validate", payloadFor(photo, allowSameName), "result");
+      const standingAt = door === "shared" ? await readFix() : null;
+      const result = await crmPost<ValidateResult>("/api/phoenix-crm/list/validate", payloadFor(photo, allowSameName, standingAt), "result");
       onSaved(savedFromResult(result), photo);
     } catch (error) {
       const code = errorCodeOf(error);
@@ -743,6 +756,9 @@ export function ValidateScreen({
       if (door === "shared" && code === SCHEDULE_RETAKE_CODE) {
         setSeated(retakeTimetable(photo));
         goStep(4);
+      } else if (door === "shared" && code === SEATING_AWAY_CODE) {
+        setSeated(chooseTheBuildingAgain(photo));
+        goStep(3);
       } else if (photo && code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
@@ -1262,6 +1278,7 @@ export function AddPlaceScreen({
   const [problem, setProblem] = useState<string | null>(null);
   // Warm from the moment the screen opens, as on Validate (location-receiver.ts).
   useLocationWarmUp();
+  const readFix = useSilentFix(door === "shared");
 
   function close() {
     if (saving) return;
@@ -1304,6 +1321,7 @@ export function AddPlaceScreen({
     setSaving(true);
     setProblem(null);
     try {
+      const standingAt = door === "shared" ? await readFix() : null;
       const added = await crmPost<{ held?: boolean; heldBecause?: ScheduleHeldBecause | null } | null>(
         "/api/phoenix-crm/list/places",
         {
@@ -1312,7 +1330,7 @@ export function AddPlaceScreen({
           customerId: customer.customerId,
           // One key or the other, never both — `addPlace` reads `seated` first (see payloadFor above).
           ...(door === "shared"
-            ? { seated: seatedPayload(photo, seated) }
+            ? { seated: seatedPayload(photo, seated, standingAt) }
             : { place: placePayload(photoAtOwnDoor(photo), draft) }),
         },
         "place",
@@ -1337,6 +1355,8 @@ export function AddPlaceScreen({
       }
       if (door === "shared" && code === SCHEDULE_RETAKE_CODE) {
         setSeated(retakeTimetable(photo));
+      } else if (door === "shared" && code === SEATING_AWAY_CODE) {
+        setSeated(chooseTheBuildingAgain(photo));
       } else if (photo && code?.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         if (door === "shared") setSeated(withoutSeatedPhoto(photo));
