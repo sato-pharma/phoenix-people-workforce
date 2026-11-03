@@ -55,8 +55,10 @@ function runWireTests() {
   }
 
   // The same guarantee, one layer further: a customer SEATED in a polyclinic (owner, 2026-10-09) sends
-  // no location AT ALL, not even a coordinate — his point is the venue's, taken once at its door. So
-  // his draft is the strictest case of this rule, and a fix smuggled back onto it would be the defect.
+  // no point for his row — his point is the venue's, taken once at its door. So his draft is the
+  // strictest case of this rule, and a fix smuggled back onto it would be the defect. Its one reading,
+  // `standingAt` (owner, 3 Nov 2026), asks only whether he is in the building and is never stored:
+  // tests/phoenix-crm-seat-at-building.test.ts.
   const sharedRules = source("src/lib/phoenix-crm/shared-place-rules.ts");
   const seated = /export type SeatedPlaceDraft = \{([\s\S]*?)\};/.exec(sharedRules);
   assert.ok(seated, "the seated draft names what a phone may send when it seats a customer");

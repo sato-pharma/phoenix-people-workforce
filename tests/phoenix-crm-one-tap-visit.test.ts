@@ -168,7 +168,8 @@ export function runPhoenixCrmOneTapVisitTests(): void {
     const fix = source("src/components/phoenix-crm/use-silent-fix.ts");
     assert.ok(fix.includes("navigator.geolocation.watchPosition("), "the position is watched, not read once at the tap");
     assert.ok(fix.includes("enableHighAccuracy: true"), "at high accuracy");
-    assert.match(fix, /useEffect\(\(\) => \{\s*start\(\);\s*return \(\) => stop\(\);\s*\}, \[start, stop\]\);/, "from mount to unmount");
+    assert.match(fix, /useEffect\(\(\) => \{\s*if \(!active\) return;\s*start\(\);\s*return \(\) => stop\(\);\s*\}, \[active, start, stop\]\);/, "from mount to unmount");
+    assert.ok(fix.includes("useSilentFix(active: boolean = true)"), "and on by default, so Log visit, which passes nothing, still watches from the moment it opens");
     assert.ok(fix.includes("export const SILENT_FIX_WAIT_MS = 8_000;"), "Log visit waits up to 8 seconds for a first reading");
     assert.ok(fix.includes("deviceMocked: null,"), "a browser cannot ask whether a reading is real, so it says nothing");
 

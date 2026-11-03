@@ -244,7 +244,7 @@ function checkRepCanValidate(): void {
   // through `photoAtOwnDoor`, which keeps a signboard non-null in `placePayload`'s own signature.
   assert.match(
     screens,
-    /const at =\s*\n?\s*door === "shared" \? \{ seated: seatedPayload\(photo, seated\) \} : \{ place: placePayload\(photoAtOwnDoor\(photo\), draft\) \};/,
+    /const at =\s*\n?\s*door === "shared" \? \{ seated: seatedPayload\(photo, seated, standingAt\) \} : \{ place: placePayload\(photoAtOwnDoor\(photo\), draft\) \};/,
     "the evidence is one door or the other: a captured place, or a seat in a shared place",
   );
   assert.match(
