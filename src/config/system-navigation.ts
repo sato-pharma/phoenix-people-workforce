@@ -2074,6 +2074,12 @@ const employeePortalNavigationSectionSeeds = [
         roles: ["Marketing Manager", "SFE Manager", "Super Admin"],
       },
       {
+        href: "/employee-portals/marketing-requests/list-check",
+        icon: ListChecks,
+        label: "Doctor-List Check",
+        roles: ["Marketing Manager", "SFE Manager", "Super Admin"],
+      },
+      {
         href: "/employee-portals/marketing-requests/control",
         icon: Settings2,
         label: "Marketing Control",
@@ -3842,6 +3848,23 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     description: "Marketing spend per manager: requests raised and approved, their value, the forecast ROI, and the sales that have actually come back.",
     roles: ["Super Admin", "CEO", "SFE Manager"],
   },
+  // Exactly the board's own four readers (canReadListCheckBoard).
+  {
+    href: "/admin/marketing-requests/list-check",
+    icon: ListChecks,
+    label: "Doctor-List Check",
+    description: "Every validated marketing customer against the rep's own doctor list, with the approved money and the visits that followed.",
+    roles: ["Super Admin", "CEO", "SFE Manager", "Marketing Manager"],
+  },
+  // Exactly the page's own three readers (canViewMarketingFinanceAgeing): this is the rare marketing
+  // card where the discoverability list and the door are the same list.
+  {
+    href: "/admin/marketing-requests/finance-ageing",
+    icon: Hourglass,
+    label: "Finance Ageing",
+    description: "Approved requests waiting at the Finance Execution step, oldest first, with the days each has waited.",
+    roles: ["Super Admin", "CEO", "Finance Manager"],
+  },
   {
     href: "/admin/marketing-roi-report",
     icon: ClipboardList,
@@ -5420,6 +5443,10 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/marketing-requests",
           "/admin/marketing-requests/all",
           "/admin/marketing-requests/bulk-upload",
+          // A queue of requests, not an ROI figure, so it sits with the requests.
+          "/admin/marketing-requests/finance-ageing",
+          // A check on the customers behind the requests.
+          "/admin/marketing-requests/list-check",
           // Market Awareness is a REQUEST module — a product manager raises a conference or round
           // table and it goes for approval — so it belongs beside the other request rows rather
           // than under ROI, which is where a reporting-shaped name would have put it. Naming it

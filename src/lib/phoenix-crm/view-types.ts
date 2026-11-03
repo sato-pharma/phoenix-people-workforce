@@ -114,7 +114,7 @@ export type {
 export type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 export type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 export type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
-export type { CapacityBoardView, FieldHeardView, MissingStockView, SamplesReportView } from "@/lib/phoenix-crm/server/insight-reports";
+export type { CapacityBoardView, FieldHeardView, MissingStockView, ObjectionsByCustomerView, SamplesReportView } from "@/lib/phoenix-crm/server/insight-reports";
 export type { CustomerTimelineView } from "@/lib/phoenix-crm/server/customer-timeline";
 export type {
   VisitAskCustomerView,

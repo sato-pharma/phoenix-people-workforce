@@ -20,7 +20,7 @@ import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
-import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
+import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadObjectionsByCustomerReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { buildPhoenixCrmReportsWorkbook, type ReportsPackInput } from "@/lib/phoenix-crm/server/reports-workbook";
 import { loadTeamCalendar } from "@/lib/phoenix-crm/server/team-calendar";
@@ -58,6 +58,7 @@ const NO_SECTIONS: Omit<ReportsPackInput, "viewerName" | "periodText" | "scopeTe
   heard: null,
   locations: null,
   managers: null,
+  objections: null,
   plan: null,
   samples: null,
   stock: null,
@@ -191,6 +192,7 @@ export async function GET(request: Request) {
       heard,
       stock,
       samples,
+      objections,
     ] = await Promise.all([
       // The cover says who it was prepared for, by NAME — the owner's standing rule, and a saved
       // workbook is exactly the artefact where an HR code would outlive anyone who could decode it.
@@ -224,6 +226,8 @@ export async function GET(request: Request) {
       managerSections ? loadFieldHeardReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadMissingStockReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadSamplesReport(viewer, filters) : Promise.resolve(null),
+      // Objections by customer (owner, 2026-11-03): behind the same predicate its service refuses with.
+      managerSections ? loadObjectionsByCustomerReport(viewer, filters) : Promise.resolve(null),
     ]);
     const dailyPlan = daily?.territory ? daily : null;
 
@@ -253,6 +257,7 @@ export async function GET(request: Request) {
       includeTest,
       locations,
       managers: scope.hasManagers ? managers : null,
+      objections,
       periodText:
         `${visits.period.from} to ${visits.period.to} · coverage${samples ? " and samples" : ""} for ${coverage.month.month}`
         + (capacity ? ` · grade against capacity for ${capacity.month.month}` : "")

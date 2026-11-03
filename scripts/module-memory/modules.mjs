@@ -866,6 +866,24 @@ export const MODULES = [
     keywords: ["roi tracker", "roi tracking", "marketing roi", "coverage report", "manager scorecard", "awaiting data", "roi facts", "roi refresh"],
     tables: ["marketing_roi_"],
   },
+  // 🔴 SPLIT 2026-11-03, FOR THE REASON `phoenix-crm-approvals` ABOVE RECORDS: six new rules took `marketing`
+  // past the 4,000-byte pointer margin. The doctor-list check and Finance Ageing are new surfaces, so
+  // their rules start here. `marketing` keeps every glob it had, so a file here loads the pair.
+  {
+    id: "marketing-list-check",
+    title: "Marketing doctor-list check and Finance Ageing",
+    scope: "Whether each validated marketing customer is on the rep's own Phoenix CRM list: the verdict, the approval flag and two photos, the hourly pass, the board and its answers. Also the Finance Ageing page of requests waiting at Finance Execution.",
+    globs: [
+      "src/lib/marketing-requests/{crm-list-check,crm-doctor-pick,finance-ageing}*",
+      "src/components/marketing-requests/{list-check,marketing-list-check,not-on-crm-list,marketing-finance-ageing}*",
+      "app/**/{list-check,finance-ageing,marketing-list-check}/**",
+      "scripts/marketing-list-check*",
+      "tests/*{marketing-list-check,marketing-finance-ageing,marketing-crm-doctor-pick}*",
+      "supabase/migrations/*marketing_customer_list_checks*",
+    ],
+    keywords: ["doctor list check", "doctor-list check", "list check", "on the rep's list", "two photos", "finance ageing"],
+    tables: ["marketing_customer_list_checks"],
+  },
   {
     id: "recruitment",
     title: "Recruitment, CVs and offers",
