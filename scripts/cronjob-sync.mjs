@@ -229,6 +229,13 @@ const JOBS = {
     // One function call over about 100,000 candidate rows, plus two read-only counts.
     requestTimeout: 300,
   },
+  "code-backup-verify": {
+    title: "Phoenix — code backup on Drive check",
+    path: "/api/cron/code-backup-verify",
+    // 10:57 Cairo daily (owner, 2026-11-03). Three short Drive reads, then the heartbeat. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [10], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 90,
+  },
   "whatsapp-handset-reminder": {
     title: "Phoenix — HR handset 14-day reminder",
     path: "/api/cron/whatsapp-handset-reminder",

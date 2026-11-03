@@ -14,11 +14,12 @@ import {
 } from "@/lib/recruitment/job-posts/titles";
 
 const TABLE = "ats_job_post_titles";
-const COLUMNS = "id,title,department,headline,reports_to,employment,location,duties,needs,menu_name,is_active,updated_at";
+const COLUMNS = "id,title,department,headline,reports_to,employment,location,duties,needs,menu_name,is_active,updated_at,title_ar,description_ar";
 
 function mapTitle(row: Record<string, unknown>): JobPostTitle {
   return {
     department: textOrNull(row.department) ?? "Human Resources",
+    descriptionAr: textOrNull(row.description_ar),
     duties: coerceLines(row.duties),
     employment: textOrNull(row.employment) ?? "Full-time",
     headline: coerceHeadline(row.headline),
@@ -29,6 +30,7 @@ function mapTitle(row: Record<string, unknown>): JobPostTitle {
     needs: coerceLines(row.needs),
     reportsTo: textOrNull(row.reports_to),
     title: String(row.title ?? ""),
+    titleAr: textOrNull(row.title_ar),
     updatedAt: textOrNull(row.updated_at),
   };
 }
@@ -99,4 +101,13 @@ export async function updateJobPostTitle(id: string, draft: JobPostTitleDraft, a
     .single();
   if (error) throw friendly(error);
   return mapTitle(data as Record<string, unknown>);
+}
+
+/** The Arabic typed in the Publish dialog, kept on the title. Its own write: a title save never touches it. */
+export async function saveJobPostTitleArabic(id: string, arabic: { descriptionAr: string; titleAr: string }, actorHrId: string | null): Promise<void> {
+  const { error } = await recruitmentDb()
+    .from(TABLE)
+    .update({ description_ar: arabic.descriptionAr, title_ar: arabic.titleAr, updated_at: new Date().toISOString(), updated_by_hr_id: actorHrId })
+    .eq("id", id);
+  if (error) throw friendly(error);
 }

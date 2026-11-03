@@ -180,7 +180,7 @@ export function ExpensePayslipReconciliationPanel({
           </div>
           {result.typedByHand ? (
             <p className="text-sm leading-6 text-slate-600">
-              This month's expense figures were typed into the sheet by hand, so differences are expected here.
+              This month&apos;s expense figures were typed into the sheet by hand, so differences are expected here.
             </p>
           ) : null}
           {result.importedHistoryTrips > 0 ? (
