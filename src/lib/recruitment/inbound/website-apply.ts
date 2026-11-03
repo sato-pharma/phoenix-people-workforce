@@ -394,7 +394,7 @@ function conditionalHints(question: ScreeningQuestion): Pick<WebsiteApplyField, 
  *  the stored question, which the bot still asks in full, is not touched. */
 function freeTextCopy(bodyText: string): Pick<WebsiteApplyField, "helpText" | "label"> {
   const paragraphs = bodyText.split(/\n\s*\n/);
-  const instruction = paragraphs.at(-1)?.trim().match(/^send it as a normal message(?:,\s*(.+?))?\.?$/is);
+  const instruction = paragraphs.at(-1)?.trim().match(/^send it as a normal message(?:,\s*([\s\S]+?))?\.?$/i);
   if (paragraphs.length < 2 || !instruction) return { helpText: null, label: bodyText };
   const hint = instruction[1]?.trim();
   return {
