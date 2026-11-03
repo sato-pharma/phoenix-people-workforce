@@ -9169,6 +9169,20 @@ Phoenix is open." It sends by itself while any Phoenix page is open, oldest firs
 **What it asks of the rep, and only when it must.** "This visit could not be sent" with the server's own sentence, or "Not
 sent in time", each with Log it again and Remove. Log it again opens the form on the rep's own comment and products.
 
+**Pressed in a real browser, 3 Nov 2026, on staging.** Four runs on a GitHub machine, because a page compile on the laptop
+hits its memory floor. A cut press was held in under a second, and on the last run it landed 33 seconds after the press,
+dated at arrival, with no flag. The day showed it about 4 seconds later. No overflow, round corner or clipped text at
+375 and 1440, on the held, refused, too-late and landed screens. The runs found two defects, both fixed:
+
+- The header read "Offline — nothing will save" directly above "Saved on this phone", and a rep who reads that may not
+  press at all. On a screen that can hold a visit it now reads "Offline — only visits will save". The old line stays
+  everywhere else, because it is true there.
+- The commitments and call prep panels were read as the form closed with no signal, and kept "No connection" under a
+  visit that had landed. A landing now reads them again with the day.
+
+On an off-plan visit, Log it again opens on the customer step, and the rep presses Continue first. The kept words are
+proven by test, and the browser run did not reach them.
+
 **Why two hours and 02:00.** The server dates every browser save at ARRIVAL, as it always has, and the retry does not
 change that. Past two hours, or across the 02:00 close of the visit day, an arrival-dated visit is no longer the same
 visit: it lands on the wrong day, or off plan, and a manager is told something nobody earned. So the rep is asked instead,
