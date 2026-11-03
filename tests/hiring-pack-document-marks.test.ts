@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   DOCUMENT_MARKS,
@@ -455,7 +456,32 @@ function testAMarkCannotBeShrunkToNothing(): void {
   );
 }
 
+/**
+ * Everyone who prints papers opens the editor, and the editor asks whether to draw the signature
+ * panel. "Not yours" is an answer, not a refusal: as a 403 the screen capture photographed it as a
+ * block the person met (HR Forms, 2 Nov 2026). The image and whether one exists stay unsaid, and the
+ * writes keep their 403.
+ */
+function testAskingAboutTheSignaturePanelIsNotARefusal(): void {
+  const route = readFileSync(new URL("../app/api/hiring-pack/signature/route.ts", import.meta.url), "utf8");
+  const read = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function PUT"));
+  const writes = route.slice(route.indexOf("export async function PUT"));
+  assert.match(
+    read,
+    /if \(isNotTheSuperAdmin\(error\)\) \{\s+return Response\.json\(\s+\{ canManage: false, present: false, dataUri: null \}/,
+    "the read answers everyone else with no image and no word of whether one is stored",
+  );
+  assert.doesNotMatch(writes, /canManage|isNotTheSuperAdmin/, "a write by anyone else is still refused");
+  assert.match(route, /if \(isForbiddenError\(error\) \|\| isNotTheSuperAdmin\(error\)\) \{\s+return Response\.json\(\s+\{\s+error: "forbidden"/);
+  assert.match(
+    readFileSync(new URL("../src/components/hiring-pack/paper-editor.tsx", import.meta.url), "utf8"),
+    /if \(body\?\.canManage === false\) \{\s+return \{ error: null, state: \{ canManage: false, dataUri: null, loaded: true, present: false \} \};/,
+    "the editor reads that answer as not managing, with nothing red on screen",
+  );
+}
+
 export function runHiringPackDocumentMarkTests() {
+  testAskingAboutTheSignaturePanelIsNotARefusal();
   testEveryMarkIsDescribed();
   testAPlacedStampDrawsItsArtwork();
   testArtworkThatCouldNotBeReadPrintsNothing();
