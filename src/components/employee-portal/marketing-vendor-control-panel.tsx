@@ -30,8 +30,7 @@ function confirmationFor(vendor: MarketingVendorControlRow, active: boolean): st
     );
   }
   return (
-    `Hide ${vendor.name}?\n\nIt leaves the Vendor picker. Its ${vendor.codesLoaded.toLocaleString("en-US")} code(s) are kept, `
-    + `and the ${vendor.customersLinked.toLocaleString("en-US")} customer(s) linked through it stay linked.`
+    `Hide ${vendor.name}?\n\nIt leaves the Vendor picker. Its ${vendor.codesLoaded.toLocaleString("en-US")} code(s) are kept.`
   );
 }
 
@@ -91,6 +90,7 @@ export function MarketingVendorControlPanel() {
 
   function action(vendor: MarketingVendorControlRow) {
     if (vendor.mergedIntoName) return <span className="text-xs font-semibold text-slate-500">Stays hidden</span>;
+    if (vendor.active && vendor.customersLinked > 0) return <span className="text-xs font-semibold text-slate-500">Customers linked</span>;
     return (
       <Button disabled={busyId !== null} onClick={() => void setActive(vendor, !vendor.active)} size="sm" type="button" variant="outline">
         {busyId === vendor.id ? <LoadingSpinner /> : vendor.active ? "Hide" : "Allow"}

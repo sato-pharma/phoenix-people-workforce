@@ -14,6 +14,10 @@
  * THE FIX CLOCK IS LOOSE ON PURPOSE. A rep's tablet reports a fix on each sync only while its location
  * service gets one, and a tablet left in a drawer indoors reports none for days. So "checks in but no fix"
  * waits 72 hours, the same as silence, and it names a tablet to look at. It never says the rep did anything.
+ *
+ * A TABLET THAT NEVER REPORTED A FIX IS ITS OWN KIND. Read live on 3 Nov 2026: neither tablet carries a location
+ * in the device list or in the location history, so every held tablet has none on record. That is true and worth
+ * saying, but a daily line about it would drown a tablet that had a fix and lost it, so the alert says it monthly.
  */
 
 import type { RepHeadwindRow } from "@/lib/devices/headwind/fleet";
@@ -38,7 +42,7 @@ export type FleetWatchRead =
 export type FleetTabletFault = {
   deviceNumber: string;
   holderName: string;
-  kind: "silent" | "no_fix";
+  kind: "silent" | "no_fix" | "never_fixed";
   label: string;
   lastAt: string | null;
 };
@@ -73,6 +77,8 @@ export function findFleetFaults(rows: readonly FleetWatchRow[], nowMs: number): 
     const label = row.assetTag ?? row.name;
     if (olderThan(row.lastContactAt, nowMs, TABLET_SILENT_LIMIT_HOURS)) {
       faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "silent", label, lastAt: row.lastContactAt });
+    } else if (!row.locatedAt) {
+      faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "never_fixed", label, lastAt: null });
     } else if (olderThan(row.locatedAt, nowMs, TABLET_NO_FIX_LIMIT_HOURS)) {
       faults.push({ deviceNumber: row.deviceNumber, holderName, kind: "no_fix", label, lastAt: row.locatedAt });
     }
@@ -121,9 +127,10 @@ export function assessTabletFleet(input: {
 
   const faults = findFleetFaults(input.read.rows, input.nowMs);
   const silent = faults.filter((fault) => fault.kind === "silent").length;
-  const noFix = faults.length - silent;
+  const noFix = faults.filter((fault) => fault.kind === "no_fix").length;
+  const neverFixed = faults.filter((fault) => fault.kind === "never_fixed").length;
   return {
-    detail: `${input.read.rows.length} tablet(s), ${silent} silent, ${noFix} with no location fix, ${input.read.pendingRegistration} unregistered. ${marker(nowIso)}`,
+    detail: `${input.read.rows.length} tablet(s), ${silent} silent, ${noFix} lost their location fix, ${neverFixed} never reported one, ${input.read.pendingRegistration} unregistered. ${marker(nowIso)}`,
     faults,
     outcome: "success",
     serverDown: false,
@@ -147,6 +154,7 @@ export function buildFleetWatchMessage(verdict: Pick<FleetWatchVerdict, "faults"
   const lines: string[] = [];
   const silent = verdict.faults.filter((fault) => fault.kind === "silent");
   const noFix = verdict.faults.filter((fault) => fault.kind === "no_fix");
+  const neverFixed = verdict.faults.filter((fault) => fault.kind === "never_fixed");
   if (silent.length > 0) {
     lines.push(`No check-in for over ${TABLET_SILENT_LIMIT_HOURS} hours:`);
     for (const fault of silent) {
@@ -157,8 +165,13 @@ export function buildFleetWatchMessage(verdict: Pick<FleetWatchVerdict, "faults"
     if (lines.length > 0) lines.push("");
     lines.push(`Checks in, but no location fix for over ${TABLET_NO_FIX_LIMIT_HOURS} hours:`);
     for (const fault of noFix) {
-      lines.push(`• ${fault.label}, held by ${fault.holderName}: ${fault.lastAt ? `last fix ${cairoStamp(fault.lastAt)} Cairo` : "no fix on record"}.`);
+      lines.push(`• ${fault.label}, held by ${fault.holderName}: last fix ${fault.lastAt ? `${cairoStamp(fault.lastAt)} Cairo` : "not recorded"}.`);
     }
+  }
+  if (neverFixed.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("Checks in, but has never reported a location:");
+    for (const fault of neverFixed) lines.push(`• ${fault.label}, held by ${fault.holderName}.`);
   }
   if (verdict.unregistered > 0) {
     if (lines.length > 0) lines.push("");

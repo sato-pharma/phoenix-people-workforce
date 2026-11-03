@@ -40,6 +40,7 @@ export function sameNameGroups(options: readonly MarketingCustomerMergeOption[])
 /** The sentence the database would refuse this pair with, or null when the pair can be merged. */
 export function customerMergeRefusal(survivor: MarketingCustomerMergeOption, retired: MarketingCustomerMergeOption): string | null {
   if (survivor.id === retired.id) return "A customer cannot be merged into itself.";
+  if (survivor.validationStatus === "rejected") return `${survivor.name} was rejected, so it cannot be the customer that stays. Keep the other one.`;
   if (survivor.lineName !== retired.lineName) return "These two are on different lines, and this screen merges only within one line.";
   if (survivor.customerType !== retired.customerType) return "These two are different kinds of customer.";
   if (survivor.areaName !== retired.areaName) return "These two are in different areas, and this screen merges only within one area.";

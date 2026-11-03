@@ -321,6 +321,32 @@ export async function runJobHeartbeatRegisterTests() {
     true,
     "one fire unanswered and still inside its grace is healthy",
   );
+  // A job that keeps reporting failures is not silent, and its error must reach the alert.
+  const failingEveryRun = assessJobHeartbeats({
+    declarations: [HOURLY_GRACE_ONE_HOUR],
+    now: new Date("2026-08-30T12:30:00.000Z"),
+    rows: [
+      row({
+        lastDetail: "interlock refused the rebuild",
+        lastFailAt: "2026-08-30T12:05:30.000Z",
+        lastOutcome: "fail",
+        lastSuccessAt: "2026-08-30T09:05:30.000Z",
+        slug: HOURLY_GRACE_ONE_HOUR.slug,
+      }),
+    ],
+  });
+  assert.deepEqual(failingEveryRun.stranded, [], "a job answering with failures is not stranded");
+  assert.match(failingEveryRun.failing[0]?.detail ?? "", /interlock refused the rebuild/, "and the failing report keeps its error");
+  // A job whose grace is below the gap keeps the old deadline: quiet between a missed day and today's fire.
+  assert.equal(
+    assessJobHeartbeats({
+      declarations: [{ graceSeconds: 3600, kind: "cron", schedule: "30 7 * * *", slug: "phoenix-recovery-snapshot" }],
+      now: new Date("2026-08-30T04:45:00.000Z"), // 07:45 Cairo, ten minutes after today's fire, inside its grace
+      rows: [row({ lastSuccessAt: "2026-08-28T04:40:00.000Z", slug: "phoenix-recovery-snapshot" })],
+    }).stranded.length,
+    0,
+    "a daily job's overdueSince is not moved by the wider rule",
+  );
   const strandedAtSweep = (now: string) =>
     assessJobHeartbeats({
       declarations: [EVERY_FIVE_GRACE_THIRTY],

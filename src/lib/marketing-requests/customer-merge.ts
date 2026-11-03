@@ -28,6 +28,7 @@ export type MarketingCustomerMergeResult = {
   linksLeftOnRetired: number;
   linksMoved: number;
   linksReactivated: number;
+  linksStatusCarried: number;
   requestsMoved: number;
   transfersMoved: number;
   validationCarried: string | null;

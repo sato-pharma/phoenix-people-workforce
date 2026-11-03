@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { buildEmailBlockView } from "../src/lib/email/suppression-admin.ts";
 import { LIFT_WARNING_TEXT } from "../src/lib/email/suppression-words.ts";
 import { emailBlockNotice, newlyBlockedPeople } from "../src/lib/email/suppression-watch.ts";
+import { operatorWatchBlocksTelegramFallback } from "../src/lib/notifications/operator-watch-channel-guard.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 
 const NOW = Date.parse("2026-11-03T12:00:00Z");
@@ -16,6 +17,7 @@ const block = (address: string, reason: string, hoursAgo: number, expires_at: st
   created_at: ago(hoursAgo),
   expires_at,
   reason,
+  updated_at: ago(hoursAgo),
 });
 
 const person = (hr_id: string, work_email: string | null, employment_status: string | null = "active") => ({
@@ -82,18 +84,52 @@ export function runEmailBlockScreenTests() {
 
   // The alert: only rows inside 48 hours, only active employees. The old blocks page nobody on deploy.
   const fresh = newlyBlockedPeople(
-    [block("recent@sato.com", "hard_bounce", 47), block("old@sato.com", "hard_bounce", 49), block("left@sato.com", "hard_bounce", 1), block("x@x.com", "complaint", 1)],
-    [person("B", "recent@sato.com"), person("A", "old@sato.com"), person("C", "left@sato.com", "terminated")],
+    [
+      block("recent@sato.com", "hard_bounce", 47),
+      block("old@sato.com", "hard_bounce", 49),
+      block("left@sato.com", "hard_bounce", 1),
+      block("x@x.com", "complaint", 1),
+      block("gone@sato.com", "unsubscribe", 1),
+      block("soft@sato.com", "hard_bounce", 1, new Date(NOW + 100 * HOUR).toISOString()),
+      block("spam@sato.com", "complaint", 1),
+      { ...block("again@sato.com", "hard_bounce", 1), created_at: ago(900) },
+    ],
+    [
+      person("B", "recent@sato.com"),
+      person("A", "old@sato.com"),
+      person("C", "left@sato.com", "terminated"),
+      person("D", "gone@sato.com"),
+      person("E", "soft@sato.com"),
+      person("F", "spam@sato.com"),
+      person("G", "again@sato.com"),
+    ],
     NOW,
   );
-  assert.deepEqual(fresh.map((row) => row.hrId), ["B"]);
+  assert.deepEqual(
+    fresh.map((row) => row.hrId),
+    ["B", "F", "G"],
+    "a hard bounce or a complaint with no expiry; an unsubscribe still gets account email and a soft bounce clears itself; a repeat bounce on an old row counts",
+  );
 
-  const one = emailBlockNotice([{ address: "a@b", hrId: "A", name: "A" }]);
-  const two = emailBlockNotice([{ address: "a@b", hrId: "A", name: "A" }, { address: "c@d", hrId: "C", name: "C" }]);
+  const blocked = (hrId: string, hoursAgo: number, reason = "hard_bounce") => ({ address: `${hrId}@b`, blockedAt: ago(hoursAgo), hrId, name: hrId, reason });
+  const one = emailBlockNotice([blocked("A", 2)]);
+  const two = emailBlockNotice([blocked("A", 2), blocked("C", 1)]);
   assert.notEqual(one.idempotencyKey, two.idempotencyKey, "a new person gets through");
-  assert.equal(one.idempotencyKey, emailBlockNotice([{ address: "a@b", hrId: "A", name: "A" }]).idempotencyKey, "the same set says it once");
+  assert.equal(one.idempotencyKey, emailBlockNotice([blocked("A", 2)]).idempotencyKey, "the same state says it once");
+  assert.equal(two.idempotencyKey, emailBlockNotice([blocked("C", 1)]).idempotencyKey, "one person leaving the window does not repeat the other");
+  assert.notEqual(one.idempotencyKey, emailBlockNotice([blocked("A", 1)]).idempotencyKey, "a block that comes back after a lift pages again");
+  const spam = emailBlockNotice([blocked("A", 1, "complaint")]);
+  assert.match(spam.message, /marked a Phoenix email as spam/, "a complaint says what happened");
+  assert.doesNotMatch(spam.message, /provider refused|Lifting sends/, "and never offers a lift the screen refuses");
+  assert.equal(operatorWatchBlocksTelegramFallback("email_block_new"), true, "a failed Telegram send never becomes an email");
 
   // Never email, and the sweep carries it.
+  const system = readFileSync("src/lib/notifications/system.ts", "utf8");
+  assert.equal(
+    (system.match(/operatorWatchBlocksTelegramFallback\(/g) ?? []).length,
+    3,
+    "all three Telegram-failure fallback sites ask the guard",
+  );
   const watch = readFileSync("src/lib/email/suppression-watch.ts", "utf8");
   assert.match(watch, /channels: \["in_app", "telegram", "push"\]/, "an address email cannot reach is not told by email");
   assert.match(watch, /hrIdsForRoles\(\["Super Admin"\]\)/);

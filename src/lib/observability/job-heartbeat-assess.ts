@@ -202,6 +202,8 @@ export function assessJobHeartbeats(params: {
     const firstSeenMs = Math.max(rowFirstSeenMs, watchingSinceMs ?? 0);
     const lastSuccessMs = parseTimestamp(row.lastSuccessAt);
     const lastFailMs = parseTimestamp(row.lastFailAt);
+    const failedMostRecently =
+      row.lastOutcome === "fail" && lastFailMs !== null && (lastSuccessMs === null || lastFailMs > lastSuccessMs);
 
     let overdueSinceMs: number | null = null;
 
@@ -250,13 +252,19 @@ export function assessJobHeartbeats(params: {
         // the LATEST fire, and when grace >= the gap the next fire arrives before that deadline does,
         // so `nowMs > deadline` could never be true: 27 of the 59 declared jobs could never strand,
         // the six pg_cron jobs among them, whatever the silence. Measure from the OLDEST fire nothing
-        // has answered instead. A job that answers on time never reaches this, because its next fire
-        // is in the future; a job whose grace is below the gap keeps the deadline above, so its
+        // has answered instead. A job whose grace is below the gap keeps the deadline above, so its
         // `overdueSince` and everything keyed on it (job-refire, the audit detector) are unchanged.
-        const baselineMs = lastSuccessMs !== null ? lastSuccessMs + CLOCK_SKEW_TOLERANCE_MS : firstSeenMs;
-        const oldestUnanswered = nextScheduledFire(schedule, baselineMs);
-        const oldestDeadline = oldestUnanswered ? oldestUnanswered.getTime() + declaration.graceSeconds * 1000 : null;
-        if (oldestDeadline !== null && nowMs > oldestDeadline) overdueSinceMs = oldestDeadline;
+        // A job that reported a failure is not silent: it falls through to the failing report below,
+        // which carries its own error, and that report is just as red.
+        const nextFire = nextScheduledFire(schedule, previousFireMs);
+        const graceCoversTheGap =
+          nextFire !== null && declaration.graceSeconds * 1000 >= nextFire.getTime() - previousFireMs;
+        if (graceCoversTheGap && !failedMostRecently) {
+          const baselineMs = lastSuccessMs !== null ? lastSuccessMs + CLOCK_SKEW_TOLERANCE_MS : firstSeenMs;
+          const oldestUnanswered = nextScheduledFire(schedule, baselineMs);
+          const oldestDeadline = oldestUnanswered ? oldestUnanswered.getTime() + declaration.graceSeconds * 1000 : null;
+          if (oldestDeadline !== null && nowMs > oldestDeadline) overdueSinceMs = oldestDeadline;
+        }
       }
     }
 
@@ -276,8 +284,6 @@ export function assessJobHeartbeats(params: {
       continue;
     }
 
-    const failedMostRecently =
-      row.lastOutcome === "fail" && lastFailMs !== null && (lastSuccessMs === null || lastFailMs > lastSuccessMs);
     if (failedMostRecently) {
       failing.push({
         detail:

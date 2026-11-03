@@ -10,6 +10,7 @@ import {
   type FleetWatchRow,
 } from "../src/lib/devices/headwind/fleet-watch.ts";
 import { fleetWatchIdempotencyKey } from "../src/lib/devices/headwind/fleet-watch-alert.ts";
+import { operatorWatchBlocksTelegramFallback } from "../src/lib/notifications/operator-watch-channel-guard.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 
 const NOW = Date.parse("2026-11-03T12:00:00Z");
@@ -53,7 +54,7 @@ export function runTabletFleetWatchTests() {
   );
   assert.deepEqual(
     faults.map((fault) => `${fault.deviceNumber}:${fault.kind}`),
-    ["never:silent", "nofix:no_fix", "nofix-ever:no_fix", "silent:silent"],
+    ["never:silent", "nofix:no_fix", "nofix-ever:never_fixed", "silent:silent"],
     "a tablet held by a person, silent or fixless past 72 hours; a tablet in a cupboard is meant to be quiet",
   );
 
@@ -89,6 +90,28 @@ export function runTabletFleetWatchTests() {
   assert.match(message, /2 tablet\(s\) are not in the custody register/);
   assert.doesNotMatch(message, /switched off|disabled|tamper|refus/i);
 
+  // A tablet that never reported a location says so, once a month rather than every day.
+  const neverFixed = assess(answered([tablet({ deviceNumber: "n", locatedAt: null })]));
+  assert.match(neverFixed.detail, /0 lost their location fix, 1 never reported one/);
+  assert.match(buildFleetWatchMessage(neverFixed), /has never reported a location:\n• PHX-n, held by A Rep\./);
+  assert.doesNotMatch(buildFleetWatchMessage(neverFixed), /switched off|disabled|tamper|refus/i);
+  assert.equal(
+    fleetWatchIdempotencyKey(neverFixed, "2026-11-03"),
+    fleetWatchIdempotencyKey(neverFixed, "2026-11-30"),
+    "a standing no-fix-on-record does not repeat daily",
+  );
+  assert.notEqual(fleetWatchIdempotencyKey(neverFixed, "2026-11-03"), fleetWatchIdempotencyKey(neverFixed, "2026-12-01"), "but it comes back next month");
+  assert.notEqual(
+    fleetWatchIdempotencyKey(neverFixed, "2026-11-03"),
+    fleetWatchIdempotencyKey({ faults: [...neverFixed.faults, { ...neverFixed.faults[0], deviceNumber: "m" }], unregistered: 0 }, "2026-11-03"),
+    "a new tablet with none still gets through",
+  );
+  assert.notEqual(
+    fleetWatchIdempotencyKey({ faults: [...neverFixed.faults, ...finding.faults], unregistered: 0 }, "2026-11-03"),
+    fleetWatchIdempotencyKey({ faults: [...neverFixed.faults, ...finding.faults], unregistered: 0 }, "2026-11-04"),
+    "a silent tablet beside it keeps the daily line",
+  );
+
   // The key: a standing fault says it once a Cairo day, a new tablet gets through, an unregistered count alone speaks when it changes.
   const one = { faults: finding.faults, unregistered: 0 };
   assert.notEqual(fleetWatchIdempotencyKey(one, "2026-11-03"), fleetWatchIdempotencyKey(one, "2026-11-04"), "once per day");
@@ -97,6 +120,12 @@ export function runTabletFleetWatchTests() {
     fleetWatchIdempotencyKey({ faults: [], unregistered: 2 }, "2026-11-04"),
     "an unchanged unregistered count does not repeat daily",
   );
+  assert.notEqual(
+    fleetWatchIdempotencyKey({ faults: [], unregistered: 2 }, "2026-11-03"),
+    fleetWatchIdempotencyKey({ faults: [], unregistered: 2 }, "2026-12-01"),
+    "a count that returns to an earlier number is not silent for good",
+  );
+  assert.equal(operatorWatchBlocksTelegramFallback("tablet_fleet_watch"), true, "a failed Telegram send never becomes an email");
 
   // It tells the Super Admin alone, never by email, and it touches no tablet.
   const alert = readFileSync("src/lib/devices/headwind/fleet-watch-alert.ts", "utf8");

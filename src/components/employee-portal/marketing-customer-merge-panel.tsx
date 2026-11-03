@@ -31,6 +31,7 @@ type Outcome = {
   evidenceCarried: boolean;
   linksLeftOnRetired: number;
   linksMoved: number;
+  linksStatusCarried: number;
   requestsMoved: number;
   transfersMoved: number;
   validationCarried: string | null;
@@ -252,7 +253,8 @@ export function MarketingCustomerMergePanel({ onMerged }: { onMerged: () => void
         {outcome ? (
           <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
             {`Merged. Moved ${outcome.requestsMoved} request(s), ${outcome.contactsMoved} contact(s), ${outcome.linksMoved} pharmacy link(s) and ${outcome.transfersMoved} transfer(s). `}
-            {outcome.linksLeftOnRetired > 0 ? `${outcome.linksLeftOnRetired} link(s) were already on the customer that stays. ` : ""}
+            {outcome.linksLeftOnRetired > 0 ? `${outcome.linksLeftOnRetired} link(s) were already on the customer that stays, so the retired copies were switched off. ` : ""}
+            {outcome.linksStatusCarried > 0 ? `${outcome.linksStatusCarried} link(s) took the retired row's higher validation. ` : ""}
             {outcome.validationCarried ? `Validation carried: ${humanizeCode(outcome.validationCarried)}. ` : ""}
             {outcome.evidenceCarried ? "Field evidence carried. " : ""}
           </div>

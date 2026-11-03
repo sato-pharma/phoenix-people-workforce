@@ -15,15 +15,19 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * swallows its own errors and never changes that route's verdict.
  *
  * In-app, Telegram and push, never email: this is about an address that email cannot reach, and the
- * standing rule is that no watch adds an outbound email. Only rows created inside 48 hours count, so the
- * blocks from 4 October, which the screen already lists, do not page anyone on deploy. A lifted address
- * that bounces again is a new row, so it pages again, which is right.
+ * standing rule is that no watch adds an outbound email (operator-watch-channel-guard.ts stops the
+ * Telegram-failure re-send too). Only a block that stops every email counts: a hard bounce or a complaint
+ * with no expiry. An unsubscribe still lets account and security email through, and a soft bounce clears
+ * itself in 7 days. Only rows written inside 48 hours count, so the blocks from 4 October, which the screen
+ * already lists, do not page anyone on deploy. The clock is `updated_at` because a repeat bounce refreshes
+ * the row and keeps its old `created_at`, so a lifted address that bounces again pages again.
  */
 
 const WINDOW_MS = 48 * 60 * 60 * 1000;
+const STOPS_EVERY_EMAIL: ReadonlySet<string> = new Set(["hard_bounce", "complaint"]);
 const ACTION_URL = "/admin/notifications/email";
 
-export type NewlyBlockedPerson = { address: string; hrId: string; name: string };
+export type NewlyBlockedPerson = { address: string; blockedAt: string; hrId: string; name: string; reason: string };
 
 export type EmailBlockWatchResult = {
   delivered: boolean;
@@ -33,32 +37,58 @@ export type EmailBlockWatchResult = {
 
 /** Pure. Active employees only; a candidate's or a leaver's address is on the screen and pages nobody. */
 export function newlyBlockedPeople(
-  suppressions: readonly Pick<SuppressionDbRow, "address" | "created_at">[],
+  suppressions: readonly Pick<SuppressionDbRow, "address" | "expires_at" | "reason" | "updated_at">[],
   employees: readonly EmployeeEmailDbRow[],
   nowMs: number,
 ): NewlyBlockedPerson[] {
-  const fresh = new Set(
+  const fresh = new Map(
     suppressions
-      .filter((row) => nowMs - Date.parse(row.created_at) <= WINDOW_MS)
-      .map((row) => row.address.trim().toLowerCase()),
+      .filter((row) => STOPS_EVERY_EMAIL.has(row.reason) && !row.expires_at && nowMs - Date.parse(row.updated_at) <= WINDOW_MS)
+      .map((row) => [row.address.trim().toLowerCase(), row] as const),
   );
   const people = new Map<string, NewlyBlockedPerson>();
   for (const employee of employees) {
     const address = employee.work_email?.trim().toLowerCase();
-    if (!address || !fresh.has(address) || isTerminalEmploymentStatus(employee.employment_status)) continue;
-    people.set(employee.hr_id, { address, hrId: employee.hr_id, name: employee.full_name ?? employee.hr_id });
+    const block = address ? fresh.get(address) : undefined;
+    if (!address || !block || isTerminalEmploymentStatus(employee.employment_status)) continue;
+    people.set(employee.hr_id, {
+      address,
+      blockedAt: block.updated_at,
+      hrId: employee.hr_id,
+      name: employee.full_name ?? employee.hr_id,
+      reason: block.reason,
+    });
   }
   return [...people.values()].sort((left, right) => left.hrId.localeCompare(right.hrId));
 }
 
-/** Pure. The key holds the set of people, so a new person gets through and the same set says it once. */
+/**
+ * Pure. The key is the newest block, person and time. A new block always gets through, the same state says
+ * it once, one person leaving the 48-hour window does not repeat the others, and a block that comes back
+ * after a lift has a new time. The delivery claim on a key is never pruned, so a key with no time would be
+ * silent for that person for good.
+ */
 export function emailBlockNotice(people: readonly NewlyBlockedPerson[]): { idempotencyKey: string; message: string; title: string } {
+  const newest = [...people].sort((left, right) => right.blockedAt.localeCompare(left.blockedAt) || left.hrId.localeCompare(right.hrId))[0];
+  const refused = people.filter((person) => person.reason !== "complaint");
+  const complained = people.filter((person) => person.reason === "complaint");
   return {
-    idempotencyKey: `email-block:${people.map((person) => person.hrId).join(",")}`,
+    idempotencyKey: `email-block:${newest?.hrId ?? "none"}@${newest?.blockedAt ?? "none"}`,
     message: [
-      "Phoenix has stopped emailing these work addresses because the email provider refused them:",
-      ...people.map((person) => `• ${person.name}: ${person.address}`),
-      "They get no email until the block is lifted, and they cannot reset their own password. Lifting sends nothing, and if the mailbox does not exist, create it first.",
+      ...(refused.length > 0
+        ? [
+            "Phoenix has stopped emailing these work addresses because the email provider refused them:",
+            ...refused.map((person) => `• ${person.name}: ${person.address}`),
+            "They get no email until the block is lifted, and they cannot reset their own password. Lifting sends nothing, and if the mailbox does not exist, create it first.",
+          ]
+        : []),
+      ...(complained.length > 0
+        ? [
+            "Phoenix has stopped emailing these work addresses because the person marked a Phoenix email as spam:",
+            ...complained.map((person) => `• ${person.name}: ${person.address}`),
+            "They get no email and cannot reset their own password. A complaint is theirs to withdraw, so it cannot be lifted from the screen.",
+          ]
+        : []),
     ].join("\n"),
     title: people.length === 1 ? `Work email blocked: ${people[0].name}` : `${people.length} work emails blocked`,
   };
@@ -69,10 +99,10 @@ export async function runEmailBlockWatch(): Promise<EmailBlockWatchResult> {
     const since = new Date(Date.now() - WINDOW_MS).toISOString();
     const { data, error } = await getSupabaseAdmin()
       .from("email_suppressions")
-      .select("address, created_at")
-      .gte("created_at", since);
+      .select("address, reason, expires_at, updated_at")
+      .gte("updated_at", since);
     if (error) throw error;
-    const rows = (data ?? []) as Array<Pick<SuppressionDbRow, "address" | "created_at">>;
+    const rows = (data ?? []) as Array<Pick<SuppressionDbRow, "address" | "expires_at" | "reason" | "updated_at">>;
     if (rows.length === 0) return { delivered: false, people: 0, skippedReason: "nothing new" };
 
     const people = newlyBlockedPeople(rows, await readEmployeeEmails(), Date.now());

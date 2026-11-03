@@ -9,7 +9,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  *
  * The pharmacy sync creates a vendor it has never seen as hidden, until he allows it. Allowing one shows
  * it in the Vendor picker, and the next nightly sync loads the codes the Sales map holds for it. Hiding
- * one takes it out of the picker; it deletes nothing, and customers already linked through it stay linked.
+ * one takes it out of the picker and deletes nothing. A vendor with customers live on it cannot be hidden:
+ * the marketing screens name a vendor from the shown ones only, so its links would read "Unknown distributor".
  *
  * A vendor merged into another can never be allowed: the Sales map still names it, so its codes would load
  * back under the old name and undo the merge. The database refuses it too.
@@ -99,6 +100,14 @@ export async function setMarketingVendorActive(
     throw conflictError(`${vendor.display_name} was merged into another vendor. Allowing it would load its codes back and undo the merge.`);
   }
   if (vendor.active === input.active) return listMarketingVendors(access);
+  if (!input.active) {
+    const counts = await supabase.rpc("phx_marketing_vendor_code_counts");
+    if (counts.error) throw counts.error;
+    const linked = Number(((counts.data ?? []) as CountRow[]).find((row) => Number(row.vendor_id) === input.vendorId)?.customers_linked ?? 0);
+    if (linked > 0) {
+      throw conflictError(`${linked} customer(s) are linked through ${vendor.display_name}. Hiding it would show them as "Unknown distributor", so it stays shown.`);
+    }
+  }
 
   const write = await supabase
     .from("marketing_distributors")

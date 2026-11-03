@@ -42,6 +42,7 @@ export type SuppressionDbRow = {
   created_at: string;
   expires_at: string | null;
   reason: string;
+  updated_at: string;
 };
 
 export type EmployeeEmailDbRow = {
@@ -79,7 +80,8 @@ export function buildEmailBlockView(
       const person = byAddress.get(row.address.trim().toLowerCase()) ?? null;
       return {
         address: row.address,
-        blockedAt: row.created_at,
+        // A repeat bounce refreshes this row and keeps its old created_at, so the date a block began is here.
+        blockedAt: row.updated_at,
         jobTitle: person?.job_title ?? null,
         liftable: LIFTABLE.has(row.reason),
         personActive: Boolean(person) && !isTerminalEmploymentStatus(person?.employment_status),
@@ -119,7 +121,7 @@ export async function readEmployeeEmails(): Promise<EmployeeEmailDbRow[]> {
 export async function readEmailBlocks(access: AccessContext): Promise<EmailBlockView> {
   assertEmailBlockAccess(access);
   const [suppressions, employees] = await Promise.all([
-    getSupabaseAdmin().from("email_suppressions").select("address, reason, bounce_subtype, created_at, expires_at"),
+    getSupabaseAdmin().from("email_suppressions").select("address, reason, bounce_subtype, created_at, expires_at, updated_at"),
     readEmployeeEmails(),
   ]);
   if (suppressions.error) throw suppressions.error;
