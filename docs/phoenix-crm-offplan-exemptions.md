@@ -117,6 +117,26 @@ On 24 November the usual 2 a day and 8 a week apply again with no job and no han
 - Migration `20261026230001_phoenix_crm_new_hire_offplan_month.sql`. To end one early, set `ended_at`. The next new hire
   is a new row with the owner's word.
 
+## The Rep Exceptions page (owner, 2026-11-03)
+
+*"Build a module for admin only to open or close this feature by a toggle or be able to control duration for any rep if
+needed exception."* `/admin/field-crm/rep-exceptions`, the Super Admin's alone (`canManageRepExceptions`, never a test
+account). It opens on everyone who has had a dated exception; the filter brings up any other rep.
+
+- **The switch** writes or ends the same rep-wide dated row the first-month section above describes, so the door, the
+  rep's allowance card and everything that stays are unchanged. The next new hire no longer needs a hand-written row.
+- **The dates** start as the live window. With the switch off they start as the first month from the hire date while
+  that month is still running, otherwise one month from today. Any dates may be saved if the last day is not before the
+  first day or before today, and a first day may be in the past.
+- **Changing dates ends the old row and writes a new one**, so every window stays as history with who set and ended it.
+- **Closing or shortening rewrites nothing.** A visit already stamped `offplan_exempt` keeps its stamp and stays out of
+  the counts, and a visit logged before a window opened stays counted.
+- **Per person, on the seats held now.** A person on two seats gets a row on each, and two people on one seat are
+  separate. A row on a seat the rep has left never matches at the door, so the page reads that rep as off.
+- **Nobody is notified.** The rep's allowance card follows the row by itself.
+- `phoenix_crm_rep_exception_set` is the one write. Migration
+  `20261103132005_phoenix_crm_rep_offplan_exception_admin.sql`. Pinned by `tests/phoenix-crm-rep-exceptions.test.ts`.
+
 ## How it is built
 
 - Table `phoenix_crm_offplan_exemptions` — one row per **seat** and **customer, venue name key or exact venue**. It is a

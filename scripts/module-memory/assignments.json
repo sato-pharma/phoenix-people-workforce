@@ -1213,6 +1213,7 @@
   "search-direct-order-customer-code-trgm-live-on-prod-2026-08-14": "direct-orders",
   "seat-continuity-resolver": "org",
   "seat-is-now-a-foreign-key-of-the-hiring-ledger": "org",
+  "seat-start-follows-the-job-offer-2026-11-03": "org",
   "seeded-marketing-pharmacies-have-no-area-and-are-invisible": "marketing",
   "selectbyids-seeks-on-id-and-visit-recordings-has-none": "phoenix-crm",
   "self-removing-a-worktree-mutes-its-own-session-end-guard": "git-worktrees",

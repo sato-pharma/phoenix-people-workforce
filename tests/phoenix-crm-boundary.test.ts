@@ -208,6 +208,9 @@ const ROUTE_GATES: RouteGate[] = [
   // The Polyclinic Caps page (owner, 2026-11-02): one switch or one number on one rep's venue. `update` at the route,
   // and `setVenueCap` narrows it to the Super Admin alone before a row is read.
   post("venue-caps", "update"),
+  // The Rep Exceptions page (owner, 2026-11-03): one switch or one change of dates for one rep. `update` at the route,
+  // and `setRepException` narrows it to the Super Admin alone before a row is read.
+  post("rep-exceptions", "update"),
   // The third tab of Place checks (owner, 2026-10-17): places several reps validated, side by side, and
   // his answer to "are these the same place?". `read` to open it and `approve` to answer, the Super Admin and the SFE Manager
   // only — the loader and the service refuse everyone else before a row is read.
@@ -1054,6 +1057,8 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql",
   // The same page's door and write, replaced again the same day: a number stays on its own seat, and a switch is a round trip.
   "supabase/migrations/20261102133258_phoenix_crm_venue_cap_round_trip.sql",
+  // The Super Admin's Rep Exceptions page (owner, 2026-11-03): one NEW function and one unique index; nothing replaced.
+  "supabase/migrations/20261103132005_phoenix_crm_rep_offplan_exception_admin.sql",
   // Reading visit comments (owner, 3 Nov 2026): one table, its queue and a trigger that clears a reading when the words
   // change. It replaces no function and writes to no visit.
   "supabase/migrations/20261103091500_phoenix_crm_visit_comment_readings.sql",

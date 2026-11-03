@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: e94a655d-2c8b-49f4-9c2c-ad15fddfe252
-  modified: 2026-09-26T18:41:47.249Z
+  modified: 2026-11-03T11:28:59.944Z
 ---
 
 `main` is squash-merge only (`delete_branch_on_merge` on, `gh pr merge --squash`). So when PR A
@@ -35,6 +35,12 @@ CI re-runs on the new head.
 **Two things that go wrong if you merge instead.** The conflict volume is large enough that you stop
 reading and start accepting, and `rerere` replays earlier resolutions into hunks they were never
 written for. Both were live on 2026-09-26.
+
+**A way with no force push, when the child holds the parent's whole tip** (3 Nov 2026, pull request 46
+on 42): first prove `git diff <parent tip> <squash commit>` is EMPTY, then `git merge -s ours
+<squash commit>` and an ordinary `git merge origin/main`. The plain merge had conflicted in 5 files;
+this brought in only what landed after the squash. `-s ours` discards that commit's side, so without
+the empty diff it silently loses work.
 
 **Get the parent sha BEFORE you reset** — `git log --oneline -3` in the child worktree, or the sha
 the child branched from. After `git reset --hard` it is only in the reflog.
