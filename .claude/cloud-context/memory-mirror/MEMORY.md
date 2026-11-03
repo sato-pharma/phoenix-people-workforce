@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [The code backup restores through `railway run`](the-code-backup-restores-through-railway-run-not-rclone-remote.md) - first restore passed 3 Nov; how to start a run by hand, and why the README's rclone route and `.env.local`'s Drive login fail here.
 
 
 
