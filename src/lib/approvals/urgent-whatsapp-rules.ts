@@ -269,7 +269,7 @@ export type ApproverTally = {
 };
 
 function personKey(hrId: string | null | undefined): string {
-  return canonicalHrIdKey(canonicalPersonHrId(hrId) ?? hrId ?? "");
+  return canonicalHrIdKey(canonicalPersonHrId(hrId) ?? hrId ?? "") ?? "";
 }
 
 function emptyCounts(): ApprovalCounts {
