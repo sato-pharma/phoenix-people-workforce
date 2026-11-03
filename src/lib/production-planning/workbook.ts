@@ -171,7 +171,7 @@ function purchaseFormula(excelRow: number, minOrder: number | null, increment: n
 /** The derived cell a material's basis count reads, chosen by what the recipe is written per. */
 function basisCountRef(
   row: WirePlanRow,
-  refs: { boxes: string; doses: string; goodUnits: string; packagingSets: string; samples: string },
+  refs: { boxes: string; doses: string; goodUnits: string; packagingSets: string; samples: string; strips: string | null },
 ) {
   switch (row.basis) {
     case "per_dose":
@@ -189,6 +189,8 @@ function basisCountRef(
       // so the carton and the sticker are consumed once per box and not once per sachet. For a
       // product whose `unitsPerBox` is 1 this is the same cell as `per_packaging_set`.
       return refs.boxes;
+    case "per_strip":
+      return refs.strips;
     default:
       return null;
   }
@@ -308,6 +310,16 @@ export async function buildProductionPlanningWorkbook(
   labelCell(sheet, unitsPerBoxRow, PPL.sheetUnitsPerBox);
   inputCell(sheet, unitsPerBoxRow, unitsPerBoxValue, UNITS_FMT);
   row += 1;
+
+  // Only a product that counts strips gets this row, so every other product's sheet is unchanged.
+  const stripsPerBoxValue = num(product?.stripsPerBox, 0);
+  let stripsPerBoxRow: number | null = null;
+  if (stripsPerBoxValue > 0) {
+    stripsPerBoxRow = row;
+    labelCell(sheet, stripsPerBoxRow, PPL.sheetStripsPerBox);
+    inputCell(sheet, stripsPerBoxRow, stripsPerBoxValue, UNITS_FMT);
+    row += 1;
+  }
 
   const fxRow = row;
   labelCell(sheet, fxRow, PPL.fxRate);
@@ -456,7 +468,27 @@ export async function buildProductionPlanningWorkbook(
   const dosesRow = row;
   labelCell(sheet, dosesRow, PPL.sheetTotalDoses);
   formulaCell(sheet, dosesRow, `$B$${runsRow}*${RUN_VOLUME}/${DOSE_ML}`, num(plan.totalDoses), UNITS_FMT);
-  row += 2;
+  row += 1;
+
+  // What a `per_strip` material counts: the engine's `stripCount`. A sample adds its one strip only
+  // when it wears its own box, because any other sample is already inside the box count.
+  let totalStripsRow: number | null = null;
+  if (stripsPerBoxRow !== null) {
+    totalStripsRow = row;
+    labelCell(sheet, totalStripsRow, PPL.sheetTotalStrips);
+    const stripsFromBoxes = `$B$${saleableBoxesRow ?? boxesRow}*$B$${stripsPerBoxRow}`;
+    formulaCell(
+      sheet,
+      totalStripsRow,
+      sampleInOwnBox ? `${stripsFromBoxes}+${SAMPLES}` : stripsFromBoxes,
+      sampleInOwnBox
+        ? Math.ceil(num(plan.goodUnits) / unitsPerBoxValue) * stripsPerBoxValue + num(plan.sampleUnits)
+        : num(plan.totalBoxes) * stripsPerBoxValue,
+      UNITS_FMT,
+    );
+    row += 1;
+  }
+  row += 1;
 
   const refs = {
     boxes: `$B$${saleableBoxesRow ?? boxesRow}`,
@@ -464,6 +496,7 @@ export async function buildProductionPlanningWorkbook(
     goodUnits: `$B$${yieldRow}`,
     packagingSets: `$B$${packagingSetsRow}`,
     samples: SAMPLES,
+    strips: totalStripsRow === null ? null : `$B$${totalStripsRow}`,
   };
 
   // ── The materials ──────────────────────────────────────────────────────────────────────────────

@@ -92,7 +92,7 @@ import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { costCoverage } from "@/lib/production-planning/costing";
 import { fromBaseUnits, toBaseUnits } from "@/lib/production-planning/display-units";
 import { createRequestSequence, planForSelection } from "@/lib/production-planning/request-sequence";
-import { COMPOSITION_BASES, isBoughtBySato, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
+import { basisFitsProduct, COMPOSITION_BASES, isBoughtBySato, MATERIAL_SUPPLIERS, SETTLED_SUPPLIERS } from "@/lib/production-planning/rules";
 import {
   coerceProductionPlanningLanguage,
   formatNumberLatin,
@@ -2714,7 +2714,9 @@ export function SettingsTab({
                   onChange={(event) => setLineBasis(event.target.value as WireBasis)}
                   value={lineBasis}
                 >
-                  {COMPOSITION_BASES.map((basis) => (
+                  {COMPOSITION_BASES.filter(
+                    (basis) => basis === lineBasis || basisFitsProduct(basis, selectedProductOf(data)?.stripsPerBox),
+                  ).map((basis) => (
                     <option key={basis} value={basis}>
                       {basisLabels[basis]}
                     </option>
