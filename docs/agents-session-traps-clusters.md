@@ -67,6 +67,7 @@ does not fire, so its silence is not evidence that no trap applies.
 
 **Git**
 
+- 🔴 **COMMIT AND PUSH IN TWO COMMANDS — `bash-guard.mjs` C12 REFUSES ONE COMMAND THAT DOES BOTH, BEFORE ANY OF IT RUNS.** The secret scan runs before the whole command starts, when the new commit does not exist, so `git add … && git commit … && git push` would send the one commit it never read. Commit, then a plain `git push` on its own. Account: `docs/hook-dispatcher.md`, "bash-guard C12".
 - **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a conflicting PR.**
 - **`git branch -d` gates NOTHING after a squash merge** — it compares the branch to its OWN STALE tracking ref, so genuinely UNMERGED work deletes just as quietly as merged work. Gate on the merged PR (`gh pr list --head <branch> --state merged` — **by NUMBER on a reused branch name**, see the Worktrees cluster) and archive the tip first. `git-branch-d-is-not-a-safety-gate-after-a-squash-merge`
 - **`git push` hangs — kill at ~60s and retry.** The OOM was a 500MB `http.postBuffer`, now 8MB; do NOT restore it.
