@@ -136,6 +136,47 @@ export function runMarketingRoiAttributionConsistencyTests() {
   testDirectOrdersCountByDefaultButNotForASettlementRequest();
   testCustomerFactsCountEachSaleOncePerCustomer();
   testAnImportRebuildsEveryRequest();
+  testDirectOrdersReachTheFactsThroughTheRollup();
+}
+
+// A direct-order venue holds sales codes (IS, PS) and a marketing distributor holds its own (DST_POS_...),
+// so comparing those two matched nothing: no direct order reached any fact table, and the dashboard read
+// EGP 18,740.40 below View Sales on production, 3 November 2026. The facts reach the venue through the
+// roll-up as View Sales does, and carry the parent code the customer and distributor facts join on.
+function testDirectOrdersReachTheFactsThroughTheRollup() {
+  const { body, file } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
+  const code = stripSqlComments(body).replace(/\s+/g, " ");
+
+  const at = code.indexOf("direct_hits as materialized (");
+  const end = code.indexOf("all_hits as materialized (", at);
+  assert.ok(at >= 0 && end > at, `${file}: direct_hits must exist, before all_hits`);
+  const directHits = code.slice(at, end);
+
+  assert.match(
+    directHits,
+    /join marketing_roi_distributor_rollup ru on ru\.marketing_normalized_name = md\.normalized_name/,
+    `${file}: the direct branch must reach sales codes through the roll-up`,
+  );
+  assert.match(
+    directHits,
+    /lower\(btrim\(dopdc\.distributor_code\)\) = lower\(btrim\(ru\.sos_distributor_code\)\)/,
+    `${file}: a venue's sales code must be compared with a sales code, or no direct order ever matches`,
+  );
+  assert.doesNotMatch(
+    directHits,
+    /btrim\(md\.distributor_code\)/,
+    `${file}: a marketing distributor's own code matches no venue`,
+  );
+  assert.match(
+    directHits,
+    /ru\.parent_distributor_code as distributor_code/,
+    `${file}: the customer and distributor facts join on the parent code, so a direct sale must carry it`,
+  );
+  assert.match(
+    directHits,
+    /select distinct on \(req\.id, dor\.id\).*order by req\.id, dor\.id\b/,
+    `${file}: one order counts once per request, even under a parent and a child code`,
+  );
 }
 
 // The summary facts are deleted by whole pay month. If an import puts back only the requests whose window

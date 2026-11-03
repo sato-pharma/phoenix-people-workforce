@@ -8941,6 +8941,13 @@ One direct order is claimed by two campaigns today (one active, one rejected), w
 rejected campaign is outside every approved roll-up; a direct order claimed by two APPROVED campaigns would be
 added twice in a company-wide roll-up until the ledger learns direct lines. Rule line: `.claude/rules/marketing-roi.md`.
 
+Found 2026-11-03: the matching rule was right in View Sales and dead in the hourly rebuild. The rebuild compared a
+venue's sales code (IS, PS) with `marketing_distributors.distributor_code` (`DST_POS_1478C028`), so it found 0
+orders while View Sales found 5 approved ones on 3 active requests, EGP 18,740.40, and the dashboard read that much
+lower than the case file. `20261103124320` reaches the venue through `marketing_roi_distributor_rollup`, as View
+Sales does. No verdict moved. A venue code with no `mapped_region_code` (9 of 252 that day) still leaves its order
+out of the region table, though none of the 5 did.
+
 ## The evidence photo is the primary source of trust — owner, 2026-10-18
 
 His words, after Direct Order request 299304bf (حضانه عبد الكريم, a marketing transfer with no distributor
