@@ -77,8 +77,16 @@ export function whatsAppInboxLineLabel(phoneNumberId: string | null | undefined,
 // `postToGraph` and the webhook both ask isApprovalsLine, because neither the inbox nor the outbound report filters by
 // line on its own.
 
+/**
+ * 🔴 NEVER A LINE PEOPLE WRITE TO. The webhook drops everything delivered to this number and still answers 200, so Meta
+ * never redelivers. Set by mistake to a line in use, it would silently lose every applicant, so such a value reads as
+ * unset: the reminders stay off, which is the loud and harmless failure.
+ */
 export function approvalsLinePhoneNumberId(): string | null {
-  return process.env.WHATSAPP_APPROVALS_PHONE_NUMBER_ID?.trim() || null;
+  const id = process.env.WHATSAPP_APPROVALS_PHONE_NUMBER_ID?.trim();
+  if (!id) return null;
+  const intake = [process.env.WHATSAPP_PHONE_NUMBER_ID ?? "", ...(process.env.WHATSAPP_PHONE_NUMBER_IDS ?? "").split(",")].map((entry) => entry.trim());
+  return intake.includes(id) || findWhatsAppInboxLine(id) ? null : id;
 }
 
 /** Null until both ids are set: a template belongs to one business account, so the number alone cannot send. */

@@ -38,4 +38,6 @@ alter table public.approval_whatsapp_reminders enable row level security;
 revoke all on table public.approval_whatsapp_reminders from public, anon, authenticated;
 grant all on table public.approval_whatsapp_reminders to service_role;
 
+notify pgrst, 'reload schema';
+
 commit;

@@ -14,6 +14,15 @@ import { VISIT_RESEND_IN_FLIGHT_MS, queuedSecondsAt, type QueuedVisit, type Visi
 
 export const VISIT_RESEND_REPORT_PATH = "/api/phoenix-crm/visit-resend-report";
 
+/**
+ * Fetches the sending code while there is signal. 🔴 IT CANNOT BE FETCHED ON THE PRESS THAT LOST THE SIGNAL, and a failed
+ * chunk load may not be retried by the bundler, so a phone that held a visit could then never send it. The screens a
+ * rep logs from ask for it as they open, at the cost of one small chunk for the people who can hold a visit.
+ */
+export function preloadVisitOutboxEngine(): void {
+  void import("@/components/phoenix-crm/visit-outbox-engine").catch(() => undefined);
+}
+
 export function notifyVisitOutboxChanged(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(VISIT_OUTBOX_CHANGED_EVENT));
 }

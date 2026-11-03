@@ -98,11 +98,12 @@ export function queuedSecondsAt(entry: Pick<QueuedVisit, "pressedAtMs">, nowMs: 
  * server knows which side of 02:00 the visit would land on. A phone clock that ran BACKWARDS measures
  * nothing, so it reads as too late too — the safe answer costs one tap and never a false visit.
  */
-export function isTooLateToSend(entry: Pick<QueuedVisit, "pressedAtMs">, phoneNowMs: number, serverNowMs: number): boolean {
+export function isTooLateToSend(entry: Pick<QueuedVisit, "pressedAtMs">, phoneNowMs: number, serverNowMs: number, landsWithinMs = 0): boolean {
   const elapsedMs = phoneNowMs - entry.pressedAtMs;
   if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return true;
   if (elapsedMs > VISIT_RESEND_MAX_SECONDS * 1000) return true;
-  return cairoBusinessDay(new Date(serverNowMs)) !== cairoBusinessDay(new Date(serverNowMs - elapsedMs));
+  // `landsWithinMs` is how long the send may take: a request leaving at 01:59:50 can arrive after the close.
+  return cairoBusinessDay(new Date(serverNowMs + landsWithinMs)) !== cairoBusinessDay(new Date(serverNowMs - elapsedMs));
 }
 
 /** An entry a sender may take right now: still waiting, and nobody's request is in flight for it. */
@@ -115,11 +116,11 @@ const ALREADY_ON_FILE = new Set(["phoenix_crm_already_visited"]);
 const VOICE_REFUSAL_PREFIX = "phoenix_crm_voice_";
 
 export type RefusalAnswer =
-  /** On file after all. Removed in silence: he has nothing left to do and nothing to be told. */
+  /** On file after all. Removed in silence: they have nothing left to do and nothing to be told. */
   | "settled"
-  /** Only the spoken note's slot failed, and his comment stands: the same visit, without the note. */
+  /** Only the spoken note's slot failed, and their comment stands: the same visit, without the note. */
   | "send_without_voice"
-  /** A real refusal. He reads the server's sentence, with Log it again and Remove. */
+  /** A real refusal. They read the server's sentence, with Log it again and Remove. */
   | "show_refusal";
 
 /**
@@ -135,7 +136,7 @@ export function answerToRefusal(input: { code: string | null; idIsOnFile: boolea
   if (input.code && ALREADY_ON_FILE.has(input.code)) return "settled";
   if (input.code?.startsWith(VOICE_REFUSAL_PREFIX) && input.body.voiceNotePath) {
     // A comment is required on every visit, so one is normally here. Without one there is nothing to
-    // keep, and the visit is his to log again.
+    // keep, and the visit is theirs to log again.
     return String(input.body.comment ?? "").trim() ? "send_without_voice" : "show_refusal";
   }
   return "show_refusal";
@@ -146,7 +147,7 @@ export function withoutVoiceNote(body: Record<string, unknown>): Record<string, 
   return { ...body, voiceNotePath: null, voiceNoteSeconds: null, voiceNoteBytes: null };
 }
 
-/** What the form starts from when he presses Log it again: his own words and picks, not a blank page. */
+/** What the form starts from when they press Log it again: their own words and picks, not a blank page. */
 export function loggedAgainStart(entry: Pick<QueuedVisit, "body"> | null): { comment: string; products: string[] } | null {
   if (!entry) return null;
   const products = Array.isArray(entry.body.products) ? entry.body.products.filter((value): value is string => typeof value === "string") : [];

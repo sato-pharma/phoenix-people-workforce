@@ -12,6 +12,7 @@
 -- Same shape as every key migration before it. The key list is the live constraint read on 3 Nov 2026 plus this key.
 
 begin;
+set local lock_timeout = '5s';
 
 do $$
 declare
@@ -63,5 +64,7 @@ insert into public.notification_role_policies (notification_key, label, descript
     'Once a working day, each approver holding a leave, excuse, marketing or direct-order request for more than three days gets one WhatsApp message with the count.',
     array[]::text[], false)
 on conflict (notification_key) do nothing;
+
+notify pgrst, 'reload schema';
 
 commit;

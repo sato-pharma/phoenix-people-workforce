@@ -16,9 +16,9 @@ import { browserLocalStorage, VISIT_OUTBOX_CHANGED_EVENT } from "@/lib/browser-s
 import { drainVisitOutbox, readQueuedVisits, type OutboxDeps } from "@/lib/phoenix-crm/visit-outbox";
 import { VISIT_RESEND_TICK_MS, VISIT_SAVE_TIMEOUT_MS } from "@/lib/phoenix-crm/visit-resend-rules";
 
-type StatusAnswer = { enabled: boolean; savedVisitIds: string[]; serverNow: string };
+type StatusAnswer = { enabled: boolean; personHrId: string; savedVisitIds: string[]; serverNow: string };
 
-async function readStatus(visitIds: string[]): Promise<{ enabled: boolean; savedVisitIds: string[]; serverNowMs: number }> {
+async function readStatus(visitIds: string[]): Promise<{ enabled: boolean; personHrId: string; savedVisitIds: string[]; serverNowMs: number }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VISIT_SAVE_TIMEOUT_MS);
   try {
@@ -26,7 +26,7 @@ async function readStatus(visitIds: string[]): Promise<{ enabled: boolean; saved
     const serverNowMs = Date.parse(answer.serverNow);
     // No usable clock proves nothing about 02:00, so nothing is decided on this pass.
     if (Number.isNaN(serverNowMs)) throw new Error("No server clock.");
-    return { enabled: answer.enabled, savedVisitIds: answer.savedVisitIds, serverNowMs };
+    return { enabled: answer.enabled, personHrId: answer.personHrId, savedVisitIds: answer.savedVisitIds, serverNowMs };
   } finally {
     clearTimeout(timer);
   }

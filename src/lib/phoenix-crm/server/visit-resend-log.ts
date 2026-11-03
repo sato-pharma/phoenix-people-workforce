@@ -8,7 +8,7 @@
  * never as "lost".
  *
  * Both follow the capture-evidence rule of this module: a rep's work never waits on them and a failure here
- * reaches nobody. The rep reads nothing from this file except the one switch and his own ids.
+ * reaches nobody. The rep reads nothing from this file except the one switch and their own ids.
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -24,17 +24,19 @@ const ATTEMPTS_MAX = 1_000;
 
 export type VisitResendStatus = {
   enabled: boolean;
-  /** Which of the ids he asked about are on file as his. Never anybody else's. */
+  /** Who this sign-in is, so a tab left open for someone else stops rather than sends under this person. */
+  personHrId: string;
+  /** Which of the ids they asked about are on file as theirs. Never anybody else's. */
   savedVisitIds: string[];
   /** The server's clock, because only the server knows which side of 02:00 a visit would land on. */
   serverNow: string;
 };
 
 /**
- * The switch, the server's clock, and which of these ids stand as his own visits. Read only while a phone is
+ * The switch, the server's clock, and which of these ids stand as their own visits. Read only while a phone is
  * holding something, so a rep with nothing waiting never asks it.
  *
- * 🔴 NARROWED TO HIS OWN VISITS BY THE QUERY. An id he merely guessed answers nothing, so this can never
+ * 🔴 NARROWED TO THEIR OWN VISITS BY THE QUERY. An id they merely guessed answers nothing, so this can never
  * confirm that somebody else's visit exists.
  */
 export async function readVisitResendStatus(viewer: Pick<PhoenixCrmViewer, "hrId" | "config" | "isTestPersona">, rawIds: string | null): Promise<VisitResendStatus> {
@@ -47,9 +49,9 @@ export async function readVisitResendStatus(viewer: Pick<PhoenixCrmViewer, "hrId
     ),
   ].slice(0, VISIT_OUTBOX_MAX_ENTRIES);
   const enabled = viewer.config.settings.visitResendEnabled;
-  if (ids.length === 0) return { enabled, savedVisitIds: [], serverNow: new Date().toISOString() };
-
   const hrId = String(viewer.hrId ?? "").toUpperCase();
+  if (ids.length === 0) return { enabled, personHrId: hrId, savedVisitIds: [], serverNow: new Date().toISOString() };
+
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_visits")
     .select("id")
@@ -57,7 +59,7 @@ export async function readVisitResendStatus(viewer: Pick<PhoenixCrmViewer, "hrId
     .or(`rep_hr_id.eq."${hrId}",entered_by_hr_id.eq."${hrId}"`);
   // A failed read must never look like "not on file": that would raise a refusal for a visit that stands.
   if (error) throw new Error(error.message);
-  return { enabled, savedVisitIds: (data ?? []).map((row) => String(row.id)), serverNow: new Date().toISOString() };
+  return { enabled, personHrId: hrId, savedVisitIds: (data ?? []).map((row) => String(row.id)), serverNow: new Date().toISOString() };
 }
 
 function boundedSeconds(value: unknown): number | null {
@@ -97,7 +99,7 @@ export async function recordVisitResend(viewer: Pick<PhoenixCrmViewer, "hrId" | 
       updated_at: new Date().toISOString(),
     };
     const supabase = getSupabaseAdmin();
-    // His own row moves on to its later outcome (refused, then Log it again). The narrow update comes first so
+    // Their own row moves on to its later outcome (refused, then Log it again). The narrow update comes first so
     // an id another person already filed can never be overwritten by a body that names it.
     const updated = await supabase.from("phoenix_crm_visit_resend_log").update(row).eq("visit_id", visitId).eq("rep_hr_id", hrId).select("visit_id");
     if (updated.error) {

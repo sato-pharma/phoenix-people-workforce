@@ -951,7 +951,10 @@ export function parseDropDraft(raw: unknown, options: { requireNote?: boolean } 
 // ── A visit ─────────────────────────────────────────────────────────────────────────────────────
 
 export type VisitDraft = CapturedFix & {
-  /** How long the phone held this save (parseQueuedSeconds). Evidence only: it never reaches the save function. */
+  /**
+   * How long the phone held this save (parseQueuedSeconds). It never reaches `phoenix_crm_save_visit`, `captured_at` or
+   * `visit_date`. It does move the phone-clock reading and the travel check, which is why the Visit report shows it.
+   */
   queuedSeconds: number | null;
   customerId: string;
   kind: PhoenixCrmVisitKind;

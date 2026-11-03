@@ -51,7 +51,7 @@ import { useRouter } from "next/navigation";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, History, Plus } from "lucide-react";
 
 import { crmPost, crmPostWithin, errorCodeOf, isRetryableFailure, messageOf, newClientId } from "@/components/phoenix-crm/api";
-import { forgetHeldVisit, holdVisitPress, leaveVisitWaiting, reportVisitResend, restoreHeldVisit } from "@/components/phoenix-crm/visit-outbox-client";
+import { forgetHeldVisit, holdVisitPress, leaveVisitWaiting, preloadVisitOutboxEngine, reportVisitResend, restoreHeldVisit } from "@/components/phoenix-crm/visit-outbox-client";
 import { dayLabel } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_COUNTS_NOTE, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
@@ -493,6 +493,12 @@ export function VisitLogForm({
     openedAtRef.current = Date.now();
   }, []);
 
+  // While there is signal: it cannot be fetched on the press that loses it (visit-outbox-client.ts).
+  const canHoldThisVisit = Boolean(form.visitQueueOwnerHrId);
+  useEffect(() => {
+    if (canHoldThisVisit) preloadVisitOutboxEngine();
+  }, [canHoldThisVisit]);
+
   // He pressed Cancel or the back arrow once with a recording on the form and was told what it would
   // cost. It is reset the moment he goes back, so the warning is per ATTEMPT to leave rather than
   // once per form — a rep who returns, records a second note and leaves again is told again.
@@ -797,9 +803,10 @@ export function VisitLogForm({
         ? await crmPostWithin<SavedVisit>("/api/phoenix-crm/visits", body, "visit", VISIT_SAVE_TIMEOUT_MS)
         : await crmPost<SavedVisit>("/api/phoenix-crm/visits", body, "visit");
       if (kept) forgetHeldVisit(queueOwner, visitId);
-      if (retryOf && queueOwner) {
-        // Log it again across 02:00 is a new visit under a new id, so the old row has to go by its own.
-        forgetHeldVisit(queueOwner, retryOf.visitId);
+      if (retryOf) {
+        // Log it again across 02:00 is a new visit under a new id, so the old row has to go by its own. By the row's own
+        // owner: with the switch off this press has no queue, and the row still has to go.
+        forgetHeldVisit(retryOf.ownerHrId, retryOf.visitId);
         reportVisitResend(retryOf, "relogged");
       }
       // 🔴 HIS DAY ON THE LANDING PAGE GOES GREEN WHEN HE PRESSES BACK (owner, 2026-09-30: "if it is

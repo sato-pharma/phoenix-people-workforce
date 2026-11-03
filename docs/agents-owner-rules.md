@@ -9205,6 +9205,15 @@ rep's own Remove counts, so it reads "no visit saved", never "lost".
 No service worker: the push provider holds that scope, so a visit sends only while Phoenix is open, which is what the
 rep is told.
 
+**Where the sending runs.** The runner sits beside the portal's top bar and never inside it, because app mode has no top
+bar. The sending code is fetched when the Visits screen and the form open, because it cannot be fetched on the press that
+lost the signal, and the runner looks again when signal returns. A tab left open for another person stops rather than
+sends under the new sign-in.
+
+**What the review accepted (3 Nov).** A forged wait can hide an impossible-travel reading, up to two hours a save. It takes
+devtools, it must also backdate the tap or the phone-clock reading shows it, it is filed and shown as Sent late (min), and
+the same person could already forge the coordinates. It moves a rank at most, and no pay reads it.
+
 **Pinned by** `tests/phoenix-crm-visit-resend-rules.test.ts`, `tests/phoenix-crm-visit-outbox.test.ts` and
 `tests/phoenix-crm-queued-evidence.test.ts`.
 

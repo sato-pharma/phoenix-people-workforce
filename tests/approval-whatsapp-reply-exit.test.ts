@@ -7,7 +7,7 @@ import { splitApprovalsLineDelivery } from "../src/lib/approvals/urgent-whatsapp
 import { probeAllWhatsAppNumbers, resolveConfiguredPhoneNumberIds } from "../src/lib/recruitment/inbound/whatsapp-health.ts";
 import { sendWhatsAppPayload } from "../src/lib/recruitment/inbound/whatsapp-interactive.ts";
 import { parseWhatsAppWebhookDelivery } from "../src/lib/recruitment/inbound/whatsapp-payload-parser.ts";
-import { approvalsLinePhoneNumberId, findWhatsAppInboxLine, isApprovalsLine, whatsAppApprovalsLine, whatsAppInboxLines } from "../src/lib/whatsapp-inbox/lines.ts";
+import { approvalsLinePhoneNumberId, findWhatsAppInboxLine, hrHandsetInboxLine, isApprovalsLine, whatsAppApprovalsLine, whatsAppInboxLines } from "../src/lib/whatsapp-inbox/lines.ts";
 import { parseInboxDelivery } from "../src/lib/whatsapp-inbox/webhook-parse.ts";
 
 const THIRD = "333000333000333";
@@ -139,6 +139,28 @@ async function testTheThirdNumberIsNeverAnInboxOrIntakeLine() {
       assert.equal(findWhatsAppInboxLine(THIRD), null, "HR Resourcing has no such line");
       assert.ok(!whatsAppInboxLines().some((line) => line.phoneNumberId === THIRD));
       assert.ok(!resolveConfiguredPhoneNumberIds().includes(THIRD), "a fault on it must not read as the recruitment intake being down");
+    },
+  );
+
+  // 🔴 Set by mistake to a line people write to, the webhook would drop every applicant and still answer 200.
+  await withEnv(
+    { WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID: "waba-3", WHATSAPP_APPROVALS_PHONE_NUMBER_ID: RECRUITMENT, WHATSAPP_PHONE_NUMBER_ID: RECRUITMENT, WHATSAPP_PHONE_NUMBER_IDS: undefined },
+    () => {
+      assert.equal(approvalsLinePhoneNumberId(), null, "the recruitment number can never be the third number");
+      assert.equal(whatsAppApprovalsLine(), null, "so the reminders stay off");
+      assert.equal(isApprovalsLine(RECRUITMENT), false, "and its applicants are never dropped");
+    },
+  );
+  await withEnv(
+    { WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID: "waba-3", WHATSAPP_APPROVALS_PHONE_NUMBER_ID: "777", WHATSAPP_PHONE_NUMBER_ID: undefined, WHATSAPP_PHONE_NUMBER_IDS: `${RECRUITMENT}, 777` },
+    () => {
+      assert.equal(approvalsLinePhoneNumberId(), null, "nor any number on the intake list");
+    },
+  );
+  await withEnv(
+    { WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID: "waba-3", WHATSAPP_APPROVALS_PHONE_NUMBER_ID: hrHandsetInboxLine().phoneNumberId, WHATSAPP_PHONE_NUMBER_ID: undefined, WHATSAPP_PHONE_NUMBER_IDS: undefined },
+    () => {
+      assert.equal(approvalsLinePhoneNumberId(), null, "nor the HR handset");
     },
   );
 }

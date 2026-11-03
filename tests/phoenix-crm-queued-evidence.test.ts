@@ -16,7 +16,7 @@ import { atTheDoor, checkLocationIntegrity, type PhoenixCrmPriorFix } from "../s
  *      function, a phone could date its own visit. So it stops at the provenance row.
  *   2. THE WAIT LOOKS LIKE A TRIP. Three visits held through a dead spot arrive seconds apart, kilometres apart.
  *      Judged at arrival that reads as impossible travel, on the held visits and on the next normal one after.
- *      So the travel check compares each side at the moment he was there.
+ *      So the travel check compares each side at the moment the rep was there.
  */
 
 const source = (path: string) => readFileSync(path, "utf8");
@@ -94,7 +94,7 @@ function checkTheMarkerStopsAtTheEvidence(): void {
 }
 
 function checkADrainedQueueIsNoTrip(): void {
-  // He logged three visits ten kilometres apart through a dead spot, each an hour apart. All three arrive together.
+  // A rep logged three visits ten kilometres apart through a dead spot, each an hour apart. All three arrive together.
   const arrival = "2026-11-03T12:00:00.000Z";
   const held = [
     { fix: fixAt(arrival, 0), customerId: "first", waited: 7_200 },
@@ -102,13 +102,13 @@ function checkADrainedQueueIsNoTrip(): void {
     { fix: fixAt("2026-11-03T12:00:06.000Z", 20), customerId: "third", waited: 6 },
   ];
 
-  // The proof the rule is worth having: compared at arrival, the same visits accuse him.
+  // The proof the rule is worth having: compared at arrival, the same visits accuse them.
   const raw = judge(held[1]!.fix, [prior(held[0]!.fix, held[0]!.customerId)]);
   assert.ok(raw.flags.includes("impossible_travel"), "compared at arrival, a drained queue reads as an impossible trip");
 
   // At the door, none of them does.
   const second = judge(atTheDoor(held[1]!.fix, held[1]!.waited), [atTheDoor(prior(held[0]!.fix, held[0]!.customerId), held[0]!.waited)]);
-  assert.equal(second.flags.includes("impossible_travel"), false, "🔴 the held visit is judged where and when he was");
+  assert.equal(second.flags.includes("impossible_travel"), false, "🔴 the held visit is judged where and when the rep was");
   const third = judge(atTheDoor(held[2]!.fix, held[2]!.waited), [
     atTheDoor(prior(held[0]!.fix, held[0]!.customerId), held[0]!.waited),
     atTheDoor(prior(held[1]!.fix, held[1]!.customerId), held[1]!.waited),
@@ -162,7 +162,7 @@ function checkTheRepIsNeverTold(): void {
     assert.equal(note.toLowerCase().includes(banned.toLowerCase()), false, `the rep's note never says ${banned}`);
   }
 
-  // The status read answers the switch, the clock and his own ids, and nothing that would teach a rep the window.
+  // The status read answers the switch, the clock and their own ids, and nothing that would teach a rep the window.
   const log = code("src/lib/phoenix-crm/server/visit-resend-log.ts");
   assert.ok(log.includes("savedVisitIds"));
   assert.equal(/\.select\([^)]*queued_seconds/.test(log), false, "the status read never reads a wait back");

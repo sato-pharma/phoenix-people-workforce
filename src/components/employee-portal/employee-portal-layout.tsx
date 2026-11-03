@@ -1524,7 +1524,6 @@ export function EmployeePortalTopNav({
     <>
       {disableSessionGuard ? null : <SessionSecurityGuard />}
       <OneSignalProvider pushHrId={data.pushHrId} />
-      <VisitOutboxRunner ownerHrId={data.pushHrId} />
       <header
         className={`fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl ${
           focusMode ? "hidden" : ""
@@ -2494,6 +2493,8 @@ export function EmployeePortalChrome({
             The 2026-09-29 command bar, shortcuts card and focus-mode button all respect this: each
             is an overlay or floats over the page — none of them is a row between the header and
             `main`. */}
+        {/* Beside the top bar and never inside it: app mode has no top bar, and a held visit still has to send. */}
+        <VisitOutboxRunner ownerHrId={data.pushHrId} />
         {/* The fixed top bar. Gone in app mode — the native screen supplies the header. */}
         {appShell ? null : (
           <EmployeePortalTopNav

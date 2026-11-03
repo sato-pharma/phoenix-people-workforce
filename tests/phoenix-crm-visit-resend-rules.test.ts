@@ -83,6 +83,12 @@ function checkTooLate(): void {
   assert.equal(isTooLateToSend(held(30), phone, justAfter), true, "pressed 01:40 Cairo, arriving 02:10: it would land on the wrong day");
   assert.equal(isTooLateToSend(held(5), phone, justAfter), false, "pressed 02:05 Cairo, arriving 02:10: the same visit day");
   assert.equal(isTooLateToSend(held(5), phone, CLOSE_OF_DAY - 10 * MINUTE), false, "pressed 01:45 Cairo, arriving 01:50: the same visit day");
+
+  // How long the send may take counts on the arrival side only.
+  assert.equal(isTooLateToSend(held(1), phone, CLOSE_OF_DAY - 20_000, 30_000), true, "leaving at 01:59:40 with 30 seconds to land can arrive after the close");
+  assert.equal(isTooLateToSend(held(1), phone, CLOSE_OF_DAY - 60_000, 30_000), false, "leaving at 01:59:00 lands in time");
+  assert.equal(isTooLateToSend(held(1), phone, CLOSE_OF_DAY + 120_000, 30_000), false, "pressed after the close and arriving after it: the same visit day");
+  assert.equal(isTooLateToSend(held(1), phone, CLOSE_OF_DAY + 50_000, 30_000), true, "pressed ten seconds before the close: the landing time never moves the press");
 }
 
 function checkReady(): void {

@@ -58,7 +58,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { VisitDetailEdit, visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
-import { useHeldVisits } from "@/components/phoenix-crm/visit-outbox-client";
+import { preloadVisitOutboxEngine, useHeldVisits } from "@/components/phoenix-crm/visit-outbox-client";
 import { VisitOutboxNote } from "@/components/phoenix-crm/visit-outbox-note";
 import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
 import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
@@ -1169,6 +1169,10 @@ export function VisitsTab({
   // What this phone is holding for this territory (visit-resend-rules.ts), and the one he chose to log again.
   const heldOwner = view?.heldVisitsOwnerHrId ?? null;
   const allHeld = useHeldVisits(heldOwner);
+  // The day just answered, so there is signal now: it cannot be fetched on the press that loses it.
+  useEffect(() => {
+    if (heldOwner) preloadVisitOutboxEngine();
+  }, [heldOwner]);
   const held = allHeld.filter((entry) => entry.seatId === seatId);
   // 🔴 A HELD VISIT THAT LANDS WHILE THE REP IS LOOKING MUST APPEAR, NOT VANISH. The row goes when the send lands, and
   // nothing else reads the day again, so the visit and the AM and PM counts stayed stale until the rep left and came back.

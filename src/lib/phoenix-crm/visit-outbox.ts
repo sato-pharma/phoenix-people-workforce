@@ -19,6 +19,7 @@ import {
   VISIT_OUTBOX_MAX_ENTRIES,
   VISIT_RESEND_GAP_MS,
   VISIT_RESEND_IN_FLIGHT_MS,
+  VISIT_SAVE_TIMEOUT_MS,
   withoutVoiceNote,
   type QueuedVisit,
   type VisitResendOutcome,
@@ -108,8 +109,8 @@ export type OutboxDeps = {
   ownerHrId: string;
   /** The phone's clock. */
   now: () => number;
-  /** Which of these ids are on file, the switch and the server's clock. Throws when it cannot be read. */
-  readStatus: (visitIds: string[]) => Promise<{ enabled: boolean; savedVisitIds: string[]; serverNowMs: number }>;
+  /** Which of these ids are on file, the switch, the server's clock and who is signed in. Throws when it cannot be read. */
+  readStatus: (visitIds: string[]) => Promise<{ enabled: boolean; personHrId: string; savedVisitIds: string[]; serverNowMs: number }>;
   /** Sends one body. Answers whether the server called it a repeat, and throws a SendFailure when refused or unreachable. */
   send: (body: Record<string, unknown>) => Promise<{ duplicate: boolean }>;
   /** Files how an entry ended. Answers nothing and must never throw. */
@@ -147,7 +148,13 @@ export async function drainVisitOutbox(deps: OutboxDeps): Promise<number> {
   } catch {
     return waiting().length;
   }
+  // 🔴 SOMEONE ELSE HAS SIGNED IN ON THIS BROWSER. This tab was opened for the person who owns these visits, and a send
+  // would now go under the other person's sign-in and could be filed as theirs. Nothing is decided: they wait for their owner.
+  if (!isOwnedByViewer(status.personHrId, ownerHrId)) return waiting().length;
   const onFile = new Set(status.savedVisitIds);
+  // The server's clock moves on while this pass runs, so it is carried forward rather than read once. Three held
+  // visits read at 01:59:50 would otherwise have the third land after the close.
+  const serverAheadOfPhoneMs = status.serverNowMs - deps.now();
 
   let sentOne = false;
   for (const entry of candidates) {
@@ -160,8 +167,8 @@ export async function drainVisitOutbox(deps: OutboxDeps): Promise<number> {
       deps.changed();
       continue;
     }
-    // Off, past two hours or across 02:00: never sent by itself. He logs it again, and it is a fresh visit.
-    if (!status.enabled || isTooLateToSend(entry, nowMs, status.serverNowMs)) {
+    // Off, past two hours or across 02:00: never sent by itself. The rep logs it again, and it is a fresh visit.
+    if (!status.enabled || isTooLateToSend(entry, nowMs, nowMs + serverAheadOfPhoneMs, VISIT_RESEND_GAP_MS + VISIT_SAVE_TIMEOUT_MS)) {
       keepQueuedVisit(storage, ownerHrId, { ...entry, status: "too_late", sendingUntilMs: 0 });
       deps.report(entry, "timed_out", queuedSeconds);
       deps.changed();
@@ -203,7 +210,7 @@ async function sendOne(deps: OutboxDeps, first: QueuedVisit): Promise<boolean> {
       try {
         idIsOnFile = (await deps.readStatus([entry.visitId])).savedVisitIds.includes(entry.visitId);
       } catch {
-        // Nothing can be proved right now, and a refusal he need not have seen is the worse mistake.
+        // Nothing can be proved right now, and a refusal they need not have seen is the worse mistake.
         keepQueuedVisit(storage, ownerHrId, { ...entry, sendingUntilMs: 0 });
         return true;
       }
@@ -219,8 +226,10 @@ async function sendOne(deps: OutboxDeps, first: QueuedVisit): Promise<boolean> {
         keepQueuedVisit(storage, ownerHrId, entry);
         continue;
       }
-      keepQueuedVisit(storage, ownerHrId, { ...entry, status: "refused", refusalCode: failure.code, refusalMessage: failure.message, sendingUntilMs: 0 });
-      deps.report(entry, "refused", queuedSeconds);
+      const refused: QueuedVisit = { ...entry, status: "refused", refusalCode: failure.code, refusalMessage: failure.message, sendingUntilMs: 0 };
+      keepQueuedVisit(storage, ownerHrId, refused);
+      // The refused entry, so the log carries the code: the row may not say why, and this is then the only record of it.
+      deps.report(refused, "refused", queuedSeconds);
       deps.changed();
       return false;
     }

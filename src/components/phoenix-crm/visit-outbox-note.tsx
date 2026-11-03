@@ -3,7 +3,7 @@
 /**
  * Phoenix CRM — the visits this phone is holding, on the rep's Visits screen.
  *
- * 🔴 GOLDEN RULE #1. Everything here is about HIS work and what he can do next. Not a word about a check, a
+ * 🔴 GOLDEN RULE #1. Everything here is about THE REP'S work and what they can do next. Not a word about a check, a
  * distance, a clock or lateness: the sentences are the constants in `visit-resend-rules.ts`, and the only other
  * words on this screen are the server's own, less any about where the rep stands (`heldRefusalSentence`).
  */

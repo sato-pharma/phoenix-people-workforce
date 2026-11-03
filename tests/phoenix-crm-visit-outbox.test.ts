@@ -74,6 +74,7 @@ type Harness = {
   storage: FakeStorage;
   sent: Array<Record<string, unknown>>;
   reports: Array<{ visitId: string; outcome: string; queuedSeconds: number | null }>;
+  reportedCodes: Array<string | null>;
   sleeps: number[];
   statusReads: string[][];
   changes: () => number;
@@ -86,6 +87,7 @@ function harness(options: {
   enabled?: boolean;
   savedVisitIds?: string[];
   serverNowMs?: number;
+  personHrId?: string;
   statusFails?: boolean | (() => boolean);
   send?: OutboxDeps["send"];
 } = {}): Harness {
@@ -93,6 +95,7 @@ function harness(options: {
   for (const held of options.entries ?? []) keepQueuedVisit(storage, ME, held);
   const sent: Harness["sent"] = [];
   const reports: Harness["reports"] = [];
+  const reportedCodes: Harness["reportedCodes"] = [];
   const sleeps: number[] = [];
   const statusReads: string[][] = [];
   let changes = 0;
@@ -104,13 +107,16 @@ function harness(options: {
       statusReads.push(ids);
       const fails = typeof options.statusFails === "function" ? options.statusFails() : options.statusFails;
       if (fails) throw new Error("no signal");
-      return { enabled: options.enabled ?? true, savedVisitIds: options.savedVisitIds ?? [], serverNowMs: options.serverNowMs ?? SERVER_NOON };
+      return { enabled: options.enabled ?? true, personHrId: options.personHrId ?? ME, savedVisitIds: options.savedVisitIds ?? [], serverNowMs: options.serverNowMs ?? SERVER_NOON };
     },
     send: async (body) => {
       sent.push(body);
       return options.send ? options.send(body) : { duplicate: false };
     },
-    report: (held, outcome, queuedSeconds) => reports.push({ visitId: held.visitId, outcome, queuedSeconds }),
+    report: (held, outcome, queuedSeconds) => {
+      reports.push({ visitId: held.visitId, outcome, queuedSeconds });
+      reportedCodes.push(held.refusalCode);
+    },
     sleep: async (ms) => {
       sleeps.push(ms);
     },
@@ -118,7 +124,7 @@ function harness(options: {
       changes += 1;
     },
   };
-  return { deps, storage, sent, reports, sleeps, statusReads, changes: () => changes, held: () => readQueuedVisits(storage, ME) };
+  return { deps, storage, sent, reports, reportedCodes, sleeps, statusReads, changes: () => changes, held: () => readQueuedVisits(storage, ME) };
 }
 
 export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
@@ -132,6 +138,43 @@ export async function runPhoenixCrmVisitOutboxTests(): Promise<void> {
   await checkTheOrder();
   checkSignOutAndAnotherPerson();
   checkTheFormKeepsThePressFirst();
+  await checkAnotherPersonSignedIn();
+  await checkTheCloseIsStrict();
+}
+
+async function checkAnotherPersonSignedIn(): Promise<void> {
+  const elsewhere = harness({ entries: [entry()], personHrId: SOMEONE_ELSE });
+  await drainVisitOutbox(elsewhere.deps);
+  assert.equal(elsewhere.sent.length, 0, "🔴 a tab left open for one person never sends under another's sign-in");
+  assert.equal(elsewhere.held()[0]?.status, "waiting", "and nothing is decided: it waits for its owner");
+  assert.equal(elsewhere.reports.length, 0);
+
+  const sameInOtherCase = harness({ entries: [entry()], personHrId: ME.toLowerCase() });
+  await drainVisitOutbox(sameInOtherCase.deps);
+  assert.equal(sameInOtherCase.sent.length, 1, "the same person in another case is the same person");
+}
+
+async function checkTheCloseIsStrict(): Promise<void> {
+  // The server's clock is carried forward through the pass: the second visit is judged later than the read.
+  const close = Date.parse("2026-11-03T00:00:00.000Z");
+  const first = entry({ visitId: "visit-1", customerId: "customer-1" });
+  const second = entry({ visitId: "visit-2", customerId: "customer-2", pressedAtMs: first.pressedAtMs + 1 });
+  const moving = harness({ entries: [first, second], serverNowMs: close - 40_000 });
+  let phone = first.pressedAtMs + 60_000;
+  moving.deps.now = () => phone;
+  moving.deps.send = async (body) => {
+    moving.sent.push(body);
+    phone += 15_000;
+    return { duplicate: false };
+  };
+  await drainVisitOutbox(moving.deps);
+  assert.equal(moving.sent.length, 1, "the first leaves 40 seconds before the close");
+  assert.equal(moving.held().find((held) => held.visitId === "visit-2")?.status, "too_late", "🔴 the second would land after the close, so it waits for the rep");
+  assert.equal(moving.reports.find((report) => report.visitId === "visit-2")?.outcome, "timed_out");
+
+  const closeCall = harness({ entries: [first], nowMs: first.pressedAtMs + 60_000, serverNowMs: close - 20_000 });
+  await drainVisitOutbox(closeCall.deps);
+  assert.equal(closeCall.sent.length, 0, "a send that may take longer than the time left is not started");
 }
 
 function checkTheFormKeepsThePressFirst(): void {
@@ -153,6 +196,24 @@ function checkTheFormKeepsThePressFirst(): void {
   const row = stripComments(readFileSync("src/components/phoenix-crm/visit-outbox-note.tsx", "utf8"));
   assert.ok(row.includes("heldRefusalSentence(entry.refusalMessage)"), "the row draws the sentence through the filter");
   assert.ok(!row.includes("{entry.refusalMessage}"), "and never the server's sentence raw");
+
+  const layout = stripComments(readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8"));
+  const runnerAt = layout.indexOf("<VisitOutboxRunner");
+  const gate = layout.indexOf("{appShell ? null : (");
+  assert.ok(runnerAt !== -1 && layout.lastIndexOf("<VisitOutboxRunner") === runnerAt, "one sender in the portal");
+  assert.ok(runnerAt < gate && gate - runnerAt < 200, "🔴 beside the top bar and never inside it: app mode has no top bar, and a held visit still has to send");
+
+  const runner = stripComments(readFileSync("src/components/phoenix-crm/visit-outbox-runner.tsx", "utf8"));
+  for (const moment of ['window.addEventListener("online", look)', 'window.addEventListener("pageshow", look)', 'document.addEventListener("visibilitychange", lookIfVisible)']) {
+    assert.ok(runner.includes(moment), `🔴 the first load can fail on the press itself, so it looks again: ${moment}`);
+  }
+  for (const screen of ["src/components/phoenix-crm/visits-tab.tsx", "src/components/phoenix-crm/visit-log-form.tsx"]) {
+    assert.ok(stripComments(readFileSync(screen, "utf8")).includes("preloadVisitOutboxEngine();"), `🔴 ${screen} fetches the sending code while there is signal`);
+  }
+  assert.ok(form.includes("forgetHeldVisit(retryOf.ownerHrId, retryOf.visitId);"), "a row logged again goes by its own owner, so the off switch cannot strand it");
+
+  const report = stripComments(readFileSync("app/api/phoenix-crm/visit-resend-report/route.ts", "utf8"));
+  assert.ok(report.indexOf("assertApiRateLimit(") !== -1 && report.indexOf("assertApiRateLimit(") < report.indexOf("recordVisitResend("), "one person cannot fill the log with random ids");
 }
 
 function checkTheList(): void {
@@ -249,6 +310,7 @@ async function checkALateRefusal(): Promise<void> {
   assert.equal(stuck?.refusalMessage, "This customer is not on your list.", "the server's own sentence, as it came");
   assert.deepEqual(refused.statusReads, [["visit-1"], ["visit-1"]], "🔴 the id is read again before a refusal is shown");
   assert.equal(refused.reports[0]?.outcome, "refused");
+  assert.equal(refused.reportedCodes[0], "phoenix_crm_outside_area", "the log carries the code, because the row may not say why");
 
   // Refused on the second press, but the first landed and only lost its reply.
   let reads = 0;
@@ -260,7 +322,7 @@ async function checkALateRefusal(): Promise<void> {
   });
   landedFirst.deps.readStatus = async () => {
     reads += 1;
-    return { enabled: true, savedVisitIds: reads > 1 ? ["visit-1"] : [], serverNowMs: SERVER_NOON };
+    return { enabled: true, personHrId: ME, savedVisitIds: reads > 1 ? ["visit-1"] : [], serverNowMs: SERVER_NOON };
   };
   await drainVisitOutbox(landedFirst.deps);
   assert.equal(landedFirst.held().length, 0, "the visit is on file: removed in silence, with no refusal shown");
