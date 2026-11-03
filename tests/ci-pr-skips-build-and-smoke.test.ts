@@ -30,6 +30,7 @@ const SHIP_SKILL = ".claude/skills/ship/SKILL.md";
 const TRAPS_CLUSTERS = "docs/agents-session-traps-clusters.md";
 const TRAPS_ACCOUNT = "docs/agents-session-traps.md";
 const ENGINEERING_RULES = ".claude/rules/engineering.md";
+const ALERTS_DOC = "docs/security/open-dependency-alerts.md";
 
 /** The steps whose cost this change removes from a pull request. */
 const HEAVY_STEPS = [
@@ -114,6 +115,12 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     new RegExp("unit suite runs in `validate`|`validate` includes `pnpm audit`|turn `validate` red|`validate`'s audit"),
     `${SHIP_SKILL} places the suite or the audit in \`validate\` again. Both have been behind \`checks\`, ` +
       "in `unit` and `static`, since 2026-10-19; on a PR `validate` holds no tests at all.",
+  );
+  assert.doesNotMatch(
+    readFileSync(ALERTS_DOC, "utf8"),
+    new RegExp("`validate`"),
+    `${ALERTS_DOC} names \`validate\` again. The audit it is about has been in \`static\`, behind ` +
+      "`checks`, since 2026-10-19.",
   );
 
   // 5. So do the traps. The clusters file is what trap-injector.mjs hands every session, and the
