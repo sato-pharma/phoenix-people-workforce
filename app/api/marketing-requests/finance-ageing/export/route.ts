@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { clientSafeErrorMessage, forbiddenError } from "@/lib/http/api-errors";
 import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
@@ -37,6 +39,15 @@ export async function GET(request: Request) {
     const report = await getMarketingFinanceAgeing(access);
     const workbook = await buildMarketingFinanceAgeingWorkbook(report);
     const buffer = await workbook.xlsx.writeBuffer();
+    // Requests, requesters and money leave the building, so the fact that the file was taken is recorded.
+    await afterResponse("marketing_finance_ageing_export_audit", () =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: null,
+        entityType: "marketing_finance_ageing_export",
+        summary: `Exported Finance Ageing (${report.rows.length} requests)`,
+      }),
+    );
     return new NextResponse(buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer), {
       headers: {
         ...DOWNLOAD_NO_STORE_HEADERS,

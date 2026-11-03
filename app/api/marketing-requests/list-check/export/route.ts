@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { afterResponse } from "@/lib/http/after-response";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { clientSafeErrorMessage, forbiddenError } from "@/lib/http/api-errors";
 import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
@@ -30,6 +32,15 @@ export async function GET(request: Request) {
     const board = await loadListCheckBoard(access);
     const workbook = await buildListCheckWorkbook(board);
     const buffer = await workbook.xlsx.writeBuffer();
+    // Doctors, reps and money leave the building, so the fact that the file was taken is recorded.
+    await afterResponse("marketing_list_check_export_audit", () =>
+      writeAuditLog({
+        actorLoginId: access.loginId ?? null,
+        entityId: null,
+        entityType: "marketing_list_check_export",
+        summary: `Exported the Doctor-List Check (${board.rows.length} rows)`,
+      }),
+    );
     return new NextResponse(buffer instanceof ArrayBuffer ? buffer : Buffer.from(buffer), {
       headers: {
         ...DOWNLOAD_NO_STORE_HEADERS,

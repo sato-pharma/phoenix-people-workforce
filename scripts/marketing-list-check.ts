@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import ExcelJS from "exceljs";
+import postgres from "postgres";
 
 import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { applyMarketingListCheck, computeMarketingListCheck, type ListCheckPlanRow } from "@/lib/marketing-requests/crm-list-check";
@@ -92,6 +93,19 @@ function findPlanRows(plan: readonly ListCheckPlanRow[], row: SheetRow, storedAr
   return inArea.length > 0 ? inArea : named;
 }
 
+/** The customers the pre-image holds. Through Postgres: the API exposes no dated backup schema. */
+async function preImageCustomerIds(): Promise<Set<string>> {
+  const databaseUrl = process.env.SUPABASE_DB_URL;
+  if (!databaseUrl) throw new Error("SUPABASE_DB_URL is missing, so the pre-image cannot be read.");
+  const sql = postgres(databaseUrl, { connect_timeout: 20, max: 1, ssl: "require" });
+  try {
+    const rows = await sql.unsafe<Array<{ id: string }>>(`select id::text as id from ${PRE_IMAGE}.customers`);
+    return new Set(rows.map((row) => row.id));
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 async function main() {
   const apply = process.argv.includes("--apply");
   const supabase = getSupabaseAdmin();
@@ -110,20 +124,20 @@ async function main() {
   const seeds: Array<{ customerId: string; decided: "on_list" | "not_on_list"; lineId: number | null; matchedId: string | null; matchedName: string | null }> = [];
   const unresolved: string[] = [];
   const candidateRead = async (planRow: ListCheckPlanRow, name: string) => {
-    if (planRow.holderSeatIds.length === 0) return null;
+    if (planRow.holderSeatIds.length === 0) return [];
     const read = await supabase
       .from("phoenix_crm_customers")
-      .select("id, name, seat_id, list_type, status")
+      .select("id, name, seat_id, list_type, status, reference_contact_crm_id, own_contact_crm_id")
       .in("seat_id", planRow.holderSeatIds)
       .eq("is_test", false)
       .eq("campaign_visit_holder", false)
       .in("status", ["active", "pending"])
       .in("list_type", ["AM", "PM"]);
     if (read.error) throw read.error;
-    const rows = (read.data ?? []) as Array<{ id: string; name: string }>;
+    const rows = (read.data ?? []) as Array<{ id: string; name: string; own_contact_crm_id: number | null; reference_contact_crm_id: number | null }>;
     const exact = rows.filter((row) => normalizeContactName(row.name) === normalizeContactName(name));
     const close = exact.length > 0 ? exact : rows.filter((row) => ["same", "one_letter"].includes(compareNames(row.name, name)));
-    return close.length === 1 ? close[0] : (close.length > 1 ? close.sort((left, right) => left.id.localeCompare(right.id))[0] : null);
+    return [...close].sort((left, right) => left.id.localeCompare(right.id));
   };
   for (const row of sheet) {
     if (!row.decided) continue;
@@ -137,9 +151,15 @@ async function main() {
       seeds.push({ customerId: planRow.customerId, decided: "not_on_list", lineId: planRow.lineId, matchedId: null, matchedName: row.repListName || null });
       continue;
     }
-    const matched = await candidateRead(planRow, row.repListName);
+    const candidates = await candidateRead(planRow, row.repListName);
+    const matched = candidates[0];
     if (!matched) {
       unresolved.push(`${row.marketingName} (${row.marketingArea}): "${row.repListName}" is not on a Phoenix CRM list of this area and line`);
+      continue;
+    }
+    // One doctor on two reps' rows is still one answer; two doctors are never chosen between.
+    if (new Set(candidates.map((candidate) => candidate.own_contact_crm_id ?? candidate.reference_contact_crm_id ?? candidate.id)).size > 1) {
+      unresolved.push(`${row.marketingName} (${row.marketingArea}): "${row.repListName}" reads as more than one doctor on this list`);
       continue;
     }
     seeds.push({ customerId: planRow.customerId, decided: "on_list", lineId: planRow.lineId, matchedId: matched.id, matchedName: matched.name });
@@ -242,9 +262,13 @@ async function main() {
     return;
   }
 
-  const preImage = await supabase.schema(PRE_IMAGE as never).from("customers").select("id", { count: "exact", head: true });
-  if (preImage.error || (preImage.count ?? 0) < changing.length) {
-    throw new Error(`Refused: the pre-image ${PRE_IMAGE}.customers is missing or short (${preImage.error?.message ?? preImage.count}).`);
+  // Every customer this run could touch must be in the pre-image, so a stale one cannot pass on its size.
+  const preImage = await preImageCustomerIds().catch((error: unknown) => {
+    throw new Error(`Refused: the pre-image ${PRE_IMAGE}.customers could not be read (${error instanceof Error ? error.message : String(error)}).`);
+  });
+  const notInPreImage = customerIds.filter((id) => !preImage.has(id));
+  if (notInPreImage.length > 0) {
+    throw new Error(`Refused: ${notInPreImage.length} customers are not in the pre-image ${PRE_IMAGE}.customers. Re-run the dry run, then apply its pre-image.`);
   }
 
   // Store the verdicts, then his decisions, then re-run so his answers reach the customers' own columns.
@@ -261,7 +285,8 @@ async function main() {
         matched_name: seed.matchedName,
         updated_at: now,
       })
-      .eq("customer_id", seed.customerId);
+      .eq("customer_id", seed.customerId)
+      .is("decided_state", null); // A re-run never overwrites an answer given since.
     query = seed.lineId === null ? query.is("line_id", null) : query.eq("line_id", seed.lineId);
     const { error } = await query;
     if (error) throw error;

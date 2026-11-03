@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { MarketingListCheckBoard } from "@/components/marketing-requests/marketing-list-check-board";
 import {
   pageHeaderDescriptionClassName,
@@ -6,6 +8,7 @@ import {
   pageHeaderRuleClassName,
   pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
+import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 import { loadListCheckBoard } from "@/lib/marketing-requests/crm-list-check-board-service";
 
 import { assertMarketingListCheckAdminPageAccess } from "../admin-access";
@@ -19,6 +22,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function AdminMarketingListCheckPage() {
   const access = await assertMarketingListCheckAdminPageAccess();
+  // The Marketing Manager works in the portal, and reads the same board on its own page there.
+  if (isPortalShellRole(access.role)) redirect("/employee-portals/marketing-requests/list-check");
   const board = await loadListCheckBoard(access);
 
   return (

@@ -25,10 +25,12 @@ import {
   canDecideListCheck,
   canReadListCheckBoard,
   compareNames,
+  currentListCheckRows,
   judgeListCheck,
   LIST_CHECK_STATE_LABELS,
   LIST_CHECK_STATE_ORDER,
   listCheckIsFar,
+  listCheckSpokesmanIndex,
   listTypesForCustomerType,
   looksLikeNursery,
   planListCheckCustomerWrite,
@@ -457,4 +459,47 @@ export async function runMarketingListCheckTests() {
   assert.match(board2, /w-full table-fixed/, "the fits-the-screen rule");
   assert.doesNotMatch(board2, /overflow-x-auto|rounded|truncate/, "no sideways scroll, no round corner, no ellipsis");
   assert.doesNotMatch(read("src/components/marketing-requests/list-check-two-photos.tsx"), /rounded|truncate/);
+
+  // ------------------------------------------------------------ one answer per customer
+
+  const spokesman = (...rows: Array<[("on_list" | "not_on_list" | null), string]>) => listCheckSpokesmanIndex(rows.map(([decidedState, state]) => ({ decidedState, state })));
+  assert.equal(spokesman([null, "not_on_list"], [null, "on_list"]), 1, "a line on a list speaks for the customer, whichever came first, so two lines never flip him hourly");
+  assert.equal(spokesman([null, "on_list"], ["on_list", "on_list"]), 1, "a person's same doctor outranks a line the check found by itself");
+  assert.equal(spokesman([null, "no_holder"], [null, "check"], [null, "not_on_list"]), 1, "with nothing on a list, the worst of the rest speaks");
+  const checkService = read("src/lib/marketing-requests/crm-list-check.ts");
+  assert.match(checkService, /return at === speaker \? row : \{ \.\.\.row, write: null \}/, "only the row that speaks writes the customer's own columns");
+  assert.match(checkService, /item\.prior\?\.decidedState\s*\? \(item\.prior\.matchedCrmCustomerId \?\? phoenixCrmCustomerId\)/, "a person's answer points at that row's own doctor");
+
+  // ------------------------------------------------------------ a row left behind
+
+  const pass = (customer_id: string, checked_at: string, state: string) => ({ checked_at, customer_id, state });
+  const left = currentListCheckRows([
+    pass("A", "2026-11-03T01:00:00+00:00", "check"),
+    pass("A", "2026-11-03T02:00:00+00:00", "on_list"),
+    pass("A", "2026-11-03T02:00:00+00:00", "not_on_list"),
+    pass("B", "2026-11-03T01:00:00+00:00", "check"),
+  ]);
+  assert.deepEqual(left.map((row) => `${row.customer_id}:${row.state}`), ["A:on_list", "A:not_on_list", "B:check"], "a customer's older row is gone, and another customer's pass is not compared with his");
+  assert.match(read("src/lib/marketing-requests/crm-list-check-flags.ts"), /of currentListCheckRows\(\(data \?\? \[\]\) as FlagRow\[\]\)/, "a row left behind can never hold a flag on every approval step");
+  const boardService = read("src/lib/marketing-requests/crm-list-check-board-service.ts");
+  assert.match(boardService, /currentListCheckRows\(\(checkRead\.data \?\? \[\]\) as unknown as Row\[\]\)/, "nor a row on the board");
+  assert.match(boardService, /customer\?\.active !== false && !customer\?\.merged_into_customer_id && validated\.has/, "a customer who left the check leaves its counts");
+  assert.match(checkService, /\.delete\(\)\s*\.in\("customer_id", part\)\s*\.is\("decided_state", null\)\s*\.lt\("checked_at", now\)/, "only an unanswered row of an older pass is ever removed");
+
+  // ------------------------------------------------------------ the first run
+
+  const script = read("scripts/marketing-list-check.ts");
+  assert.match(script, /\.is\("decided_state", null\); \/\/ A re-run never overwrites/, "🔴 a re-run of the seed never overwrites a person's answer");
+  assert.doesNotMatch(script, /supabase\.schema\(PRE_IMAGE/, "the API exposes no dated schema, so a guard through it could never pass");
+  assert.match(script, /customerIds\.filter\(\(id\) => !preImage\.has\(id\)\)/, "the guard is by customer, so a stale pre-image cannot pass on its size");
+  assert.match(script, /reads as more than one doctor/, "two doctors are reported, never chosen between");
+
+  // ------------------------------------------------------------ the portal's door, and the record of an export
+
+  const portal = read("app/employee-portals/marketing-requests/list-check/page.tsx");
+  assert.match(portal, /if \(!canReadListCheckBoard\(access\.role\)\) redirect/, "the portal page keeps the board's own readers");
+  assert.match(read("app/(admin)/admin/marketing-requests/list-check/page.tsx"), /isPortalShellRole\(access\.role\)\) redirect\("\/employee-portals\/marketing-requests\/list-check"\)/, "the Marketing Manager reaches the board, not the portal home");
+  for (const route of ["list-check", "finance-ageing"]) {
+    assert.match(read(`app/api/marketing-requests/${route}/export/route.ts`), /afterResponse\("marketing_[a-z_]+_export_audit", \(\) =>\s*writeAuditLog\(/, `the ${route} export records who took it, as the registry declares`);
+  }
 }

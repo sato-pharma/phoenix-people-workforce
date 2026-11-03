@@ -416,6 +416,40 @@ export function planListCheckCustomerWrite(input: {
   return unchanged ? null : write;
 }
 
+/** The validation states the check covers. A customer outside them leaves the board. */
+export const LIST_CHECKED_VALIDATION_STATUSES = ["system_validated", "sfe_validated", "admin_approved"] as const;
+
+/**
+ * A customer's rows from his newest pass. Every row of one pass shares `checked_at`, so a row left behind when
+ * a customer's only request moved to another line reads older, and can never raise a flag or a board row.
+ */
+export function currentListCheckRows<Row extends { checked_at?: unknown; customer_id?: unknown }>(rows: readonly Row[]): Row[] {
+  const at = (row: Row) => Date.parse(String(row.checked_at ?? "")) || 0;
+  const newest = new Map<string, number>();
+  for (const row of rows) {
+    const customerId = String(row.customer_id);
+    newest.set(customerId, Math.max(newest.get(customerId) ?? 0, at(row)));
+  }
+  return rows.filter((row) => at(row) === newest.get(String(row.customer_id)));
+}
+
+const CUSTOMER_WRITE_ORDER: readonly string[] = ["left_list", "check", "not_on_list", "no_holder", "no_location"];
+
+/**
+ * Which of a customer's lines speaks for his own three list columns: a person's "same doctor", then any line
+ * on a list, then the worst of the rest. One answer per customer, or two lines would overwrite each other
+ * every hour and undo a person's answer within the hour.
+ */
+export function listCheckSpokesmanIndex(rows: ReadonlyArray<{ decidedState: "on_list" | "not_on_list" | null; state: string }>): number {
+  const rank = (row: { decidedState: "on_list" | "not_on_list" | null; state: string }) => {
+    if (row.decidedState === "on_list") return 0;
+    if (row.state === "on_list") return 1;
+    const at = CUSTOMER_WRITE_ORDER.indexOf(row.state);
+    return 2 + (at < 0 ? CUSTOMER_WRITE_ORDER.length : at);
+  };
+  return rows.reduce((best, row, at) => (rank(row) < rank(rows[best]) ? at : best), 0);
+}
+
 /** Who reads the board. The money on it is estimated cost on approved requests, never sales. */
 export function canReadListCheckBoard(role: string | null | undefined): boolean {
   return role === "Super Admin" || role === "SFE Manager" || role === "CEO" || role === "Marketing Manager";

@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { metresBetween } from "@/lib/crm/location-confidence";
 import type { CrmListFlagCheck } from "@/lib/marketing-requests/crm-doctor-pick";
+import { currentListCheckRows } from "@/lib/marketing-requests/crm-list-check-rules";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { matchAnchorOf } from "@/lib/phoenix-crm/server/place-match-groups";
@@ -22,7 +23,7 @@ const DOCTOR_PHOTO_URL_SECONDS = 15 * 60;
 /** The row that speaks for a customer: the worst state across his lines, a nursery on any of them. */
 const FLAG_ORDER = ["left_list", "check", "not_on_list", "no_holder", "no_location", "on_list"];
 
-type FlagRow = { customer_id?: unknown; looks_like_nursery?: unknown; metres_apart?: unknown; state?: unknown };
+type FlagRow = { checked_at?: unknown; customer_id?: unknown; looks_like_nursery?: unknown; metres_apart?: unknown; state?: unknown };
 
 export function worstListCheckFlagFacts(rows: readonly FlagRow[]): CrmListFlagCheck | null {
   if (rows.length === 0) return null;
@@ -46,11 +47,11 @@ export async function loadListCheckFlagFacts(supabase: SupabaseClient, customerI
   try {
     const { data, error } = await supabase
       .from("marketing_customer_list_checks")
-      .select("customer_id, looks_like_nursery, metres_apart, state")
+      .select("customer_id, checked_at, looks_like_nursery, metres_apart, state")
       .in("customer_id", ids);
     if (error) throw error;
     const byCustomer = new Map<string, FlagRow[]>();
-    for (const row of (data ?? []) as FlagRow[]) {
+    for (const row of currentListCheckRows((data ?? []) as FlagRow[])) {
       const customerId = String(row.customer_id);
       byCustomer.set(customerId, [...(byCustomer.get(customerId) ?? []), row]);
     }

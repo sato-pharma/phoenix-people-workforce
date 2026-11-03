@@ -27,6 +27,8 @@ import {
   canReadListCheckBoard,
   LIST_CHECK_STATE_LABELS,
   LIST_CHECK_STATE_ORDER,
+  currentListCheckRows,
+  LIST_CHECKED_VALIDATION_STATUSES,
   listCheckIsFar,
   type ListCheckState,
 } from "@/lib/marketing-requests/crm-list-check-rules";
@@ -48,7 +50,7 @@ const DOCTOR_PHOTO_URL_SECONDS = 15 * 60;
 const IN_CHUNK = 100;
 
 const CHECK_COLUMNS =
-  "id, customer_id, line_id, state, reason, matched_crm_customer_id, matched_name, seat_id, list_type, metres_apart, area_code, area_name, looks_like_nursery, left_list_at, decided_state, decided_by_hr_id, decided_at";
+  "id, customer_id, line_id, state, reason, matched_crm_customer_id, matched_name, seat_id, list_type, metres_apart, area_code, area_name, looks_like_nursery, left_list_at, checked_at, decided_state, decided_by_hr_id, decided_at, line:lines(name)";
 
 /** The roles who may read a doctor's objections here: the company-wide readers of the managers' report. */
 function readsDoctorObjections(role: string | null | undefined): boolean {
@@ -127,18 +129,26 @@ export async function loadListCheckBoard(access: Pick<AccessContext, "role">, no
 
   const checkRead = await supabase.from("marketing_customer_list_checks").select(CHECK_COLUMNS);
   if (checkRead.error) throw checkRead.error;
-  const checks = (checkRead.data ?? []) as unknown as Row[];
-  const customerIds = [...new Set(checks.map((row) => String(row.customer_id)))];
+  const currentChecks = currentListCheckRows((checkRead.data ?? []) as unknown as Row[]);
+  const customerIds = [...new Set(currentChecks.map((row) => String(row.customer_id)))];
 
-  const [customerRows, requestRows, lineRead, org] = await Promise.all([
-    readIn(supabase, "marketing_customers", "id, display_name, captured_latitude, captured_longitude", "id", customerIds),
+  const [customerRows, requestRows, org] = await Promise.all([
+    readIn(supabase, "marketing_customers", "id, display_name, captured_latitude, captured_longitude, active, merged_into_customer_id, validation_status", "id", customerIds),
     readIn(supabase, "marketing_requests", "customer_id, line_id, status, estimated_cost, pay_date, requester_hr_id", "customer_id", customerIds),
-    supabase.from("lines").select("id, name"),
     loadPhoenixCrmOrg(),
   ]);
-  if (lineRead.error) throw lineRead.error;
   const customerById = new Map(customerRows.map((row) => [String(row.id), row]));
-  const lineName = new Map(((lineRead.data ?? []) as Row[]).map((row) => [Number(row.id), textOrNull(row.name)]));
+  // A customer merged away, switched off or no longer validated leaves the check, so he leaves its counts too.
+  const validated = new Set<string>(LIST_CHECKED_VALIDATION_STATUSES);
+  const checks = currentChecks.filter((row) => {
+    const customer = customerById.get(String(row.customer_id));
+    return Boolean(customer) && customer?.active !== false && !customer?.merged_into_customer_id && validated.has(String(customer?.validation_status));
+  });
+  const lineName = new Map(
+    checks
+      .filter((row) => row.line_id !== null && row.line_id !== undefined)
+      .map((row) => [Number(row.line_id), textOrNull((row.line as { name?: unknown } | null | undefined)?.name)]),
+  );
   const seatById = new Map(org.territories.map((seat) => [seat.seatId, seat]));
   const seatsByKey = indexSeats(org.territories);
   const lineCode = new Map(org.territories.map((seat) => [seat.lineName, seat.lineCode]));

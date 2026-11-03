@@ -2074,6 +2074,12 @@ const employeePortalNavigationSectionSeeds = [
         roles: ["Marketing Manager", "SFE Manager", "Super Admin"],
       },
       {
+        href: "/employee-portals/marketing-requests/list-check",
+        icon: ListChecks,
+        label: "Doctor-List Check",
+        roles: ["Marketing Manager", "SFE Manager", "Super Admin"],
+      },
+      {
         href: "/employee-portals/marketing-requests/control",
         icon: Settings2,
         label: "Marketing Control",

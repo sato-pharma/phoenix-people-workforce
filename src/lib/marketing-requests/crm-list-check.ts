@@ -36,6 +36,8 @@ import {
   type ListCheckPrior,
   type ListCheckState,
   type ListCheckVerdict,
+  LIST_CHECKED_VALIDATION_STATUSES,
+  listCheckSpokesmanIndex,
 } from "@/lib/marketing-requests/crm-list-check-rules";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { chunk, dedupeIds, textOrNull } from "@/lib/phoenix-crm/server/db";
@@ -50,11 +52,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 type Row = Record<string, unknown>;
 
 /** The statuses that mean a customer really was validated. `system_validated` means no human looked, and still counts as captured. */
-export const LIST_CHECKED_VALIDATION_STATUSES = ["system_validated", "sfe_validated", "admin_approved"] as const;
 
 const ON_LIST_STATUSES: ReadonlySet<string> = new Set(["active", "pending"]);
 const CUSTOMER_COLUMNS =
-  "id, display_name, customer_type, line_id, captured_latitude, captured_longitude, crm_list_status, crm_list_source, phoenix_crm_customer_id";
+  "id, display_name, customer_type, line_id, captured_latitude, captured_longitude, crm_list_status, crm_list_source, phoenix_crm_customer_id, line:lines(code, name)";
 const LIST_ROW_COLUMNS = "id, seat_id, name, list_type, status, reference_contact_crm_id, own_contact_crm_id, campaign_visit_holder";
 const PLACE_COLUMNS =
   "id, customer_id, seat_id, lat, lon, accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, photo_path, brick_id";
@@ -183,19 +184,24 @@ export async function computeMarketingListCheck(options: { customerIds?: readonl
   if (customers.length === 0) return [];
   const customerIds = customers.map((row) => String(row.id));
 
-  const [requestRows, evidenceRows, contactRows, priorRows, lineRead, org, centroids] = await Promise.all([
-    readIn(supabase, "marketing_requests", "customer_id, line_id", "customer_id", customerIds),
+  const [requestRows, evidenceRows, contactRows, priorRows, org, centroids] = await Promise.all([
+    readIn(supabase, "marketing_requests", "customer_id, line_id, line:lines(code, name)", "customer_id", customerIds),
     readIn(supabase, "marketing_evidence_files", "entity_id, captured_latitude, captured_longitude, created_at", "entity_id", customerIds, ((query: { eq: (c: string, v: string) => { eq: (c: string, v: string) => unknown } }) =>
       query.eq("entity_type", "customer").eq("evidence_type", "location_photo")) as never),
     readIn(supabase, "marketing_customer_contacts", "customer_id, crm_code, active", "customer_id", customerIds),
     readIn(supabase, "marketing_customer_list_checks", "customer_id, line_id, state, matched_crm_customer_id, left_list_at, decided_state", "customer_id", customerIds),
-    supabase.from("lines").select("id, code, name"),
     loadPhoenixCrmOrg(),
     loadBrickCentroids(),
   ]);
-  if (lineRead.error) throw lineRead.error;
   if (centroids.length === 0) throw new Error("The brick centres could not be read, so no customer can be placed in an area.");
-  const lineById = new Map(((lineRead.data ?? []) as Row[]).map((row) => [Number(row.id), { code: textOrNull(row.code), name: textOrNull(row.name) }]));
+  // The line's code and name come joined on the rows that name it: marketing keeps its own fresh reads, and
+  // this adds no read of the lines table (tests/performance-phase-3.test.ts, tests/reference-list-cache.test.ts).
+  const lineById = new Map<number, { code: string | null; name: string | null }>();
+  for (const row of [...customers, ...requestRows]) {
+    if (row.line_id === null || row.line_id === undefined) continue;
+    const line = row.line as { code?: unknown; name?: unknown } | null | undefined;
+    lineById.set(Number(row.line_id), { code: textOrNull(line?.code), name: textOrNull(line?.name) });
+  }
 
   const linesByCustomer = new Map<string, Set<number>>();
   for (const row of requestRows) {
@@ -354,13 +360,16 @@ export async function computeMarketingListCheck(options: { customerIds?: readonl
     return { ...row, contactBrickId, places };
   };
 
-  return work.map((item) => {
+  const planned: ListCheckPlanRow[] = work.map((item) => {
     const customerId = String(item.customer.id);
     const displayName = textOrNull(item.customer.display_name) ?? "";
     const crmListStatus = toListStatus(item.customer.crm_list_status);
     const crmListSource = toListSource(item.customer.crm_list_source);
     const phoenixCrmCustomerId = textOrNull(item.customer.phoenix_crm_customer_id);
-    const linkedId = phoenixCrmCustomerId ?? item.prior?.matchedCrmCustomerId ?? null;
+    // A person answered about this row's own doctor, so that answer points at him, not at another line's.
+    const linkedId = item.prior?.decidedState
+      ? (item.prior.matchedCrmCustomerId ?? phoenixCrmCustomerId)
+      : (phoenixCrmCustomerId ?? item.prior?.matchedCrmCustomerId ?? null);
     const verdict = judgeListCheck({
       areaCode: item.areaCode,
       brickId: item.brickId,
@@ -396,6 +405,16 @@ export async function computeMarketingListCheck(options: { customerIds?: readonl
       }),
     };
   });
+
+  // One answer per customer: only the row that speaks for him may write his own columns.
+  const rowsByCustomer = new Map<string, number[]>();
+  planned.forEach((row, at) => rowsByCustomer.set(row.customerId, [...(rowsByCustomer.get(row.customerId) ?? []), at]));
+  return planned.map((row, at) => {
+    const own = rowsByCustomer.get(row.customerId) ?? [at];
+    if (own.length < 2) return row;
+    const speaker = own[listCheckSpokesmanIndex(own.map((index) => ({ decidedState: work[index].prior?.decidedState ?? null, state: planned[index].verdict.state })))];
+    return at === speaker ? row : { ...row, write: null };
+  });
 }
 
 /** Stores the verdicts. A person's decision columns are never named here, so a re-check cannot touch them. */
@@ -425,6 +444,17 @@ export async function applyMarketingListCheck(rows: readonly ListCheckPlanRow[],
       })),
       { onConflict: "customer_id,line_id" },
     );
+    if (error) throw error;
+  }
+  // A line this pass no longer holds for these customers goes, unless a person answered on it: that answer
+  // is kept for the day the line comes back, and `currentListCheckRows` keeps it off every screen until then.
+  for (const part of chunk([...new Set(rows.map((row) => row.customerId))], IN_CHUNK)) {
+    const { error } = await supabase
+      .from("marketing_customer_list_checks")
+      .delete()
+      .in("customer_id", part)
+      .is("decided_state", null)
+      .lt("checked_at", now);
     if (error) throw error;
   }
   for (const row of rows) {

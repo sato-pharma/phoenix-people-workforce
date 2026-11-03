@@ -90,6 +90,7 @@ export async function getMarketingFinanceAgeing(access: AccessContext): Promise<
       customer_id: string;
       estimated_cost: number | string | null;
       id: string;
+      line: { name: string | null } | null;
       line_id: number | string | null;
       other_request_type: string | null;
       pay_date: string | null;
@@ -100,23 +101,19 @@ export async function getMarketingFinanceAgeing(access: AccessContext): Promise<
     }>(requestIds, (batch) =>
       supabase
         .from("marketing_requests")
-        .select("id, request_code, status, customer_id, request_type_id, other_request_type, requester_hr_id, line_id, estimated_cost, pay_date")
+        .select("id, request_code, status, customer_id, request_type_id, other_request_type, requester_hr_id, line_id, line:lines(name), estimated_cost, pay_date")
         .in("id", batch)
         .eq("status", "pending_approval"),
     ),
   ]);
 
-  const lineIds = distinct(requestRows.map((row) => row.line_id).filter((id): id is number | string => id !== null));
   const requesterKeys = distinct(requestRows.flatMap((row) => hrIdLookupKeys(row.requester_hr_id)));
-  const [customers, types, lines, employees] = await Promise.all([
+  const [customers, types, employees] = await Promise.all([
     readByIn<{ display_name: string | null; id: string }>(distinct(requestRows.map((row) => row.customer_id)), (batch) =>
       supabase.from("marketing_customers").select("id, display_name").in("id", batch),
     ),
     readByIn<{ id: number | string; name: string | null }>(distinct(requestRows.map((row) => row.request_type_id)), (batch) =>
       supabase.from("marketing_request_types").select("id, name").in("id", batch),
-    ),
-    readByIn<{ id: number | string; name: string | null }>(lineIds, (batch) =>
-      supabase.from("lines").select("id, name").in("id", batch),
     ),
     readByIn<{ full_name: string | null; hr_id: string }>(requesterKeys, (batch) =>
       supabase.from("employees").select("hr_id, full_name").in("hr_id", batch),
@@ -125,7 +122,6 @@ export async function getMarketingFinanceAgeing(access: AccessContext): Promise<
 
   const customerName = new Map(customers.map((row) => [row.id, cleanText(row.display_name)] as const));
   const typeName = new Map(types.map((row) => [String(row.id), row.name] as const));
-  const lineName = new Map(lines.map((row) => [String(row.id), cleanText(row.name)] as const));
   const requesterName = new Map(employees.map((row) => [canonicalHrIdKey(row.hr_id), cleanText(row.full_name)] as const));
 
   const requestsById = new Map<string, FinanceAgeingRequestInput>(
@@ -135,7 +131,7 @@ export async function getMarketingFinanceAgeing(access: AccessContext): Promise<
         customerName: customerName.get(row.customer_id) ?? "Customer not on file",
         estimatedCost: Number(row.estimated_cost ?? 0),
         id: row.id,
-        lineName: (row.line_id === null ? null : lineName.get(String(row.line_id))) ?? "No line",
+        lineName: cleanText(row.line?.name) || "No line",
         payDate: row.pay_date,
         requestCode: row.request_code,
         requesterName: requesterName.get(canonicalHrIdKey(row.requester_hr_id)) ?? "Name not on file",
