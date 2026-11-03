@@ -398,6 +398,15 @@ export function runDependabotAlertsTests() {
     1,
     "and exactly the reachable one is named - the count in the summary drives what a session bumps",
   );
+  // What it prints names the check that really goes red. The audit left `validate` on 2026-10-19 for
+  // the `static` job behind `checks`, so a session watching `validate` would wait on the wrong one.
+  for (const line of [...mixed.errors, ...unreachableOnly.notes]) {
+    assert.doesNotMatch(
+      line,
+      new RegExp("`validate`"),
+      "a printed line must not name validate as the check the audit fails",
+    );
+  }
 
   // The reachability set is derived from the repo's own shape, not guessed. `pnpm-workspace.yaml`
   // declares no `packages:` list, so the root audit walks exactly one tree; if that ever changes, this

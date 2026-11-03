@@ -422,7 +422,7 @@ export function judgeAlerts(read, enabled, decisions) {
       notes.push(
         `OK — ${unreachable.length} open HIGH+ alert(s) that the audit cannot reach${also}. Each is `
           + 'listed above with the reason it sits outside the tree `pnpm audit --prod` walks at the '
-          + 'root, so none of them can turn `validate` red and none of them blocks a merge. They are '
+          + 'root, so none of them can turn `checks` red and none of them blocks a merge. They are '
           + 'still real open alerts: a decision to leave recorded, not a bump to chase — see '
           + 'docs/security/open-dependency-alerts.md.',
       );
@@ -431,7 +431,7 @@ export function judgeAlerts(read, enabled, decisions) {
   }
 
   errors.push(
-    `${failing.length} open HIGH+ alert(s). Each one fails \`validate\`'s `
+    `${failing.length} open HIGH+ alert(s). Each one fails \`checks\` through the `
       + '`pnpm audit --audit-level=high --prod` step as soon as the audit feed learns the advisory — '
       + 'which is AFTER the alert appears here, so there is a window and this is it. Bump them in ONE '
       + 'PR (AGENTS.md §6.1), then re-run this. A transitive one needs `pnpm update --depth Infinity '
