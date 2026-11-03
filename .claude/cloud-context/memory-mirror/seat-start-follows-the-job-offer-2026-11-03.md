@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e50549d1-2c7d-48f2-9380-f5c0f14ffe8c
-  modified: 2026-11-03T11:27:41.155Z
+  modified: 2026-11-03T15:13:06.862Z
 ---
 
 Owner, 2026-11-03: "the start date must follow the date, the start date in the job offer, not the date when he accepted".
@@ -16,4 +16,4 @@ Owner, 2026-11-03: "the start date must follow the date, the start date in the j
 
 **Still owed from 8 Nov 2026:** Toka Zaki (`SEAT-CNS-REP-D25`, seat 2 Nov) and Mahmoud Khaled (`SEAT-CNS-REP-CA1`, seat 1 Nov) start on 8 Nov. Moving them before that flips the published months' credit on their seats to Muhammad AlMinshawy and Georgette Hany, who held them, until 8 Nov. From 8 Nov the same update moves no credit, measured by the arm order of `au.f_seat_occupant_asof`. A one-off scheduled task for it was refused by the permission classifier, so it needs doing by a session. Same update, restricted to those two seats, with its own pre-image.
 
-**How to apply:** a pending joiner's seat reads vacant until the start, and from now on every new accepted hire does the same; that is the rule working, not a lost occupant. Open-only readers still show them. Related: [[au-occupancy-hiring-date-from-master]], [[hire-date-history-survives-only-in-probation-reminders]].
+**How to apply:** a pending joiner's seat reads vacant on the DATED readers until the start, and every new accepted hire does the same; for sales credit that is the rule working. It is NOT acceptable on the live chart: the owner reported the same day that people who accepted were missing from the organogram, so `drawJoinersAwaitingStart` (`src/lib/reports/organogram-au-source.ts`) draws them on their seat with "Starts <date>". Never fix that in `au.v_org_tree`. Open-only readers still show them. Related: [[au-occupancy-hiring-date-from-master]], [[hire-date-history-survives-only-in-probation-reminders]].

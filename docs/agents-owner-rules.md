@@ -9320,6 +9320,8 @@ His words: "the start date must follow the date, the start date in the job offer
 
 **What it does before the start.** The seat reads vacant on dated readers until the start day, and arm 2 of `au.f_seat_occupant_asof` hands that seat's past months to whoever held them. Open-only readers still show the joiner, so a second hire into that seat is refused. No file under `src/lib/incentives` or `src/lib/payroll` reads occupancy.
 
+**The live organogram draws the joiner anyway (his words the same day: "people accepted the job offer are not appearing in organogram").** Three people had dropped off it: Hagar Abu Zeid, Mariam Wagdy and Salma Sabry, all starting 8 Nov. Their vacancies were already filled, so the "Offer accepted" label could not speak for them either. `drawJoinersAwaitingStart` puts each on their seat with "Starts 08 Nov 2026". Only the chart reads it; the dated readers and sales credit do not move.
+
 **The existing rows, 3 Nov about 13:20 Cairo.** 40 open hire rows and 34 vacant rows moved in one transaction, outside the migration, with the pre-image in `au_backup_20261103.occupancy_hire_start`. Measured in the same transaction: no change to the occupant of any seat at any 2026 month end, the organogram or open vacancies; drift stayed at 108; inverted rows went from 1 to 0. Closed spans were left alone.
 
 **Held.** Toka Zaki and Mahmoud Khaled start on 8 Nov. Moving them before that flips the credit on their two seats in published months to the people who held them, until the 8th. From the 8th the same update moves no credit. Note: `seat-start-follows-the-job-offer-2026-11-03`.

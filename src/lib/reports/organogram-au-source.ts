@@ -10,6 +10,7 @@ import {
 } from "@/lib/reports/organogram-head-office";
 import { organogramAsOfMonthEnd } from "@/lib/reports/organogram-as-of";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
+import { todayInCairo } from "@/lib/date-only";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -52,7 +53,49 @@ export type AuTreeRow = {
   region_name: string | null;
   line_name: string | null;
   line_id: number | null;
+  /** Set only by `drawJoinersAwaitingStart`: this occupant's first day, still ahead of today. */
+  starts_on?: string | null;
 };
+
+/** An open hire span whose first day is still ahead, as read from `au_v_seat_occupancy_all`. */
+export type JoinerAwaitingStart = {
+  effective_from: string;
+  occupant_hr_id: string;
+  seat_id: string;
+};
+
+/**
+ * The person who has accepted and not started yet, drawn on the seat waiting for them.
+ *
+ * A new hire's seat starts on the job offer's start date (owner, 2026-11-03), and `au_v_org_tree`
+ * reads only spans that have begun, so from the day that rule landed the seat read as a plain vacancy
+ * until the start: on 3 Nov Hagar Abu Zeid, Mariam Wagdy and Salma Sabry were on no chart, and their
+ * vacancies were already `filled`, so not even the "Offer accepted" label could speak for them (owner,
+ * 2026-11-03: "people accepted the job offer are not appearing in organogram").
+ *
+ * This changes the CHART and nothing else. The dated readers stay as they are, because sales credit
+ * in a past month must not move to somebody who has not started. A seat somebody still sits in keeps
+ * its tree row, and a person the tree already draws is never drawn twice.
+ */
+export function drawJoinersAwaitingStart(tree: AuTreeRow[], joiners: JoinerAwaitingStart[]): AuTreeRow[] {
+  if (joiners.length === 0) return tree;
+  const onTree = new Set<string>();
+  for (const s of tree) {
+    const key = canonicalHrIdKey(s.occupant_hr_id);
+    if (key) onTree.add(key);
+  }
+  const bySeat = new Map<string, JoinerAwaitingStart>();
+  for (const joiner of joiners) {
+    const key = canonicalHrIdKey(joiner.occupant_hr_id);
+    if (key && !onTree.has(key)) bySeat.set(joiner.seat_id, joiner);
+  }
+  return tree.map((s) => {
+    const joiner = s.occupant_hr_id?.trim() ? undefined : bySeat.get(s.seat_id);
+    return joiner
+      ? { ...s, is_vacant: false, occupant_hr_id: joiner.occupant_hr_id, starts_on: joiner.effective_from }
+      : s;
+  });
+}
 
 /**
  * The employee-master columns joined onto each occupied seat. Work fields only.
@@ -242,6 +285,7 @@ export function buildSeatTreeRows(
       replacementForHrId: null,
       seatId: s.seat_id,
       sourceRowNumber: null,
+      startsOn: s.starts_on ?? null,
       // Only a VACANT seat can carry one. An occupied chair has nothing pending, and reading the
       // map for it would be the first step towards labelling a filled seat with somebody else's
       // letter.
@@ -299,6 +343,17 @@ export async function buildOrganogramSeatReport(
           .eq("line_id", HEAD_OFFICE_LINE_ID)
           .eq("status", "open"),
       );
+  // Past months read their own dated history, so only the live chart has anybody still to start.
+  const joinerLoad = asOfMonth
+    ? null
+    : Promise.resolve(
+        supabase
+          .from("au_v_seat_occupancy_all")
+          .select("seat_id, occupant_hr_id, effective_from")
+          .is("effective_to", null)
+          .not("occupant_hr_id", "is", null)
+          .gt("effective_from", todayInCairo()),
+      );
 
   const { data: treeData, error } = asOfMonth
     ? await supabase.rpc("au_f_org_tree_as_of", { p_date: organogramAsOfMonthEnd(asOfMonth) })
@@ -308,7 +363,18 @@ export async function buildOrganogramSeatReport(
           "seat_id,parent_seat_id,seat_tier,line_code,region_code,area_code,is_other_pseudo_dm,occupant_hr_id,is_vacant,area_name,region_name,line_name,line_id",
         );
   if (error) throw new Error(`organogram seat source failed: ${error.message}`);
-  const tree = (treeData ?? []) as AuTreeRow[];
+  const { data: joinerData, error: joinerError } = joinerLoad
+    ? await joinerLoad
+    : { data: null, error: null };
+  if (joinerError) {
+    console.error(
+      `organogram: joiners awaiting their start could not be read (${joinerError.message}); their seats draw as vacant`,
+    );
+  }
+  const tree = drawJoinersAwaitingStart(
+    (treeData ?? []) as AuTreeRow[],
+    (joinerData ?? []) as JoinerAwaitingStart[],
+  );
 
   // Which empty chairs already have a letter out against them (owner, 2026-09-29). A third round
   // trip, and the cheapest of the three: it reads only offers that name a seat. It swallows its own

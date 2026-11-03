@@ -171,6 +171,8 @@ export type OrganogramReportRow = OrganogramWorkFields & {
   // deduplicated away (the 2026-08-01 AI-0005 "seat vanished" incident).
   seatId?: string | null;
   sourceRowNumber: number | null;
+  /** The first day of someone who has accepted and not started yet; null on everyone else. */
+  startsOn?: string | null;
   status: string;
   teamId: number | null;
   teamName: string | null;

@@ -1924,6 +1924,7 @@ import { runMarketingConfigGrantsTests } from "./marketing-config-grants.test.ts
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.test.ts";
+import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
@@ -6950,6 +6951,11 @@ await runTest(
 await runTest(
   "organogram NSM chart (a seat in handover draws both people with their own HR ids, and every count is one count of seats)",
   runOrganogramNsmChartFixesTests,
+);
+
+await runTest(
+  "organogram joiners awaiting their start (someone who accepted is drawn on the seat with the day they start)",
+  runOrganogramJoinersAwaitingStartTests,
 );
 
 await runTest(
