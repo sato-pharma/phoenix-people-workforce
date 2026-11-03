@@ -159,9 +159,10 @@ export type AfterSubmitItem = {
  * done is "now"; everything after it is "next".
  *
  * The departure photo leads whenever the trip owes one: that is the step Osama did not know about.
- * A car trip that drives on to another governorate adds its stops BEFORE that last photo, so the
- * stop line sits above it, marked "if needed" — most trips have none, and it never takes "now"
- * (owner, 2026-10-22: "what about the stops we added in expenses"; the rule is chained-journey.ts).
+ * A trip that moves on to another governorate captures each new place BEFORE that last photo, so the
+ * line sits above it, marked "if needed" — most trips have none, and it never takes "now" (owner,
+ * 2026-10-22: "what about the stops we added in expenses"; what each person owes is
+ * journey-stop-rules.ts, owner 2026-11-03).
  * The CRM line says visits saved later the same evening are picked up the next morning, because they
  * are (runOutstationWorkloadRestamp, owner 2026-10-22: "fix the stale no-activity stamp").
  */
@@ -171,6 +172,8 @@ export function afterSubmitGuidance(input: {
   isCarTrip: boolean;
   isNonTravel: boolean;
   isTicketBased: boolean;
+  /** This role carries no photo evidence, so the next place is its location alone. */
+  photosWaived?: boolean;
   ticketsAttached: number;
 }): AfterSubmitItem[] {
   const place = input.destination?.trim() ? input.destination.trim() : "the destination";
@@ -186,14 +189,23 @@ export function afterSubmitGuidance(input: {
       title: "Claim submitted",
     },
   ];
-  if (input.isCarTrip && !input.isNonTravel) {
+  if (!input.isNonTravel) {
+    const capture = !input.isCarTrip
+      ? input.photosWaived
+        ? "capture your location there, and attach that leg's ticket if you have one"
+        : "attach that leg's ticket and capture your location there"
+      : input.photosWaived
+        ? "capture your location there"
+        : "take one live photo there";
+    const pays = input.isCarTrip
+      ? "A drive from one governorate to another over 40 km is paid one way; a place in the same governorate changes nothing."
+      : "The ticket is paid. No fuel is paid on a trip without a car.";
     items.push({
-      detail:
-        "Open this claim under My claims and take the stop photo where you arrive, before the trip's last day ends — up to 6 stops. A drive from one governorate to another over 40 km is paid one way; a stop in the same governorate changes nothing.",
+      detail: `Open the line at the top of this page and ${capture}, before the trip's last day ends, up to 6 places. ${pays}`,
       done: false,
       ifNeeded: true,
       key: "stops",
-      title: "Driving on to another governorate? Add a stop there",
+      title: "Moved on to another governorate? Capture the next place",
     });
   }
   if (input.arrivalPhotoOwed) {

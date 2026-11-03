@@ -85,6 +85,7 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-production-planning-fx", kind: "cron", schedule: "7 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-production-planning-reorder", kind: "cron", schedule: "11 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-field-capture-nudge", kind: "cron", schedule: "50 6 * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-marketing-list-check", kind: "cron", schedule: "37 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-invoice-overdue-nudge", kind: "cron", schedule: "5 7 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-distributor-upload-overdue-nudge", kind: "cron", schedule: "20 7 * * *", graceSeconds: 1 * HOUR },
   // Every quarter hour, not daily, and that is the point. A held mapping change means the map is
@@ -126,7 +127,21 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // Five ticks at 10:xx Cairo, every day (owner, 3 Nov 2026: the WhatsApp reminder to a slow approver). The route sends
   // nothing on a Friday or Saturday and nothing until its three locks open, and still pings, so the check stays a straight
   // daily one. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job.
-  { slug: "phoenix-approval-whatsapp-reminders", kind: "cron", schedule: "11,21,29,37,47 10 * * *", graceSeconds: 2 * HOUR },
+  { slug: "phoenix-approval-whatsapp-reminders", kind: "cron", schedule: "9,11,17,29,47 10 * * *", graceSeconds: 2 * HOUR },
+  // 02:47 Cairo nightly (owner, 2026-11-03): the Sales -> Marketing pharmacy-code sync, until now run only
+  // by hand. A minute no other job holds. Must match scripts/cronjob-sync.mjs exactly, in the SAME sitting.
+  // NO watchingSince: a new declaration.
+  { slug: "phoenix-marketing-pharmacy-code-sync", kind: "cron", schedule: "47 2 * * *", graceSeconds: 2 * HOUR },
+  // 10:57 Cairo, every day (owner, 2026-11-03: the nightly code backup, read from Drive). Under the period.
+  { slug: "phoenix-code-backup-verify", kind: "cron", schedule: "57 10 * * *", graceSeconds: 2 * HOUR },
+  // 10:37 Cairo, every day including Friday (owner, 2026-11-03: the HR handset's 14-day reminder). Under
+  // seven days it says nothing and still reports, so a quiet run is correct. A minute no other job holds.
+  // Must match scripts/cronjob-sync.mjs exactly, in the SAME sitting. NO watchingSince: a new declaration.
+  { slug: "phoenix-whatsapp-handset-reminder", kind: "cron", schedule: "37 10 * * *", graceSeconds: 2 * HOUR },
+  // Hourly on :21 (owner, 2026-11-03): when each check on GitHub last succeeded. The grace is under the
+  // hour, so one missed fire stays quiet only if the next one lands. Must match scripts/cronjob-sync.mjs
+  // exactly, in the SAME sitting. NO watchingSince: a new declaration.
+  { slug: "phoenix-github-workflow-watch", kind: "cron", schedule: "21 * * * *", graceSeconds: 30 * MINUTE },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match

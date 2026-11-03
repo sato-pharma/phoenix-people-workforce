@@ -188,6 +188,9 @@ function pack(patch: Partial<ReportsPackInput> = {}): ReportsPackInput {
     heard: null,
     stock: null,
     samples: null,
+    // Objections by customer (owner, 2026-11-03), required for the same reason; its sheet is pinned in
+    // tests/phoenix-crm-objections-by-customer.test.ts.
+    objections: null,
     ...patch,
   };
 }
@@ -744,6 +747,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       heard: {},
       locations: {},
       managers: {},
+      objections: {},
       plan: {},
       samples: {},
       stock: {},
@@ -770,6 +774,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
         SECTION_TITLES.heard,
         SECTION_TITLES.stock,
         SECTION_TITLES.samples,
+        SECTION_TITLES.objections,
       ],
       "the cover promises every report in the guide, in the screen's order, plus the calendar",
     );

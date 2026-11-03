@@ -3,12 +3,14 @@ import { AlertTriangle, ArrowLeft, UserX } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
+import { Employee360IncentiveSection } from "@/components/employee-360/incentive-section";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
 import { Card } from "@/components/ui/card";
 import { guardSeatPage } from "@/lib/auth/seat-page-guard";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { buildEmployee360Scope, canViewEmployee360Subject } from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
+import { loadEmployee360PersonnelRecords } from "@/lib/employee-360/personnel-records";
 import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
@@ -62,7 +64,8 @@ export default async function Employee360DetailPage({
 
   // 360-specific scope gate (self / team / hierarchy / line / reps / company),
   // separate from the global canSeeEmployee used by payroll/directory.
-  if (!canViewEmployee360Subject(access, target, await buildEmployee360Scope(rows, access))) {
+  const scope = await buildEmployee360Scope(rows, access);
+  if (!canViewEmployee360Subject(access, target, scope)) {
     redirect("/employee-360");
   }
 
@@ -139,6 +142,9 @@ export default async function Employee360DetailPage({
       queue.push(key);
     }
   }
+
+  // Never rejects: each section inside it fails on its own and is named on the page.
+  const personnelRead = loadEmployee360PersonnelRecords({ access, target, scope });
 
   let summary: Awaited<ReturnType<typeof getEmployee360Profile>> | null = null;
   let previous: Awaited<ReturnType<typeof getEmployee360Summary>> | null = null;
@@ -290,6 +296,8 @@ export default async function Employee360DetailPage({
     }
   }
 
+  const personnel = await personnelRead;
+
   const comparison: Employee360Comparison | null = previous
     ? {
         previousLabel: period.previous.label,
@@ -325,6 +333,12 @@ export default async function Employee360DetailPage({
             : null
         }
         unreadSections={unreadSections}
+        personnel={personnel}
+        incentiveSection={
+          personnel.incentiveSignIn ? (
+            <Employee360IncentiveSection access={access} scope={scope} signIn={personnel.incentiveSignIn} target={target} />
+          ) : null
+        }
       />
     </div>
   );

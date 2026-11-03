@@ -20,6 +20,9 @@
  *   - there is no row per rep and no row per territory. The three grains are a product, a speciality
  *     and an area, and an area is a place, not a person.
  *
+ * This report stays exactly that. By the owner's decision of 3 November 2026 the per-customer list the
+ * managers read is a separate report, objections-by-customer.ts: counts only, and it never scores a rep.
+ *
  * ## An objection belongs to the VISIT
  *
  * A visit records one objection and the products discussed on it. So on the product grain an objection

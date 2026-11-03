@@ -50,6 +50,8 @@ export default async function TerritoryManagementPage() {
       // only decides whether the affordance is drawn.
       canEditPins={access.role === "Super Admin"}
       canPublishPreview={access.role === "Super Admin"}
+      // The same bar as the Database Mapping page a finding links to; anyone else would only be bounced.
+      canReviewBricks={access.role === "Super Admin" || access.scope === "system"}
       // `admin` is the default, but it is passed explicitly because it is load-bearing: this route
       // renders the workspace BARE, with no shell around it, so the workspace's own header is the
       // only title on the screen and must keep rendering here.

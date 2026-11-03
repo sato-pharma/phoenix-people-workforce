@@ -50,6 +50,7 @@
     "ops:backfill-access-profiles": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/backfill-missing-access-profiles.ts",
     "ops:backfill-whatsapp-classify-gaps": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/backfill-whatsapp-classify-gaps.ts",
     "sales:check-truth": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-sales-truth.ts",
+    "payroll:reconcile-expenses": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/reconcile-payroll-expenses.ts",
     "payroll:reconcile-deductions": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/reconcile-payroll-deductions.ts",
     "needs-you": "node scripts/needs-you.mjs",
     "analyze": "next build --experimental-analyze",

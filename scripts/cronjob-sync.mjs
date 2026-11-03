@@ -111,6 +111,15 @@ const JOB_FILTER = (() => {
 const REFERENCE_JOB_ID = 8200914;
 
 const JOBS = {
+  "marketing-list-check": {
+    title: "Phoenix — marketing doctor-list check",
+    path: "/api/cron/marketing-list-check",
+    // Hourly at :37. A full pass over fewer than 120 customers; the platform cuts at 30s and the work
+    // carries on, so the heartbeat is the truth. Arm it only AFTER scripts/marketing-list-check.ts --apply,
+    // or the owner's seeded answers are skipped.
+    schedule: { hours: [-1], minutes: [37], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
   "territory-restamp": {
     title: "Phoenix — nightly territory re-stamp",
     path: "/api/cron/territory-restamp",
@@ -226,8 +235,41 @@ const JOBS = {
     // Five ticks at 10:xx Cairo, every day (owner, 3 Nov 2026). Sends nothing on a Friday or Saturday, and nothing at all
     // until the switch, the third number and Meta's approval are in place. --hold does not hold: cron-autoarm.yml arms a
     // new row on merge, so the off position lives in the code. Odd minutes no other job holds. Matches JOB_SCHEDULES exactly.
-    schedule: { hours: [10], minutes: [11, 21, 29, 37, 47], mdays: [-1], months: [-1], wdays: [-1] },
+    schedule: { hours: [10], minutes: [9, 11, 17, 29, 47], mdays: [-1], months: [-1], wdays: [-1] },
     // Six reads, then at most eight sends a tick and none while it is off.
+    requestTimeout: 300,
+  },
+  "marketing-pharmacy-code-sync": {
+    title: "Phoenix — pharmacy-code sync",
+    path: "/api/cron/marketing-pharmacy-code-sync",
+    // 02:47 Cairo nightly (owner, 2026-11-03). Additive and idempotent; a new vendor starts hidden; it
+    // refuses to run if it would retire too many codes. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [2], minutes: [47], mdays: [-1], months: [-1], wdays: [-1] },
+    // One function call over about 100,000 candidate rows, plus two read-only counts.
+    requestTimeout: 300,
+  },
+  "code-backup-verify": {
+    title: "Phoenix — code backup on Drive check",
+    path: "/api/cron/code-backup-verify",
+    // 10:57 Cairo daily (owner, 2026-11-03). Three short Drive reads, then the heartbeat. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [10], minutes: [57], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 90,
+  },
+  "whatsapp-handset-reminder": {
+    title: "Phoenix — HR handset 14-day reminder",
+    path: "/api/cron/whatsapp-handset-reminder",
+    // 10:37 Cairo daily, Friday included (owner, 2026-11-03). Tells the Super Admin only, from seven
+    // days with no send from the phone. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [10], minutes: [37], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read and a few Meta reads, then at most one message.
+    requestTimeout: 300,
+  },
+  "github-workflow-watch": {
+    title: "Phoenix — watch the checks on GitHub",
+    path: "/api/cron/github-workflow-watch",
+    // Hourly on :21 (owner, 2026-11-03). Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [21], mdays: [-1], months: [-1], wdays: [-1] },
+    // Eight GitHub reads, each cut at 15 seconds, and at most one message.
     requestTimeout: 300,
   },
   "phoenix-crm-daily-digest": {

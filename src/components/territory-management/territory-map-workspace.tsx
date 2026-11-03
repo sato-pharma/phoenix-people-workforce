@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import Link from "next/link";
+
 import { Card } from "@/components/ui/card";
+import { brickCorrectionHref } from "@/lib/sales/normalizer/brick-area";
 import { TerritoryPreviewLinksPanel } from "@/components/territory-management/preview-links-panel";
 import {
   importGoogleLibrary,
@@ -37,6 +40,8 @@ type Props = {
   browserKey: string | null;
   /** Pin editing is Super-Admin only — the server enforces it too, this just hides the affordance. */
   canEditPins: boolean;
+  /** Whether this viewer can open the Database Mapping page a finding links to. Computed on the server. */
+  canReviewBricks?: boolean;
   /** Publishing a passwordless preview link is Super-Admin only. Enforced server-side as well. */
   canPublishPreview: boolean;
   /**
@@ -63,23 +68,30 @@ type Props = {
 const FINDINGS_SHOWN = 5;
 
 /** A finding list that never drops an item: the first few open, every one of the rest one click away. */
-function FindingList({ items }: { items: Array<{ key: string; text: string }> }) {
+function FindingList({ items }: { items: Array<{ href?: string; key: string; text: string }> }) {
   const shown = items.slice(0, FINDINGS_SHOWN);
   const folded = items.slice(FINDINGS_SHOWN);
+  const row = (item: { href?: string; key: string; text: string }) => (
+    <li key={item.key}>
+      {item.text}
+      {item.href ? (
+        <>
+          {" "}
+          <Link className="font-bold text-phx-accent underline" href={item.href}>Review</Link>
+        </>
+      ) : null}
+    </li>
+  );
   return (
     <>
       <ul className="text-muted-foreground list-disc pl-5">
-        {shown.map((item) => (
-          <li key={item.key}>{item.text}</li>
-        ))}
+        {shown.map(row)}
       </ul>
       {folded.length > 0 ? (
         <details className="text-muted-foreground mt-1">
           <summary className="cursor-pointer text-xs">Show the other {folded.length}</summary>
           <ul className="mt-1 list-disc pl-5">
-            {folded.map((item) => (
-              <li key={item.key}>{item.text}</li>
-            ))}
+            {folded.map(row)}
           </ul>
         </details>
       ) : null}
@@ -98,6 +110,7 @@ export function TerritoryMapWorkspace({
   browserKey,
   canEditPins,
   canPublishPreview,
+  canReviewBricks = false,
   chrome = "admin",
   filters,
   initialError,
@@ -754,6 +767,8 @@ export function TerritoryMapWorkspace({
               </p>
               <FindingList
                 items={area.overlaps.map((overlap) => ({
+                  // "Review", not "Fix": the finding rests on pins, and a pin can be a guess.
+                  href: canReviewBricks ? brickCorrectionHref(overlap.brickId) : undefined,
                   key: overlap.brickId,
                   text: `${overlap.brickName} — ${overlap.kmToOwnCentre} km from ${area.areaName}, but ${overlap.kmToOtherCentre} km from ${overlap.nearerAreaName}`,
                 }))}

@@ -307,6 +307,10 @@ export type AuditEntityType =
   // an area has already gone out. Best-effort (`writeAuditLog`): it observes a finished file and must
   // never be able to take it away. audit_logs has no CHECK on entity_type, so no migration.
   | "job_post_download"
+  // A job post sent to the public careers page, or a card closed there, by a person's press (`action` in
+  // the row says which, the entity id is the website's card). audit_logs has no CHECK on entity_type, so
+  // no migration. Best-effort: the card already exists by the time this is written.
+  | "job_post_publish"
   // The rebuilt Recruitment workspace (owner, 19–20 Oct 2026). `recruitment_candidate` is a decision
   // on one candidate from the workspace — placing them in a tab, a call result, a rejection with its
   // reason, the archive; `recruitment_candidate_answer` is HR typing an answer the applicant never
@@ -342,6 +346,10 @@ export type AuditEntityType =
   // the approval chain. Its own type because it answers "who changed who approves what", which is
   // not a change to any one request. `audit_logs.entity_type` is plain `text`, so no migration.
   | "marketing_control"
+  // Who took the Doctor-List Check or Finance Ageing as a file: doctors, reps, requesters and money leave
+  // the building. `audit_logs.entity_type` is plain `text`, so no migration.
+  | "marketing_finance_ageing_export"
+  | "marketing_list_check_export"
   | "notification"
   | "outstation_expense_access"
   | "outstation_request"

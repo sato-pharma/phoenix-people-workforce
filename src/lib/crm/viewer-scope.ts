@@ -24,6 +24,8 @@
  * `company` is constructed in exactly two places — the /admin/crm page and its export route — and a
  * test pins that. Everything else must pass an `hr-ids` scope.
  */
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
 export type CrmViewerScope =
   | { kind: "company" }
   | {
@@ -46,7 +48,7 @@ export function crmScopeNothing(): CrmViewerScope {
 }
 
 function normalizeHrIdKey(value: string): string {
-  return value.trim().toLowerCase();
+  return canonicalHrIdKey(value) ?? "";
 }
 
 /**

@@ -4893,8 +4893,18 @@ holds the why.
   roles hold `phoenix_crm: read` for ONE report: what the field heard about their OWN products
   (`resolveSalesAccessScope`, the rule Sales already uses), company-wide, never by area, territory or
   rep. Every other Phoenix CRM read answers them with nothing, because they hold no seat.
-- **Counts only.** No report anywhere shows a "no objection" figure, a rate or a row per rep: that would
-  be an honesty figure, and golden rule #1 keeps those out of every screen but the integrity board.
+- **Counts only.** No report anywhere shows a "no objection" figure or a rate: that would be an honesty
+  figure, and golden rule #1 keeps those out of every screen but the integrity board. What the field heard
+  itself is unchanged: by product, speciality and area, with no row per rep.
+- **One separate list names the rep: Objections by customer, his "per-doctor list" under the 23 September wording rule (owner, 3 November 2026).** He partly lifted the
+  no-row-per-rep rule for a per-doctor list for managers: each rep's doctors and what they objected to,
+  with the product, the day and the rep's note. Counts only: no percentage, rate, rank or score, sorted by
+  name and never by a count, with no "no objection" row and no blank. Readers are `readsTeamReports` alone
+  (Super Admin, SFE Manager, CEO, a manager on his own team); reps and the product audience are refused.
+  It never scores a rep: `tests/phoenix-crm-objections-by-customer.test.ts` refuses an import of it from
+  ranks, KPIs, payroll, incentives, coaching and the integrity board. It reads
+  `phoenix_crm_countable_visits`, so copied iReports360 history stays out; What the field heard reads the
+  view that keeps that history. Module: `src/lib/phoenix-crm/objections-by-customer.ts`.
 
 ### The rep's visit asks
 
@@ -9156,23 +9166,23 @@ no server answer in the 14 days before, a floor, because that capture skips offl
 and the customer reads "Waiting to send", with one line: "Saved on this phone. It sends when you have signal and
 Phoenix is open." It sends by itself while any Phoenix page is open, oldest first, a few seconds apart.
 
-**What it asks of him, and only when it must.** "This visit could not be sent" with the server's own sentence, or "Not
-sent in time", each with Log it again and Remove. Log it again opens the form on his own comment and products.
+**What it asks of the rep, and only when it must.** "This visit could not be sent" with the server's own sentence, or "Not
+sent in time", each with Log it again and Remove. Log it again opens the form on the rep's own comment and products.
 
 **Why two hours and 02:00.** The server dates every browser save at ARRIVAL, as it always has, and the retry does not
 change that. Past two hours, or across the 02:00 close of the visit day, an arrival-dated visit is no longer the same
-visit: it lands on the wrong day, or off plan, and a manager is told something nobody earned. So he is asked instead,
+visit: it lands on the wrong day, or off plan, and a manager is told something nobody earned. So the rep is asked instead,
 one tap, in a case that should be rare. Elapsed time is measured on the phone's clock and the day on the server's,
 because each is right about only that one thing.
 
-**What protects the evidence.** A held save must never become a mark against him.
+**What protects the evidence.** A held save must never become a mark against the rep.
 
 - `queuedSeconds` is a duration, bounded 1 to 7,200, parsed by `parseVisitDraft`, and never sent to
   `phoenix_crm_save_visit`. Only a browser may carry it.
 - It is filed as `queued_seconds` on `phoenix_crm_visit_capture_provenance`, after the save.
 - The phone-clock check adds it to the tap before comparing, so a phone that merely waited reads true and a phone whose
   clock is truly wrong still shows.
-- The travel check compares both sides at the moment he was there (`atTheDoor`), or a drained queue reads as visits
+- The travel check compares both sides at the moment the rep was there (`atTheDoor`), or a drained queue reads as visits
   seconds apart and the next normal visit reads as an impossible trip. What is filed keeps the arrival.
 - The SFE Manager's Visit report shows it as Sent late (min), so a forged value is visible. A rep and a district manager
   never read it.
@@ -9191,7 +9201,7 @@ what a phone holds asks to be logged again rather than vanishing.
 `phoenix_crm_visits` it answers how many were pressed and never saved. A phone that never reopens undercounts it, and a
 rep's own Remove counts, so it reads "no visit saved", never "lost".
 
-**Who has a queue.** A rep on his own territory and day. A seat view and a test login have none, and behave as before.
+**Who has a queue.** A rep on their own territory and day. A seat view and a test login have none, and behave as before.
 No service worker: the push provider holds that scope, so a visit sends only while Phoenix is open, which is what the
 rep is told.
 
@@ -9239,3 +9249,13 @@ number, because its replies are dropped only once it is known.
 
 **Pinned by** `tests/approval-whatsapp-rules.test.ts`, `tests/approval-whatsapp-send.test.ts` and
 `tests/approval-whatsapp-reply-exit.test.ts`.
+
+## The doctor-list check (owner, 2026-10-27 and 2026-11-03)
+
+His words, 27 October: the name compared allowing one letter, *"The line must match"*, the GPS of the customer validation and of the doctor validation's live photo *"not more than 500 meters away from each other"*, and *"you must don't block but flag … in the approval window, you will show the two photos."* A marketing request is never on a nursery; hospitals and accounts compare with the AM list, a clinic or a doctor with the PM list. On 3 November he chose: the SFE Manager answers an unsure row with two photos side by side, the Super Admin can too, and every answer records who made it.
+
+**How it reads.** One row per customer and line in `marketing_customer_list_checks`. The area always comes from the photo's GPS through the nearest brick, never a hand-chosen area. A person's answer beats a pick, a pick beats a re-check, a typed name moves only on a person's "same doctor". States: on the list, check, not on the list, no rep holds the area, left the list, no location.
+
+**Three readings made tighter than his sentence, each from measuring the 114 customers on 3 November.** Twin given names are refused (the tolerance read احمد علي as محمد علي موسي). A different name reaches the queue only within 100 m (500 m sent 15 unrelated names there). The same name and the same brick proves a row only when no distance can be read, because his 27 October sheet accepted that, and 7.5 km apart in one brick is his flag.
+
+**Order of the first run.** Merge, read `/api/healthz` revision, announce (no point-in-time recovery, 7 daily backups), apply the pre-image with `scripts/apply-sql-file.mjs`, run `scripts/marketing-list-check.ts --apply`, confirm no picked row changed, and only then arm the hourly job `phoenix-marketing-list-check`.

@@ -1,12 +1,15 @@
 import { AlertTriangle } from "lucide-react";
 
+import { crmListFlagChip } from "@/lib/marketing-requests/crm-doctor-pick";
+
 /**
  * "This doctor's name was typed by hand — the doctor is not on a rep's Phoenix CRM list."
  *
  * Owner, 2026-10-23: a doctor not on the rep's list may still be typed at Customer Validation, "but
  * flag, clearly flag in all approval steps". ONE component, so every approval surface — the inbox
  * card, the approval window, the decision page — says it in the same words. Renders nothing for a
- * picked doctor or a customer validated before the rule (`flag` null).
+ * picked doctor or a customer validated before the rule (`flag` null). Since 2026-11-03 the list check
+ * speaks here too (`crmListFlag`), so the wording is the flag's own and not always "typed by hand".
  *
  * `compact` is the chip under a card's customer name; the full box leads the approval window.
  */
@@ -19,7 +22,7 @@ export function NotOnCrmListFlag({ compact = false, flag }: { compact?: boolean;
         title={flag}
       >
         <AlertTriangle aria-hidden className="mt-px h-3 w-3 shrink-0" />
-        <span>Not on the rep&apos;s CRM list — name typed by hand</span>
+        <span>{crmListFlagChip(flag)}</span>
       </p>
     );
   }

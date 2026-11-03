@@ -8,6 +8,7 @@ import {
   Footprints,
   GraduationCap,
   Info,
+  Laptop,
   ListChecks,
   MapPin,
   Megaphone,
@@ -41,6 +42,13 @@ import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
 import type { PmMarketingSummary } from "@/lib/employee-360/pm-marketing";
 import type { Employee360Comparison, MetricDelta } from "@/lib/employee-360/period";
 import { EMPLOYEE_360_ROLE_META, type Employee360RoleCategory } from "@/lib/employee-360/roles";
+import type {
+  Employee360PersonnelRecords,
+  PersonnelDevices,
+  PersonnelLeave,
+  PersonnelProbation,
+  PersonnelRank,
+} from "@/lib/employee-360/personnel-records";
 import { planEmployee360Sections } from "@/lib/employee-360/report-sections";
 import { crmInsightState, type Employee360CrmInsights } from "@/lib/employee-360/crm-insights";
 import { Employee360CrmInsightsSections } from "./crm-insights-sections";
@@ -83,7 +91,7 @@ const TONE_GLYPH: Record<Tone, string> = {
 // The dossier look (owner, 2026-10-27): every section is a sheet of one personnel record — a 2px ink
 // rule across its head, hairline ledgers for its figures, no grey tiles and no tinted icon squares.
 // The card keeps its depth (app/globals.css RULE 3).
-const PREMIUM_CARD =
+export const PREMIUM_CARD =
   "border-slate-200/80 border-t-2 border-t-slate-900 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-6";
 
 /** One figure grid drawn as a ledger: the grid carries the left and top hairline, each cell the rest. */
@@ -288,11 +296,11 @@ const KPI_EXPLAIN: Record<string, string> = {
   "AM visits": "How many visits were made in the morning.",
   "PM visits": "How many visits were made in the afternoon.",
   // Outstation
-  Claimed: "The total amount claimed for outstation trips.",
+  Claimed: "The total amount claimed for outstation trips, leaving out rejected requests.",
   Flagged: "How many outstation requests have an eligibility or territory issue to review.",
 };
 
-function KpiTile({
+export function KpiTile({
   label,
   value,
   benchmark,
@@ -336,7 +344,7 @@ function KpiTile({
   );
 }
 
-function SectionHeader({
+export function SectionHeader({
   icon: Icon,
   tone = "sky",
   sub,
@@ -812,7 +820,190 @@ function Chapter({ id, number, title, lede, children }: { id: string; number: st
   );
 }
 
-type ChapterKey = "leadership" | "results" | "field" | "development" | "cost";
+function dayRange(from: string, to: string): string {
+  return from === to ? dayLabel(from) : `${dayLabel(from)} to ${dayLabel(to)}`;
+}
+
+/** Tiles for the personnel sections: the columns follow the card's width, not the window's. */
+function RecordTiles({ children }: { children: ReactNode }) {
+  return (
+    <div className="@container">
+      <div className="grid grid-cols-2 border-l border-t border-slate-200 @lg:grid-cols-3">{children}</div>
+    </div>
+  );
+}
+
+function LeaveRecordSection({ leave }: { leave: PersonnelLeave }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={CalendarClock} tone="sky" sub="The balance and the latest requests, from the Leave screen.">
+        Leave
+      </SectionHeader>
+      <RecordTiles>
+        <KpiTile
+          label="Annual leave available"
+          value={leave.balanceDays == null ? "—" : `${intFmt.format(leave.balanceDays)} days`}
+          hint={leave.balanceDays == null ? "Not shown: the balance could not be worked out" : "What can be requested today"}
+          explain="The annual leave this person can request today, as the Leave screen works it out."
+        />
+      </RecordTiles>
+      {leave.requests.length > 0 ? (
+        // Fits-the-screen golden rule: a fixed table once the CARD has the width, cards under it.
+        <div className="@container mt-5">
+          <table className="hidden w-full table-fixed border-collapse text-sm @xl:table">
+            <colgroup>
+              <col className="w-[28%]" />
+              <col className="w-[36%]" />
+              <col className="w-[12%]" />
+              <col className="w-[24%]" />
+            </colgroup>
+            <thead>
+              <tr className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
+                <th className="py-1.5 pr-2 text-left">Type</th>
+                <th className="px-2 py-1.5 text-left">Dates</th>
+                <th className="px-2 py-1.5 text-right">Days</th>
+                <th className="py-1.5 pl-2 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leave.requests.map((request) => (
+                <tr key={request.id} className="border-t border-slate-100 align-top">
+                  <td className="break-words py-1.5 pr-2 font-semibold text-slate-800">{request.typeLabel}</td>
+                  <td className="break-words px-2 py-1.5 text-slate-600">{dayRange(request.startDate, request.endDate)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-800">{request.durationDays}</td>
+                  <td className="break-words py-1.5 pl-2 text-slate-600">{request.statusLabel}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <ul className="divide-y divide-slate-100 border-y border-slate-100 @xl:hidden">
+            {leave.requests.map((request) => (
+              <li key={request.id} className="py-2.5 text-sm">
+                <span className="block break-words font-semibold text-slate-800">{request.typeLabel}</span>
+                <span className="block break-words text-slate-600">
+                  {dayRange(request.startDate, request.endDate)} · {request.durationDays} {request.durationDays === 1 ? "day" : "days"}
+                </span>
+                <span className="block break-words text-phx-xs text-slate-500">{request.statusLabel}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function ProbationRecordSection({ probation }: { probation: PersonnelProbation }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={ClipboardCheck} tone="amber" sub="Still inside the 90 days, from the Probation tracker.">
+        Probation
+      </SectionHeader>
+      <RecordTiles>
+        <KpiTile label="Days remaining" value={intFmt.format(probation.daysRemaining)} explain="Days left before the probation ends." />
+        <KpiTile label="Ends on" value={dayLabel(probation.endDate)} explain="The last day of the 90-day probation." />
+        <KpiTile label="Hired on" value={dayLabel(probation.hireDate)} explain="The first day the probation counts from." />
+      </RecordTiles>
+    </Card>
+  );
+}
+
+function DevicesRecordSection({ devices }: { devices: PersonnelDevices }) {
+  const value = (amount: number | null) => (amount == null ? "—" : `EGP ${intFmt.format(amount)}`);
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader
+        icon={Laptop}
+        tone="sky"
+        sub={
+          devices.showValues
+            ? "What this person holds and has signed for, from the Device register."
+            : "What this person holds, from the Device register. Agreed values are shown only to the person, their managers, the CEO and the Super Admin."
+        }
+      >
+        Company devices
+      </SectionHeader>
+      <div className="@container">
+        <table className="hidden w-full table-fixed border-collapse text-sm @xl:table">
+          <colgroup>
+            <col className={devices.showValues ? "w-[38%]" : "w-[56%]"} />
+            <col className="w-[22%]" />
+            <col className="w-[22%]" />
+            {devices.showValues ? <col className="w-[18%]" /> : null}
+          </colgroup>
+          <thead>
+            <tr className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
+              <th className="py-1.5 pr-2 text-left">Device</th>
+              <th className="px-2 py-1.5 text-left">Asset tag</th>
+              <th className="px-2 py-1.5 text-left">Issued on</th>
+              {devices.showValues ? <th className="py-1.5 pl-2 text-right">Agreed value</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {devices.items.map((device) => (
+              <tr key={device.assignmentId} className="border-t border-slate-100 align-top">
+                <td className="break-words py-1.5 pr-2">
+                  <span className="block font-semibold text-slate-800">{humanizeCode(device.category)}</span>
+                  {device.identifier ? <span className="block break-all text-phx-xs text-slate-500">{device.identifier}</span> : null}
+                </td>
+                <td className="break-words px-2 py-1.5 text-slate-600">{device.assetTag}</td>
+                <td className="break-words px-2 py-1.5 text-slate-600">{dayLabel(device.issuedOn)}</td>
+                {devices.showValues ? <td className="py-1.5 pl-2 text-right tabular-nums text-slate-800">{value(device.agreedValueEgp)}</td> : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <ul className="divide-y divide-slate-100 border-y border-slate-100 @xl:hidden">
+          {devices.items.map((device) => (
+            <li key={device.assignmentId} className="py-2.5 text-sm">
+              <span className="block break-words font-semibold text-slate-800">
+                {humanizeCode(device.category)} · {device.assetTag}
+              </span>
+              {device.identifier ? <span className="block break-all text-phx-xs text-slate-500">{device.identifier}</span> : null}
+              <span className="block break-words text-slate-600">
+                Issued {dayLabel(device.issuedOn)}
+                {devices.showValues ? ` · ${value(device.agreedValueEgp)}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Card>
+  );
+}
+
+function RankRecordSection({ rank }: { rank: PersonnelRank }) {
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={Award} tone="violet" sub="Scores and rank from Phoenix Ranks, which reads Phoenix CRM only.">
+        Rank
+      </SectionHeader>
+      <RecordTiles>
+        <KpiTile label="Rank" value={rank.rankEnglish} hint={rank.rankArabic} explain="The rank the rolling score has reached on the Phoenix Ranks ladder." />
+        <KpiTile label="Stars" value={intFmt.format(rank.stars)} explain="Month, quarter and semester titles won in closed windows." />
+        <KpiTile
+          label="Rolling score"
+          value={rank.rollingScore == null ? "—" : rank.rollingScore.toFixed(1)}
+          explain="The score the rank is read from."
+        />
+      </RecordTiles>
+      {rank.monthTrail.length > 0 ? (
+        <ul className="mt-5 divide-y divide-slate-100 border-y border-slate-100 text-sm">
+          {rank.monthTrail.map((month) => (
+            <li key={month.label} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+              <span className="min-w-0 break-words font-semibold text-slate-800">{month.label}</span>
+              <span className="min-w-0 break-words text-slate-600">
+                {month.total == null ? "—" : month.total.toFixed(1)} · {month.rankEnglish}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
+  );
+}
+
+type ChapterKey = "leadership" | "results" | "field" | "development" | "personnel" | "cost";
 
 export function Employee360View({
   chrome = "admin",
@@ -828,6 +1019,8 @@ export function Employee360View({
   crmInsights = null,
   skillsSurvey = null,
   unreadSections = [],
+  personnel = null,
+  incentiveSection = null,
   bare = false,
 }: {
   /**
@@ -857,6 +1050,10 @@ export function Employee360View({
   skillsSurvey?: { history: SkillsSurveyHistoryData; memberHref: string } | null;
   /** Sections whose read failed on the server — named on the page, never silently left out. */
   unreadSections?: readonly string[];
+  /** Leave, probation, devices and rank. Each is absent unless this viewer may see it and it holds something. */
+  personnel?: Employee360PersonnelRecords | null;
+  /** The incentive, already gated and streaming, built by the page because it reads on the server. */
+  incentiveSection?: ReactNode;
   /**
    * The employee portal's page shell already pads and sizes the content column, so its two call
    * sites render the report BARE: no second padding (32px lost at 375px) and no max-width, which
@@ -1213,6 +1410,7 @@ export function Employee360View({
   // The record's chapters. Every section belongs to exactly one, and the role decides their order: a
   // leader's record opens on what they deliver, a rep's on their own field work. A chapter with nothing
   // to show is left out and the rest are numbered in the order they appear.
+  const unreadNames = [...unreadSections, ...(personnel?.unread ?? [])];
   const CHAPTERS: Record<ChapterKey, { title: string; lede: string; parts: ReactNode[] }> = {
     leadership: {
       title: "Leadership",
@@ -1236,6 +1434,17 @@ export function Employee360View({
       lede: "The coaching this employee received, what changed after it, and the double visits made with them.",
       parts: [receivedPart, skillsSurveyPart],
     },
+    personnel: {
+      title: "Personnel",
+      lede: "Leave, probation, the company devices this person holds, their incentive and their rank, each read from its own screen.",
+      parts: [
+        personnel?.leave ? <LeaveRecordSection leave={personnel.leave} /> : null,
+        personnel?.probation ? <ProbationRecordSection probation={personnel.probation} /> : null,
+        incentiveSection,
+        personnel?.devices ? <DevicesRecordSection devices={personnel.devices} /> : null,
+        personnel?.rank ? <RankRecordSection rank={personnel.rank} /> : null,
+      ],
+    },
     cost: {
       title: "Cost",
       lede: "Payroll and outstation cost for the period, against the field work it paid for.",
@@ -1243,8 +1452,8 @@ export function Employee360View({
     },
   };
   const order: ChapterKey[] = isLeader
-    ? ["leadership", "results", "field", "development", "cost"]
-    : ["field", "results", "development", "leadership", "cost"];
+    ? ["leadership", "results", "field", "development", "personnel", "cost"]
+    : ["field", "results", "development", "leadership", "personnel", "cost"];
   const chapters = order
     .map((key) => ({ key, ...CHAPTERS[key], parts: CHAPTERS[key].parts.filter((part) => part != null) }))
     .filter((chapter) => chapter.parts.length > 0)
@@ -1263,7 +1472,7 @@ export function Employee360View({
           sources={sources}
           contents={chapters.map(({ id, number, title }) => ({ id, number, title }))}
         />
-        {unreadSections.length > 0 ? <UnreadSectionsNotice names={unreadSections} /> : null}
+        {unreadNames.length > 0 ? <UnreadSectionsNotice names={unreadNames} /> : null}
         {glance.length > 0 ? <AtAGlance figures={glance} /> : null}
       </div>
 
@@ -2689,7 +2898,7 @@ function ExpensesSection({
             <div className="mt-5 border border-slate-200 p-3.5">
               <div className="mb-2 text-sm font-bold text-slate-800">Outstation requests submitted in Phoenix</div>
               <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-3">
-                <KpiTile label="Trips" value={intFmt.format(outstation.tripCount)} />
+                <KpiTile label="Trips" value={intFmt.format(outstation.tripCount)} hint={outstation.rejectedCount > 0 ? `${intFmt.format(outstation.rejectedCount)} rejected, not counted` : undefined} />
                 <KpiTile label="Claimed" value={compactFmt.format(outstation.claimedTotal)} hint={`expected ${compactFmt.format(outstation.expectedTotal)}`} />
                 <KpiTile label="Flagged" value={intFmt.format(outstation.flaggedCount)} goodWhenAbove={!(outstation.flaggedCount > 0)} hint="eligibility or territory issue" />
               </div>

@@ -760,6 +760,7 @@ import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.te
 import { runPmProductAssignmentTests } from "./pm-product-assignments.test.ts";
 import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
+import { runEmployee360PersonnelRecordsTests } from "./employee-360-personnel-records.test.ts";
 import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
 import { runEmployee360CustomerKeyTests } from "./employee-360-customer-key.test.ts";
 import { runEmployee360BrickCoverageTests } from "./employee-360-brick-coverage.test.ts";
@@ -788,6 +789,8 @@ import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
+import { runAddressBrickFindingTests } from "./address-brick-finding.test.ts";
+import { runOutstationExpenseScreensTests } from "./outstation-expense-screens.test.ts";
 import {
   runAddressCorrectionQueueTests,
   runReconcileQueuesItsFilesTests,
@@ -960,7 +963,10 @@ import { runMarketingRequestTwinGuardTests } from "./marketing-request-twin-guar
 import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audit.test.ts";
+import { runMarketingFinanceAgeingTests } from "./marketing-finance-ageing.test.ts";
+import { runMarketingListCheckTests } from "./marketing-list-check.test.ts";
 import { runMarketingManagerScorecardTests } from "./marketing-manager-scorecard.test.ts";
+import { runPhoenixCrmObjectionsByCustomerTests } from "./phoenix-crm-objections-by-customer.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
@@ -2638,6 +2644,7 @@ import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
 import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
 import { runOutstationJourneyStopRehearsalTests } from "./outstation-journey-stop-rehearsal.test.ts";
+import { runOutstationJourneyStopRulesTests } from "./outstation-journey-stop-rules.test.ts";
 import { runOutstationAdminMissedStopTests } from "./outstation-admin-missed-stop.test.ts";
 import { runStagingTestSignInTests } from "./staging-test-sign-in.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
@@ -2955,6 +2962,13 @@ import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold
 import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
 import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
+import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
+import { runWhatsappHandsetClockTests } from "./whatsapp-handset-clock.test.ts";
+import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-sync-job.test.ts";
+import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconciliation.test.ts";
+import { runCrmIReports360HoldoutsTests } from "./crm-ireports360-holdouts.test.ts";
+import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
+import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -4687,6 +4701,9 @@ await runTest(
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos address-first brick (the customer address outranks the label and the stored map)", runSosAddressFirstBrickTests);
+await runTest("outstation expense screens (HR's cut shows, rejected claims leave Claimed, payroll's ledger reads untouched)", runOutstationExpenseScreensTests);
+await runTest("employee 360 personnel chapter (incentive and device values: the person, their managers, the CEO, the Super Admin)", runEmployee360PersonnelRecordsTests);
+await runTest("wrong-town finder (longer names and other towns flagged; the importer unchanged; a ruling is on the row read)", runAddressBrickFindingTests);
 await runTest("weekly number cells (a \"12,5\" quantity refuses the upload with both readings; Arabic digits read)", runWeeklyNumberCellTests);
 await runTest("weekly date cells (an ambiguous slash date never picks the week; an afternoon serial stays on its day)", runWeeklyDateCellTests);
 await runTest("old sales upload numbers (\"12,5\" is refused and named, never read as 125)", runOldSalesUploadNumberTests);
@@ -8656,6 +8673,18 @@ await runTest(
   runMarketingManagerScorecardTests,
 );
 await runTest(
+  "marketing finance ageing (the waiting filter, the step clock, the bands, three readers, no execute control)",
+  runMarketingFinanceAgeingTests,
+);
+await runTest(
+  "marketing doctor-list check (one letter and the twin names, 500 m, a pick never overwritten, the flag wording, the board sums, the sheet layout)",
+  runMarketingListCheckTests,
+);
+await runTest(
+  "phoenix crm objections by customer (no none, no rate, no rank, refused roles, the import ban)",
+  runPhoenixCrmObjectionsByCustomerTests,
+);
+await runTest(
   "marketing customer area ownership (a customer belongs to a territory, so the rep hired into a resigned rep's patch inherits it with nothing re-stamped; same area other line sees it too; another area does not)",
   runMarketingCustomerAreaOwnershipTests,
 );
@@ -10272,6 +10301,11 @@ await runTest(
 );
 
 await runTest(
+  "outstation stop rebuilt (owner 2026-11-03): each person owes the evidence their travel and role allow, a trip without a car pays tickets and no fuel, and stored stops still read",
+  runOutstationJourneyStopRulesTests,
+);
+
+await runTest(
   "outstation admin missed stop (owner 2026-11-03): a system administrator adds a stop the employee missed — guarded before anything moves, measured, priced and written through the employee's own path, marked as his with the reason, and offered only on an undecided car trip",
   runOutstationAdminMissedStopTests,
 );
@@ -11749,6 +11783,13 @@ await runTest(
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
+await runTest("the checks on GitHub (3 Nov 2026): every scheduled workflow is watched, an overdue one alerts, and being blind fails rather than reading clean", runGithubWorkflowWatchTests);
+await runTest("the HR handset's 14-day clock (3 Nov 2026): the stages, him only, honest wording, and a lost echoes field is not a routing fault", runWhatsappHandsetClockTests);
+await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts hidden, both guards survive, and it refuses a mass retirement", runMarketingPharmacyCodeSyncJobTests);
+await runTest("approved expenses against the payslips (3 Nov 2026): four findings, held is not unpaid, carried is an inference, and the check reads three salary columns and writes nothing", runExpensePayslipReconciliationTests);
+await runTest("who still records only in iReports360 (3 Nov 2026): vendor rows and real partners only, a day Phoenix holds is not only there, leave is its own line, and the tab offers no action", runCrmIReports360HoldoutsTests);
+await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
+await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

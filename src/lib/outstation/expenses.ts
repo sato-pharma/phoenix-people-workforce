@@ -855,6 +855,21 @@ export function carryStoredDecisionOntoRequestExpenses<
 }
 
 /**
+ * The one way a SCREEN joins the two expense tables: request rows wearing HR's decision, plus the
+ * ledger rows no request shadows. In that order, because the row being read from is the row about to
+ * be dropped. Dedupe alone showed the employee's full claim after HR had cut it.
+ *
+ * Screens only. What payroll PAYS reads `outstation_expenses` directly and never comes through here.
+ */
+export function mergeRequestAndLedgerExpenses<
+  L extends { approvedAmount: number | null; hrComment: string; tripId: string },
+  H extends { approvedAmount: number | null; hrComment: string; tripId: string },
+>(historical: H[], live: L[]): { historical: H[]; live: L[] } {
+  const carried = carryStoredDecisionOntoRequestExpenses(live, historical);
+  return { historical: dedupeHistoricalExpensesByTrip(historical, carried), live: carried };
+}
+
+/**
  * Show the employee's CURRENT record name on rows that were written with an older one.
  *
  * `specialist` is a snapshot: both sources freeze the name at write time, so a correction to the
@@ -947,14 +962,9 @@ export async function listUnifiedOutstationExpenses(
     : month && year
     ? requestExpenses.filter((expense) => expense.payoutMonth === month && expense.payoutYear === year)
     : requestExpenses;
-  // Enrich BEFORE the dedup: the row being read from is the row about to be dropped.
-  const enrichedRequestExpenses = carryStoredDecisionOntoRequestExpenses(
+  const { historical: dedupedHistoricalExpenses, live: enrichedRequestExpenses } = mergeRequestAndLedgerExpenses(
+    historicalExpenses,
     filteredRequestExpenses,
-    historicalExpenses,
-  );
-  const dedupedHistoricalExpenses = dedupeHistoricalExpensesByTrip(
-    historicalExpenses,
-    enrichedRequestExpenses,
   );
 
   const unified = [...enrichedRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {

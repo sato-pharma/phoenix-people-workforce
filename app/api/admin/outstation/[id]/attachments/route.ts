@@ -65,14 +65,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .filter((ticket): ticket is { contentType: string; name: string; url: string } => Boolean(ticket.url));
 
     // The chained journey's stops (owner rule, 2026-10-18): each drive, whether it is paid and why,
-    // the flags, and every stop's own photo — signed like the arrival and departure photos.
+    // the flags, and every stop's own photo — signed like the arrival and departure photos. A stop
+    // proved by its location has none, so only the stops with a photo are signed.
     const stops = requestRow.journeyStops ?? [];
     const pricing = stops.length > 0 ? requestRow.journeyPricing ?? null : null;
     // A stop a system administrator added has no photo to sign (ADMIN_ADDED_STOP_PHOTO_PATH).
-    const stopUrls =
-      stops.length > 0
-        ? await createOutstationEvidenceSignedUrls(stops.map((stop) => (stop.addedByAdmin ? "" : stop.photoPath)))
-        : [];
+    const photoPaths = stops.flatMap((stop) => {
+      const path = stop.addedByAdmin ? "" : stop.photoPath;
+      return path ? [path] : [];
+    });
+    const signedStopPhotos = photoPaths.length > 0 ? await createOutstationEvidenceSignedUrls(photoPaths) : [];
+    const stopPhotoUrl = new Map(photoPaths.map((path, index) => [path, signedStopPhotos[index] ?? null]));
     const journey =
       stops.length > 0
         ? {
@@ -81,20 +84,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             legs: (pricing?.legs ?? []).map((leg) => ({
               distanceKm: leg.distanceKm,
               from: leg.from,
+              fuelAmount: leg.fuelAmount,
               paid: leg.paid,
               reason: leg.reason,
+              ticketAmount: leg.ticketAmount,
               to: leg.to,
             })),
+            mode: pricing?.mode ?? null,
             modeReason: pricing?.modeReason ?? null,
             singleDestinationFuelAmount: pricing?.singleDestinationFuelAmount ?? null,
-            stops: stops.map((stop, index) => ({
+            stops: stops.map((stop) => ({
               accuracyMeters: stop.accuracyMeters,
               capturedAt: stop.capturedAt,
+              evidence: stop.evidence,
               governorate: stop.governorate,
               locationLabel: stop.locationLabel,
               addedByAdmin: stop.addedByAdmin ?? null,
               stopNumber: stop.stopNumber,
-              url: stopUrls[index] ?? null,
+              ticketAmount: stop.ticketAmount,
+              url: stop.photoPath ? stopPhotoUrl.get(stop.photoPath) ?? null : null,
             })),
           }
         : null;

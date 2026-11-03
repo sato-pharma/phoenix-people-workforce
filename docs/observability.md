@@ -749,6 +749,7 @@ policy):
    | `phoenix-production-planning-fx` | `7 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-production-planning-reorder` | `11 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
+   | `phoenix-marketing-list-check` | `37 * * * *` | 1h | cron-job.org job, armed only after the first `scripts/marketing-list-check.ts --apply` (the seeds would be skipped otherwise) |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
    | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
    | `phoenix-mapping-guard-notify` | `5,20,35,50 * * * *` | 1h | cron-job.org job `8427700` |
@@ -757,7 +758,11 @@ policy):
    | `phoenix-recruitment-manager-cv-reminders` | `41 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-archive-rejections` | `29 3 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` |
-   | `phoenix-approval-whatsapp-reminders` | `11,21,29,37,47 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-approval-whatsapp-reminders` | `9,11,17,29,47 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-marketing-pharmacy-code-sync` | `47 2 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-code-backup-verify` | `57 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-whatsapp-handset-reminder` | `37 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-github-workflow-watch` | `21 * * * *` | 30m | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org job `8526396` · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org job `8525234` · **in-house only** |
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
@@ -851,6 +856,7 @@ policy):
    | `phoenix-notify-daily` | `hr` | The 06:36 daily bundle — birthdays, contract renewals, holiday reminders, the vacation, marketing and outstation SLA digests, and the notification-retention cleanup. A red means none of those notices went out that morning. |
    | `phoenix-production-planning-fx` | `production-planning in-house-only` | The one dollar rate a day that keeps every dollar-typed material price deriving a current pound figure. A red means the planner is costing the buy list on a stale rate. |
    | `phoenix-production-planning-reorder` | `production-planning in-house-only` | The Ivyronc reorder and expiry alarm, naming the materials whose cover has fallen to about one run. A red means nothing warned him, and the imported material takes about six months to arrive. |
+   | `phoenix-marketing-list-check` | `marketing` | Re-checks every validated marketing customer against the reps' doctor lists, sending nothing. A red means the approval flags and the list-check board have stopped following the lists. |
    | `phoenix-marketing-field-capture-nudge` | `marketing silent-when-clean` | Tells each rep which of his own validated marketing customers still have no field capture behind them, in-app, Telegram and push only. A red means that backlog went unnamed. |
    | `phoenix-marketing-invoice-overdue-nudge` | `marketing silent-when-clean` | Tells the requester and finance that an approved marketing request's invoice has passed its deadline. A red means a late invoice was raised with nobody. |
    | `phoenix-distributor-upload-overdue-nudge` | `sales silent-when-clean` | Tells the Super Admin and the SFE Manager which distributor files for the month just closed are later than they were last month. A red means a late file went unreported. |
@@ -859,6 +865,10 @@ policy):
    | `phoenix-recruitment-manager-cv-reminders` | `recruitment in-house-only silent-when-clean` | The hourly reminder to each manager holding CV folders about CVs sent to them and not yet opened, 08:00-21:59 Cairo, in-app, Telegram and push, never email. A manager with nothing unopened is told nothing, so a red means an unopened CV stopped being chased. |
    | `phoenix-recruitment-archive-rejections` | `recruitment in-house-only silent-when-clean` | Moves every rejection older than 30 days out of the Recruitment workspace's tabs into its archive — never deleted, still searchable. It tells nobody, so a red means old rejections are piling back into the tabs Talent Acquisition works from. |
    | `phoenix-recruitment-whatsapp-reask` | `recruitment silent-when-clean` | The in-window WhatsApp re-ask: while the switch on the Screening Questions screen is on, an applicant who went quiet mid-way through the questions is asked the question they stopped at, once, before WhatsApp's 24-hour window closes. It starts OFF and sends nothing while off, so a quiet run is correct; a red means quiet applicants stopped being asked again and their answers stay missing. |
+   | `phoenix-marketing-pharmacy-code-sync` | `marketing in-house-only silent-when-clean` | The nightly Sales to Marketing pharmacy-code sync. Additive; a new vendor starts hidden and is named; it refuses to run if it would retire over 500 codes. A healthy night tells nobody, so this check and its detail are the only record. A red means Customer Validation is reading stale codes, or the Sales map lost rows. |
+   | `phoenix-code-backup-verify` | `platform in-house-only silent-when-clean` | The nightly code backup checked from production: fails when the newest file on Drive is over 36 hours old, under 100 MB, under half the one before it, or Drive cannot be read. The job itself is `infra/code-backup/`. |
+   | `phoenix-whatsapp-handset-reminder` | `recruitment in-house-only silent-when-clean` | The reminder to open WhatsApp Business on the HR handset before the 14-day limit, to the Super Admin only, in-app, Telegram and push. Under seven days with no send from the phone it says nothing, so a quiet run is correct; a red means the clock could not be read and nobody will be warned before the link drops. |
+   | `phoenix-github-workflow-watch` | `platform in-house-only silent-when-clean` | Asks GitHub hourly when each scheduled check last succeeded, and alerts on its own when one is overdue. A red means the watch itself is blind: no token, a refusal, or GitHub silent for over three hours. |
    | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
    | `phoenix-approval-whatsapp-reminders` | `hr in-house-only silent-when-clean` | The WhatsApp reminder to each approver holding something more than three days. It starts OFF behind a switch, a number and Meta's approval, and sends nothing while off, so a quiet run is correct; a red means the read failed or every send was refused. |
    | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |

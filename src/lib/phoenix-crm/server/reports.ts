@@ -378,6 +378,11 @@ export type ReportScopeView = {
    */
   canSeeLocations: boolean;
   /**
+   * `readsTeamReports`: who is offered Objections by customer. Its own flag, because `canSeeLocations` is
+   * narrower and leaves out the CEO and the regional managers, who read that report too (owner, 2026-11-03).
+   */
+  canReadTeamReports: boolean;
+  /**
    * Who the tab is drawn for. `field`: the field force, its managers, SFE, the CEO and the Super Admin
    * — every section, as each one's own gate allows. `products`: a product or marketing manager (owner,
    * 2026-10-02), who holds no seat in the sales organogram and reads ONE section — what the field heard
@@ -454,6 +459,7 @@ export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportS
     // falls back to the one report he had before.
     hasManagers: managersInScope(viewer.org, viewer.hrId, viewer.basis).length > 0 || readsOwnRideAlongs(viewer),
     canSeeLocations: canReadLocationReport(viewer),
+    canReadTeamReports: readsTeamReports(viewer),
     // The team's gate first: a product manager who also read team reports would read them as a manager.
     audience: !readsTeamReports(viewer) && readsFieldHeardByProduct(viewer) ? "products" : "field",
     answersVisitAsks: !readsTeamReports(viewer) && isVisitAskAskableRole(viewer.role),

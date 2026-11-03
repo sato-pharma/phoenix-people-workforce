@@ -1,0 +1,46 @@
+# Nightly code backup
+
+A one-shot Railway service, `phoenix-code-backup`, in Europe. Railway starts it at `17 0 * * *` UTC and it
+exits when done. Railway's schedule has no setting in `.railway/railway.ts`, so it is set with GraphQL
+`serviceInstanceUpdate { cronSchedule }`. Railway skips a run while the last one is still going.
+
+Each night it makes one file on the app's Drive, `phoenix-code-backup/daily/code-backup-YYYY-MM-DD.tar.age`:
+a verified `git bundle` of every repository the token can see, the `hmdm-android` release files, and a
+`manifest.tsv` listing each repository's refs and size, with `releases.tsv` listing each release file and its size. It keeps 7 daily and 4 weekly files.
+`phoenix-code-backup/frozen-2026-10-26/` is never pruned: the repositories that had no copy off this disk.
+
+**Not covered:** unpushed commits and `.env` files. Restoring code does not restore secrets.
+
+**What watches it:** `/api/cron/code-backup-verify` reads Drive from production every day and fails when the
+newest file is over 36 hours old, too small, or Drive cannot be read. A run that fails prunes nothing.
+
+## Variables
+
+| Name | Value |
+| --- | --- |
+| `GITHUB_BACKUP_TOKEN` | Read-only GitHub token covering every repository |
+| `CODE_BACKUP_AGE_RECIPIENT` | The PUBLIC age key. The private key is never on Railway |
+| `CODE_BACKUP_MIN_REPOS` | Refuses the night if the token sees fewer repositories than this |
+| `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` | Railway references to the app's own, so a rotation reaches them |
+
+## Restoring
+
+The owner holds the private key. On Windows, set long paths first or a clone silently returns 0 refs.
+
+```bash
+git config --global core.longpaths true
+```
+
+```bash
+rclone copy "drive:phoenix-code-backup/daily/code-backup-YYYY-MM-DD.tar.age" .
+```
+
+```bash
+age -d -i age-key.txt code-backup-YYYY-MM-DD.tar.age | tar -xf -
+```
+
+```bash
+git clone bundles/NAME.bundle NAME
+```
+
+Then compare the clone's `git for-each-ref` count with that repository's line in `manifest.tsv`.

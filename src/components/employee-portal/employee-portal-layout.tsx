@@ -339,6 +339,7 @@ function buildEmployeePortalSections({
   showExcusesTab = false,
   showExpenseActionTab = false,
   showExpenseDashboardTab = false,
+  showExpenseSubmissionsTab = false,
   showFingerprintReportTab = false,
   showIncentiveTab = true,
   showMarketAwarenessInboxTab = false,
@@ -685,9 +686,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Outstation Expenses", icon: ReceiptText }] : []),
         ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),
-        // Shares showExpenseDashboardTab deliberately: anyone allowed to see expense figures is by
-        // definition allowed to see his OWN submissions.
-        ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-submissions", label: "Expense Submissions", icon: ReceiptText }] : []),
+        ...(showExpenseSubmissionsTab ? [{ href: "/employee-portals/expense-submissions", label: "Expense Submissions", icon: ReceiptText }] : []),
         ...(showExpenseActionTab ? [{ href: "/employee-portals/submit-expense", label: "Submit Expense", icon: Send }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),
       ],

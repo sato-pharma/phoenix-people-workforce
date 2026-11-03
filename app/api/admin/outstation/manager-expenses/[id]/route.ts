@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { isOutstationClaimChangedError } from "@/lib/outstation/claim-revision";
 import { buildManagerExpenseAdminPatch } from "@/lib/outstation/manager-expense-input";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import {
@@ -28,6 +29,7 @@ function managerExpenseStatus(error: unknown) {
   if (
     isOutstationPayrollLockError(error) ||
     isOutstationConcurrencyConflictError(error) ||
+    isOutstationClaimChangedError(error) ||
     isWorkflowRegistryTransitionError(error)
   ) {
     return 409;
@@ -64,7 +66,9 @@ export async function PATCH(
       );
     }
 
-    const updated = await updateManagerExpenseAsAdmin(id, access, patch.input);
+    const updated = await updateManagerExpenseAsAdmin(id, access, patch.input, {
+      expectedRevision: typeof body?.expectedRevision === "string" ? body.expectedRevision : undefined,
+    });
 
     return NextResponse.json({
       message: "Outstation expense updated successfully.",

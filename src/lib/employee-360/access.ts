@@ -207,6 +207,40 @@ export async function buildEmployee360Scope(
 }
 
 /**
+ * May this viewer see another person's incentive and the agreed value of the devices they hold? The
+ * person themselves, the Super Admin, the CEO, and anyone above them in the org tree (owner, 2026-11-03:
+ * "Also their managers"). Narrower than opening the report, on purpose: HR Operations and the Training
+ * Manager open every rep's 360, and a line-scoped marketing viewer opens the line's, and none of them is
+ * in this list, because being able to read someone's record is not being above them.
+ *
+ * It asks the role and the tree, never the access SCOPE: "company" scope also covers Finance and HR
+ * Operations. Pure, and the only answer: a value this returns false for never leaves the server.
+ */
+export function canViewPersonMoney(
+  viewer: Pick<AccessContext, "hrId" | "role" | "scope" | "source">,
+  subject: Pick<Employee360SubjectRow, "hrId" | "managerHrId" | "pendingManagerReplacementForHrId">,
+  scope: Pick<Employee360Scope, "byCanonicalHrId">,
+): boolean {
+  if (viewer.source === "guest" || viewer.scope === "none") return false;
+  if (isEmployee360ExcludedSubject(subject.hrId)) return false;
+  if (viewer.scope === "system" || viewer.role === "Super Admin" || viewer.role === "CEO") return true;
+  const viewerKey = canonicalHrIdKey(viewer.hrId);
+  if (!viewerKey) return false;
+  if (hrIdsMatch(viewer.hrId, subject.hrId)) return true;
+  return isWithinManagerHierarchy({
+    employee: { managerHrId: subject.managerHrId, pendingManagerReplacementForHrId: subject.pendingManagerReplacementForHrId },
+    byCanonicalHrId: scope.byCanonicalHrId,
+    viewerCanonicalHrId: viewerKey,
+    canonicalize: canonicalHrIdKey,
+  });
+}
+
+/** The portal sends these two away from its Incentive tab (app/employee-portals/incentive/page.tsx). */
+export function subjectHasIncentiveTab(role: PhoenixRole): boolean {
+  return role !== "Marketing Manager" && role !== "Training Manager";
+}
+
+/**
  * Pure scope predicate — may this viewer open this subject's 360? Field-force
  * filtering is applied separately so the detail page can still show a friendly
  * out-of-scope card for a non-field person the viewer is otherwise allowed to see.

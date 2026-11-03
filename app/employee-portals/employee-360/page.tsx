@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { Employee360IncentiveSection } from "@/components/employee-360/incentive-section";
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
 import {
@@ -19,6 +20,7 @@ import {
   resolveEmployee360VisibleRows,
 } from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
+import { loadEmployee360PersonnelRecords } from "@/lib/employee-360/personnel-records";
 import { buildEmployee360ListItems } from "@/lib/employee-360/list-items";
 import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
@@ -309,7 +311,7 @@ export default async function EmployeePortalEmployee360Page({
   const window360 = { from: period.current.from, to: period.current.to };
   const settled = <T,>(load: Promise<T> | null): Promise<{ failed: boolean; value: T | null }> =>
     load ? load.then((value) => ({ failed: false, value }), () => ({ failed: true, value: null })) : Promise.resolve({ failed: false, value: null });
-  const [teamHealthLoad, teamLifecycleLoad, tmAnalyticsLoad, pmMarketingLoad, crmInsights] = await Promise.all([
+  const [teamHealthLoad, teamLifecycleLoad, tmAnalyticsLoad, pmMarketingLoad, crmInsights, personnel] = await Promise.all([
     // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM).
     settled<TeamHealthSummary>(
       isFieldManager
@@ -353,6 +355,8 @@ export default async function EmployeePortalEmployee360Page({
       from: period.current.from,
       to: period.current.to,
     }).catch((): Employee360CrmInsights | null => unreadCrmInsights(roleCategory)),
+    // Never rejects: each section inside it fails on its own and is named on the page.
+    loadEmployee360PersonnelRecords({ access, target, scope: scope360 }),
   ]);
   const teamHealth: TeamHealthSummary | null = teamHealthLoad.value;
   if (teamHealthLoad.failed) unreadSections.push("Team Development");
@@ -397,6 +401,12 @@ export default async function EmployeePortalEmployee360Page({
           comparison={comparison}
           crmInsights={crmInsights}
           unreadSections={unreadSections}
+          personnel={personnel}
+          incentiveSection={
+            personnel.incentiveSignIn ? (
+              <Employee360IncentiveSection access={access} scope={scope360} signIn={personnel.incentiveSignIn} target={target} />
+            ) : null
+          }
           pmMarketing={pmMarketing}
           showExpenses={showExpenses}
           subject={subject}
