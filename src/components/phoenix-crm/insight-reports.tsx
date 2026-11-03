@@ -21,7 +21,7 @@
  * question. All four boards are manager-only (the server refuses each one to a medical rep), and none
  * of them judges how a rep worked or how honest he is.
  *
- * Objections by doctor (owner, 2026-11-03) is drawn here too: it names the rep to say whose doctors they
+ * Objections by customer (owner, 2026-11-03) is drawn here too: it names the rep to say whose customers they
  * are, by name and never by a count, and carries no percentage, no rank, no score and no total per rep.
  */
 
@@ -49,9 +49,9 @@ import {
 import { capacityVerdictText, gradeTargetsText, type CapacityRow, type CapacityVerdict, type ListCapacity } from "@/lib/phoenix-crm/capacity-board";
 import { HEARD_BASIS_TEXT, heardTallyText, type HeardGrain, type HeardNote, type HeardRow } from "@/lib/phoenix-crm/field-heard";
 import type { MissingStockPharmacy, MissingStockProduct, StockChase } from "@/lib/phoenix-crm/missing-stock";
-import { objectionDoctorRows, type DoctorObjection, type ObjectionDoctorRow } from "@/lib/phoenix-crm/objections-by-doctor";
+import { objectionCustomerRows, type CustomerObjection, type ObjectionCustomerRow } from "@/lib/phoenix-crm/objections-by-customer";
 import type { SampleItemTotal, SamplesTerritoryRow } from "@/lib/phoenix-crm/samples-report";
-import type { CapacityBoardView, FieldHeardView, MissingStockView, ObjectionsByDoctorView, SamplesReportView } from "@/lib/phoenix-crm/view-types";
+import type { CapacityBoardView, FieldHeardView, MissingStockView, ObjectionsByCustomerView, SamplesReportView } from "@/lib/phoenix-crm/view-types";
 
 // ── Words ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -787,15 +787,15 @@ export function SamplesSection({ idPrefix, resource }: { idPrefix: string; resou
   );
 }
 
-// ── Objections by doctor ────────────────────────────────────────────────────────────────────────
+// ── Objections by customer ────────────────────────────────────────────────────────────────────────
 
 /** "Price — 2 PM", one line per objection, in the visit form's own order. */
-function doctorObjectionLines(objections: ReadonlyArray<DoctorObjection>): string[] {
+function customerObjectionLines(objections: ReadonlyArray<CustomerObjection>): string[] {
   return objections.map((objection) => `${objection.label} — ${heardTallyText(objection)}`);
 }
 
-/** The visits behind a doctor's counts, as days: the objection, the list, the products and the rep's note. */
-function objectionVisitDays(row: ObjectionDoctorRow): DayLine[] {
+/** The visits behind a customer's counts, as days: the objection, the list, the products and the rep's note. */
+function objectionVisitDays(row: ObjectionCustomerRow): DayLine[] {
   const byDay = new Map<string, string[]>();
   for (const objection of row.objections) {
     for (const visit of objection.visits) {
@@ -809,13 +809,13 @@ function objectionVisitDays(row: ObjectionDoctorRow): DayLine[] {
 }
 
 /**
- * Objections by doctor. Sorted by the rep's name, then the doctor's, and never by a count; the only
+ * Objections by customer. Sorted by the rep's name, then the customer's, and never by a count; the only
  * figures are how many times each objection was raised, AM and PM apart.
  */
-export function ObjectionsByDoctorSection({ idPrefix, resource, today }: { idPrefix: string; resource: CrmResource<ObjectionsByDoctorView>; today: string }) {
+export function ObjectionsByCustomerSection({ idPrefix, resource, today }: { idPrefix: string; resource: CrmResource<ObjectionsByCustomerView>; today: string }) {
   const report = resource.data;
-  if (!report) return <SectionWaiting error={resource.error} label="Gathering what the doctors objected to" onRetry={resource.reload} />;
-  const rows = objectionDoctorRows(report);
+  if (!report) return <SectionWaiting error={resource.error} label="Gathering what the customers objected to" onRetry={resource.reload} />;
+  const rows = objectionCustomerRows(report);
 
   return (
     <>
@@ -823,26 +823,26 @@ export function ObjectionsByDoctorSection({ idPrefix, resource, today }: { idPre
       <TestNote includeTest={report.includeTest} />
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="Objections heard" note="Visits where a doctor pushed back" value={amPmText(report.totals.objections.am, report.totals.objections.pm)} />
-          <CrmStat label="Doctors" note="Who raised at least one" value={countText(report.totals.doctors)} />
-          <CrmStat label="Reps" note="Whose doctors these are" value={countText(report.totals.reps)} />
+          <CrmStat label="Objections heard" note="Visits where a customer pushed back" value={amPmText(report.totals.objections.am, report.totals.objections.pm)} />
+          <CrmStat label="Customers" note="Who raised at least one" value={countText(report.totals.customers)} />
+          <CrmStat label="Reps" note="Whose customers these are" value={countText(report.totals.reps)} />
         </CrmStatGrid>
-        <CrmNote className="mt-3" title="What the doctor said, never a mark against the rep" tone="info">
-          Counts only, sorted by name. There is no percentage, no rank and no score here, and a visit where the doctor raised nothing is never listed. A manager&apos;s report: reps never see it.
+        <CrmNote className="mt-3" title="What the customer said, never a mark against the rep" tone="info">
+          Counts only, sorted by name. There is no percentage, no rank and no score here, and a visit where the customer raised nothing is never listed. A manager&apos;s report: reps never see it.
         </CrmNote>
       </CrmBlock>
       {rows.length === 0 ? (
         <div className="border-t border-slate-100">
-          <CrmEmpty message="A doctor's objection shows here once a rep records one on a visit in these days." title="Nothing objected to yet" />
+          <CrmEmpty message="A customer's objection shows here once a rep records one on a visit in these days." title="Nothing objected to yet" />
         </div>
       ) : (
         <ReportList
           columns={["24%", "24%", null, "16%"]}
-          explain="Each rep by name, then each of the rep's doctors by name, and what the doctor objected to. Open a row for the day, the products and the rep's note."
+          explain="Each rep by name, then each of the rep's customers by name, and what the customer objected to. Open a row for the day, the products and the rep's note."
           hasData={() => true}
           headers={[
             "Rep",
-            "Doctor",
+            "Customer",
             "What they objected to",
             <span className="sr-only" key="visits">
               The visits
@@ -852,11 +852,11 @@ export function ObjectionsByDoctorSection({ idPrefix, resource, today }: { idPre
           items={rows}
           keyOf={(row) => row.key}
           renderCard={(row, open, onToggle) => (
-            <CrmCard meta={[row.repName, ...row.territories].join(" · ")} title={row.doctorName}>
+            <CrmCard meta={[row.repName, ...row.territories].join(" · ")} title={row.customerName}>
               <CrmFacts
                 facts={[
                   { label: "Speciality", value: row.speciality ?? "—" },
-                  { label: "What they objected to", value: doctorObjectionLines(row.objections).join(" · ") },
+                  { label: "What they objected to", value: customerObjectionLines(row.objections).join(" · ") },
                 ]}
               />
               <div className="mt-3">
@@ -876,11 +876,11 @@ export function ObjectionsByDoctorSection({ idPrefix, resource, today }: { idPre
                 {row.territories.length > 0 ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.territories.join(", ")}</p> : null}
               </td>
               <td className={crmTdClassName}>
-                <p className="break-words font-black text-slate-950">{row.doctorName}</p>
+                <p className="break-words font-black text-slate-950">{row.customerName}</p>
                 {row.speciality ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.speciality}</p> : null}
               </td>
               <td className={crmTdClassName}>
-                {doctorObjectionLines(row.objections).map((line) => (
+                {customerObjectionLines(row.objections).map((line) => (
                   <p className="break-words" key={line}>
                     {line}
                   </p>
@@ -892,8 +892,8 @@ export function ObjectionsByDoctorSection({ idPrefix, resource, today }: { idPre
             </>
           )}
           renderOpen={(row) => <DayList days={objectionVisitDays(row)} today={today} />}
-          searchWords={(row) => [row.repName, row.doctorName, row.speciality, ...row.territories, ...row.objections.flatMap((objection) => [objection.label, ...objection.visits.flatMap((visit) => visit.products)])]}
-          words={{ ...LIST_WORDS, searchLabel: "Find a rep or doctor", searchPlaceholder: "Rep, doctor, territory or product", title: "By rep, then doctor", with: "With objections", without: "None" }}
+          searchWords={(row) => [row.repName, row.customerName, row.speciality, ...row.territories, ...row.objections.flatMap((objection) => [objection.label, ...objection.visits.flatMap((visit) => visit.products)])]}
+          words={{ ...LIST_WORDS, searchLabel: "Find a rep or customer", searchPlaceholder: "Rep, customer, territory or product", title: "By rep, then customer", with: "With objections", without: "None" }}
         />
       )}
     </>

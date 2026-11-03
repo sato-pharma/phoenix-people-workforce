@@ -78,8 +78,10 @@ export function MarketingFinanceAgeingDesk({ report }: { report: MarketingFinanc
         {tiles.map((tile) => (
           <div className={`${adminSoftPanelClassName} p-4`} key={tile.label}>
             <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{tile.label}</dt>
-            <dd className="mt-1 text-phx-lg font-bold text-slate-900">{tile.value}</dd>
-            <p className="mt-0.5 text-phx-xs text-slate-500">{tile.hint}</p>
+            <dd className="mt-1 text-phx-lg font-bold text-slate-900">
+              {tile.value}
+              <span className="mt-0.5 block text-phx-xs font-normal text-slate-500">{tile.hint}</span>
+            </dd>
           </div>
         ))}
       </dl>

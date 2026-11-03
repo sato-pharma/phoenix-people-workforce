@@ -10,7 +10,7 @@ import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadTeamCalendar } from "@/lib/phoenix-crm/server/team-calendar";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
-import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadObjectionsByDoctorReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
+import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadObjectionsByCustomerReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
 import {
   loadCoverageReport,
   loadCustomerFrequencyReport,
@@ -67,7 +67,7 @@ export const dynamic = "force-dynamic";
 //             the visits that promised to chase it. No sales figure. Managers only
 //   samples   samples and materials left, by month, by product and territory — a record, never a stock
 //             balance. Managers only
-//   objections objections by doctor (owner, 2026-11-03): each rep's doctors and what they objected to,
+//   objections objections by customer (owner, 2026-11-03): each rep's customers and what they objected to,
 //             counts only. Managers only, and it never scores a rep
 // Filters: seatId, lineCode, managerHrId (owner, 2026-10-20 — one of the viewer's managers), from, to, month,
 // includeTest (the Super Admin's only). Scope runs downward only and is applied in the service.
@@ -109,7 +109,7 @@ export async function GET(request: Request) {
     else if (section === "heard") report = await loadFieldHeardReport(viewer, filters);
     else if (section === "stock") report = await loadMissingStockReport(viewer, filters);
     else if (section === "samples") report = await loadSamplesReport(viewer, filters);
-    else if (section === "objections") report = await loadObjectionsByDoctorReport(viewer, filters);
+    else if (section === "objections") report = await loadObjectionsByCustomerReport(viewer, filters);
     // The team calendar. Its own TAB in the module (owner, 2026-09-30) but the module's own report
     // endpoint, so there is one place a Phoenix CRM report section is gated, scoped and audited.
     else if (section === "calendar") report = await loadTeamCalendar(viewer, { month: filters.month, test: filters.includeTest });

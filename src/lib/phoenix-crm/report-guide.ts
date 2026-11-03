@@ -63,7 +63,7 @@ export const SECTION_TITLES: Record<ReportSection, string> = {
   heard: "What the field heard",
   stock: "Missing stock",
   samples: "Samples by month",
-  objections: "Objections by doctor",
+  objections: "Objections by customer",
 };
 
 /**
@@ -195,8 +195,8 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
   },
   objections: {
     family: "heard",
-    note: "Each rep's doctors, counts only",
-    answers: "Each rep's doctors and what they objected to, with the product, the day and the rep's note. The objection is the doctor's: counts only, and it never scores a rep.",
+    note: "Each rep's customers, counts only",
+    answers: "Each rep's customers and what they objected to, with the product, the day and the rep's note. The objection is the customer's: counts only, and it never scores a rep.",
   },
 };
 

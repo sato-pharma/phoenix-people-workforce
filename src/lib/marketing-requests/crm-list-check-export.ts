@@ -34,11 +34,11 @@ export async function buildListCheckWorkbook(board: ListCheckBoard): Promise<Exc
   ]);
 
   const sheet = workbook.addWorksheet("List Check");
-  const columns: Array<Partial<ExcelJS.Column> & { fill?: string }> = [
-    { fill: MARKETING_FILL, header: "Marketing Name", key: "customerName", width: 32 },
-    { fill: REP_LIST_FILL, header: "Rep List Name", key: "matchedName", width: 32 },
-    { fill: MARKETING_FILL, header: "Marketing Area", key: "marketingAreaName", width: 22 },
-    { fill: REP_LIST_FILL, header: "Rep List Area", key: "listAreaName", width: 22 },
+  const columns: Array<{ header: string; key: string; tint?: string; width: number }> = [
+    { header: "Marketing Name", key: "customerName", tint: MARKETING_FILL, width: 32 },
+    { header: "Rep List Name", key: "matchedName", tint: REP_LIST_FILL, width: 32 },
+    { header: "Marketing Area", key: "marketingAreaName", tint: MARKETING_FILL, width: 22 },
+    { header: "Rep List Area", key: "listAreaName", tint: REP_LIST_FILL, width: 22 },
     { header: "Metres Apart", key: "metresApart", width: 13 },
     { header: "Line", key: "lineName", width: 16 },
     { header: "List", key: "listType", width: 8 },
@@ -56,7 +56,7 @@ export async function buildListCheckWorkbook(board: ListCheckBoard): Promise<Exc
     { header: "Decided By", key: "decidedByName", width: 26 },
     { header: "Decided (Cairo)", key: "decidedAt", width: 22 },
   ];
-  sheet.columns = columns;
+  sheet.columns = columns.map(({ header, key, width }) => ({ header, key, width }));
   sheet.addRows(
     board.rows.map((row) => ({
       approvedCost: Math.round(row.approvedCost),
@@ -85,9 +85,9 @@ export async function buildListCheckWorkbook(board: ListCheckBoard): Promise<Exc
   const header = sheet.getRow(1);
   header.font = { bold: true };
   columns.forEach((column, index) => {
-    if (!column.fill) return;
+    if (!column.tint) return;
     const cell = header.getCell(index + 1);
-    cell.fill = { fgColor: { argb: column.fill }, pattern: "solid", type: "pattern" };
+    cell.fill = { fgColor: { argb: column.tint }, pattern: "solid", type: "pattern" };
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
   });
   return workbook;

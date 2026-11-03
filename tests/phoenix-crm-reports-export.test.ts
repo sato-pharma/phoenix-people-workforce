@@ -188,8 +188,8 @@ function pack(patch: Partial<ReportsPackInput> = {}): ReportsPackInput {
     heard: null,
     stock: null,
     samples: null,
-    // Objections by doctor (owner, 2026-11-03), required for the same reason; its sheet is pinned in
-    // tests/phoenix-crm-objections-by-doctor.test.ts.
+    // Objections by customer (owner, 2026-11-03), required for the same reason; its sheet is pinned in
+    // tests/phoenix-crm-objections-by-customer.test.ts.
     objections: null,
     ...patch,
   };

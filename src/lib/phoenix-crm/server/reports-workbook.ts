@@ -64,14 +64,14 @@ import {
 } from "@/lib/phoenix-crm/daily-plan-report";
 import { brickStatusLabel } from "@/lib/phoenix-crm/brick-report";
 import { HEARD_BASIS_TEXT, heardTallyText, type HeardRow } from "@/lib/phoenix-crm/field-heard";
-import { objectionDoctorRows } from "@/lib/phoenix-crm/objections-by-doctor";
+import { objectionCustomerRows } from "@/lib/phoenix-crm/objections-by-customer";
 import { LEAVE_UNREAD_NOTE } from "@/lib/phoenix-crm/plan-leave";
 import { SECTION_TITLES } from "@/lib/phoenix-crm/report-guide";
 import { PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 import type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 import type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
-import type { CapacityBoardView, FieldHeardView, MissingStockView, ObjectionsByDoctorView, SamplesReportView } from "@/lib/phoenix-crm/server/insight-reports";
+import type { CapacityBoardView, FieldHeardView, MissingStockView, ObjectionsByCustomerView, SamplesReportView } from "@/lib/phoenix-crm/server/insight-reports";
 import type {
   CoverageReportView,
   CustomerFrequencyReportView,
@@ -115,7 +115,7 @@ export type ReportsPackInput = {
   stock: MissingStockView | null;
   samples: SamplesReportView | null;
   /** A manager section (owner, 2026-11-03), null (no sheet) for anyone else. */
-  objections: ObjectionsByDoctorView | null;
+  objections: ObjectionsByCustomerView | null;
 };
 
 const COUNT = "#,##0";
@@ -1007,19 +1007,19 @@ function writeSamples(workbook: ExcelJS.Workbook, view: SamplesReportView): void
 }
 
 /**
- * Each rep's doctors and what they objected to (owner, 2026-11-03): by name, rep then doctor, and never
+ * Each rep's customers and what they objected to (owner, 2026-11-03): by name, rep then customer, and never
  * by a count. Counts only, so no percentage, rate, rank or score, and a rep carries no total of his own.
  */
-function writeObjections(workbook: ExcelJS.Workbook, view: ObjectionsByDoctorView): void {
+function writeObjections(workbook: ExcelJS.Workbook, view: ObjectionsByCustomerView): void {
   const sheet = workbook.addWorksheet(SECTION_TITLES.objections);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const period = `${view.period.from} to ${view.period.to}`;
-  const rows = objectionDoctorRows(view);
+  const rows = objectionCustomerRows(view);
   const next = writeHouseTable(sheet, 1, {
     columns: [
       { ...NAME, label: "Rep" },
       column("Territory", { width: 22 }),
-      column("Doctor", { width: 26 }),
+      column("Customer", { width: 26 }),
       column("Speciality", { width: 18 }),
       column("Objection", { width: 26 }),
       counted("AM"),
@@ -1027,12 +1027,12 @@ function writeObjections(workbook: ExcelJS.Workbook, view: ObjectionsByDoctorVie
     ],
     note: [
       rows.length === 0 ? "Nothing objected to in these days." : null,
-      "The objection is the doctor's and never a mark against the rep. Counts only, sorted by name: no percentage, no rate, no rank and no score.",
+      "The objection is the customer's and never a mark against the rep. Counts only, sorted by name: no percentage, no rate, no rank and no score.",
     ]
       .filter((part): part is string => part !== null)
       .join(" "),
     rows: rows.flatMap((row) =>
-      row.objections.map((objection) => [row.repName, row.territories.join(", ") || "—", row.doctorName, row.speciality ?? "—", objection.label, objection.am, objection.pm]),
+      row.objections.map((objection) => [row.repName, row.territories.join(", ") || "—", row.customerName, row.speciality ?? "—", objection.label, objection.am, objection.pm]),
     ),
     title: `${SECTION_TITLES.objections} · ${period}`,
   });
@@ -1040,7 +1040,7 @@ function writeObjections(workbook: ExcelJS.Workbook, view: ObjectionsByDoctorVie
   writeHouseTable(sheet, next + 1, {
     columns: [
       { ...NAME, label: "Rep" },
-      column("Doctor", { width: 26 }),
+      column("Customer", { width: 26 }),
       column("Objection", { width: 26 }),
       column("Day", { width: 13 }),
       column("List", { width: 7 }),
@@ -1050,7 +1050,7 @@ function writeObjections(workbook: ExcelJS.Workbook, view: ObjectionsByDoctorVie
     note: "Every visit behind the counts above, the newest first under each objection.",
     rows: rows.flatMap((row) =>
       row.objections.flatMap((objection) =>
-        objection.visits.map((visit) => [row.repName, row.doctorName, objection.label, visit.visitDate, visit.listType, visit.products.join(", ") || "—", visit.note ?? "—"]),
+        objection.visits.map((visit) => [row.repName, row.customerName, objection.label, visit.visitDate, visit.listType, visit.products.join(", ") || "—", visit.note ?? "—"]),
       ),
     ),
     title: `The visits · ${period}`,

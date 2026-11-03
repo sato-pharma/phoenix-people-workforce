@@ -23,7 +23,7 @@ import { crmUrl, useCrmGet, type CrmResource } from "@/components/phoenix-crm/ap
 import { DailyPlanDaysFilter, DailyPlanSection, dailyPlanDaysSummary, useDailyPlanDays } from "@/components/phoenix-crm/daily-plan-report";
 import { countText, dayLabel, dayLabelWithYear, monthLabel, percentText, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { DayList, DaysToggle, LIST_WORDS, RefreshFailed, ReportList, SectionWaiting, type DayLine } from "@/components/phoenix-crm/report-list";
-import { CapacitySection, HeardSection, ObjectionsByDoctorSection, SamplesSection, StockSection } from "@/components/phoenix-crm/insight-reports";
+import { CapacitySection, HeardSection, ObjectionsByCustomerSection, SamplesSection, StockSection } from "@/components/phoenix-crm/insight-reports";
 import { VisitAskInbox } from "@/components/phoenix-crm/visit-asks";
 import { listText } from "@/components/phoenix-crm/labels";
 import {
@@ -73,7 +73,7 @@ import type {
   CoverageReportView,
   CustomerFrequencyReportView,
   FieldHeardView,
-  ObjectionsByDoctorView,
+  ObjectionsByCustomerView,
   MissingStockView,
   SamplesReportView,
   TrackingSheetReportView,
@@ -1952,7 +1952,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const heard = useCrmGet<FieldHeardView>(sectionUrl("heard"), "report");
   const stock = useCrmGet<MissingStockView>(sectionUrl("stock"), "report");
   const samples = useCrmGet<SamplesReportView>(sectionUrl("samples"), "report");
-  const objections = useCrmGet<ObjectionsByDoctorView>(sectionUrl("objections"), "report");
+  const objections = useCrmGet<ObjectionsByCustomerView>(sectionUrl("objections"), "report");
   // 🔴 EVERY SECTION HAS A KEY HERE. The Refresh button and the busy state read this map, so a
   // section added to `ReportSection` and forgotten here is a TS7053 at build and a crash the
   // moment that section is open. Caught on `frequency` before it shipped.
@@ -2088,7 +2088,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       // The four insight boards of 2026-10-02: the same gate as every board above them, and the server
       // refuses each one to a medical rep as well.
       ...(view.canSeeLocations ? [offer("capacity"), offer("heard"), offer("stock"), offer("samples")] : []),
-      // Objections by doctor (owner, 2026-11-03): its own wider gate, because the CEO and the regional
+      // Objections by customer (owner, 2026-11-03): its own wider gate, because the CEO and the regional
       // managers read it and `canSeeLocations` leaves them out. The server refuses it to a rep as well.
       ...(view.canReadTeamReports ? [offer("objections")] : []),
       ];
@@ -2378,7 +2378,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       ) : activeSection === "samples" ? (
         <SamplesSection idPrefix={idPrefix} resource={samples} />
       ) : activeSection === "objections" ? (
-        <ObjectionsByDoctorSection idPrefix={idPrefix} resource={objections} today={today} />
+        <ObjectionsByCustomerSection idPrefix={idPrefix} resource={objections} today={today} />
       ) : (
         <ManagersSection idPrefix={idPrefix} resource={managers} today={today} />
       )}

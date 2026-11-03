@@ -13,8 +13,8 @@
  *
  * And one the owner added on 3 November 2026:
  *
- *   objections  objections by doctor — each rep's doctors and what they objected to, counts only, for
- *               the managers alone (objections-by-doctor.ts). It reads `phoenix_crm_countable_visits`,
+ *   objections  objections by customer — each rep's customers and what they objected to, counts only, for
+ *               the managers alone (objections-by-customer.ts). It reads `phoenix_crm_countable_visits`,
  *               which leaves out the visits copied from iReports360, where the other boards read the
  *               view that keeps them.
  *
@@ -69,7 +69,7 @@ import {
   type HeardVisit,
 } from "@/lib/phoenix-crm/field-heard";
 import { buildMissingStock, type MissingStockResult, type StockAnswer, type StockChase } from "@/lib/phoenix-crm/missing-stock";
-import { buildObjectionsByDoctor, type ObjectionsByDoctorResult, type ObjectionVisit } from "@/lib/phoenix-crm/objections-by-doctor";
+import { buildObjectionsByCustomer, type ObjectionsByCustomerResult, type ObjectionVisit } from "@/lib/phoenix-crm/objections-by-customer";
 import { resolveReportMonth, type ReportMonth, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
 import { buildSamplesReport, type SamplesReportResult } from "@/lib/phoenix-crm/samples-report";
 import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -606,14 +606,14 @@ export async function loadSamplesReport(viewer: PhoenixCrmViewer, raw: ReportFil
   return { ...result, month, includeTest };
 }
 
-// ── 5. Objections by doctor ─────────────────────────────────────────────────────────────────────
+// ── 5. Objections by customer ─────────────────────────────────────────────────────────────────────
 
-export type ObjectionsByDoctorView = ObjectionsByDoctorResult & { period: ReportPeriod; includeTest: boolean };
+export type ObjectionsByCustomerView = ObjectionsByCustomerResult & { period: ReportPeriod; includeTest: boolean };
 
 const OBJECTION_VISIT_COLUMNS = "seat_id, customer_id, list_type, visit_date, rep_hr_id, manager_hr_id, products, objection, objection_note";
 
 /**
- * The period's visits on which a doctor raised an objection, read as the report reads them. Pure, so
+ * The period's visits on which a customer raised an objection, read as the report reads them. Pure, so
  * the mapping is tested without a database. A visit with no rep is a manager's own, said in his name.
  */
 export function objectionVisitsOf(
@@ -639,7 +639,7 @@ export function objectionVisitsOf(
           : "No rep recorded",
       territoryName: seat ? territoryName(seat) : null,
       customerId,
-      doctorName: customer?.name ?? "Unnamed customer",
+      customerName: customer?.name ?? "Unnamed customer",
       speciality: customer?.speciality ?? null,
       visitDate: String(row.visit_date ?? "").slice(0, 10),
       listType: row.list_type,
@@ -651,16 +651,16 @@ export function objectionVisitsOf(
 }
 
 /**
- * Objections by doctor. The gate comes first and is the managers' one, so a rep and a product or
+ * Objections by customer. The gate comes first and is the managers' one, so a rep and a product or
  * marketing manager are refused before anything is read; a manager's seats are his own team's.
  *
  * 🔴 `phoenix_crm_countable_visits`, not the view with the copied history: a visit copied from
  * iReports360 is the old system's and stays out of this list.
  */
-export async function loadObjectionsByDoctorReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<ObjectionsByDoctorView> {
+export async function loadObjectionsByCustomerReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<ObjectionsByCustomerView> {
   const { seats, includeTest } = insightTerritories(viewer, raw);
   const period = periodOf(viewer, raw);
-  if (seats.length === 0) return { ...buildObjectionsByDoctor([]), includeTest, period };
+  if (seats.length === 0) return { ...buildObjectionsByCustomer([]), includeTest, period };
 
   // Asked for by the objections themselves, so the many visits with none never leave the database.
   const raised = HEARD_OBJECTIONS.map((entry) => entry.key);
@@ -693,7 +693,7 @@ export async function loadObjectionsByDoctorReport(viewer: PhoenixCrmViewer, raw
   const people = await loadPeopleNames(rows.map((row) => textOrNull(row.rep_hr_id) ?? textOrNull(row.manager_hr_id)));
 
   return {
-    ...buildObjectionsByDoctor(objectionVisitsOf(rows, { customers, people, seats: new Map(seats.map((seat) => [seat.seatId, seat])) })),
+    ...buildObjectionsByCustomer(objectionVisitsOf(rows, { customers, people, seats: new Map(seats.map((seat) => [seat.seatId, seat])) })),
     includeTest,
     period,
   };

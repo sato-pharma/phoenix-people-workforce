@@ -428,7 +428,7 @@ export async function runMarketingListCheckTests() {
   assert.match(service, /\.eq\("customer_validated", true\)/);
   assert.match(service, /const showObjections = readsDoctorObjections\(access\.role\)/, "🔴 the objection is withheld by role on the server, not hidden by the page");
   assert.match(service, /latestObjection: showObjections/);
-  assert.doesNotMatch(service, /objections-by-doctor/, "the board reads no rep-scoring path");
+  assert.doesNotMatch(service, /objections-by-customer/, "the board reads no rep-scoring path");
 
   const check = read("src/lib/marketing-requests/crm-list-check.ts");
   assert.match(check, /if \(!canDecideListCheck\(access\.role\)\) throw forbiddenError/, "the answer's role check is before any read");

@@ -1,28 +1,28 @@
 /**
- * Phoenix CRM — objections by doctor: each rep's doctors, and what each doctor objected to, with the
+ * Phoenix CRM — objections by customer: each rep's customers, and what each customer objected to, with the
  * product, the day and the rep's note where the visit carries one. No I/O.
  *
  * Owner's decision, 3 November 2026, partly lifting the rule What the field heard keeps
- * (field-heard.ts, which is unchanged): he wants a per-doctor list for the managers, counts only.
+ * (field-heard.ts, which is unchanged): he wants a per-customer list for the managers, counts only.
  *
- * ## 🔴 WHAT THE DOCTOR SAID — NEVER A MARK AGAINST THE REP
+ * ## 🔴 WHAT THE CUSTOMER SAID — NEVER A MARK AGAINST THE REP
  *
- * The objection is the DOCTOR's (visit-outcome.ts). Naming the rep here says whose doctors they are, so
+ * The objection is the CUSTOMER's (visit-outcome.ts). Naming the rep here says whose customers they are, so
  * a manager can help with them. It never measures him, so:
  *
- *   - only an objection a doctor actually raised gets in. "No objection", a blank and an unknown key are
+ *   - only an objection a customer actually raised gets in. "No objection", a blank and an unknown key are
  *     dropped at the door, through `raisedObjection`, the rule What the field heard reads;
  *   - there is no percentage, no rate, no rank and no score, and no field of this output can carry one;
- *   - a rep carries NO total of his own. Counts sit on an objection, under a doctor, and the only sum
+ *   - a rep carries NO total of his own. Counts sit on an objection, under a customer, and the only sum
  *     above that is the report's whole total;
- *   - every row sorts by NAME — rep, then doctor — and never by a count, so the list can never read as a
+ *   - every row sorts by NAME — rep, then customer — and never by a count, so the list can never read as a
  *     league table;
- *   - tests/phoenix-crm-objections-by-doctor.test.ts refuses an import of this module from Phoenix Ranks,
+ *   - tests/phoenix-crm-objections-by-customer.test.ts refuses an import of this module from Phoenix Ranks,
  *     the KPIs, payroll, incentives, coaching or the integrity board.
  *
- * Reps never read it: the gate is `readsTeamReports`, asked first in `loadObjectionsByDoctorReport`.
+ * Reps never read it: the gate is `readsTeamReports`, asked first in `loadObjectionsByCustomerReport`.
  *
- * A pharmacy call is left out, as on What the field heard: it is not a doctor. AM and PM stay two figures.
+ * A pharmacy call is left out, as on What the field heard: it is not a customer. AM and PM stay two figures.
  */
 
 import { HEARD_OBJECTIONS, raisedObjection, type HeardObjection, type HeardTally } from "@/lib/phoenix-crm/field-heard";
@@ -35,13 +35,13 @@ export type ObjectionVisit = {
   repName: string;
   territoryName: string | null;
   customerId: string;
-  doctorName: string;
+  customerName: string;
   speciality: string | null;
   visitDate: string;
   /** Raw, as the visit saved it: a pharmacy call is dropped here. */
   listType: unknown;
   products: ReadonlyArray<string>;
-  /** Raw, as the visit saved it: only an objection a doctor raised is kept. */
+  /** Raw, as the visit saved it: only an objection a customer raised is kept. */
   objection: unknown;
   objectionNote: string | null;
 };
@@ -54,20 +54,20 @@ export type ObjectionVisitLine = {
   note: string | null;
 };
 
-/** One objection of one doctor: how many times, AM and PM apart, and the visits it was raised on. */
-export type DoctorObjection = HeardTally & {
+/** One objection of one customer: how many times, AM and PM apart, and the visits it was raised on. */
+export type CustomerObjection = HeardTally & {
   key: HeardObjection;
   label: string;
   /** Newest first. */
   visits: ObjectionVisitLine[];
 };
 
-export type ObjectingDoctor = {
+export type ObjectingCustomer = {
   key: string;
-  doctorName: string;
+  customerName: string;
   speciality: string | null;
   /** In the visit form's own order, never by how many. */
-  objections: DoctorObjection[];
+  objections: CustomerObjection[];
 };
 
 export type RepObjections = {
@@ -75,24 +75,24 @@ export type RepObjections = {
   repName: string;
   /** The territories these visits were made on, by name. */
   territories: string[];
-  /** By the doctor's name. A rep has no total of his own: that would be a figure about him. */
-  doctors: ObjectingDoctor[];
+  /** By the customer's name. A rep has no total of his own: that would be a figure about him. */
+  customers: ObjectingCustomer[];
 };
 
-export type ObjectionsByDoctorResult = {
+export type ObjectionsByCustomerResult = {
   /** By the rep's name, never by a count. */
   reps: RepObjections[];
-  totals: { objections: HeardTally; doctors: number; reps: number };
+  totals: { objections: HeardTally; customers: number; reps: number };
 };
 
-/** One row per doctor, in the report's own order: what the screen and the workbook both list. */
-export type ObjectionDoctorRow = {
+/** One row per customer, in the report's own order: what the screen and the workbook both list. */
+export type ObjectionCustomerRow = {
   key: string;
   repName: string;
   territories: string[];
-  doctorName: string;
+  customerName: string;
   speciality: string | null;
-  objections: DoctorObjection[];
+  objections: CustomerObjection[];
 };
 
 function cleanText(value: string | null | undefined): string | null {
@@ -104,12 +104,12 @@ function byName(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
-type BuildingDoctor = { doctorName: string; speciality: string | null; objections: Map<HeardObjection, { am: number; pm: number; visits: ObjectionVisitLine[] }> };
-type BuildingRep = { repName: string; territories: Set<string>; doctors: Map<string, BuildingDoctor> };
+type BuildingCustomer = { customerName: string; speciality: string | null; objections: Map<HeardObjection, { am: number; pm: number; visits: ObjectionVisitLine[] }> };
+type BuildingRep = { repName: string; territories: Set<string>; customers: Map<string, BuildingCustomer> };
 
-export function buildObjectionsByDoctor(visits: ReadonlyArray<ObjectionVisit>): ObjectionsByDoctorResult {
+export function buildObjectionsByCustomer(visits: ReadonlyArray<ObjectionVisit>): ObjectionsByCustomerResult {
   const reps = new Map<string, BuildingRep>();
-  const doctorsSeen = new Set<string>();
+  const customersSeen = new Set<string>();
   const totals: HeardTally = { am: 0, pm: 0 };
 
   for (const visit of visits) {
@@ -119,23 +119,23 @@ export function buildObjectionsByDoctor(visits: ReadonlyArray<ObjectionVisit>): 
 
     let rep = reps.get(visit.repKey);
     if (!rep) {
-      rep = { repName: visit.repName, territories: new Set(), doctors: new Map() };
+      rep = { repName: visit.repName, territories: new Set(), customers: new Map() };
       reps.set(visit.repKey, rep);
     }
     const territory = cleanText(visit.territoryName);
     if (territory) rep.territories.add(territory);
 
-    let doctor = rep.doctors.get(visit.customerId);
-    if (!doctor) {
-      doctor = { doctorName: visit.doctorName, speciality: cleanText(visit.speciality), objections: new Map() };
-      rep.doctors.set(visit.customerId, doctor);
+    let customer = rep.customers.get(visit.customerId);
+    if (!customer) {
+      customer = { customerName: visit.customerName, speciality: cleanText(visit.speciality), objections: new Map() };
+      rep.customers.set(visit.customerId, customer);
     }
-    doctorsSeen.add(visit.customerId);
+    customersSeen.add(visit.customerId);
 
-    let entry = doctor.objections.get(objection);
+    let entry = customer.objections.get(objection);
     if (!entry) {
       entry = { am: 0, pm: 0, visits: [] };
-      doctor.objections.set(objection, entry);
+      customer.objections.set(objection, entry);
     }
     const side = listType === "AM" ? "am" : "pm";
     entry[side] += 1;
@@ -154,13 +154,13 @@ export function buildObjectionsByDoctor(visits: ReadonlyArray<ObjectionVisit>): 
         key,
         repName: rep.repName,
         territories: [...rep.territories].sort(byName),
-        doctors: [...rep.doctors]
-          .map(([doctorKey, doctor]) => ({
-            key: doctorKey,
-            doctorName: doctor.doctorName,
-            speciality: doctor.speciality,
+        customers: [...rep.customers]
+          .map(([customerKey, customer]) => ({
+            key: customerKey,
+            customerName: customer.customerName,
+            speciality: customer.speciality,
             objections: HEARD_OBJECTIONS.flatMap(({ key: objectionKey, label }) => {
-              const entry = doctor.objections.get(objectionKey);
+              const entry = customer.objections.get(objectionKey);
               if (!entry) return [];
               return [
                 {
@@ -173,23 +173,23 @@ export function buildObjectionsByDoctor(visits: ReadonlyArray<ObjectionVisit>): 
               ];
             }),
           }))
-          .sort((left, right) => byName(left.doctorName, right.doctorName) || byName(left.key, right.key)),
+          .sort((left, right) => byName(left.customerName, right.customerName) || byName(left.key, right.key)),
       }))
       .sort((left, right) => byName(left.repName, right.repName) || byName(left.key, right.key)),
-    totals: { objections: totals, doctors: doctorsSeen.size, reps: reps.size },
+    totals: { objections: totals, customers: customersSeen.size, reps: reps.size },
   };
 }
 
-/** The grouped report as one row per doctor, keeping its order: rep by name, then doctor by name. */
-export function objectionDoctorRows(result: Pick<ObjectionsByDoctorResult, "reps">): ObjectionDoctorRow[] {
+/** The grouped report as one row per customer, keeping its order: rep by name, then customer by name. */
+export function objectionCustomerRows(result: Pick<ObjectionsByCustomerResult, "reps">): ObjectionCustomerRow[] {
   return result.reps.flatMap((rep) =>
-    rep.doctors.map((doctor) => ({
-      key: `${rep.key}|${doctor.key}`,
+    rep.customers.map((customer) => ({
+      key: `${rep.key}|${customer.key}`,
       repName: rep.repName,
       territories: rep.territories,
-      doctorName: doctor.doctorName,
-      speciality: doctor.speciality,
-      objections: doctor.objections,
+      customerName: customer.customerName,
+      speciality: customer.speciality,
+      objections: customer.objections,
     })),
   );
 }

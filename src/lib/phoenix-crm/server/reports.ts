@@ -378,7 +378,7 @@ export type ReportScopeView = {
    */
   canSeeLocations: boolean;
   /**
-   * `readsTeamReports`: who is offered Objections by doctor. Its own flag, because `canSeeLocations` is
+   * `readsTeamReports`: who is offered Objections by customer. Its own flag, because `canSeeLocations` is
    * narrower and leaves out the CEO and the regional managers, who read that report too (owner, 2026-11-03).
    */
   canReadTeamReports: boolean;

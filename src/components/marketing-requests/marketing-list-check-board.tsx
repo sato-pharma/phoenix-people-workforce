@@ -176,7 +176,7 @@ export function MarketingListCheckBoard({ board }: { board: ListCheckBoard }) {
 
   return (
     <div className="space-y-6">
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {board.cards.map((card) => (
           <button
             aria-pressed={filter === card.state}
@@ -185,12 +185,12 @@ export function MarketingListCheckBoard({ board }: { board: ListCheckBoard }) {
             onClick={() => setFilter(filter === card.state ? null : card.state)}
             type="button"
           >
-            <dt className="text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{card.label}</dt>
-            <dd className="mt-1 text-phx-lg font-bold text-slate-900">{card.customers.toLocaleString("en-US")}</dd>
-            <p className="mt-0.5 text-phx-xs text-slate-500">{money(card.approvedCost)} approved</p>
+            <span className="block text-phx-xs font-bold uppercase tracking-[0.1em] text-slate-500">{card.label}</span>
+            <span className="mt-1 block text-phx-lg font-bold text-slate-900">{card.customers.toLocaleString("en-US")}</span>
+            <span className="mt-0.5 block text-phx-xs text-slate-500">{money(card.approvedCost)} approved</span>
           </button>
         ))}
-      </dl>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         {/* `download` is load-bearing: the target streams a binary, which a <Link> would hand to the client router. */}
@@ -246,7 +246,7 @@ export function MarketingListCheckBoard({ board }: { board: ListCheckBoard }) {
           <p className="text-phx-sm font-bold uppercase tracking-[0.12em] text-white">Every customer{filter ? `, ${shown[0]?.stateLabel ?? "none here"}` : ""}</p>
           <p className="mt-0.5 text-phx-xs text-slate-300">Read {cairoDateTime(board.generatedAtIso)} Cairo</p>
         </header>
-        <div className="hidden lg:block">
+        <div className="hidden xl:block">
           <table className="w-full table-fixed text-phx-xs">
             <colgroup>
               <col className="w-[15%]" />
@@ -282,7 +282,7 @@ export function MarketingListCheckBoard({ board }: { board: ListCheckBoard }) {
                   </td>
                   <td className="break-words px-2 py-2 text-slate-700">{row.marketingAreaName ?? "Not read"}</td>
                   <td className="break-words px-2 py-2 text-slate-700">{row.listAreaName ?? "None"}</td>
-                  <td className="px-2 py-2">
+                  <td className="break-words px-2 py-2">
                     <Metres row={row} />
                   </td>
                   <td className="break-words px-2 py-2 text-slate-700" dir="auto">
@@ -301,7 +301,7 @@ export function MarketingListCheckBoard({ board }: { board: ListCheckBoard }) {
             </tbody>
           </table>
         </div>
-        <ul className="lg:hidden">
+        <ul className="xl:hidden">
           {shown.map((row) => (
             <li className="space-y-2 border-t border-slate-100 p-3 first:border-t-0" key={row.checkId}>
               <div className="flex flex-wrap items-center gap-2">
@@ -332,7 +332,7 @@ export function MarketingListCheckBoard({ board }: { board: ListCheckBoard }) {
         </ul>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 2xl:grid-cols-3">
         <Breakdown rows={board.byRequester} title="By requester" />
         <Breakdown rows={board.byLine} title="By line" />
         <Breakdown rows={board.byArea} title="By area" />

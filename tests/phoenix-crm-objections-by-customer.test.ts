@@ -7,21 +7,21 @@ import ExcelJS from "exceljs";
 import { stripComments } from "./support/comment-strip.ts";
 
 import { HEARD_OBJECTIONS } from "../src/lib/phoenix-crm/field-heard.ts";
-import { buildObjectionsByDoctor, objectionDoctorRows, type ObjectionVisit } from "../src/lib/phoenix-crm/objections-by-doctor.ts";
+import { buildObjectionsByCustomer, objectionCustomerRows, type ObjectionVisit } from "../src/lib/phoenix-crm/objections-by-customer.ts";
 import { PHARMACY_LIST_TYPE } from "../src/lib/phoenix-crm/pharmacy-call-rules.ts";
 import { REPORT_GUIDE, SECTION_TITLES } from "../src/lib/phoenix-crm/report-guide.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import { PHOENIX_CRM_DEFAULT_SETTINGS } from "../src/lib/phoenix-crm/types.ts";
 import { readsTeamReports, type PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
-import { insightTerritories, loadObjectionsByDoctorReport, objectionVisitsOf, type ObjectionsByDoctorView } from "../src/lib/phoenix-crm/server/insight-reports.ts";
+import { insightTerritories, loadObjectionsByCustomerReport, objectionVisitsOf, type ObjectionsByCustomerView } from "../src/lib/phoenix-crm/server/insight-reports.ts";
 import { buildPhoenixCrmReportsWorkbook, packSections, type ReportsPackInput } from "../src/lib/phoenix-crm/server/reports-workbook.ts";
 
 /**
- * Objections by doctor (owner, 3 November 2026): each rep's doctors and what they objected to, for the
+ * Objections by customer (owner, 3 November 2026): each rep's customers and what they objected to, for the
  * managers alone. Counts only, by name and never by a count, and it never scores a rep.
  */
 
-const THIS_MODULE = "objections-by-doctor";
+const THIS_MODULE = "objections-by-customer";
 
 function visit(patch: Partial<ObjectionVisit> = {}): ObjectionVisit {
   return {
@@ -29,7 +29,7 @@ function visit(patch: Partial<ObjectionVisit> = {}): ObjectionVisit {
     repName: "Mona Adel",
     territoryName: "Giza 1",
     customerId: "C-1",
-    doctorName: "Dr Salma",
+    customerName: "Dr Salma",
     speciality: "Pediatrics",
     visitDate: "2026-10-05",
     listType: "PM",
@@ -44,30 +44,30 @@ function read(path: string): string {
   return readFileSync(path, "utf8");
 }
 
-// ── 1 · Grouping: rep → doctor → objection ────────────────────────────────────────────────────────
+// ── 1 · Grouping: rep → customer → objection ────────────────────────────────────────────────────────
 
 function runGroupingTests(): void {
-  const result = buildObjectionsByDoctor([
+  const result = buildObjectionsByCustomer([
     visit({ visitDate: "2026-10-01", products: ["Ivyronc", " Ivyronc ", "", "Lacto Advanced"], objectionNote: "  Too   dear for his patients " }),
     visit({ visitDate: "2026-10-09", listType: "AM" }),
     visit({ visitDate: "2026-10-03", objection: "safety", territoryName: "Giza 2" }),
-    visit({ customerId: "C-2", doctorName: "Dr Amir", speciality: null }),
+    visit({ customerId: "C-2", customerName: "Dr Amir", speciality: null }),
     visit({ repKey: "R-2", repName: "Karim Nabil", territoryName: null, customerId: "C-1" }),
   ]);
 
   assert.deepEqual(result.reps.map((rep) => rep.repName), ["Karim Nabil", "Mona Adel"], "one entry per rep");
   const mona = result.reps[1]!;
   assert.deepEqual(mona.territories, ["Giza 1", "Giza 2"], "a rep's territories, by name");
-  assert.deepEqual(mona.doctors.map((doctor) => doctor.doctorName), ["Dr Amir", "Dr Salma"], "the doctors sit under the rep");
+  assert.deepEqual(mona.customers.map((customer) => customer.customerName), ["Dr Amir", "Dr Salma"], "the customers sit under the rep");
 
-  const salma = mona.doctors[1]!;
+  const salma = mona.customers[1]!;
   assert.equal(salma.speciality, "Pediatrics");
   assert.deepEqual(
     salma.objections.map((entry) => [entry.key, entry.label, entry.am, entry.pm]),
     HEARD_OBJECTIONS.filter((entry) => entry.key === "price" || entry.key === "safety").map((entry) =>
       entry.key === "price" ? [entry.key, entry.label, 1, 1] : [entry.key, entry.label, 0, 1],
     ),
-    "the objections sit under the doctor, in the form's own order, with AM and PM apart",
+    "the objections sit under the customer, in the form's own order, with AM and PM apart",
   );
 
   const price = salma.objections.find((entry) => entry.key === "price")!;
@@ -84,12 +84,12 @@ function runGroupingTests(): void {
   assert.equal(price.visits[0]!.note, null, "a visit with no note says so as null, never as an empty string");
   assert.deepEqual(price.visits[0]!.listType, "AM");
 
-  // The same doctor under two reps is one doctor in the total and one row under each rep.
-  assert.deepEqual(result.totals, { objections: { am: 1, pm: 4 }, doctors: 2, reps: 2 }, "the report's whole total");
+  // The same customer under two reps is one customer in the total and one row under each rep.
+  assert.deepEqual(result.totals, { objections: { am: 1, pm: 4 }, customers: 2, reps: 2 }, "the report's whole total");
 
-  const rows = objectionDoctorRows(result);
+  const rows = objectionCustomerRows(result);
   assert.deepEqual(
-    rows.map((row) => [row.repName, row.doctorName]),
+    rows.map((row) => [row.repName, row.customerName]),
     [
       ["Karim Nabil", "Dr Salma"],
       ["Mona Adel", "Dr Amir"],
@@ -97,13 +97,13 @@ function runGroupingTests(): void {
     ],
     "the flat rows keep the report's own order",
   );
-  assert.equal(new Set(rows.map((row) => row.key)).size, rows.length, "the same doctor under two reps is two keys");
+  assert.equal(new Set(rows.map((row) => row.key)).size, rows.length, "the same customer under two reps is two keys");
 }
 
 // ── 2 · No "none", no blank, no pharmacy ──────────────────────────────────────────────────────────
 
 function runDroppedTests(): void {
-  const result = buildObjectionsByDoctor([
+  const result = buildObjectionsByCustomer([
     visit({ customerId: "C-NONE", objection: "none" }),
     visit({ customerId: "C-NULL", objection: null }),
     visit({ customerId: "C-EMPTY", objection: "" }),
@@ -112,16 +112,16 @@ function runDroppedTests(): void {
     visit({ customerId: "C-PHARMACY", listType: PHARMACY_LIST_TYPE }),
   ]);
   assert.deepEqual(result.reps, [], "none, null, a blank, an unknown key and a pharmacy call never appear");
-  assert.deepEqual(result.totals, { objections: { am: 0, pm: 0 }, doctors: 0, reps: 0 }, "and count nowhere");
+  assert.deepEqual(result.totals, { objections: { am: 0, pm: 0 }, customers: 0, reps: 0 }, "and count nowhere");
 
   // Beside a real one they vanish just the same, and the rep is not listed for a "none" alone.
-  const mixed = buildObjectionsByDoctor([
+  const mixed = buildObjectionsByCustomer([
     visit({ objection: "competitor" }),
     visit({ objection: "none" }),
     visit({ repKey: "R-9", repName: "Only None", customerId: "C-9", objection: "none" }),
   ]);
-  assert.deepEqual(mixed.reps.map((rep) => rep.repName), ["Mona Adel"], "a rep whose doctors raised nothing is not on the list");
-  assert.deepEqual(mixed.reps[0]!.doctors[0]!.objections.map((entry) => entry.key), ["competitor"]);
+  assert.deepEqual(mixed.reps.map((rep) => rep.repName), ["Mona Adel"], "a rep whose customers raised nothing is not on the list");
+  assert.deepEqual(mixed.reps[0]!.customers[0]!.objections.map((entry) => entry.key), ["competitor"]);
   assert.ok(
     !HEARD_OBJECTIONS.some((entry) => (entry.key as string) === "none"),
     "the form's list this report walks does not hold none",
@@ -136,8 +136,8 @@ const ALLOWED_KEYS = new Set([
   "key",
   "repName",
   "territories",
-  "doctors",
-  "doctorName",
+  "customers",
+  "customerName",
   "speciality",
   "objections",
   "label",
@@ -164,54 +164,54 @@ function allKeys(value: unknown, into = new Set<string>()): Set<string> {
 }
 
 function runAllowListTests(): void {
-  const result = buildObjectionsByDoctor([visit(), visit({ repKey: "R-2", repName: "Karim Nabil", customerId: "C-2", objection: "safety", listType: "AM", objectionNote: "Asked about side effects" })]);
+  const result = buildObjectionsByCustomer([visit(), visit({ repKey: "R-2", repName: "Karim Nabil", customerId: "C-2", objection: "safety", listType: "AM", objectionNote: "Asked about side effects" })]);
   const keys = allKeys(result);
   assert.deepEqual([...keys].filter((key) => !ALLOWED_KEYS.has(key)), [], "every field of the output is on the allow-list");
   assert.deepEqual([...keys].filter((key) => SCORE_WORD.test(key)), [], "no field is a rate, a percentage, a rank or a score");
-  assert.deepEqual(Object.keys(result.reps[0]!).sort(), ["doctors", "key", "repName", "territories"], "a rep carries no total of his own");
-  assert.deepEqual([...allKeys(objectionDoctorRows(result))].filter((key) => SCORE_WORD.test(key)), [], "nor do the flat rows");
+  assert.deepEqual(Object.keys(result.reps[0]!).sort(), ["customers", "key", "repName", "territories"], "a rep carries no total of his own");
+  assert.deepEqual([...allKeys(objectionCustomerRows(result))].filter((key) => SCORE_WORD.test(key)), [], "nor do the flat rows");
 
   // The source too: no division, nothing rounded, no percentage word in the code that builds it.
-  const source = stripComments(read("src/lib/phoenix-crm/objections-by-doctor.ts"));
+  const source = stripComments(read("src/lib/phoenix-crm/objections-by-customer.ts"));
   assert.doesNotMatch(source, /Math\.(round|floor|ceil)|toFixed|%`|\b(percent|rate|rank|score)\b/i, "the module computes no rate");
   assert.doesNotMatch(source, /\.am\s*\+\s*[\w.?]*\.pm\b|\.pm\s*\+\s*[\w.?]*\.am\b/, "AM and PM are never added");
 
   const screen = stripComments(read("src/components/phoenix-crm/insight-reports.tsx"));
-  const drawn = screen.slice(screen.indexOf("function doctorObjectionLines"));
-  assert.ok(drawn.length > 0 && drawn.includes("ObjectionsByDoctorSection"), "the section is where this test looks");
+  const drawn = screen.slice(screen.indexOf("function customerObjectionLines"));
+  assert.ok(drawn.length > 0 && drawn.includes("ObjectionsByCustomerSection"), "the section is where this test looks");
   assert.doesNotMatch(drawn, /percentText|rows\s*\.\s*sort|\[\.\.\.rows\]|No objection/, "the section draws no percentage, never re-sorts the rows and never says no objection");
 }
 
 // ── 4 · Sorted by name, never by a count ──────────────────────────────────────────────────────────
 
 function runSortTests(): void {
-  // The rep and the doctor with the most objections come LAST by name: a count-sort would flip them.
-  const busy = Array.from({ length: 5 }, (_, index) => visit({ repKey: "R-Z", repName: "Ziad Omar", customerId: "C-Z", doctorName: "Dr Zein", visitDate: `2026-10-0${index + 1}` }));
-  const result = buildObjectionsByDoctor([
+  // The rep and the customer with the most objections come LAST by name: a count-sort would flip them.
+  const busy = Array.from({ length: 5 }, (_, index) => visit({ repKey: "R-Z", repName: "Ziad Omar", customerId: "C-Z", customerName: "Dr Zein", visitDate: `2026-10-0${index + 1}` }));
+  const result = buildObjectionsByCustomer([
     ...busy,
-    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-Y", doctorName: "Dr Yara" }),
-    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-Y", doctorName: "Dr Yara", objection: "safety" }),
-    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-Y", doctorName: "Dr Yara", objection: "efficacy" }),
-    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-B", doctorName: "Dr Bassem" }),
+    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-Y", customerName: "Dr Yara" }),
+    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-Y", customerName: "Dr Yara", objection: "safety" }),
+    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-Y", customerName: "Dr Yara", objection: "efficacy" }),
+    visit({ repKey: "R-A", repName: "Amal Fathy", customerId: "C-B", customerName: "Dr Bassem" }),
   ]);
   assert.deepEqual(result.reps.map((rep) => rep.repName), ["Amal Fathy", "Ziad Omar"], "reps by name: five objections do not float a rep up");
-  assert.deepEqual(result.reps[0]!.doctors.map((doctor) => doctor.doctorName), ["Dr Bassem", "Dr Yara"], "doctors by name: three objections do not float a doctor up");
+  assert.deepEqual(result.reps[0]!.customers.map((customer) => customer.customerName), ["Dr Bassem", "Dr Yara"], "customers by name: three objections do not float a customer up");
 
   // The arrival order changes nothing, and two people of one name stay two rows in a steady order.
-  const shuffled = buildObjectionsByDoctor([
+  const shuffled = buildObjectionsByCustomer([
     visit({ repKey: "R-B", repName: "Same Name", customerId: "C-2" }),
     visit({ repKey: "R-A", repName: "Same Name", customerId: "C-1" }),
   ]);
   assert.deepEqual(shuffled.reps.map((rep) => rep.key), ["R-A", "R-B"], "two reps of one name are two rows, in a steady order");
 
-  // The form's own order on a doctor, whichever objection is the most frequent.
-  const order = buildObjectionsByDoctor([
+  // The form's own order on a customer, whichever objection is the most frequent.
+  const order = buildObjectionsByCustomer([
     ...HEARD_OBJECTIONS.slice().reverse().flatMap((entry, index) => Array.from({ length: index + 1 }, () => visit({ objection: entry.key }))),
   ]);
   assert.deepEqual(
-    order.reps[0]!.doctors[0]!.objections.map((entry) => entry.key),
+    order.reps[0]!.customers[0]!.objections.map((entry) => entry.key),
     HEARD_OBJECTIONS.map((entry) => entry.key),
-    "a doctor's objections in the form's own order, never by how many",
+    "a customer's objections in the form's own order, never by how many",
   );
 }
 
@@ -237,12 +237,12 @@ function runReadMappingTests(): void {
   );
   assert.equal(own!.repName, nameOfPerson(own!.repKey, named.people), "the rep by his name");
   assert.equal(own!.visitDate, "2026-10-05", "the day alone");
-  assert.equal(own!.doctorName, "Dr Salma");
+  assert.equal(own!.customerName, "Dr Salma");
   assert.equal(own!.speciality, "Pediatrics");
   assert.ok(own!.territoryName, "the territory by its name");
   assert.match(managers!.repName, /Hany Saad \(own visits\)/, "a manager's own visit is said in his name");
   assert.deepEqual(managers!.products, [], "a visit with no products list is an empty list");
-  assert.equal(nameless!.doctorName, "Unnamed customer", "a customer who cannot be read is never a raw id");
+  assert.equal(nameless!.customerName, "Unnamed customer", "a customer who cannot be read is never a raw id");
   assert.notEqual(nameless!.repName, "X-1", "and a person who cannot be read is never printed as an HR id");
   assert.equal(nameless!.territoryName, null);
 }
@@ -318,7 +318,7 @@ const MANAGERS_ONLY = /district managers, national sales managers, SFE and the S
 
 async function refused(viewer: PhoenixCrmViewer, filters: Record<string, unknown>, message: RegExp, label: string): Promise<void> {
   await assert.rejects(
-    () => loadObjectionsByDoctorReport(viewer, filters),
+    () => loadObjectionsByCustomerReport(viewer, filters),
     (error: unknown) => {
       const failure = error as { status?: number; message?: string };
       return failure.status === 403 && message.test(String(failure.message));
@@ -339,7 +339,7 @@ async function runGateTests(): Promise<void> {
   ] as const) {
     const viewer = viewerFor(hrId, role);
     assert.equal(readsTeamReports(viewer), false, `${role} is not a reader`);
-    await refused(viewer, {}, MANAGERS_ONLY, `${role} is refused Objections by doctor`);
+    await refused(viewer, {}, MANAGERS_ONLY, `${role} is refused Objections by customer`);
   }
   await refused(viewerFor("R-1", "Medical Rep"), { seatId: "SEAT-PED-REP-1" }, MANAGERS_ONLY, "a rep is refused even for his own territory");
 
@@ -363,7 +363,7 @@ async function runGateTests(): Promise<void> {
 
   // The gate is the loader's first line, and the read names the view that leaves the copied history out.
   const server = stripComments(read("src/lib/phoenix-crm/server/insight-reports.ts"));
-  const body = server.slice(server.indexOf("export async function loadObjectionsByDoctorReport"));
+  const body = server.slice(server.indexOf("export async function loadObjectionsByCustomerReport"));
   const firstLine = body.split("\n")[1]!.trim();
   assert.equal(firstLine, "const { seats, includeTest } = insightTerritories(viewer, raw);", "the gate comes before anything else");
   const read_ = body.slice(0, body.indexOf("phoenix_crm_customers"));
@@ -374,14 +374,14 @@ async function runGateTests(): Promise<void> {
 
 // ── 7 · The door: the tab, the route, the workbook ────────────────────────────────────────────────
 
-const VIEW: ObjectionsByDoctorView = {
-  ...buildObjectionsByDoctor([
+const VIEW: ObjectionsByCustomerView = {
+  ...buildObjectionsByCustomer([
     visit({ objectionNote: "Too dear", products: ["Ivyronc", "Lacto Advanced"] }),
     visit({ visitDate: "2026-10-06", listType: "AM" }),
-    visit({ repKey: "R-2", repName: "Karim Nabil", customerId: "C-2", doctorName: "Dr Amir", objection: "safety" }),
+    visit({ repKey: "R-2", repName: "Karim Nabil", customerId: "C-2", customerName: "Dr Amir", objection: "safety" }),
   ]),
   includeTest: false,
-  period: { from: "2026-10-01", to: "2026-10-07" } as ObjectionsByDoctorView["period"],
+  period: { from: "2026-10-01", to: "2026-10-07" } as ObjectionsByCustomerView["period"],
 };
 
 function workbookInput(patch: Partial<ReportsPackInput>): ReportsPackInput {
@@ -428,7 +428,7 @@ async function sheetRows(input: ReportsPackInput, title: string): Promise<string
 
 async function runDoorTests(): Promise<void> {
   // The guide offers it, in the family of What the field heard.
-  assert.equal(SECTION_TITLES.objections, "Objections by doctor");
+  assert.equal(SECTION_TITLES.objections, "Objections by customer");
   assert.ok(SECTION_TITLES.objections.length <= 31, "a sheet name Excel accepts");
   assert.equal(REPORT_GUIDE.objections.family, "heard");
 
@@ -441,9 +441,9 @@ async function runDoorTests(): Promise<void> {
 
   // Both routes go through the gated loader; the export asks only for the managers.
   const route = stripComments(read("app/api/phoenix-crm/reports/route.ts"));
-  assert.ok(route.includes('section === "objections") report = await loadObjectionsByDoctorReport(viewer, filters)'), "the route serves it through the loader");
+  assert.ok(route.includes('section === "objections") report = await loadObjectionsByCustomerReport(viewer, filters)'), "the route serves it through the loader");
   const exportRoute = stripComments(read("app/api/phoenix-crm/reports/export/route.ts"));
-  assert.ok(exportRoute.includes("managerSections ? loadObjectionsByDoctorReport(viewer, filters) : Promise.resolve(null)"), "the export asks for it only for a manager");
+  assert.ok(exportRoute.includes("managerSections ? loadObjectionsByCustomerReport(viewer, filters) : Promise.resolve(null)"), "the export asks for it only for a manager");
 
   // The workbook: no sheet for anyone else, and for a manager a sheet by name holding only counts.
   assert.ok(!packSections(workbookInput({})).includes(SECTION_TITLES.objections), "no view, no sheet");
@@ -452,7 +452,7 @@ async function runDoorTests(): Promise<void> {
   const text = rows.map((row) => row.join(" | "));
   const karim = text.findIndex((line) => line.startsWith("Karim Nabil"));
   const mona = text.findIndex((line) => line.startsWith("Mona Adel"));
-  assert.ok(karim >= 0 && mona > karim, "the counts run by the rep's name, though Mona's doctor objected more");
+  assert.ok(karim >= 0 && mona > karim, "the counts run by the rep's name, though Mona's customer objected more");
   assert.ok(text.some((line) => line.includes("Too dear")), "the rep's note reaches the sheet");
   assert.ok(text.some((line) => line.includes("Ivyronc, Lacto Advanced")), "the products reach the sheet");
   const headerCells = rows.filter((row) => row[0] === "Rep").flat();
@@ -521,7 +521,7 @@ const MAY_IMPORT = new Set([
   "src/lib/phoenix-crm/server/insight-reports.ts",
   "src/lib/phoenix-crm/server/reports-workbook.ts",
   "src/components/phoenix-crm/insight-reports.tsx",
-  "tests/phoenix-crm-objections-by-doctor.test.ts",
+  "tests/phoenix-crm-objections-by-customer.test.ts",
 ]);
 
 const IMPORTS_THIS = new RegExp(`(from\\s+|import\\s*\\(\\s*|require\\s*\\(\\s*|import\\s+)["'][^"']*${THIS_MODULE}(\\.ts)?["']`);
@@ -547,7 +547,7 @@ function runImportBanTests(): void {
   assert.ok(importers.includes("src/lib/phoenix-crm/server/insight-reports.ts"), "the scan found the one real importer, so it is looking at real files");
 }
 
-export async function runPhoenixCrmObjectionsByDoctorTests(): Promise<void> {
+export async function runPhoenixCrmObjectionsByCustomerTests(): Promise<void> {
   runGroupingTests();
   runDroppedTests();
   runAllowListTests();

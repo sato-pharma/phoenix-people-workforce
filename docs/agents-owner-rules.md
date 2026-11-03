@@ -4896,15 +4896,15 @@ holds the why.
 - **Counts only.** No report anywhere shows a "no objection" figure or a rate: that would be an honesty
   figure, and golden rule #1 keeps those out of every screen but the integrity board. What the field heard
   itself is unchanged: by product, speciality and area, with no row per rep.
-- **One separate list names the rep: Objections by doctor (owner, 3 November 2026).** He partly lifted the
+- **One separate list names the rep: Objections by customer, his "per-doctor list" under the 23 September wording rule (owner, 3 November 2026).** He partly lifted the
   no-row-per-rep rule for a per-doctor list for managers: each rep's doctors and what they objected to,
   with the product, the day and the rep's note. Counts only: no percentage, rate, rank or score, sorted by
   name and never by a count, with no "no objection" row and no blank. Readers are `readsTeamReports` alone
   (Super Admin, SFE Manager, CEO, a manager on his own team); reps and the product audience are refused.
-  It never scores a rep: `tests/phoenix-crm-objections-by-doctor.test.ts` refuses an import of it from
+  It never scores a rep: `tests/phoenix-crm-objections-by-customer.test.ts` refuses an import of it from
   ranks, KPIs, payroll, incentives, coaching and the integrity board. It reads
   `phoenix_crm_countable_visits`, so copied iReports360 history stays out; What the field heard reads the
-  view that keeps that history. Module: `src/lib/phoenix-crm/objections-by-doctor.ts`.
+  view that keeps that history. Module: `src/lib/phoenix-crm/objections-by-customer.ts`.
 
 ### The rep's visit asks
 

@@ -963,7 +963,7 @@ import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audi
 import { runMarketingFinanceAgeingTests } from "./marketing-finance-ageing.test.ts";
 import { runMarketingListCheckTests } from "./marketing-list-check.test.ts";
 import { runMarketingManagerScorecardTests } from "./marketing-manager-scorecard.test.ts";
-import { runPhoenixCrmObjectionsByDoctorTests } from "./phoenix-crm-objections-by-doctor.test.ts";
+import { runPhoenixCrmObjectionsByCustomerTests } from "./phoenix-crm-objections-by-customer.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
@@ -8640,8 +8640,8 @@ await runTest(
   runMarketingListCheckTests,
 );
 await runTest(
-  "phoenix crm objections by doctor (no none, no rate, no rank, refused roles, the import ban)",
-  runPhoenixCrmObjectionsByDoctorTests,
+  "phoenix crm objections by customer (no none, no rate, no rank, refused roles, the import ban)",
+  runPhoenixCrmObjectionsByCustomerTests,
 );
 await runTest(
   "marketing customer area ownership (a customer belongs to a territory, so the rep hired into a resigned rep's patch inherits it with nothing re-stamped; same area other line sees it too; another area does not)",

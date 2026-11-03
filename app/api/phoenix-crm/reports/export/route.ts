@@ -20,7 +20,7 @@ import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadDailyPlanReport } from "@/lib/phoenix-crm/server/daily-plan-report";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
-import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadObjectionsByDoctorReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
+import { loadCapacityBoard, loadFieldHeardReport, loadMissingStockReport, loadObjectionsByCustomerReport, loadSamplesReport } from "@/lib/phoenix-crm/server/insight-reports";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { buildPhoenixCrmReportsWorkbook, type ReportsPackInput } from "@/lib/phoenix-crm/server/reports-workbook";
 import { loadTeamCalendar } from "@/lib/phoenix-crm/server/team-calendar";
@@ -226,8 +226,8 @@ export async function GET(request: Request) {
       managerSections ? loadFieldHeardReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadMissingStockReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadSamplesReport(viewer, filters) : Promise.resolve(null),
-      // Objections by doctor (owner, 2026-11-03): behind the same predicate its service refuses with.
-      managerSections ? loadObjectionsByDoctorReport(viewer, filters) : Promise.resolve(null),
+      // Objections by customer (owner, 2026-11-03): behind the same predicate its service refuses with.
+      managerSections ? loadObjectionsByCustomerReport(viewer, filters) : Promise.resolve(null),
     ]);
     const dailyPlan = daily?.territory ? daily : null;
 
