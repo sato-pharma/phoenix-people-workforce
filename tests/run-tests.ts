@@ -2634,6 +2634,8 @@ import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
 import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
 import { runOutstationJourneyStopRehearsalTests } from "./outstation-journey-stop-rehearsal.test.ts";
+import { runOutstationAdminMissedStopTests } from "./outstation-admin-missed-stop.test.ts";
+import { runStagingTestSignInTests } from "./staging-test-sign-in.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -10240,6 +10242,16 @@ await runTest(
 await runTest(
   "outstation journey-stop rehearsal (owner 2026-11-03): a test account rehearses a stop end to end — measured and priced through the real stop's one measurement and one pricing, refused to anyone else, and nothing is saved",
   runOutstationJourneyStopRehearsalTests,
+);
+
+await runTest(
+  "outstation admin missed stop (owner 2026-11-03): a system administrator adds a stop the employee missed — guarded before anything moves, measured, priced and written through the employee's own path, marked as his with the reason, and offered only on an undecided car trip",
+  runOutstationAdminMissedStopTests,
+);
+
+await runTest(
+  "staging test sign-in (owner 2026-11-03): a TEST account signs in on staging with the owner's key — APP_ENV=staging, a 32+ character key and a non-production database, each refusing on its own; a real account never, and only after its own password failed",
+  runStagingTestSignInTests,
 );
 
 await runTest(

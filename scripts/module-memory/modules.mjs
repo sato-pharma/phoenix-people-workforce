@@ -1256,9 +1256,13 @@ export const MODULES = [
   {
     id: "platform-sessions",
     title: "Platform — the login check, the session copy, the heartbeat and the open tab's pulse",
-    scope: "How a signed-in person stays signed in and what it costs: the phx_auth_session_bundle read and the one live read that requests arriving together share, the ten-minute outage copy, the session heartbeat and its outage answer, the session pulse an open tab sends, and the audit rows a sign-in and a rejected session leave.",
+    scope: "How a signed-in person stays signed in and what it costs: the phx_auth_session_bundle read and the one live read that requests arriving together share, the ten-minute outage copy, the session heartbeat and its outage answer, the session pulse an open tab sends, the audit rows a sign-in and a rejected session leave, and the staging-only test sign-in.",
     globs: [
       "src/lib/auth/{server,session,session-bundle-cache,session-heartbeat,session-lifecycle,session-token,app-sessions,client-session}.ts",
+      // The credential check and the staging test sign-in's gate (2026-11-03): how a person SIGNS in,
+      // routed here rather than to `platform`, whose pointer was at its margin.
+      "src/lib/auth/{credentials,staging-test-sign-in}.ts",
+      "tests/staging-test-sign-in*",
       "src/lib/session-pulse-store.ts",
       "src/components/auth/session-security-guard.tsx",
       "app/api/auth/{pulse,heartbeat,login,logout}/**",

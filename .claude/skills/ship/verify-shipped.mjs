@@ -513,14 +513,17 @@ const gitOk = (args) => git(args, { quiet: true }) !== null;
 
 const out = { pr: Number(pr), notes: [] };
 
-// 1 - the PR itself. `state` is the field; there is no `merged` field on `gh pr view`.
-const view = ghJson(['pr', 'view', pr, '--repo', REPO, '--json', 'number,title,state,mergedAt,mergeCommit,headRefName,baseRefName']);
+// 1 - the PR itself, read over REST. `gh pr view` is GraphQL, which a Claude Code cloud session is
+// refused (HTTP 403), so this crashed three readings in a row there on #11 (2026-11-03). REST has no
+// `state: MERGED`: a merged PR is `closed` with `merged_at`, and only then is `merge_commit_sha` the
+// squash (before it, GitHub fills it with a test merge that never reaches main).
+const view = ghJson(['api', `repos/${REPO}/pulls/${pr}`]);
 out.title = view.title;
-out.state = view.state;
-out.base = view.baseRefName;
-out.head = view.headRefName;
-out.mergedAt = view.mergedAt || null;
-out.mergeSha = view.mergeCommit ? view.mergeCommit.oid : null;
+out.state = view.merged_at ? 'MERGED' : String(view.state || '').toUpperCase();
+out.base = view.base ? view.base.ref : null;
+out.head = view.head ? view.head.ref : null;
+out.mergedAt = view.merged_at || null;
+out.mergeSha = view.merged_at ? view.merge_commit_sha || null : null;
 
 if (out.state !== 'MERGED' || !out.mergeSha) {
   const d = decide({ state: out.state, mergeSha: out.mergeSha, contains: null, building: false, mainRed: false });
@@ -561,7 +564,15 @@ for (const n of ancestry.notes) out.notes.push(n);
 out.liveContainsMerge = contains;
 
 // 4 - deployments: the rows for production, newest first, with their real STATES
-const deployments = ghJson(['api', `repos/${REPO}/deployments`, '--paginate=false']) || [];
+// A Claude Code cloud session's GitHub token is refused this read (HTTP 403 "Resource not accessible
+// by integration", measured 2026-11-03), so it is noted and skipped rather than crashing the whole
+// reading: the verdict rests on the live revision and its ancestry, which still answer.
+let deployments = [];
+try {
+  deployments = ghJson(['api', `repos/${REPO}/deployments`, '--paginate=false']) || [];
+} catch (e) {
+  out.notes.push(`deployment rows unreadable from here, so "building" cannot be seen: ${String(e.message).trim()}`);
+}
 const prod = deployments.filter((d) => String(d.environment || '').includes('production')).slice(0, 5);
 out.deployments = [];
 for (const d of prod) {

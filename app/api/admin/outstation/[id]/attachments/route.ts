@@ -9,6 +9,9 @@ import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
+import { MAX_JOURNEY_STOPS } from "@/lib/outstation/chained-journey";
+import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
+import { isOutstationClaimUndecided } from "@/lib/outstation/undecided-claim";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,7 +68,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // the flags, and every stop's own photo — signed like the arrival and departure photos.
     const stops = requestRow.journeyStops ?? [];
     const pricing = stops.length > 0 ? requestRow.journeyPricing ?? null : null;
-    const stopUrls = stops.length > 0 ? await createOutstationEvidenceSignedUrls(stops.map((stop) => stop.photoPath)) : [];
+    // A stop a system administrator added has no photo to sign (ADMIN_ADDED_STOP_PHOTO_PATH).
+    const stopUrls =
+      stops.length > 0
+        ? await createOutstationEvidenceSignedUrls(stops.map((stop) => (stop.addedByAdmin ? "" : stop.photoPath)))
+        : [];
     const journey =
       stops.length > 0
         ? {
@@ -85,13 +92,30 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
               capturedAt: stop.capturedAt,
               governorate: stop.governorate,
               locationLabel: stop.locationLabel,
+              addedByAdmin: stop.addedByAdmin ?? null,
               stopNumber: stop.stopNumber,
               url: stopUrls[index] ?? null,
             })),
           }
         : null;
 
+    // Whether Expense Approvals offers "Add a missed stop" (2026-11-03). Only a hint for the screen:
+    // addOutstationJourneyStopAsAdmin re-checks every condition, payroll included, and the version.
+    const missedStop =
+      requestRow.expenseType === "traveling" &&
+      requestRow.transportationType === "car" &&
+      isOutstationClaimUndecided(requestRow.status) &&
+      stops.length < MAX_JOURNEY_STOPS
+        ? {
+            nextStopNumber: Math.max(1, ...stops.map((stop) => stop.stopNumber)) + 1,
+            revision: outstationClaimRevision(requestRow.updatedAt),
+            tripEndDate: String(requestRow.tripEndDate || requestRow.tripStartDate).slice(0, 10),
+            tripStartDate: String(requestRow.tripStartDate).slice(0, 10),
+          }
+        : null;
+
     return NextResponse.json({
+      missedStop,
       carEvidenceImageUrl: requestRow.carEvidenceImageUrl ?? null,
       departureEvidenceImageUrl: requestRow.departureEvidenceImageUrl ?? null,
       employeeName: formatEmployeeDisplayName(requestRow.employeeName) || null,
