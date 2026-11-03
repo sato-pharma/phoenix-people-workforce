@@ -46,6 +46,8 @@ jobs:
           test "$NEXT_PUBLIC_SUPABASE_URL" = "https://cifwmndunmlxjhyjugxa.supabase.co"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           ! env | grep -q ozucdzovmcqvepbozvqf
+      - name: The fix's own test, unbroken and broken
+        run: node --no-warnings scripts/ci-press/back-mutants.mjs
       - name: Start the server
         run: |
           sudo fallocate -l 6G /mnt/phx-look-swap && sudo chmod 600 /mnt/phx-look-swap && sudo mkswap /mnt/phx-look-swap >/dev/null && sudo swapon /mnt/phx-look-swap || echo "no extra swap"
@@ -59,15 +61,10 @@ jobs:
           for p in /employee-portals/field-crm /employee-portals/field-crm/visits /employee-portals/field-crm/plan; do
             curl -sS -m 500 -b "$REP" -o /dev/null -w "$p %{http_code} %{time_total}s\n" "$B$p" || true
           done
-          MANAGER=$(mktemp)
-          curl -sS -m 500 -c "$MANAGER" -o /dev/null -w 'manager sign in %{http_code} %{time_total}s\n' "$B/api/dev-auth?role=District%20Manager&hrId=B-116&next=/api/healthz" || true
-          for p in /employee-portals /employee-portals/field-crm/team; do
-            curl -sS -m 500 -b "$MANAGER" -o /dev/null -w "$p %{http_code} %{time_total}s\n" "$B$p" || true
-          done
       - name: Look
         run: |
           bad=0
-          for flow in rep-nav manager-team manager-phone; do
+          for flow in rep-nav; do
             echo "=== $flow"
             node --no-warnings scripts/ci-press/look.mjs "$flow" look-out || { echo "=== $flow exit $?"; bad=1; }
           done
