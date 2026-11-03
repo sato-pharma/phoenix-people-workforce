@@ -32,7 +32,7 @@
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
-import { deviceClockSkewMinutes } from "@/lib/phoenix-crm/entry-rules";
+import { deviceClockSkewMinutes, type ValidatedPlaceReading } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import {
@@ -184,6 +184,10 @@ const SHARED_PLACE_COLUMNS =
   "area_code, area_name, region_code, region_name, lat, lon, accuracy_meters, photo_path, captured_at, " +
   "schedule_photo_path, schedule_photo_captured_at, schedule_photo_by_hr_id, " +
   "created_by_hr_id, is_test";
+
+/** The building's two door readings, asked only when a rep is seating a customer in it. */
+const SHARED_PLACE_READING_COLUMNS =
+  "photo_lat, photo_lon, photo_accuracy_meters, pin_lat, pin_lon, pin_accuracy_meters, point_source";
 
 /**
  * What the plan's refusal needs to NAME a venue: `sharedPlaceId → name and kind`.
@@ -450,6 +454,8 @@ export type SeatingVenue = {
   location: Row;
   /** The building's own timetable, or null while nobody has been seated here yet. */
   schedulePhotoPath: string | null;
+  /** Its readings at the door, to ask whether a rep seating here is in it. Never copied onto the seated row. */
+  readings: ValidatedPlaceReading;
 };
 
 /**
@@ -474,7 +480,7 @@ export async function sharedPlaceForSeating(input: {
   if (!isUuid(input.sharedPlaceId)) throw validationError("Choose the polyclinic or centre this customer receives in.");
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_shared_places")
-    .select(SHARED_PLACE_COLUMNS)
+    .select(`${SHARED_PLACE_COLUMNS}, ${SHARED_PLACE_READING_COLUMNS}`)
     .eq("id", input.sharedPlaceId)
     .eq("seat_id", input.seatId)
     .eq("is_test", input.isTest)
@@ -491,6 +497,18 @@ export async function sharedPlaceForSeating(input: {
     lon: numberOrNull(row.lon) ?? 0,
     accuracyMeters: numberOrNull(row.accuracy_meters),
     schedulePhotoPath: text(row.schedule_photo_path),
+    readings: {
+      id: String(row.id),
+      lat: numberOrNull(row.lat) ?? 0,
+      lon: numberOrNull(row.lon) ?? 0,
+      photoLat: numberOrNull(row.photo_lat),
+      photoLon: numberOrNull(row.photo_lon),
+      photoAccuracyMeters: numberOrNull(row.photo_accuracy_meters),
+      pinLat: numberOrNull(row.pin_lat),
+      pinLon: numberOrNull(row.pin_lon),
+      pinAccuracyMeters: numberOrNull(row.pin_accuracy_meters),
+      pointSource: text(row.point_source),
+    },
     // 🔴 COPIED, NEVER RE-RESOLVED. It is the SAME point, so re-resolving would pay for a second brick
     // and map lookup to answer a question already answered at the door — and could answer it
     // differently if the brick master changed in between, leaving two rows at one coordinate in two

@@ -30,16 +30,17 @@
  * `ج.م.`, so the locale here is `en-EG` and the test asserts the literal `"ar-EG"` never appears in
  * this module.
  *
- * ── The one import, and why it is type-only ──────────────────────────────────────────────────────
+ * ── The imports, and why only one of them runs ───────────────────────────────────────────────────
  *
- * This file is otherwise a LEAF: it imports nothing at runtime, which is what lets the cron, the
- * workbook builder and a `"use client"` component all read it without pulling anything behind it.
- * `import type` emits no code at all, so taking the two unions from the kernel keeps that property
- * while making a drifted basis or measure unit a compile error rather than a label that silently
- * stops matching.
+ * This file is otherwise a LEAF, which is what lets the cron, the workbook builder and a
+ * `"use client"` component all read it without pulling anything behind it. `import type` emits no
+ * code at all, so taking the two unions from the kernel keeps that property while making a drifted
+ * basis or measure unit a compile error rather than a label that silently stops matching. The one
+ * runtime import is `ceilDiv`, from a kernel that imports nothing itself: a sentence that rounded
+ * boxes its own way is how it came to disagree with the engine beside it.
  */
 import type { ExpirySeverity } from "./expiry";
-import type { CompositionBasis, MeasureUnit } from "./rules";
+import { ceilDiv, type CompositionBasis, type MeasureUnit } from "./rules";
 
 /** The locale every number in this module is formatted with. NEVER `ar-EG` — see the note above. */
 export const PRODUCTION_PLANNING_NUMBER_LOCALE = "en-EG";
@@ -173,6 +174,7 @@ export const PP = {
   unitBottle: "زجاجة",
   unitSachet: "كيس",
   unitTablet: "قرص",
+  unitCapsule: "كبسولة",
   unitSample: "عينة",
   roundedUpNote: "التشغيلات بأعداد صحيحة، فتم التقريب لأعلى",
   exactRunsNote: "الاحتياج الدقيق",
@@ -415,6 +417,7 @@ export const PP = {
   sheetTotalDoses: "إجمالي الجرعات",
   sheetPackagingSets: "إجمالي العبوات الكاملة",
   sheetTotalBoxes: "إجمالي العلب (الكراتين)",
+  sheetSaleableBoxes: "علب البيع بدون العينات",
   sheetColBasisLabel: "أساس الحساب",
   sheetColQtyPerBasis: "الكمية لكل أساس",
   sheetColBasisCount: "عدد الأساس",
@@ -515,6 +518,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   unitBottle: "bottle",
   unitSachet: "sachet",
   unitTablet: "tablet",
+  unitCapsule: "capsule",
   unitSample: "sample",
   roundedUpNote: "Runs are whole, so this is rounded up",
   exactRunsNote: "Exact requirement",
@@ -752,6 +756,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   sheetTotalDoses: "Total doses",
   sheetPackagingSets: "Total full packaging sets",
   sheetTotalBoxes: "Total boxes (cartons)",
+  sheetSaleableBoxes: "Saleable boxes, without the samples",
   sheetColBasisLabel: "Basis",
   sheetColQtyPerBasis: "Quantity per basis",
   sheetColBasisCount: "Basis count",
@@ -956,6 +961,8 @@ export type ProductMeasure = {
   /** One free sample. */
   readonly sampleUnit: string;
   readonly measureUnit: MeasureUnit;
+  /** How many saleable units a sample box holds, on a product whose sample is its own box. */
+  readonly unitsInOwnSampleBox?: string;
 };
 
 /**
@@ -977,6 +984,7 @@ export function measureUnitLabelsAr(unit: MeasureUnit): { small: string; large: 
     g: { large: PP.unitKilogram, small: PP.unitGram },
     // A milligram geometry is still READ in kilograms: 31,000,000 mg is the owner's own "31 kg".
     mg: { large: PP.unitKilogram, small: PP.unitMilligram },
+    mg_capsule: { large: PP.unitKilogram, small: PP.unitMilligram },
     ml: { large: PP.unitLitre, small: PP.unitMl },
   };
   return labels[unit];
@@ -986,6 +994,7 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
   const labels: Record<MeasureUnit, { small: string; large: string }> = {
     g: { large: PP_EN.unitKilogram, small: PP_EN.unitGram },
     mg: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
+    mg_capsule: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
     ml: { large: PP_EN.unitLitre, small: PP_EN.unitMl },
   };
   return labels[unit];
@@ -1002,7 +1011,12 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
  * sachets"*).
  */
 export function saleableUnitWordAr(unit: MeasureUnit): string {
-  const words: Record<MeasureUnit, string> = { g: PP.unitSachet, mg: PP.unitTablet, ml: PP.unitBox };
+  const words: Record<MeasureUnit, string> = {
+    g: PP.unitSachet,
+    mg: PP.unitTablet,
+    mg_capsule: PP.unitCapsule,
+    ml: PP.unitBox,
+  };
   return words[unit];
 }
 
@@ -1010,6 +1024,7 @@ export function saleableUnitWordEn(unit: MeasureUnit): string {
   const words: Record<MeasureUnit, string> = {
     g: PP_EN.unitSachet,
     mg: PP_EN.unitTablet,
+    mg_capsule: PP_EN.unitCapsule,
     ml: PP_EN.unitBox,
   };
   return words[unit];
@@ -1077,6 +1092,7 @@ export function runActualLabelAr(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: "الأكياس الناتجة فعليًا",
     mg: "الأقراص الناتجة فعليًا",
+    mg_capsule: "الكبسولات الناتجة فعليًا",
     ml: PP.runActualGoodUnits,
   };
   return labels[unit];
@@ -1086,6 +1102,7 @@ export function runActualLabelEn(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: "Sachets actually produced",
     mg: "Tablets actually produced",
+    mg_capsule: "Capsules actually produced",
     ml: PP_EN.runActualGoodUnits,
   };
   return labels[unit];
@@ -1105,6 +1122,7 @@ export function runSizeLabelAr(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: PP.tileRunWeight,
     mg: PP.tileRunWeight,
+    mg_capsule: PP.tileRunWeight,
     ml: PP.tileRunVolume,
   };
   return labels[unit];
@@ -1114,6 +1132,7 @@ export function runSizeLabelEn(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: PP_EN.tileRunWeight,
     mg: PP_EN.tileRunWeight,
+    mg_capsule: PP_EN.tileRunWeight,
     ml: PP_EN.tileRunVolume,
   };
   return labels[unit];
@@ -1167,6 +1186,25 @@ export function requestModeLabelsEn(parts: {
 }
 
 /**
+ * The word after the count of units in a sample's own box: Arabic counts three to ten with the plural,
+ * so `5 كبسولات`, and every other figure with the singular, so `12 كبسولة`.
+ *
+ * 🔴 IT IS LOCAL TO THIS ONE PHRASE. `PP.unitCapsule` stays singular because the sentence and the
+ * request labels need it (`29,500 كبسولة`, `30 كبسولة في العلبة`), and the other three units keep
+ * their word because no other product has a sample box of its own to read here.
+ */
+function ownSampleBoxUnitWordAr(count: string, unit: MeasureUnit): string {
+  const threeToTen: Record<MeasureUnit, string> = {
+    g: PP.unitSachet,
+    mg: PP.unitTablet,
+    mg_capsule: "كبسولات",
+    ml: PP.unitBox,
+  };
+  const figure = Number(count.replaceAll(",", ""));
+  return figure >= 3 && figure <= 10 ? threeToTen[unit] : saleableUnitWordAr(unit);
+}
+
+/**
  * The sample-size hint, with the product's own two sizes written into it.
  *
  * It used to be a flat string naming 40 ml and 100 ml, which were Ivyronc's. A hint that states a
@@ -1175,6 +1213,13 @@ export function requestModeLabelsEn(parts: {
  */
 export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
   const u = measureUnitLabelsAr(measure.measureUnit);
+  if (measure.unitsInOwnSampleBox) {
+    return (
+      `العينة علبة مستقلة فيها ${measure.unitsInOwnSampleBox} ` +
+      `${ownSampleBoxUnitWordAr(measure.unitsInOwnSampleBox, measure.measureUnit)} ` +
+      `من نفس حجم التشغيلة — تقلل عدد العلب القابلة للبيع`
+    );
+  }
   return (
     `العينة ${measure.sampleUnit} ${u.small} من نفس حجم التشغيلة — ` +
     `تقلل عدد الوحدات ${measure.goodUnit} ${u.small} وتستهلك عبوة كاملة`
@@ -1183,6 +1228,13 @@ export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
 
 export function buildSampleUnitsHintEn(measure: ProductMeasure): string {
   const u = measureUnitLabelsEn(measure.measureUnit);
+  if (measure.unitsInOwnSampleBox) {
+    return (
+      `A sample is its own box of ${measure.unitsInOwnSampleBox} ` +
+      `${pluralEn(saleableUnitWordEn(measure.measureUnit))} out of the same batch — ` +
+      `it reduces the saleable box count`
+    );
+  }
   return (
     `A ${measure.sampleUnit} ${u.small} sample comes out of the same run volume — ` +
     `it reduces the ${measure.goodUnit} ${u.small} unit count and still uses a full packaging set`
@@ -1311,6 +1363,15 @@ export function storedPlanTitle(productNameAr: string, runs: string): string {
 }
 
 /**
+ * The saleable box count in the sentence's bracket. ROUNDED UP: a part-box is still a box (owner,
+ * 2026-10-24), so Saginkgo's 29,500 capsules are 984 boxes of thirty, the count the engine adds its
+ * sample boxes to, and never 983. Both languages come through here so they cannot differ.
+ */
+function saleableBoxesLabel(goodUnits: string, unitsPerBox: string): string {
+  return formatNumberLatin(ceilDiv(BigInt(goodUnits.replaceAll(",", "")), BigInt(unitsPerBox)));
+}
+
+/**
  * The sentence under the four tiles.
  *
  * Built here rather than in the component so the workbook's own header row says exactly the same
@@ -1356,9 +1417,7 @@ export function buildPlannerSentence(parts: {
   // box figure beside the saleable one would read as its equivalent and be larger than it.
   const perBox = parts.unitsPerBox ?? "1";
   const saleableBoxes =
-    perBox === "1" || !parts.totalBoxes
-      ? null
-      : formatNumberLatin((BigInt(parts.goodUnits.replaceAll(",", "")) / BigInt(perBox)).toString());
+    perBox === "1" || !parts.totalBoxes ? null : saleableBoxesLabel(parts.goodUnits, perBox);
   const saleable = saleableBoxes
     ? `${parts.goodUnits} ${unitWord} (${saleableBoxes} ${PP.unitBox})`
     : `${parts.goodUnits} ${unitWord}`;
@@ -1506,9 +1565,7 @@ export function buildPlannerSentenceEn(parts: {
     `${u.large} = ${parts.totalVolumeLitres} ${u.large}`;
   const perBox = parts.unitsPerBox ?? "1";
   const saleableBoxes =
-    perBox === "1" || !parts.totalBoxes
-      ? null
-      : formatNumberLatin((BigInt(parts.goodUnits.replaceAll(",", "")) / BigInt(perBox)).toString());
+    perBox === "1" || !parts.totalBoxes ? null : saleableBoxesLabel(parts.goodUnits, perBox);
   const saleable = saleableBoxes
     ? `${parts.goodUnits} ${unitWord} (${saleableBoxes} ${pluralEn(PP_EN.unitBox)})`
     : `${parts.goodUnits} ${unitWord}`;

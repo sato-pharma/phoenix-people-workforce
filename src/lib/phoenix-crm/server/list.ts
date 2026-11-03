@@ -161,12 +161,19 @@ import {
   countTimetableRefusals,
   recordOffListingRefusal,
   recordRefusedReading,
+  recordSeatingAwayRefusal,
   recordSignboardRefusal,
   recordTimetableRefusal,
 } from "@/lib/phoenix-crm/server/refused-readings";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { restampVisitLocationsQuietly } from "@/lib/phoenix-crm/server/visit-locations";
-import type { SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
+import {
+  SEATING_AWAY_CODE,
+  SEATING_AWAY_FROM_BUILDING,
+  type SeatedPlaceDraft,
+  seatingAwayFromBuilding,
+  type SharedPlaceNamed,
+} from "@/lib/phoenix-crm/shared-place-rules";
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
 import {
   addedPharmacyNameProblem,
@@ -2310,6 +2317,36 @@ async function signboardRefusalRecorded(
 }
 
 /**
+ * 🔴 A REP SEATS A CUSTOMER ONLY WHILE STANDING IN THAT BUILDING (owner, 3 Nov 2026). Asked right after the
+ * venue is read and before the timetable scan, so a refusal spends no try, replaces no board and writes
+ * nothing but its own row for the SFE. No reading seats as before (`parseSeatingReading`).
+ */
+async function refuseSeatingAwayFromBuilding(input: {
+  viewer: PhoenixCrmViewer;
+  seatId: string;
+  isTest: boolean;
+  venue: SeatingVenue;
+  seated: SeatedPlaceDraft;
+  customerId: string | null;
+}): Promise<void> {
+  const reading = input.seated.standingAt;
+  const away = seatingAwayFromBuilding({ building: input.venue.readings, standingAt: reading, farMeters: input.viewer.config.settings.visitFarMeters });
+  if (!reading || !away?.refused) return;
+  await recordSeatingAwayRefusal({
+    reading,
+    sharedPlaceId: input.venue.sharedPlaceId,
+    customerId: input.customerId,
+    photoPath: input.seated.photoPath,
+    seatId: input.seatId,
+    repHrId: input.viewer.hrId,
+    metres: away.metres,
+    farMeters: away.farMeters,
+    isTest: input.isTest,
+  });
+  throw validationError(SEATING_AWAY_FROM_BUILDING, SEATING_AWAY_CODE);
+}
+
+/**
  * Validate a customer at the door: a live signboard photo, the two location readings and his days and
  * hours, once and for good. Three modes:
  *
@@ -2336,10 +2373,14 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   const lineCode = lineCodeOf(seat);
   // 🔴 A SEATING IN A POLYCLINIC IS THE SAME ACT WITH A DIFFERENT DOOR (owner, 2026-10-09): the venue
   // was captured once at its own door, so this customer brings a TIMETABLE photo and his hours and no
-  // location at all — `body.seated` instead of `body.place`. Everything below is shared: the mode, the
+  // point of its own — `body.seated` instead of `body.place`. Everything below is shared: the mode, the
   // phone, the request a `new` or `outside` customer files, the notice, the restamp.
   const seated = seatedDraftOf(body);
   const venue = seated ? await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: seated.sharedPlaceId }) : null;
+  // The rep's own seating only: a manager validating beside the rep keeps today's door, as his own visit does.
+  if (seated && venue && validatedAs === "rep") {
+    await refuseSeatingAwayFromBuilding({ viewer, seatId: seat.seatId, isTest, venue, seated, customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null });
+  }
   let place: PlaceDraft | null = null;
   if (!seated) {
     const parsed = parsePlaceDraft(body.place);
@@ -2828,6 +2869,7 @@ export async function addPlace(
   // the five-active cap in `phoenix_crm_add_place` has always allowed for.
   const seated = seatedDraftOf(body);
   const venue = seated ? await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: seated.sharedPlaceId }) : null;
+  if (seated && venue) await refuseSeatingAwayFromBuilding({ viewer, seatId: seat.seatId, isTest, venue, seated, customerId });
   let place: PlaceDraft | null = null;
   if (!seated) {
     const parsed = parsePlaceDraft(body.place);

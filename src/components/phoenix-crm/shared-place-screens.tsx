@@ -55,6 +55,7 @@ import {
   crmInputClassName,
 } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
+import type { SilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import { PLACE_PRECISION_NOTE, PLACE_TEXT_MAX, SIGNBOARD_FRAME_NOTE } from "@/lib/phoenix-crm/entry-rules";
 import { SCHEDULE_UPLOAD_NOTE, scheduleUploadAllowed } from "@/lib/phoenix-crm/schedule-rules";
 import {
@@ -146,13 +147,14 @@ export function seatedDraftProblem(draft: SeatedDraftState): string | null {
  * The seating as /api/phoenix-crm/list/validate and /list/places read it: which venue, the timetable
  * photo, the hours, and an optional name for the room.
  *
- * 🔴 NOT ONE COORDINATE IN IT. `parseSeatedPlaceDraft` names no fix at all and the server copies the
- * venue's whole resolution — point, brick, area, region, address — onto the row. A reading sent from
- * here would be a second answer to a question already answered at the venue's door.
+ * 🔴 NO POINT FOR THE ROW IN IT. The server copies the venue's whole resolution — point, brick, area,
+ * region, address — onto the row. `standingAt` is read in silence and asks one thing at the door, whether
+ * he is in this building (owner, 3 Nov 2026); the rep is never shown it and the row never keeps it.
  */
-export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftState) {
+export function seatedPayload(photo: CapturedPhoto | null, draft: SeatedDraftState, standingAt: SilentFix | null) {
   return {
     sharedPlaceId: draft.sharedPlaceId,
+    standingAt: standingAt ? { lat: standingAt.lat, lon: standingAt.lon, accuracyMeters: standingAt.accuracyMeters } : null,
     // 🔴 NULL MEANS "the board this building already has", and the server resolves it from the VENUE's
     // own `schedule_photo_path` — never from anything sent here. So a phone cannot name another rep's
     // photograph, and a photo sent here is always a REPLACEMENT of the board on the wall.

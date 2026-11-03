@@ -654,3 +654,32 @@ His ruling, in his words: *"the city clinic is the polyclinic itself … this po
 **What it is NOT.** The columns are a marker for the screen. Nothing in the database or the settle reads them to validate anybody, so a customer seated in City clinic later is still held, and the administrator's Approve on him is the exception. Declaring another building without a timetable is a deliberate act on that one row; there is no screen for it yet.
 
 Pinned by `tests/phoenix-crm-shared-place-groups.test.ts` and `tests/phoenix-crm-place-check-advice.test.ts`.
+
+## Seating is refused away from the building — owner, 3 Nov 2026
+
+This amends his 2026-10-09 "no location when a customer is seated". The point on the row is still the building's, and nothing he seats stores a reading of its own.
+
+**What happened.** Khaled Bedair rejected عيادات الحصرى ١٢ (29.9561373, 30.9076283) on 29 Oct, 12:35 Cairo, "No Table". At 15:09:54 on 3 Nov, Hadeer Abdelnaser Osman Hassan seated Dr Farid Shawky in the look-alike عيادات الحصري at Hossary Station (29.9732, 30.9437), 3.9 km away, and replaced that building's timetable with a photo. A seating asked for no location, so nothing could see it. The far-visit rule then refused seven visits at the real door between 15:11:11 and 15:12:52, at 3,919 to 3,970 m. The wrong tap is an inference; nothing suggests cheating. Asked the same afternoon, over the 14 days before: 419 far refusals, 60 on seated places, 11 customers and 6 reps; the wrong-building cause is proven only for this one.
+
+**His two answers, 3 Nov, about 15:3x Cairo.** "Move him (Recommended)" and "Refuse at seating (Recommended)".
+
+**What was done to the data (production).**
+
+- 15:36:40 Cairo, in his name, in one transaction: place `072e73f4` moved to his old point with `point_source = 'moved'` and a written reason on the `place_moved` event, status active, still listed under building `412fb041` so it counts toward its three a day. Address and brick were copied from the old place row. Hadeer's last reading is 13 m from it.
+- Two visits (14 and 21 Oct) re-pointed to that place, flag ok, 37 m and 11 m unchanged.
+- عيادات الحصري's `schedule_photo_path` restored to `…/2026/10/place/9971defa-….jpg`, captured 2026-10-18 08:23:21 UTC by Hadeer. The before-image was `4d5dc663`, captured 2026-11-03 13:09:24 UTC; **this restore wrote no event row, so this paragraph is its record.** That photo stays on Dr Farid's own place row as evidence.
+
+**The rule.**
+
+- Save reads the location in silence (`useSilentFix`, watching only on the building door) and sends `standingAt`. The rep adds no step and is shown nothing.
+- `seatingAwayFromBuilding` is `visitAwayFromValidatedPlace` against the building's two door readings and `visit_far_meters`, never a second distance rule, so a rep the seating lets through can log the visit there.
+- Both doors, `validateCustomer` and `addPlace`, ask right after the venue is read and before the timetable scan, so a refusal spends no try and replaces no board.
+- The refusal goes back to the building step and clears any fresh photo, which is stamped with the refused building's name and would otherwise replace another building's board.
+- It is filed in `phoenix_crm_refused_readings` as `far_from_place`, `subject_kind` place, with the metres and `shared_place_id` (`20261103154101` widened that CHECK). Timetable tries are counted by their own two reasons, so it can never spend one.
+
+**Decided by the build, not asked.**
+
+- **No reading seats as before.** Location off, no reading within eight seconds, an older build, or one wider than the visit's 500 m is not measured and never a refusal. A rep with location off can therefore still seat in the wrong building; his visits there are still refused, as they were.
+- **A manager validating beside the rep, and the Super Admin's move, are not asked,** as a manager's own visit is not.
+
+**Expected.** Over the 30 days before: 427 seatings, 315 with a visit reading within 20 minutes; 299 of those (95%) within 300 m, median 34 m; 16 beyond it (10 at 300 to 1,000 m, 6 over 1 km). That reading can be up to 20 minutes from the seating, so it is a rough proxy. Pinned by `tests/phoenix-crm-seat-at-building.test.ts`.

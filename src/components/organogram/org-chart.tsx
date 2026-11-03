@@ -170,7 +170,12 @@ function formatHireDate(value: string | null | undefined) {
 function personFactsLine(row: OrganogramRow | null | undefined): string {
   if (!row) return "";
   const place = row.areaName ?? row.regionName ?? null;
-  return [row.hireDate ? `Joined ${formatHireDate(row.hireDate)}` : null, place]
+  const joined = row.startsOn
+    ? `Starts ${formatHireDate(row.startsOn)}`
+    : row.hireDate
+      ? `Joined ${formatHireDate(row.hireDate)}`
+      : null;
+  return [joined, place]
     .filter(Boolean)
     .join(" · ");
 }
@@ -375,7 +380,11 @@ function PersonNode({
             an area never render an empty pill. */}
         {row.hireDate || place ? (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-phx-2xs text-slate-500">
-            {row.hireDate ? (
+            {row.startsOn ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-800">
+                Starts {formatHireDate(row.startsOn)}
+              </span>
+            ) : row.hireDate ? (
               <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium">
                 <span aria-hidden className="h-1 w-1 rounded-full bg-slate-400" />
                 {formatHireDate(row.hireDate)}

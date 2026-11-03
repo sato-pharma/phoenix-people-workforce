@@ -2312,7 +2312,7 @@ He set the new rules on 2026-09-15, first in his own words and then by choosing 
 
 The daily job (`app/api/cron/attendance-weekly-digest`, 06:23 and 13:23 Cairo) brings every started
 week of the review month up to date as **`awaiting_release`** and **sends nothing** (section 5). The week then waits on the admin page
-**Attendance › Weekly Attendance Review** (`/attendance/weekly-review`), which lists every
+**Attendance › Attendance Review** (`/attendance/weekly-review`), which lists every
 employee's flagged days by name.
 
 **He chooses the days (same day, second decision).** In his words: "I want to be able to select the
@@ -9319,6 +9319,8 @@ His words: "the start date must follow the date, the start date in the job offer
 **The rule.** A new hire's seat starts on `employees.hire_date`, which carries the letter's start date (`offerHireDate`), never `position_vacancies.filled_at`, the day the record is created at acceptance. A long-standing employee moved into a vacant seat keeps the fill day. A later Master correction moves an open hire span that was following the Master. Aya Ali and Sahar El Gallad's letters differ from the Master and he ruled both correct, so their seats follow the Master's 24 Oct.
 
 **What it does before the start.** The seat reads vacant on dated readers until the start day, and arm 2 of `au.f_seat_occupant_asof` hands that seat's past months to whoever held them. Open-only readers still show the joiner, so a second hire into that seat is refused. No file under `src/lib/incentives` or `src/lib/payroll` reads occupancy.
+
+**The live organogram draws the joiner anyway (his words the same day: "people accepted the job offer are not appearing in organogram").** Three people had dropped off it: Hagar Abu Zeid, Mariam Wagdy and Salma Sabry, all starting 8 Nov. Their vacancies were already filled, so the "Offer accepted" label could not speak for them either. `drawJoinersAwaitingStart` puts each on their seat with "Starts 08 Nov 2026". Only the chart reads it; the dated readers and sales credit do not move.
 
 **The existing rows, 3 Nov about 13:20 Cairo.** 40 open hire rows and 34 vacant rows moved in one transaction, outside the migration, with the pre-image in `au_backup_20261103.occupancy_hire_start`. Measured in the same transaction: no change to the occupant of any seat at any 2026 month end, the organogram or open vacancies; drift stayed at 108; inverted rows went from 1 to 0. Closed spans were left alone.
 

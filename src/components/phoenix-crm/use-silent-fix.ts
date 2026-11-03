@@ -59,8 +59,11 @@ function replaces(current: SilentFix | null, reading: SilentFix): boolean {
  *
  * A refusal stops the watch and answers anyone waiting at once; the next call starts it again, because
  * the rep may have switched location on between two taps.
+ *
+ * `active` false holds the watch until the screen needs it (Validate, on the customer's own door, which
+ * has its own Capture location). The reader still starts it when called.
  */
-export function useSilentFix(): SilentFixReader {
+export function useSilentFix(active: boolean = true): SilentFixReader {
   const bestRef = useRef<SilentFix | null>(null);
   const watchRef = useRef<number | null>(null);
   const waitersRef = useRef<Set<() => void>>(new Set());
@@ -103,9 +106,10 @@ export function useSilentFix(): SilentFixReader {
   }, [stop, wake]);
 
   useEffect(() => {
+    if (!active) return;
     start();
     return () => stop();
-  }, [start, stop]);
+  }, [active, start, stop]);
 
   return useCallback(
     (waitMs: number = SILENT_FIX_WAIT_MS) => {

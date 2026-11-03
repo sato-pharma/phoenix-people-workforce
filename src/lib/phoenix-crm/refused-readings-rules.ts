@@ -68,7 +68,9 @@
  * logged, not for how well the phone read it: the reading was good enough to measure, and it sat past
  * the line from the customer's validated photograph. It carries the metres (`distance_meters`) and the
  * place they were measured to (`place_id`), and `max_accuracy_meters` holds the far LINE the save was
- * refused against, so an old row reads against its own rule. Never printed as "too rough".
+ * refused against, so an old row reads against its own rule. Never printed as "too rough". Since
+ * 3 Nov 2026 a row of `subject_kind` "place" is a SEATING refused the same way: its metres are to the
+ * building, which it names in `shared_place_id`, and its `place_id` stays null.
  */
 export type RefusedReason =
   | "no_fix"
@@ -235,6 +237,11 @@ export function refusalSentence(
         : distance < 1000
           ? `${Math.round(distance)} m away`
           : `${(distance / 1000).toFixed(1)} km away`;
+    // A seating refused the same way (owner, 3 Nov 2026): the metres are to the BUILDING he chose.
+    if (attempt.subjectKind === "place") {
+      const seatingRule = line === null ? "" : ` A rep adds a customer to a building only within ${line} m of it.`;
+      return `The rep stood ${away} from the building this customer was being added to, so it was not saved.${seatingRule}`;
+    }
     const rule = line === null ? "" : ` A medical rep's visit is taken only within ${line} m of it.`;
     return `The visit was logged ${away} from this customer's validated photo, so it was not saved.${rule}`;
   }

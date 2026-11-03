@@ -208,7 +208,7 @@ export function runPhoenixCrmSharedPlaceTests(): void {
     sharedPlaceId: "3f4a1b2c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
     photoPath: "crm/timetables/a.jpg",
     timings: [{ weekday: 6, start: "10:00" }],
-    // A body that still carries a fix is IGNORED, never honoured: the point is the venue's.
+    // A body that carries a fix on the draft itself is IGNORED, never honoured: the point is the venue's.
     lat: 29.9,
     lon: 31.9,
     accuracyMeters: 8,
@@ -217,9 +217,10 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   if (seated.ok) {
     assert.deepEqual(
       Object.keys(seated.value).sort(),
-      ["label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "timings"],
-      "🔴 SIX KEYS, NO FIX — a seated draft cannot carry a location even when the body sends one",
+      ["label", "photoPath", "photoUploaded", "session", "sharedPlaceId", "standingAt", "timings"],
+      "🔴 SEVEN KEYS, AND NONE OF THEM A POINT — the one reading is `standingAt`, which asks whether he is in the building and is never stored (tests/phoenix-crm-seat-at-building.test.ts)",
     );
+    assert.equal(seated.value.standingAt, null, "and a body naming no `standingAt` is not measured");
     assert.equal(seated.value.session, null, "a build that names no session leaves it null, and the database seats him in his own list");
     assert.equal(seated.value.timings.length, 1);
     assert.equal(seated.value.timings[0].startMinute, 600);

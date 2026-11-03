@@ -28,6 +28,7 @@ import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import { PLACE_MAX_ACCURACY_METERS, refusedReadingOf, type PlaceDraft, type VisitDraft } from "@/lib/phoenix-crm/entry-rules";
 import { type BlockedPermission } from "@/lib/phoenix-crm/refused-readings-rules";
 import { type ScheduleRetakeReason } from "@/lib/phoenix-crm/schedule-rules";
+import { type SeatingReading } from "@/lib/phoenix-crm/shared-place-rules";
 import { type SignboardRetakeReason } from "@/lib/phoenix-crm/signboard-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -220,6 +221,57 @@ export async function recordFarVisitRefusal(input: FarVisitRefusalInput): Promis
     }
   } catch (error) {
     console.error("[phoenix-crm] far-visit refusal record failed", { seatId: input.seatId, error });
+  }
+}
+
+export type SeatingAwayRefusalInput = {
+  reading: SeatingReading;
+  sharedPlaceId: string;
+  /** Null on `new`, `outside` and `reference`, where no customer row has been chosen yet. */
+  customerId: string | null;
+  /** A fresh timetable photo he had taken, kept with the row. Null when the board on file was to be used. */
+  photoPath: string | null;
+  seatId: string;
+  repHrId: string;
+  metres: number | null;
+  farMeters: number;
+  isTest: boolean;
+};
+
+/**
+ * File a rep's seating refused for being past the far line from the building (owner, 3 Nov 2026 —
+ * `seatingAwayFromBuilding`, shared-place-rules.ts). The same reason as a far visit, told apart by
+ * `subject_kind`, and it names the BUILDING (`shared_place_id`, 20261103154101), because a refused seating
+ * leaves no place row to say which one. It never counts as a timetable try: those are counted by their
+ * own two reasons. The same three rules as above: nothing more reaches the rep, it never throws, it is awaited.
+ */
+export async function recordSeatingAwayRefusal(input: SeatingAwayRefusalInput): Promise<void> {
+  try {
+    const refusedAt = new Date();
+    const { error } = await getSupabaseAdmin()
+      .from("phoenix_crm_refused_readings")
+      .insert({
+        subject_kind: "place",
+        reason: "far_from_place",
+        shared_place_id: input.sharedPlaceId,
+        seat_id: input.seatId,
+        rep_hr_id: input.repHrId.toUpperCase(),
+        customer_id: input.customerId,
+        refused_at: refusedAt.toISOString(),
+        visit_date: cairoBusinessDay(refusedAt),
+        lat: input.reading.lat,
+        lon: input.reading.lon,
+        accuracy_meters: input.reading.accuracyMeters,
+        photo_path: input.photoPath,
+        max_accuracy_meters: Math.round(input.farMeters),
+        distance_meters: input.metres === null || !Number.isFinite(input.metres) ? null : Math.round(input.metres),
+        is_test: input.isTest,
+      });
+    if (error) {
+      console.error("[phoenix-crm] far-seating refusal not recorded", { seatId: input.seatId, message: error.message });
+    }
+  } catch (error) {
+    console.error("[phoenix-crm] far-seating refusal record failed", { seatId: input.seatId, error });
   }
 }
 

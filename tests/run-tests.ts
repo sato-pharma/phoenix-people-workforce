@@ -1924,6 +1924,7 @@ import { runMarketingConfigGrantsTests } from "./marketing-config-grants.test.ts
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.test.ts";
+import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
@@ -2881,6 +2882,7 @@ import { runProductionPlanningExpiredStockTests } from "./production-planning-ex
 import { runProductionPlanningGuamusinTests } from "./production-planning-guamusin.test.ts";
 import { runProductionPlanningRoyanoxicamTests } from "./production-planning-royanoxicam.test.ts";
 import { runProductionPlanningCarvibradineTests } from "./production-planning-carvibradine.test.ts";
+import { runProductionPlanningSaginkgoTests } from "./production-planning-saginkgo.test.ts";
 import { runProductionPlanningRetireMaterialTests } from "./production-planning-retire-material.test.ts";
 import { runProductionPlanningCompositionEditorTests } from "./production-planning-composition-editor.test.ts";
 import { runProductionPlanningFitFixtureTests } from "./production-planning-fit-fixture.test.ts";
@@ -2982,6 +2984,7 @@ import { runCrmIReports360HoldoutsTests } from "./crm-ireports360-holdouts.test.
 import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
 import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
 import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fence.test.ts";
+import { runPhoenixCrmSeatAtBuildingTests } from "./phoenix-crm-seat-at-building.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -6948,6 +6951,11 @@ await runTest(
 await runTest(
   "organogram NSM chart (a seat in handover draws both people with their own HR ids, and every count is one count of seats)",
   runOrganogramNsmChartFixesTests,
+);
+
+await runTest(
+  "organogram joiners awaiting their start (someone who accepted is drawn on the seat with the day they start)",
+  runOrganogramJoinersAwaitingStartTests,
 );
 
 await runTest(
@@ -11430,6 +11438,10 @@ await runTest(
   runProductionPlanningCarvibradineTests,
 );
 await runTest(
+  "Saginkgo 120 mg arrives as a capsule made at Med Care's Badr factory, and its formula is the certificate to the microgram: the five weighed lines read back out of the migration add to exactly 300 mg, one batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg with nothing left over and the tile reads 9 kg rather than 9,000; Sato brings the extract, the empty capsule, the box and the aluminium, which stays a row with no composition rather than a zero, Med Care brings the four excipients, there is no leaflet, the shell is one bought item, a capsule never reads as a tablet, and a free sample is a whole box of five capsules on its own box material, so 1,000 boxes with 100 samples is one batch of 29,500 saleable capsules, 984 boxes of 30 and 100 sample boxes, on the screen and through the sheet's own formulas, while a product without the flag keeps a sample as one saleable unit",
+  runProductionPlanningSaginkgoTests,
+);
+await runTest(
   "a material can be taken OFF the planner from the screen, and put back, without a migration: three materials had to be switched off by hand-written SQL (the combined LEAFLET, STICKER_GUAMUSIN, LEAFLET_OLD) because the screen could only ADD one, so a retire now CLOSES every formula row in force at today rather than deleting it - a plan committed last month still reproduces under the formula it was committed with - switches the product-link rows off so a restore can put the material back on the products it belonged to, and NEVER touches the stock table, because the written-off quantity IS the record EGPI sent; a row opened TODAY is left alone, since closing one at its own effective_from is not a window the database accepts; a RESTORE deliberately does not re-open the formula line (a reactivation that revived the old quantity is exactly the leaflet double-count, 68,250 pieces of superseded artwork covering new production with every figure still looking ordinary), the close is pinned INSIDE the retire branch by counting braces rather than matching a lazy regex, and the two writes are ordered so a half-done retire leaves the material visible with no line instead of hidden with a live one; the retired list is a separate read and is NOT a field on ProductionPlanningData, so computePlan can never see an inactive material; the endpoint splits on `\"active\" in body` and not on truthiness, because active:false and no active at all are different requests; and the shared-material warning is computed from the real helper and named BEFORE the click, with a product that has no join rows counted as a user (it gets every material) since the citric acid anhydrous and the lemon flavour genuinely belong to both products and a retire from one screen shortens the other's buy list",
   runProductionPlanningRetireMaterialTests,
 );
@@ -11841,6 +11853,7 @@ await runTest("who still records only in iReports360 (3 Nov 2026): vendor rows a
 await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
 await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
 await runTest("Award Cheques refuses the Talent Acquisition seat on the page and every API verb, and her Spotlight read and print stay", runSpotlightChequesSeatFenceTests);
+await runTest("a rep seats a customer in a polyclinic only while standing in that building (3 Nov 2026): 3.9 km is refused at both doors before the timetable scan, no reading seats as before, a manager and the Super Admin's move are not asked, the building is filed for the SFE and the row keeps no reading", runPhoenixCrmSeatAtBuildingTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

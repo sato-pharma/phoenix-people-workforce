@@ -327,13 +327,20 @@ export async function buildProductionPlanningWorkbook(
   sectionTitle(sheet, row, PPL.sheetOutputsTitle);
   row += 1;
 
+  // A sample in its own box takes a whole box out of the total and is never a part of a saleable one,
+  // so four cells below read differently for that product. Every other product's sheet is unchanged.
+  const sampleInOwnBox = product?.sampleInOwnBox === true;
+  const goodRequestedValue = sampleInOwnBox
+    ? (num(plan.requestedBoxes) - num(plan.sampleUnits)) * unitsPerBoxValue
+    : num(plan.requestedBoxes) * unitsPerBoxValue - num(plan.sampleUnits);
+
   const goodRequestedRow = row;
   labelCell(sheet, goodRequestedRow, PPL.sheetGoodUnitsRequested);
   formulaCell(
     sheet,
     goodRequestedRow,
-    `${REQUESTED}*${UNITS_PER_BOX}-${SAMPLES}`,
-    num(plan.requestedBoxes) * Math.max(1, num(product?.unitsPerBox, 1)) - num(plan.sampleUnits),
+    sampleInOwnBox ? `(${REQUESTED}-${SAMPLES})*${UNITS_PER_BOX}` : `${REQUESTED}*${UNITS_PER_BOX}-${SAMPLES}`,
+    goodRequestedValue,
     UNITS_FMT,
   );
   row += 1;
@@ -344,9 +351,7 @@ export async function buildProductionPlanningWorkbook(
     sheet,
     neededVolumeRow,
     `$B$${goodRequestedRow}*${GOOD_ML}+${SAMPLES}*${SAMPLE_ML}`,
-    (num(plan.requestedBoxes) * Math.max(1, num(product?.unitsPerBox, 1)) - num(plan.sampleUnits)) *
-      num(product?.goodUnitMl) +
-      num(plan.sampleUnits) * num(product?.sampleUnitMl),
+    goodRequestedValue * num(product?.goodUnitMl) + num(plan.sampleUnits) * num(product?.sampleUnitMl),
     UNITS_FMT,
   );
   row += 1;
@@ -388,8 +393,29 @@ export async function buildProductionPlanningWorkbook(
       ? PPL.sheetPackagingSets
       : `${PPL.sheetPackagingSets} (${S.saleableUnitWord(plan.measureUnit)})`,
   );
-  formulaCell(sheet, packagingSetsRow, `$B$${yieldRow}+${SAMPLES}`, num(plan.packagingSets), UNITS_FMT);
+  formulaCell(
+    sheet,
+    packagingSetsRow,
+    sampleInOwnBox ? `$B$${yieldRow}+${SAMPLES}*${SAMPLE_ML}/${GOOD_ML}` : `$B$${yieldRow}+${SAMPLES}`,
+    num(plan.packagingSets),
+    UNITS_FMT,
+  );
   row += 1;
+
+  // The box a `per_box` material counts, when the samples wear a different one.
+  let saleableBoxesRow: number | null = null;
+  if (sampleInOwnBox) {
+    saleableBoxesRow = row;
+    labelCell(sheet, saleableBoxesRow, PPL.sheetSaleableBoxes);
+    formulaCell(
+      sheet,
+      saleableBoxesRow,
+      `ROUNDUP($B$${yieldRow}/${UNITS_PER_BOX},0)`,
+      Math.ceil(num(plan.goodUnits) / unitsPerBoxValue),
+      UNITS_FMT,
+    );
+    row += 1;
+  }
 
   const boxesRow = row;
   labelCell(sheet, boxesRow, PPL.sheetTotalBoxes);
@@ -397,7 +423,9 @@ export async function buildProductionPlanningWorkbook(
     sheet,
     boxesRow,
     // ROUNDUP, as the engine does: a part-box is still a carton (owner, 2026-10-24).
-    `ROUNDUP($B$${packagingSetsRow}/${UNITS_PER_BOX},0)`,
+    saleableBoxesRow === null
+      ? `ROUNDUP($B$${packagingSetsRow}/${UNITS_PER_BOX},0)`
+      : `$B$${saleableBoxesRow}+${SAMPLES}`,
     num(plan.totalBoxes),
     UNITS_FMT,
   );
@@ -431,7 +459,7 @@ export async function buildProductionPlanningWorkbook(
   row += 2;
 
   const refs = {
-    boxes: `$B$${boxesRow}`,
+    boxes: `$B$${saleableBoxesRow ?? boxesRow}`,
     doses: `$B$${dosesRow}`,
     goodUnits: `$B$${yieldRow}`,
     packagingSets: `$B$${packagingSetsRow}`,
