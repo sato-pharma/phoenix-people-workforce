@@ -1,0 +1,77 @@
+name: Home look press (one-off, never merged)
+
+# The four browser checks owed on the first-read work and the home, on a GitHub runner against STAGING only.
+# The laptop never had room for a dev server. This file lives on one branch with no pull request, and the branch is deleted after.
+# No artifact: staging holds real names, so the screenshots stay on the runner and only the verdict lines reach the log.
+on:
+  push:
+    branches: [codex/home-look-press]
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      PHOENIX_AUTH_SECRET: "ci-only-phoenix-auth-secret-for-playwright-session-signing"
+      PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE: "true"
+      PHOENIX_ENABLE_DEV_AUTH_HEADERS: "true"
+      APP_ENV: development
+      PHOENIX_EMAIL_DELIVERY_MODE: log
+      PHOENIX_EMAIL_FORCE_TESTING: "true"
+      NOTIFICATION_TEST_MODE: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      PHOENIX_DEV_HEAP_MB: "5632"
+      LOOK_BASE: "http://localhost:3011"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: corepack enable
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Staging's public key, as ci.yml holds it
+        run: |
+          K=$(grep -m1 -oE 'eyJ[A-Za-z0-9_.-]+' .github/workflows/ci.yml)
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$K" >> "$GITHUB_ENV"
+      - name: Refuse anything but staging
+        run: |
+          node -e 'const c=JSON.parse(Buffer.from(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.split(".")[1],"base64url"));if(c.ref!=="cifwmndunmlxjhyjugxa"||c.role!=="anon"){console.error("not the staging public key");process.exit(1)}'
+          test "$NEXT_PUBLIC_SUPABASE_URL" = "https://cifwmndunmlxjhyjugxa.supabase.co"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          ! env | grep -q ozucdzovmcqvepbozvqf
+      - name: Start the server
+        run: nohup node scripts/dev-server.mjs --port 3011 > server.log 2>&1 &
+      - name: Compile the pages before the look
+        run: |
+          B=http://localhost:3011
+          for i in $(seq 1 30); do curl -s -m 5 -o /dev/null "$B/login" && break; sleep 5; done
+          REP=$(mktemp)
+          curl -sS -m 500 -c "$REP" -o /dev/null -w 'rep sign in %{http_code} %{time_total}s\n' "$B/api/dev-auth?role=Medical%20Rep&hrId=B-59&next=/api/healthz" || true
+          for p in /employee-portals/field-crm /employee-portals/field-crm/visits /employee-portals/field-crm/plan; do
+            curl -sS -m 500 -b "$REP" -o /dev/null -w "$p %{http_code} %{time_total}s\n" "$B$p" || true
+          done
+          MANAGER=$(mktemp)
+          curl -sS -m 500 -c "$MANAGER" -o /dev/null -w 'manager sign in %{http_code} %{time_total}s\n' "$B/api/dev-auth?role=District%20Manager&hrId=B-116&next=/api/healthz" || true
+          for p in /employee-portals /employee-portals/field-crm/team; do
+            curl -sS -m 500 -b "$MANAGER" -o /dev/null -w "$p %{http_code} %{time_total}s\n" "$B$p" || true
+          done
+      - name: Look
+        run: |
+          bad=0
+          for flow in rep-nav manager-team manager-phone; do
+            echo "=== $flow"
+            node --no-warnings scripts/ci-press/look.mjs "$flow" look-out || { echo "=== $flow exit $?"; bad=1; }
+          done
+          exit $bad
+      - name: Server errors
+        if: always()
+        run: |
+          wc -l server.log
+          grep -E '⨯|Server is approaching' server.log | cut -c1-200 | sort | uniq -c | sort -rn | head -20 || true
