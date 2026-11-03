@@ -274,6 +274,7 @@ does not fire, so its silence is not evidence that no trap applies.
 
 **Next.js runtime**
 
+- **A page cannot tell a refresh from a move between pages** — Next hides `next-router-state-tree`, `rsc` and `next-router-prefetch` from `headers()` (`HIDDEN_REQUEST_HEADERS`, `next/dist/server/async-storage/request-store.js`), so a check on them never fires and a test with fake headers proves nothing. Only the browser knows.
 - **A >2MB `unstable_cache` entry KILLS the dev server** — throws only in dev, uncatchable, muted in prod.
 - **`unstable_cache` SERIALIZES, so a returned `Map` comes back `{}`** — the page works on exactly ONE render, then throws for the whole revalidate window, rendered as the admin error boundary (which reads as a permission redirect). Cache the ROWS.
 - **Standalone tracing copies FILES, not pnpm SYMLINKS**, and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing.
