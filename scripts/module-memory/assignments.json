@@ -702,6 +702,7 @@
   "heavy-production-checks-wait-until-after-17-cairo": "database",
   "heredoc-eats-backslashes-and-makes-a-test-that-only-passes": "engineering-tests",
   "hire-date-change-doubles-probation-reminders": "probation",
+  "hire-date-history-survives-only-in-probation-reminders": "employees",
   "hiring-a-manager-must-reclaim-their-reports": "employees",
   "hiring-document-files-table-and-private-bucket-live-in-prod": "hiring-documents",
   "hiring-document-writes-were-unaudited-until-2026-08-23": "hiring-documents",
