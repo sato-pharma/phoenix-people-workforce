@@ -35,6 +35,7 @@ import {
 import { recomputeCompleteness } from "@/lib/recruitment/workspace/completeness";
 import { readTemplateStatus, type TemplateApprovalStatus } from "@/lib/whatsapp-inbox/graph";
 import { whatsAppInboxLines } from "@/lib/whatsapp-inbox/lines";
+import { isPhoneMatchLink } from "@/lib/whatsapp-inbox/phone-link";
 import { normalizeNewChatNumber, startInboxConversation } from "@/lib/whatsapp-inbox/send";
 import { linkInboxConversation } from "@/lib/whatsapp-inbox/store";
 
@@ -153,16 +154,17 @@ export async function sendAskAgain(
     .eq("id", candidateId);
   if (stampError) throw stampError;
 
-  // The chat is this candidate's from now on — unless someone already linked it to a person.
+  // The chat is this candidate's from now on — unless someone already linked it to a person. A phone
+  // match is not someone: replacing it with this link is what lets their reply find them.
   if (result.conversationId) {
     try {
       const { data: conversation } = await db
         .from("whatsapp_inbox_conversations")
-        .select("candidate_id,employee_hr_id")
+        .select("candidate_id,employee_hr_id,linked_by_hr_id")
         .eq("id", result.conversationId)
         .maybeSingle();
-      const linked = conversation as { candidate_id: string | null; employee_hr_id: string | null } | null;
-      if (linked && !linked.candidate_id && !linked.employee_hr_id) {
+      const linked = conversation as { candidate_id: string | null; employee_hr_id: string | null; linked_by_hr_id: string | null } | null;
+      if (linked && !linked.employee_hr_id && (!linked.candidate_id || isPhoneMatchLink(linked.linked_by_hr_id))) {
         await linkInboxConversation({ access, candidateId, conversationId: result.conversationId, employeeHrId: null });
       }
     } catch (error) {

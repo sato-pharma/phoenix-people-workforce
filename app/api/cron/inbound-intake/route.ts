@@ -6,7 +6,7 @@ import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 import { refuseOnPageServer } from "@/lib/platform/worker-only-route";
-import { cacheInboxMedia } from "@/lib/whatsapp-inbox/store";
+import { cacheInboxMedia, linkInboxChatsByPhone } from "@/lib/whatsapp-inbox/store";
 import { fetchPendingInboundVideos } from "@/lib/whatsapp-videos/inbox";
 import { thankDueFtpVideoSenders } from "@/lib/whatsapp-videos/thanks";
 
@@ -75,7 +75,16 @@ export async function GET(request: Request) {
       return null;
     });
 
-    return NextResponse.json({ success: true, ...result, inboxMedia, thanks, videos });
+    // Whoever a chat can only mean, once their record exists. Same terms: outside the switch, never fatal.
+    const inboxLinks = await linkInboxChatsByPhone().catch((linkError) => {
+      logError("WhatsApp Inbox phone linking failed", {
+        error: linkError,
+        labels: { event: "whatsapp_inbox_phone_links_threw", job: "inbound-intake" },
+      });
+      return null;
+    });
+
+    return NextResponse.json({ success: true, ...result, inboxLinks, inboxMedia, thanks, videos });
   } catch (error) {
     logError("Inbound intake worker failed", {
       error,

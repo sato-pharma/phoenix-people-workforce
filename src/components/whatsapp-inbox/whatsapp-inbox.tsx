@@ -14,6 +14,7 @@ import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Briefcase,
+  Clock,
   FileText,
   Link2,
   Loader2,
@@ -44,7 +45,7 @@ import { inboxPlaceText, inboxPositionHasArea, inboxPositionHasRegion } from "@/
 import type { InboxConversationSummary, InboxThread } from "@/lib/whatsapp-inbox/store";
 import { cn } from "@/lib/utils";
 
-import { conversationTitle, formatListTime } from "./inbox-format";
+import { conversationTitle, formatListTime, formatWaitingFor } from "./inbox-format";
 import { InboxAvatar, InboxEmptyState, LineChip, LineMark, lineToneFor } from "./inbox-look";
 import { InboxTemplateForm, type TemplateSendInput } from "./inbox-template-form";
 import { InboxThreadView } from "./inbox-thread";
@@ -55,8 +56,8 @@ import {
 
 export type InboxLineOption = { phoneNumberId: string; label: string; displayNumber: string };
 
-/** "" shows every chat; "unread" and "read" are the Read / Unread filter. */
-type ReadFilter = "" | "unread" | "read";
+/** "" shows every chat; "unread" and "read" are the Read / Unread filter; "waiting" is Waiting for us. */
+type ReadFilter = "" | "unread" | "read" | "waiting";
 type Filters = { line: string; search: string; readState: ReadFilter; position: string; region: string; area: string; limit: number };
 
 /** Every job the candidate pool sorts people into, then the chats where nothing says which job. */
@@ -86,16 +87,19 @@ export function WhatsAppInbox({
   initialConversations,
   initialTotalCount,
   initialTotalUnread,
+  initialTotalWaiting,
   lines,
 }: {
   initialConversations: InboxConversationSummary[];
   initialTotalCount: number;
   initialTotalUnread: number;
+  initialTotalWaiting: number | null;
   lines: InboxLineOption[];
 }) {
   const [conversations, setConversations] = useState(initialConversations);
   const [totalCount, setTotalCount] = useState(initialTotalCount);
   const [totalUnread, setTotalUnread] = useState(initialTotalUnread);
+  const [totalWaiting, setTotalWaiting] = useState(initialTotalWaiting);
   const [filters, setFilters] = useState<Filters>({
     area: "",
     limit: LIST_PAGE_SIZE,
@@ -127,6 +131,7 @@ export function WhatsAppInbox({
       setConversations(rows);
       setTotalCount(typeof data.totalCount === "number" ? data.totalCount : rows.length);
       setTotalUnread(typeof data.totalUnread === "number" ? data.totalUnread : 0);
+      setTotalWaiting(typeof data.totalWaiting === "number" ? data.totalWaiting : null);
       setAreaOptions(Array.isArray(data.areaOptions) ? data.areaOptions.filter((area): area is string => typeof area === "string") : []);
       setListError(null);
     } catch (error) {
@@ -261,6 +266,7 @@ export function WhatsAppInbox({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <StatTile hot={(totalWaiting ?? 0) > 0} label="Waiting for us" value={totalWaiting} />
               <StatTile hot={totalUnread > 0} label="Unread" value={totalUnread} />
               <StatTile label={totalCount === 1 ? "Chat" : "Chats"} value={totalCount} />
             </div>
@@ -288,7 +294,7 @@ export function WhatsAppInbox({
               ))}
             </div>
             <div
-              aria-label="Read or unread"
+              aria-label="Which chats"
               className="inline-flex flex-wrap border border-slate-200 bg-slate-100/80 p-0.5 shadow-[inset_0_1px_2px_rgba(15,23,42,0.07)]"
               role="group"
             >
@@ -302,6 +308,14 @@ export function WhatsAppInbox({
               <Segment active={filters.readState === "read"} onClick={() => applyFilters({ ...filters, readState: "read" })}>
                 <span aria-hidden className="h-2 w-2 border border-slate-400 bg-white" />
                 Read
+              </Segment>
+              <Segment
+                active={filters.readState === "waiting"}
+                onClick={() => applyFilters({ ...filters, readState: "waiting" })}
+                title="They wrote in the last 30 days and nobody has answered, oldest first. A reaction, a deleted message or a system notice does not count. Answering takes a chat off; reading it does not."
+              >
+                <Clock aria-hidden className="h-3 w-3" />
+                Waiting for us
               </Segment>
             </div>
             <FilterSelect
@@ -448,7 +462,7 @@ export function WhatsAppInbox({
                 <InboxEmptyState
                   body={
                     filtered
-                      ? "Try another number, position, region or area, clear the search, or choose All instead of Read or Unread."
+                      ? "Try another number, position, region or area, clear the search, or choose All instead of Read, Unread or Waiting for us."
                       : "Messages appear here as soon as someone writes to either number."
                   }
                   compact
@@ -511,9 +525,15 @@ export function WhatsAppInbox({
                           </span>
                         ) : null}
                       </span>
-                      {(filters.line === "" && lines.length > 1) || item.candidate || item.employee || item.positions.length > 0 || item.cv ? (
+                      {(filters.line === "" && lines.length > 1) || item.candidate || item.employee || item.positions.length > 0 || item.cv || item.waitingSince ? (
                         // Room on the right for the Open CV button, which sits over this row outside the button.
                         <span className={cn("flex min-h-[1.375rem] flex-wrap items-center gap-1.5", item.cv && "pr-[5.25rem]")}>
+                          {item.waitingSince ? (
+                            <span className="inline-flex max-w-full items-center gap-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold leading-tight text-amber-900">
+                              <Clock aria-hidden className="h-3 w-3 shrink-0" />
+                              <span className="break-words">{formatWaitingFor(item.waitingSince)}</span>
+                            </span>
+                          ) : null}
                           {filters.line === "" && lines.length > 1 ? <LineChip label={item.lineLabel} /> : null}
                           {item.positions.map((position) => {
                             const place = inboxPlaceText(position);
@@ -649,7 +669,7 @@ export function WhatsAppInbox({
 const newChatButtonClassName =
   "inline-flex shrink-0 items-center gap-1.5 border border-orange-600 bg-[linear-gradient(180deg,#FB923C_0%,#F97316_55%,#EA580C_100%)] px-3 py-1.5 text-[12px] font-bold leading-none text-white shadow-[0_1px_2px_rgba(194,65,12,0.35),0_8px_18px_rgba(249,115,22,0.28)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60";
 
-function StatTile({ hot = false, label, value }: { hot?: boolean; label: string; value: number }) {
+function StatTile({ hot = false, label, value }: { hot?: boolean; label: string; value: number | null }) {
   return (
     <span
       className={cn(
@@ -662,9 +682,14 @@ function StatTile({ hot = false, label, value }: { hot?: boolean; label: string;
       <span className={cn("text-[10px] font-black uppercase leading-none tracking-[0.18em]", hot ? "text-orange-700" : "text-slate-400")}>
         {label}
       </span>
-      <span className={cn("text-[20px] font-black leading-none tabular-nums tracking-[-0.02em]", hot ? "text-orange-600" : "text-slate-900")}>
-        {value}
-      </span>
+      {/* A count that could not be read says so; it is never a zero nobody read. */}
+      {value === null ? (
+        <span className="text-[11px] font-bold leading-[20px] text-slate-500">Not available</span>
+      ) : (
+        <span className={cn("text-[20px] font-black leading-none tabular-nums tracking-[-0.02em]", hot ? "text-orange-600" : "text-slate-900")}>
+          {value}
+        </span>
+      )}
     </span>
   );
 }

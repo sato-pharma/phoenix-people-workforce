@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { pickInboxCvs, type InboxDocumentMessage } from "../src/lib/whatsapp-inbox/cv-pick.ts";
+import { formatWaitingFor } from "../src/components/whatsapp-inbox/inbox-format.ts";
+import { INBOX_PHONE_MATCH_LINKER, isPhoneMatchLink } from "../src/lib/whatsapp-inbox/phone-link.ts";
 import { parseInboxReadState } from "../src/lib/whatsapp-inbox/read-state.ts";
 import {
   addInboxPositionRecord,
@@ -201,6 +203,54 @@ function runWiringTests() {
   assert.match(link, /Open CV/);
 }
 
+function runPhoneLinkAndWaitingTests() {
+  const has = (source: string, text: string, message: string) => assert.ok(source.includes(text), message);
+
+  assert.equal(parseInboxReadState("waiting"), "waiting", "Waiting for us is a filter the list understands");
+
+  const now = new Date("2026-11-03T12:00:00.000Z");
+  assert.equal(formatWaitingFor("2026-11-03T11:30:00.000Z", now), "Waiting under an hour");
+  assert.equal(formatWaitingFor("2026-11-03T11:00:00.000Z", now), "Waiting 1 hour");
+  assert.equal(formatWaitingFor("2026-11-03T00:00:00.000Z", now), "Waiting 12 hours");
+  assert.equal(formatWaitingFor("2026-11-02T12:00:00.000Z", now), "Waiting 1 day");
+  assert.equal(formatWaitingFor("2026-10-29T12:00:00.000Z", now), "Waiting 5 days");
+  assert.equal(formatWaitingFor(null, now), "");
+
+  assert.equal(isPhoneMatchLink(INBOX_PHONE_MATCH_LINKER), true);
+  assert.equal(isPhoneMatchLink("B-10"), false, "a person's link is a person's");
+  assert.equal(isPhoneMatchLink(null), false, "a blank linker is an old link, not the phone match");
+
+  const migration = read("supabase/migrations/20261103062000_whatsapp_inbox_phone_links_and_waiting.sql");
+  has(migration, `linked_by_hr_id = '${INBOX_PHONE_MATCH_LINKER}'`, "the function and the app name the phone match the same way");
+  has(migration, "having count(*) = 1", "a number two candidates share links nobody");
+  has(migration, "from public.employees e", "a number an employee holds is left for a person");
+  has(migration, "i.candidate_id <> h.candidate_id", "a forwarder's number links nobody");
+  has(migration, "(c.linked_by_hr_id is null or c.linked_by_hr_id = 'phone-match')", "a chat a person linked or unlinked is never touched");
+  has(migration, "c.candidate_id is null\n      and c.employee_hr_id is null", "a chat already linked keeps its link");
+  has(migration, "not in ('reaction', 'revoke', 'system')", "a reaction, a deleted message and a notice wait on nobody");
+  has(migration, "o.status <> 'failed'", "a send that failed is not a reply");
+  has(migration, "from public, anon, authenticated", "neither function is open to a browser's key");
+
+  const store = read("src/lib/whatsapp-inbox/store.ts");
+  const linkAt = store.indexOf("export async function linkInboxConversation(");
+  const linkBody = store.slice(linkAt, store.indexOf("\n}\n", linkAt));
+  has(linkBody, `linked_by_hr_id: hrIdForStorage(input.access.hrId) ?? input.access.loginId ?? "unknown",`, "an Unlink records who decided, which is what stops the phone match linking it again");
+  has(store, "totalWaiting: waitingRead ? waitingSince.size : null,", "a failed read of the pile is unknown, never zero");
+  has(store, "if (waitingOnly) throw error;", "the pile asked for and not read is an error, never an empty list");
+  has(store, "await inboxConversationsHiddenFrom(\n        input.access,\n        waitingOnLine.map(", "the pile and its count stop at the Talent Acquisition fence");
+  has(store, "totalCount: position || waitingOnly", "the pile's count is the chats in it");
+
+  has(read("src/lib/recruitment/inbound/whatsapp-text-only-applicant.ts"), ".or(NOT_A_PHONE_MATCH_LINK);", "the phone match never decides who the bot resumes");
+  has(
+    read("src/lib/recruitment/inbound/whatsapp-followup-template.ts"),
+    "(!linked.candidate_id || isPhoneMatchLink(linked.linked_by_hr_id))",
+    "Ask again replaces a phone match, or the reply to it finds nobody",
+  );
+  has(read("app/api/cron/inbound-intake/route.ts"), "await linkInboxChatsByPhone().catch(", "the tick links, and a failure there is never fatal");
+  has(read("src/components/whatsapp-inbox/whatsapp-inbox.tsx"), `label="Waiting for us" value={totalWaiting}`, "the screen says how many are waiting");
+  has(read("src/components/whatsapp-inbox/inbox-thread.tsx"), "Matched by phone number", "the open chat says Phoenix made the link");
+}
+
 function runReadStateTests() {
   assert.equal(parseInboxReadState("unread"), "unread");
   assert.equal(parseInboxReadState("read"), "read");
@@ -247,4 +297,5 @@ export async function runWhatsAppInboxFilterAndCvTests() {
   runCvPickTests();
   runWiringTests();
   runReadStateTests();
+  runPhoneLinkAndWaitingTests();
 }

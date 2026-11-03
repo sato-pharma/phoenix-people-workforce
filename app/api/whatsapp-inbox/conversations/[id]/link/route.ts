@@ -16,8 +16,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Links a chat to a candidate or an employee, or clears the link. A human decides: a shared phone is
- * not the same person, so the inbox only ever suggests. Super Admin only.
+ * A person links a chat to a candidate or an employee, or clears the link. Their decision stands: the
+ * automatic phone match (`linkInboxChatsByPhone`) never touches a chat a person has decided. Super Admin only.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

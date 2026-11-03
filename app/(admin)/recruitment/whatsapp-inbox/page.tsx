@@ -85,6 +85,7 @@ export default async function WhatsAppInboxPage() {
       initialConversations={initial.conversations}
       initialTotalCount={initial.totalCount}
       initialTotalUnread={initial.totalUnread}
+      initialTotalWaiting={initial.totalWaiting}
       lines={lines}
     />
   );
