@@ -12,10 +12,12 @@ import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permis
 import { todayInCairo } from "@/lib/date-only";
 import {
   HiringJoinerInputError,
+  joinerDayOneFacts,
   upcomingJoinerOffers,
+  type JoinerDayOneReads,
 } from "@/lib/hiring-documents/joiners-logic";
 import type { HiringJoiner, HiringJoinersData, UpdateHiringJoinerInput } from "@/lib/hiring-documents/types";
-import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const OFFER_COLUMNS = "id,candidate_name,candidate_email,title,territory,start_date,status,employee_hr_id";
@@ -65,6 +67,64 @@ async function readEmployees(hrIds: readonly string[]): Promise<Map<string, Empl
   return new Map(((data ?? []) as EmployeeRow[]).map((row) => [keyOf(row.hr_id), row]));
 }
 
+/**
+ * One Day one read, which may fail alone. A person's mailbox status or device count is worth less
+ * than the list of who is arriving, so a failure here says "Not read" on those lines and costs nothing
+ * else. Nor does it become a "no": `joinerDayOneFacts` keeps the null.
+ */
+async function dayOneRead<T>(what: string, read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch (error) {
+    console.error(`[hiring-joiners] the ${what} read failed:`, error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/**
+ * Status and count only. `new_hire_mailbox_tasks` also holds the address and a sealed first password,
+ * and `device_assignments` joins to what a device is worth, and this panel needs neither.
+ */
+async function readDayOne(hrIds: readonly string[]): Promise<JoinerDayOneReads> {
+  const supabase = getSupabaseAdmin();
+  const spellings = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
+  const keys = [...new Set(hrIds.map(keyOf).filter(Boolean))];
+  if (keys.length === 0) return { deviceCounts: new Map(), logins: new Set(), mailboxes: new Map() };
+
+  const [logins, mailboxes, deviceCounts] = await Promise.all([
+    dayOneRead("account", async () => {
+      const { data, error } = await supabase.from("app_auth_users").select("hr_id").in("hr_id", spellings).eq("is_active", true);
+      if (error) throw new Error(error.message);
+      return new Set(((data ?? []) as Array<{ hr_id: string | null }>).map((row) => keyOf(row.hr_id)));
+    }),
+    dayOneRead("mailbox", async () => {
+      const { data, error } = await supabase
+        .from("new_hire_mailbox_tasks")
+        .select("employee_hr_id_key,status")
+        .in("employee_hr_id_key", keys);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as Array<{ employee_hr_id_key: string; status: string | null }>;
+      return new Map(rows.map((row) => [keyOf(row.employee_hr_id_key), row.status]));
+    }),
+    dayOneRead("device", async () => {
+      const { data, error } = await supabase
+        .from("device_assignments")
+        .select("employee_hr_id")
+        .in("employee_hr_id", spellings)
+        .eq("status", "outstanding")
+        .eq("is_placeholder", false);
+      if (error) throw new Error(error.message);
+      const counts = new Map<string, number>();
+      for (const row of (data ?? []) as Array<{ employee_hr_id: string | null }>) {
+        const key = keyOf(row.employee_hr_id);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      return counts;
+    }),
+  ]);
+  return { deviceCounts, logins, mailboxes };
+}
+
 export async function getHiringJoiners(): Promise<HiringJoinersData> {
   const todayKey = todayInCairo();
   const supabase = getSupabaseAdmin();
@@ -96,7 +156,7 @@ export async function getHiringJoiners(): Promise<HiringJoinersData> {
   if (upcoming.length === 0) return { joiners: [], todayKey };
 
   const offerIds = upcoming.map(({ offer }) => offer.id);
-  const [contactResult, acceptanceResult] = await Promise.all([
+  const [contactResult, acceptanceResult, dayOneReads] = await Promise.all([
     supabase
       .from("hiring_joiner_contacts")
       .select("offer_id,papers_confirmed,attendance_date,attendance_time,notes,updated_at,updated_by_hr_id")
@@ -106,6 +166,7 @@ export async function getHiringJoiners(): Promise<HiringJoinersData> {
       .select("offer_id,mobile:payload->>mobileNumber")
       .in("offer_id", offerIds)
       .order("submitted_at", { ascending: true }),
+    readDayOne(upcoming.map(({ offer }) => offer.employeeHrId ?? "").filter(Boolean)),
   ]);
   if (contactResult.error) throw new Error(contactResult.error.message);
   if (acceptanceResult.error) throw new Error(acceptanceResult.error.message);
@@ -124,6 +185,7 @@ export async function getHiringJoiners(): Promise<HiringJoinersData> {
       attendanceDate: contact?.attendance_date ?? null,
       // Postgres answers `09:30:00`; the screen and the save speak `09:30`.
       attendanceTime: contact?.attendance_time?.slice(0, 5) ?? null,
+      dayOne: joinerDayOneFacts(keyOf(offer.employeeHrId), dayOneReads),
       email: offer.row.candidate_email,
       employeeHrId: offer.employeeHrId,
       mobile: formMobile.get(offer.id) ?? employee?.mobile_number?.trim() ?? null,
