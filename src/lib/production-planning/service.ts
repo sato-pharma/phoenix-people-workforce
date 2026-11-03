@@ -37,7 +37,14 @@ import {
   type EffectiveFxRate,
   type LineCost,
 } from "./costing";
-import { evaluateExpiry, resolveExpiryArming, type ExpiryLot, type ExpiryVerdict } from "./expiry";
+import {
+  evaluateExpiry,
+  isIsoDate,
+  resolveExpiryArming,
+  splitExpiredLots,
+  type ExpiryLot,
+  type ExpiryVerdict,
+} from "./expiry";
 import { formatExactRuns, resolveRunGeometry, type RunGeometry } from "./geometry";
 import { formatOveragePct, learnFromRuns, resolveOverage, type MaterialLearning, type RunObservation } from "./learning";
 import type { WireRetiredMaterial, WireRun, WireWorkspace } from "./wire";
@@ -79,7 +86,7 @@ import {
   productionPlanningStrings,
   storedPlanTitle,
 } from "./strings";
-import { isStockMovement, isStockSource, storedStockQty, type StockSource } from "./stock";
+import { expiryChangeRows, isStockMovement, isStockSource, storedStockQty, type StockSource } from "./stock";
 
 const T = {
   products: "prodplan_products",
@@ -314,7 +321,13 @@ export type ProductionPlanningData = {
    */
   readonly linkSupplierByProductId?: Map<string, Map<string, MaterialSupplier>>;
   readonly compositionsByProductId: Map<string, LoadedComposition[]>;
+  /** The lots still in stock. Everything that counts as held reads this one. */
   readonly stock: LoadedStock[];
+  /**
+   * The lots whose expiry date has come (`splitExpiredLots`), kept for the accounts and counted as
+   * held by nothing. Optional so a hand-built fixture need not carry it.
+   */
+  readonly expiredStock?: LoadedStock[];
   readonly prices: LoadedPrice[];
   readonly settings: LoadedSettings;
   readonly fx: EffectiveFxRate;
@@ -499,14 +512,14 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
   // the same factory two separate standing figures rather than one overwriting the other. Before
   // Guamusin every row had a null expiry, so each pair had exactly one lot and this fold returns the
   // identical array it always did — which is why the pinned Ivyronc figures do not move.
-  const stock: LoadedStock[] = [];
+  const lots: LoadedStock[] = [];
   const seenStock = new Set<string>();
   for (const row of stockRes.data ?? []) {
     const expiryDate = asText(row.expiry_date);
     const key = `${String(row.material_id)}/${String(row.location_id)}/${expiryDate ?? ""}`;
     if (seenStock.has(key)) continue;
     seenStock.add(key);
-    stock.push({
+    lots.push({
       materialId: String(row.material_id),
       locationId: String(row.location_id),
       expiryDate,
@@ -516,6 +529,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
       note: asText(row.note),
     });
   }
+  const { live: stock, expired: expiredStock } = splitExpiredLots(lots, todayCairo());
 
   const prices: LoadedPrice[] = [];
   const seenPrice = new Set<string>();
@@ -586,6 +600,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
     linkSupplierByProductId,
     compositionsByProductId,
     stock,
+    expiredStock,
     prices,
     settings,
     fx,
@@ -729,23 +744,41 @@ function factoryLocationIdFor(data: ProductionPlanningData, product: LoadedProdu
  * Ivyronc's plan. A product with no product given (`null`) keeps every lot.
  */
 function stockForProduct(data: ProductionPlanningData, product: LoadedProduct | null | undefined): readonly LoadedStock[] {
-  if (!product) return data.stock;
+  return lotsForProduct(data, product, data.stock);
+}
+
+/** The same scope over the expired lots, so a product never lists another factory's write-off. */
+function expiredStockForProduct(data: ProductionPlanningData, product: LoadedProduct | null | undefined): readonly LoadedStock[] {
+  return lotsForProduct(data, product, data.expiredStock ?? []);
+}
+
+function lotsForProduct(
+  data: ProductionPlanningData,
+  product: LoadedProduct | null | undefined,
+  lots: readonly LoadedStock[],
+): readonly LoadedStock[] {
+  if (!product) return lots;
   const ownFactoryId = factoryLocationIdFor(data, product);
   const otherFactories = new Set(
     data.locations.filter((location) => location.isFactory && location.id !== ownFactoryId).map((location) => location.id),
   );
-  if (otherFactories.size === 0) return data.stock;
-  return data.stock.filter((row) => !otherFactories.has(row.locationId));
+  if (otherFactories.size === 0) return lots;
+  return lots.filter((row) => !otherFactories.has(row.locationId));
 }
 
 /** The lots of one product's materials, ready for `evaluateExpiry`. */
-function expiryLotsFor(data: ProductionPlanningData, productId: string | null): ExpiryLot[] {
+function expiryLotsFor(data: ProductionPlanningData, productId: string | null, today: string): ExpiryLot[] {
   const materials = materialsForProduct(data, productId);
   const byId = new Map(materials.map((material) => [material.id, material]));
   const lots: ExpiryLot[] = [];
   // Only the lots this product could use: the expiry sweep walks every product, so a lot at another
   // factory is still reported once, under the product made there.
-  for (const row of stockForProduct(data, data.products.find((candidate) => candidate.id === productId))) {
+  //
+  // 🔴 A lot that expired TODAY is still reported, so the morning it leaves stock is announced once.
+  // From tomorrow it is only in the Expired column, or the email would repeat it every day for ever.
+  const product = data.products.find((candidate) => candidate.id === productId);
+  const expiredToday = expiredStockForProduct(data, product).filter((row) => row.expiryDate === today);
+  for (const row of [...stockForProduct(data, product), ...expiredToday]) {
     const material = byId.get(row.materialId);
     if (!material) continue;
     lots.push({
@@ -767,7 +800,7 @@ export function evaluateExpiryForProduct(
   productId: string | null,
   today: string = todayCairo(),
 ): ExpiryVerdict[] {
-  return evaluateExpiry(expiryLotsFor(data, productId), {
+  return evaluateExpiry(expiryLotsFor(data, productId, today), {
     today,
     warnDays: data.settings.expiryWarnDays,
   });
@@ -1302,7 +1335,9 @@ export async function getProductionPlanningWorkspace(
   // Hoisted out of the map below: folding every lot once per material is quadratic, and the stock
   // table is the longest list on this screen. Only the selected product's own factory and Sato's
   // stores: the Stock tab must agree with the plan beside it.
-  const productStock = stockForProduct(data, data.products.find((candidate) => candidate.id === productId));
+  const selectedProduct = data.products.find((candidate) => candidate.id === productId);
+  const productStock = stockForProduct(data, selectedProduct);
+  const productExpired = expiredStockForProduct(data, selectedProduct);
   const heldByMaterial = heldByMaterialAndLocation(productStock);
   const lotsByMaterialAndLocation = new Map<string, LoadedStock[]>();
   for (const row of productStock) {
@@ -1344,6 +1379,7 @@ export async function getProductionPlanningWorkspace(
       const composition = compositionByMaterialId.get(material.id);
       const learned = data.learning.get(material.id);
       const price = data.prices.find((row) => row.materialId === material.id) ?? null;
+      const expired = productExpired.filter((row) => row.materialId === material.id);
       return {
         id: material.id,
         code: material.code,
@@ -1388,6 +1424,22 @@ export async function getProductionPlanningWorkspace(
             source: row.source,
             note: row.note,
           })),
+        expiredStock: expired
+          .slice()
+          .sort((a, b) => (a.expiryDate ?? "").localeCompare(b.expiryDate ?? ""))
+          .map((row) => ({
+            locationId: row.locationId,
+            expiryDate: row.expiryDate,
+            qty: formatQty(row.qty),
+            qtyDisplay: display(row.qty, material.basePerDisplay),
+            asOfDate: row.asOfDate,
+            source: row.source,
+            note: row.note,
+          })),
+        expiredTotalDisplay:
+          expired.length === 0
+            ? null
+            : display(expired.reduce((sum, row) => sum + row.qty, BigInt(0)), material.basePerDisplay),
         // Summed HERE, in BigInt, for the same reason the delivery arithmetic is server-side: the
         // screen would have to add decimal strings in floats, and this module exists to avoid that.
         heldByLocation: [...(heldByMaterial.get(material.id)?.entries() ?? [])].map(([locationId, qty]) => {
@@ -1606,6 +1658,92 @@ export async function addStockEntry(access: AccessContext, body: Record<string, 
     storedQty: formatQty(storedQty),
     typedQty: formatQty(qty),
   };
+}
+
+/**
+ * Move a lot to another expiry date, or give an undated lot its date.
+ *
+ * Append-only like every stock report: the arithmetic and the reason it takes two rows are in
+ * `expiryChangeRows`. A lot whose new date has already passed goes to the Expired column on the next
+ * read, and an expired lot given a later date comes back into stock, with nothing else to undo.
+ */
+export async function changeStockLotExpiry(access: AccessContext, body: Record<string, unknown>) {
+  await assertWrite(access);
+  const who = actor(access);
+  const materialId = asText(body.materialId);
+  const locationId = asText(body.locationId);
+  if (!materialId || !locationId) {
+    throw new ProductionPlanningInputError(errorsFor(body).materialAndLocationRequired, "materialId");
+  }
+  const fromExpiryDate = asText(body.fromExpiryDate);
+  const toExpiryDate = asText(body.toExpiryDate);
+  if (fromExpiryDate !== null && !isIsoDate(fromExpiryDate)) {
+    throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "fromExpiryDate");
+  }
+  if (toExpiryDate !== null && !isIsoDate(toExpiryDate)) {
+    throw new ProductionPlanningInputError(errorsFor(body).expiryDateInvalid, "toExpiryDate");
+  }
+  if (fromExpiryDate === toExpiryDate) {
+    throw new ProductionPlanningInputError(errorsFor(body).expiryDateUnchanged, "toExpiryDate");
+  }
+
+  const db = getSupabaseAdmin();
+  const standingOn = (expiryDate: string | null) => {
+    const query = db
+      .from(T.stock)
+      .select("qty::text, as_of_date, unit_kind")
+      .eq("material_id", materialId)
+      .eq("location_id", locationId);
+    return (expiryDate === null ? query.is("expiry_date", null) : query.eq("expiry_date", expiryDate))
+      .order("as_of_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  };
+  const [fromRes, targetRes] = await Promise.all([standingOn(fromExpiryDate), standingOn(toExpiryDate)]);
+  if (fromRes.error) failure(fromRes.error, "read the lot being moved");
+  if (targetRes.error) failure(targetRes.error, "read the lot on the new expiry date");
+
+  const fromQty = fromRes.data?.qty ? parseNonNegativeQty(fromRes.data.qty, "qty") : BigInt(0);
+  if (!fromRes.data || fromQty <= BigInt(0)) {
+    throw new ProductionPlanningInputError(errorsFor(body).stockLotNotFound, "fromExpiryDate");
+  }
+
+  const rows = expiryChangeRows({
+    from: { asOfDate: String(fromRes.data.as_of_date), qty: fromQty },
+    fromExpiryDate,
+    target: targetRes.data
+      ? { asOfDate: String(targetRes.data.as_of_date), qty: parseNonNegativeQty(targetRes.data.qty, "qty") }
+      : null,
+    toExpiryDate,
+  });
+  const unitKind = fromRes.data.unit_kind;
+  const note = `Expiry date changed from ${fromExpiryDate ?? "none"} to ${toExpiryDate ?? "none"}`;
+  const { error } = await db.from(T.stock).insert(
+    rows.map((row) => ({
+      as_of_date: row.asOfDate,
+      expiry_date: row.expiryDate,
+      location_id: locationId,
+      material_id: materialId,
+      note,
+      qty: formatQty(row.qty),
+      recorded_by_hr_id: who.hrId,
+      recorded_by_login: who.login,
+      source: "adjustment",
+      unit_kind: unitKind,
+    })),
+  );
+  if (error) failure(error, "change the expiry date");
+
+  await writeAuditLog({
+    actorLoginId: who.login,
+    entityType: "production_stock_entry",
+    entityId: null,
+    newValues: { materialId, locationId, fromExpiryDate, toExpiryDate, qty: formatQty(fromQty) },
+    summary: `Production planner: ${formatQty(fromQty)} of material ${materialId} at ${locationId} moved from expiry ${fromExpiryDate ?? "none"} to ${toExpiryDate ?? "none"}`,
+  });
+
+  return { qty: formatQty(fromQty), toExpiryDate };
 }
 
 /**
