@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { runEmailBlockWatch } from "@/lib/email/suppression-watch";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { runDatabaseRestartCheck } from "@/lib/observability/database-restart-alert";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
@@ -69,6 +70,11 @@ export async function GET(request: Request) {
   // event is still the thing he is looking at, not a day later. One RPC per sweep, and it swallows
   // its own errors so a database that is still refusing connections cannot take the sweep with it.
   const databaseRestart = await runDatabaseRestartCheck();
+
+  // A FOURTH, for an active employee whose work email has just been blocked (owner, 2026-11-03): every
+  // email to them is skipped from that moment, and they cannot reset their own password. Same reasons:
+  // no new cron, swallows its own errors, leaves this route's verdict alone. src/lib/email/suppression-watch.ts.
+  const emailBlocks = await runEmailBlockWatch();
 
   try {
     const verdict = await sweepJobHeartbeats();
@@ -164,6 +170,7 @@ export async function GET(request: Request) {
           skippedReason: deadTokenPolling.reason ?? null,
         },
         durationMs: Date.now() - startedAt,
+        emailBlocks,
         failing: verdict.failing,
         healthy: verdict.healthy,
         misdeclared: verdict.misdeclared,

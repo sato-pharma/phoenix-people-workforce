@@ -272,6 +272,14 @@ const JOBS = {
     // Eight GitHub reads, each cut at 15 seconds, and at most one message.
     requestTimeout: 300,
   },
+  "tablet-fleet-watch": {
+    title: "Phoenix — watch the rep tablets",
+    path: "/api/cron/tablet-fleet-watch",
+    // Hourly on :11 (owner, 2026-11-03). Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [11], mdays: [-1], months: [-1], wdays: [-1] },
+    // One read of the device list and at most one message.
+    requestTimeout: 300,
+  },
   "phoenix-crm-daily-digest": {
     title: "Phoenix — CRM daily digest",
     path: "/api/cron/phoenix-crm-daily-digest",

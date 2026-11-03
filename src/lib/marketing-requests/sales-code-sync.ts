@@ -78,7 +78,7 @@ export function hiddenVendorNotice(name: string): { title: string; message: stri
   return {
     message: [
       `New vendor from the Sales map, hidden until allowed: ${name}.`,
-      "Its pharmacy codes stay out of the Vendor picker and wait. No screen allows a vendor yet, so allowing one is a database change, made on request.",
+      "Its pharmacy codes stay out of the Vendor picker and wait. To allow it: Marketing Control, Vendors.",
     ].join("\n"),
     title: `New hidden vendor: ${name}`,
   };
@@ -151,13 +151,13 @@ function cairoDayKey(): string {
 }
 
 /** Never throws: the run's own result stands, and a lost notice is logged. */
-async function tell(notice: { title: string; message: string }, keyPart: string): Promise<void> {
+async function tell(notice: { title: string; message: string }, keyPart: string, actionUrl = "/admin/marketing-requests/validation"): Promise<void> {
   try {
     const { recipients } = await resolveNotificationPersonRecipients(AUDIENCE_KEY, "Pharmacy-code sync recipients");
     await Promise.all(
       recipients.map((recipient) =>
         createSystemNotification({
-          actionUrl: "/admin/marketing-requests/validation",
+          actionUrl,
           actorId: ACTOR,
           channels: ["in_app", "telegram"],
           eventType: "marketing_pharmacy_code_sync_notice",
@@ -202,7 +202,7 @@ export async function runSalesPharmacyCodeSync(options: { dryRun?: boolean } = {
   const newHiddenVendors = newHidden.map((vendor) => vendor.name);
 
   // The key is the vendor's id, so it is told once however many nights it stays hidden inside the window.
-  for (const vendor of newHidden) await tell(hiddenVendorNotice(vendor.name), `vendors:${vendor.id}`);
+  for (const vendor of newHidden) await tell(hiddenVendorNotice(vendor.name), `vendors:${vendor.id}`, "/admin/marketing-requests/control");
   // Ambiguous pairs repeat each night until they are cleared.
   const ambiguous = ambiguousPairsNotice(after.ambiguousPairs);
   if (ambiguous) await tell(ambiguous, `ambiguous:${cairoDayKey()}`);

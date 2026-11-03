@@ -16,6 +16,7 @@ import {
   PortalResponsiveDataList,
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
+import { MarketingCustomerMergePanel } from "@/components/employee-portal/marketing-customer-merge-panel";
 import { LinkFieldEvidenceBadge, NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { LoadingSpinner } from "@/components/ui/loading-state";
@@ -519,6 +520,7 @@ export function MarketingCustomerDatabase() {
       ) : null}
 
       <MergeVenuesPanel onMerged={() => void loadWorkspace()} />
+      <MarketingCustomerMergePanel onMerged={() => void loadWorkspace()} />
 
       <PortalSection
         actions={<Badge variant="neutral">{workspace.rows.length} rows</Badge>}

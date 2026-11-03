@@ -3,6 +3,7 @@ import { Mail } from "lucide-react";
 
 import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { EmailAdminControlCenterView } from "@/components/admin/email-admin-control-center";
+import { EmailSuppressionPanel } from "@/components/admin/email-suppression-panel";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmailAdminControlCenter } from "@/lib/notifications/email-admin";
@@ -35,6 +36,8 @@ export default async function AdminEmailNotificationsPage() {
           icon={<Mail className="h-4 w-4" />}
           title="Email Delivery Status"
         />
+
+        {access.role === "Super Admin" ? <EmailSuppressionPanel /> : null}
 
         <EmailAdminControlCenterView initialData={data} />
       </div>

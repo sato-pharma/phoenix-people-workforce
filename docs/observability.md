@@ -763,6 +763,7 @@ policy):
    | `phoenix-code-backup-verify` | `57 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-whatsapp-handset-reminder` | `37 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-github-workflow-watch` | `21 * * * *` | 30m | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
+   | `phoenix-tablet-fleet-watch` | `11 * * * *` | 30m | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org job `8526396` · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org job `8525234` · **in-house only** |
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
@@ -869,6 +870,7 @@ policy):
    | `phoenix-code-backup-verify` | `platform in-house-only silent-when-clean` | The nightly code backup checked from production: fails when the newest file on Drive is over 36 hours old, under 100 MB, under half the one before it, or Drive cannot be read. The job itself is `infra/code-backup/`. |
    | `phoenix-whatsapp-handset-reminder` | `recruitment in-house-only silent-when-clean` | The reminder to open WhatsApp Business on the HR handset before the 14-day limit, to the Super Admin only, in-app, Telegram and push. Under seven days with no send from the phone it says nothing, so a quiet run is correct; a red means the clock could not be read and nobody will be warned before the link drops. |
    | `phoenix-github-workflow-watch` | `platform in-house-only silent-when-clean` | Asks GitHub hourly when each scheduled check last succeeded, and alerts on its own when one is overdue. A red means the watch itself is blind: no token, a refusal, or GitHub silent for over three hours. |
+   | `phoenix-tablet-fleet-watch` | `platform in-house-only silent-when-clean` | Reads the Headwind device list hourly and tells the Super Admin alone about a tablet held by a rep that is silent or has no location fix for over 72 hours. Nothing reaches a tablet or a rep. A red means the watch is blind: settings missing, a refusal, the custody register unreadable, an empty fleet, or the server silent for over three hours. |
    | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
    | `phoenix-approval-whatsapp-reminders` | `hr in-house-only silent-when-clean` | The WhatsApp reminder to each approver holding something more than three days. It starts OFF behind a switch, a number and Meta's approval, and sends nothing while off, so a quiet run is correct; a red means the read failed or every send was refused. |
    | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |
@@ -1047,6 +1049,7 @@ Three design points worth not re-deriving:
   silent for 23 hours *by design*, and `0 6-21/3 * * *` has a nine-hour overnight gap. Any
   interval-based staleness rule calls both of those stranded every single day, and a monitor that
   cries wolf daily is one nobody reads.
+- **A job whose grace is at or above the gap between its fires is measured from the oldest fire nothing answered (2026-11-03).** Before that, 27 of the 59 declared jobs could never be called stranded, because the next fire always arrived before the deadline.
 - **A job that has never reported is not stranded until a fire has passed since `first_seen_at`.**
   Otherwise declaring a new job pages someone the moment it deploys.
 - **The sweep pings its own switch `success` even when it finds problems.** That check answers one
