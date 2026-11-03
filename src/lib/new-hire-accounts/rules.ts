@@ -72,8 +72,11 @@ export type NewHireLastSend = {
   byName: string | null;
   /** "Sato email", "Private email", "Email", "WhatsApp" or "Link copied". */
   how: string;
-  /** Sent: the mail left. Not delivered: the link exists and the person does not have it. Prepared: a chat was opened for a person to send. */
-  outcome: "sent" | "not_delivered" | "prepared";
+  /**
+   * Sent: the mail left. Not delivered: the link exists and the person does not have it. Not confirmed: the first try did
+   * not leave and the outbox was still trying, so the page cannot say. Prepared: a chat was opened for a person to send.
+   */
+  outcome: "sent" | "not_delivered" | "not_confirmed" | "prepared";
 };
 
 /** What one audit row says about how a link travelled. An older row carries no `emailTo`, so it says only "Email". */
@@ -81,12 +84,14 @@ export function lastSendOf(values: Record<string, unknown>): Pick<NewHireLastSen
   if (values.deliveryMode === "whatsapp") return { how: "WhatsApp", outcome: "prepared" };
   if (values.deliveryMode === "copy") return { how: "Link copied", outcome: "prepared" };
   const how = values.emailTo === "private" ? "Private email" : values.emailTo === "work" ? "Sato email" : "Email";
+  if (values.delivery === "email_queued_for_retry") return { how, outcome: "not_confirmed" };
   return { how, outcome: values.delivery === "email_sent" ? "sent" : "not_delivered" };
 }
 
 export function lastSendOutcomeText(outcome: NewHireLastSend["outcome"]): string {
   if (outcome === "sent") return "Sent";
   if (outcome === "prepared") return "Prepared";
+  if (outcome === "not_confirmed") return "Not confirmed";
   return "Not delivered";
 }
 

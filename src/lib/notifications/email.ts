@@ -124,6 +124,11 @@ export type NotificationEmailInput = {
    * this input, so a queued row is covered when it drains.
    */
   credentialEmail?: CredentialEmailKind | null;
+  /**
+   * The one mailbox a person pressed for (New Hire Accounts). Travels in the outbox payload, so a retried row keeps the
+   * same answer at the Recipient Assurance Guard, which is the only reader.
+   */
+  chosenMailbox?: string | null;
   notificationType?: EmailNotificationType;
   /** Pre-rendered HTML table of submitted plan rows for the {{planTable}} variable. */
   planTableHtml?: string;
@@ -1876,6 +1881,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   const finalBcc = bcc;
 
   const origin = {
+    chosenMailbox: input.chosenMailbox ?? null,
     employeeHrId: input.employeeHrId ?? null,
     eventType: input.eventType ?? null,
     identityStatus: input.identityStatus ?? null,

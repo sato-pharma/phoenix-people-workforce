@@ -178,9 +178,16 @@ reads logins and the audit trail and the module may not.
 - **WhatsApp puts the live link in the browser of the person who pressed**, inside the chat URL, until the new hire sets a
   password. He asked for it, and each send leaves an audit row. The URL is never stored, and the screen never re-reads,
   so it cannot be lost.
-- **A second press asks first**, because a new link cancels the last one. Last sent comes from the audit row, and an email
-  that did not leave says not delivered.
+- **A second press asks first**, because a new link cancels the last one. Last sent comes from the audit row. An email
+  that did not leave says not delivered, and one whose first try failed and went to the outbox says not confirmed.
 - **A private address is for this person-pressed link only.** The self-service reset code still goes to the Sato mailbox.
+- **The chosen mailbox passes the Recipient Assurance Guard by name** (3 Nov 2026). The guard knows only Sato addresses.
+  The first private send, Hagar Abu zeid's at 16:31 Cairo, was refused at every try because she has no Sato mailbox, while
+  the audit row and the screen said sent. A person with a Sato mailbox would have had it added beside the one chosen.
+  `chosenMailbox` now answers the guard's "is this person addressed?", only when it is the whole of To and declared; CC and
+  BCC are still checked. Every other sender leaves it empty and meets the guard as before.
+- **`sendPasswordSetupLink` no longer calls a queued first try a send**, on this page or the Super Admin's access page. The
+  audit row says `email_queued_for_retry`. A row written before the fix keeps what it said.
 
 ## Limits worth knowing
 
