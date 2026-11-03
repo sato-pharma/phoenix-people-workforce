@@ -588,7 +588,12 @@ function runPersonnelSpecialistFormTests() {
     pq("field_age_band", 10, ["medical_rep", "office_coordinator", "personnel"]),
     pq("hr_sheraton_commute", 11, ["human_resources", "talent_acquisition", "personnel"]),
     pq("hrsh_pharma", 103, ["hr_section_head", "personnel"]),
-    { ...pq("hrsh_current_salary", 106, ["hr_section_head", "personnel"]), kind: "free_text", options: null },
+    {
+      ...pq("hrsh_current_salary", 106, ["hr_section_head", "personnel"]),
+      bodyText: "What is your current monthly net salary?\n\nSend it as a normal message, in EGP.",
+      kind: "free_text",
+      options: null,
+    },
     // Another seat's question never reaches a Personnel applicant.
     pq("hr_ats_experience", 12, ["human_resources", "talent_acquisition", "hr_section_head"]),
   ];
@@ -606,4 +611,22 @@ function runPersonnelSpecialistFormTests() {
     "the Personnel seat is asked the expected salary, then its fourteen-question flow in sort order — no experience, no background, nothing from another seat",
   );
   assert.ok(form.fields.every((field) => !field.endOn), "no field on this form can end the application");
+
+  // The stored question is worded for WhatsApp. A form has a box to type in, so the careers form never
+  // tells an applicant to "send a message", and "in EGP" survives as the hint.
+  const currentSalary = form.fields.find((field) => field.key === "extra:hrsh_current_salary");
+  assert.equal(currentSalary?.label, "What is your current monthly net salary?");
+  assert.equal(currentSalary?.helpText, "In EGP.");
+
+  // Only that exact instruction is dropped: a question he reworded on the screen is shown as he wrote it.
+  const reworded = "Your current salary?\n\nSend us the net figure.";
+  const rewordedForm = assembleWebsiteApplyForm(
+    role,
+    audiences,
+    [{ ...pq("hrsh_current_salary", 106), bodyText: reworded, kind: "free_text", options: null }],
+    AREAS_BY_REGION,
+  );
+  const rewordedField = rewordedForm.fields.find((field) => field.key === "extra:hrsh_current_salary");
+  assert.equal(rewordedField?.label, reworded);
+  assert.equal(rewordedField?.helpText, null);
 }

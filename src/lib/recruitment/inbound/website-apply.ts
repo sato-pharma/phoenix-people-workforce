@@ -388,13 +388,27 @@ function conditionalHints(question: ScreeningQuestion): Pick<WebsiteApplyField, 
   };
 }
 
+/** A free-text question is worded for WhatsApp, where the applicant must be told to type rather than
+ *  tap ("Send it as a normal message, in EGP."). A form has a box to type in, so that instruction is
+ *  dropped here and whatever it added ("in EGP") becomes the hint. Any other wording is left whole, and
+ *  the stored question, which the bot still asks in full, is not touched. */
+function freeTextCopy(bodyText: string): Pick<WebsiteApplyField, "helpText" | "label"> {
+  const paragraphs = bodyText.split(/\n\s*\n/);
+  const instruction = paragraphs.at(-1)?.trim().match(/^send it as a normal message(?:,\s*(.+?))?\.?$/is);
+  if (paragraphs.length < 2 || !instruction) return { helpText: null, label: bodyText };
+  const hint = instruction[1]?.trim();
+  return {
+    helpText: hint ? `${hint.charAt(0).toUpperCase()}${hint.slice(1)}.` : null,
+    label: paragraphs.slice(0, -1).join("\n\n").trim(),
+  };
+}
+
 function extraField(question: ScreeningQuestion): WebsiteApplyField {
   if (question.kind === "free_text") {
     return {
-      helpText: null,
+      ...freeTextCopy(question.bodyText),
       key: websiteExtraFieldKey(question.questionKey),
       kind: "text",
-      label: question.bodyText,
       // Extras are optional on WhatsApp (the loop can be abandoned), so they are optional here too —
       // a missing answer must never block an application.
       maxLength: 200,
