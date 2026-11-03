@@ -1512,6 +1512,7 @@ import { runSosUiTruthRemainderTests } from "./sos-ui-truth-remainder.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runApprovalsHubEmployeeContextGuardTests } from "./approvals-hub-employee-context-guard.test.ts";
+import { runApproverContextTests } from "./approver-context.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 import { runErrorBoundaryStaleDeployRecoveryTests } from "./error-boundaries-recover-from-a-stale-deploy.test.ts";
 import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
@@ -6125,6 +6126,7 @@ await runTest('SoS UI truth remainder (headline vs breakdowns, territory target 
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("approvals hub employee context (a 403 body never becomes context state, so HR Operations does not crash the hub on an employee she may approve for but not read)", runApprovalsHubEmployeeContextGuardTests);
+await runTest("approver context (who else is off, the Marketing inbox line, probation sales, the Customer 360 doors: each shows and decides nothing)", runApproverContextTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
 await runTest("every class error boundary recovers from a stale deploy, not just reports it (the portal shell's boundary left a missing chunk unrecovered)", runErrorBoundaryStaleDeployRecoveryTests);
 await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);

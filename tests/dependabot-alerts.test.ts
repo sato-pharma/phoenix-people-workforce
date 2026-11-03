@@ -14,6 +14,7 @@ import {
   classifyAlerts,
   describeAlert,
   judgeAlerts,
+  outcomeOfReadFailure,
   readRecordedDecisions,
 } from "../scripts/dependabot-alerts.mjs";
 
@@ -124,6 +125,29 @@ export function runDependabotAlertsTests() {
   const unknownZero = judgeAlerts({ alerts: [] }, { unknown: "could not tell (403)" });
   assert.equal(unknownZero.exitCode, 0, "an unreadable ON/OFF must not manufacture a failure either");
   assert.match(unknownZero.notes.join("\n"), /though could not tell \(403\)/);
+
+  // 2b. A 403 THAT SAYS THE ALERTS ARE OFF IS THE BLIND REPO, NOT A BAD TOKEN
+  // GitHub's literal answer on 2026-11-03, for a repository moved the day before and a token holding
+  // `repo`. It was reported as a token problem and exited 0.
+  const offRead = outcomeOfReadFailure({
+    stderr: "gh: Dependabot alerts are disabled for this repository. (HTTP 403)\n",
+  });
+  assert.deepEqual(offRead, { switchedOff: true }, "alerts switched off must not read as a token problem");
+  const off = judgeAlerts(offRead, { enabled: false });
+  assert.equal(off.exitCode, 1, "alerts switched off must fail, never skip");
+  assert.match(off.errors.join("\n"), /SWITCHED OFF/);
+  assert.doesNotMatch(off.errors.join("\n"), /zero open alerts/, "GitHub listed nothing, so no count may be quoted");
+  assert.equal(
+    judgeAlerts(offRead, { unknown: "could not tell" }).exitCode,
+    1,
+    "the refusal is itself the proof, so a failed ON/OFF read must not turn it back into a pass",
+  );
+  // A 403 that says nothing about the setting is still the token, and still a skip.
+  const tokenRead = outcomeOfReadFailure({
+    stderr: "gh: Resource not accessible by personal access token (HTTP 403)\n",
+  });
+  assert.match("skipped" in tokenRead ? tokenRead.skipped : "", /token lacks/);
+  assert.equal(judgeAlerts(tokenRead, { unknown: "not read" }).exitCode, 0);
 
   // 3. AN UNREADABLE SEVERITY IS URGENT, NOT QUIET
   // Routing an ungradeable alert to "below the audit level" would file it as harmless on no evidence.

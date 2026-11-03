@@ -296,6 +296,12 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
         />
       ) : null}
 
+      {detail.customer360Href ? (
+        <a className="block break-words text-sm font-bold text-orange-700 hover:underline" dir="auto" href={detail.customer360Href}>
+          Open {detail.customerName ?? "this customer"} in Customer 360
+        </a>
+      ) : null}
+
       {/* Same pharmacy, same person, both modules (owner, 2026-10-28): the requester also raised a
           direct order to a pharmacy this request targets — that order already carries its bonus. */}
       <SamePharmacyCrossUseNotice flag={detail.samePharmacyDirectOrders} />
