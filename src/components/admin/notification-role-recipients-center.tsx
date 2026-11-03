@@ -20,6 +20,7 @@ type NotificationRolePolicyView = {
 // Recipients here are computed per-request (assigned approver / requester), not a role
 // broadcast list — `roles` is always empty and this key's card only shows the master switch.
 const NOT_ROLE_CONFIGURABLE: Partial<Record<NotificationRoleKey, string>> = {
+  approval_whatsapp_reminder: "Recipients are whoever holds an approval for more than three days — not role-configurable. This is the on and off switch.",
   marketing_sla_reminder: "Recipients are always the specific request's assigned approver and requester — not role-configurable. This switch only turns the reminder on or off.",
 };
 

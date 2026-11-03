@@ -757,6 +757,7 @@ policy):
    | `phoenix-recruitment-manager-cv-reminders` | `41 * * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-archive-rejections` | `29 3 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-recruitment-whatsapp-reask` | `1,31 * * * *` | 1h | cron-job.org, armed on merge by `cron-autoarm.yml` |
+   | `phoenix-approval-whatsapp-reminders` | `11,21,29,37,47 10 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org job `8526396` · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org job `8525234` · **in-house only** |
    | `phoenix-crm-plan-reminder` | `57 12,17 * * *` | 2h | cron-job.org job `8562812` · **in-house only** |
@@ -859,6 +860,7 @@ policy):
    | `phoenix-recruitment-archive-rejections` | `recruitment in-house-only silent-when-clean` | Moves every rejection older than 30 days out of the Recruitment workspace's tabs into its archive — never deleted, still searchable. It tells nobody, so a red means old rejections are piling back into the tabs Talent Acquisition works from. |
    | `phoenix-recruitment-whatsapp-reask` | `recruitment silent-when-clean` | The in-window WhatsApp re-ask: while the switch on the Screening Questions screen is on, an applicant who went quiet mid-way through the questions is asked the question they stopped at, once, before WhatsApp's 24-hour window closes. It starts OFF and sends nothing while off, so a quiet run is correct; a red means quiet applicants stopped being asked again and their answers stay missing. |
    | `phoenix-interview-reminders` | `recruitment in-house-only silent-when-clean` | Reminds each person chosen to conduct an interview, the evening before and an hour before, in-app, email and Telegram. A red means an interviewer may be given no reminder at all. |
+   | `phoenix-approval-whatsapp-reminders` | `hr in-house-only silent-when-clean` | The WhatsApp reminder to each approver holding something more than three days. It starts OFF behind a switch, a number and Meta's approval, and sends nothing while off, so a quiet run is correct; a red means the read failed or every send was refused. |
    | `phoenix-crm-daily-digest` | `crm in-house-only silent-when-clean` | Phoenix CRM's 06:55 digest to each district manager about the previous field day, in-app and Telegram. A clean manager is told nothing, so this check is the only proof it ran. |
    | `phoenix-crm-integrity-sweep` | `crm in-house-only` | Phoenix CRM's 03:35 photo-duplicate and integrity sweep. It notifies nobody by design and only writes evidence for the board, so a red here is the only way anyone learns it stopped. |
    | `phoenix-crm-plan-reminder` | `crm in-house-only silent-when-clean` | Phoenix CRM's 12:57 and 17:57 reminder that a rep's coming week is not sent, to him and to his district manager. It is silent outside the window the week is due in. |
@@ -1055,6 +1057,8 @@ paragraph exists instead of a green dashboard.
 🔴 **READ LIVE ON 2 NOV 2026, THE GAP IS 14 JOBS, NOT ONE.** 54 jobs are declared and Healthchecks holds 40 checks, all up. Six jobs ping and are refused with a 404, which is what a refused `?create=1` answers: `phoenix-recruitment-requisition-autopilot`, `phoenix-recruitment-manager-cv-reminders`, `phoenix-recruitment-archive-rejections`, `phoenix-brick-move-drain`, `phoenix-system-audit-sweep` and, since the handover below, `phoenix-crm-fraud-scan`. Each one is marked `in-house only` above. Eight more run on `pg_cron` and never ping: the agent-CRM-ids, person-by-HR-key, contact-truth and rep-entry-days reconciles, data retention, the Marketing ROI refresh, the recovery snapshot and analyze-tables-without-statistics. So `deadmans_switch_ping_refused` with status 404 means a missing check, not a wrong address. The warning stays on purpose. The in-house sweep still watches all 54: at 12:00:03 Cairo that day it read 54 checked, 0 stranded, 0 failing.
 
 **The same day, on his word, the fraud scan's check went to `phoenix-recruitment-whatsapp-reask`.** The count stays at 40 checks and 14 jobs without one. The re-ask's switch is still off, so for now its check proves only that the job fires, not that anyone was asked. The fraud scan pings once a week, so it adds one 404 refusal each Thursday, and the in-house sweep still watches it.
+
+**On 3 Nov 2026 `phoenix-approval-whatsapp-reminders` joined in-house only, so 55 jobs are declared and 15 have no check.** Healthchecks still holds its 40, and this job's pings are refused the same way.
 
 **One declared job reports from INSIDE the database (2026-10-23).** `phoenix-crm-agent-crm-ids-reconcile`
 is the pg_cron job that alone keeps the departed-agent CRM id cache current; its command,

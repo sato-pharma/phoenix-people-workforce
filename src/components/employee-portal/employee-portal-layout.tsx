@@ -98,6 +98,7 @@ import {
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
+import { VisitOutboxRunner } from "@/components/phoenix-crm/visit-outbox-runner";
 import { signOutAndLeave } from "@/lib/auth/sign-out-client";
 import { DisplayScaleControl } from "@/components/layout/display-scale-control";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
@@ -1524,6 +1525,7 @@ export function EmployeePortalTopNav({
     <>
       {disableSessionGuard ? null : <SessionSecurityGuard />}
       <OneSignalProvider pushHrId={data.pushHrId} />
+      <VisitOutboxRunner ownerHrId={data.pushHrId} />
       <header
         className={`fixed inset-x-0 top-0 z-30 w-full border-b border-slate-200/80 bg-white/96 shadow-[0_12px_34px_rgba(15,23,42,0.10)] backdrop-blur-2xl ${
           focusMode ? "hidden" : ""

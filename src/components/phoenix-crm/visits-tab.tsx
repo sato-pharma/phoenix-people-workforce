@@ -58,6 +58,8 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { VisitDetailEdit, visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
+import { useHeldVisits } from "@/components/phoenix-crm/visit-outbox-client";
+import { VisitOutboxNote } from "@/components/phoenix-crm/visit-outbox-note";
 import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
 import { CrmStepFooter, CrmStepForm, CrmStepFrame, type CrmStep } from "@/components/phoenix-crm/step-form";
 import { decidersText, logVisitTypeLabel, VisitLogForm, type LogVisitType, type VisitFormPart } from "@/components/phoenix-crm/visit-log-form";
@@ -77,6 +79,8 @@ import { offPlanBlock } from "@/lib/phoenix-crm/offplan-cap-rules";
 import { outOfListVisitNote, unplannedKindLabel } from "@/lib/phoenix-crm/unplanned-rules";
 import type { DayActivityRow, SavedVisit, VisitCustomerOption, VisitDayView, VisitFormView, VisitRow } from "@/lib/phoenix-crm/view-types";
 import { recordingReviewRepLabel } from "@/lib/phoenix-crm/visit-recording-rules";
+import { waitingCustomerIds } from "@/lib/phoenix-crm/visit-outbox";
+import { VISIT_WAITING_LINE, type QueuedVisit } from "@/lib/phoenix-crm/visit-resend-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -745,25 +749,34 @@ function AddFlow({
   dayActivity,
   onActivitySaved,
   onClose,
+  onQueued,
   onSaved,
   onStep,
   resource,
+  retryOf,
   seatId,
   step,
   test,
+  waitingIds,
 }: {
   /** Null while the day is still loading (see VisitStart). */
   canSetDayActivity: boolean | null;
   dayActivity: DayActivityRow | null;
   onActivitySaved: (activity: DayActivityRow | null, label: string) => void;
   onClose: () => void;
+  /** The signal failed on the save and the phone kept the visit. */
+  onQueued: () => void;
   onSaved: (visit: SavedVisit, customerName: string) => void;
   onStep: (next: AddStep) => void;
   /** The form's read — the Visits tab's, which starts it before Add visit is pressed (see `formWanted`). */
   resource: CrmResource<VisitFormView>;
+  /** The held visit he pressed Log it again on, whose words the form starts from. */
+  retryOf: QueuedVisit | null;
   seatId: string;
   step: AddStep;
   test: boolean;
+  /** Customers whose visit is already on this phone: not offered again. */
+  waitingIds: ReadonlySet<string>;
 }) {
   const form = resource.data;
   // The visit recording a chosen rep sends before logging (owner, 2026-10-16), kept until the visit saves.
@@ -843,7 +856,10 @@ function AddFlow({
     );
   }
 
-  const loaded = form;
+  const loaded: VisitFormView =
+    waitingIds.size === 0
+      ? form
+      : { ...form, customers: form.customers.map((customer) => (waitingIds.has(customer.customerId) ? { ...customer, waitingToSend: true } : customer)) };
   const find = (customerId: string) => loaded.customers.find((customer) => customer.customerId === customerId) ?? null;
   // A customer just validated arrives with the form's next read; until then this is loading, not gone.
   const missing = (name: string | null) => (
@@ -893,10 +909,21 @@ function AddFlow({
     );
   }
 
+  // Whatever road led here — Today's stop, a link — the visit is already on this phone, so it is not logged twice.
+  const alreadyWaiting = (customer: VisitCustomerOption) => (
+    <CrmPanel>
+      {back}
+      <CrmBlock>
+        <CrmNote title={customer.name}>{VISIT_WAITING_LINE}</CrmNote>
+      </CrmBlock>
+    </CrmPanel>
+  );
+
   let current: AddStep = step;
   if (step.name === "open") {
     const customer = find(step.customerId);
     if (!customer) return missing(step.customerName);
+    if (customer.waitingToSend) return alreadyWaiting(customer);
     if (customer.validateFirst) return validateFirst(customer);
     current = routeFor(customer);
   }
@@ -1042,6 +1069,7 @@ function AddFlow({
       const formStep = current;
       const customer = find(formStep.customerId);
       if (!customer) return missing(null);
+      if (customer.waitingToSend) return alreadyWaiting(customer);
       if (customer.validateFirst) return validateFirst(customer);
       return shell(
         formStep,
@@ -1053,6 +1081,11 @@ function AddFlow({
           key={formStep.customerId}
           onBack={() => (formStep.back ? onStep(formStep.back) : onClose())}
           onPart={(part) => onStep({ ...formStep, part })}
+          onQueued={() => {
+            sent.clear();
+            onQueued();
+          }}
+          retryOf={retryOf && retryOf.customerId === formStep.customerId ? retryOf : null}
           onReload={resource.reload}
           onRecordingRefused={(message) => {
             setRecordingNotice(message);
@@ -1133,6 +1166,11 @@ export function VisitsTab({
   const [saved, setSaved] = useState<SavedState | null>(null);
   const day = useCrmGet<VisitDayView>(crmUrl("/api/phoenix-crm/visits", { date, seatId, test }), "day");
   const view = day.data;
+  // What this phone is holding for this territory (visit-resend-rules.ts), and the one he chose to log again.
+  const heldOwner = view?.heldVisitsOwnerHrId ?? null;
+  const allHeld = useHeldVisits(heldOwner);
+  const held = allHeld.filter((entry) => entry.seatId === seatId);
+  const [retryOf, setRetryOf] = useState<QueuedVisit | null>(null);
 
   // 🔴 THE REP'S OWN READS START WITH THE DAY'S, NOT AFTER IT (performance work, 24 Oct 2026). The
   // commitments and the call prep used to mount only once the day had answered `canSetDayActivity`, so
@@ -1192,6 +1230,7 @@ export function VisitsTab({
 
   function closeFlow() {
     setStep(null);
+    setRetryOf(null);
     // The two panels used to live under the flow and so were read afresh every time it closed — a visit
     // just saved can keep a commitment or change the next call. Their reads live up here now, so the
     // closing asks for them again explicitly.
@@ -1212,6 +1251,13 @@ export function VisitsTab({
           day.reload();
         }}
         onClose={closeFlow}
+        onQueued={() => {
+          closeFlow();
+          setSaved(null);
+          setDate(null);
+        }}
+        retryOf={retryOf}
+        waitingIds={waitingCustomerIds(held, seatId)}
         onSaved={(visit, customerName) => {
           closeFlow();
           setSaved({ kind: "visit", visit, customerName });
@@ -1320,6 +1366,19 @@ export function VisitsTab({
           <div className="px-4 pt-4 sm:px-5">
             <SavedNote onOpenList={onOpenList} saved={saved} />
           </div>
+        ) : null}
+
+        {isToday && heldOwner ? (
+          <VisitOutboxNote
+            entries={held}
+            onLogAgain={(entry) => {
+              setSaved(null);
+              setRetryOf(entry);
+              setStep({ name: "open", customerId: entry.customerId, customerName: entry.customerName });
+              if (form.data) form.reload();
+            }}
+            ownerHrId={heldOwner}
+          />
         ) : null}
 
         {!view && day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}

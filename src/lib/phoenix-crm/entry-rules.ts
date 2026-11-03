@@ -951,6 +951,8 @@ export function parseDropDraft(raw: unknown, options: { requireNote?: boolean } 
 // ── A visit ─────────────────────────────────────────────────────────────────────────────────────
 
 export type VisitDraft = CapturedFix & {
+  /** How long the phone held this save (parseQueuedSeconds). Evidence only: it never reaches the save function. */
+  queuedSeconds: number | null;
   customerId: string;
   kind: PhoenixCrmVisitKind;
   managerHrId: string | null;
@@ -1237,8 +1239,25 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       samplesGiven: parseSamplesGiven(body.samplesGiven),
       formOpenSeconds: clampFormOpenSeconds(body.formOpenSeconds),
       deviceInstallId: parseDeviceInstallId(body.deviceInstallId),
+      queuedSeconds: parseQueuedSeconds(body.queuedSeconds),
     },
   };
+}
+
+/** The longest a phone holds a press (visit-resend-rules.ts), the same bound as the column's own CHECK. */
+const QUEUED_SECONDS_MAX = 7_200;
+
+/**
+ * How long the phone held this save before it arrived, or null for the normal save that was never held.
+ *
+ * 🔴 A DURATION, NEVER A DATE, AND IT NEVER REACHES `phoenix_crm_save_visit`. The visit stays dated at arrival.
+ * It exists so a late save does not read as a wrong phone clock or as impossible travel: a false flag against
+ * a rep who did nothing wrong. Anything odd reads as null, and it can never refuse a visit.
+ */
+export function parseQueuedSeconds(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > QUEUED_SECONDS_MAX) return null;
+  return parsed;
 }
 
 /**
@@ -1247,11 +1266,16 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
  */
 export const DEVICE_CLOCK_TOLERANCE_MINUTES = 15;
 
-export function deviceClockSkewMinutes(deviceCapturedAt: string | null, serverNow: Date): number | null {
+/**
+ * `queuedSeconds` is how long the phone held the save: the stamp is the TAP and the receipt is the ARRIVAL, so
+ * the gap between them is added to the stamp before the two are compared. A phone whose clock truly is wrong
+ * still shows, and a phone that merely waited for signal does not.
+ */
+export function deviceClockSkewMinutes(deviceCapturedAt: string | null, serverNow: Date, queuedSeconds: number | null = null): number | null {
   if (!deviceCapturedAt) return null;
   const device = Date.parse(deviceCapturedAt);
   if (Number.isNaN(device)) return null;
-  return Math.round((device - serverNow.getTime()) / 60000);
+  return Math.round((device + (queuedSeconds ?? 0) * 1000 - serverNow.getTime()) / 60000);
 }
 
 export function isReportMonth(value: unknown): boolean {

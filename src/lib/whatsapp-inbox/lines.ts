@@ -64,3 +64,26 @@ export function whatsAppInboxLineLabel(phoneNumberId: string | null | undefined,
   if (line) return line.label;
   return displayNumber?.trim() ? `WhatsApp ${displayNumber.trim()}` : "Another WhatsApp line";
 }
+
+// ── The third number (owner, 3 Nov 2026) ──
+//
+// The number the approval reminders go out from (src/lib/approvals/urgent-whatsapp-rules.ts). 🔴 IT IS DELIBERATELY NOT
+// IN whatsAppInboxLines ABOVE, and it has no default: HR Resourcing reads that list, and nobody reads this number.
+// `postToGraph` and the webhook both ask isApprovalsLine, because neither the inbox nor the outbound report filters by
+// line on its own.
+
+export function approvalsLinePhoneNumberId(): string | null {
+  return process.env.WHATSAPP_APPROVALS_PHONE_NUMBER_ID?.trim() || null;
+}
+
+/** Null until both ids are set: a template belongs to one business account, so the number alone cannot send. */
+export function whatsAppApprovalsLine(): { phoneNumberId: string; businessAccountId: string } | null {
+  const phoneNumberId = approvalsLinePhoneNumberId();
+  const businessAccountId = process.env.WHATSAPP_APPROVALS_BUSINESS_ACCOUNT_ID?.trim();
+  return phoneNumberId && businessAccountId ? { businessAccountId, phoneNumberId } : null;
+}
+
+export function isApprovalsLine(phoneNumberId: string | null | undefined): boolean {
+  const line = approvalsLinePhoneNumberId();
+  return Boolean(line) && phoneNumberId?.trim() === line;
+}

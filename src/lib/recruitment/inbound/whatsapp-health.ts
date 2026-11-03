@@ -201,6 +201,11 @@ export type WhatsAppNumberProbe = {
    * exist.
    */
   failureKind: "transport" | "meta" | null;
+  /**
+   * The status Meta answered with, when it answered. A "meta" failure covers a refusal and Meta's own 5xx alike, and
+   * the Needs You board must not call an outage a refused account (owner, 3 Nov 2026).
+   */
+  httpStatus?: number;
   /** Last inbound CV recorded on THIS line (ISO), populated by checkWhatsAppIntakeHealth. */
   lastInboundAt?: string | null;
 };
@@ -503,9 +508,9 @@ async function probeWhatsAppNumberOnce(phoneNumberId: string, token: string): Pr
       const displayNumber = body?.display_phone_number ?? null;
       const status = body?.status;
       if (status && status !== "CONNECTED") {
-        return { displayNumber, error: `number status is ${status}`, failureKind: "meta", ok: false, phoneNumberId };
+        return { displayNumber, error: `number status is ${status}`, failureKind: "meta", httpStatus: response.status, ok: false, phoneNumberId };
       }
-      return { displayNumber, error: null, failureKind: null, ok: true, phoneNumberId };
+      return { displayNumber, error: null, failureKind: null, httpStatus: response.status, ok: true, phoneNumberId };
     }
 
     // Meta's error body is far more actionable than the status code ("API access blocked" vs a
@@ -517,6 +522,7 @@ async function probeWhatsAppNumberOnce(phoneNumberId: string, token: string): Pr
       displayNumber: null,
       error: message ? `${message}${code === undefined ? "" : ` (code ${code})`}` : `HTTP ${response.status}`,
       failureKind: "meta",
+      httpStatus: response.status,
       ok: false,
       phoneNumberId,
     };
@@ -555,9 +561,11 @@ export async function probeWhatsAppNumber(phoneNumberId: string, token: string):
 }
 
 /** Probes every configured intake number concurrently. Empty when the channel is not configured. */
-export async function probeAllWhatsAppNumbers(): Promise<WhatsAppNumberProbe[]> {
+export async function probeAllWhatsAppNumbers(alsoAsk: ReadonlyArray<string | null> = []): Promise<WhatsAppNumberProbe[]> {
   const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
-  const ids = resolveConfiguredPhoneNumberIds();
+  // `alsoAsk` is for the Needs You vendor read, which covers the approvals line too. It is not added to the configured
+  // list, because a fault on the reminders' number must not read as the recruitment intake being down.
+  const ids = Array.from(new Set([...resolveConfiguredPhoneNumberIds(), ...alsoAsk.filter((id): id is string => Boolean(id))]));
   if (!token || ids.length === 0) return [];
   return Promise.all(ids.map((id) => probeWhatsAppNumber(id, token)));
 }

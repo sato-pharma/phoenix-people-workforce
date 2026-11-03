@@ -397,6 +397,10 @@ const ROUTE_GATES: RouteGate[] = [
   // report's own `read` gate and 404 (`canReadVisitReport`); the service keys every call on the viewer's
   // HR id and takes no owner argument. A save and a delete write to the database, so both are audited as
   // mutations and both refuse a cross-site request first; the list is a plain read.
+  // A beacon for the visit retry: it always answers 204, and its row in the resend log is the record. The GET is the
+  // switch and the ids on file, called only while the phone holds something.
+  get("visit-resend-report", "create"),
+  { route: "visit-resend-report", method: "POST", action: "create", audit: "mutation", auditRequired: false },
   get("visit-report/views"),
   post("visit-report/views", "read"),
   { route: "visit-report/views", method: "DELETE", action: "read", audit: "mutation", auditRequired: true },
@@ -1050,6 +1054,8 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql",
   // The same page's door and write, replaced again the same day: a number stays on its own seat, and a switch is a round trip.
   "supabase/migrations/20261102133258_phoenix_crm_venue_cap_round_trip.sql",
+  // The visit retry (owner, 3 Nov 2026): one column, one log table and a switch. It creates and replaces no function.
+  "supabase/migrations/20261103120000_phoenix_crm_visit_resend.sql",
 ];
 
 /**

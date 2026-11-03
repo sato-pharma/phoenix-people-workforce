@@ -265,7 +265,7 @@ function testCrmVisitsTabStartsItsReadsTogether() {
   assert.match(visits, /const ownDay = isToday && view\?\.canSetDayActivity === true;/);
   assert.match(visits, /\{ownDay \? \(\s*<>[\s{}]*<CommitmentsPanel commitments=\{commitments\} \/>[\s{}]*<CallPrepPanel prep=\{prep\} \/>/);
   // A form read ahead is read again on every opening, so he never picks from an old list.
-  assert.equal((visits.match(/if \(form\.data\) form\.reload\(\);/g) ?? []).length, 3, "RED the hand-off, the portal's + and Add visit each read the form afresh");
+  assert.equal((visits.match(/if \(form\.data\) form\.reload\(\);/g) ?? []).length, 4, "RED the hand-off, the portal's +, Add visit and Log it again each read the form afresh");
   const close = functionBody(visits, "closeFlow");
   assert.match(close, /commitments\.reload\(\);\s*prep\.reload\(\);/, "RED closing the flow reads the two panels again, as their remount used to");
   // The panels and the flow make no read of their own any more.

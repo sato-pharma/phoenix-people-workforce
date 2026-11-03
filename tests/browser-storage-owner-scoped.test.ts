@@ -6,6 +6,7 @@ import {
   EXPENSE_DECISION_DRAFT_KEY_BASE,
   PUSH_REGISTRATION_MEMO_KEY_BASE,
   UNOWNED_LEGACY_DRAFT_KEYS,
+  VISIT_OUTBOX_KEY_BASE,
   clearSignedOutDrafts,
   isOwnedByViewer,
   normalizeOwnerHrId,
@@ -89,14 +90,15 @@ export function runBrowserStorageOwnerScopedTests() {
       "phoenix:contact-hr-draft:v1": "{}",
       "phoenix.outstation.expense-approvals.draft.v1": "{}",
       "phoenix-outstation-draft:MR-0412": "{}",
+      [`${VISIT_OUTBOX_KEY_BASE}:MR-0412`]: "[]",
       "phoenix-theme": "dark",
     });
     clearSignedOutDrafts(storage);
     assert.deepEqual(
       storage.keys(),
-      ["phoenix-outstation-draft:MR-0412", "phoenix-theme"],
+      ["phoenix-outstation-draft:MR-0412", "phoenix-theme", `${VISIT_OUTBOX_KEY_BASE}:MR-0412`],
       "sign-out removes every person's unsaved-typing draft and every un-owned legacy key, and leaves the " +
-        "owner-checked queue (the outstation claim) and unrelated settings alone",
+        "owner-checked queues (the outstation claim, the visits a phone holds) and unrelated settings alone",
     );
     assert.equal(UNOWNED_LEGACY_DRAFT_KEYS.length, 3, "the three pre-rule keys are all named");
 

@@ -114,7 +114,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-signboard` — Phoenix CRM — the signboard reader: reading a photo and judging it against the list | `src/lib/phoenix-crm/{signboard-rules,place-check-advice}.ts` and 5 more |
 | `phoenix-crm-reports` — Phoenix CRM — the reports, the boards and how every figure is counted | `src/lib/phoenix-crm/{brick-report,daily-plan-report,exceptions,report-guide,report-rules,samples-report,team-calendar}.ts` and 4 more |
 | `phoenix-crm-reference-list` — Phoenix CRM — the reference list: the seat's customers and the mint that keeps them current | `src/lib/phoenix-crm/server/{list,visits,missed-records}.ts` and 4 more |
-| `phoenix-crm-visits` — Phoenix CRM — the visit a rep records: the form, the day, the pharmacy call | `src/lib/phoenix-crm/{call-prep,day-activities,day-detail,day-start-rules,double-visit-request-rules,last-visit-products,pharmacy-call-rules,today-rules,visit-ask-rules,visit-company,visit-detail-edit-rules,visit-edit-rules,visit-kind-labels,visit-location-words,visit-outcome,visit-rollup-rules}.ts` and 6 more |
+| `phoenix-crm-visits` — Phoenix CRM — the visit a rep records: the form, the day, the pharmacy call | `src/lib/phoenix-crm/{call-prep,day-activities,day-detail,day-start-rules,double-visit-request-rules,last-visit-products,pharmacy-call-rules,today-rules,visit-ask-rules,visit-company,visit-detail-edit-rules,visit-edit-rules,visit-kind-labels,visit-location-words,visit-outbox,visit-outcome,visit-resend-rules,visit-rollup-rules}.ts` and 8 more |
 | `crm` — Field CRM analytics (iReports360) — visits, KPIs, reps lists and plans | `src/lib/{crm,crm-integrity,customer-360,customer-identity,double-visit-analytics,visits-report,field-activity,weekly-planning}/**` and 10 more |
 | `crm-board-reads` — Field CRM — how a board reads: the shared minute-old copies and the one-statement functions | `src/lib/crm/{shared-windows,reps-list,reps-list-board,contact-trade,rep-kpi-reports-data,region-brick}.ts` and 5 more |
 | `crm-unified-doors` — The CRM union doors — crm_visits_unified, crm_checkins_unified and the entry days | `src/lib/crm/{reads,master,phoenix-work-evidence,phoenix-vendor-leftovers,phoenix-team-starts,phoenix-kpi-data}.ts` and 9 more |
@@ -143,7 +143,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `turbify-provisioning` — Turbify provisioning — creating a mailbox, its invitation and its app password | `src/lib/new-hire-mailbox/**` and 3 more |
 | `coaching` — Coaching, training and visual aids | `src/lib/{coaching,visual-aids}/**` and 4 more |
 | `report-it` — Report It (pharmacovigilance — patient data) | `src/lib/report-it/**` and 3 more |
-| `approvals` — Approvals and workflow | `src/lib/{approvals-hub,workflow-control,workflow-registry,approvals}/**` and 4 more |
+| `approvals` — Approvals and workflow | `src/lib/{approvals-hub,workflow-control,workflow-registry,approvals}/**` and 6 more |
 | `devices` — Devices and tablet management (Headwind MDM) | `src/lib/devices/**` and 4 more |
 | `platform` — Platform — auth, security, cron, data access and shared UI | `src/lib/{auth,security,platform,cron-control,background-jobs,observability,error-monitor,system-audit,share-links,share,http,imports,uploads,ai,validation,qr,operations,synthetic-journeys,admin,format,i18n,ui,utils}/**` and 9 more |
 | `platform-system-audit` — Platform — the System Audit board, its daily message and the error screenshots | `src/lib/system-audit/**` and 7 more |

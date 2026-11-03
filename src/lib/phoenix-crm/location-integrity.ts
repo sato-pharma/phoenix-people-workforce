@@ -367,6 +367,17 @@ export const COARSE_ACCURACY_METERS = 500;
 
 // ── Input ───────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A fix at the moment he was there rather than the moment it arrived (the visit retry, owner, 3 Nov 2026). A save
+ * the phone held for want of signal has a late `captured_at`, and compared raw a drained queue reads as visits
+ * seconds apart. Both sides of a comparison go through this, each with its own wait. A save never held is
+ * returned as it is, which is every save before this existed.
+ */
+export function atTheDoor<T extends { capturedAt: Date }>(fix: T, queuedSeconds: number | null | undefined): T {
+  if (!queuedSeconds || !Number.isFinite(queuedSeconds)) return fix;
+  return { ...fix, capturedAt: new Date(fix.capturedAt.getTime() - queuedSeconds * 1000) };
+}
+
 /** One fix already on record, as the history query returns it. */
 export type PhoenixCrmPriorFix = GeoPoint & {
   accuracyMeters: number | null;

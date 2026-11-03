@@ -4,6 +4,7 @@ import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { dispatchSyntheticJourneys } from "@/lib/observability/dispatch-synthetic-journeys";
 import { logError } from "@/lib/observability/log";
+import { SYNTHETIC_DISPATCH_FAILURE_PREFIX } from "@/lib/observability/synthetic-dispatch-reasons";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       JOB_SLUG,
       result.dispatched ? "success" : "fail",
-      result.dispatched ? undefined : `the run was not dispatched: ${result.reason}`,
+      result.dispatched ? undefined : `${SYNTHETIC_DISPATCH_FAILURE_PREFIX}${result.reason}`,
     );
 
     return NextResponse.json({ success: true, ...result });

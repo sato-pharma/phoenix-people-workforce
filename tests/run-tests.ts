@@ -2045,6 +2045,9 @@ import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-in
 import { runPhoenixCrmSweepPagingTests } from "./phoenix-crm-sweep-paging.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
 import { runPhoenixCrmVisitDatingTests } from "./phoenix-crm-visit-dating.test.ts";
+import { runPhoenixCrmVisitResendRulesTests } from "./phoenix-crm-visit-resend-rules.test.ts";
+import { runPhoenixCrmVisitOutboxTests } from "./phoenix-crm-visit-outbox.test.ts";
+import { runPhoenixCrmQueuedEvidenceTests } from "./phoenix-crm-queued-evidence.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
@@ -2784,6 +2787,10 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouOfficeAllocationDriftTests } from "./needs-you-office-allocation-drift.test.ts";
 import { runNeedsYouSeatDriftTests } from "./needs-you-seat-drift.test.ts";
+import { runNeedsYouVendorAccountsTests } from "./needs-you-vendor-accounts.test.ts";
+import { runApprovalWhatsAppRulesTests } from "./approval-whatsapp-rules.test.ts";
+import { runApprovalWhatsAppSendTests } from "./approval-whatsapp-send.test.ts";
+import { runApprovalWhatsAppReplyExitTests } from "./approval-whatsapp-reply-exit.test.ts";
 import { runNeedsYouUncollectedLeaverDeductionsTests } from "./needs-you-uncollected-leaver-deductions.test.ts";
 import { runOrphanedRequestsTests } from "./orphaned-requests.test.ts";
 import { runOrphanedRequestsReaderTests } from "./orphaned-requests-reader.test.ts";
@@ -7462,6 +7469,21 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM's visit retry sends a held visit only inside its window, and a refusal never hides a visit already on file",
+  runPhoenixCrmVisitResendRulesTests,
+);
+
+await runTest(
+  "Phoenix CRM's visit queue survives no signal, a late refusal, a repeat, 02:00, sign-out and a second person on the phone",
+  runPhoenixCrmVisitOutboxTests,
+);
+
+await runTest(
+  "Phoenix CRM: how long a phone held a visit never dates it and never reads as an impossible trip",
+  runPhoenixCrmQueuedEvidenceTests,
+);
+
+await runTest(
   "Phoenix CRM's save button reaches the queue, so a rep in a dead spot keeps his visit (A1, the wiring — until now the queue had NO caller and could not have one, because `@/*` resolves only to `mobile/src/*` and no phone file could supply `drainOutbox` its rules, so it shipped uncallable; BOTH failure points now end in the queue rather than in a message — a photo upload that never landed is held without even attempting the save, and a save whose connection died after the photo got through is held rather than sending him back to the door; a visit is NEVER held without its stamped photo, because one that can never be sent would never leave; a full queue refuses the NEWEST capture with an instruction he can act on and discards nothing older; the elapsed reading is taken at the PRESS from the monotonic clock, and the claim carries an anchor id, a run id and a duration with no timestamp of any kind; every word he reads says the visit is SAVED on his phone, in green, in the same place a sent visit is confirmed; and a PLACE can never be queued, because the server resolves its brick, area and address from the coordinates at capture)",
   runPhoenixCrmOfflineWireTests,
 );
@@ -11008,6 +11030,23 @@ await runTest(
 await runTest(
   "the organogram seat-drift board row reports an active person whose employees record disagrees with the seat they occupy — the area, the region or the manager — which au_v_employee_seat_drift had been flagging for two days on 2026-10-15 with nothing reading it as an alarm while a new rep was silently missing from her own area's weekly plan; one row per PERSON however many facts disagree, both values side by side with an absent one reading as \"holds no area\" rather than a blank, the person NAMED and no HR id anywhere a reader sees one, no automatic repair because which side is right is a judgement, a clean view producing no row at all, the Super Admin's lane alone, the light lane (3.228 ms over 97 rows on production), and the read selecting on the three drift booleans only — a person with NO seat is not drift and all 16 Head Office people would be on the board for ever if it were widened to that",
   runNeedsYouSeatDriftTests,
+);
+
+await runTest(
+  "Needs You reads three vendor accounts, says a refusal in his lane, never words an outage as a refusal, and prints what it cannot see",
+  runNeedsYouVendorAccountsTests,
+);
+await runTest(
+  "the approval reminders count only the step that can decide now, on an open request, and only past three days",
+  runApprovalWhatsAppRulesTests,
+);
+await runTest(
+  "the approval reminders stay silent behind every lock, send once a person a day, and never read as a calm zero",
+  runApprovalWhatsAppSendTests,
+);
+await runTest(
+  "the third WhatsApp number never reaches HR Resourcing, the applicant bot or the recruitment report",
+  runApprovalWhatsAppReplyExitTests,
 );
 await runTest(
   "the orphaned-request detector flags a request stranded because its next actor has left: a resigned actor is caught even through a casing difference (assigned_hr_id keeps the master's casing), while an ACTIVE actor, a role rung with no named person, and an actor the master does not hold are each left alone (it detects a KNOWN departure, never guesses one from a missing row); grouping is by (module, reason), dedupes the people and keeps the OLDEST timestamp; and the source is wired into the Needs You board in all four places (id, label, destination, adapter) so it reaches the morning digest rather than only existing",

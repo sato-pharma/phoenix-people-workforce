@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { logError, logWarning } from "@/lib/observability/log";
+import { applyApprovalsLineStatuses } from "@/lib/approvals/urgent-whatsapp-log";
+import { splitApprovalsLineDelivery } from "@/lib/approvals/urgent-whatsapp-rules";
+import { logError, logInfo, logWarning } from "@/lib/observability/log";
 import {
   assembleWhatsAppSourceContext,
   MAX_WHATSAPP_SOURCE_MESSAGES,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { recordUnattributedWhatsAppMessage } from "@/lib/recruitment/inbound/whatsapp-unattributed-sender";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
+import { approvalsLinePhoneNumberId } from "@/lib/whatsapp-inbox/lines";
 import { recordInboxDelivery } from "@/lib/whatsapp-inbox/record";
 import { extractFtpSubmissionIds } from "@/lib/whatsapp-videos/handoff-contract";
 import { captureInboundSubmissionId, captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
@@ -120,6 +123,20 @@ export async function POST(request: Request) {
     payload = JSON.parse(body);
   } catch {
     return NextResponse.json({ message: "Invalid WhatsApp webhook JSON." }, { status: 400 });
+  }
+
+  // 🔴 THE THIRD NUMBER LEAVES BEFORE ANYTHING READS THE DELIVERY (owner, 3 Nov 2026). The approval reminders' number
+  // does not read replies, and the inbox below files every line it is handed, so a reply left in would reach HR
+  // Resourcing, the applicant bot and Talent Acquisition. Per change, not per delivery: the number sits under the
+  // recruitment business account, so an applicant's CV can arrive in the same delivery and must still go through.
+  const approvalsLine = splitApprovalsLineDelivery(payload, approvalsLinePhoneNumberId());
+  payload = approvalsLine.payload;
+  if (approvalsLine.droppedChanges > 0) {
+    logInfo("WhatsApp delivery on the approvals line was dropped", {
+      context: { messages: approvalsLine.droppedMessages, statuses: approvalsLine.statuses.length },
+      labels: { event: "whatsapp_approvals_line_dropped", webhook: "whatsapp" },
+    });
+    await applyApprovalsLineStatuses(approvalsLine.statuses);
   }
 
   // THE WHATSAPP INBOX KEEPS ITS OWN COPY, FIRST. Every message on both numbers — from the person,

@@ -258,6 +258,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
   const { visit, customer, place, sharedPlace, seat, names, provenance, evidence, sequence, planItem, review, unplanned } = context;
   const visitDate = String(visit.visit_date ?? "");
   const fixAge = num(provenance?.fix_age_seconds);
+  const queued = num(provenance?.queued_seconds);
   const planned = planItem !== null;
 
   // Everyone the visit lists past its fixed places (owner, 2026-10-27) joins his own side's column, each once:
@@ -366,6 +367,7 @@ export function buildVisitReportValues(context: VisitReportContext): Record<stri
     photoTakenAt: iso(visit.photo_captured_at),
     // A negative age is a phone clock that ran ahead of the server: not a measurement.
     fixAgeSeconds: fixAge !== null && fixAge >= 0 ? fixAge : null,
+    sentLateMinutes: queued !== null && queued > 0 ? Math.round(queued / 60) : null,
     deviceInstall: text(provenance?.device_install_id),
     appRevision: text(provenance?.app_revision),
     browser: text(provenance?.user_agent),

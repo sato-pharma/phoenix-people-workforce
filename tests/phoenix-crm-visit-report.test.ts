@@ -81,7 +81,7 @@ function viewer(flags: Partial<PhoenixCrmViewer>): PhoenixCrmViewer {
 // ── 1 · the catalogue ───────────────────────────────────────────────────────────────────────────
 
 function checkCatalogue(): void {
-  assert.equal(VISIT_REPORT_FIELDS.length, 115, "the owner's list is 115 fields");
+  assert.equal(VISIT_REPORT_FIELDS.length, 116, "the owner's 115 fields, and Sent late (min) from the visit retry (3 Nov 2026)");
   assert.equal(VISIT_REPORT_CATEGORIES.length, 10, "in ten categories");
   const keys = VISIT_REPORT_FIELDS.map((field) => field.key);
   assert.equal(new Set(keys).size, keys.length, "no field key is used twice");
@@ -125,16 +125,16 @@ function checkSelection(): void {
     resolveVisitReportSelection(asked, "superAdmin").some((field) => field.key === "mockDevice"),
     "the Super Admin keeps it",
   );
-  assert.equal(visitReportFieldsFor("sfe").length, 114, "the SFE Manager is offered 114 of the 115");
-  assert.equal(visitReportFieldsFor("superAdmin").length, 115, "the Super Admin all of them");
-  assert.equal(visitReportFieldsFor("manager").length, 97, "a district manager is offered 97 of the 115");
+  assert.equal(visitReportFieldsFor("sfe").length, 115, "the SFE Manager is offered 115 of the 116");
+  assert.equal(visitReportFieldsFor("superAdmin").length, 116, "the Super Admin all of them");
+  assert.equal(visitReportFieldsFor("manager").length, 97, "a district manager is offered 97 of the 116");
 
   // The district manager's sight: no measurement behind a distance, no integrity case, no device
   // telemetry, no mock-location evidence (owner, 2026-10-02 "District Managers see the distance only";
   // the integrity board is the Super Admin's and the SFE Manager's).
   const beyondTheDistrictManager = [
     "clockOffsetMinutes", "visitAccuracy", "photoAccuracy", "placeAccuracy", "pointSource", "photoLat", "photoLon",
-    "photoTakenAt", "fixAgeSeconds", "deviceInstall", "appRevision", "browser", "integrityDetectors",
+    "photoTakenAt", "fixAgeSeconds", "sentLateMinutes", "deviceInstall", "appRevision", "browser", "integrityDetectors",
     "integrityStrength", "caseSettled", "repMonthFlags", "speedKmh", "mockDevice",
   ];
   const offeredToManager = new Set(visitReportFieldsFor("manager").map((field) => field.key));
@@ -148,7 +148,7 @@ function checkSelection(): void {
   }
   assert.equal(
     visitReportFieldsFor("manager").length + beyondTheDistrictManager.length,
-    115,
+    116,
     "the hidden list is exactly the difference — a field added without a sight is a manager's by default, so add it here when it is not",
   );
   for (const key of ["distanceFromPlace", "locationFlag", "visitLat", "visitLon", "placeLat", "placeLon"]) {
@@ -792,7 +792,7 @@ function checkSource(): void {
   assert.match(loader, /resolveVisitReportSelection\(.*visitReportTierOf\(viewer\)\)/, "the selection is cleaned against the viewer's sight before anything is read");
   assert.match(loader, /&& !isLocationBlind\(viewer, seat\)/, "an acting district manager's own rep seat is never one he reports on");
   assert.ok(
-    loader.includes('has("fixAgeSeconds", "deviceInstall", "appRevision", "browser") || has("speedKmh")') &&
+    loader.includes('has("fixAgeSeconds", "sentLateMinutes", "deviceInstall", "appRevision", "browser") || has("speedKmh")') &&
       loader.includes('has("integrityDetectors", "integrityStrength", "mockDevice", "caseSettled")') &&
       loader.includes('has("repMonthFlags")'),
     "the fields that read a silent table are still exactly the ones the district manager's sight hides — change both together",

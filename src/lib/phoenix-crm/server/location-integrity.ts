@@ -19,6 +19,7 @@
 import { assessCaptureTrust, fixesAreBitIdentical, type CaptureFix } from "@/lib/evidence/capture-trust";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
 import {
+  atTheDoor,
   checkLocationIntegrity,
   PHOENIX_CRM_STRONG_INTEGRITY_FLAGS,
   REPLAY_DECIMALS,
@@ -90,11 +91,11 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
   const lonLow = fix.lon - COORDINATE_BAND;
   const lonHigh = fix.lon + COORDINATE_BAND;
 
-  const visitColumns = "lat, lon, accuracy_meters, captured_at, rep_hr_id, customer_id";
+  const visitColumns = "id, lat, lon, accuracy_meters, captured_at, rep_hr_id, customer_id";
   // A place records who created it rather than a "rep", so it is aliased into the same shape.
   const placeColumns = "lat, lon, accuracy_meters, captured_at, rep_hr_id:created_by_hr_id, customer_id";
 
-  const [ownVisits, ownPlaces, replayVisits, replayPlaces] = await Promise.all([
+  const [ownVisits, ownPlaces, replayVisits, replayPlaces, held] = await Promise.all([
     // Visits with a reading only: one the Super Admin entered for the rep has none, and must not spend
     // a row of the 500 — toPriorFix would drop it anyway.
     supabase
@@ -126,13 +127,25 @@ async function loadHistory(repHrId: string, fix: { lat: number; lon: number }, i
       .gte("lon", lonLow)
       .lte("lon", lonHigh)
       .limit(50),
+    // This rep's saves a phone held for want of signal. Rare, and the partial index holds only them.
+    supabase
+      .from("phoenix_crm_visit_capture_provenance")
+      .select("visit_id, queued_seconds")
+      .eq("rep_hr_id", repHrId)
+      .gte("captured_at", ownSince)
+      .not("queued_seconds", "is", null)
+      .limit(500),
   ]);
 
+  // 🔴 A HELD SAVE ARRIVED LATE, SO ITS `captured_at` IS NOT WHEN HE WAS THERE. Compared raw, a drained queue
+  // reads as several visits seconds apart, and the next normal visit reads as a trip made in the time since
+  // the last one arrived. A failed read here shifts nothing: the check runs as it did before the queue.
+  const heldSeconds = new Map(((held.data ?? []) as Row[]).map((row) => [String(row.visit_id), Number(row.queued_seconds)]));
   const out: PhoenixCrmPriorFix[] = [];
   for (const result of [ownVisits, ownPlaces, replayVisits, replayPlaces]) {
     for (const row of (result.data ?? []) as Row[]) {
       const prior = toPriorFix(row, "customer_id");
-      if (prior) out.push(prior);
+      if (prior) out.push(atTheDoor(prior, heldSeconds.get(String(row.id))));
     }
   }
   return out;
@@ -146,6 +159,8 @@ export type JudgeCaptureInput = {
   customerId: string | null;
   isTest: boolean;
   fix: { lat: number; lon: number; accuracyMeters: number | null; capturedAt: Date };
+  /** How long the phone held this save before it arrived (visit-resend-rules.ts). Places never carry one. */
+  queuedSeconds?: number | null;
   /** Android's mock-provider flag as the phone reported it; null where it cannot be asked. */
   deviceMocked: boolean | null;
   /** Whether the browser's own location reader was replaced (location-reader-probe.ts); null when not asked. */
@@ -165,8 +180,9 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
     const repHrId = input.repHrId.toUpperCase();
     const history = await loadHistory(repHrId, input.fix, input.isTest).catch(() => [] as PhoenixCrmPriorFix[]);
     // The capture being judged is already on file by now, so it would otherwise match itself.
+    // Compared at the moment he was there. What is FILED below keeps the arrival: it must agree with the visit.
     const verdict = checkLocationIntegrity({
-      fix: input.fix,
+      fix: atTheDoor(input.fix, input.queuedSeconds),
       repHrId,
       customerId: input.customerId,
       deviceMocked: input.deviceMocked,

@@ -50,7 +50,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, History, Plus } from "lucide-react";
 
-import { crmPost, errorCodeOf, messageOf, newClientId } from "@/components/phoenix-crm/api";
+import { crmPost, crmPostWithin, errorCodeOf, isRetryableFailure, messageOf, newClientId } from "@/components/phoenix-crm/api";
+import { forgetHeldVisit, holdVisitPress, leaveVisitWaiting, reportVisitResend, restoreHeldVisit } from "@/components/phoenix-crm/visit-outbox-client";
 import { dayLabel } from "@/components/phoenix-crm/format";
 import { customerMetaText, monthVisitsText, PENDING_COUNTS_NOTE, PENDING_PILL, pendingVisitsText } from "@/components/phoenix-crm/labels";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
@@ -100,6 +101,9 @@ import { isFollowUp, OBJECTION_NOTE_MAX, VISIT_NEXT_STEPS, VISIT_OBJECTIONS, typ
 import { COMPANY_MOST, companyToStorage, type VisitCompanyChoice } from "@/lib/phoenix-crm/visit-company";
 import type { SavedVisit, VisitCustomerOption, VisitFormView, VisitPerson } from "@/lib/phoenix-crm/view-types";
 import { isVisitRecordingRefusal } from "@/lib/phoenix-crm/visit-recording-rules";
+import { browserLocalStorage } from "@/lib/browser-storage/owner-scoped";
+import { findHeldVisit, readQueuedVisits } from "@/lib/phoenix-crm/visit-outbox";
+import { loggedAgainStart, VISIT_SAVE_TIMEOUT_MS, type QueuedVisit } from "@/lib/phoenix-crm/visit-resend-rules";
 import { cn } from "@/lib/utils";
 
 /**
@@ -373,6 +377,8 @@ export function VisitLogForm({
   initialVisitType,
   onBack,
   onPart,
+  onQueued,
+  retryOf = null,
   onReload,
   onRecordingRefused,
   onSaved,
@@ -397,6 +403,10 @@ export function VisitLogForm({
   part: VisitFormPart;
   /** Read the form again: the customer moved on under the screen (already visited, dropped). */
   onReload: () => void;
+  /** The signal failed and the phone kept the visit: it is safe, so the form closes as if it had saved. */
+  onQueued?: () => void;
+  /** The held visit he pressed Log it again on (visit-resend-rules.ts): the form starts from his own words. */
+  retryOf?: QueuedVisit | null;
   onSaved: (visit: SavedVisit, customerName: string) => void;
   /**
    * The visit recording a chosen rep sent before the form opened (owner, 2026-10-16), carried in the
@@ -426,7 +436,10 @@ export function VisitLogForm({
   const [picked, setPicked] = useState<string[]>([]);
   // A manager entering a chain picks the manager above himself — his own box, unchanged.
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
-  const [products, setProducts] = useState<string[]>(() => carriedProducts(customer));
+  const [products, setProducts] = useState<string[]>(() => {
+    const again = loggedAgainStart(retryOf)?.products ?? [];
+    return again.length > 0 ? again : carriedProducts(customer);
+  });
   const [pharmacyName, setPharmacyName] = useState("");
   // At the pharmacy itself (owner, 2026-10-03): the pharmacy is the customer, so there is no other
   // pharmacy to name — only its stock. Every road to a pharmacy opens this form as a pharmacy visit
@@ -436,7 +449,7 @@ export function VisitLogForm({
   // Which families in the pharmacy-stock check are expanded to show their concentrations. A family
   // with a single product is never a group, so it is never in here; the rest start collapsed.
   const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
-  const [comment, setComment] = useState("");
+  const [comment, setComment] = useState(() => loggedAgainStart(retryOf)?.comment ?? "");
   // The LAST question (owner, 2026-10-16): "Do you need a double visit with this customer?". It starts
   // on No, and No asks nothing more.
   const [doubleVisit, setDoubleVisit] = useState<DoubleVisitAnswerDraft>(NO_DOUBLE_VISIT);
@@ -732,7 +745,13 @@ export function VisitLogForm({
   // re-render must never be able to move the clock.
   async function save(savedAt: number) {
     if (saving) return;
-    const visitId = visitIdRef.current ?? newClientId();
+    // 🔴 THE SAME VISIT GOES UNDER THE SAME ID. If a press the phone is holding did land, the server answers with
+    // that visit rather than a second one. Null when this person has no queue: a manager, a test login, or off.
+    const queueOwner = form.visitQueueOwnerHrId ?? null;
+    const heldForThisVisit = queueOwner
+      ? findHeldVisit(readQueuedVisits(browserLocalStorage(), queueOwner), { seatId, customerId: customer.customerId, pressedDay: form.cairoToday })
+      : null;
+    const visitId = visitIdRef.current ?? heldForThisVisit?.visitId ?? newClientId();
     // The clock is read HERE, in the event handler, where an impure call is allowed.
     const openedAt = openedAtRef.current;
     const next = draft(visitId, openedAt === null ? null : Math.max(0, Math.round((savedAt - openedAt) / 1000)));
@@ -754,15 +773,35 @@ export function VisitLogForm({
       setSaving(false);
       return;
     }
+    // 🔴 SILENT, and read HERE for the same reason the stopwatch is: `draft` runs where React will
+    // not allow an impure call, and reading this one writes to browser storage the first time. It
+    // answers null wherever there is no storage to keep it in, and the save is identical either way.
+    const body = { ...next.payload, ...silentFixPayload(fix, savedAt), deviceInstallId: deviceInstallId() };
+    // 🔴 THE PRESS IS KEPT BEFORE THE REQUEST GOES (owner, 3 Nov 2026), so a reload or a dead battery cannot lose
+    // it, and it is the one record that he pressed at all. Not kept, the save behaves as it always did: he is
+    // never told a visit is safe on this phone when it is not.
+    const kept =
+      queueOwner !== null &&
+      holdVisitPress({
+        ownerHrId: queueOwner,
+        visitId,
+        seatId,
+        customerId: customer.customerId,
+        customerName: next.customerName,
+        pressedDay: form.cairoToday,
+        pressedAtMs: savedAt,
+        body,
+      });
     try {
-      // 🔴 SILENT, and read HERE for the same reason the stopwatch is: `draft` runs where React will
-      // not allow an impure call, and reading this one writes to browser storage the first time. It
-      // answers null wherever there is no storage to keep it in, and the save is identical either way.
-      const saved = await crmPost<SavedVisit>(
-        "/api/phoenix-crm/visits",
-        { ...next.payload, ...silentFixPayload(fix, savedAt), deviceInstallId: deviceInstallId() },
-        "visit",
-      );
+      const saved = kept
+        ? await crmPostWithin<SavedVisit>("/api/phoenix-crm/visits", body, "visit", VISIT_SAVE_TIMEOUT_MS)
+        : await crmPost<SavedVisit>("/api/phoenix-crm/visits", body, "visit");
+      if (kept) forgetHeldVisit(queueOwner, visitId);
+      if (retryOf && queueOwner) {
+        // Log it again across 02:00 is a new visit under a new id, so the old row has to go by its own.
+        forgetHeldVisit(queueOwner, retryOf.visitId);
+        reportVisitResend(retryOf, "relogged");
+      }
       // 🔴 HIS DAY ON THE LANDING PAGE GOES GREEN WHEN HE PRESSES BACK (owner, 2026-09-30: "if it is
       // submitted from those visits in the overview landing page, it is automatically marked as
       // done"). The server side was never wrong — `done` is read from the day's saved visits, and a
@@ -777,6 +816,18 @@ export function VisitLogForm({
       router.refresh();
       onSaved(saved, next.customerName);
     } catch (error) {
+      if (kept) {
+        // Only no signal is held. A refusal is an answer, and it is shown here as it always was.
+        if (isRetryableFailure(error)) {
+          leaveVisitWaiting(queueOwner, visitId);
+          setSaving(false);
+          onQueued?.();
+          return;
+        }
+        // The same id as the row he came from: put that row back, so backing out of the form loses nothing.
+        if (retryOf && retryOf.visitId === visitId) restoreHeldVisit(queueOwner, retryOf);
+        else forgetHeldVisit(queueOwner, visitId);
+      }
       const code = errorCodeOf(error);
       if (isVisitRecordingRefusal(code)) {
         // The recording cannot stand on this visit. Add visit drops it and puts the recorder back, with
@@ -1022,7 +1073,7 @@ export function VisitLogForm({
         {/* GOLDEN RULE #1, the EASY half: the prefill is said out loud ABOVE the grid, before he reads a
             single tick, with one tap to clear it and one to put it back. A silent prefill he cannot see
             the source of is worse than asking. */}
-        {customer.lastVisit && lastProducts.length > 0 ? (
+        {customer.lastVisit && lastProducts.length > 0 && !retryOf ? (
           <div className="mb-2 grid min-w-0 gap-2 border border-orange-200 bg-orange-50/60 px-3 py-2 sm:flex sm:items-center">
             <p className="flex min-w-0 flex-1 items-start gap-2 text-xs font-semibold leading-5 text-orange-900">
               <History aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
