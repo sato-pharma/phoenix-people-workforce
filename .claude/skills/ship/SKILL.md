@@ -125,6 +125,10 @@ re-run does not resurrect. An open HIGH alert is that failure with the clock alr
   [docs/security/open-dependency-alerts.md](../../../docs/security/open-dependency-alerts.md).
 - **`skipped — …` is NOT a pass.** It means nothing was read — no `gh`, not authenticated, no
   network, or a token without `security_events`. Report it as unread, never as clear.
+- **`SWITCHED OFF` (exit 1) is NOT an alert to bump.** Dependabot alerts are off for the repository, so
+  nothing could be listed. It does not stop this merge: `validate`'s audit is still the gate. Say in the
+  report that the alerts were not read, and that turning them on is the owner's click in the repository's
+  Security settings.
 - The alert appears here hours before the audit feed learns it, which is the whole window this buys.
   It is a read: it never merges anything, and **auto-merging these bumps was offered on 2026-09-30
   and declined** — every merge stays the owner's own word.

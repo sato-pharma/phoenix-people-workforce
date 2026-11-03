@@ -80,13 +80,30 @@ export function readOpenAlerts() {
     if (!Array.isArray(alerts)) return { skipped: 'the alerts endpoint returned no array' };
     return { alerts };
   } catch (err) {
-    const stderr = String(err?.stderr ?? '');
-    if (err?.code === 'ENOENT') return { skipped: 'the `gh` CLI is not on PATH here' };
-    if (/gh auth login|authentication|not logged/i.test(stderr)) return { skipped: '`gh` is not authenticated here' };
-    if (/403/.test(stderr)) return { skipped: 'the alerts endpoint returned 403 — the token lacks `security_events` or `repo`' };
-    if (/404/.test(stderr)) return { skipped: 'the alerts endpoint returned 404 — Dependabot alerts may be disabled for this repo' };
-    return { skipped: `could not read the alerts (${String(err?.message ?? err).split('\n')[0]})` };
+    return outcomeOfReadFailure(err);
   }
+}
+
+/**
+ * What a failed read means, pure so the branches can be driven without the live API.
+ *
+ * 🔴 A 403 IS NOT ALWAYS THE TOKEN. With alerts switched off the endpoint answers 403 and says so in
+ * words: "Dependabot alerts are disabled for this repository." Measured 2026-11-03 on the repository
+ * moved the day before, with a token holding `repo`: it printed "the token lacks `security_events` or
+ * `repo`" and exited 0, so the blind-repo failure in `judgeAlerts` was never reached and every ship
+ * read as a mere skip. GitHub's own words are asked first, before the status code.
+ *
+ * @param {{ code?: string, stderr?: unknown, message?: string }} err what `execFileSync` threw.
+ * @returns {{ skipped: string } | { switchedOff: true }}
+ */
+export function outcomeOfReadFailure(err) {
+  const stderr = String(err?.stderr ?? '');
+  if (err?.code === 'ENOENT') return { skipped: 'the `gh` CLI is not on PATH here' };
+  if (/gh auth login|authentication|not logged/i.test(stderr)) return { skipped: '`gh` is not authenticated here' };
+  if (/alerts are disabled/i.test(stderr)) return { switchedOff: true };
+  if (/403/.test(stderr)) return { skipped: 'the alerts endpoint returned 403 — the token lacks `security_events` or `repo`' };
+  if (/404/.test(stderr)) return { skipped: 'the alerts endpoint returned 404 — Dependabot alerts may be disabled for this repo' };
+  return { skipped: `could not read the alerts (${String(err?.message ?? err).split('\n')[0]})` };
 }
 
 /**
@@ -332,7 +349,7 @@ export function describeAlert(row, decisions) {
  * execute. Extracting the decision is what makes them testable, exactly as `rollup-check-state.mjs`
  * does for the roll-up's classification.
  *
- * @param {{ skipped?: string, alerts?: ReadonlyArray<object> }} read result of `readOpenAlerts()`.
+ * @param {{ skipped?: string, switchedOff?: boolean, alerts?: ReadonlyArray<object> }} read result of `readOpenAlerts()`.
  * @param {{ enabled?: boolean, unknown?: string }} enabled result of `alertsEnabled()`.
  * @param {Map<number, { recorded: string }>} [decisions] recorded risk decisions, by alert number.
  * @returns {{ exitCode: 0|1, errors: string[], notes: string[], failing: AlertRow[], other: AlertRow[], unreachable: AlertRow[] }}
@@ -347,6 +364,17 @@ export function judgeAlerts(read, enabled, decisions) {
     notes.push(`skipped — ${read.skipped}`);
     notes.push('this is not a pass: nothing was read, so nothing was judged.');
     return { exitCode: 0, errors, notes, failing: [], other: [], unreachable: [] };
+  }
+
+  if (read?.switchedOff) {
+    // GitHub refused to list anything, so unlike the blind zero below there is no count to quote.
+    errors.push(
+      'ERROR: Dependabot alerts are SWITCHED OFF for this repo, so GitHub lists nothing and nobody is '
+        + 'looking. This is not a token problem and there is nothing to bump. Turn them on in the '
+        + 'repository\'s Security settings; until then `pnpm audit` in CI is the first thing that will '
+        + 'notice a new advisory, which is the frozen-afternoon case this check exists to prevent.',
+    );
+    return { exitCode: 1, errors, notes, failing: [], other: [], unreachable: [] };
   }
 
   const { failing, other, unreachable } = classifyAlerts(read?.alerts);
