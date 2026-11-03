@@ -105,12 +105,19 @@ is the **record of each one it has actually been applied to**, so that "still op
 decision somebody made rather than an oversight nobody noticed. An alert with no row here has not
 been judged yet.
 
+🔴 **ALERT NUMBERS BELONG TO ONE REPOSITORY, AND THE 2 NOV 2026 MOVE RESTARTED THEM AT 1.** A row keeps a
+`#N` in its Alert cell only when that number is a live alert on `gawishtheit/phoenix-people-workforce`
+for the same advisory in the same manifest. A row from before the move with no such alert names its old
+number in words, so the check cannot read it, and a new alert that later reaches that number is never
+taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert
+cell, but only for the same advisory and manifest. Rows read 2026-11-03 17:02 Cairo.
+
 ### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
 
 | | |
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-04 at the owner's instruction. |
-| Alert | #112, opened 2026-10-03, root `pnpm-lock.yaml` |
+| Alert | none on this repository yet. It was number 112 on the old repository, opened 2026-10-03, root `pnpm-lock.yaml` |
 | Scope | `development` — the `--prod` filter drops it, so it cannot turn `checks` red |
 | Patched version | **none exists** — there is nothing to bump to |
 | How it arrives | `braces@3.0.3` ← `micromatch@4.0.8` ← `fast-glob` ← **`shadcn`**, a `devDependency` |
@@ -150,13 +157,13 @@ they are judged separately below — on different facts, and on a narrower accep
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
-| Alert | #111, opened 2026-10-03, `mobile/package-lock.json` |
+| Alert | none on this repository yet. It was number 111 on the old repository, opened 2026-10-03, `mobile/package-lock.json` |
 | Scope | **`runtime`** — but in a manifest `pnpm audit` never reads at the root, so it still cannot turn `checks` red |
 | Patched version | **none exists** |
 | What it is | Stack-exhaustion denial of service through deeply nested patterns |
 | Impact vector | `C:N/I:N/A:H` — availability only |
 
-**This is a narrower acceptance than `#112` above, and the difference matters.** `#112` is
+**This is a narrower acceptance than the `braces` row above, and the difference matters.** That one is
 `development` scope, so nothing vulnerable is in a shipped graph at all — that is a scope fact.
 This one is `runtime` scope within its own lockfile. What makes it unable to gate is only that the
 root audit never walks that manifest, which is a statement about **this repo's CI**, not about the
@@ -168,7 +175,7 @@ there is no action this repository can take either way.
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
-| Alert | #110, opened 2026-10-03, `mobile/package-lock.json` |
+| Alert | #2, opened on this repository 2026-11-03 16:11 Cairo, `mobile/package-lock.json`. It was number 110 on the old repository, opened 2026-10-03 |
 | Scope | **`runtime`**, in a manifest the root audit never reads |
 | Patched version | **none exists** |
 | What it is | RSA PKCS#1 v1.5 signature verification accepts extra nested `DigestAlgorithm` elements |
@@ -202,7 +209,7 @@ What this acceptance does and does not say:
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-06 at the owner's instruction. |
-| Alert | #113, opened 2026-10-06 05:56 Cairo, `mobile/package-lock.json` |
+| Alert | none on this repository. It was number 113 on the old repository, opened 2026-10-06 05:56 Cairo, `mobile/package-lock.json` |
 | Scope | **`runtime`**, in a manifest the root audit never reads |
 | Patched version | **1.2.2 exists** — and that is what makes this row different from the three above |
 | How it arrives | `source-map-js@1.2.1` ← `postcss`, which declares `^1.2.1` |
@@ -223,7 +230,7 @@ acceptance above rests partly on `first_patched_version` being null — *"there 
 That is **not true here**: 1.2.2 is published, and `postcss`'s own `^1.2.1` already permits it, so the
 change would be a one-line lockfile resolution. What makes this one unable to gate is **only** that
 `pnpm audit --prod` never walks `mobile/package-lock.json` at the root — the same narrow ground as
-`#111`, and nothing more.
+the second `braces` row, and nothing more.
 
 **Why it is accepted rather than bumped.** The file is under `mobile/`, which AGENTS.md §4's first
 bullet freezes until the owner lifts it in his own words — and that freeze is enforced, not merely
@@ -252,7 +259,7 @@ acceptance is therefore about **where the fix has to happen**, never about the f
 | | |
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-06 at the owner's instruction — asked directly, he answered *"leave sprintf-js as it is — it never loads"*. |
-| Alert | #116, opened 2026-10-06 05:56 Cairo, root `pnpm-lock.yaml` |
+| Alert | none on this repository yet. It was number 116 on the old repository, opened 2026-10-06 05:56 Cairo, root `pnpm-lock.yaml` |
 | Scope | **`runtime`** — it IS in the production graph, so scope is not what makes this quiet |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it. This is the alert that exposed the `medium`/`moderate` spelling bug above |
 | Patched version | **none at any version** — every published release, 0.0.7 through 1.1.3, is inside `<= 1.1.3` |
@@ -294,6 +301,66 @@ what triggered the Dependabot updater runs four seconds later; those runs failed
 production deploy of the commit merged seconds earlier**. So an alert that cannot fail the audit
 still cost a deploy. The mechanism is recorded in `docs/agents-session-traps-clusters.md`.
 
+### `glob` — GHSA-3g3m-2fjr-6pw4 · MEDIUM
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `minimatch` one below. |
+| Alert | #19 on `gawishtheit/phoenix-people-workforce`, opened 2026-11-03 16:11 Cairo, root `pnpm-lock.yaml` |
+| Scope | **`runtime`**, because `@sentry/nextjs` is a production dependency, but this code only runs during the build |
+| Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
+| Patched version | **14.0.2 only** — no 13.x release carries the fix, and `@sentry/bundler-plugins` 11.10.0, its newest, still asks for `^13.0.6` |
+| How it arrives | `glob@13.0.6` ← `@sentry/bundler-plugins` ← `@sentry/nextjs`, and the development tool `c8`. `glob@7.2.3` under `exceljs` is below the affected range |
+| What it is | A walk cancelled through `signal` keeps reading directories in the background |
+
+**The flaw needs a cancel signal, and Sentry never passes one.** The whole of its use is
+`build/cjs/core/glob.js`: `glob(patterns, { absolute: true, nodir: true, ...options })`, and its callers
+pass only `ignore` or `root`. A search of the installed package for `signal:` found none (3 Nov 2026).
+`next.config.ts` is the only file that loads `@sentry/nextjs/config`, and only on a build that holds a
+Sentry token. Nothing else outside the frozen application imports `glob`.
+
+**What would reverse this.** Any one of these:
+
+1. **Code in this repository calls `glob` with a `signal`**, or Sentry's build tools start to.
+2. **The advisory is re-scored above MEDIUM**, which would let it fail the audit on a `runtime` package.
+3. **Sentry's build tools accept a patched `glob`.** Take it in the next dependency refresh.
+
+### `minimatch` — GHSA-g3hv-75wg-m249 · MEDIUM
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `glob` one above. |
+| Alert | #20 on `gawishtheit/phoenix-people-workforce`, opened 2026-11-03 16:11 Cairo, root `pnpm-lock.yaml` |
+| Scope | **`runtime`**, because `@sentry/nextjs` and `exceljs` are production dependencies |
+| Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
+| Patched version | **11.0.1 only** — 3.1.5, 5.1.9 and 10.2.6, the three we resolve, are each the newest of their line |
+| How it arrives | `10.2.6` ← `glob@13.0.6` above, and development tools. `3.1.5` ← `glob@7.2.3` ← `archiver-utils` ← `archiver` ← `exceljs`, and ESLint. `5.1.9` ← `readdir-glob` ← `archiver` ← `exceljs` |
+| What it is | A crafted glob pattern multiplies during preprocessing and uses up CPU and memory |
+
+**Only 10.2.6 holds the flawed code, and no user reaches it.** `firstPhasePreProcess` appears in the
+installed 10.2.6 and nowhere in 3.1.5 or 5.1.9, which the advisory's `< 11.0.1` range catches by number
+alone. `glob` does run 10.2.6 at the `optimizationLevel: 2` the flaw needs, so the safety here is who
+writes the pattern: Sentry's build tools and `next.config.ts`, never a request. Nothing outside the frozen
+application imports `minimatch`. `exceljs` uses `archiver` only to write zip files, and never calls its
+`glob` or `directory`.
+
+**Forcing the fix is the wrong trade.** `minimatch@3.1.5` exports a callable function, which its
+callers depend on, and 11.x does not: the same break `pnpm-workspace.yaml` records for
+`brace-expansion` 5.x would be likely here, in ESLint and the Excel exports (not tested). `exceljs` 4.4.0
+is already its newest release and asks for `archiver ^5.0.0`, and 120 files import it.
+
+**What would reverse this.** Any one of these:
+
+1. **Code in this repository or a request-time path passes a pattern a user wrote** to `minimatch` or
+   `glob`. The acceptance rests on who writes the pattern, so this is the condition that matters.
+2. **The advisory is re-scored above MEDIUM**, which would let it fail the audit on a `runtime` package.
+3. **`exceljs` moves off these lines, or `exceljs` is replaced for another reason.** Re-read the chain then.
+
+🔴 **`check-dependabot-alerts.mjs` KEEPS PRINTING `bump to 14.0.2` AND `bump to 11.0.1` FOR THESE TWO, ON PURPOSE.** It adds
+`risk ACCEPTED` only to an alert outside the audited tree, and both of these are in the root lockfile, so
+a recorded acceptance can never read as a reason to leave something that could turn `checks` red. Read
+the two rows above before acting on those lines.
+
 ## Reading it
 
 ```bash
@@ -304,7 +371,7 @@ node scripts/check-dependabot-alerts.mjs --json   # the whole reading, including
 🔴 **THE CHECK READS THE ROWS ABOVE, so a decision written here stops the tool demanding one.** An
 unpatched alert with a row prints `risk ACCEPTED, recorded <date>`; one without keeps
 `needs an override, a replacement, or a recorded risk decision`. Added 2026-10-05, because the
-demand used to print on **every** unpatched alert including `#112`, whose decision was already
+demand used to print on **every** unpatched alert including the first `braces` row, whose decision was already
 written and dated — and the ship skill reads this check before every merge, so a session read that
 line at the moment it was deciding to merge, believed three alerts were unjudged, and put the
 already-answered question to the owner. A demand that outlives its answer is the same cry-wolf
@@ -312,8 +379,9 @@ failure as the 2026-10-04 false `WILL FAIL CI`, arriving from the other directio
 
 **It is keyed on the alert NUMBER, never the GHSA** — which is what makes the red note above true
 mechanically rather than only in prose. One advisory opens one alert per manifest, so `braces`
-`GHSA-vfj7-8cjw-p6xm` is open as both `#112` here and `#111` elsewhere; keying on the advisory would
-turn this file's explicit refusal to judge the other one into an automatic acceptance, silently.
+`GHSA-vfj7-8cjw-p6xm` was two alerts on the old repository, one in the root lockfile and one elsewhere;
+keying on the advisory would turn this file's explicit refusal to judge the other one into an automatic
+acceptance, silently.
 
 **The parser fails closed**, like every other grading in `dependabot-alerts.mjs`: a row is honoured
 only when one `###` section positively yields **one** alert number and a Decision cell saying
@@ -335,3 +403,16 @@ which hid that alerts had never been turned on after the 2 Nov move to
 `gawishtheit/phoenix-people-workforce`: a repository setting does not come across with the code.
 Turning them on is the owner's click, in the repository's Security settings. It is not a bump, and
 the audit behind `checks` is still the gate.
+
+🔴 **Switched on does not mean scanned.** On 3 Nov 2026 alerts read on at 15:43 and the check printed
+`OK` on a zero, while GitHub's dependency list (`dependency-graph/sbom`) still answered 404. It held
+1,812 packages by 16:00, and the first of 20 alerts came at 16:11. A zero now asks that list too:
+
+- **Empty or 404:** exit 1, saying GitHub has not scanned the repository.
+- **Could not be read:** exit 0 and "this is not a pass", like any other skip.
+- **Filled:** `OK`, with a warning. Between 16:00 and 16:11 the list was filled and the alerts were not
+  there yet, and nothing GitHub answers tells those minutes from a finished scan. A zero within about
+  30 minutes of switching alerts on can still be early, and the check says so.
+
+GraphQL `dependenciesCount` read 0 on all 33 manifests at 16:00 with the list already filled, so it
+is not a signal for this.
