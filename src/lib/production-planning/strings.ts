@@ -30,16 +30,17 @@
  * `ج.م.`, so the locale here is `en-EG` and the test asserts the literal `"ar-EG"` never appears in
  * this module.
  *
- * ── The one import, and why it is type-only ──────────────────────────────────────────────────────
+ * ── The imports, and why only one of them runs ───────────────────────────────────────────────────
  *
- * This file is otherwise a LEAF: it imports nothing at runtime, which is what lets the cron, the
- * workbook builder and a `"use client"` component all read it without pulling anything behind it.
- * `import type` emits no code at all, so taking the two unions from the kernel keeps that property
- * while making a drifted basis or measure unit a compile error rather than a label that silently
- * stops matching.
+ * This file is otherwise a LEAF, which is what lets the cron, the workbook builder and a
+ * `"use client"` component all read it without pulling anything behind it. `import type` emits no
+ * code at all, so taking the two unions from the kernel keeps that property while making a drifted
+ * basis or measure unit a compile error rather than a label that silently stops matching. The one
+ * runtime import is `ceilDiv`, from a kernel that imports nothing itself: a sentence that rounded
+ * boxes its own way is how it came to disagree with the engine beside it.
  */
 import type { ExpirySeverity } from "./expiry";
-import type { CompositionBasis, MeasureUnit } from "./rules";
+import { ceilDiv, type CompositionBasis, type MeasureUnit } from "./rules";
 
 /** The locale every number in this module is formatted with. NEVER `ar-EG` — see the note above. */
 export const PRODUCTION_PLANNING_NUMBER_LOCALE = "en-EG";
@@ -1185,6 +1186,25 @@ export function requestModeLabelsEn(parts: {
 }
 
 /**
+ * The word after the count of units in a sample's own box: Arabic counts three to ten with the plural,
+ * so `5 كبسولات`, and every other figure with the singular, so `12 كبسولة`.
+ *
+ * 🔴 IT IS LOCAL TO THIS ONE PHRASE. `PP.unitCapsule` stays singular because the sentence and the
+ * request labels need it (`29,500 كبسولة`, `30 كبسولة في العلبة`), and the other three units keep
+ * their word because no other product has a sample box of its own to read here.
+ */
+function ownSampleBoxUnitWordAr(count: string, unit: MeasureUnit): string {
+  const threeToTen: Record<MeasureUnit, string> = {
+    g: PP.unitSachet,
+    mg: PP.unitTablet,
+    mg_capsule: "كبسولات",
+    ml: PP.unitBox,
+  };
+  const figure = Number(count.replaceAll(",", ""));
+  return figure >= 3 && figure <= 10 ? threeToTen[unit] : saleableUnitWordAr(unit);
+}
+
+/**
  * The sample-size hint, with the product's own two sizes written into it.
  *
  * It used to be a flat string naming 40 ml and 100 ml, which were Ivyronc's. A hint that states a
@@ -1195,7 +1215,8 @@ export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
   const u = measureUnitLabelsAr(measure.measureUnit);
   if (measure.unitsInOwnSampleBox) {
     return (
-      `العينة علبة مستقلة فيها ${measure.unitsInOwnSampleBox} ${saleableUnitWordAr(measure.measureUnit)} ` +
+      `العينة علبة مستقلة فيها ${measure.unitsInOwnSampleBox} ` +
+      `${ownSampleBoxUnitWordAr(measure.unitsInOwnSampleBox, measure.measureUnit)} ` +
       `من نفس حجم التشغيلة — تقلل عدد العلب القابلة للبيع`
     );
   }
@@ -1342,6 +1363,15 @@ export function storedPlanTitle(productNameAr: string, runs: string): string {
 }
 
 /**
+ * The saleable box count in the sentence's bracket. ROUNDED UP: a part-box is still a box (owner,
+ * 2026-10-24), so Saginkgo's 29,500 capsules are 984 boxes of thirty, the count the engine adds its
+ * sample boxes to, and never 983. Both languages come through here so they cannot differ.
+ */
+function saleableBoxesLabel(goodUnits: string, unitsPerBox: string): string {
+  return formatNumberLatin(ceilDiv(BigInt(goodUnits.replaceAll(",", "")), BigInt(unitsPerBox)));
+}
+
+/**
  * The sentence under the four tiles.
  *
  * Built here rather than in the component so the workbook's own header row says exactly the same
@@ -1387,9 +1417,7 @@ export function buildPlannerSentence(parts: {
   // box figure beside the saleable one would read as its equivalent and be larger than it.
   const perBox = parts.unitsPerBox ?? "1";
   const saleableBoxes =
-    perBox === "1" || !parts.totalBoxes
-      ? null
-      : formatNumberLatin((BigInt(parts.goodUnits.replaceAll(",", "")) / BigInt(perBox)).toString());
+    perBox === "1" || !parts.totalBoxes ? null : saleableBoxesLabel(parts.goodUnits, perBox);
   const saleable = saleableBoxes
     ? `${parts.goodUnits} ${unitWord} (${saleableBoxes} ${PP.unitBox})`
     : `${parts.goodUnits} ${unitWord}`;
@@ -1537,9 +1565,7 @@ export function buildPlannerSentenceEn(parts: {
     `${u.large} = ${parts.totalVolumeLitres} ${u.large}`;
   const perBox = parts.unitsPerBox ?? "1";
   const saleableBoxes =
-    perBox === "1" || !parts.totalBoxes
-      ? null
-      : formatNumberLatin((BigInt(parts.goodUnits.replaceAll(",", "")) / BigInt(perBox)).toString());
+    perBox === "1" || !parts.totalBoxes ? null : saleableBoxesLabel(parts.goodUnits, perBox);
   const saleable = saleableBoxes
     ? `${parts.goodUnits} ${unitWord} (${saleableBoxes} ${pluralEn(PP_EN.unitBox)})`
     : `${parts.goodUnits} ${unitWord}`;
