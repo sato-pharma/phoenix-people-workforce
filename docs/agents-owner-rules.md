@@ -9311,3 +9311,15 @@ His words, 27 October: the name compared allowing one letter, *"The line must ma
 **Three readings made tighter than his sentence, each from measuring the 114 customers on 3 November.** Twin given names are refused (the tolerance read احمد علي as محمد علي موسي). A different name reaches the queue only within 100 m (500 m sent 15 unrelated names there). The same name and the same brick proves a row only when no distance can be read, because his 27 October sheet accepted that, and 7.5 km apart in one brick is his flag.
 
 **Order of the first run.** Merge, read `/api/healthz` revision, announce (no point-in-time recovery, 7 daily backups), apply the pre-image with `scripts/apply-sql-file.mjs`, run `scripts/marketing-list-check.ts --apply`, confirm no picked row changed, and only then arm the hourly job `phoenix-marketing-list-check`.
+
+## A seat starts on the job offer's date — owner, 3 Nov 2026
+
+His words: "the start date must follow the date, the start date in the job offer, not the date when he accepted". He said it after the second hire-date mismatch he found, Mohamed Saad El Fetiany (letter and Master 1 Nov, seat 26 Oct).
+
+**The rule.** A new hire's seat starts on `employees.hire_date`, which carries the letter's start date (`offerHireDate`), never `position_vacancies.filled_at`, the day the record is created at acceptance. A long-standing employee moved into a vacant seat keeps the fill day. A later Master correction moves an open hire span that was following the Master. Aya Ali and Sahar El Gallad's letters differ from the Master and he ruled both correct, so their seats follow the Master's 24 Oct.
+
+**What it does before the start.** The seat reads vacant on dated readers until the start day, and arm 2 of `au.f_seat_occupant_asof` hands that seat's past months to whoever held them. Open-only readers still show the joiner, so a second hire into that seat is refused. No file under `src/lib/incentives` or `src/lib/payroll` reads occupancy.
+
+**The existing rows, 3 Nov about 13:20 Cairo.** 40 open hire rows and 34 vacant rows moved in one transaction, outside the migration, with the pre-image in `au_backup_20261103.occupancy_hire_start`. Measured in the same transaction: no change to the occupant of any seat at any 2026 month end, the organogram or open vacancies; drift stayed at 108; inverted rows went from 1 to 0. Closed spans were left alone.
+
+**Held.** Toka Zaki and Mahmoud Khaled start on 8 Nov. Moving them before that flips the credit on their two seats in published months to the people who held them, until the 8th. From the 8th the same update moves no credit. Note: `seat-start-follows-the-job-offer-2026-11-03`.

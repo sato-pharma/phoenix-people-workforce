@@ -18,11 +18,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //
 // WHO HELD IT: the occupancy row in force on the month's last day (half-open, the same `coversAsOf`
 // and `periodEndDate` the performance review resolves its managers with; the latest start wins,
-// as in arm 2 of `au.f_seat_occupant_asof`). AND HE MUST HAVE BEEN EMPLOYED THAT DAY — seating often
-// runs ahead of the hire date (Jonia Wageh seated on Pedia UE1 on 20 Sep, hired 1 Oct), and the
-// owner's rule is that occupancy starts at the hiring date in the master
-// (`au-occupancy-hiring-date-from-master`). A missing hire date never blocks a credit; a last
-// working day before the month end does.
+// as in arm 2 of `au.f_seat_occupant_asof`). AND HE MUST HAVE BEEN EMPLOYED THAT DAY — seating ran
+// ahead of the hire date until 2026-11-03 (Jonia Wageh seated on Pedia UE1 on 20 Sep, hired 1 Oct),
+// and closed spans from then still do; the owner's rule is that occupancy starts at the hiring date
+// in the master (`au-occupancy-hiring-date-from-master`). A missing hire date never blocks a credit;
+// a last working day before the month end does.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type SeatOccupancyStretch = {
