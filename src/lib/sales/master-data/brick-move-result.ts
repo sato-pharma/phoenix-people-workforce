@@ -166,6 +166,21 @@ export function describeBrickMoveRefresh(result: BrickMoveRefresh): string {
     : "Every moved file's totals are up to date.";
 }
 
+/**
+ * Why the bin must not switch a brick off, or null when it may. A count that could not be read
+ * refuses too: the brick stays on, which is the side nothing is lost on.
+ */
+export function brickSwitchOffRefusal(activePharmacies: {
+  count: number | null;
+  error: { message: string } | null;
+}): string | null {
+  if (activePharmacies.error || activePharmacies.count === null) {
+    return "Could not check this brick for active pharmacies, so it stays switched on. Try again.";
+  }
+  if (activePharmacies.count === 0) return null;
+  return `${plural(activePharmacies.count, "active pharmacy still sits", "active pharmacies still sit")} on this brick, so it stays switched on. Move ${activePharmacies.count === 1 ? "it" : "them"} on SoS Mapping first.`;
+}
+
 function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }

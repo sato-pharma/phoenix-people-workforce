@@ -21,7 +21,7 @@ import {
   type MasterDefinition,
   type MasterKey,
 } from "./definitions";
-import { historicalNameCandidates, parseBrickRelocation, type BrickRelocation } from "./brick-move-result";
+import { brickSwitchOffRefusal, historicalNameCandidates, parseBrickRelocation, type BrickRelocation } from "./brick-move-result";
 import { selectAllRows } from "./list";
 
 export type MasterImportBlockedRow = { key: string; reason: string; row: number };
@@ -768,6 +768,17 @@ export async function setMasterRowActive(input: {
   const wasActive = (existingRow as Record<string, unknown>).active !== false;
   if (wasActive === input.active) {
     return { success: true }; // already in the requested state
+  }
+  // A brick with active pharmacies on it stays switched on: they would keep pointing at a brick the
+  // pickers and the map no longer show. Combining two bricks starts by moving the pharmacies.
+  if (input.master === "bricks" && !input.active) {
+    const activePharmacies = await supabase
+      .from("source_of_sales_customer_map")
+      .select("id", { count: "exact", head: true })
+      .eq("brick_id", key)
+      .eq("active", true);
+    const refusal = brickSwitchOffRefusal(activePharmacies);
+    if (refusal) return { success: false, error: refusal };
   }
 
   const { error } = await supabase
