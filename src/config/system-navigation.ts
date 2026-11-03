@@ -1349,13 +1349,13 @@ export const adminNavigationSectionSeeds = [
   //   /admin/crm-integrity                CRM Integrity
   //   /admin/brick-coverage               Brick Coverage
   //   /admin/double-visit-analytics       Double Visit Analytics
-  //   /admin/double-visit-data-integrity  Double Visit Integrity — the label was shortened from
-  //                                       "Double Visit Data Integrity" because that string
-  //                                       measured 160px against this shell's 157px budget. It
-  //                                       keeps the full name as a hub card, where the budget is
-  //                                       different. Never model these widths: the app resolves to
-  //                                       Aptos and a per-character estimate was once off by 9px
-  //                                       against ~5px of slack. scripts/measure-sidebar-labels.ts
+  //   /admin/double-visit-data-integrity  Double Visit Integrity — the label is shortened from
+  //                                       "Double Visit Data Integrity", which clips against this
+  //                                       shell's 157px budget wherever the font stack falls back
+  //                                       to Arial's metrics (159px). It keeps the full name as a
+  //                                       hub card, where the budget is different. Never model
+  //                                       these widths: a per-character estimate was once off by
+  //                                       9px against ~5px of slack. scripts/measure-sidebar-labels.ts
   //                                       regenerates tests/fixtures/sidebar-label-widths.json.
   {
     id: "crm",
@@ -4496,7 +4496,10 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/double-visit-data-integrity",
     icon: TriangleAlert,
-    label: "Double Visit Data Integrity",
+    // Shorter than the page's own title on purpose: the full "Double Visit Data Integrity" fits the
+    // 157px row only by 3px in Segoe UI (154px) and clips in Arial's metrics (159px), which is what a
+    // machine without Segoe falls back to. The rail never wraps, and its siblings are one line.
+    label: "Double Visit Integrity",
     description: "Data-integrity checks for double-visit records.",
     roles: ["Super Admin", "SFE Manager"],
   },
