@@ -135,6 +135,26 @@ export function runMarketingRoiAttributionConsistencyTests() {
   testCustomerDashboardIsExactOnlyAndLocksDirectBranchGap();
   testDirectOrdersCountByDefaultButNotForASettlementRequest();
   testCustomerFactsCountEachSaleOncePerCustomer();
+  testAnImportRebuildsEveryRequest();
+}
+
+// The summary facts are deleted by whole pay month. If an import puts back only the requests whose window
+// overlaps its months, the other requests of those pay months vanish from the reports until the next full
+// run: EGP 79,951.56 against 88,051.56 on production, 3 November 2026.
+function testAnImportRebuildsEveryRequest() {
+  const { body, file } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
+  const code = stripSqlComments(body).replace(/\s+/g, " ");
+
+  assert.equal(
+    (code.match(/into v_affected_ids/g) ?? []).length,
+    1,
+    `${file}: the batch and the bare call must choose their requests in ONE statement, or the two drift apart`,
+  );
+  assert.match(
+    code,
+    /if p_batch_id is null or v_min_period is not null then select coalesce\(array_agg\(distinct id\), '\{\}'\) into v_source_batch_ids from source_of_sales_import_batches where status = 'validated'; select coalesce\(array_agg\(mr\.id\), '\{\}'\) into v_affected_ids from marketing_requests mr where mr\.pay_date is not null; end if;/,
+    `${file}: an import must rebuild every request with a pay date, and a batch with no valid period must rebuild nothing`,
+  );
 }
 
 // Two approved requests by one customer on the same pharmacy and product both claim the same sale.
