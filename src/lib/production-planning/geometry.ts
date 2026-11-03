@@ -41,6 +41,12 @@ export type RunGeometry = {
   readonly wholeRunsOnly: boolean;
   /** Bottles in one box as the owner counts them. 1 for Ivyronc. */
   readonly unitsPerBox: bigint;
+  /**
+   * True when one sample is a whole box of its own holding `sampleUnitMl` of product. Saginkgo's is a
+   * box with one strip of five capsules (owner, 2026-11-03). Absent or false counts a sample as one
+   * more saleable unit, which at 30 to a box would make it a thirtieth of a box.
+   */
+  readonly sampleInOwnBox?: boolean;
 };
 
 export type PlanRequest = {
@@ -60,6 +66,8 @@ export type RunYield = {
   readonly packagingSets: bigint;
   /** Boxes delivered, as the owner counts boxes. */
   readonly totalBoxes: bigint;
+  /** What a `per_box` material counts: `totalBoxes`, less the samples when they wear their own box. */
+  readonly perBoxCount: bigint;
   readonly totalVolumeMl: bigint;
   readonly totalDoses: bigint;
   /** Volume that fills neither a bottle nor a sample. Normally zero; never silently dropped. */
@@ -97,6 +105,30 @@ export function goodUnitsPerRunWithoutSamples(geometry: RunGeometry): bigint {
   return geometry.runVolumeMl / geometry.goodUnitMl;
 }
 
+/** How a good-unit count and a sample count become sets and boxes. */
+function packingFor(
+  geometry: RunGeometry,
+  goodUnits: bigint,
+  sampleUnits: bigint,
+): Pick<RunYield, "packagingSets" | "perBoxCount" | "totalBoxes"> {
+  if (geometry.sampleInOwnBox) {
+    // Saginkgo: 100 samples are 100 boxes of five, and the 500 capsules in them are still capsules, so
+    // the set count stays in the saleable unit the tile prints it in.
+    const saleableBoxes = ceilDiv(goodUnits, geometry.unitsPerBox);
+    return {
+      packagingSets: goodUnits + (sampleUnits * geometry.sampleUnitMl) / geometry.goodUnitMl,
+      perBoxCount: saleableBoxes,
+      totalBoxes: saleableBoxes + sampleUnits,
+    };
+  }
+  const packagingSets = goodUnits + sampleUnits;
+  // ROUNDED UP: a part-box is still a box (owner, 2026-10-24, "Round up to a box"). Guamusin's
+  // 40,000 sachets are 3,334 cartons of twelve, not 3,333 with four sachets silently dropped — and
+  // `per_box` materials (the carton, the film) read this count, so flooring it under-ordered them.
+  const totalBoxes = ceilDiv(packagingSets, geometry.unitsPerBox);
+  return { packagingSets, perBoxCount: totalBoxes, totalBoxes };
+}
+
 /**
  * What `runs` runs yield once `sampleUnits` samples have been taken out of the same volume.
  *
@@ -120,17 +152,12 @@ export function yieldForRuns(geometry: RunGeometry, runs: bigint, sampleUnits: b
   const volumeForGoodUnits = totalVolumeMl - sampleVolumeMl;
   const goodUnits = volumeForGoodUnits / geometry.goodUnitMl;
   const leftoverMl = volumeForGoodUnits % geometry.goodUnitMl;
-  const packagingSets = goodUnits + sampleUnits;
 
   return {
     runs,
     goodUnits,
     sampleUnits,
-    packagingSets,
-    // ROUNDED UP: a part-box is still a box (owner, 2026-10-24, "Round up to a box"). Guamusin's
-    // 40,000 sachets are 3,334 cartons of twelve, not 3,333 with four sachets silently dropped — and
-    // `per_box` materials (the carton, the film) read this count, so flooring it under-ordered them.
-    totalBoxes: ceilDiv(packagingSets, geometry.unitsPerBox),
+    ...packingFor(geometry, goodUnits, sampleUnits),
     totalVolumeMl,
     totalDoses: totalVolumeMl / geometry.doseMl,
     leftoverMl,
@@ -182,30 +209,33 @@ export function resolveRunGeometry(geometry: RunGeometry, request: PlanRequest):
     targetGoodUnits = request.requestedQty * geometry.unitsPerBox;
   } else {
     const targetSets = request.requestedQty * geometry.unitsPerBox;
-    if (samples > targetSets) {
+    // A sample in its own box takes a whole box out of the total, not one unit of it.
+    if (geometry.sampleInOwnBox ? samples > request.requestedQty : samples > targetSets) {
       throw new ProductionPlanningInputError(
         `${samples} samples do not fit inside an order of ${request.requestedQty} box(es). The samples come out of the total, not on top of it.`,
         "sampleUnits",
       );
     }
-    targetGoodUnits = targetSets - samples;
+    targetGoodUnits = geometry.sampleInOwnBox
+      ? (request.requestedQty - samples) * geometry.unitsPerBox
+      : targetSets - samples;
   }
 
   const requiredVolumeMl = targetGoodUnits * geometry.goodUnitMl + samples * geometry.sampleUnitMl;
   const exactRunsMicro = ceilDiv(requiredVolumeMl * QTY_SCALE, geometry.runVolumeMl);
-  const requestedBoxes = (targetGoodUnits + samples) / geometry.unitsPerBox;
+  const requestedBoxes = geometry.sampleInOwnBox
+    ? targetGoodUnits / geometry.unitsPerBox + samples
+    : (targetGoodUnits + samples) / geometry.unitsPerBox;
 
   if (!geometry.wholeRunsOnly) {
     // A product the factory will make a partial run of gets exactly what was asked for. Nothing is
     // rounded, so there is no surplus and no neighbour to offer.
     const totalDoses = requiredVolumeMl / geometry.doseMl;
-    const packagingSets = targetGoodUnits + samples;
     return {
       runs: ceilDiv(exactRunsMicro, QTY_SCALE),
       goodUnits: targetGoodUnits,
       sampleUnits: samples,
-      packagingSets,
-      totalBoxes: ceilDiv(packagingSets, geometry.unitsPerBox),
+      ...packingFor(geometry, targetGoodUnits, samples),
       totalVolumeMl: requiredVolumeMl,
       totalDoses,
       leftoverMl: BigInt(0),

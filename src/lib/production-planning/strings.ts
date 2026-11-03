@@ -173,6 +173,7 @@ export const PP = {
   unitBottle: "زجاجة",
   unitSachet: "كيس",
   unitTablet: "قرص",
+  unitCapsule: "كبسولة",
   unitSample: "عينة",
   roundedUpNote: "التشغيلات بأعداد صحيحة، فتم التقريب لأعلى",
   exactRunsNote: "الاحتياج الدقيق",
@@ -415,6 +416,7 @@ export const PP = {
   sheetTotalDoses: "إجمالي الجرعات",
   sheetPackagingSets: "إجمالي العبوات الكاملة",
   sheetTotalBoxes: "إجمالي العلب (الكراتين)",
+  sheetSaleableBoxes: "علب البيع بدون العينات",
   sheetColBasisLabel: "أساس الحساب",
   sheetColQtyPerBasis: "الكمية لكل أساس",
   sheetColBasisCount: "عدد الأساس",
@@ -515,6 +517,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   unitBottle: "bottle",
   unitSachet: "sachet",
   unitTablet: "tablet",
+  unitCapsule: "capsule",
   unitSample: "sample",
   roundedUpNote: "Runs are whole, so this is rounded up",
   exactRunsNote: "Exact requirement",
@@ -752,6 +755,7 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   sheetTotalDoses: "Total doses",
   sheetPackagingSets: "Total full packaging sets",
   sheetTotalBoxes: "Total boxes (cartons)",
+  sheetSaleableBoxes: "Saleable boxes, without the samples",
   sheetColBasisLabel: "Basis",
   sheetColQtyPerBasis: "Quantity per basis",
   sheetColBasisCount: "Basis count",
@@ -956,6 +960,8 @@ export type ProductMeasure = {
   /** One free sample. */
   readonly sampleUnit: string;
   readonly measureUnit: MeasureUnit;
+  /** How many saleable units a sample box holds, on a product whose sample is its own box. */
+  readonly unitsInOwnSampleBox?: string;
 };
 
 /**
@@ -977,6 +983,7 @@ export function measureUnitLabelsAr(unit: MeasureUnit): { small: string; large: 
     g: { large: PP.unitKilogram, small: PP.unitGram },
     // A milligram geometry is still READ in kilograms: 31,000,000 mg is the owner's own "31 kg".
     mg: { large: PP.unitKilogram, small: PP.unitMilligram },
+    mg_capsule: { large: PP.unitKilogram, small: PP.unitMilligram },
     ml: { large: PP.unitLitre, small: PP.unitMl },
   };
   return labels[unit];
@@ -986,6 +993,7 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
   const labels: Record<MeasureUnit, { small: string; large: string }> = {
     g: { large: PP_EN.unitKilogram, small: PP_EN.unitGram },
     mg: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
+    mg_capsule: { large: PP_EN.unitKilogram, small: PP_EN.unitMilligram },
     ml: { large: PP_EN.unitLitre, small: PP_EN.unitMl },
   };
   return labels[unit];
@@ -1002,7 +1010,12 @@ export function measureUnitLabelsEn(unit: MeasureUnit): { small: string; large: 
  * sachets"*).
  */
 export function saleableUnitWordAr(unit: MeasureUnit): string {
-  const words: Record<MeasureUnit, string> = { g: PP.unitSachet, mg: PP.unitTablet, ml: PP.unitBox };
+  const words: Record<MeasureUnit, string> = {
+    g: PP.unitSachet,
+    mg: PP.unitTablet,
+    mg_capsule: PP.unitCapsule,
+    ml: PP.unitBox,
+  };
   return words[unit];
 }
 
@@ -1010,6 +1023,7 @@ export function saleableUnitWordEn(unit: MeasureUnit): string {
   const words: Record<MeasureUnit, string> = {
     g: PP_EN.unitSachet,
     mg: PP_EN.unitTablet,
+    mg_capsule: PP_EN.unitCapsule,
     ml: PP_EN.unitBox,
   };
   return words[unit];
@@ -1077,6 +1091,7 @@ export function runActualLabelAr(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: "الأكياس الناتجة فعليًا",
     mg: "الأقراص الناتجة فعليًا",
+    mg_capsule: "الكبسولات الناتجة فعليًا",
     ml: PP.runActualGoodUnits,
   };
   return labels[unit];
@@ -1086,6 +1101,7 @@ export function runActualLabelEn(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: "Sachets actually produced",
     mg: "Tablets actually produced",
+    mg_capsule: "Capsules actually produced",
     ml: PP_EN.runActualGoodUnits,
   };
   return labels[unit];
@@ -1105,6 +1121,7 @@ export function runSizeLabelAr(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: PP.tileRunWeight,
     mg: PP.tileRunWeight,
+    mg_capsule: PP.tileRunWeight,
     ml: PP.tileRunVolume,
   };
   return labels[unit];
@@ -1114,6 +1131,7 @@ export function runSizeLabelEn(unit: MeasureUnit): string {
   const labels: Record<MeasureUnit, string> = {
     g: PP_EN.tileRunWeight,
     mg: PP_EN.tileRunWeight,
+    mg_capsule: PP_EN.tileRunWeight,
     ml: PP_EN.tileRunVolume,
   };
   return labels[unit];
@@ -1175,6 +1193,12 @@ export function requestModeLabelsEn(parts: {
  */
 export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
   const u = measureUnitLabelsAr(measure.measureUnit);
+  if (measure.unitsInOwnSampleBox) {
+    return (
+      `العينة علبة مستقلة فيها ${measure.unitsInOwnSampleBox} ${saleableUnitWordAr(measure.measureUnit)} ` +
+      `من نفس حجم التشغيلة — تقلل عدد العلب القابلة للبيع`
+    );
+  }
   return (
     `العينة ${measure.sampleUnit} ${u.small} من نفس حجم التشغيلة — ` +
     `تقلل عدد الوحدات ${measure.goodUnit} ${u.small} وتستهلك عبوة كاملة`
@@ -1183,6 +1207,13 @@ export function buildSampleUnitsHintAr(measure: ProductMeasure): string {
 
 export function buildSampleUnitsHintEn(measure: ProductMeasure): string {
   const u = measureUnitLabelsEn(measure.measureUnit);
+  if (measure.unitsInOwnSampleBox) {
+    return (
+      `A sample is its own box of ${measure.unitsInOwnSampleBox} ` +
+      `${pluralEn(saleableUnitWordEn(measure.measureUnit))} out of the same batch — ` +
+      `it reduces the saleable box count`
+    );
+  }
   return (
     `A ${measure.sampleUnit} ${u.small} sample comes out of the same run volume — ` +
     `it reduces the ${measure.goodUnit} ${u.small} unit count and still uses a full packaging set`

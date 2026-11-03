@@ -118,7 +118,7 @@ export function basisCountFor(basis: CompositionBasis, run: RunGeometryResult): 
     case "per_sample_unit":
       return run.sampleUnits;
     case "per_box":
-      return run.totalBoxes;
+      return run.perBoxCount;
   }
 }
 
@@ -137,7 +137,7 @@ function basisCountForOneRun(basis: CompositionBasis, run: RunGeometryResult): b
     case "per_sample_unit":
       return ceilDiv(run.sampleUnits, run.runs);
     case "per_box":
-      return ceilDiv(run.totalBoxes, run.runs);
+      return ceilDiv(run.perBoxCount, run.runs);
   }
 }
 

@@ -20,7 +20,7 @@ export type WireBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "pe
  * The unit a product's geometry is counted in: `ml` for a syrup, `g` for a powder in sachets, `mg`
  * for a tablet (155 mg is not a whole gram, and the geometry columns are integers).
  */
-export type WireMeasureUnit = "ml" | "g" | "mg";
+export type WireMeasureUnit = "ml" | "g" | "mg" | "mg_capsule";
 export type WireRequestMode = "total_boxes" | "good_units" | "runs";
 export type WireCurrency = "USD" | "EGP";
 export type WireOverageSource = "measured" | "material" | "default";
@@ -38,6 +38,8 @@ export type WireProduct = {
   sampleUnitMl: string;
   wholeRunsOnly: boolean;
   unitsPerBox: string;
+  /** True when one sample is a whole box of its own, as Saginkgo's box of five capsules is. */
+  sampleInOwnBox?: boolean;
   /**
    * What the four `…Ml` figures above are counted in. The arithmetic never cared — a run is
    * `runVolumeMl / doseMl` whatever the unit — but the LABELS did, and a powder in 5 g sachets was
