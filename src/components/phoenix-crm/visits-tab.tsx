@@ -58,6 +58,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { VisitDetailEdit, visitDetailEditedText } from "@/components/phoenix-crm/visit-detail-panel";
+import { markVisitsCanBeHeld } from "@/components/phoenix-crm/visit-hold-signal";
 import { preloadVisitOutboxEngine, useHeldVisits } from "@/components/phoenix-crm/visit-outbox-client";
 import { VisitOutboxNote } from "@/components/phoenix-crm/visit-outbox-note";
 import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
@@ -1173,16 +1174,9 @@ export function VisitsTab({
   useEffect(() => {
     if (heldOwner) preloadVisitOutboxEngine();
   }, [heldOwner]);
+  // Tells the portal's header, which says offline at the top of every page, what is true on this screen.
+  useEffect(() => (heldOwner ? markVisitsCanBeHeld() : undefined), [heldOwner]);
   const held = allHeld.filter((entry) => entry.seatId === seatId);
-  // 🔴 A HELD VISIT THAT LANDS WHILE THE REP IS LOOKING MUST APPEAR, NOT VANISH. The row goes when the send lands, and
-  // nothing else reads the day again, so the visit and the AM and PM counts stayed stale until the rep left and came back.
-  const waitingHere = held.filter((entry) => entry.status === "waiting").length;
-  const waitingBefore = useRef(waitingHere);
-  const reloadDay = day.reload;
-  useEffect(() => {
-    if (waitingHere < waitingBefore.current) reloadDay();
-    waitingBefore.current = waitingHere;
-  }, [reloadDay, waitingHere]);
   const [retryOf, setRetryOf] = useState<QueuedVisit | null>(null);
 
   // 🔴 THE REP'S OWN READS START WITH THE DAY'S, NOT AFTER IT (performance work, 24 Oct 2026). The
@@ -1196,6 +1190,23 @@ export function VisitsTab({
   const ownToday = date === null && (view ? view.canSetDayActivity : guessOwn);
   const commitments = useCommitments(ownToday ? commitmentsUrl(seatId, test) : null);
   const prep = useCallPrep(ownToday ? callPrepUrl(seatId, test) : null);
+  // 🔴 A HELD VISIT THAT LANDS WHILE THE REP IS LOOKING MUST APPEAR, NOT VANISH. The row goes when the send lands, and
+  // nothing else reads the day again, so the visit and the AM and PM counts stayed stale until the rep left and came back.
+  // The two panels too: they were read when the form closed with no signal, and the press on staging found both still
+  // saying "No connection" on the page where the visit had already landed.
+  const waitingHere = held.filter((entry) => entry.status === "waiting").length;
+  const waitingBefore = useRef(waitingHere);
+  const reloadDay = day.reload;
+  const reloadCommitments = commitments.reload;
+  const reloadPrep = prep.reload;
+  useEffect(() => {
+    if (waitingHere < waitingBefore.current) {
+      reloadDay();
+      reloadCommitments();
+      reloadPrep();
+    }
+    waitingBefore.current = waitingHere;
+  }, [reloadCommitments, reloadDay, reloadPrep, waitingHere]);
   // The Add visit form, read ahead on a day he can add to, so pressing Add visit opens on it (p50
   // 1,034 ms on production, 24 Oct, every time the button was pressed). Opening Add visit still reads
   // it AGAIN when it was read ahead (`form.reload()` beside each `setStep` below), because the form is

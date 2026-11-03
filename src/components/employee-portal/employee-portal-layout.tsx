@@ -98,6 +98,7 @@ import {
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
+import { useVisitsCanBeHeld } from "@/components/phoenix-crm/visit-hold-signal";
 import { VisitOutboxRunner } from "@/components/phoenix-crm/visit-outbox-runner";
 import { signOutAndLeave } from "@/lib/auth/sign-out-client";
 import { DisplayScaleControl } from "@/components/layout/display-scale-control";
@@ -788,6 +789,7 @@ function EmployeePortalHeaderDate() {
  */
 function EmployeePortalGreeting({ firstName }: { firstName: string }) {
   const online = useIsOnline();
+  const visitsCanBeHeld = useVisitsCanBeHeld();
   const [greeting, setGreeting] = useState<string | null>(null);
 
   useEffect(() => {
@@ -804,7 +806,8 @@ function EmployeePortalGreeting({ firstName }: { firstName: string }) {
     return (
       <p className="flex items-center gap-1 text-phx-4xs font-black uppercase tracking-[0.14em] text-red-600 sm:text-phx-3xs" role="status">
         <WifiOff className="h-3 w-3 shrink-0" />
-        Offline — nothing will save
+        {/* 🔴 Never "nothing will save" above "Saved on this phone": the press on staging showed the two together, and a rep who reads this line may not press at all. */}
+        {visitsCanBeHeld ? "Offline — only visits will save" : "Offline — nothing will save"}
       </p>
     );
   }

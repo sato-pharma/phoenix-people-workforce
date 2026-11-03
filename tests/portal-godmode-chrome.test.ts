@@ -394,7 +394,7 @@ export function runPortalGodmodeChromeTests() {
 
   const greeting = componentBody(layout, "EmployeePortalGreeting");
   assert.match(greeting, /useState<string \| null>\(null\)/, "the greeting starts empty so the server HTML and first client pass match");
-  assert.match(greeting, /Offline — nothing will save/);
+  assert.ok(greeting.includes('{visitsCanBeHeld ? "Offline — only visits will save" : "Offline — nothing will save"}'), "🔴 the line is true for the screen it sits on: a rep on Visits can keep a visit, and everyone else still cannot save");
 
   // The waiting counter opens queues — it never decides anything.
   const chip = componentBody(widgets, "WaitingOnYouChip");

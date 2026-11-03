@@ -14,6 +14,7 @@ import {
   type OutboxDeps,
 } from "../src/lib/phoenix-crm/visit-outbox.ts";
 import { VISIT_OUTBOX_MAX_ENTRIES, VISIT_RESEND_GAP_MS, type QueuedVisit } from "../src/lib/phoenix-crm/visit-resend-rules.ts";
+import { markVisitsCanBeHeld, visitsCanBeHeldNow } from "../src/components/phoenix-crm/visit-hold-signal.ts";
 
 /**
  * Phoenix CRM — the phone's list of held visits and the one pass that sends them (owner, 3 Nov 2026).
@@ -191,7 +192,23 @@ function checkTheFormKeepsThePressFirst(): void {
   assert.ok(replaced !== -1 && form.indexOf("forgetHeldVisit(queueOwner, retryOf.visitId);", replaced) - replaced < 120, "a row logged again under a new id goes once the phone holds the new one, or it stays for ever");
 
   const tab = stripComments(readFileSync("src/components/phoenix-crm/visits-tab.tsx", "utf8"));
-  assert.ok(tab.includes("if (waitingHere < waitingBefore.current) reloadDay();"), "🔴 a held visit that lands while the rep is looking appears in the day, it does not just vanish");
+  const landing = tab.indexOf("if (waitingHere < waitingBefore.current) {");
+  assert.ok(landing !== -1, "🔴 a held visit that lands while the rep is looking appears in the day, it does not just vanish");
+  for (const read of ["reloadDay();", "reloadCommitments();", "reloadPrep();"]) {
+    const at = tab.indexOf(read, landing);
+    assert.ok(at !== -1 && at - landing < 120, `🔴 the landing reads again, or the panel keeps "No connection" under a visit that landed: ${read}`);
+  }
+  assert.ok(tab.includes("useEffect(() => (heldOwner ? markVisitsCanBeHeld() : undefined), [heldOwner]);"), "🔴 only the server's own answer lets the header say a visit can be kept, and it stops saying so when the screen goes");
+
+  assert.equal(visitsCanBeHeldNow(), false, "no screen, nothing can be kept");
+  const first = markVisitsCanBeHeld();
+  const second = markVisitsCanBeHeld();
+  first();
+  assert.equal(visitsCanBeHeldNow(), true, "one screen left, it can still be kept");
+  second();
+  assert.equal(visitsCanBeHeldNow(), false, "the last screen gone, the header goes back to nothing will save");
+  const signal = stripComments(readFileSync("src/components/phoenix-crm/visit-hold-signal.ts", "utf8"));
+  assert.deepEqual(signal.match(/from "[^"]+"/g), ['from "react"'], "🔴 the shell imports this on every page, so it brings nothing with it");
 
   const row = stripComments(readFileSync("src/components/phoenix-crm/visit-outbox-note.tsx", "utf8"));
   assert.ok(row.includes("heldRefusalSentence(entry.refusalMessage)"), "the row draws the sentence through the filter");
