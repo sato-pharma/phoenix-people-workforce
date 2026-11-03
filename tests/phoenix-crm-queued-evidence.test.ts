@@ -134,12 +134,13 @@ function checkALoneHeldVisitRaisesNothing(): void {
 function checkAWaitCorrectsAReadingAndNeverErasesIt(): void {
   // A rep logged three visits ten kilometres apart through a dead spot, each an hour apart. All three arrive together.
   const first = { ...prior(fixAt("2026-11-03T12:00:00.000Z", 0), "first"), queuedSeconds: 7_200 };
-  const second = { ...prior(fixAt("2026-11-03T12:00:03.000Z", 10), "second"), queuedSeconds: 3_603 };
+  const secondFix = fixAt("2026-11-03T12:00:03.000Z", 10);
+  const second = { ...prior(secondFix, "second"), queuedSeconds: 3_603 };
   const third = fixAt("2026-11-03T12:00:06.000Z", 20);
   const contacts = [first.capturedAt, second.capturedAt, third.capturedAt];
 
   // The proof the correction is worth having: with no claim at all, the same visits read as an impossible trip.
-  assert.ok(judge(second, [first]).flags.includes("impossible_travel"), "compared at arrival, a drained queue reads as an impossible trip");
+  assert.ok(judge(secondFix, [first]).flags.includes("impossible_travel"), "compared at arrival, a drained queue reads as an impossible trip");
 
   const drained = held(third, [first, second], 6, contacts);
   assert.equal(drained.flags.includes("impossible_travel"), false, "🔴 an honest drain is never called impossible: on the phone's word, they made the trip");
