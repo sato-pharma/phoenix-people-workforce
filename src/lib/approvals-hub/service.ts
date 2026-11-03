@@ -21,6 +21,7 @@ import {
   VacationViewerHasNoEmployeeProfileError,
 } from "@/lib/vacation/service";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
+import { loadWhoElseIsOff, shouldShowWhoElseIsOff, type WhoElseIsOff } from "@/lib/vacation/who-else-is-off";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { addDaysIso } from "@/lib/crm/dates";
 import {
@@ -792,6 +793,21 @@ export async function getVacationApprovalDetail(access: AccessContext, id: strin
     canReviewEvidence: isAllVacationVisibility(access),
     canAdminManage,
   };
+}
+
+/**
+ * The "who else is off" panel for a detail the viewer has already been allowed to read. Its own read,
+ * not a field on the detail: the panel must never hold up, or fail, the page that decides the request.
+ */
+export async function getWhoElseIsOffForApprovalDetail(
+  access: AccessContext,
+  detail: VacationApprovalDetail,
+): Promise<WhoElseIsOff | null> {
+  const record = detail.record;
+  if (!record) return null;
+  const isOwnRequest = isViewer(record.employeeHrId, access.hrId?.trim() ?? "");
+  if (!shouldShowWhoElseIsOff({ isOwnRequest, status: record.status })) return null;
+  return loadWhoElseIsOff(record);
 }
 
 export type ExcuseApprovalDetail = {

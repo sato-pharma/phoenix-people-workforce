@@ -149,8 +149,18 @@ export function runCustomer360WiringTests() {
     if (allowed.test(file)) continue;
     assert.doesNotMatch(
       read(file),
-      /from ["']@\/lib\/customer-360(?!\/validated["'])(?:\/|["'])/,
-      `${file} imports Customer 360 — its verdict is advisory and must never reach a request, order or approval path (only the validated-customer rule may be shared)`,
+      /from ["']@\/lib\/customer-360(?!\/(?:validated|hrefs|open-link)["'])(?:\/|["'])/,
+      `${file} imports Customer 360 — its verdict is advisory and must never reach a request, order or approval path (only the validated-customer rule and the two link helpers may be shared)`,
+    );
+  }
+  // The doors in from an approval screen (owner, 2026-11-03: pharmacy names open Customer 360) are a web
+  // address and a permission check. They may be shared only because they read no report and no verdict.
+  for (const door of ["src/lib/customer-360/hrefs.ts", "src/lib/customer-360/open-link.ts"]) {
+    const reads = [...read(door).matchAll(/from ["'](@\/lib\/customer-360[^"']*)["']/g)].map((match) => match[1]);
+    assert.deepEqual(
+      reads.filter((name) => name !== "@/lib/customer-360/subject"),
+      [],
+      `${door} is shared with approval paths, so it may read nothing of Customer 360 but the subject id`,
     );
   }
 

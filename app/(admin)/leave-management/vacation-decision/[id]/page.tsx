@@ -13,6 +13,8 @@ import {
   vacationDecisionFormProblem,
   vacationDecisionRetryPath,
 } from "@/lib/vacation/decision-form";
+import { loadWhoElseIsOff } from "@/lib/vacation/who-else-is-off";
+import { WhoElseIsOffPanel } from "@/components/approvals-hub/who-else-is-off-panel";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +80,8 @@ export default async function VacationDecisionPage({
       ? "You are not authorized to decide this vacation request."
       : clientSafeErrorMessage(err, "Unable to load this vacation decision.");
   }
+  // Read only after the service confirmed this person is a pending approver on this request.
+  const whoElseIsOff = data ? await loadWhoElseIsOff(data.request) : null;
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
@@ -110,6 +114,12 @@ export default async function VacationDecisionPage({
               <dd>{data.request.vacationType}</dd>
             </div>
           </dl>
+
+          {whoElseIsOff ? (
+            <div className="mt-5">
+              <WhoElseIsOffPanel data={whoElseIsOff} />
+            </div>
+          ) : null}
 
           <form action={recordVacationDecision} className="mt-6 flex flex-col gap-4">
             <input name="requestId" type="hidden" value={data.request.id} />

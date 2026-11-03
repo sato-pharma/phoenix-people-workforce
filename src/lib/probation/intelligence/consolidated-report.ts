@@ -6,7 +6,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canSeeConfidentialNote } from "./assessments";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { canAccess, type AccessContext } from "@/lib/auth/permissions";
+import { getProbationSalesEvidence, type ProbationSalesEvidence } from "./sales-evidence";
 
 import { getProbationConfig } from "./config";
 import { getProbationCaseByEmployee, mapProbationCaseRow } from "./cases";
@@ -52,6 +53,8 @@ export type ConsolidatedReport = {
   }>;
   assessments: Awaited<ReturnType<typeof getCaseAssessments>>;
   sfeEvidence: Awaited<ReturnType<typeof getSfeEvidencePreview>> | null;
+  /** The territory's published sales against target over the probation months. Display only; no score reads it. */
+  salesEvidence: ProbationSalesEvidence | null;
   score: Awaited<ReturnType<typeof getCaseScore>>["score"];
   contradictions: Awaited<ReturnType<typeof getCaseScore>>["contradictions"];
   provisionalReadiness: Awaited<ReturnType<typeof getCaseScore>>["provisionalReadiness"];
@@ -96,7 +99,7 @@ export async function buildConsolidatedReport(
   const probationCase = await loadCaseById(caseId);
   if (!probationCase) throw new Error("Not found: probation case does not exist.");
 
-  const [{ data: dvRows }, { data: fbRows }, assessments, score, sfeEvidence, developmentActions] = await Promise.all([
+  const [{ data: dvRows }, { data: fbRows }, assessments, score, sfeEvidence, developmentActions, salesEvidence] = await Promise.all([
     supabase.from("probation_dv_days")
       .select("id, evaluator_hr_id, evaluator_role, dv_date, ampm, area_name, visit_count, dv_status, validation_reason, synced_at")
       .eq("case_id", caseId).order("dv_date", { ascending: true }),
@@ -107,6 +110,15 @@ export async function buildConsolidatedReport(
     getCaseScore(caseId, nowIso),
     getSfeEvidencePreview(caseId).catch(() => null),
     listDevelopmentActionsByCase(caseId).catch(() => []),
+    (await canAccess(access, "sales", "read"))
+      ? getProbationSalesEvidence({
+          employeeHrId: probationCase.employeeHrId,
+          endDate: probationCase.probationEndDate,
+          startDate: probationCase.probationStartDate ?? probationCase.hireDate,
+          todayIso: today,
+          viewerRole: access.role,
+        })
+      : null,
   ]);
 
   const dvDays = (dvRows ?? []) as DvDayRow[];
@@ -208,6 +220,7 @@ export async function buildConsolidatedReport(
     dvDays: dvDaysOut,
     assessments,
     sfeEvidence,
+    salesEvidence,
     score: score.score,
     contradictions: score.contradictions,
     provisionalReadiness: score.provisionalReadiness,

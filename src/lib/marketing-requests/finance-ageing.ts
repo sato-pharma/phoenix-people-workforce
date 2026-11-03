@@ -58,6 +58,7 @@ export type FinanceAgeingStepInput = {
 };
 
 export type FinanceAgeingRequestInput = {
+  customerId?: string | null;
   customerName: string;
   estimatedCost: number;
   id: string;
@@ -73,6 +74,8 @@ export type MarketingFinanceAgeingRow = {
   /** No `step_opened` event exists, so the days come from the row stamps and are shown as "about". */
   approximate: boolean;
   band: MarketingWaitingBand;
+  /** For the Customer 360 link on the page. Null when the request names none. */
+  customerId: string | null;
   customerName: string;
   daysWaiting: number;
   estimatedCost: number;
@@ -137,6 +140,7 @@ export function buildFinanceAgeingRows(input: {
     rows.push({
       approximate: !step.openedAt || days === null,
       band: marketingWaitingBand(daysWaiting),
+      customerId: request.customerId ?? null,
       customerName: request.customerName,
       daysWaiting,
       estimatedCost: request.estimatedCost,

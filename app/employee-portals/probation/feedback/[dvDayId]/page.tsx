@@ -3,8 +3,10 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission } from "@/lib/auth/permissions";
+import { ProbationSalesEvidencePanel } from "@/components/probation/probation-sales-evidence-panel";
+import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { loadFeedbackSalesEvidence } from "@/lib/probation/intelligence/sales-evidence";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getProbationConfig } from "@/lib/probation/intelligence/config";
@@ -58,6 +60,11 @@ export default async function StructuredFeedbackPage({
     // fall back to the HR_ID if the directory lookup fails
   }
 
+  // The territory's published sales, shown beside the scorecard to an evaluator who may read sales.
+  // listFeedbackTasks above is what proved this person is evaluating this employee.
+  const canReadSales = await canAccess(access, "sales", "read");
+  const salesEvidence = canReadSales ? await loadFeedbackSalesEvidence(task, access.role) : null;
+
   return (
     <EmployeePortalPageShell
       badge="People Operations"
@@ -65,16 +72,19 @@ export default async function StructuredFeedbackPage({
       errorBoundaryTitle="Feedback form unavailable"
       title="Double-Visit Feedback"
     >
-      <StructuredFeedbackForm
-        dvDayId={task.dvDayId}
-        employeeName={employeeName}
-        dvDate={task.dvDate}
-        visitCount={task.visitCount}
-        evaluatorRoleLabel={task.evaluatorRole ? ROLE_LABEL[task.evaluatorRole] ?? task.evaluatorRole : null}
-        dimensions={config.scorecardDimensions}
-        scale={config.scoringScale}
-        backHref={backHref}
-      />
+      <div className="space-y-4">
+        {salesEvidence ? <ProbationSalesEvidencePanel evidence={salesEvidence} /> : null}
+        <StructuredFeedbackForm
+          dvDayId={task.dvDayId}
+          employeeName={employeeName}
+          dvDate={task.dvDate}
+          visitCount={task.visitCount}
+          evaluatorRoleLabel={task.evaluatorRole ? ROLE_LABEL[task.evaluatorRole] ?? task.evaluatorRole : null}
+          dimensions={config.scorecardDimensions}
+          scale={config.scoringScale}
+          backHref={backHref}
+        />
+      </div>
     </EmployeePortalPageShell>
   );
 }

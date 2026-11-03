@@ -1,4 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { marketingCustomer360Href } from "@/lib/customer-360/hrefs";
+import { canOpenCustomer360 } from "@/lib/customer-360/open-link";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -49,6 +51,8 @@ export type MarketingCustomerHistory = {
 };
 
 export type MarketingApproverRequestDetail = MarketingRequestDecisionSummary & {
+  /** The customer's Customer 360 page, for an office viewer. Decided here because this window runs in both shells. */
+  customer360Href: string | null;
   customerHistory: MarketingCustomerHistory;
 };
 
@@ -192,9 +196,14 @@ export async function getMarketingRequestApproverDetail(
   const summary = await getMarketingRequestDecisionSummary(requestId, "approve", access);
   // The summary carries the customer's NAME and code but not its id, and the id is what the
   // history joins on. Resolved only after the summary has authorized the caller.
-  const customerHistory = await loadCustomerHistory(
-    await resolveCustomerId(summary.requestId),
-    summary.requestId,
-  );
-  return { ...summary, customerHistory };
+  const customerId = await resolveCustomerId(summary.requestId);
+  const [customerHistory, canOpenCustomer] = await Promise.all([
+    loadCustomerHistory(customerId, summary.requestId),
+    canOpenCustomer360(access),
+  ]);
+  return {
+    ...summary,
+    customer360Href: canOpenCustomer && customerId ? marketingCustomer360Href(customerId) : null,
+    customerHistory,
+  };
 }

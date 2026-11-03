@@ -28,6 +28,8 @@ This file is loaded because this session opened a file of this module (or the mo
 <!-- module-memory:rules:begin — hand-written; add this module's rules here -->
 ## Rules
 
+- 🔒 **THE DOORS INTO CUSTOMER 360 ARE OFFICE ROLES ONLY AND STILL SCOPED BY THE PAGE** (owner, 2026-11-03). `canOpenCustomer360` asks what the Customer 360 pages ask; a direct order links to `dor_<pharmacy>`, and Marketing and Finance Ageing link through `/customer-360/marketing-customer/<id>`, which finds the hub in the viewer's own scoped report or says it is not theirs. Pinned by `tests/approver-context.test.ts`.
+
 ### Owner rules (moved from AGENTS.md §4)
 
 - 🔴 **THE SYSTEM NEVER AUTO-APPROVES A PLAN — a DM's weekly plan is submit → NSM (or RSM) → HR acknowledge, NO CEO stage.** No system-signed APPROVAL (`SYSTEM-AUTO-HR-ACK` on the acknowledgement stays); never skip a stage by writing a decision row for it. DM plans carry NO `ceo_approve` row by design — do not restore one, and never delete a human decision on a fabricated-row predicate. **One exception, owner 2026-09-20: DMs reporting to Hany Saad run submit → Hany → Ali Mohamed Ali → HR auto-ack** (`second-approver.ts`); Ali's decision rides the `ceo_*` slot, never the CEO's. 🔴 **A DM whose Phoenix CRM team is LIVE plans in Phoenix CRM instead** (owner, 2026-10-16): RSM or NSM, and after any RSM the NSM above him, never skipped (owner, 2026-10-17), NO HR acknowledgement, decided in the Approvals Hub, and the Administrator may act in any holder's place — the `phoenix-crm-manager-plan` module. Since 2026-10-17 the RSM, the NSMs and the product managers plan there too, approved "as today" with HR's automatic acknowledgement. `the-system-never-auto-approves-a-plan`

@@ -1,5 +1,6 @@
 import type { ConsolidatedReport } from "@/lib/probation/intelligence/consolidated-report";
 import { humanizeCode } from "@/lib/format/code-label";
+import { ProbationSalesEvidencePanel } from "@/components/probation/probation-sales-evidence-panel";
 
 // Presentational (server) view of the live consolidated probation report. No interactivity —
 // it renders whatever the report data service composed. Human names, not codes.
@@ -219,6 +220,8 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
           ))}
         </div>
       </Section>
+
+      {report.salesEvidence ? <ProbationSalesEvidencePanel evidence={report.salesEvidence} /> : null}
 
       {/* Assessments */}
       <Section title="SFE & HR assessments">

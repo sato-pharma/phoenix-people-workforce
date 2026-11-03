@@ -8,6 +8,8 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canAccessMarketingAdminPage } from "@/lib/marketing-requests/admin-page-access";
+import { getMarketingInboxQueueLink } from "@/lib/marketing-requests/service";
 import {
   getActionCenterDeepLinkItem,
   getAwaitingMyActionItems,
@@ -79,11 +81,18 @@ async function movedOutQueuesFor(access: Awaited<ReturnType<typeof resolveAccess
   // `const x = await canAccess(...)` is the shape that reader deliberately does not count, and it is
   // what the rest of the codebase writes for a flag.
   const canReadDirectOrders = await canAccess(access, "direct_orders", "read");
+  // Marketing keeps its own inbox (owner, 2026-11-03): the hub only says what is waiting there. Same
+  // role set the inbox page itself admits, so the line never links to a page that bounces the reader.
+  const marketingInbox =
+    access.scope === "system" || canAccessMarketingAdminPage(access.role, { approvalInbox: true })
+      ? await getMarketingInboxQueueLink(access, "/admin/marketing-requests/inbox")
+      : null;
   return [
     ...(canReviewOutstationExpenseApprovals(access)
       ? [{ href: "/admin/outstation/expense-approvals", label: "Expense approvals" }]
       : []),
     ...(canReadDirectOrders ? [{ href: "/admin/direct-orders", label: "Direct orders" }] : []),
+    ...(marketingInbox ? [marketingInbox] : []),
     ...(access.role === "Super Admin"
       ? [{ href: "/admin/private-calendar-disputes", label: "Calendar disputes" }]
       : []),

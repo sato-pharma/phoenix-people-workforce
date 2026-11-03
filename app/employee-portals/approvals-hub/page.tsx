@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { ActionsWorkspace } from "@/components/action-center/actions-workspace";
+import { ActionsWorkspace, type MovedOutQueue } from "@/components/action-center/actions-workspace";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import type { ActionHubData, ActionHubModule } from "@/components/action-center/types";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
@@ -12,6 +12,8 @@ import {
   type DecidedForMeItem,
 } from "@/lib/action-center/decided-for-me";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem } from "@/components/action-center/types";
+import { canUseEmployeePortalMarketingRequests } from "@/lib/employee-portal/navigation";
+import { getMarketingInboxQueueLink } from "@/lib/marketing-requests/service";
 
 export const dynamic = "force-dynamic";
 
@@ -63,17 +65,23 @@ export default async function PortalApprovalsHubPage({
   // Portal audience: after the migrated-module redirect above, the live inbox only carries the
   // access-scoped residual modules (contract renewal). Unscoped HR/admin sources (resignation,
   // outstation) never reach a portal manager — see getAwaitingMyActionItems.
-  const [items, rawMyRequests, rawHistoricalItems, decidedForMe]: [
+  const [items, rawMyRequests, rawHistoricalItems, decidedForMe, marketingInbox]: [
     ActionHubItem[],
     MyRequestItem[],
     HistoricalApprovalItem[],
     DecidedForMeItem[] | null,
+    MovedOutQueue | null,
   ] = await Promise.all([
     getAwaitingMyActionItems(access, "portal"),
     getMyRequestItems(access).catch((): MyRequestItem[] => []),
     getMyApprovalHistory(access).catch((): HistoricalApprovalItem[] => []),
     // null, not [] — see the admin hub: an empty list would claim nothing happened.
     getDecisionsMadeForMe(access).catch((): DecidedForMeItem[] | null => null),
+    // Marketing keeps its own inbox: the hub only says what is waiting there, and only to a role
+    // the portal's inbox page admits.
+    canUseEmployeePortalMarketingRequests(access.role)
+      ? getMarketingInboxQueueLink(access, "/employee-portals/marketing-requests/inbox")
+      : Promise.resolve(null),
   ]);
   // Every migrated module (leave/excuse/weekly_plan) has its own "My Requests"/"History" tabs on
   // its dedicated hub (approvals-hub/service.ts filters these same shared functions down to one
@@ -119,6 +127,7 @@ export default async function PortalApprovalsHubPage({
         initialId={initialId}
         callerRole={access.role}
         initialTab={initialTab}
+        movedOutQueues={marketingInbox ? [marketingInbox] : undefined}
         decidedForMe={decidedForMe}
         decidedForMeWindowDays={DECIDED_FOR_ME_WINDOW_DAYS}
         embedded
