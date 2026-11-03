@@ -443,7 +443,7 @@ charges:
 gh run list --workflow=ci.yml --limit 240 --json databaseId,event \
   --jq '.[] | "\(.databaseId)|\(.event)"' |
 while IFS='|' read -r id ev; do
-  m=$(gh api "repos/it-gawish-hr/phoenix-people-workforce/actions/runs/$id/jobs" \
+  m=$(gh api "repos/gawishtheit/phoenix-people-workforce/actions/runs/$id/jobs" \
     --jq '[.jobs[] | select(.started_at != null and .completed_at != null)
            | ((.completed_at|fromdateiso8601) - (.started_at|fromdateiso8601)) / 60 | ceil] | add // 0')
   echo "${m:-0}|$ev"
@@ -887,7 +887,7 @@ pull request starts building, that test fails instead of answering NO VERDICT fo
    hard-freezes under a build plus a dev server. A CI runner there guarantees it.
    🔴 **This happened.** On 2026-09-27 a runner named `OMAR-GAWISH` (`self-hosted, Windows, X64`)
    was registered and online, and with `CI_RUNNER=self-hosted` it took the jobs — see rule 2b for
-   what that did. Deregister it: `gh api -X DELETE repos/it-gawish-hr/phoenix-people-workforce/actions/runners/<id>`,
+   what that did. Deregister it: `gh api -X DELETE repos/gawishtheit/phoenix-people-workforce/actions/runners/<id>`,
    and on the machine `cd C:\actions-runner && .\config.cmd remove`. A registered runner is not
    idle — it competes for every job the moment the variable points at it.
 2b. 🔴 **THE RUNNER MUST BE LINUX. A WINDOWS RUNNER FAILS EVERY JOB IN SECONDS, AND LOOKS HEALTHY
@@ -1004,7 +1004,7 @@ on a new run attempt, `gh run rerun --failed` then rescues a stuck `ci-runner/` 
    2026-09-29 stand-down below.
 3. On the host:
    ```bash
-   git clone https://github.com/it-gawish-hr/phoenix-people-workforce
+   git clone https://github.com/gawishtheit/phoenix-people-workforce
    cd phoenix-people-workforce
    export RUNNER_TOKEN=...
    bash scripts/setup-self-hosted-runner.sh
@@ -1016,7 +1016,7 @@ on a new run attempt, `gh run rerun --failed` then rescues a stuck `ci-runner/` 
 4b. 🔴 **Confirm the OS before flipping the variable, and that NO other runner is registered** —
    this is the step whose absence cost PR #4537 a full red cycle on 2026-09-27 (safety rule 2b):
    ```bash
-   gh api repos/it-gawish-hr/phoenix-people-workforce/actions/runners \
+   gh api repos/gawishtheit/phoenix-people-workforce/actions/runners \
      --jq '.runners[] | {name, os, status, labels: [.labels[].name]}'
    ```
    Every row must read `"os": "Linux"`. A `"Windows"` row will take the jobs and fail all of them in
@@ -1024,7 +1024,7 @@ on a new run attempt, `gh run rerun --failed` then rescues a stuck `ci-runner/` 
 5. Point the switch at the label you gave it — **never at `self-hosted`**, which matches every
    self-hosted runner on the repo:
    ```bash
-   gh variable set CI_RUNNER_LABEL --repo it-gawish-hr/phoenix-people-workforce --body 'hetzner'
+   gh variable set CI_RUNNER_LABEL --repo gawishtheit/phoenix-people-workforce --body 'hetzner'
    ```
    This alone turns nothing on: only a same-repo PR from a `ci-runner/<task>` branch is eligible.
    `main`, dispatches, schedules and every other PR stay hosted.
@@ -1082,7 +1082,7 @@ exit
 
 # B3  back in as that user
 ssh phx@<server-ip>
-git clone https://github.com/it-gawish-hr/phoenix-people-workforce
+git clone https://github.com/gawishtheit/phoenix-people-workforce
 cd phoenix-people-workforce
 
 # B4  the label override — the whole point of the section above
@@ -1124,10 +1124,10 @@ self-hosted** — not `main`, not a dispatch, not any other PR. Roll back with
 which machine took each job:
 
 ```bash
-gh api repos/it-gawish-hr/phoenix-people-workforce/actions/runners \
+gh api repos/gawishtheit/phoenix-people-workforce/actions/runners \
   --jq '.runners[] | select([.labels[].name] | index("hetzner")) | "\(.name) \(.status) \(.os)"'
 gh run list --workflow=ci.yml --limit 1 --json databaseId --jq '.[0].databaseId'
-gh api repos/it-gawish-hr/phoenix-people-workforce/actions/runs/<id>/jobs \
+gh api repos/gawishtheit/phoenix-people-workforce/actions/runs/<id>/jobs \
   --jq '.jobs[] | "\(.name) on \(.runner_name) \([.labels[]] | join(","))"'
 ```
 
@@ -1152,7 +1152,7 @@ hosted**, and the two clauses that keep them there are load-bearing:
 **Rolling back is the kill switch, never an edit to the expression:**
 
 ```bash
-gh variable set CI_SELF_HOSTED --repo it-gawish-hr/phoenix-people-workforce --body off
+gh variable set CI_SELF_HOSTED --repo gawishtheit/phoenix-people-workforce --body off
 ```
 
 `vars.*` re-resolve on each new run **attempt**, so that returns every PR to hosted on its next
@@ -1517,7 +1517,7 @@ on his box; and the hardware refusal stands (*"I WILL NOT BUY THIS"*, of two CPX
 ## Turning it off
 
 ```bash
-gh variable set CI_SELF_HOSTED --repo it-gawish-hr/phoenix-people-workforce --body off
+gh variable set CI_SELF_HOSTED --repo gawishtheit/phoenix-people-workforce --body off
 ```
 
 That is the kill switch and it wins over everything else, so it works without having to remember which
