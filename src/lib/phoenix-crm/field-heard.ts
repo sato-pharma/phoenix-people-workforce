@@ -40,6 +40,8 @@ import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 /** One countable visit, as this report reads it. */
 export type HeardVisit = {
+  /** The visit's own id, when the reader needs to match it to something kept beside the visit. Never shown. */
+  visitId?: string;
   visitDate: string;
   listType: PhoenixCrmListType;
   /** The product families discussed, as the visit saved them. */

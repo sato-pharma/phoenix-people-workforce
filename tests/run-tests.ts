@@ -2163,6 +2163,7 @@ import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
+import { runPhoenixCrmCommentReadingTests } from "./phoenix-crm-comment-reading.test.ts";
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
 import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
@@ -7708,6 +7709,11 @@ await runTest(
 await runTest(
   "Phoenix CRM rep commitments (the four next steps that had NO home: at every visit the rep records one of six next steps with an optional day, and only follow_up ever came back to him — as a next-week plan suggestion. This pins that all five actionable steps resurface and \"Nothing to follow\" does not; that open-or-closed is DERIVED through the module's own pickLastNextStep, so a LATER visit to the same customer addresses it, the newest visit's answer stands, a later \"Nothing to follow\" closes an older promise and a repeat re-opens it on the new day; the four groups measured against the VISIT day with a Friday looking into the week that starts the next morning; that nothing open is silently dropped — dated past this week or undated beyond the named 30-day window is counted and said in a sentence; that the view carries NO aggregate figure and the wording never reads as a verdict on the rep (golden rule #1, and his surfaces were stripped of meters); and that the read is his OWN seat on the RAW visits table with no POST at all, because a commitment closes by going back and a tick would be a step added to his day)",
   runPhoenixCrmCommitmentsTests,
+);
+
+await runTest(
+  "Phoenix CRM reading visit comments (a quote is the rep's own words or it is dropped, a failed batch is split and asked again, a reading joins no counted figure and no KPI, a follow-up stays on the rep's own notes and closes on going back)",
+  runPhoenixCrmCommentReadingTests,
 );
 
 await runTest(

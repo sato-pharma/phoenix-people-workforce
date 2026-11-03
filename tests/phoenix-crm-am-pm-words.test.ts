@@ -79,6 +79,9 @@ export function runPhoenixCrmAmPmWordTests() {
     // every screen reads, and its screen file is reached by this import specifier; nothing else may say it.
     /"Test accounts"/,
     /"@\/components\/phoenix-crm\/test-accounts-tab"/,
+    // The question put to the model about a visit comment (comment-reading.ts). Reps write about doctors in those
+    // comments and no rep or manager ever reads the question, and the wording is what the sample was checked on.
+    /^\s*"(stock|price|follow_up): /,
   ];
 
   const files: string[] = [];

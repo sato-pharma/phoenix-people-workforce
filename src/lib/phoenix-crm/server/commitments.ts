@@ -24,9 +24,11 @@
  */
 
 import { addDaysIso } from "@/lib/crm/dates";
+import { openCommentFollowUps, type CommentFollowUp } from "@/lib/phoenix-crm/comment-reading";
 import { buildRepCommitments, type CommitmentVisitRow, type RepCommitments } from "@/lib/phoenix-crm/commitments";
 import { LAST_SEEN_WINDOW_DAYS } from "@/lib/phoenix-crm/plan-insight";
 import { readTestFlag, territoryForRepWrite, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadSeatCommentFollowUps } from "@/lib/phoenix-crm/server/comment-reading";
 import { textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -44,6 +46,11 @@ export type RepCommitmentsView = RepCommitments & {
    * a rep writing up his evening at 01:00 is not told his own promise for that day has passed.
    */
   today: string;
+  /**
+   * What the rep wrote in a visit comment about doing next, in the rep's own words. Behind the same seat gate
+   * as everything above, so nobody above the rep reads it. Null when the read failed: never shown as nothing.
+   */
+  fromComments: { followUps: CommentFollowUp[]; older: number } | null;
 };
 
 /** The customer's name as the embed answers it — PostgREST returns an object, or an array of one. */
@@ -60,7 +67,8 @@ export async function loadRepCommitments(
   const { seat, isTest } = territoryForRepWrite(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.visitDay;
 
-  const [rows, names] = await Promise.all([
+  const fromDay = addDaysIso(today, -LAST_SEEN_WINDOW_DAYS);
+  const [rows, names, followUps] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () =>
         getSupabaseAdmin()
@@ -68,10 +76,11 @@ export async function loadRepCommitments(
           .select("id, customer_id, visit_date, captured_at, next_step, next_step_on, customer:phoenix_crm_customers!customer_id(name)")
           .eq("seat_id", seat.seatId)
           .eq("is_test", isTest)
-          .gte("visit_date", addDaysIso(today, -LAST_SEEN_WINDOW_DAYS)),
+          .gte("visit_date", fromDay),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     ),
     loadPeopleNames(territoryPeople(viewer.org, [seat])),
+    loadSeatCommentFollowUps(seat.seatId, fromDay),
   ]);
 
   const visits: CommitmentVisitRow[] = rows.map((row) => ({
@@ -88,5 +97,19 @@ export async function loadRepCommitments(
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     today,
+    fromComments:
+      followUps === null
+        ? null
+        : openCommentFollowUps({
+            followUps,
+            today,
+            visits: rows.map((row) => ({
+              visitId: String(row.id),
+              customerId: String(row.customer_id ?? ""),
+              customerName: embeddedName(row.customer),
+              visitDate: String(row.visit_date ?? ""),
+              capturedAt: String(row.captured_at ?? ""),
+            })),
+          }),
   };
 }

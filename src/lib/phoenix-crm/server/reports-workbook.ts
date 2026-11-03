@@ -880,7 +880,7 @@ function writeHeard(workbook: ExcelJS.Workbook, view: FieldHeardView): void {
   const withArea = view.byArea !== null;
   const notes = view.byProduct.flatMap((row) => row.notes.map((note) => ({ ...note, product: row.label })));
   if (notes.length > 0) {
-    writeHouseTable(sheet, next + 1, {
+    next = writeHouseTable(sheet, next + 1, {
       columns: [
         column("Day", { width: 13 }),
         column("List", { width: 7 }),
@@ -903,6 +903,38 @@ function writeHeard(workbook: ExcelJS.Workbook, view: FieldHeardView): void {
       title: "What was said",
     });
   }
+
+  writeCommentReadingsTable(sheet, next + 1, "Price complaints, read from comments", view.priceFromComments, {
+    columns: [
+      column("Day", { width: 13 }),
+      column("List", { width: 7 }),
+      { ...NAME, label: "Product" },
+      column("Speciality", { width: 18 }),
+      ...(withArea ? [column("Area", { width: 16 })] : []),
+      column("What was written", { width: 56 }),
+    ],
+    rows: (view.priceFromComments ?? []).flatMap((row) =>
+      row.quotes.map((quote) => [quote.visitDate, quote.listType, row.product, quote.speciality ?? "—", ...(withArea ? [quote.area ?? "—"] : []), quote.quote]),
+    ),
+  });
+}
+
+/** One wording for both sheets: where a reading comes from, and that it is in no figure on the sheet. */
+function writeCommentReadingsTable(
+  sheet: ExcelJS.Worksheet,
+  at: number,
+  title: string,
+  source: ReadonlyArray<unknown> | null,
+  table: Pick<HouseTableInput, "columns" | "rows">,
+): number {
+  return writeHouseTable(sheet, at, {
+    ...table,
+    note:
+      source === null
+        ? "The readings could not be loaded when this was exported, so this part is missing rather than empty."
+        : "Read automatically from what reps wrote in their visit comments, in their own words. Not counted in any figure on this sheet. A reading can be wrong, so the words are here to judge for yourself.",
+    title,
+  });
 }
 
 /**
@@ -914,7 +946,7 @@ function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
   const sheet = workbook.addWorksheet(SECTION_TITLES.stock);
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
   const { summary } = view;
-  const next = writeHouseTable(sheet, 1, {
+  let next = writeHouseTable(sheet, 1, {
     columns: [
       { ...NAME, label: "Product" },
       column("Pharmacy", { width: 26 }),
@@ -941,7 +973,7 @@ function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
     title: `${SECTION_TITLES.stock} · ${view.period.from} to ${view.period.to}`,
   });
   if (view.chases.length > 0) {
-    writeHouseTable(sheet, next + 1, {
+    next = writeHouseTable(sheet, next + 1, {
       columns: [
         column("Visit day", { width: 13 }),
         column("By", { width: 13 }),
@@ -962,6 +994,18 @@ function writeStock(workbook: ExcelJS.Workbook, view: MissingStockView): void {
       title: "Chase the pharmacy stock",
     });
   }
+
+  writeCommentReadingsTable(sheet, next + 1, `${SECTION_TITLES.stock}, read from comments`, view.fromComments, {
+    columns: [
+      column("Day", { width: 13 }),
+      column("List", { width: 7 }),
+      { ...NAME, label: "Product" },
+      column("Customer", { width: 26 }),
+      column("Territory", { width: 22 }),
+      column("What was written", { width: 56 }),
+    ],
+    rows: (view.fromComments ?? []).map((row) => [row.visitDate, row.listType, row.product ?? "Product not named", row.customerName, row.territoryName, row.quote]),
+  });
 }
 
 /**

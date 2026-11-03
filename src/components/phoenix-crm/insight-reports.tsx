@@ -47,6 +47,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { capacityVerdictText, gradeTargetsText, type CapacityRow, type CapacityVerdict, type ListCapacity } from "@/lib/phoenix-crm/capacity-board";
+import type { CommentPriceRow, CommentStockRow } from "@/lib/phoenix-crm/comment-reading";
 import { HEARD_BASIS_TEXT, heardTallyText, type HeardGrain, type HeardNote, type HeardRow } from "@/lib/phoenix-crm/field-heard";
 import type { MissingStockPharmacy, MissingStockProduct, StockChase } from "@/lib/phoenix-crm/missing-stock";
 import { objectionCustomerRows, type CustomerObjection, type ObjectionCustomerRow } from "@/lib/phoenix-crm/objections-by-customer";
@@ -478,7 +479,135 @@ export function HeardSection({ idPrefix, resource, today }: { idPrefix: string; 
           }}
         />
       )}
+      <CommentPriceSection idPrefix={idPrefix} rows={report.priceFromComments} />
     </>
+  );
+}
+
+// ── Read from comments ──────────────────────────────────────────────────────────────────────────
+
+/** The one explanation both boards print, so a reader always knows what they are looking at. */
+const READ_FROM_COMMENTS_NOTE =
+  "Read automatically from what reps wrote in their visit comments, in their own words. Not counted in any figure above. A reading can be wrong, so the words are here to judge for yourself.";
+
+function CommentReadingsNote({ failed, title }: { failed: boolean; title: string }) {
+  return (
+    <CrmBlock className="border-t border-slate-100" title={title}>
+      <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+        {failed ? "The readings could not be loaded just now, so this part is missing rather than empty." : "Nothing read from a comment in these days."}
+      </p>
+    </CrmBlock>
+  );
+}
+
+function CommentPriceSection({ idPrefix, rows }: { idPrefix: string; rows: CommentPriceRow[] | null }) {
+  const title = "Price complaints, read from comments";
+  if (rows === null || rows.length === 0) return <CommentReadingsNote failed={rows === null} title={title} />;
+  const quoteLine = (quote: CommentPriceRow["quotes"][number]) =>
+    [dayLabel(quote.visitDate), listText(quote.listType), quote.speciality, quote.area].filter(Boolean).join(" · ");
+  return (
+    <ReportList
+      columns={["26%", "14%", null]}
+      explain={READ_FROM_COMMENTS_NOTE}
+      hasData={(row: CommentPriceRow) => row.quotes.length > 1}
+      headers={["Product", "Times", "What was written"]}
+      idPrefix={`${idPrefix}-comment-price`}
+      items={rows}
+      keyOf={(row) => row.product}
+      renderCard={(row) => (
+        <CrmCard meta={heardTallyText(row)} title={row.product}>
+          {row.quotes.map((quote, index) => (
+            <div className="mt-2 first:mt-0" key={`${quote.visitDate}|${index}`}>
+              <p className="break-words text-sm font-semibold leading-6 text-slate-800" dir="auto">
+                {quote.quote}
+              </p>
+              <p className="break-words text-xs text-slate-500">{quoteLine(quote)}</p>
+            </div>
+          ))}
+        </CrmCard>
+      )}
+      renderCells={(row) => (
+        <>
+          <td className={crmTdClassName}>
+            <p className="break-words font-black text-slate-950">{row.product}</p>
+          </td>
+          <td className={crmTdClassName}>{heardTallyText(row)}</td>
+          <td className={crmTdClassName}>
+            {row.quotes.map((quote, index) => (
+              <div className="mt-2 first:mt-0" key={`${quote.visitDate}|${index}`}>
+                <p className="break-words" dir="auto">
+                  {quote.quote}
+                </p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">{quoteLine(quote)}</p>
+              </div>
+            ))}
+          </td>
+        </>
+      )}
+      searchWords={(row) => [row.product, ...row.quotes.map((quote) => quote.quote)]}
+      words={{
+        ...LIST_WORDS,
+        searchLabel: "Find a product or word",
+        searchPlaceholder: "Product or word",
+        title,
+        with: "More than once",
+        without: "Once",
+      }}
+    />
+  );
+}
+
+function CommentStockSection({ idPrefix, rows }: { idPrefix: string; rows: CommentStockRow[] | null }) {
+  const title = "Missing stock, read from comments";
+  if (rows === null || rows.length === 0) return <CommentReadingsNote failed={rows === null} title={title} />;
+  const productName = (row: CommentStockRow) => row.product ?? "Product not named";
+  return (
+    <ReportList
+      columns={["22%", "30%", null]}
+      explain={READ_FROM_COMMENTS_NOTE}
+      hasData={(row: CommentStockRow) => row.product !== null}
+      headers={["Product", "Customer", "What was written"]}
+      idPrefix={`${idPrefix}-comment-stock`}
+      items={rows}
+      keyOf={(row) => row.key}
+      renderCard={(row) => (
+        <CrmCard meta={`${dayLabel(row.visitDate)} · ${listText(row.listType)} · ${row.territoryName}`} title={<span dir="auto">{row.customerName}</span>}>
+          <CrmFacts
+            facts={[
+              { label: "Product", value: productName(row) },
+              { label: "What was written", value: <span dir="auto">{row.quote}</span> },
+            ]}
+          />
+        </CrmCard>
+      )}
+      renderCells={(row) => (
+        <>
+          <td className={crmTdClassName}>
+            <p className="break-words font-black text-slate-950">{productName(row)}</p>
+          </td>
+          <td className={crmTdClassName}>
+            <p className="break-words" dir="auto">
+              {row.customerName}
+            </p>
+            <p className="mt-0.5 break-words text-xs text-slate-500">{`${dayLabel(row.visitDate)} · ${listText(row.listType)} · ${row.territoryName}`}</p>
+          </td>
+          <td className={crmTdClassName}>
+            <p className="break-words" dir="auto">
+              {row.quote}
+            </p>
+          </td>
+        </>
+      )}
+      searchWords={(row) => [row.product, row.customerName, row.territoryName, row.quote]}
+      words={{
+        ...LIST_WORDS,
+        searchLabel: "Find a product, customer or word",
+        searchPlaceholder: "Product, customer or territory",
+        title,
+        with: "Product named",
+        without: "Product not named",
+      }}
+    />
   );
 }
 
@@ -661,6 +790,7 @@ export function StockSection({ idPrefix, resource }: { idPrefix: string; resourc
           }}
         />
       ) : null}
+      <CommentStockSection idPrefix={idPrefix} rows={report.fromComments} />
     </>
   );
 }
