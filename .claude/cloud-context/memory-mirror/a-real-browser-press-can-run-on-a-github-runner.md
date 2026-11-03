@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: 0c04efb3-07cb-4951-a5b4-067a48ed21f3
-  modified: 2026-11-03T06:14:38.285Z
+  modified: 2026-11-03T11:42:48.403Z
 ---
 
 The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free memory fell to 2,018 MB), and hosted staging serves an old revision with `/api/dev-auth` answering 404. A workflow on a throwaway branch with no pull request did the press instead, about 10 minutes a run. Copies of both files: `~/.claude/docs/visit-press-2026-11-03/` (`visit-press.yml`, `press.mjs`). Used for [[visit-retry-post-deploy-reads-owed-2026-11-03]].
@@ -18,5 +18,10 @@ The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free me
 - One rep per day of off-plan presses: two are allowed, then the form stops. `dev-auth` answers 409 when the role and hr id disagree; read `app_auth_users` on staging first.
 - `context.setOffline(true)` to cut the network; `page.route` to stage a refusal, so no visit is saved.
 - Decide a landing from local storage and the day's own count. "The text went away" also happens while the page reloads, and that gave one false "landed".
+
+**Reading what it says (3 Nov 2026, the HR Operations Specialist's account):**
+- A `/hr/...` page answering plain-text 500 with `Failed to proxy ... socket hang up` in the server log is `next dev`'s proxy dropping during a slow compile or a heap restart. The same page answered 200 through `/hr` once compiled. It cost three runs and a wrong first explanation, so read that log line before calling a page broken, and prove it by opening the page again after it compiled.
+- `ERR_CONNECTION_REFUSED` or `chrome-error://chromewebdata/` is the server restarting at its heap cap, even at 5,632 MB, after about four heavy pages. Press few pages per run.
+- A permission `redirect()` after the `(admin)` loading shell answers 200 and moves on the client, more than 6 seconds later on a cold server. Use `page.waitForURL` with a long timeout; a fixed wait read Milestones and Spotlight as open when both send her home.
 
 **Tooling traps:** commit and push in separate commands so the secret scan sees the commit.

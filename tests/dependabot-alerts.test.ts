@@ -250,7 +250,7 @@ export function runDependabotAlertsTests() {
 
   // 6. AUDIT REACHABILITY — AND THE FAIL-CLOSED RULE, WHICH IS THE ONLY REASON THIS IS SAFE
   //
-  // `validate` runs `pnpm audit --audit-level=high --prod` at the repository ROOT. Two kinds of open
+  // `static`, behind `checks`, runs `pnpm audit --audit-level=high --prod` at the repository ROOT. Two kinds of open
   // HIGH alert provably cannot turn that red: one whose scope is `development` (the `--prod` filter
   // drops it) and one in a manifest the root audit never reads. Grading those as "WILL FAIL CI" is
   // what this tool did until 2026-10-04 — it printed three such lines and exited 1 while
@@ -398,6 +398,15 @@ export function runDependabotAlertsTests() {
     1,
     "and exactly the reachable one is named - the count in the summary drives what a session bumps",
   );
+  // What it prints names the check that really goes red. The audit left `validate` on 2026-10-19 for
+  // the `static` job behind `checks`, so a session watching `validate` would wait on the wrong one.
+  for (const line of [...mixed.errors, ...unreachableOnly.notes]) {
+    assert.doesNotMatch(
+      line,
+      new RegExp("`validate`"),
+      "a printed line must not name validate as the check the audit fails",
+    );
+  }
 
   // The reachability set is derived from the repo's own shape, not guessed. `pnpm-workspace.yaml`
   // declares no `packages:` list, so the root audit walks exactly one tree; if that ever changes, this
@@ -600,7 +609,7 @@ export function runDependabotAlertsTests() {
   );
 
   // 🔴 AND THE REACHABLE ONE KEEPS ITS BARE BUMP. A recorded acceptance must never read as a reason to
-  // leave something that will turn `validate` red — which by AGENTS.md §2.3 withholds a production
+  // leave something that will turn `checks` red — which by AGENTS.md §2.3 withholds a production
   // deploy. This is the fail-closed direction of the case above, and the only reason it is safe.
   const patchedReachable = classifyAlerts([patchedAlert("pnpm-lock.yaml")]).failing[0];
   assert.ok(patchedReachable, "a patched runtime HIGH in the audited lockfile must classify as failing");

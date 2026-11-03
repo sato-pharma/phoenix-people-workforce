@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [Salma Sabry's record made from her letter, 2026-11-03](salma-sabry-record-made-from-the-letter-2026-11-03.md) - his choice; identity and pay blank on purpose, her joining form is closed.
 - [The customer merge keeps refusing different lines, 2026-11-03](customer-merge-keeps-refusing-different-lines.md) - his choice by multiple choice; never offer to widen it without a real pair from him.
 - [Visit retry: post-deploy reads owed, 3 Nov 2026](visit-retry-post-deploy-reads-owed-2026-11-03.md) - first-day resend log, reminders heartbeat, new flag count; the real-browser press ran on staging and pull request 34 carries its two fixes.
 - [A real-browser press can run on a GitHub runner](a-real-browser-press-can-run-on-a-github-runner.md) - one-off job on a throwaway branch, staging only, when the laptop's memory floor stops a dev server.
@@ -38,6 +39,7 @@
 - [The home's open times on Small, 2026-11-03](portal-home-speed-on-small-before-medium-2026-11-03.md) - the figures to beat after Medium: 2.69 s median, 41% over 3 s, the slow tail unchanged; how to count an open.
 - [A hire date's history survives only in probation reminders, 2026-11-03](hire-date-history-survives-only-in-probation-reminders.md) - saves leave no audit row; Medical Reps only; a date moved away and back leaves no live reminders.
 - [A seat starts on the job offer's date, 2026-11-03](seat-start-follows-the-job-offer-2026-11-03.md) - his ruling; 40 rows corrected with a backup; Toka Zaki and Mahmoud Khaled still owed from 8 Nov, when moving them changes no credit.
+- [A runner press must wait for hydration before it clicks](a-runner-press-must-wait-for-hydration-before-it-clicks.md) - a click with no request in the server log and no page error means the press beat the script, not that the feature is broken.
 
 
 

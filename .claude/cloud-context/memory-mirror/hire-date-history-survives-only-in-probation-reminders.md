@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: e50549d1-2c7d-48f2-9380-f5c0f14ffe8c
-  modified: 2026-11-03T11:03:04.265Z
+  modified: 2026-11-03T11:44:36.370Z
 ---
 
 Measured on production, 2026-11-03, after the owner said HR found a Master hire date wrong and corrected it.
@@ -14,6 +14,6 @@ A save of `employees.hire_date` (`POST employees?on_conflict=hr_id`, from HR For
 
 Mohamed Salah's proof (2 Nov, Cairo): writes at 14:28:34 and 14:35:16 line up with reminders cancelled at 14:28 and 14:35, and the middle set carries hire date 2 Nov against a letter of 25 Oct.
 
-**The round trip loses reminders:** the dedupe key embeds the date and the upsert uses `ignoreDuplicates`, so returning to the original date meets its own cancelled rows and creates nothing. Mohamed Salah had 0 live reminders on 3 Nov, the only active probation case in that state.
+**The round trip loses reminders:** the dedupe key embeds the date and the upsert uses `ignoreDuplicates`, so returning to the original date meets its own cancelled rows and creates nothing. Mohamed Salah had 0 live reminders on 3 Nov, the only active probation case in that state. Restored the same day on the owner's word: the three cancelled rows on his correct dates back to `pending`, the Day 30 audience refreshed, one `probation_reminders_restored` audit row. The defect itself is unchanged, so the next date moved away and back loses reminders the same way; repair it by un-cancelling those rows, because the upsert will not recreate them.
 
 **How to apply:** when asked what a hire date used to be, read those rows and say a person outside Medical Reps cannot be answered from the data. Comparing the letter with today's Master cannot see a mismatch that was already corrected. Related: [[hire-date-change-doubles-probation-reminders]], [[au-occupancy-hiring-date-from-master]].

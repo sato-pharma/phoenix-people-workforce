@@ -7,8 +7,8 @@ exist.
 
 ## The rule
 
-`validate` runs **`pnpm audit --audit-level=high --prod`** at the repository root
-(`scripts/ci-dependency-audit.mjs`). An open Dependabot alert can turn that red **only** if it is in
+The `static` job, which `checks` stands for, runs **`pnpm audit --audit-level=high --prod`** at the
+repository root (`scripts/ci-dependency-audit.mjs`). An open Dependabot alert can turn that red **only** if it is in
 a tree that command actually walks. Two kinds cannot:
 
 | Why it cannot reach the gate | Read from |
@@ -34,7 +34,7 @@ not a tolerance. A finding in another application's lockfile belongs to that app
 scanning, not to this repo's audit gate.
 
 🔴 **A reachable HIGH is unchanged and still blocks.** Scope `runtime` in the root lockfile fails
-`validate` the moment the audit feed learns the advisory, and by AGENTS.md §2.3 a red suite on a
+`checks` the moment the audit feed learns the advisory, and by AGENTS.md §2.3 a red suite on a
 `main` commit makes Railway mark that production deploy **SKIPPED** for good. Bump those in one PR
 before merging anything else.
 
@@ -111,7 +111,7 @@ been judged yet.
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-04 at the owner's instruction. |
 | Alert | #112, opened 2026-10-03, root `pnpm-lock.yaml` |
-| Scope | `development` — the `--prod` filter drops it, so it cannot turn `validate` red |
+| Scope | `development` — the `--prod` filter drops it, so it cannot turn `checks` red |
 | Patched version | **none exists** — there is nothing to bump to |
 | How it arrives | `braces@3.0.3` ← `micromatch@4.0.8` ← `fast-glob` ← **`shadcn`**, a `devDependency` |
 | What it is | Stack-exhaustion denial of service through deeply nested patterns |
@@ -137,7 +137,7 @@ together, and all three are:
 
 - a patched version is published → bump it, in its own PR, and delete this row
 - the alert's `scope` turns `runtime`, or `braces` appears in the root `dependencies` graph → it is
-  then a reachable HIGH, it blocks `validate`, and AGENTS.md §2.3 applies
+  then a reachable HIGH, it blocks `checks`, and AGENTS.md §2.3 applies
 - the advisory is re-scored with a confidentiality or integrity impact
 - `shadcn` stops being a `devDependency`
 
@@ -151,7 +151,7 @@ they are judged separately below — on different facts, and on a narrower accep
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
 | Alert | #111, opened 2026-10-03, `mobile/package-lock.json` |
-| Scope | **`runtime`** — but in a manifest `pnpm audit` never reads at the root, so it still cannot turn `validate` red |
+| Scope | **`runtime`** — but in a manifest `pnpm audit` never reads at the root, so it still cannot turn `checks` red |
 | Patched version | **none exists** |
 | What it is | Stack-exhaustion denial of service through deeply nested patterns |
 | Impact vector | `C:N/I:N/A:H` — availability only |
@@ -181,7 +181,7 @@ hanging their own terminal" — **do not apply here** and must not be borrowed f
 
 What this acceptance does and does not say:
 
-- **It does say** the alert cannot turn `validate` red, because the root audit does not read that
+- **It does say** the alert cannot turn `checks` red, because the root audit does not read that
   manifest; verified the same way as the rows above, by the gate command exiting 0 with it open.
 - **It does say** there is nothing to bump to — `first_patched_version` is null — so no PR in this
   repository could clear it today.
@@ -192,7 +192,7 @@ What this acceptance does and does not say:
 
 - a patched version is published → bump it and delete the row
 - the advisory appears in the **root** `pnpm-lock.yaml` graph → it is then a reachable HIGH, it
-  blocks `validate`, and AGENTS.md §2.3 applies
+  blocks `checks`, and AGENTS.md §2.3 applies
 - **anything is next built or distributed from `mobile/package-lock.json`** → the `node-forge`
   integrity finding is re-judged first, on its own merits, by whoever owns that artifact. An
   acceptance recorded against a CI gate is not a clearance for a shipped binary.
@@ -231,7 +231,7 @@ written down, by `.claude/hooks/mobile-freeze-guard.mjs`. So no session here can
 change, and nothing is built or distributed from that lockfile while the freeze stands. The
 acceptance is therefore about **where the fix has to happen**, never about the finding being small.
 
-- **It does say** the alert cannot turn `validate` red: the root audit does not read that manifest,
+- **It does say** the alert cannot turn `checks` red: the root audit does not read that manifest,
   verified the same way as the rows above.
 - 🔴 **It does NOT say there is nothing to do** — there is, and it is a one-line bump. It is simply
   not this repository's to make today.
@@ -243,7 +243,7 @@ acceptance is therefore about **where the fix has to happen**, never about the f
   🔴 Unlike the rows above, this one has no "wait for upstream" condition left to satisfy: the only
   thing standing between the alert and its fix is the freeze.
 - the advisory appears in the **root** `pnpm-lock.yaml` graph → it is then a reachable HIGH, it blocks
-  `validate`, and AGENTS.md §2.3 applies
+  `checks`, and AGENTS.md §2.3 applies
 - anything is built or distributed from `mobile/package-lock.json` → re-judged first, by whoever owns
   that artifact, and with a published patch available the answer is very unlikely to be this one
 
@@ -291,7 +291,7 @@ cost, **not an impossibility**: an earlier draft of this page's sibling note cal
 **Why it is worth a row despite being below the gate.** The alert's own creation, at 05:56:00, is
 what triggered the Dependabot updater runs four seconds later; those runs failed
 `security_update_not_possible` — correctly, there is nothing to update to — and **that withheld the
-production deploy of the commit merged seconds earlier**. So an alert that cannot fail `validate`
+production deploy of the commit merged seconds earlier**. So an alert that cannot fail the audit
 still cost a deploy. The mechanism is recorded in `docs/agents-session-traps-clusters.md`.
 
 ## Reading it
@@ -334,4 +334,4 @@ now reports that as `SWITCHED OFF` and exits 1. Until 3 Nov 2026 it blamed the t
 which hid that alerts had never been turned on after the 2 Nov move to
 `gawishtheit/phoenix-people-workforce`: a repository setting does not come across with the code.
 Turning them on is the owner's click, in the repository's Security settings. It is not a bump, and
-`validate`'s audit is still the gate.
+the audit behind `checks` is still the gate.

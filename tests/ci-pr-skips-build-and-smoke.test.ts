@@ -27,6 +27,10 @@ import { readFileSync } from "node:fs";
 
 const WORKFLOW = ".github/workflows/ci.yml";
 const SHIP_SKILL = ".claude/skills/ship/SKILL.md";
+const TRAPS_CLUSTERS = "docs/agents-session-traps-clusters.md";
+const TRAPS_ACCOUNT = "docs/agents-session-traps.md";
+const ENGINEERING_RULES = ".claude/rules/engineering.md";
+const ALERTS_DOC = "docs/security/open-dependency-alerts.md";
 
 /** The steps whose cost this change removes from a pull request. */
 const HEAVY_STEPS = [
@@ -105,5 +109,43 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     /node scripts\/ci-build-risk\.mjs/,
     `${SHIP_SKILL} no longer names scripts/ci-build-risk.mjs, the one thing that answers whether this ` +
       "PR built, so a session has to guess what its green checks covered.",
+  );
+  assert.doesNotMatch(
+    ship,
+    new RegExp("unit suite runs in `validate`|`validate` includes `pnpm audit`|turn `validate` red|`validate`'s audit"),
+    `${SHIP_SKILL} places the suite or the audit in \`validate\` again. Both have been behind \`checks\`, ` +
+      "in `unit` and `static`, since 2026-10-19; on a PR `validate` holds no tests at all.",
+  );
+  assert.doesNotMatch(
+    readFileSync(ALERTS_DOC, "utf8"),
+    new RegExp("`validate`"),
+    `${ALERTS_DOC} names \`validate\` again. The audit it is about has been in \`static\`, behind ` +
+      "`checks`, since 2026-10-19.",
+  );
+
+  // 5. So do the traps. The clusters file is what trap-injector.mjs hands every session, and the
+  // account is where it sends them to read more. The account's dated snapshot of the old AGENTS.md
+  // §2.1 keeps the old line on purpose, so this asks for the present-tense claims only.
+  const clusters = readFileSync(TRAPS_CLUSTERS, "utf8");
+  assert.doesNotMatch(
+    clusters,
+    /runs NO tests/,
+    `${TRAPS_CLUSTERS} says a docs-only PR runs no tests again, and sessions are shown that line as the ` +
+      "rule. ci.yml has run the whole suite on every pull request since 2026-10-06.",
+  );
+  const traps = readFileSync(TRAPS_ACCOUNT, "utf8");
+  assert.doesNotMatch(
+    traps,
+    /`validate` never runs the tests|fast-paths and runs no tests/,
+    `${TRAPS_ACCOUNT} describes the docs-only fast path as live again. It was removed on 2026-10-06; ` +
+      "its account stays, in the past tense.",
+  );
+
+  // 6. And the memory note a session working in CI is handed through its module's rules file.
+  assert.doesNotMatch(
+    readFileSync(ENGINEERING_RULES, "utf8"),
+    /going green in FOUR SECONDS is CORRECT/,
+    `${ENGINEERING_RULES} says a docs-only PR going green in seconds is correct again. That was true ` +
+      "only while the fast path existed, and today a green that quick would be a real fault.",
   );
 }
