@@ -760,6 +760,7 @@ import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.te
 import { runPmProductAssignmentTests } from "./pm-product-assignments.test.ts";
 import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
+import { runEmployee360PersonnelRecordsTests } from "./employee-360-personnel-records.test.ts";
 import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
 import { runEmployee360CustomerKeyTests } from "./employee-360-customer-key.test.ts";
 import { runEmployee360BrickCoverageTests } from "./employee-360-brick-coverage.test.ts";
@@ -788,6 +789,8 @@ import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
+import { runAddressBrickFindingTests } from "./address-brick-finding.test.ts";
+import { runOutstationExpenseScreensTests } from "./outstation-expense-screens.test.ts";
 import {
   runAddressCorrectionQueueTests,
   runReconcileQueuesItsFilesTests,
@@ -4681,6 +4684,9 @@ await runTest(
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos address-first brick (the customer address outranks the label and the stored map)", runSosAddressFirstBrickTests);
+await runTest("outstation expense screens (HR's cut shows, rejected claims leave Claimed, payroll's ledger reads untouched)", runOutstationExpenseScreensTests);
+await runTest("employee 360 personnel chapter (incentive and device values: the person, their managers, the CEO, the Super Admin)", runEmployee360PersonnelRecordsTests);
+await runTest("wrong-town finder (longer names and other towns flagged; the importer unchanged; a ruling is on the row read)", runAddressBrickFindingTests);
 await runTest("weekly number cells (a \"12,5\" quantity refuses the upload with both readings; Arabic digits read)", runWeeklyNumberCellTests);
 await runTest("weekly date cells (an ambiguous slash date never picks the week; an afternoon serial stays on its day)", runWeeklyDateCellTests);
 await runTest("old sales upload numbers (\"12,5\" is refused and named, never read as 125)", runOldSalesUploadNumberTests);

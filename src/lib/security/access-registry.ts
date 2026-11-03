@@ -2549,6 +2549,9 @@ export const accessRegistry = [
   // only sales:read because it holds nothing the planner screen does not already show that caller —
   // the route rebuilds the workspace in the caller's own scope before writing a byte.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/make-it-happen/export", permission: { resource: "sales", action: "read" }, csrfRequired: true }),
+  // Wrong-town finder. Explicit because the blanket below carries no audit classification and the GET
+  // names every customer's address nationally; the route itself is Super Admin only, like its page.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/sales/mapping-database/address-findings", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super Admin JSON-only: one ruling on one customer mapping, re-checked server-side against the row the person read." }),
   sessionApi({ methods: allMethods, pattern: "/api/sales/**", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/list", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/submit", permission: { resource: "report_it", action: "create" }, guard: "domain-helper", csrfExemptReason: "JSON-only employee ADR submission; all authenticated roles can submit their own reports." }),

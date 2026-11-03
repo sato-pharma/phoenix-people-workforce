@@ -78,8 +78,36 @@ import { stripComments } from "./support/comment-strip.ts";
  * Lowered 19 -> 18 (2026-09-17): the field-capture nudge's hand-rolled `cleanHrId` in
  * src/lib/marketing-requests/field-capture-backlog.ts now delegates to canonicalHrIdForDisplay, so a
  * rep's id matches the active directory whatever its casing or alias.
+ *
+ * Lowered 18 -> 14 (2026-11-03, owner: "build 5"): the coaching export, the CRM viewer scope, the
+ * contract-renewal route and the email admin list compare in memory, on both sides, through one
+ * function, so they folded with nothing to lose.
+ *
+ * LEFT ALONE ON PURPOSE, and each is a decision, not an oversight:
+ *  - src/lib/payroll/allowance-policy.ts, app/api/payroll/template/route.ts: money. The allowance
+ *    policy matches upper-case ids against blocked allowances, so lower-casing would pay them.
+ *  - src/lib/imports/employee-normalizers.ts: see the header, it must not fold.
+ *  - src/lib/employees/access-provisioning.ts, app/api/attendance/raw-punches/route.ts,
+ *    src/lib/notifications/in-app.ts, system.ts: the value is stored, and folding rewrites what is written.
+ *  - src/lib/email/recipient-assurance.ts, src/lib/notifications/email.ts, policy.ts, settings.ts,
+ *    telegram-admin.ts, telegram-operations.ts: who receives a message. Never changed in passing.
+ *  - src/lib/sales/metrics.ts: a sales key, whose empty value is the word "unassigned".
  */
-const BASELINE = 18;
+const BASELINE = 14;
+
+/**
+ * The same copy under names the verb pattern never saw: `hrKey`, `hrIdKey`, `compactHr…`. Counted
+ * apart, so the 14 above stays the number its history talks about. These are comparison keys (the
+ * four compact ones in calendar and weekly planning deliberately match B10 with B-10), so the point
+ * is only that no NEW one arrives: a new key function calls canonicalHrIdKey.
+ */
+const KEY_BASELINE = 16;
+const KEY_NAME = "(?:[a-z][A-Za-z0-9]*H|h)r(?:Id)?Key|compactHr[A-Za-z0-9_]*|compact[A-Za-z0-9]*HrId";
+const KEY_DEF_RE = new RegExp(
+  `(?:export\\s+)?(?:async\\s+)?function\\s+(${KEY_NAME})\\s*\\(` +
+    `|(?:export\\s+)?const\\s+(${KEY_NAME})\\s*=\\s*(?:async\\s*)?\\(`,
+  "g",
+);
 
 const ROOTS = ["app", "src"];
 
@@ -184,13 +212,13 @@ type Member = { site: string; name: string; delegates: boolean; inline: boolean 
  * excludes src/lib/hr-id.ts itself — those functions ARE the canonical shape,
  * not a copy of it.
  */
-function scan(label: string, rawSource: string, isCanonSource = false): Member[] {
+function scan(label: string, rawSource: string, isCanonSource = false, defRe: RegExp = DEF_RE): Member[] {
   if (isCanonSource) return [];
   const source = stripComments(rawSource);
   const members: Member[] = [];
-  DEF_RE.lastIndex = 0;
+  defRe.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = DEF_RE.exec(source))) {
+  while ((match = defRe.exec(source))) {
     const name = match[1] ?? match[2];
     const body = bodyAfterParamsOpen(source, match.index + match[0].length);
     members.push({
@@ -327,6 +355,25 @@ export function runHrIdNormalizerRatchetTests() {
 
   const violations = population.filter(isBaselineViolation);
   const sites = violations.map((m) => `${m.site}  ${m.name}`).sort();
+
+  // The second set, proved on a probe first like the first one.
+  const keyProbe = (body: string) => scan("probe.ts", body, false, KEY_DEF_RE);
+  assert.ok(keyProbe('function hrKey(v: string) { return String(v).trim().toUpperCase(); }').some(isBaselineViolation), "an inline hrKey counts");
+  assert.ok(keyProbe('const compactHrId = (v: string) => v.trim().toUpperCase().replace(/-/g, "");').some(isBaselineViolation), "an inline compact key counts");
+  assert.ok(!keyProbe("function hrKey(v: string) { return canonicalHrIdKey(v) ?? \"\"; }").some(isBaselineViolation), "a delegating key does not");
+  const keyCopies = files
+    .flatMap((file) => {
+      const rel = file.replace(/\\/g, "/");
+      return scan(rel, cachedReadFile(file), rel.endsWith("src/lib/hr-id.ts"), KEY_DEF_RE);
+    })
+    .filter(isBaselineViolation)
+    .map((m) => `${m.site}  ${m.name}`)
+    .sort();
+  assert.ok(keyCopies.length >= 5, `only ${keyCopies.length} hand-rolled HR id keys were found: the name pattern has stopped matching, so the count is meaningless`);
+  assert.ok(
+    keyCopies.length <= KEY_BASELINE,
+    `a new hand-rolled HR id key: the count went ${KEY_BASELINE} -> ${keyCopies.length}. Call canonicalHrIdKey from @/lib/hr-id instead.\nPresent:\n  ${keyCopies.join("\n  ")}`,
+  );
 
   // The ratchet, both arms.
   assert.ok(

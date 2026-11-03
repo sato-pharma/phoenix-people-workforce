@@ -9,6 +9,7 @@ import { DistributorWorkspaceShell } from "@/components/sales/distributor-worksp
 import { MappingLookupPanel } from "@/components/sales/mapping-lookup-panel";
 import { WeeklyBranchMappingManager } from "@/components/sales/weekly/weekly-branch-mapping-manager";
 import { WeeklyProductMappingManager } from "@/components/sales/weekly/weekly-product-mapping-manager";
+import { WrongTownFinder } from "@/components/sales/wrong-town-finder";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
@@ -458,6 +459,7 @@ function DistributorMapping({ selected, products, bricks }: { selected: SalesDis
 }
 
 export function MappingDatabaseWorkspace({ distributors, products, bricks }: Props) {
+  const [view, setView] = useState<"distributor" | "wrong-town">("distributor");
   return (
     <div className="space-y-5 p-4 sm:p-6">
       {/* Header styled to match /sales/weekly exactly — same content as before, just re-skinned. */}
@@ -474,9 +476,19 @@ export function MappingDatabaseWorkspace({ distributors, products, bricks }: Pro
         </p>
       </header>
       <MappingLookupPanel />
-      <DistributorWorkspaceShell distributors={distributors}>
-        {(selected) => <DistributorMapping bricks={bricks} products={products} selected={selected} />}
-      </DistributorWorkspaceShell>
+      <div className="flex flex-wrap gap-1.5">
+        <TabButton active={view === "distributor"} onClick={() => setView("distributor")}>By distributor</TabButton>
+        <TabButton active={view === "wrong-town"} onClick={() => setView("wrong-town")}>Wrong town</TabButton>
+      </div>
+      {view === "distributor" ? (
+        <DistributorWorkspaceShell distributors={distributors}>
+          {(selected) => <DistributorMapping bricks={bricks} products={products} selected={selected} />}
+        </DistributorWorkspaceShell>
+      ) : (
+        <Card className="overflow-hidden p-0">
+          <WrongTownFinder distributors={distributors} />
+        </Card>
+      )}
     </div>
   );
 }

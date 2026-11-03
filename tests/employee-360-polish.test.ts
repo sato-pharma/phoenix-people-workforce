@@ -18,6 +18,7 @@ const UI = [
   "src/components/employee-360/period-filter.tsx",
   "src/components/employee-360/charts.tsx",
   "src/components/employee-360/crm-insights-sections.tsx",
+  "src/components/employee-360/incentive-section.tsx",
   ...PAGES,
   "app/(admin)/employee-360/page.tsx",
 ];
@@ -38,7 +39,7 @@ export function runEmployee360PolishTests() {
   }
 
   const view = read("src/components/employee-360/employee-360-view.tsx");
-  assert.match(view, /unreadSections\.length > 0 \? <UnreadSectionsNotice names=\{unreadSections\} \/>/, "the report names what it could not read");
+  assert.match(view, /unreadNames\.length > 0 \? <UnreadSectionsNotice names=\{unreadNames\} \/>/, "the report names what it could not read");
   assert.match(view, /Could not be read just now/);
   assert.match(view, /\{r\.typeName \? `\$\{r\.typeName\} · ` : ""\}\{r\.customerName\}/, "a marketing request reads by its type and customer, not its code alone");
 
