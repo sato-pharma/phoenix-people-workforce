@@ -2122,6 +2122,22 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 79,951.56 on the six summary tables before, 81 requests and EGP 88,051.56 after, identical to a full
   // rebuild. Re-applying it is a no-op (`create or replace`).
   "20261103120202_marketing_roi_import_rebuilds_every_request.sql",
+  // 2026-11-03, applied to staging about 12:44 Cairo and to production at 13:04 Cairo, on the owner's merge
+  // word for pull request 48, with `node scripts/apply-sql-file.mjs <file> <env>` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), the standing route: both MCP doors refuse a
+  // body holding the rebuild's own `delete from marketing_roi_*` statements. That route writes NO ledger
+  // row, so production holds none for this version or name.
+  // Verified by digest on BOTH projects, not by presence: md5(pg_proc.prosrc) for
+  // public.phx_refresh_marketing_roi_facts reads 8c13b0e8a7cf7a066a73408a10e654bf over 31,689 chars on
+  // ozucdzovmcqvepbozvqf and on cifwmndunmlxjhyjugxa, md5-equal to the dollar-quoted body in this file. The
+  // definer it replaces is 20261103120202_marketing_roi_import_rebuilds_every_request.sql,
+  // bddeae52ff73e414f6528f8633463b7e on production before the apply, which makes that file the one-command
+  // rollback. `prosecdef` true and proacl {postgres=X/postgres,service_role=X/postgres} were read in the same
+  // query. Its effect, read on production after a full rebuild at 13:04:23 Cairo: all six summary tables EGP
+  // 109,930.71, which is 88,051.56 at 12:20, plus 3,138.75 from five requests that went active at 12:29 to
+  // 12:33, plus 18,740.40 from 5 direct orders; verdicts unchanged at 78, 1 and 2; 0 of 81 requests differ
+  // from View Sales. Re-applying it is a no-op (`create or replace`).
+  "20261103124320_marketing_roi_direct_orders_reach_the_facts.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
