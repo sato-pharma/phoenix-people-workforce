@@ -1,0 +1,69 @@
+name: Panel proof (one-off, never merged)
+
+# The double-visit panel's proof, on a GitHub runner because the laptop has no room: the tests, each broken on purpose, then the old read and the
+# new read side by side for every manager on STAGING only. This file lives on one branch with no pull request, and the branch is deleted after.
+# No artifact: staging holds real names, so answers stay on the runner and only counts and hr ids reach the log.
+on:
+  push:
+    branches: [codex/panel-proof]
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PHOENIX_LOG_LEVEL: error
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: corepack enable
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The tests, then each one broken on purpose (no credentials)
+        run: node scripts/ci-press/panel-mutants.mjs
+      - name: Staging's public key, as ci.yml holds it
+        run: |
+          K=$(grep -m1 -oE 'eyJ[A-Za-z0-9_.-]+' .github/workflows/ci.yml)
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$K" >> "$GITHUB_ENV"
+      - name: Old against new for every manager, on staging
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          PHOENIX_EMAIL_DELIVERY_MODE: log
+          PHOENIX_EMAIL_FORCE_TESTING: "true"
+          NOTIFICATION_TEST_MODE: "true"
+          APP_ENV: development
+        run: |
+          node -e 'const c=JSON.parse(Buffer.from(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.split(".")[1],"base64url"));if(c.ref!=="cifwmndunmlxjhyjugxa"||c.role!=="anon"){console.error("not the staging public key");process.exit(1)}'
+          test "$NEXT_PUBLIC_SUPABASE_URL" = "https://cifwmndunmlxjhyjugxa.supabase.co"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          ! env | grep -q ozucdzovmcqvepbozvqf
+          L="--no-warnings --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs"
+          F=src/lib/double-visit-analytics/service.ts
+          cp "$F" /tmp/service.bak
+          sed -i '/^ *shareSettledWeeks: true,\r\?$/d' "$F"
+          if grep -q 'shareSettledWeeks: true' "$F"; then echo "the old read was not restored"; exit 1; fi
+          echo "=== today, old"
+          node $L scripts/ci-press/panel-answers.mjs old-today.json
+          echo "=== 20 Aug, old (staging's visits end 29 Aug, so this one has live days)"
+          PANEL_TODAY=2026-08-20 node $L scripts/ci-press/panel-answers.mjs old-august.json
+          cp /tmp/service.bak "$F"
+          grep -q 'shareSettledWeeks: true' "$F"
+          echo "=== today, new"
+          node $L scripts/ci-press/panel-answers.mjs new-today.json
+          echo "=== 20 Aug, new"
+          PANEL_TODAY=2026-08-20 node $L scripts/ci-press/panel-answers.mjs new-august.json
+          bad=0
+          echo "=== VERDICT today"
+          node scripts/ci-press/panel-compare.mjs old-today.json new-today.json || bad=1
+          echo "=== VERDICT 20 Aug"
+          node scripts/ci-press/panel-compare.mjs old-august.json new-august.json || bad=1
+          echo "=== one manager's reads"
+          node $L scripts/ci-press/trace-focus.mjs B-116 "District Manager" || bad=1
+          exit $bad
