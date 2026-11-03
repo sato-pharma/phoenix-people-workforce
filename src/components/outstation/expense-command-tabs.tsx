@@ -2,15 +2,16 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useTransition } from "react";
-import { Radar, ClipboardList } from "lucide-react";
+import { Radar, ClipboardList, Scale } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-type TabKey = "intelligence" | "queue";
+type TabKey = "intelligence" | "queue" | "reconcile";
 
 const TAB_DEFS: ReadonlyArray<{ key: TabKey; label: string; icon: typeof Radar; description: string }> = [
   { key: "intelligence", label: "Intelligence", icon: Radar, description: "KPIs, map, charts, ledger" },
   { key: "queue", label: "Queue", icon: ClipboardList, description: "Per-request review & approval" },
+  { key: "reconcile", label: "Against payslips", icon: Scale, description: "Approved beside what was paid" },
 ];
 
 /**
@@ -45,6 +46,7 @@ export function ExpenseCommandTabs({
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     if (next === "intelligence") params.delete("tab");
     else params.set("tab", next);
+    if (next !== "reconcile") params.delete("reconcileMonth");
     const query = params.toString();
     startTransition(() => {
       router.replace(query ? `/admin/outstation/expense-command?${query}` : "/admin/outstation/expense-command", {
@@ -59,7 +61,7 @@ export function ExpenseCommandTabs({
   return (
     <div className="space-y-5">
       <div
-        className="inline-flex w-full overflow-hidden rounded-[14px] border border-phx-line bg-white p-1 shadow-[0_8px_22px_rgba(15,23,42,0.04)] sm:w-auto"
+        className="inline-flex w-full flex-wrap rounded-[14px] border border-phx-line bg-white p-1 shadow-[0_8px_22px_rgba(15,23,42,0.04)] sm:w-auto"
         role="tablist"
       >
         {visibleTabs.map((tab) => {
