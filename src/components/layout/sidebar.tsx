@@ -71,6 +71,7 @@ import {
   normalizePathnameForMode,
   usesAdminChrome,
   usesFlatSidebar,
+  drawersStartOpen,
   usesSectionDrawers,
   type PermissionLookup,
 } from "@/lib/navigation/active-path";
@@ -1070,6 +1071,15 @@ function SidebarNav({
   const openDomainId = pickIsCurrent
     ? picked.domainId || null
     : (activeDomainId ?? (domains.length > 0 ? domains[0].id : null));
+  // The seat on `drawersStartOpen` has no one open drawer: all are open, and these are the ones the
+  // viewer closed. Remembered with the page the same way as `picked`, so moving to another drawer's
+  // page opens them all again.
+  const allDrawersOpen = sectionDrawers && drawersStartOpen(mode, currentRole);
+  const [closedDrawers, setClosedDrawers] = useState<{ ids: readonly string[]; forActive: string | null }>({
+    forActive: null,
+    ids: [],
+  });
+  const closedDrawerIds = closedDrawers.forActive === activeDomainId ? closedDrawers.ids : [];
 
   // One definition, rendered by both paths. Two copies of an 18-prop element is how the grouped
   // rail and the flat one would drift apart without anyone noticing.
@@ -1322,7 +1332,7 @@ function SidebarNav({
         >
           {useDomains ? (
             domains.map((domain) => {
-              const open = openDomainId === domain.id;
+              const open = allDrawersOpen ? !closedDrawerIds.includes(domain.id) : openDomainId === domain.id;
               const DomainIcon = domain.icon;
               // A one-row section on the HR drawer rail IS its row: a drawer that opens onto a
               // single link is an extra click that says nothing, so the row stands on its own.
@@ -1369,7 +1379,12 @@ function SidebarNav({
                     aria-expanded={open}
                     className="group/dom flex w-full items-center gap-2 px-1.5 py-2.5 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                     onClick={() =>
-                      setPicked({ domainId: open ? "" : domain.id, forActive: activeDomainId })
+                      allDrawersOpen
+                        ? setClosedDrawers({
+                            forActive: activeDomainId,
+                            ids: open ? [...closedDrawerIds, domain.id] : closedDrawerIds.filter((id) => id !== domain.id),
+                          })
+                        : setPicked({ domainId: open ? "" : domain.id, forActive: activeDomainId })
                     }
                     type="button"
                   >

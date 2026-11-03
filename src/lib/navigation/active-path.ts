@@ -138,6 +138,18 @@ export function usesSectionDrawers(mode: NavigationMode | undefined, role?: Phoe
 }
 
 /**
+ * The drawer-rail seat that opens with EVERY drawer expanded instead of one at a time (owner,
+ * 3 Nov 2026, of Aya, the Office Coordinator who holds it: "make it by default all expanded"). She
+ * can still close a drawer. Presentation only, like `usesSectionDrawers`; the other two HR seats
+ * and the admin rail keep their one open drawer.
+ */
+export const drawersStartOpenRoles: readonly PhoenixRole[] = ["HR Administration"];
+
+export function drawersStartOpen(mode: NavigationMode | undefined, role?: PhoenixRole) {
+  return usesSectionDrawers(mode, role) && Boolean(role && drawersStartOpenRoles.includes(role));
+}
+
+/**
  * Resolve an item's DISPLAYED label for `role` — the per-role override from `labelByRole` if one
  * is set for this role, else the item's own canonical `label`. The canonical label is what
  * canonical label alone, at config-build time (see `defaultModuleId` in system-navigation.ts), so

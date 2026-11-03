@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { hrSectionIcons } from "../src/config/sidebar-domains.ts";
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import {
+  drawersStartOpen,
   getSections,
   sectionDrawerRoles,
   usesSectionDrawers,
@@ -121,5 +122,27 @@ export function runHrSeatSectionDrawersTests() {
     sidebar,
     /if \(sectionDrawers\) \{\s*return sectionsAsDrawers\(/,
     "the drawer rail is built by sectionsAsDrawers, the admin rail by groupAdminSections",
+  );
+
+  // ── 6. Aya's seat opens with every drawer expanded; nobody else's does ─────────────────────
+  // Owner, 3 Nov 2026, of the Office Coordinator who holds the HR Operations Specialist seat.
+  for (const role of ROLES) {
+    for (const mode of MODES) {
+      assert.equal(
+        drawersStartOpen(mode, role),
+        mode === "hr" && role === "HR Administration",
+        `${role} in ${mode}: all drawers open by default only on the HR Operations Specialist's /hr rail`,
+      );
+    }
+  }
+  assert.match(
+    sidebar,
+    /const allDrawersOpen = sectionDrawers && drawersStartOpen\(mode, currentRole\);/,
+    "the all-open rail is decided by drawersStartOpen and only on the drawer rail",
+  );
+  assert.match(
+    sidebar,
+    /const open = allDrawersOpen \? !closedDrawerIds\.includes\(domain\.id\) : openDomainId === domain\.id;/,
+    "on her rail a drawer is open unless she closed it; everyone else keeps the one open drawer",
   );
 }
