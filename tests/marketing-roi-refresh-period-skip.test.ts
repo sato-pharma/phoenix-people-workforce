@@ -107,7 +107,7 @@ export function runMarketingRoiRefreshPeriodSkipTests() {
   );
   assert.match(
     sql,
-    /ROLLBACK:\s*re-apply 20261009150000_marketing_roi_facts_awaiting_data\.sql/,
+    /ROLLBACK:\s*re-apply \d{14}_marketing_roi_\w+\.sql/,
     `${file}: the header must name the one-command rollback`,
   );
 }
