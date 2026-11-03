@@ -2163,6 +2163,7 @@ import { runPhotoRotationTests } from "./photo-rotation.test.ts";
 import { runPhoenixCrmPlaceCheckScorecardTests } from "./phoenix-crm-place-check-scorecard.test.ts";
 import { runPhoenixCrmMasterListTests } from "./phoenix-crm-master-list.test.ts";
 import { runPhoenixCrmAwaitingValidationTests } from "./phoenix-crm-awaiting-validation.test.ts";
+import { runPhoenixCrmCommentReadingTests } from "./phoenix-crm-comment-reading.test.ts";
 import { runPhoenixCrmCommitmentsTests } from "./phoenix-crm-commitments.test.ts";
 import { runPhoenixCrmCallPrepTests } from "./phoenix-crm-call-prep.test.ts";
 import { runPhoenixCrmNeedsYouSourceTests } from "./phoenix-crm-needs-you-source.test.ts";
@@ -2965,6 +2966,10 @@ import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts"
 import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
 import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
+import { runTabletFleetWatchTests } from "./tablet-fleet-watch.test.ts";
+import { runEmailBlockScreenTests } from "./email-block-screen.test.ts";
+import { runOperatorWatchChannelGuardTests } from "./operator-watch-channel-guard.test.ts";
+import { runMarketingVendorAndCustomerMergeTests } from "./marketing-vendor-and-customer-merge.test.ts";
 import { runWhatsappHandsetClockTests } from "./whatsapp-handset-clock.test.ts";
 import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-sync-job.test.ts";
 import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconciliation.test.ts";
@@ -7711,6 +7716,11 @@ await runTest(
 );
 
 await runTest(
+  "Phoenix CRM reading visit comments (a quote is the rep's own words or it is dropped, a failed batch is split and asked again, a reading joins no counted figure and no KPI, a follow-up stays on the rep's own notes and closes on going back)",
+  runPhoenixCrmCommentReadingTests,
+);
+
+await runTest(
   "Phoenix CRM tomorrow's call prep (four continuity facts that existed and could only be read from INSIDE the visit form: \"tomorrow\" is the next day a PLAN can hold, so Thursday's tomorrow is the Saturday and `today + 1` would prepare a Friday that holds no plan at all; the objection is the NEWEST visit's answer and never the newest visit that happens to carry one, with \"No objection\" a stored answer that closes an older one and prints nothing; a missing fact is ABSENT rather than blank, because \"nothing to prepare\" and \"he prepared nothing\" are different sentences; a pharmacy is never a prep line, since it is never planned and the AM/PM binary is the spelling that filed 26 readers' pharmacies among the doctors; and the read is the rep's own seat, the raw visits table, paged, composed of the module's own picks, with NOTHING that writes — a sent week changes only through \"Ask to edit this week\")",
   runPhoenixCrmCallPrepTests,
 );
@@ -11794,6 +11804,10 @@ await runTest(
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
+await runTest("the tablet fleet watch (3 Nov 2026): a held tablet gone quiet is flagged, blind means fail, the Super Admin alone, and nothing reaches a tablet", runTabletFleetWatchTests);
+await runTest("blocked work emails (3 Nov 2026): who is refused, a lift sends nothing, a complaint stays, and old blocks page nobody", runEmailBlockScreenTests);
+await runTest("alarms that never email (3 Nov 2026): a failed Telegram send on any listed alarm is not re-sent as email, each name is the sender's real one, and a new system sender must be decided", runOperatorWatchChannelGuardTests);
+await runTest("marketing vendors and the customer merge (3 Nov 2026): a merged vendor stays hidden, a merge refuses what it should, and only customer_id moves on a request", runMarketingVendorAndCustomerMergeTests);
 await runTest("the checks on GitHub (3 Nov 2026): every scheduled workflow is watched, an overdue one alerts, and being blind fails rather than reading clean", runGithubWorkflowWatchTests);
 await runTest("the HR handset's 14-day clock (3 Nov 2026): the stages, him only, honest wording, and a lost echoes field is not a routing fault", runWhatsappHandsetClockTests);
 await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts hidden, both guards survive, and it refuses a mass retirement", runMarketingPharmacyCodeSyncJobTests);

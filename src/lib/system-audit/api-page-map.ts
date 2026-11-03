@@ -41,6 +41,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/admin/email-control-center": { admin: "/admin/email-control-center" },
   "/api/admin/email-notifications": { admin: "/admin/notifications/email" },
   "/api/admin/email-reply": { admin: "/admin/email-reply-composer" },
+  "/api/admin/email-suppressions": { admin: "/admin/notifications/email" },
   "/api/admin/email-templates": { admin: "/admin/email-templates" },
   "/api/admin/field-activity": { admin: "/admin/field-activity", portal: "/employee-portals/field-activity" },
   "/api/admin/field-workforce-compliance": { admin: "/admin/field-workforce-compliance" },

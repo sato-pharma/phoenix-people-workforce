@@ -1054,6 +1054,9 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql",
   // The same page's door and write, replaced again the same day: a number stays on its own seat, and a switch is a round trip.
   "supabase/migrations/20261102133258_phoenix_crm_venue_cap_round_trip.sql",
+  // Reading visit comments (owner, 3 Nov 2026): one table, its queue and a trigger that clears a reading when the words
+  // change. It replaces no function and writes to no visit.
+  "supabase/migrations/20261103091500_phoenix_crm_visit_comment_readings.sql",
   // The visit retry (owner, 3 Nov 2026): one column, one log table and a switch. It creates and replaces no function.
   "supabase/migrations/20261103120000_phoenix_crm_visit_resend.sql",
 ];

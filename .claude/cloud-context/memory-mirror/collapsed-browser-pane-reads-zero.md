@@ -66,3 +66,5 @@ Change the query string or the router treats it as the page already shown. Two m
 
 See [[never-horizontal-scroll-always-mobile-and-desktop-friendly]] and
 [[monthly-closing-matrix-cannot-fit]].
+
+**On production, where `window.next.router` is not there to use** (3 Nov 2026, Employee 360 on revision `abc39ee56`): `window.$RV(window.$RB)` runs React's own reveal for the queued streamed boundaries, in place, with no attribute lifting. Run it again after a few seconds for a boundary that streams late, then finish the animations and measure. A timed `fetch(location.href)` from the tab tells a slow server from a stuck reveal: here 4.2 s and the whole page, while the tab still said "Loading employee portal page".

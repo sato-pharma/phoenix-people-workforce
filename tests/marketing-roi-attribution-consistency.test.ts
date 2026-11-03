@@ -134,6 +134,44 @@ export function runMarketingRoiAttributionConsistencyTests() {
   testFastRpcHasNoOwnAttributionLogic();
   testCustomerDashboardIsExactOnlyAndLocksDirectBranchGap();
   testDirectOrdersCountByDefaultButNotForASettlementRequest();
+  testCustomerFactsCountEachSaleOncePerCustomer();
+}
+
+// Two approved requests by one customer on the same pharmacy and product both claim the same sale.
+// Each request keeps its claim, but the customer report adds the customer's fact rows, so those rows
+// must hold each sale once: inside one row when the pay months match, and across rows when they differ.
+function testCustomerFactsCountEachSaleOncePerCustomer() {
+  const { body, file } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
+  const code = stripSqlComments(body).replace(/\s+/g, " ");
+
+  const cteAt = code.indexOf("actuals_by_customer_dist as (");
+  const cteEnd = code.indexOf("actuals_by_request_geo as (", cteAt);
+  assert.ok(cteAt >= 0 && cteEnd > cteAt, `${file}: actuals_by_customer_dist must exist, before actuals_by_request_geo`);
+  assert.match(
+    code.slice(cteAt, cteEnd),
+    /select distinct on \(rr\.customer_id, ah\.match_type, ah\.row_id\).*order by rr\.customer_id, ah\.match_type, ah\.row_id, rr\.pay_month\b/,
+    `${file}: one sale per customer, kept under its earliest pay month, or a customer's rows add one sale twice`,
+  );
+
+  const insertAt = code.indexOf("ins_customers as (");
+  assert.ok(insertAt >= 0, `${file}: ins_customers must exist`);
+  const insert = code.slice(insertAt);
+  assert.doesNotMatch(
+    insert,
+    /sum\(rr\.(?:exact|fallback)_sales_rows\)/,
+    `${file}: a request's row count repeats once per target pharmacy, so adding it overstates the customer's rows`,
+  );
+  assert.match(
+    insert,
+    /max\(coalesce\(acbd\.exact_sales_rows, 0\)\)::integer, max\(coalesce\(acbd\.fallback_sales_rows, 0\)\)::integer/,
+    `${file}: the customer's row counts must come from the same once-per-customer rows as its value`,
+  );
+
+  assert.match(
+    code,
+    /actuals as materialized \( select request_id, coalesce\(sum\(sales_value\),0\)::numeric as actual_value/,
+    `${file}: a request keeps its own full claim; only the customer roll-up dedupes`,
+  );
 }
 
 // OWNER, 2026-10-18: a direct order at a campaign's own pharmacy counts in that campaign's ROI with

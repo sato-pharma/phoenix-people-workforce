@@ -455,7 +455,7 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   `.github/workflows/deploy-cloud-run.yml`, interpolated `repos/${{ github.repository }}` and could
   not be wrong; that workflow was deleted 2026-09-08. So this is never a defect to go fix in a
   file — it is a typo the checkout invites, and the fix is to read the name rather than infer it:
-  `gh repo view --json nameWithOwner` returns `it-gawish-hr/phoenix-people-workforce`, and
+  `gh repo view --json nameWithOwner` returns `gawishtheit/phoenix-people-workforce`, and
   `git remote -v` agrees.
 
 **Migrations**

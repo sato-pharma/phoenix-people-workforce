@@ -93,6 +93,8 @@ export function dependencyOrderProblems(tables = TABLES) {
 const ENV_FILES = [".env.staging.rls.local", ".env.production.rls.local", ".env.local"];
 
 function envVar(name) {
+  // The nightly check runs on GitHub, where the secrets arrive in the environment and no env file exists.
+  if (process.env[name]) return process.env[name];
   for (const file of ENV_FILES) {
     if (!existsSync(file)) continue;
     for (const raw of readFileSync(file, "utf8").replace(/^﻿/, "").split(/\r?\n/)) {

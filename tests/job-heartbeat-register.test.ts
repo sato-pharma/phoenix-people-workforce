@@ -283,6 +283,119 @@ export async function runJobHeartbeatRegisterTests() {
     "the failure detail must reach the alert body — it is the only diagnostic a reader gets",
   );
 
+  // A GRACE AT OR ABOVE THE GAP BETWEEN FIRES (owner, 2026-11-03). Measuring only from the latest
+  // fire, the next fire always arrived before the deadline, so these jobs could never strand.
+  const HOURLY_GRACE_ONE_HOUR: JobScheduleDeclaration = {
+    graceSeconds: 3600,
+    kind: "cron",
+    schedule: "5 * * * *",
+    slug: "phoenix-recovery-snapshot",
+  };
+  const EVERY_FIVE_GRACE_THIRTY: JobScheduleDeclaration = {
+    graceSeconds: 1800,
+    kind: "cron",
+    schedule: "*/5 * * * *",
+    slug: "phoenix-crm-rep-entry-days-reconcile",
+  };
+  const silentForHours = assessJobHeartbeats({
+    declarations: [HOURLY_GRACE_ONE_HOUR],
+    now: new Date("2026-08-30T12:30:00.000Z"),
+    rows: [row({ lastSuccessAt: "2026-08-30T09:05:30.000Z", slug: HOURLY_GRACE_ONE_HOUR.slug })],
+  });
+  assert.deepEqual(
+    silentForHours.stranded.map((problem) => problem.slug),
+    [HOURLY_GRACE_ONE_HOUR.slug],
+    "an hourly job with an hour of grace, silent for over three hours, is stranded",
+  );
+  assert.equal(
+    silentForHours.stranded[0]?.overdueSince,
+    "2026-08-30T11:05:00.000Z",
+    "it is overdue from the OLDEST fire nothing answered, plus its grace",
+  );
+  assert.equal(
+    assessJobHeartbeats({
+      declarations: [HOURLY_GRACE_ONE_HOUR],
+      now: new Date("2026-08-30T10:50:00.000Z"),
+      rows: [row({ lastSuccessAt: "2026-08-30T09:05:30.000Z", slug: HOURLY_GRACE_ONE_HOUR.slug })],
+    }).healthy,
+    true,
+    "one fire unanswered and still inside its grace is healthy",
+  );
+  // A job that keeps reporting failures is not silent, and its error must reach the alert.
+  const failingEveryRun = assessJobHeartbeats({
+    declarations: [HOURLY_GRACE_ONE_HOUR],
+    now: new Date("2026-08-30T12:30:00.000Z"),
+    rows: [
+      row({
+        lastDetail: "interlock refused the rebuild",
+        lastFailAt: "2026-08-30T12:05:30.000Z",
+        lastOutcome: "fail",
+        lastSuccessAt: "2026-08-30T09:05:30.000Z",
+        slug: HOURLY_GRACE_ONE_HOUR.slug,
+      }),
+    ],
+  });
+  assert.deepEqual(failingEveryRun.stranded, [], "a job answering with failures is not stranded");
+  assert.match(failingEveryRun.failing[0]?.detail ?? "", /interlock refused the rebuild/, "and the failing report keeps its error");
+  // A job whose grace is below the gap keeps the old deadline: quiet between a missed day and today's fire.
+  assert.equal(
+    assessJobHeartbeats({
+      declarations: [{ graceSeconds: 3600, kind: "cron", schedule: "30 7 * * *", slug: "phoenix-recovery-snapshot" }],
+      now: new Date("2026-08-30T04:45:00.000Z"), // 07:45 Cairo, ten minutes after today's fire, inside its grace
+      rows: [row({ lastSuccessAt: "2026-08-28T04:40:00.000Z", slug: "phoenix-recovery-snapshot" })],
+    }).stranded.length,
+    0,
+    "a daily job's overdueSince is not moved by the wider rule",
+  );
+  const strandedAtSweep = (now: string) =>
+    assessJobHeartbeats({
+      declarations: [EVERY_FIVE_GRACE_THIRTY],
+      now: new Date(now),
+      rows: [row({ lastSuccessAt: "2026-08-30T09:00:30.000Z", slug: EVERY_FIVE_GRACE_THIRTY.slug })],
+    }).stranded[0];
+  assert.equal(strandedAtSweep("2026-08-30T09:30:00.000Z"), undefined, "a five-minute job stays quiet inside its grace");
+  assert.equal(
+    strandedAtSweep("2026-08-30T09:45:00.000Z")?.overdueSince,
+    strandedAtSweep("2026-08-30T11:45:00.000Z")?.overdueSince,
+    "overdueSince does not move between sweeps, because the audit detector keys its dedupe on it",
+  );
+  assert.equal(
+    assessJobHeartbeats({
+      declarations: [EVERY_FIVE_GRACE_THIRTY],
+      now: new Date("2026-08-30T09:31:00.000Z"),
+      rows: [row({ lastSuccessAt: "2026-08-30T09:30:20.000Z", slug: EVERY_FIVE_GRACE_THIRTY.slug })],
+    }).healthy,
+    true,
+    "a job answering on time is untouched",
+  );
+  assert.deepEqual(
+    assessJobHeartbeats({
+      declarations: [HOURLY_GRACE_ONE_HOUR],
+      now: new Date("2026-08-30T12:30:00.000Z"),
+      rows: [row({ firstSeenAt: "2026-08-30T09:00:00.000Z", lastOutcome: null, slug: HOURLY_GRACE_ONE_HOUR.slug })],
+    }).stranded.map((problem) => problem.slug),
+    [HOURLY_GRACE_ONE_HOUR.slug],
+    "a short-gap job that has never reported is stranded too, once a fire and its grace have passed",
+  );
+  assert.equal(
+    assessJobHeartbeats({
+      declarations: [HOURLY_GRACE_ONE_HOUR],
+      now: new Date("2026-08-30T09:30:00.000Z"),
+      rows: [row({ firstSeenAt: "2026-08-30T09:00:00.000Z", lastOutcome: null, slug: HOURLY_GRACE_ONE_HOUR.slug })],
+    }).healthy,
+    true,
+    "a job declared half an hour ago does not alarm for being new",
+  );
+  assert.equal(
+    assessJobHeartbeats({
+      declarations: [DAILY_0636],
+      now: noon,
+      rows: [row({ lastSuccessAt: "2026-08-27T03:37:00.000Z", slug: DAILY_0636.slug })],
+    }).stranded[0]?.overdueSince,
+    "2026-08-30T04:36:00.000Z",
+    "a job whose grace is below the gap keeps today's deadline, which is what job-refire reads",
+  );
+
   // Stranded beats failing: silence is the more serious signal, and listing a job under both
   // headings makes the alert harder to read rather than more informative.
   const both = assessJobHeartbeats({
@@ -425,8 +538,17 @@ export async function runJobHeartbeatRegisterTests() {
     assert.ok(JOB_REFIRE_POLICIES[NOTIFY], "notify-daily is the first job with a re-fire policy");
     assert.deepEqual(
       Object.keys(JOB_REFIRE_POLICIES),
-      [NOTIFY],
+      [NOTIFY, "phoenix-reconciliation-check"],
       "a job joins this list only after its sub-jobs were read for a same-day repeat (docs/observability.md)",
+    );
+    // 2026-11-03: a merge at 04:40 removed the container 42 seconds into the nightly integrity checks.
+    assert.deepEqual(
+      decideJobRefires(
+        [{ overdueSince: "2026-11-03T04:40:00.000Z", slug: "phoenix-reconciliation-check" }],
+        at("2026-11-03T05:00:00.000Z"),
+      ).due,
+      [{ day: "2026-11-03", path: "/api/cron/reconciliation-check", slug: "phoenix-reconciliation-check" }],
+      "the nightly integrity checks killed by a deploy are re-fired once the sweep sees them stranded",
     );
 
     const due = decideJobRefires([{ overdueSince: overdue, slug: NOTIFY }], at("2026-10-16T04:51:00.000Z"));
