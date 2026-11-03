@@ -6,6 +6,7 @@ import {
   requireRecruitmentAccess,
 } from "@/app/api/recruitment/_lib/http";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { canPublishJobPosts } from "@/lib/recruitment/access";
 import { closeJobCardOnWebsite, WebsiteCareersError } from "@/lib/recruitment/job-posts/website";
 
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
     if (!canPublishJobPosts(access)) {
       return recruitmentProblem("Closing a careers card is open to the Super Admin.", 403);
     }
+    assertRealSessionForDecision(access, "close a careers card");
 
     const body = await readJsonObject(request);
     const cardId = typeof body.cardId === "string" ? body.cardId.trim() : "";

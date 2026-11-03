@@ -6,6 +6,7 @@ import {
   requireRecruitmentAccess,
 } from "@/app/api/recruitment/_lib/http";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { assertRealSessionForDecision } from "@/lib/auth/preview-session-guard";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { canPublishJobPosts } from "@/lib/recruitment/access";
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
     if (!canPublishJobPosts(access)) {
       return recruitmentProblem("Publishing to the careers page is open to the Super Admin.", 403);
     }
+    assertRealSessionForDecision(access, "publish a job to the careers page");
 
     const body = await readJsonObject(request);
     const draft = coerceTitleDraft(body.title && typeof body.title === "object" ? (body.title as Record<string, unknown>) : {});

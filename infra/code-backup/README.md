@@ -6,7 +6,7 @@ exits when done. Railway's schedule has no setting in `.railway/railway.ts`, so 
 
 Each night it makes one file on the app's Drive, `phoenix-code-backup/daily/code-backup-YYYY-MM-DD.tar.age`:
 a verified `git bundle` of every repository the token can see, the `hmdm-android` release files, and a
-`manifest.tsv` listing each repository's refs and size. It keeps 7 daily and 4 weekly files.
+`manifest.tsv` listing each repository's refs and size, with `releases.tsv` listing each release file and its size. It keeps 7 daily and 4 weekly files.
 `phoenix-code-backup/frozen-2026-10-26/` is never pruned: the repositories that had no copy off this disk.
 
 **Not covered:** unpushed commits and `.env` files. Restoring code does not restore secrets.

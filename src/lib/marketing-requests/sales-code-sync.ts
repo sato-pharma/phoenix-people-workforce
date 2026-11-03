@@ -4,7 +4,9 @@
 //
 // WHAT CHANGES WITH NOBODY AT THE KEYBOARD.
 //   * A vendor the Sales map names for the first time starts hidden until he allows it (the function,
-//     20261103*_marketing_pharmacy_sync_hides_new_vendors.sql). He is told, by name.
+//     20261103*_marketing_pharmacy_sync_hides_new_vendors.sql). He is told, by name, once per vendor. That
+//     is read from the vendor's own age rather than a before-and-after, so a run that timed out but
+//     committed, or a notice that failed to send, is told by the next night's run.
 //   * A broken Sales import empties the map and its codes then look retired. The run refuses above
 //     SYNC_RETIRE_LIMIT and reads as failed: on 3 Nov the honest number was 0.
 //   * Ambiguous pairs must stay 0. 44,244 of them is what the blind insert caused on 2026-08-19.
@@ -22,6 +24,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Above this the run stops and asks: the map almost certainly broke, rather than this many codes left. */
 export const SYNC_RETIRE_LIMIT = 500;
+/**
+ * How long a new hidden vendor stays eligible for its one notice. The vendors hidden before this job
+ * existed are all older (the newest was made on 2026-08-19), so they are never announced as new.
+ */
+export const NEW_VENDOR_NOTICE_DAYS = 14;
 const SYNC_REQUEST_TIMEOUT_MS = 120_000;
 const AUDIENCE_KEY = "weekly_system_health_digest" as const;
 const ACTOR = "marketing-pharmacy-code-sync";
@@ -66,32 +73,29 @@ export function salesCodeSyncDetail(counts: SalesCodeSyncCounts, ambiguousPairs:
   ].join(", ");
 }
 
-/** Pure: what a person must be told. Null on a healthy night. */
-export function salesCodeSyncNotice(input: {
-  ambiguousPairs: number;
-  newHiddenVendors: readonly string[];
-}): { title: string; message: string } | null {
-  const lines: string[] = [];
-  if (input.newHiddenVendors.length > 0) {
-    lines.push(
-      `New vendor from the Sales map, hidden until allowed: ${input.newHiddenVendors.join(", ")}.`,
-      "Its pharmacy codes stay out of the Vendor picker and wait. No screen allows a vendor yet, so allowing one is a database change, made on request.",
-    );
-  }
-  if (input.ambiguousPairs > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push(
-      `${input.ambiguousPairs} pharmacy code(s) now sit on more than one reference row under one vendor. Customer Validation reads those as ambiguous rather than matched, so they need clearing.`,
-    );
-  }
-  if (lines.length === 0) return null;
+/** Pure: the one notice a new hidden vendor gets. */
+export function hiddenVendorNotice(name: string): { title: string; message: string } {
   return {
-    message: lines.join("\n"),
-    title:
-      input.ambiguousPairs > 0
-        ? `Pharmacy codes turned ambiguous: ${input.ambiguousPairs}`
-        : `New hidden vendor: ${input.newHiddenVendors.join(", ")}`,
+    message: [
+      `New vendor from the Sales map, hidden until allowed: ${name}.`,
+      "Its pharmacy codes stay out of the Vendor picker and wait. No screen allows a vendor yet, so allowing one is a database change, made on request.",
+    ].join("\n"),
+    title: `New hidden vendor: ${name}`,
   };
+}
+
+/** Pure: the ambiguous-pairs notice, which repeats daily until they are cleared. Null at zero. */
+export function ambiguousPairsNotice(ambiguousPairs: number): { title: string; message: string } | null {
+  if (ambiguousPairs <= 0) return null;
+  return {
+    message: `${ambiguousPairs} pharmacy code(s) now sit on more than one reference row under one vendor. Customer Validation reads those as ambiguous rather than matched, so they need clearing.`,
+    title: `Pharmacy codes turned ambiguous: ${ambiguousPairs}`,
+  };
+}
+
+/** Pure: the oldest a hidden vendor's created_at can be and still get its notice. */
+export function newVendorCutoffIso(now: number = Date.now()): string {
+  return new Date(now - NEW_VENDOR_NOTICE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
 
 async function readPreflight(): Promise<{ ambiguousPairs: number; wouldRetire: number }> {
@@ -104,13 +108,18 @@ async function readPreflight(): Promise<{ ambiguousPairs: number; wouldRetire: n
   return { ambiguousPairs: Number(row.ambiguous_pairs ?? 0), wouldRetire: Number(row.would_retire ?? 0) };
 }
 
-async function readHiddenVendors(): Promise<Map<string, string>> {
+async function readNewHiddenVendors(): Promise<Array<{ id: string; name: string }>> {
   const { data, error } = await getSupabaseAdmin()
     .from("marketing_distributors")
     .select("id,display_name")
-    .eq("active", false);
+    .eq("active", false)
+    .gte("created_at", newVendorCutoffIso())
+    .order("created_at", { ascending: true });
   if (error) throw new Error(`Could not read the hidden vendors: ${error.message}`);
-  return new Map(((data ?? []) as Array<{ id: unknown; display_name: unknown }>).map((row) => [String(row.id), String(row.display_name ?? "")]));
+  return ((data ?? []) as Array<{ id: unknown; display_name: unknown }>).map((row) => ({
+    id: String(row.id),
+    name: String(row.display_name ?? ""),
+  }));
 }
 
 async function callSync(): Promise<SalesCodeSyncCounts> {
@@ -187,19 +196,16 @@ export async function runSalesPharmacyCodeSync(options: { dryRun?: boolean } = {
   }
   if (refusal) throw new Error(refusal);
 
-  const hiddenBefore = await readHiddenVendors();
   const counts = await callSync();
   const after = await readPreflight();
-  const hiddenAfter = await readHiddenVendors();
-  const newHidden = [...hiddenAfter.entries()].filter(([id]) => !hiddenBefore.has(id));
-  const newHiddenVendors = newHidden.map(([, name]) => name);
+  const newHidden = await readNewHiddenVendors();
+  const newHiddenVendors = newHidden.map((vendor) => vendor.name);
 
-  const notice = salesCodeSyncNotice({ ambiguousPairs: after.ambiguousPairs, newHiddenVendors });
-  if (notice) {
-    const ids = newHidden.map(([id]) => id).sort().join(",");
-    // A new vendor is told once, by its id. Ambiguous pairs repeat each night until they are cleared.
-    await tell(notice, `${after.ambiguousPairs > 0 ? `ambiguous-${cairoDayKey()}` : "vendors"}:${ids}`);
-  }
+  // The key is the vendor's id, so it is told once however many nights it stays hidden inside the window.
+  for (const vendor of newHidden) await tell(hiddenVendorNotice(vendor.name), `vendors:${vendor.id}`);
+  // Ambiguous pairs repeat each night until they are cleared.
+  const ambiguous = ambiguousPairsNotice(after.ambiguousPairs);
+  if (ambiguous) await tell(ambiguous, `ambiguous:${cairoDayKey()}`);
 
   return {
     ambiguousPairs: after.ambiguousPairs,

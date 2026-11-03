@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
 import {
+  ambiguousPairsNotice,
+  hiddenVendorNotice,
+  NEW_VENDOR_NOTICE_DAYS,
+  newVendorCutoffIso,
   SYNC_RETIRE_LIMIT,
   salesCodeSyncDetail,
-  salesCodeSyncNotice,
   syncRetireRefusal,
 } from "../src/lib/marketing-requests/sales-code-sync.ts";
 
@@ -41,11 +44,16 @@ export function runMarketingPharmacyCodeSyncJobTests() {
   assert.match(refusal, /did not run/);
 
   // A healthy night reaches nobody.
-  assert.equal(salesCodeSyncNotice({ ambiguousPairs: 0, newHiddenVendors: [] }), null);
-  const vendor = salesCodeSyncNotice({ ambiguousPairs: 0, newHiddenVendors: ["New Vendor"] });
-  assert.match(vendor?.message ?? "", /New Vendor/, "a new hidden vendor is named");
-  assert.match(vendor?.message ?? "", /No screen allows a vendor yet/, "and says plainly that no screen does this");
-  assert.match(salesCodeSyncNotice({ ambiguousPairs: 3, newHiddenVendors: [] })?.title ?? "", /ambiguous: 3/);
+  assert.equal(ambiguousPairsNotice(0), null);
+  const vendor = hiddenVendorNotice("New Vendor");
+  assert.match(vendor.message, /New Vendor/, "a new hidden vendor is named");
+  assert.match(vendor.message, /No screen allows a vendor yet/, "and says plainly that no screen does this");
+  assert.match(ambiguousPairsNotice(3)?.title ?? "", /ambiguous: 3/);
+
+  // 🔴 The vendors hidden before this job existed are never announced as new: the newest was made on 2026-08-19.
+  const firstRunCutoff = newVendorCutoffIso(Date.parse("2026-11-04T00:47:00Z"));
+  assert.ok(firstRunCutoff > "2026-08-19T23:59:59Z", "the 12 vendors already hidden must fall outside the window");
+  assert.equal(firstRunCutoff, new Date(Date.parse("2026-11-04T00:47:00Z") - NEW_VENDOR_NOTICE_DAYS * 86_400_000).toISOString());
 
   assert.match(
     salesCodeSyncDetail(
@@ -63,8 +71,13 @@ export function runMarketingPharmacyCodeSyncJobTests() {
     "the heartbeat detail is the one place a run's counts are recorded",
   );
 
-  // Order in the runner: the refusal is read before anything is written, and the hidden set on both sides.
+  // Order in the runner: the refusal is read before anything is written.
   const runner = readFileSync("src/lib/marketing-requests/sales-code-sync.ts", "utf8");
+  // 🔴 A before-and-after loses the notice for good when a run times out but commits, or the send fails.
+  // Reading by age with a per-vendor key means the next night still tells, and tells once.
+  assert.doesNotMatch(runner, /hiddenBefore|hiddenAfter/, "the notice must not rest on a diff around one run");
+  assert.match(runner, /\.gte\("created_at", newVendorCutoffIso\(\)\)/, "new means recently created");
+  assert.match(runner, /tell\(hiddenVendorNotice\(vendor\.name\), `vendors:\$\{vendor\.id\}`\)/, "one notice per vendor id");
   assert.ok(
     runner.indexOf("if (refusal) throw") < runner.indexOf("await callSync()"),
     "the refusal must come before the sync, or it protects nothing",

@@ -185,6 +185,11 @@ export async function runRecruitmentJobPostWebsiteTests() {
   for (const file of ["app/api/recruitment/job-posts/publish/route.ts", "app/api/recruitment/job-posts/close/route.ts"]) {
     const route = readFileSync(file, "utf8");
     assert.match(route, /if \(!canPublishJobPosts\(access\)\)/, `${file} must check the Super Admin gate`);
+    assert.match(route, /assertRealSessionForDecision\(access, /, `${file} must refuse a local preview session`);
+    assert.ok(
+      route.indexOf("assertRealSessionForDecision(access") < route.indexOf("readJsonObject(request)"),
+      `${file} must refuse a preview session before it reads the request`,
+    );
     assert.match(route, /writeAuditLog\(/, `${file} must leave an audit row`);
   }
   assert.match(readFileSync("src/lib/recruitment/access.ts", "utf8"), /function canPublishJobPosts[^]*?return access\.role === "Super Admin";/);

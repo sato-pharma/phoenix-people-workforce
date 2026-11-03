@@ -45,12 +45,20 @@ github() {
   curl -fsSL --retry 3 -H "Authorization: Bearer $GITHUB_BACKUP_TOKEN" -H "Accept: application/vnd.github+json" "$@"
 }
 
+# One Accept header only: with the JSON one a release file downloads as 1,719 bytes of JSON under its .apk
+# name, with no error (measured 2026-11-03; the real file is 6,290,217 bytes).
+github_asset() {
+  curl -fsSL --retry 3 -H "Authorization: Bearer $GITHUB_BACKUP_TOKEN" -H "Accept: application/octet-stream" -o "$1" "$2"
+}
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 OUT="$WORK/backup"
 mkdir -p "$OUT/bundles" "$OUT/releases"
 MANIFEST="$OUT/manifest.tsv"
 printf 'repository\trefs\tbytes\tstate\n' > "$MANIFEST"
+RELEASE_MANIFEST="$OUT/releases.tsv"
+printf 'repository\ttag\tfile\tbytes\n' > "$RELEASE_MANIFEST"
 
 repos=()
 page=1
@@ -90,10 +98,16 @@ for name in $RELEASE_REPOS; do
   dir="$OUT/releases/$name"
   mkdir -p "$dir"
   github "https://api.github.com/repos/$OWNER/$name/releases?per_page=100" \
-    | jq -r '.[] | .tag_name as $t | .assets[] | [$t, .name, .url] | @tsv' \
-    | while IFS=$'\t' read -r tag asset url; do
+    | jq -r '.[] | .tag_name as $t | .assets[] | [$t, .name, .url, .size] | @tsv' \
+    | while IFS=$'\t' read -r tag asset url expected; do
         mkdir -p "$dir/$tag"
-        github -H "Accept: application/octet-stream" -o "$dir/$tag/$asset" "$url"
+        github_asset "$dir/$tag/$asset" "$url"
+        bytes="$(stat -c %s "$dir/$tag/$asset")"
+        if [ "$bytes" != "$expected" ]; then
+          echo "refused: $name $tag $asset is $bytes bytes where GitHub lists $expected" >&2
+          exit 1
+        fi
+        printf '%s\t%s\t%s\t%s\n' "$name" "$tag" "$asset" "$bytes" >> "$RELEASE_MANIFEST"
       done
 done
 
@@ -118,6 +132,8 @@ prune() {
     echo "pruned: $1/$old"
   done
 }
+# Listing a folder that does not exist fails, and weekly/ has none until the first Sunday.
+rclone mkdir "backup:$FOLDER/weekly"
 prune daily "$KEEP_DAILY"
 prune weekly "$KEEP_WEEKLY"
 echo "done"

@@ -63,4 +63,17 @@ export async function runCodeBackupVerifyTests() {
   const readBack = script.indexOf("rclone lsf --format s");
   const pruned = script.indexOf("prune daily");
   assert.ok(uploaded > 0 && uploaded < readBack && readBack < pruned, "prune only after the upload is read back");
+
+  // 🔴 With the JSON Accept header a release file downloads as JSON under its .apk name, with no error.
+  const assetBody = /github_asset\(\) \{\n([^}]*)\n\}/.exec(script)?.[1] ?? "";
+  assert.match(assetBody, /Accept: application\/octet-stream/, "a release file asks for its bytes");
+  assert.doesNotMatch(assetBody, /vnd\.github/, "and carries no JSON Accept header");
+  assert.match(script, /github_asset "\$dir\/\$tag\/\$asset" "\$url"/, "release files go through it");
+  assert.match(script, /\.size\] \| @tsv/, "the listed size is read");
+  assert.match(script, /\$bytes" != "\$expected"[\s\S]*?exit 1/, "and a file of another size stops the night");
+  assert.match(script, />> "\$RELEASE_MANIFEST"/, "each release file is recorded");
+
+  // 🔴 Listing a missing folder fails, so weekly/ must exist or every night fails until the first Sunday.
+  const madeWeekly = script.indexOf('rclone mkdir "backup:$FOLDER/weekly"');
+  assert.ok(madeWeekly > 0 && madeWeekly < script.indexOf('prune weekly "$KEEP_WEEKLY"'), "weekly/ is made before it is listed");
 }
