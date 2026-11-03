@@ -105,12 +105,19 @@ is the **record of each one it has actually been applied to**, so that "still op
 decision somebody made rather than an oversight nobody noticed. An alert with no row here has not
 been judged yet.
 
+🔴 **ALERT NUMBERS BELONG TO ONE REPOSITORY, AND THE 2 NOV 2026 MOVE RESTARTED THEM AT 1.** A row keeps a
+`#N` in its Alert cell only when that number is a live alert on `gawishtheit/phoenix-people-workforce`
+for the same advisory in the same manifest. A row from before the move with no such alert names its old
+number in words, so the check cannot read it, and a new alert that later reaches that number is never
+taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert
+cell, but only for the same advisory and manifest. Rows read 2026-11-03 17:02 Cairo.
+
 ### `braces` — GHSA-vfj7-8cjw-p6xm · CVE-2026-93687 · HIGH (CVSS 7.5)
 
 | | |
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-04 at the owner's instruction. |
-| Alert | #112, opened 2026-10-03, root `pnpm-lock.yaml` |
+| Alert | none on this repository yet. It was number 112 on the old repository, opened 2026-10-03, root `pnpm-lock.yaml` |
 | Scope | `development` — the `--prod` filter drops it, so it cannot turn `checks` red |
 | Patched version | **none exists** — there is nothing to bump to |
 | How it arrives | `braces@3.0.3` ← `micromatch@4.0.8` ← `fast-glob` ← **`shadcn`**, a `devDependency` |
@@ -150,13 +157,13 @@ they are judged separately below — on different facts, and on a narrower accep
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
-| Alert | #111, opened 2026-10-03, `mobile/package-lock.json` |
+| Alert | none on this repository yet. It was number 111 on the old repository, opened 2026-10-03, `mobile/package-lock.json` |
 | Scope | **`runtime`** — but in a manifest `pnpm audit` never reads at the root, so it still cannot turn `checks` red |
 | Patched version | **none exists** |
 | What it is | Stack-exhaustion denial of service through deeply nested patterns |
 | Impact vector | `C:N/I:N/A:H` — availability only |
 
-**This is a narrower acceptance than `#112` above, and the difference matters.** `#112` is
+**This is a narrower acceptance than the `braces` row above, and the difference matters.** That one is
 `development` scope, so nothing vulnerable is in a shipped graph at all — that is a scope fact.
 This one is `runtime` scope within its own lockfile. What makes it unable to gate is only that the
 root audit never walks that manifest, which is a statement about **this repo's CI**, not about the
@@ -168,7 +175,7 @@ there is no action this repository can take either way.
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
-| Alert | #110, opened 2026-10-03, `mobile/package-lock.json` |
+| Alert | #2, opened on this repository 2026-11-03 16:11 Cairo, `mobile/package-lock.json`. It was number 110 on the old repository, opened 2026-10-03 |
 | Scope | **`runtime`**, in a manifest the root audit never reads |
 | Patched version | **none exists** |
 | What it is | RSA PKCS#1 v1.5 signature verification accepts extra nested `DigestAlgorithm` elements |
@@ -202,7 +209,7 @@ What this acceptance does and does not say:
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-06 at the owner's instruction. |
-| Alert | #113, opened 2026-10-06 05:56 Cairo, `mobile/package-lock.json` |
+| Alert | none on this repository. It was number 113 on the old repository, opened 2026-10-06 05:56 Cairo, `mobile/package-lock.json` |
 | Scope | **`runtime`**, in a manifest the root audit never reads |
 | Patched version | **1.2.2 exists** — and that is what makes this row different from the three above |
 | How it arrives | `source-map-js@1.2.1` ← `postcss`, which declares `^1.2.1` |
@@ -223,7 +230,7 @@ acceptance above rests partly on `first_patched_version` being null — *"there 
 That is **not true here**: 1.2.2 is published, and `postcss`'s own `^1.2.1` already permits it, so the
 change would be a one-line lockfile resolution. What makes this one unable to gate is **only** that
 `pnpm audit --prod` never walks `mobile/package-lock.json` at the root — the same narrow ground as
-`#111`, and nothing more.
+the second `braces` row, and nothing more.
 
 **Why it is accepted rather than bumped.** The file is under `mobile/`, which AGENTS.md §4's first
 bullet freezes until the owner lifts it in his own words — and that freeze is enforced, not merely
@@ -252,7 +259,7 @@ acceptance is therefore about **where the fix has to happen**, never about the f
 | | |
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-10-06 at the owner's instruction — asked directly, he answered *"leave sprintf-js as it is — it never loads"*. |
-| Alert | #116, opened 2026-10-06 05:56 Cairo, root `pnpm-lock.yaml` |
+| Alert | none on this repository yet. It was number 116 on the old repository, opened 2026-10-06 05:56 Cairo, root `pnpm-lock.yaml` |
 | Scope | **`runtime`** — it IS in the production graph, so scope is not what makes this quiet |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it. This is the alert that exposed the `medium`/`moderate` spelling bug above |
 | Patched version | **none at any version** — every published release, 0.0.7 through 1.1.3, is inside `<= 1.1.3` |
@@ -364,7 +371,7 @@ node scripts/check-dependabot-alerts.mjs --json   # the whole reading, including
 🔴 **THE CHECK READS THE ROWS ABOVE, so a decision written here stops the tool demanding one.** An
 unpatched alert with a row prints `risk ACCEPTED, recorded <date>`; one without keeps
 `needs an override, a replacement, or a recorded risk decision`. Added 2026-10-05, because the
-demand used to print on **every** unpatched alert including `#112`, whose decision was already
+demand used to print on **every** unpatched alert including the first `braces` row, whose decision was already
 written and dated — and the ship skill reads this check before every merge, so a session read that
 line at the moment it was deciding to merge, believed three alerts were unjudged, and put the
 already-answered question to the owner. A demand that outlives its answer is the same cry-wolf
@@ -372,8 +379,9 @@ failure as the 2026-10-04 false `WILL FAIL CI`, arriving from the other directio
 
 **It is keyed on the alert NUMBER, never the GHSA** — which is what makes the red note above true
 mechanically rather than only in prose. One advisory opens one alert per manifest, so `braces`
-`GHSA-vfj7-8cjw-p6xm` is open as both `#112` here and `#111` elsewhere; keying on the advisory would
-turn this file's explicit refusal to judge the other one into an automatic acceptance, silently.
+`GHSA-vfj7-8cjw-p6xm` was two alerts on the old repository, one in the root lockfile and one elsewhere;
+keying on the advisory would turn this file's explicit refusal to judge the other one into an automatic
+acceptance, silently.
 
 **The parser fails closed**, like every other grading in `dependabot-alerts.mjs`: a row is honoured
 only when one `###` section positively yields **one** alert number and a Decision cell saying
