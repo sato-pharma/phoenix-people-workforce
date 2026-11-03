@@ -16,10 +16,10 @@ Pull request 28 merged 3 Nov 2026 06:41 Cairo; production served `ef50ae919` abo
 - `phoenix_crm_location_integrity` cases where `'travel_rests_on_held_wait' = any(flags)`, counted for him, by name. Only he settles a case.
 - `phoenix_crm_visit_capture_provenance` rows with `queued_seconds` not null.
 
-**The real-browser press ran, on staging, 3 Nov 2026** (route: [[a-real-browser-press-can-run-on-a-github-runner]]). Four runs. It found two defects, the header line and the stuck panels, both fixed in pull request 34, which was open when this was written; read its state before saying either fix is live. Seen on the fixed code: held, refused, too-late and landed at 375 and 1440.
+**The real-browser press ran, on staging, 3 Nov 2026** (route: [[a-real-browser-press-can-run-on-a-github-runner]]). Four runs. It found two defects, the header line and the stuck panels, both fixed in pull request 34, merged 3 Nov 2026 10:48 Cairo and live by 10:58 in revision `b78b92dbf`. Seen on the fixed code: held, refused, too-late and landed at 375 and 1440.
 
 **Not seen:** a real phone; the board page on production; the kept comment after Log it again on an off-plan visit, where the form opens on the customer step first (a unit test proves it).
 
-**Why:** the auto-mode classifier refused a one-time scheduled task for these reads on 3 Nov 2026, so nothing fires them by itself.
+**Why it is scheduled:** the auto-mode classifier refused the task when it was set up unasked. On his word, "schedule the visit retry read for 09:00 tomorrow" (3 Nov 2026), scheduled task `phoenix-visit-retry-first-day-read` fires once, 4 Nov 09:00 Cairo, read-only. It runs only while the app is open.
 
 **How to apply:** when he asks for the first-day figures, read the tables above, in Cairo time, with names.
