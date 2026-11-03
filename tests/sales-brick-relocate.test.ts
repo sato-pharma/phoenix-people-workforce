@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { historicalNameCandidates } from "@/lib/sales/master-data/brick-move-result";
+import { brickSwitchOffRefusal, historicalNameCandidates } from "@/lib/sales/master-data/brick-move-result";
 
 // Moving a brick to a different block goes through relocateBrick instead of updateSingleMasterRow's
 // plain in-place PATCH. Owner preference (2026-07-23): this dataset's brick IDs encode their block, so
@@ -118,6 +118,42 @@ export function runSalesBrickRelocateTests() {
     serviceSource,
     /error: "This brick is kept as history after it moved to another area, so published months keep their numbers\. It stays switched on\.",/,
     "the refusal says why the history brick stays switched on",
+  );
+
+  // The bin refuses a brick that still has active pharmacies, and refuses when it cannot tell.
+  assert.equal(brickSwitchOffRefusal({ count: 0, error: null }), null, "a brick with no active pharmacy may be switched off");
+  assert.match(
+    brickSwitchOffRefusal({ count: 1, error: null }) ?? "",
+    /^1 active pharmacy still sits on this brick, so it stays switched on\. Move it on SoS Mapping first\.$/,
+    "one active pharmacy refuses the switch-off and says where to move it",
+  );
+  assert.match(
+    brickSwitchOffRefusal({ count: 902, error: null }) ?? "",
+    /^902 active pharmacies still sit on this brick/,
+    "many active pharmacies refuse the switch-off",
+  );
+  assert.match(
+    brickSwitchOffRefusal({ count: null, error: { message: "timeout" } }) ?? "",
+    /stays switched on/,
+    "an unreadable count refuses, never lets the switch-off through",
+  );
+  assert.match(
+    brickSwitchOffRefusal({ count: null, error: null }) ?? "",
+    /stays switched on/,
+    "a missing count with no error refuses too",
+  );
+  const switchOffBody = serviceSource.slice(
+    serviceSource.indexOf("export async function setMasterRowActive"),
+    serviceSource.indexOf("Moves a brick to the block it really belongs to"),
+  );
+  assert.match(
+    switchOffBody,
+    /input\.master === "bricks" && !input\.active\) \{\s*const activePharmacies = await supabase\s*\.from\("source_of_sales_customer_map"\)\s*\.select\("id", \{ count: "exact", head: true \}\)\s*\.eq\("brick_id", key\)\s*\.eq\("active", true\);\s*const refusal = brickSwitchOffRefusal\(activePharmacies\);\s*if \(refusal\) return \{ success: false, error: refusal \};/,
+    "setMasterRowActive counts the brick's ACTIVE pharmacies and returns the refusal",
+  );
+  assert.ok(
+    switchOffBody.indexOf("brickSwitchOffRefusal(activePharmacies)") < switchOffBody.indexOf(".update({ active: input.active"),
+    "the check runs before the brick is switched off",
   );
 
   const routeSource = readFileSync("app/api/sales/database-mapping/bricks/[key]/relocate/route.ts", "utf8");

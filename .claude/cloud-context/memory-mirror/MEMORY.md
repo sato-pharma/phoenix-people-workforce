@@ -29,10 +29,9 @@
 
 
 ## Inbox — new notes land here
-- [Claude in Chrome JS blocks query strings and cookie words](claude-in-chrome-javascript-blocks-query-strings-and-cookie-words.md) - `[BLOCKED: Cookie/query string data]` twice; time an API from the page's own resource entries, never a hand fetch.
-- [Railway's HTTP path has no query string](railway-http-path-has-no-query-so-prefetches-look-like-page-opens.md) - `_rsc` prefetches read as page opens; count a real open by bytes (30 KB or more). It produced a wrong "1 in 9".
-- [A plain-Node trace overstates reads](a-plain-node-trace-overstates-reads-the-test-loader-disables-the-caches.md) - `tests/alias-loader.mjs` turns off `unstable_cache`; keep the caches working, trust order, never absolute times.
-- [AbortSignal.timeout does not hold the process open](abortsignal-timeout-does-not-hold-the-process-open.md) - await only its abort and Node can exit 13 with no message; hold the loop with your own interval.
+- [GitHub suspended the account, 2026-11-02](github-account-suspended-2026-11-02.md) - 403 on git and API; Polyclinic Caps commits unpushed in their worktree. Re-test with `git ls-remote`; never route around it.
+- [The sampler's postgresStartedAt moves without a restart](db-host-sampler-postgres-started-at-moves-without-a-restart.md) - prove a restart or compute size from `memTotalMb` and `pg_postmaster_start_time()`, never that field or the dashboard alone.
+- [Supabase showed outstanding invoices, 2026-11-02](supabase-outstanding-invoices-banner-2026-11-02.md) - Gawish organization, service-disruption warning; Future Talents Hub restricted; nothing on Medium, and Medium's cores are shared.
 
 
 
