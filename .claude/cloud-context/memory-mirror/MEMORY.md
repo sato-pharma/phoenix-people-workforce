@@ -29,6 +29,7 @@
 
 
 ## Inbox — new notes land here
+- [Salma Sabry's record made from her letter, 2026-11-03](salma-sabry-record-made-from-the-letter-2026-11-03.md) - his choice; identity and pay blank on purpose, her joining form is closed.
 - [The customer merge keeps refusing different lines, 2026-11-03](customer-merge-keeps-refusing-different-lines.md) - his choice by multiple choice; never offer to widen it without a real pair from him.
 - [Visit retry: post-deploy reads owed, 3 Nov 2026](visit-retry-post-deploy-reads-owed-2026-11-03.md) - first-day resend log, reminders heartbeat, new flag count; the real-browser press ran on staging and pull request 34 carries its two fixes.
 - [A real-browser press can run on a GitHub runner](a-real-browser-press-can-run-on-a-github-runner.md) - one-off job on a throwaway branch, staging only, when the laptop's memory floor stops a dev server.
