@@ -73,6 +73,10 @@ page.on("console", (m) => {
 });
 page.on("pageerror", (e) => errors.push(`pageerror: ${String(e.message).slice(0, 400)}`));
 page.on("response", (r) => r.status() >= 500 && failures.push(`${r.status()} ${new URL(r.url()).pathname}`));
+const visitAnswers = [];
+page.on("response", (r) => {
+  if (new URL(r.url()).pathname === "/api/phoenix-crm/visits" && r.request().method() === "GET") visitAnswers.push(r.status());
+});
 page.on("request", (r) => {
   const url = new URL(r.url());
   if (url.pathname.startsWith("/api/phoenix-crm/") && r.method() === "GET") calls.push(url.pathname + url.search);
@@ -165,8 +169,13 @@ try {
       const pageMark = pageRequests.length;
       await page.goBack({ timeout: 180_000 });
       await settle();
-      await page.waitForTimeout(5000);
+      const answerMark = visitAnswers.length;
+      const pressedAt = Date.now();
+      const drew = await page.waitForFunction(() => document.querySelectorAll('[class*="animate-pulse"]').length === 0, null, { timeout: 180_000 }).then(() => true).catch(() => false);
+      console.log(`  the day ${drew ? "drew" : "NEVER drew"}, ${Math.round((Date.now() - pressedAt) / 1000)} s after the wait began`);
+      await page.waitForTimeout(3000);
       await report(`back-${label}`, readMark);
+      console.log(`  answers to the Visits read since the mark: ${visitAnswers.slice(answerMark).join(", ") || "none yet"}; all so far: ${visitAnswers.join(", ") || "none"}`);
       const ownReads = calls.slice(readMark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length;
       const askedAgain = pageRequests.slice(pageMark).filter((p) => p.endsWith("/field-crm/visits"));
       console.log(`  VERDICT back ${label}: the browser read Visits itself ${ownReads} time(s); the router asked the server for the Visits page ${askedAgain.length} time(s). Either one above 0 is fresh; both 0 is the day from before.`);
