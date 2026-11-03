@@ -238,7 +238,7 @@ function testARateIsNeverDrawnAsZero() {
     /<PhoenixIdentityStrip[^>]*\breserve=\{conversionBand\}/,
     "the Conversion band is the strip's reserve — it stands beside her portrait",
   );
-  assert.equal(component.split('aria-label="Conversion"').length - 1, 1, "and is drawn once, there and nowhere else");
+  assert.equal(component.split('label="Conversion"').length - 1, 1, "and is drawn once, there and nowhere else");
   const stripAt = component.indexOf("<PhoenixIdentityStrip");
   const railAt = component.indexOf("<TaCommandRail");
   const groupsAt = component.indexOf("{groups.map(");

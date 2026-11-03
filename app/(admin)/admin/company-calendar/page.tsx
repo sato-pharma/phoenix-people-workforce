@@ -5,6 +5,7 @@ import {
   canAccessSystemAdministratorWorkspace,
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
+import { HR_OPERATIONS_SPECIALIST_SEAT } from "@/lib/auth/hr-functions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
 import { currentCairoDateParts } from "@/lib/i18n/format";
@@ -41,9 +42,13 @@ export default async function AdminCompanyCalendarPage() {
   // The Talent Acquisition seat (HR Resourcing) added 2026-10-08 — the owner ticked this page for
   // her on the access blueprint. She READS it: she is not in CALENDAR_MANAGER_ROLES, so /api/calendar
   // refuses her edits exactly as it refuses everyone else outside that list.
+  //
+  // The HR Operations Specialist added 2026-11-03 (owner: "add hr calen dars"), a read on the same
+  // terms: she is not in CALENDAR_MANAGER_ROLES either.
   const allowed =
     access.role === "Finance Manager" ||
     access.role === "HR Resourcing" ||
+    access.role === HR_OPERATIONS_SPECIALIST_SEAT ||
     canAccessSystemAdministratorWorkspace(access);
   if (!allowed) {
     redirect("/admin");
