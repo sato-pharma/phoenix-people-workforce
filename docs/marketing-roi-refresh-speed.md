@@ -85,6 +85,26 @@ Re-apply `20261009150000_marketing_roi_facts_awaiting_data.sql`. Its body digest
 `e0219a05d76db904f1e324561b969782` (LF-normalised); production stored it with CRLF
 (`bad8ea66782c00ccc6e12d1ce7755875`, 29,721 characters).
 
+## An import now rebuilds every request
+
+Added 3 November 2026, migration `20261103120202_marketing_roi_import_rebuilds_every_request.sql`. The
+batch-triggered branch described above chose only the requests whose window overlapped the batch's months,
+yet the six summary tables were deleted by whole pay month, so the other requests of those months dropped out
+until the next hourly run.
+
+| Production, replaying the 3 November 10:54 Cairo import in a rolled-back transaction | Before | After |
+| --- | --- | --- |
+| Requests rebuilt | 61 of 81 | 81 of 81 |
+| Trend, line, product, region, distributor and customer facts | EGP 79,951.56 | EGP 88,051.56, equal to a full rebuild |
+| Time for that call | 671 ms | 109 ms, warm |
+
+The two timings are not a speed-up: the after figure ran on a warm cache straight after a full rebuild. The
+before transaction's full rebuild took 1,184 ms against the batch's 671 ms, so expect an import to cost at most
+about half a second more. The hourly job's result does not change. There were 1,022 import-triggered runs in the
+60 days before the fix.
+
+Rollback: re-apply `20261103120201_marketing_roi_customer_counts_each_sale_once.sql`.
+
 ## What to check later
 
 `pg_stat_statements` for the statement `select public.phx_refresh_marketing_roi_facts()` should show a
