@@ -236,6 +236,14 @@ export const PP = {
   stockExpiryHint: "يُترك فارغًا لمواد التغليف — الفيلم والكراتين والاستيكر لا تنتهي",
   stockNoExpiry: "لا ينتهي",
   stockLotNote: "كل تاريخ انتهاء رصيد منفصل، والمتاح هو مجموعها",
+  stockExpired: "منتهي (معدوم)",
+  expiredTitle: "المخزون المنتهي (المعدوم)",
+  expiredSubtitle: "عند حلول تاريخ الانتهاء تخرج الكمية تلقائيًا من المخزون ومن الاحتياج، وتبقى مسجلة هنا للحسابات",
+  stockChangeExpiry: "تعديل تاريخ انتهاء رصيد",
+  stockChangeExpirySubtitle: "تنتقل الكمية كما هي إلى التاريخ الجديد، ولو يوجد رصيد بنفس التاريخ تُضاف عليه",
+  stockLot: "الرصيد",
+  stockNewExpiry: "تاريخ الانتهاء الجديد",
+  stockNewExpiryHint: "يُترك فارغًا لو المادة لا تنتهي",
 
   // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
   costTitle: "التكلفة",
@@ -565,6 +573,14 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   stockExpiryHint: "Left blank for packaging — film, cartons and stickers do not expire",
   stockNoExpiry: "No expiry",
   stockLotNote: "Each expiry date is its own balance, and the held figure is their total",
+  stockExpired: "Expired (written off)",
+  expiredTitle: "Expired stock (written off)",
+  expiredSubtitle: "When the expiry date comes the quantity leaves stock and the buy list by itself, and stays recorded here for the accounts",
+  stockChangeExpiry: "Change a lot's expiry date",
+  stockChangeExpirySubtitle: "The quantity moves as it stands to the new date, and joins any lot already on that date",
+  stockLot: "Lot",
+  stockNewExpiry: "New expiry date",
+  stockNewExpiryHint: "Left blank if the material does not expire",
 
   // ── The cost tab ──────────────────────────────────────────────────────────────────────────────
   costTitle: "Cost",
@@ -1558,7 +1574,9 @@ export type ProductionPlanningErrorKey =
   | "unknownStockSource"
   | "unknownSupplier"
   | "unknownUnitKind"
-  | "expiryDateInvalid";
+  | "expiryDateInvalid"
+  | "expiryDateUnchanged"
+  | "stockLotNotFound";
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
@@ -1582,6 +1600,8 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
   unknownSupplier: "مورد المادة غير معروف.",
   unknownUnitKind: "نوع الوحدة غير معروف.",
   expiryDateInvalid: "تاريخ الانتهاء يجب أن يكون بالشكل سنة-شهر-يوم (مثال 2027-04-27).",
+  expiryDateUnchanged: "التاريخ الجديد هو نفس تاريخ الرصيد الحالي.",
+  stockLotNotFound: "لا توجد كمية في هذا الرصيد لنقلها.",
 };
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
@@ -1606,6 +1626,8 @@ export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, s
   unknownSupplier: "Unknown material supplier.",
   unknownUnitKind: "Unknown unit kind.",
   expiryDateInvalid: "An expiry date must be written year-month-day (for example 2027-04-27).",
+  expiryDateUnchanged: "The new date is the date this lot already has.",
+  stockLotNotFound: "This lot holds no quantity to move.",
 };
 
 /**

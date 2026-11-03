@@ -109,6 +109,7 @@ import type {
   WireExpiryVerdict,
   WireGrant,
   WireMaterial,
+  WireStockRow,
   WirePlan,
   WirePlanRow,
   WireProduct,
@@ -1450,7 +1451,9 @@ export function StockTab({
   // offer it. An empty expiry field means the undated lot — packaging, which never expires.
   const typedExpiry = expiryDate.trim() === "" ? null : expiryDate.trim();
   const standingHere =
-    formMaterial?.stock.find((row) => row.locationId === locationId && row.expiryDate === typedExpiry) ?? null;
+    [...(formMaterial?.stock ?? []), ...(formMaterial?.expiredStock ?? [])].find(
+      (row) => row.locationId === locationId && row.expiryDate === typedExpiry,
+    ) ?? null;
   const qtyHint = isDelivery
     ? standingHere
       ? `${t.stockDeliveryAdds}: ${standingHere.qtyDisplay} ${formMaterial?.displayUnit ?? ""}`.trim()
@@ -1564,14 +1567,18 @@ export function StockTab({
         </section>
       ) : null}
 
+      {canWrite ? (
+        <LotExpiryEditor busy={busy} locationName={locationName} materials={data.materials} onSave={onSave} />
+      ) : null}
+
       {data.expiry.length > 0 ? <ExpiryBanner rows={data.expiry} /> : null}
 
       <section className="min-w-0">
         <FactoryHiddenNote count={factoryHidden} />
-        {/* 34/22/22/22, UNCHANGED — the fourth column now carries the EXPIRY DATE instead of the
-            report date, and the report date moved under each quantity. Merged, never added: a fifth
-            column takes this table below its natural width in the admin shell's 669px box, which is
-            the fits-the-screen rule's own remedy (AGENTS.md §4). */}
+        {/* 34/22/22/22, UNCHANGED. The Expired column made four figures for four columns, so the
+            factory and the Sato store are MERGED into one Available column, the way the planner
+            table carries them: a fifth column takes this table below its natural width, and merging
+            is the fits-the-screen rule's own remedy (AGENTS.md §4). */}
         <table className={TABLE}>
           <colgroup>
             <col className="w-[34%]" />
@@ -1581,7 +1588,7 @@ export function StockTab({
           </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {[t.colMaterial, t.atFactory, t.atOwnStore, t.stockExpiry].map((heading) => (
+              {[t.colMaterial, t.colAvailable, t.stockExpiry, t.stockExpired].map((heading) => (
                 <th className={TH} key={heading} scope="col">
                   {heading}
                 </th>
@@ -1599,35 +1606,33 @@ export function StockTab({
               );
               const dated = material.stock.filter((row) => row.expiryDate !== null);
               const soonest = dated[0] ?? null;
+              const expiredLots = material.expiredStock ?? [];
               return (
                 <tr className="border-b border-slate-200 last:border-b-0" key={material.id}>
                   <td className={TD}>
                     <p className="font-bold text-slate-900 break-words">{S.name(material)}</p>
                   </td>
                   <td className={TD}>
-                    {factory ? (
-                      <>
-                        <Qty unit={material.displayUnit} value={factory.qtyDisplay} />
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          <Num>{factory.newestAsOfDate}</Num>
-                          {factory.lots > 1 ? ` · ${formatNumberLatin(factory.lots)}` : ""}
-                        </p>
-                      </>
+                    {factory || own ? (
+                      [
+                        { held: factory, label: t.atFactory },
+                        { held: own, label: t.atOwnStore },
+                      ].map(({ held, label }) =>
+                        held ? (
+                          <div className="mt-1 first:mt-0" key={label}>
+                            <p className="break-words">
+                              <span className="text-[11px] text-slate-500">{label}</span>{" "}
+                              <Qty unit={material.displayUnit} value={held.qtyDisplay} />
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              <Num>{held.newestAsOfDate}</Num>
+                              {held.lots > 1 ? ` · ${formatNumberLatin(held.lots)}` : ""}
+                            </p>
+                          </div>
+                        ) : null,
+                      )
                     ) : (
-                      <span className="text-[11px] text-slate-500">{t.stockNoneYet}</span>
-                    )}
-                  </td>
-                  <td className={TD}>
-                    {own ? (
-                      <>
-                        <Qty unit={material.displayUnit} value={own.qtyDisplay} />
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          <Num>{own.newestAsOfDate}</Num>
-                          {own.lots > 1 ? ` · ${formatNumberLatin(own.lots)}` : ""}
-                        </p>
-                      </>
-                    ) : (
-                      <span className="text-[11px] text-slate-500">{t.stockNoneYet}</span>
+                      <span className="break-words text-[11px] text-slate-500">{t.stockNoneYet}</span>
                     )}
                   </td>
                   <td className={TD}>
@@ -1638,8 +1643,23 @@ export function StockTab({
                           <p className="mt-0.5 break-words text-[11px] text-slate-500">{t.stockLotNote}</p>
                         ) : null}
                       </>
+                    ) : expiredLots.length > 0 ? (
+                      "—"
                     ) : (
                       <span className="break-words text-[11px] text-slate-500">{t.stockNoExpiry}</span>
+                    )}
+                  </td>
+                  <td className={TD}>
+                    {material.expiredTotalDisplay ? (
+                      <>
+                        <Qty unit={material.displayUnit} value={material.expiredTotalDisplay} />
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          <Num>{expiredLots.at(-1)?.expiryDate}</Num>
+                          {expiredLots.length > 1 ? ` · ${formatNumberLatin(expiredLots.length)}` : ""}
+                        </p>
+                      </>
+                    ) : (
+                      "—"
                     )}
                   </td>
                 </tr>
@@ -1681,7 +1701,143 @@ export function StockTab({
           ))}
         </div>
       </section>
+
+      <ExpiredStock locationName={locationName} materials={data.materials} />
     </>
+  );
+}
+
+/**
+ * Every expired lot, for the accounts: what it was, where it stood, its date and how much.
+ *
+ * The Expired column gives each material's total. This is the detail behind it, and on a phone,
+ * where the table is hidden, it is the whole of it. Quantities only: not one material carries a
+ * price yet (measured on production 2026-11-03), so a value here would read zero for every lot.
+ */
+function ExpiredStock({
+  materials,
+  locationName,
+}: {
+  materials: WireMaterial[];
+  locationName: (id: string) => string;
+}) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const rows = materials.flatMap((material) => (material.expiredStock ?? []).map((lot) => ({ lot, material })));
+  if (rows.length === 0) return null;
+  return (
+    <section className={PANEL}>
+      <SectionTitle subtitle={t.expiredSubtitle} title={t.expiredTitle} />
+      <ul className="space-y-1">
+        {rows.map(({ lot, material }) => (
+          <li
+            className="border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-semibold break-words text-slate-700"
+            key={`${material.id}-${lot.locationId}-${lot.expiryDate}`}
+          >
+            {S.name(material)} — {locationName(lot.locationId)} · <Num>{lot.expiryDate}</Num> ·{" "}
+            <Qty unit={material.displayUnit} value={lot.qtyDisplay} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Change the expiry date of a lot already in stock, or give an undated one its date.
+ *
+ * The add form cannot do this: a report carrying a new date opens a second lot beside the old one,
+ * and the material is then counted twice. Expired lots are offered too, because a wrong date is how
+ * a good lot gets written off, and correcting it is what brings the lot back.
+ */
+function LotExpiryEditor({
+  materials,
+  locationName,
+  busy,
+  onSave,
+}: {
+  materials: WireMaterial[];
+  locationName: (id: string) => string;
+  busy: boolean;
+  onSave: SaveFn;
+}) {
+  const S = useProductionPlanningStrings();
+  const t = S.t;
+  const [materialId, setMaterialId] = useState("");
+  const [lotKey, setLotKey] = useState("");
+  const [newExpiry, setNewExpiry] = useState("");
+
+  const keyOf = (lot: WireStockRow) => `${lot.locationId}/${lot.expiryDate ?? ""}`;
+  const lotsOf = (material: WireMaterial) =>
+    [...material.stock, ...(material.expiredStock ?? [])].filter((lot) => /[1-9]/.test(lot.qty));
+  const material = materials.find((candidate) => candidate.id === materialId) ?? null;
+  const lots = material ? lotsOf(material) : [];
+  const lot = lots.find((candidate) => keyOf(candidate) === lotKey) ?? null;
+  const toExpiryDate = newExpiry.trim() === "" ? null : newExpiry.trim();
+
+  return (
+    <section className={PANEL}>
+      <SectionTitle subtitle={t.stockChangeExpirySubtitle} title={t.stockChangeExpiry} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label={t.colMaterial}>
+          <select
+            className={INPUT}
+            onChange={(event) => {
+              setMaterialId(event.target.value);
+              setLotKey("");
+            }}
+            value={materialId}
+          >
+            <option value="">{t.colMaterial}</option>
+            {materials
+              .filter((candidate) => lotsOf(candidate).length > 0)
+              .map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {S.name(candidate)}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <Field label={t.stockLot}>
+          <select className={INPUT} onChange={(event) => setLotKey(event.target.value)} value={lot ? lotKey : ""}>
+            <option value="">{t.stockLot}</option>
+            {lots.map((candidate) => (
+              <option key={keyOf(candidate)} value={keyOf(candidate)}>
+                {locationName(candidate.locationId)} · {candidate.expiryDate ?? t.stockNoExpiry} ·{" "}
+                {formatNumberLatin(candidate.qtyDisplay)} {S.unitLabel(material?.displayUnit)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field hint={t.stockNewExpiryHint} label={t.stockNewExpiry}>
+          <input
+            className={INPUT}
+            dir="ltr"
+            onChange={(event) => setNewExpiry(event.target.value)}
+            type="date"
+            value={newExpiry}
+          />
+        </Field>
+      </div>
+      <div className="mt-3">
+        <button
+          className={BUTTON}
+          disabled={busy || !lot || lot.expiryDate === toExpiryDate}
+          onClick={() => {
+            if (!lot) return;
+            void onSave("/stock/expiry", {
+              materialId,
+              locationId: lot.locationId,
+              fromExpiryDate: lot.expiryDate,
+              toExpiryDate,
+            });
+          }}
+          type="button"
+        >
+          {t.save}
+        </button>
+      </div>
+    </section>
   );
 }
 

@@ -56,3 +56,34 @@ export function storedStockQty(args: {
 }): bigint {
   return isStockMovement(args.source) ? args.previousQty + args.typedQty : args.typedQty;
 }
+
+/** The newest report standing on one lot. */
+export type StandingLot = {
+  readonly qty: bigint;
+  readonly asOfDate: string;
+};
+
+/**
+ * The two rows that move a lot to another expiry date.
+ *
+ * The expiry date is part of a lot's key, so a new report carrying the corrected date opens a SECOND
+ * lot beside the old one and the held figure counts the material twice. Moving it therefore closes
+ * the old lot at zero and opens the new one, in one insert, and the old report stays in the history.
+ *
+ * Each row carries a date no older than the report it must supersede. The load reads the newest
+ * `as_of_date`, then the newest `created_at`, so a tie goes to these rows. If a lot already stands on
+ * the new date the quantities add, because they are then one balance.
+ */
+export function expiryChangeRows(args: {
+  readonly fromExpiryDate: string | null;
+  readonly toExpiryDate: string | null;
+  readonly from: StandingLot;
+  readonly target: StandingLot | null;
+}): { readonly expiryDate: string | null; readonly qty: bigint; readonly asOfDate: string }[] {
+  const { from, target } = args;
+  const asOfDate = target && target.asOfDate > from.asOfDate ? target.asOfDate : from.asOfDate;
+  return [
+    { asOfDate: from.asOfDate, expiryDate: args.fromExpiryDate, qty: BigInt(0) },
+    { asOfDate, expiryDate: args.toExpiryDate, qty: from.qty + (target?.qty ?? BigInt(0)) },
+  ];
+}
