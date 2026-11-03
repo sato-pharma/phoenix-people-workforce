@@ -43,6 +43,11 @@ type Props = {
   /** Set when the panel was opened from a grid cell, so it lands on that exact pair. */
   initialDocumentId?: string | null;
   initialEmployeeHrId?: string | null;
+  /**
+   * People who have left, who can be chosen and filed against. Kept apart from `employees` because the
+   * scan queue is built from that alone, and its length has to stay the figure above the screen.
+   */
+  leavers?: HiringDocumentEmployeeRow[];
   /** Reload the dashboard so the grid's ticks and file counts follow what happened here. */
   onChanged: () => void | Promise<void>;
 };
@@ -105,6 +110,7 @@ export function HiringDocumentCapture({
   employees,
   initialDocumentId,
   initialEmployeeHrId,
+  leavers = [],
   onChanged,
 }: Props) {
   const [employeeHrId, setEmployeeHrId] = React.useState(initialEmployeeHrId ?? "");
@@ -127,8 +133,8 @@ export function HiringDocumentCapture({
   const uploadInputRef = React.useRef<HTMLInputElement>(null);
 
   const selectedEmployee = React.useMemo(
-    () => employees.find((employee) => employee.hrId === employeeHrId) ?? null,
-    [employees, employeeHrId],
+    () => [...employees, ...leavers].find((employee) => employee.hrId === employeeHrId) ?? null,
+    [employees, employeeHrId, leavers],
   );
   const selectedDocument = React.useMemo(
     () => documents.find((document) => document.id === documentId) ?? null,
@@ -448,6 +454,11 @@ export function HiringDocumentCapture({
               {employees.map((employee) => (
                 <option key={employee.hrId} value={employee.hrId}>
                   {employee.fullName} — {employee.hrId}
+                </option>
+              ))}
+              {leavers.map((leaver) => (
+                <option key={leaver.hrId} value={leaver.hrId}>
+                  {leaver.fullName} — {leaver.hrId} (left)
                 </option>
               ))}
             </SearchableSelect>

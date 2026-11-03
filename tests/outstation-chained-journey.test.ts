@@ -42,9 +42,12 @@ function stop(overrides: Partial<OutstationJourneyStop> & { stopNumber: number }
     legFromPreviousMinutes: 58,
     locationLabel: "Beni Suef",
     longitude: 31.0955565,
+    evidence: "live_photo",
     photoPath: "stops/test.jpg",
     returnHomeKm: 194,
     routeError: null,
+    ticketAmount: 0,
+    ticketPaths: [],
     ...overrides,
   };
 }
@@ -144,7 +147,7 @@ export function runOutstationChainedJourneyTests() {
     const pricing = priceChainedJourney(exampleOne());
     assert.equal(pricing.mode, "chained");
     assert.equal(pricing.legs.length, 3, "home → arrival, Fayoum city → Beni Suef, Beni Suef → home");
-    assert.match(pricing.legs[1].from, /Departure photo \(Fayoum\)/, "the second drive starts where he left Fayoum");
+    assert.match(pricing.legs[1].from, /^Fayoum$/, "the second drive starts where he left Fayoum");
     assert.deepEqual(
       pricing.legs.map((leg) => [leg.fromGovernorate, leg.toGovernorate, leg.distanceKm, leg.paid]),
       [
@@ -454,8 +457,8 @@ function runCaptureGuardPins() {
   const upload = at("await uploadOutstationJourneyStopImage(");
   for (const guard of [
     'throw forbiddenError("A stop can only be added by the employee on the trip.")',
-    'request.expenseType !== "traveling" || request.transportationType !== "car"',
-    "JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status)",
+    'request.expenseType !== "traveling"',
+    "isJourneyStopOpen(request.status, request.employeeRole)",
     "isOutstationExpenseInPayroll(linkedPayroll)",
     "isWithinDepartureWindow({ capturedAt, tripEndDate: request.tripEndDate })",
     "existingStops.length >= MAX_JOURNEY_STOPS",
@@ -479,10 +482,10 @@ function runCaptureGuardPins() {
     return index;
   };
   inWriter('.eq("updated_at", (token as { updated_at: string }).updated_at)');
-  inWriter('.in("status", [...JOURNEY_STOP_OPEN_STATUSES])');
+  inWriter('.in("status", journeyStopWriteStatuses(request.employeeRole))');
   inWriter("withJourneyReason(request.approvalReason, pricing, [...notEligibleNote, ...adminAddedStopNotes(stops)])");
   // A not-eligible trip keeps its money exactly; the chain is only recorded and explained.
-  assert.ok(inWriter('const moneyMoves = request.eligibilityStatus !== "not_eligible";') < inWriter("? rebaseClaimOnNewFuel({"));
+  assert.ok(inWriter('const moneyMoves = request.eligibilityStatus !== "not_eligible";') < inWriter("...rebaseClaimOnNewFuel({"));
   // Every governorate is Google's reading of a GPS position — never the label the phone posted.
   // The measurement lives in measureJourneyStop, shared with a test account's rehearsal
   // (2026-11-03), so the capture must go through it and the helper is held to the same rule.
@@ -518,5 +521,11 @@ function runCaptureGuardPins() {
   assert.ok(!route2.includes("flagReasons"), "the flag wording is the approver's — never returned to the employee");
   const card = source("src/components/outstation/journey-stop-card.tsx");
   assert.ok(card.includes("maximumAge: 0"), "the stop camera takes a FRESH fix at the shutter");
-  assert.ok(!card.includes('type="file"'), "the stop card is camera only — a gallery picture proves nothing");
+  // The only file input is the ticket's: the photo is camera only, a gallery picture proves nothing.
+  assert.equal(card.split('type="file"').length, 2, "one file input, the ticket's");
+  assert.ok(
+    card.indexOf('{rule.ticket !== "none" ? (') < card.indexOf('type="file"') &&
+      card.indexOf('type="file"') < card.indexOf("{rule.photo ? ("),
+    "it sits inside the ticket block, never beside the camera",
+  );
 }

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { DEPARTED_EMPLOYMENT_STATUSES, isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { canSeeHrScopedRecord, resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
@@ -37,6 +37,7 @@ type EmployeeDbRow = {
   hire_date: string | null;
   hr_id: string;
   job_title: string | null;
+  last_working_date?: string | null;
   line_id: number | null;
   manager_hr_id: string | null;
   nickname: string | null;
@@ -273,6 +274,48 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   if (employeeError) throw new Error(employeeError.message);
 
   const employeeRows = (employeeData as EmployeeDbRow[]).filter(isVisibleEmployee);
+  const employees = await employeesWithPapers(employeeRows, documents);
+
+  const result = {
+    documents,
+    employees,
+    summary: summarize(employees, documents),
+  };
+  hiringDocumentsDashboardCache = { data: result, timestamp: now };
+  return result;
+}
+
+/**
+ * The people who have left, with their papers, for the Leavers tab. Same read as the checklist's, and
+ * never in the checklist: `isVisibleEmployee` keeps it to current staff, so its figures and the scan
+ * queue stay about the people Phoenix employs. Not cached, because a scan filed against one of them has
+ * to show on the next read.
+ */
+export async function getDepartedEmployeesWithPapers(): Promise<
+  Array<HiringDocumentEmployeeRow & { lastWorkingDate: string | null }>
+> {
+  const [employeeResult, documents] = await Promise.all([
+    getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id,full_name,nickname,job_title,hire_date,employment_status,last_working_date,line_id,manager_hr_id")
+      .in("employment_status", [...DEPARTED_EMPLOYMENT_STATUSES])
+      .order("last_working_date", { ascending: false, nullsFirst: false }),
+    loadDocumentDefinitions(),
+  ]);
+  if (employeeResult.error) throw new Error(employeeResult.error.message);
+
+  const employeeRows = (employeeResult.data as EmployeeDbRow[]).filter((row) => row.hr_id && cleanText(row.full_name));
+  const lastWorkingDates = new Map(employeeRows.map((row) => [normalizeHrId(row.hr_id) ?? "", row.last_working_date ?? null]));
+  const employees = await employeesWithPapers(employeeRows, documents);
+  return employees.map((employee) => ({ ...employee, lastWorkingDate: lastWorkingDates.get(employee.hrId) ?? null }));
+}
+
+/** Each person's line and manager names, their note, and their entry for every document on the checklist. */
+async function employeesWithPapers(
+  employeeRows: EmployeeDbRow[],
+  documents: HiringDocumentDefinition[],
+): Promise<HiringDocumentEmployeeRow[]> {
+  const supabase = getSupabaseAdmin();
   const employeeHrIds = employeeRows.map((row) => normalizeHrId(row.hr_id) ?? "").filter(Boolean);
   const [lineNames, managerNames] = await Promise.all([
     loadLines(employeeRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number")),
@@ -345,7 +388,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
     noteRows.map((row) => [normalizeHrId(row.employee_hr_id) ?? "", row.notes]),
   );
 
-  const employees = employeeRows.map((row) => {
+  return employeeRows.map((row) => {
     const hrId = normalizeHrId(row.hr_id) ?? "";
     const documentsById: Record<string, HiringDocumentEntry> = {};
     for (const document of documents) {
@@ -372,14 +415,6 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
       notes: notesByEmployee.get(hrId) ?? null,
     };
   });
-
-  const result = {
-    documents,
-    employees,
-    summary: summarize(employees, documents),
-  };
-  hiringDocumentsDashboardCache = { data: result, timestamp: now };
-  return result;
 }
 
 /**
@@ -589,10 +624,7 @@ export async function updateHiringDocumentEmployeeNotes(
   });
 }
 
-export function filterHiringDocumentsForAccess(
-  dashboard: HiringDocumentsDashboardData,
-  access: AccessContext,
-): HiringDocumentsDashboardData {
+function seesEveryHiringDocumentRow(access: AccessContext): boolean {
   // Talent Acquisition is the primary user of this dashboard (her recruiting/onboarding
   // tool) and already gets the equivalent company-wide bypass in every sibling HR domain
   // (isCompanyResignationReader, isCompanyContractReader, canSeeAllRecruitment) — without
@@ -607,21 +639,34 @@ export function filterHiringDocumentsForAccess(
   //
   // The HR Operations Specialist too (owner, 2026-11-02): she receives the hiring papers of every
   // joiner, so a self-only board would be an empty desk.
-  if (
+  return (
     access.scope === "system" ||
     access.role === "Super Admin" ||
     access.role === "HR Operations" ||
     access.role === "HR Administration"
-  ) {
-    return dashboard;
-  }
-
-  const employees = dashboard.employees.filter((employee) =>
-    canSeeHrScopedRecord(access, {
-      employeeHrId: employee.hrId,
-      managerHrId: employee.managerHrId,
-    }),
   );
+}
+
+/** One person's row, for whoever is looking. The dashboard and the Leavers tab both ask this. */
+export function canSeeHiringDocumentRow(
+  access: AccessContext,
+  employee: Pick<HiringDocumentEmployeeRow, "hrId" | "managerHrId">,
+): boolean {
+  if (seesEveryHiringDocumentRow(access)) return true;
+
+  return canSeeHrScopedRecord(access, {
+    employeeHrId: employee.hrId,
+    managerHrId: employee.managerHrId,
+  });
+}
+
+export function filterHiringDocumentsForAccess(
+  dashboard: HiringDocumentsDashboardData,
+  access: AccessContext,
+): HiringDocumentsDashboardData {
+  if (seesEveryHiringDocumentRow(access)) return dashboard;
+
+  const employees = dashboard.employees.filter((employee) => canSeeHiringDocumentRow(access, employee));
 
   return {
     ...dashboard,

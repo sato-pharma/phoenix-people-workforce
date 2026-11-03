@@ -1,3 +1,4 @@
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type EmailAdminDelivery = {
@@ -37,7 +38,7 @@ function cleanText(value: unknown) {
 }
 
 function cleanHrId(value: unknown) {
-  return cleanText(value).toUpperCase();
+  return canonicalHrIdForDisplay(cleanText(value)) ?? "";
 }
 
 function deliveryStatus(value: unknown): EmailAdminDelivery["status"] {

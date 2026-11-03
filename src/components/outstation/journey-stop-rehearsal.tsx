@@ -3,6 +3,7 @@
 import { MapPin } from "lucide-react";
 import { useCallback, useState } from "react";
 
+import { JourneyRouteLine } from "@/components/outstation/journey-route-line";
 import {
   JourneyStopCard,
   type JourneyStopCapture,
@@ -10,6 +11,7 @@ import {
 } from "@/components/outstation/journey-stop-card";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import type { ChainedJourneyPricing } from "@/lib/outstation/chained-journey";
+import type { JourneyStopRule } from "@/lib/outstation/journey-stop-rules";
 
 /** The trip a test account's Submit checked and did not save — all a rehearsed stop needs. */
 export type RehearsalTrip = {
@@ -19,6 +21,9 @@ export type RehearsalTrip = {
     latitude: number | null;
     longitude: number | null;
   };
+  /** What a stop on this trip asks of the person the test account mirrors. */
+  rule: JourneyStopRule;
+  transportationType: string;
   tripEndDate: string;
   tripStartDate: string;
 };
@@ -33,16 +38,12 @@ function egp(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
-function km(value: number | null) {
-  return value == null ? "distance unknown" : `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })} km`;
-}
-
 /**
  * A TEST ACCOUNT's journey-stop rehearsal (owner, 2026-11-03 — "submit a trip to Sohag, then a stop
  * from Sohag to Assiut, and from Assiut back home"). Its claim was checked and never saved, so the
- * real Add stop under My claims has no trip to join. This takes each stop with the same live camera
- * and GPS, has the server measure and price it exactly as a real stop
- * (POST /api/outstation/rehearse-journey-stop), and shows every drive of the journey home to home.
+ * real stop has no trip to join. This takes each stop with the same capture and the same rule, has the
+ * server measure and price it exactly as a real stop (POST /api/outstation/rehearse-journey-stop), and
+ * shows every drive of the journey home to home.
  *
  * The stops are held only on this screen: the server keeps nothing, so the page sends the earlier
  * ones back with each new stop. Leaving the screen ends the rehearsal.
@@ -58,13 +59,17 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
     async (capture: JourneyStopCapture): Promise<JourneyStopSaveResult> => {
       const response = await fetch("/api/outstation/rehearse-journey-stop", {
         body: JSON.stringify({
-          // The photo itself is not sent: nothing is stored, and the price needs only the position.
+          // No photo and no ticket file is sent: nothing is stored, and the price needs only the
+          // position and the ticket's amount.
           accuracyMeters: capture.accuracyMeters,
           arrival: trip.arrival,
           latitude: capture.latitude,
           locationLabel: capture.locationLabel,
           longitude: capture.longitude,
           stops: stopRecords,
+          ticketAmount: capture.ticketAmount,
+          ticketFileCount: capture.ticketFiles.length,
+          transportationType: trip.transportationType,
           tripEndDate: trip.tripEndDate,
           tripStartDate: trip.tripStartDate,
         }),
@@ -73,7 +78,7 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.stop || !payload?.pricing) {
-        throw new Error(payload?.message || `The stop could not be rehearsed (${response.status}).`);
+        throw new Error(payload?.message || "This place could not be checked. Check your connection and try again.");
       }
       const stop = payload.stop as RehearsedStop;
       const next = payload.pricing as ChainedJourneyPricing;
@@ -81,26 +86,24 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
       setStops((current) => [...current, stop]);
       setPricing(next);
       setStopsLeft(typeof payload.stopsLeft === "number" ? payload.stopsLeft : null);
-      const place = stop.governorate ? ` in ${stop.governorate}` : "";
       return {
         flagged: next.flags.length > 0,
-        message: `Stop ${stop.stopNumber}${place} checked, not saved. ${next.modeReason}`.trim(),
+        message: `${stop.governorate ?? "The next place"} checked, not saved.`,
       };
     },
     [stopRecords, trip],
   );
 
-  const nextStopNumber = Math.max(1, ...stops.map((stop) => stop.stopNumber)) + 1;
   const canAddMore = stopsLeft == null || stopsLeft > 0;
 
   return (
-    <section aria-label="Rehearse a stop" className="mt-5 space-y-4 border-t border-slate-200 pt-5">
+    <section aria-label="Rehearse the next place" className="mt-5 space-y-4 border-t border-slate-200 pt-5">
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Rehearse the stops</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Rehearse the next places</p>
         <p className="mt-1 text-sm leading-6 text-slate-600">
-          On a real car trip the employee adds a stop under My claims when they drive on to another
-          governorate. Take each stop photo here to see how Phoenix measures and pays the journey. The
-          drive home from the last stop is added by itself. Nothing is saved, and leaving this screen
+          On a real trip the person captures the next place at the top of this page when they move on to
+          another governorate. Capture each place here to see how Phoenix measures and pays the journey.
+          The way home from the last place is added by itself. Nothing is saved, and leaving this screen
           ends the rehearsal.
         </p>
       </div>
@@ -109,10 +112,9 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
         <ol className="space-y-1.5 text-xs text-slate-600">
           {stops.map((stop) => (
             <li className="flex items-start gap-1.5 break-words" key={stop.stopNumber}>
-              <MapPin aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700" />
+              <MapPin aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-600" />
               <span>
-                <span className="font-bold text-slate-900">Stop {stop.stopNumber}</span>
-                {stop.governorate ? ` · ${stop.governorate}` : ""}
+                <span className="font-bold text-slate-900">{stop.governorate ?? "Next place"}</span>
                 {stop.locationLabel ? ` · ${stop.locationLabel}` : ""}
               </span>
             </li>
@@ -123,34 +125,30 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
       {pricing ? (
         <div className="border border-slate-200 bg-slate-50 p-4">
           <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
-            {pricing.mode === "chained" ? "Paid drive by drive" : "Paid as a single destination"}
+            {pricing.mode === "chained"
+              ? "Paid drive by drive"
+              : pricing.mode === "ticket_journey"
+                ? "Paid by ticket"
+                : "Paid as a single destination"}
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-800">{pricing.modeReason}</p>
           {pricing.legs.length > 0 ? (
-            <ol className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
-              {pricing.legs.map((leg, index) => (
-                <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 text-sm" key={index}>
-                  <span className="min-w-0 break-words text-slate-800">
-                    {leg.from} → {leg.to}
-                    <span className="block text-xs text-slate-500">
-                      {km(leg.distanceKm)} · {leg.paid ? "paid one way" : "not paid on its own"}
-                    </span>
-                  </span>
-                  <span className="font-black text-slate-900">{leg.paid ? egp(leg.fuelAmount) : "—"}</span>
-                </li>
-              ))}
-            </ol>
+            <div className="mt-3">
+              <JourneyRouteLine legs={pricing.legs} />
+            </div>
           ) : null}
-          <dl className="mt-3 space-y-1 text-sm">
-            <div className="flex flex-wrap justify-between gap-x-3">
-              <dt className="text-slate-600">Fuel for this journey</dt>
-              <dd className="font-black text-slate-900">{egp(pricing.fuelAmount)}</dd>
-            </div>
-            <div className="flex flex-wrap justify-between gap-x-3">
-              <dt className="text-slate-600">Without the stops (home to the first place and back)</dt>
-              <dd className="font-semibold text-slate-700">{egp(pricing.singleDestinationFuelAmount)}</dd>
-            </div>
-          </dl>
+          {pricing.mode === "ticket_journey" ? null : (
+            <dl className="mt-3 space-y-1 text-sm">
+              <div className="flex flex-wrap justify-between gap-x-3">
+                <dt className="text-slate-600">Fuel for this journey</dt>
+                <dd className="font-black text-slate-900">{egp(pricing.fuelAmount)}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-x-3">
+                <dt className="text-slate-600">Without the extra places (home to the first place and back)</dt>
+                <dd className="font-semibold text-slate-700">{egp(pricing.singleDestinationFuelAmount)}</dd>
+              </div>
+            </dl>
+          )}
           {pricing.flagReasons.length > 0 ? (
             <ul className="mt-3 space-y-1 border-t border-amber-200 pt-3 text-xs leading-5 text-amber-900">
               {pricing.flagReasons.map((reason) => (
@@ -167,12 +165,12 @@ export function JourneyStopRehearsal({ employeeHrId, trip }: { employeeHrId: str
         <JourneyStopCard
           employeeHrId={employeeHrId}
           key={stops.length}
-          nextStopNumber={nextStopNumber}
           rehearsal={{ save }}
           requestId={null}
+          rule={trip.rule}
         />
       ) : (
-        <p className="text-sm text-slate-600">This trip has reached the most stops one trip may carry.</p>
+        <p className="text-sm text-slate-600">This trip has reached the most places one trip may carry.</p>
       )}
     </section>
   );

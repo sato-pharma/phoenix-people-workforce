@@ -630,6 +630,8 @@ export async function addCustomerMapRow(input: {
   address?: string;
   brickId: string;
   backfill?: boolean;
+  /** A person's ruling on this row: it sticks at confidence 100, and the history keeps what it replaced. */
+  ruling?: { before: Record<string, unknown>; source: string };
 }): Promise<{ backfilled: number }> {
   const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const brickById = new Map<string, BrickRef>(
@@ -655,14 +657,18 @@ export async function addCustomerMapRow(input: {
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("source_of_sales_customer_map")
-    .upsert({ ...result.payload, updated_at: new Date().toISOString() }, { onConflict: "distributor_code,customer_code" });
+    .upsert({
+      ...result.payload,
+      ...(input.ruling ? { confidence: 100, mapped_by: input.actorLoginId, source: input.ruling.source } : {}),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "distributor_code,customer_code" });
   if (error) throw new SalesWorkflowError("persist_failed", error.message, 500);
 
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: "source_of_sales_customer_map",
     entityType: "sales_import_batch",
-    newValues: { ...result.payload, source: "customer_map_add" },
+    newValues: { ...result.payload, source: input.ruling?.source ?? "customer_map_add" },
     summary: `Customer map add — ${String(result.payload.distributor_code)} / ${String(result.payload.customer_code)} -> ${String(result.payload.brick_id)}.`,
   });
   await writeMappingAudit({
@@ -670,7 +676,11 @@ export async function addCustomerMapRow(input: {
     distributorCode: String(result.payload.distributor_code),
     entityKey: String(result.payload.customer_code),
     action: "edit",
-    after: { brick_id: result.payload.brick_id, area_code: result.payload.area_code, region_code: result.payload.region_code },
+    before: input.ruling?.before,
+    after: {
+      brick_id: result.payload.brick_id, area_code: result.payload.area_code, region_code: result.payload.region_code,
+      ...(input.ruling ? { confidence: 100, mapped_by: input.actorLoginId, source: input.ruling.source } : {}),
+    },
     actor: input.actorLoginId,
   });
 

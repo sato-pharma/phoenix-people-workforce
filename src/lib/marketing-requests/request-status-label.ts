@@ -20,7 +20,7 @@
  */
 
 /** The step code of the execution rung — the one that is not an approval. */
-const EXECUTION_STEP_CODE = "finance_execution";
+export const EXECUTION_STEP_CODE = "finance_execution";
 
 /**
  * A held request needs its own words, because the fall-through is actively wrong.

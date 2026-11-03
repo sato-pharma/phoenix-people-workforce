@@ -11,6 +11,13 @@
  *
  * The fifth, the customer's own timeline, is on the customer's page (server/customer-timeline.ts).
  *
+ * And one the owner added on 3 November 2026:
+ *
+ *   objections  objections by customer — each rep's customers and what they objected to, counts only, for
+ *               the managers alone (objections-by-customer.ts). It reads `phoenix_crm_countable_visits`,
+ *               which leaves out the visits copied from iReports360, where the other boards read the
+ *               view that keeps them.
+ *
  * ## 🔴 WHO READS THEM
  *
  * The district managers for their teams, the national sales managers for their lines, SFE, the CEO and
@@ -55,15 +62,17 @@ import {
 import { parseProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import {
   buildFieldHeard,
+  HEARD_OBJECTIONS,
   heardProductScope,
   type FieldHeardResult,
   type HeardProductBasis,
   type HeardVisit,
 } from "@/lib/phoenix-crm/field-heard";
 import { buildMissingStock, type MissingStockResult, type StockAnswer, type StockChase } from "@/lib/phoenix-crm/missing-stock";
+import { buildObjectionsByCustomer, type ObjectionsByCustomerResult, type ObjectionVisit } from "@/lib/phoenix-crm/objections-by-customer";
 import { resolveReportMonth, type ReportMonth, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
 import { buildSamplesReport, type SamplesReportResult } from "@/lib/phoenix-crm/samples-report";
-import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { personKey, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmDoctorListType, PhoenixCrmGrade, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { readsFieldHeardByProduct, readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -595,4 +604,97 @@ export async function loadSamplesReport(viewer: PhoenixCrmViewer, raw: ReportFil
     }),
   );
   return { ...result, month, includeTest };
+}
+
+// ── 5. Objections by customer ─────────────────────────────────────────────────────────────────────
+
+export type ObjectionsByCustomerView = ObjectionsByCustomerResult & { period: ReportPeriod; includeTest: boolean };
+
+const OBJECTION_VISIT_COLUMNS = "seat_id, customer_id, list_type, visit_date, rep_hr_id, manager_hr_id, products, objection, objection_note";
+
+/**
+ * The period's visits on which a customer raised an objection, read as the report reads them. Pure, so
+ * the mapping is tested without a database. A visit with no rep is a manager's own, said in his name.
+ */
+export function objectionVisitsOf(
+  rows: ReadonlyArray<Row>,
+  named: {
+    seats: ReadonlyMap<string, OrgSeat>;
+    people: ReadonlyMap<string, string>;
+    customers: ReadonlyMap<string, { name: string; speciality: string | null }>;
+  },
+): ObjectionVisit[] {
+  return rows.map((row) => {
+    const repHrId = textOrNull(row.rep_hr_id);
+    const managerHrId = repHrId ? null : textOrNull(row.manager_hr_id);
+    const seat = named.seats.get(String(row.seat_id));
+    const customerId = String(row.customer_id);
+    const customer = named.customers.get(customerId);
+    return {
+      repKey: personKey(repHrId ?? managerHrId) ?? "",
+      repName: repHrId
+        ? nameOf(named.people, repHrId)
+        : managerHrId
+          ? `${nameOf(named.people, managerHrId)} (own visits)`
+          : "No rep recorded",
+      territoryName: seat ? territoryName(seat) : null,
+      customerId,
+      customerName: customer?.name ?? "Unnamed customer",
+      speciality: customer?.speciality ?? null,
+      visitDate: String(row.visit_date ?? "").slice(0, 10),
+      listType: row.list_type,
+      products: Array.isArray(row.products) ? row.products.map((entry) => String(entry)) : [],
+      objection: row.objection,
+      objectionNote: textOrNull(row.objection_note),
+    };
+  });
+}
+
+/**
+ * Objections by customer. The gate comes first and is the managers' one, so a rep and a product or
+ * marketing manager are refused before anything is read; a manager's seats are his own team's.
+ *
+ * 🔴 `phoenix_crm_countable_visits`, not the view with the copied history: a visit copied from
+ * iReports360 is the old system's and stays out of this list.
+ */
+export async function loadObjectionsByCustomerReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<ObjectionsByCustomerView> {
+  const { seats, includeTest } = insightTerritories(viewer, raw);
+  const period = periodOf(viewer, raw);
+  if (seats.length === 0) return { ...buildObjectionsByCustomer([]), includeTest, period };
+
+  // Asked for by the objections themselves, so the many visits with none never leave the database.
+  const raised = HEARD_OBJECTIONS.map((entry) => entry.key);
+  const rows = await readSeatGroups(seats.map((seat) => seat.seatId), 200, (batch) =>
+    fetchAllRowsKeyset<Row>(
+      () => {
+        let query = getSupabaseAdmin()
+          .from("phoenix_crm_countable_visits")
+          .select(`id, ${OBJECTION_VISIT_COLUMNS}`)
+          .in("seat_id", batch)
+          .in("objection", raised)
+          .gte("visit_date", period.from)
+          .lte("visit_date", period.to);
+        if (!includeTest) query = query.eq("is_test", false);
+        return query;
+      },
+      { cursorColumn: "id", cursorOf: (row) => textOrNull(row.id) },
+    ),
+  );
+
+  const customerIds = [...new Set(rows.map((row) => textOrNull(row.customer_id)).filter((id): id is string => id !== null))];
+  const customerBatches = await mapWithConcurrency(chunk(customerIds, 200), 4, async (part) => {
+    const { data, error } = await getSupabaseAdmin().from("phoenix_crm_customers").select("id, name, speciality").in("id", part);
+    throwIfError(error);
+    return (data ?? []) as Row[];
+  });
+  const customers = new Map(
+    customerBatches.flat().map((row) => [String(row.id), { name: textOrNull(row.name) ?? "Unnamed customer", speciality: textOrNull(row.speciality) }]),
+  );
+  const people = await loadPeopleNames(rows.map((row) => textOrNull(row.rep_hr_id) ?? textOrNull(row.manager_hr_id)));
+
+  return {
+    ...buildObjectionsByCustomer(objectionVisitsOf(rows, { customers, people, seats: new Map(seats.map((seat) => [seat.seatId, seat])) })),
+    includeTest,
+    period,
+  };
 }

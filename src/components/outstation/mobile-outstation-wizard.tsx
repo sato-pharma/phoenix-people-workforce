@@ -14,13 +14,15 @@ import {
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
 import { JourneyStopRehearsal, type RehearsalTrip } from "@/components/outstation/journey-stop-rehearsal";
 import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
 import { isNonTravelExpenseType, nonTravelAmountRefusal } from "@/lib/outstation/non-travel-expense";
+import { humanizeCode } from "@/lib/format/code-label";
+import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { journeyStopRuleForNewClaim } from "@/lib/outstation/journey-stop-rules";
 import { Field } from "@/components/outstation/wizard-primitives";
 import { FormWizard } from "@/components/ui/form-kit";
 import {
@@ -159,12 +161,14 @@ const TEST_CLAIM_NOT_SAVED_DETAIL =
   "Every check ran exactly as it does for the real claim. Nothing was saved: no claim, no photo, no ticket, no payroll line and no email.";
 
 /**
- * What a test account's stop rehearsal needs from its checked, unsaved car trip: the arrival photo's
+ * What a test account's stop rehearsal needs from its checked, unsaved trip: the first capture's
  * position and time (the phone's, exactly what a saved trip would store) and the distance from home.
  */
 function rehearsalTripFrom(
   payload: Record<string, unknown> | null,
   carEvidence: { capturedAt: string; capturedLatitude: number; capturedLongitude: number } | null,
+  employeeRole: string,
+  transportationType: string,
 ): RehearsalTrip | null {
   const tripStartDate = typeof payload?.tripStartDate === "string" ? payload.tripStartDate.slice(0, 10) : "";
   const tripEndDate = typeof payload?.tripEndDate === "string" ? payload.tripEndDate.slice(0, 10) : tripStartDate;
@@ -177,6 +181,8 @@ function rehearsalTripFrom(
       latitude: carEvidence?.capturedLatitude ?? finite(payload?.capturedLatitude),
       longitude: carEvidence?.capturedLongitude ?? finite(payload?.capturedLongitude),
     },
+    rule: journeyStopRuleForNewClaim({ employeeRole, transportationType }),
+    transportationType,
     tripEndDate: tripEndDate || tripStartDate,
     tripStartDate,
   };
@@ -189,14 +195,15 @@ type SubmittedClaim = {
   /**
    * A test account's claim: every check ran and NOTHING was saved (owner, 2026-10-28 — "Runs fully,
    * saves nothing"; the stop is in submitOutstationRequest). Carries the total Phoenix priced it at,
-   * and for a car trip what its stop rehearsal needs (journey-stop-rehearsal.tsx, owner 2026-11-03).
+   * and for a trip what its stop rehearsal needs (journey-stop-rehearsal.tsx, owner 2026-11-03).
    */
   dryRun: { expectedTotal: number | null; rehearsal: RehearsalTrip | null } | null;
   id: number | null;
-  /** A car trip can add stops on the way (chained-journey.ts) — the screen after Submit says how. */
+  /** What the screen after Submit says about the next place depends on the car and on the role. */
   isCarTrip: boolean;
   isNonTravel: boolean;
   isTicketBased: boolean;
+  photosWaived: boolean;
   ticketsAttached: number;
 };
 
@@ -1462,7 +1469,7 @@ export function MobileOutstationWizard({
           payload?.dryRun === true
             ? {
                 expectedTotal: Number.isFinite(expectedTotal) ? expectedTotal : null,
-                rehearsal: !isNonTravel && transportationType === "car" ? rehearsalTripFrom(payload, carEvidence) : null,
+                rehearsal: !isNonTravel ? rehearsalTripFrom(payload, carEvidence, employeeRole, transportationType) : null,
               }
             : null,
         destination:
@@ -1472,6 +1479,7 @@ export function MobileOutstationWizard({
         isCarTrip: !isNonTravel && transportationType === "car",
         isNonTravel,
         isTicketBased,
+        photosWaived: isOutstationEvidenceWaivedRole(employeeRole),
         ticketsAttached: ticketAttachments?.length ?? 0,
       });
       resetFormState();
@@ -1669,14 +1677,9 @@ export function MobileOutstationWizard({
     <div className="grid gap-5">
       {/* From is not a choice: it is the registered home the distance is measured from. Said here,
           on the step it belongs to, together with whether that home has a GPS point at all. */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="From — your registered home">
-          <LocationReadout value={residenceSummary || fromShortLabel} />
-        </Field>
-        <Field label="Home GPS">
-          <LocationReadout value={hasResidenceCoordinates ? "Ready" : "Missing"} />
-        </Field>
-      </div>
+      <Field label="From — your registered home">
+        <LocationReadout value={residenceSummary || fromShortLabel} />
+      </Field>
       {!hasResidenceCoordinates ? (
         <StepNote tone="bad">
           Your home GPS is missing, so the distance cannot be measured. Ask HR to set your residence in
@@ -1993,6 +1996,7 @@ export function MobileOutstationWizard({
     isCarTrip: !isNonTravel && transportationType === "car",
     isNonTravel,
     isTicketBased,
+    photosWaived: isEvidencePhotoWaived,
     ticketsAttached: ticketFiles.length,
   });
 
@@ -2020,7 +2024,7 @@ export function MobileOutstationWizard({
           that mattered. */}
       <dl className="grid border border-slate-200 bg-white sm:grid-cols-2" aria-label="Claim review">
         <ReviewRow label="Expense" value={`${expenseTypeOptions.find((option) => option.value === expenseType)?.label ?? expenseType}${isNonTravel ? "" : ` · ${transportOptions.find((option) => option.value === transportationType)?.label ?? transportationType}`}`} />
-        <ReviewRow label="Dates" value={tripStartDate && tripEndDate ? `${tripStartDate === tripEndDate ? tripStartDate : `${tripStartDate} to ${tripEndDate}`} · ${durationSummary}` : "Not chosen yet"} />
+        <ReviewRow label="Dates" value={tripStartDate && tripEndDate ? `${tripStartDate === tripEndDate ? formatPhoenixLongDate(tripStartDate) : `${formatPhoenixLongDate(tripStartDate)} to ${formatPhoenixLongDate(tripEndDate)}`} · ${durationSummary}` : "Not chosen yet"} />
         {isNonTravel ? null : <ReviewRow label="From" value={fromShortLabel} />}
         {isNonTravel ? null : <ReviewRow label="To" value={captured ? destinationLocation.fullAddress : "Not captured yet"} />}
         {selectedMedicalTripName ? <ReviewRow label="Medical rep" value={formatEmployeeDisplayName(selectedMedicalTripName)} /> : null}
@@ -2068,17 +2072,11 @@ export function MobileOutstationWizard({
           <ReviewRow
             label="Eligibility"
             tone={calculation.eligibilityStatus === "not_eligible" ? "bad" : calculation.eligibilityStatus === "eligible" ? "good" : "warn"}
-            value={`${calculation.eligibilityStatus.replace(/_/g, " ")} — ${calculation.eligibilityReason}`}
+            value={`${humanizeCode(calculation.eligibilityStatus)} — ${calculation.eligibilityReason}`}
           />
         ) : null}
       </dl>
 
-      {calculation ? (
-        <div className="flex flex-wrap items-start gap-3 border border-slate-200 bg-slate-50 p-3">
-          <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
-          <p className="min-w-0 flex-1 basis-56 break-words text-sm leading-6 text-slate-700">{calculation.approvalReason}</p>
-        </div>
-      ) : null}
       {calculation?.routeError ? (
         <StepNote tone="warn">
           <span className="font-black">Route:</span> {calculation.routeError}
@@ -2214,7 +2212,7 @@ export function MobileOutstationWizard({
           <div
             aria-label="Submit expense action bar"
             data-portal-action-bar=""
-            className="sticky bottom-[var(--phx-portal-bottom-nav-reserve,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 print:hidden"
+            className="sticky bottom-[var(--phx-portal-bottom-nav-reserve,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 sm:px-5 print:hidden"
             data-no-print
             role="region"
           >
@@ -2384,7 +2382,7 @@ function NextSteps({ items }: { items: ReadonlyArray<AfterSubmitItem> }) {
                 : item.state === "now"
                   ? "Now"
                   : item.state === "if-needed"
-                    ? "If you drive on"
+                    ? "If you move on"
                     : "Next"}
             </p>
             <p className={cn("break-words text-sm font-black", item.state === "next" ? "text-slate-500" : "text-slate-950")} dir="auto">
@@ -2423,7 +2421,7 @@ function SubmittedClaimPanel({
   }
   const items = afterSubmitGuidance(claim);
   return (
-    <section aria-label="Claim submitted" className="border border-slate-200 bg-white shadow-sm">
+    <section aria-label="Claim submitted" className="border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
         <p className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-emerald-700">
           <CircleCheck aria-hidden className="h-4 w-4" />
@@ -2463,7 +2461,7 @@ function TestClaimPanel({
   rehearsal: RehearsalTrip | null;
 }) {
   return (
-    <section aria-label="Test claim checked" className="border border-slate-200 bg-white shadow-sm">
+    <section aria-label="Test claim checked" className="border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
         <p className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
           <CircleCheck aria-hidden className="h-4 w-4" />

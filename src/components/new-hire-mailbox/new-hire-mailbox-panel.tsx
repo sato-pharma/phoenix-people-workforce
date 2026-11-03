@@ -10,6 +10,7 @@ import { AppPasswordRehearsalCard } from "@/components/new-hire-mailbox/app-pass
 import { InviteInboxCard } from "@/components/new-hire-mailbox/invite-inbox-card";
 import { INVITE_INBOX_ADDRESS } from "@/lib/new-hire-mailbox/robot/invite-inbox";
 import { PremiumHero } from "@/components/ui/premium-hero";
+import { employeeLeftLabel } from "@/lib/employees/left-flag";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   NEW_HIRE_MAILBOX_STEPS,
@@ -122,6 +123,11 @@ function PendingCard({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {task.employeeLeft ? (
+            <span className="border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">
+              {employeeLeftLabel(task.employeeLeft)}
+            </span>
+          ) : null}
           {task.employeeFound ? null : (
             <span className="border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">
               Employee record not found

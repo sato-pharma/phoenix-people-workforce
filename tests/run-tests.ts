@@ -760,6 +760,7 @@ import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.te
 import { runPmProductAssignmentTests } from "./pm-product-assignments.test.ts";
 import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
+import { runEmployee360PersonnelRecordsTests } from "./employee-360-personnel-records.test.ts";
 import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
 import { runEmployee360CustomerKeyTests } from "./employee-360-customer-key.test.ts";
 import { runEmployee360BrickCoverageTests } from "./employee-360-brick-coverage.test.ts";
@@ -788,6 +789,8 @@ import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosAddressFirstBrickTests } from "./sos-address-first-brick.test.ts";
+import { runAddressBrickFindingTests } from "./address-brick-finding.test.ts";
+import { runOutstationExpenseScreensTests } from "./outstation-expense-screens.test.ts";
 import {
   runAddressCorrectionQueueTests,
   runReconcileQueuesItsFilesTests,
@@ -960,7 +963,10 @@ import { runMarketingRequestTwinGuardTests } from "./marketing-request-twin-guar
 import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audit.test.ts";
+import { runMarketingFinanceAgeingTests } from "./marketing-finance-ageing.test.ts";
+import { runMarketingListCheckTests } from "./marketing-list-check.test.ts";
 import { runMarketingManagerScorecardTests } from "./marketing-manager-scorecard.test.ts";
+import { runPhoenixCrmObjectionsByCustomerTests } from "./phoenix-crm-objections-by-customer.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
@@ -1149,6 +1155,7 @@ import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
 import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
+import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -2634,6 +2641,7 @@ import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
 import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
 import { runOutstationJourneyStopRehearsalTests } from "./outstation-journey-stop-rehearsal.test.ts";
+import { runOutstationJourneyStopRulesTests } from "./outstation-journey-stop-rules.test.ts";
 import { runOutstationAdminMissedStopTests } from "./outstation-admin-missed-stop.test.ts";
 import { runStagingTestSignInTests } from "./staging-test-sign-in.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
@@ -4686,6 +4694,9 @@ await runTest(
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos address-first brick (the customer address outranks the label and the stored map)", runSosAddressFirstBrickTests);
+await runTest("outstation expense screens (HR's cut shows, rejected claims leave Claimed, payroll's ledger reads untouched)", runOutstationExpenseScreensTests);
+await runTest("employee 360 personnel chapter (incentive and device values: the person, their managers, the CEO, the Super Admin)", runEmployee360PersonnelRecordsTests);
+await runTest("wrong-town finder (longer names and other towns flagged; the importer unchanged; a ruling is on the row read)", runAddressBrickFindingTests);
 await runTest("weekly number cells (a \"12,5\" quantity refuses the upload with both readings; Arabic digits read)", runWeeklyNumberCellTests);
 await runTest("weekly date cells (an ambiguous slash date never picks the week; an afternoon serial stays on its day)", runWeeklyDateCellTests);
 await runTest("old sales upload numbers (\"12,5\" is refused and named, never read as 125)", runOldSalesUploadNumberTests);
@@ -5126,6 +5137,10 @@ await runTest(
   + "hire date winning; a save must carry every field; papers progress skips exit documents; the read "
   + "carries no money, and both routes assert before they touch anything)",
   runHiringJoinersTests,
+);
+await runTest(
+  "the Leavers tab and the left word: who has left, what they owe, the scan queue stays current staff, and flagging closes and decides nothing",
+  runHiringLeaversTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "
@@ -8636,6 +8651,18 @@ await runTest(
   runMarketingManagerScorecardTests,
 );
 await runTest(
+  "marketing finance ageing (the waiting filter, the step clock, the bands, three readers, no execute control)",
+  runMarketingFinanceAgeingTests,
+);
+await runTest(
+  "marketing doctor-list check (one letter and the twin names, 500 m, a pick never overwritten, the flag wording, the board sums, the sheet layout)",
+  runMarketingListCheckTests,
+);
+await runTest(
+  "phoenix crm objections by customer (no none, no rate, no rank, refused roles, the import ban)",
+  runPhoenixCrmObjectionsByCustomerTests,
+);
+await runTest(
   "marketing customer area ownership (a customer belongs to a territory, so the rep hired into a resigned rep's patch inherits it with nothing re-stamped; same area other line sees it too; another area does not)",
   runMarketingCustomerAreaOwnershipTests,
 );
@@ -10249,6 +10276,11 @@ await runTest(
 await runTest(
   "outstation journey-stop rehearsal (owner 2026-11-03): a test account rehearses a stop end to end — measured and priced through the real stop's one measurement and one pricing, refused to anyone else, and nothing is saved",
   runOutstationJourneyStopRehearsalTests,
+);
+
+await runTest(
+  "outstation stop rebuilt (owner 2026-11-03): each person owes the evidence their travel and role allow, a trip without a car pays tickets and no fuel, and stored stops still read",
+  runOutstationJourneyStopRulesTests,
 );
 
 await runTest(

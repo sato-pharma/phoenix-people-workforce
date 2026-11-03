@@ -495,9 +495,9 @@ export function buildPayoutExpenseTripMap(rows: PayoutExpenseRow[]): Map<string,
 }
 
 /**
- * Owner-corrected expense source (2026-07-20): the real payroll expenses live in the
- * legacy `outstation_expenses` table keyed by payout_month/payout_year — the new
- * `outstation_expense_requests` table the Copilot feeder reads is near-empty.
+ * Owner-corrected expense source (2026-07-20): what payroll pays lives in the ledger,
+ * `outstation_expenses`, keyed by payout_month/payout_year. `outstation_expense_requests`
+ * holds each claim as submitted, not what HR decided, so it is never the money source here.
  *
  * Returns the individual TRIPS per employee, not just their sum (owner request
  * 2026-08-01: "which days, where"). recommendExpenses adds them up, so the money

@@ -1,3 +1,5 @@
+import type { ExitRoute } from "@/lib/hiring-pack/types";
+
 export type HiringDocumentStatus = "pending" | "submitted" | "missing";
 
 /**
@@ -206,6 +208,14 @@ export type HiringJoinerDayOne = {
   hasActiveLogin: boolean | null;
   /** "none" means no mailbox task was ever opened for them. */
   mailbox: "connected" | "none" | "not_needed" | "pending" | null;
+  /** Whether each is on their record. Only ever yes or no: the numbers themselves stay on the server. */
+  details: HiringJoinerDetails | null;
+};
+
+export type HiringJoinerDetails = {
+  bankAccount: boolean;
+  insuranceNumber: boolean;
+  nationalId: boolean;
 };
 
 export type HiringJoiner = {
@@ -234,6 +244,27 @@ export type HiringJoiner = {
 
 export type HiringJoinersData = {
   joiners: HiringJoiner[];
+  todayKey: string;
+};
+
+/** What the mailbox register says for one leaver. "none" means it holds no task for them. */
+export type HiringLeaverMailbox = "in_progress" | "none" | "not_needed" | "pending" | "revoked";
+
+/**
+ * One person who has left. NULL MEANS THE READ FAILED, which the screen says in words: it must never
+ * read as "no device" or "no task". Count and status only, and no money.
+ */
+export type HiringLeaver = HiringDocumentEmployeeRow & {
+  devicesOutstanding: number | null;
+  /** What HR Forms recorded, null when nobody has, or when that read failed. Greys the other labour paper. */
+  exitRoute: ExitRoute | null;
+  /** `YYYY-MM-DD`. Null when the record holds no last working day. */
+  lastWorkingDate: string | null;
+  mailbox: HiringLeaverMailbox | null;
+};
+
+export type HiringLeaversData = {
+  leavers: HiringLeaver[];
   todayKey: string;
 };
 

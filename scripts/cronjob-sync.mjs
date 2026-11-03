@@ -111,6 +111,15 @@ const JOB_FILTER = (() => {
 const REFERENCE_JOB_ID = 8200914;
 
 const JOBS = {
+  "marketing-list-check": {
+    title: "Phoenix — marketing doctor-list check",
+    path: "/api/cron/marketing-list-check",
+    // Hourly at :37. A full pass over fewer than 120 customers; the platform cuts at 30s and the work
+    // carries on, so the heartbeat is the truth. Arm it only AFTER scripts/marketing-list-check.ts --apply,
+    // or the owner's seeded answers are skipped.
+    schedule: { hours: [-1], minutes: [37], mdays: [-1], months: [-1], wdays: [-1] },
+    requestTimeout: 300,
+  },
   "territory-restamp": {
     title: "Phoenix — nightly territory re-stamp",
     path: "/api/cron/territory-restamp",

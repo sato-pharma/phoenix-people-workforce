@@ -15,15 +15,16 @@ import {
   TriangleAlert,
   Wallet,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { DeparturePhotoCard } from "@/components/outstation/departure-photo-card";
-import { JourneyStopCard } from "@/components/outstation/journey-stop-card";
+import { JourneyRouteLine } from "@/components/outstation/journey-route-line";
 import { MissingTicketCard } from "@/components/outstation/missing-ticket-card";
 import type { MyOutstationSubmission } from "@/lib/outstation/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { humanizeCode } from "@/lib/format/code-label";
+import { claimMoneyRows } from "@/lib/outstation/claim-money-rows";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { tidyOutstationAddress } from "@/lib/outstation/description-format";
 import { claimsLabel, isPassedValidation, summarizeMyClaims } from "@/lib/outstation/my-claims-summary";
@@ -142,6 +143,9 @@ export function buildStages(submission: MyOutstationSubmission): Stage[] {
   // trip nobody can photograph any more is exactly the message that sent people looking for a
   // control that does not exist.
   const photoExempt = !arrivalDone && submission.isPayrollEligible;
+  // A role with no photo evidence at all is asked for none, so no stage names one (owner, 2026-11-03:
+  // "nsms/pms should not have evidence photo"). A photo it does hold is still shown as captured.
+  const noPhotoStages = submission.photosWaived && !arrivalDone && !departureDone;
 
   const stage = (
     key: StageKey,
@@ -153,7 +157,7 @@ export function buildStages(submission: MyOutstationSubmission): Stage[] {
 
   const overdue = submission.departureDeadline.slice(0, 10) < cairoToday();
 
-  return sequenceStages([
+  const stages = [
     stage(
       "submitted",
       "Submitted",
@@ -234,7 +238,10 @@ export function buildStages(submission: MyOutstationSubmission): Stage[] {
           : "Included in a payroll batch"
         : "Not yet pulled into a payroll batch",
     ),
-  ]);
+  ];
+  return sequenceStages(
+    noPhotoStages ? stages.filter((entry) => entry.key !== "arrival" && entry.key !== "departure") : stages,
+  );
 }
 
 /**
@@ -325,7 +332,6 @@ export function MyExpenseSubmissions({
   employeeHrId: string;
   submissions: MyOutstationSubmission[];
 }) {
-  const router = useRouter();
   const [openId, setOpenId] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Record<number, PhotoState>>({});
   const [captured, setCaptured] = useState<number[]>([]);
@@ -468,19 +474,11 @@ export function MyExpenseSubmissions({
                       ? ` – ${formatPhoenixLongDate(submission.tripEndDate)}`
                       : ""}
                     {" · "}
-                    {submission.transportationType}
+                    {humanizeCode(submission.transportationType)}
                   </p>
                   {!submission.isPayrollEligible ? (
                     <p className="mt-1.5 text-phx-md leading-relaxed text-amber-800">
                       {submission.gateMessage}
-                    </p>
-                  ) : null}
-                  {submission.canAddJourneyStop ? (
-                    // A stop is taken on the way, before the trip's last day ends, and most trips
-                    // have none — so it is said beside the claim rather than counted as owed.
-                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-                      <span className="font-black uppercase tracking-wider text-orange-700">If you drive on</span>{" "}
-                      Open this claim and add a stop in each new governorate before the trip ends.
                     </p>
                   ) : null}
                   {nowAndNext ? (
@@ -605,7 +603,7 @@ export function MyExpenseSubmissions({
                         icon={<CalendarDays className="h-3 w-3" />}
                         label="Trip type"
                         value={
-                          submission.tripType ??
+                          humanizeCode(submission.tripType) ||
                           (submission.sameDayTrip
                             ? "Same day"
                             : `Overnight · ${submission.overnightDays} night(s)`)
@@ -621,7 +619,7 @@ export function MyExpenseSubmissions({
                         label="Field workload"
                         value={fieldWorkloadLabel(submission)}
                       />
-                      <Fact label="Transport" value={submission.transportationType} />
+                      <Fact label="Transport" value={humanizeCode(submission.transportationType)} />
                     </div>
 
                     {/* Where the GPS actually landed in Phoenix geography, split into its three
@@ -657,8 +655,8 @@ export function MyExpenseSubmissions({
                     ) : null}
                   </section>
 
-                  {/* ── The journey's stops (owner rule, 2026-10-18) ───────────── */}
-                  {submission.journeyStops.length > 0 || submission.canAddJourneyStop ? (
+                  {/* ── The journey's places, read-only: they are captured at the top of the page ── */}
+                  {submission.journeyStops.length > 0 ? (
                     <section>
                       <SectionTitle>Journey</SectionTitle>
                       {submission.journey ? (
@@ -666,23 +664,15 @@ export function MyExpenseSubmissions({
                           <p className="text-phx-md leading-relaxed text-slate-700">
                             {submission.journey.modeReason}
                           </p>
-                          <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                            {submission.journey.legs.map((leg, index) => (
-                              <li className="flex flex-wrap justify-between gap-x-3" key={`${index}-${leg.from}`}>
-                                <span className="min-w-0 break-words">
-                                  {leg.from} → {leg.to}
-                                  {leg.distanceKm !== null ? ` · ${leg.distanceKm} km` : ""}
-                                </span>
-                                <span className={`font-bold ${leg.paid ? "text-emerald-700" : "text-slate-500"}`}>
-                                  {leg.paid ? "Paid" : "Not paid"}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                          <p className="mt-2 text-xs text-slate-600">
-                            Fuel {money(submission.journey.fuelAmount)} · home to first destination and back
-                            would be {money(submission.journey.singleDestinationFuelAmount)}
-                          </p>
+                          <div className="mt-2">
+                            <JourneyRouteLine legs={submission.journey.legs} />
+                          </div>
+                          {submission.journey.mode === "ticket_journey" ? null : (
+                            <p className="mt-2 text-xs text-slate-600">
+                              Fuel {money(submission.journey.fuelAmount)} · home to the first place and back would be{" "}
+                              {money(submission.journey.singleDestinationFuelAmount)}
+                            </p>
+                          )}
                           {submission.journey.flagged ? (
                             <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800">
                               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -691,31 +681,20 @@ export function MyExpenseSubmissions({
                           ) : null}
                         </div>
                       ) : null}
-                      {submission.journeyStops.length > 0 ? (
-                        <ol className="mt-3 space-y-1.5 text-xs text-slate-600">
-                          {submission.journeyStops.map((stop) => (
-                            <li className="break-words" key={stop.stopNumber}>
-                              <span className="font-bold text-slate-900">Stop {stop.stopNumber}</span>
-                              {stop.governorate ? ` · ${stop.governorate}` : ""}
-                              {stop.locationLabel ? ` · ${readableAddress(stop.locationLabel)}` : ""}
-                              {` · ${formatPhoenixLongDate(stop.capturedAt)}`}
-                            </li>
-                          ))}
-                        </ol>
-                      ) : null}
-                      {submission.canAddJourneyStop ? (
-                        <div className="mt-3">
-                          <JourneyStopCard
-                            employeeHrId={employeeHrId}
-                            key={`${submission.id}-${submission.journeyStops.length}`}
-                            nextStopNumber={
-                              Math.max(1, ...submission.journeyStops.map((stop) => stop.stopNumber)) + 1
-                            }
-                            onSaved={() => router.refresh()}
-                            requestId={submission.id}
-                          />
-                        </div>
-                      ) : null}
+                      <ol className="mt-3 space-y-1.5 text-xs text-slate-600">
+                        {submission.journeyStops.map((stop) => (
+                          <li className="break-words" key={stop.stopNumber}>
+                            <span className="font-bold text-slate-900">{stop.governorate ?? "Next place"}</span>
+                            {stop.locationLabel ? ` · ${readableAddress(stop.locationLabel)}` : ""}
+                            {` · ${formatPhoenixLongDate(stop.capturedAt)}`}
+                            {stop.evidence === "live_photo"
+                              ? " · live photo"
+                              : stop.evidence === "location_ticket"
+                                ? ` · location and ticket, ${money(stop.ticketAmount)}`
+                                : " · location"}
+                          </li>
+                        ))}
+                      </ol>
                     </section>
                   ) : null}
 
@@ -732,26 +711,12 @@ export function MyExpenseSubmissions({
                           {money(submission.claimedTotalAmount)}
                         </p>
                         <dl className="mt-3 space-y-1 text-xs text-slate-600">
-                          <div className="flex justify-between gap-3">
-                            <dt>Travel</dt>
-                            <dd className="font-bold text-slate-900">{money(submission.travelCost)}</dd>
-                          </div>
-                          <div className="flex justify-between gap-3">
-                            <dt>Ticket</dt>
-                            <dd className="font-bold text-slate-900">{money(submission.ticketAmount)}</dd>
-                          </div>
-                          <div className="flex justify-between gap-3">
-                            <dt>Meeting</dt>
-                            <dd className="font-bold text-slate-900">{money(submission.meetingAmount)}</dd>
-                          </div>
-                          <div className="flex justify-between gap-3">
-                            <dt>Other</dt>
-                            <dd className="font-bold text-slate-900">{money(submission.otherAmount)}</dd>
-                          </div>
-                          <div className="flex justify-between gap-3">
-                            <dt>Allowance</dt>
-                            <dd className="font-bold text-slate-900">{money(submission.allowanceAmount)}</dd>
-                          </div>
+                          {claimMoneyRows(submission).map((row) => (
+                            <div className="flex justify-between gap-3" key={row.label}>
+                              <dt>{row.label}</dt>
+                              <dd className="font-bold text-slate-900">{money(row.amount)}</dd>
+                            </div>
+                          ))}
                         </dl>
                       </div>
 
@@ -803,6 +768,7 @@ export function MyExpenseSubmissions({
                   </section>
 
                   {/* ── The two photos, side by side, as the approver sees them ── */}
+                  {submission.photosWaived && !submission.hasArrivalPhoto && !submission.hasDeparturePhoto ? null : (
                   <section>
                     <SectionTitle>Evidence</SectionTitle>
                     {photoState.kind === "loading" ? (
@@ -944,6 +910,7 @@ export function MyExpenseSubmissions({
                       </p>
                     ) : null}
                   </section>
+                  )}
                 </div>
               ) : null}
             </article>

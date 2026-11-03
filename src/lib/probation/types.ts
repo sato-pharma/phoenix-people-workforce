@@ -19,6 +19,8 @@ export type ProbationRow = {
   area_name: string;
   crm_id: string;
   employment_status?: string;
+  /** Only what the "left" word beside their name needs. Leaving closes and decides nothing here. */
+  last_working_date?: string | null;
   has_durable_probation_record?: boolean;
   days_remaining: number;
   /**

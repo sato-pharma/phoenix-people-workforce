@@ -120,7 +120,7 @@ import type {
   VacationWeeklyOffMode,
   VacationWeeklyOffPolicyRecord,
 } from "@/lib/vacation/types";
-import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
+import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_STATUSES, VACATION_TYPES, VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
 import { filterVacationRowsInMemory } from "@/lib/vacation/report-filter";
 import { packVacationReportRows, unpackVacationReportRows } from "@/lib/vacation/report-rows-pack";
 import { resolveVacationInformedHrIds, VACATION_INFORMED_SEAT, isVacationInformedType } from "@/lib/vacation/informed-recipients";
@@ -7375,6 +7375,63 @@ export async function getEmployeeAnnualLeaveBalanceDays(employeeHrId: string | n
   // NOT the row's Balance column: inside the first six months that is the accrued figure the report
   // shows, which this employee cannot request. See requestableAnnualLeaveDays.
   return eligibilityRow ? requestableAnnualLeaveDays(eligibilityRow) : null;
+}
+
+/** One line of a person's leave history, as Employee 360's personnel chapter shows it. */
+export type EmployeeLeaveRecordLine = {
+  id: string;
+  typeLabel: string;
+  startDate: string;
+  endDate: string;
+  durationDays: number;
+  statusLabel: string;
+};
+
+/**
+ * Whether the leave screen would list this person for this viewer: its own filter, never a copy.
+ * leave:read alone is not the answer, because every seat holds it for its OWN leave.
+ */
+export async function canViewEmployeeLeaveRecord(access: AccessContext, employeeHrId: string): Promise<boolean> {
+  try {
+    // Departed people too: a report can be opened on someone who has left, under the same rule.
+    const visible = await filterVacationEmployeesForAccess(access, await getEmployeeDirectoryRows({ includeInactive: true }));
+    return visible.some((employee) => hrIdsMatch(employee.hrId, employeeHrId));
+  } catch (error) {
+    if (error instanceof VacationViewerHasNoEmployeeProfileError) return false;
+    throw error;
+  }
+}
+
+/**
+ * One person's leave requests, newest first, keyed on the PERSON rather than the viewer. The report
+ * screen's own read is scoped to whoever is looking, so a viewer outside that scope would see this
+ * person as having no leave at all. The caller has already decided this viewer may see them.
+ * Throws on a failed read; an empty list means nothing was filed.
+ */
+export async function getEmployeeLeaveRequestsForRecord(employeeHrId: string, limit: number): Promise<EmployeeLeaveRecordLine[]> {
+  const directory = await getEmployeeDirectory();
+  const employee = findEmployeeByHrId(directory, employeeHrId);
+  if (!employee) return [];
+
+  const rows = (await fetchVacationReportRowsFromDatabase({
+    access: systemAccessContext,
+    filters: {},
+    visibleEmployeeHrIds: buildVisibleHrIdSet([employee]),
+  }))
+    .map((row) => mapVacationRow(row))
+    .filter((row) => hrIdsMatch(row.employeeHrId, employee.hrId));
+
+  return rows
+    .sort((left, right) => right.startDate.localeCompare(left.startDate))
+    .slice(0, limit)
+    .map((row) => ({
+      id: row.id,
+      typeLabel: vacationTypeLabel(row.vacationType),
+      startDate: row.startDate,
+      endDate: row.endDate,
+      durationDays: row.durationDays,
+      statusLabel: VACATION_STATUSES.find((status) => status.value === row.status)?.label ?? row.status,
+    }));
 }
 
 /**

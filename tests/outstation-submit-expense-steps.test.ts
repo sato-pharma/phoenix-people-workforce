@@ -135,6 +135,7 @@ export function runOutstationSubmitExpenseStepsTests() {
     osama.map((item) => [item.key, item.state]),
     [
       ["submitted", "done"],
+      ["stops", "if-needed"],
       ["departure", "now"],
       ["ticket", "next"],
       ["workload", "next"],
@@ -143,9 +144,9 @@ export function runOutstationSubmitExpenseStepsTests() {
     ],
     "the departure photo leads, then the missing ticket, the CRM visits, validation and payroll",
   );
-  assert.match(osama[1].title, /departure photo before you leave Assiut/);
-  assert.match(osama[1].detail, /top of this page/, "it says where the departure photo waits");
-  assert.match(osama[3].detail, /next morning/, "visits saved later the same evening are picked up the next morning");
+  assert.match(osama[2].title, /departure photo before you leave Assiut/);
+  assert.match(osama[2].detail, /top of this page/, "it says where the departure photo waits");
+  assert.match(osama[4].detail, /next morning/, "visits saved later the same evening are picked up the next morning");
   assert.equal(osama.filter((item) => item.state === "now").length, 1, "exactly one thing is NOW");
 
   const meeting = afterSubmitGuidance({
@@ -163,8 +164,8 @@ export function runOutstationSubmitExpenseStepsTests() {
   );
   assert.equal(meeting[1].state, "now");
 
-  // A car trip can drive on and add stops (owner, 2026-10-22: "what about the stops we added in
-  // expenses"; the pricing rule is chained-journey.ts). The stop is taken on the way, BEFORE the
+  // A trip can move on to another governorate (owner, 2026-10-22: "what about the stops we added in
+  // expenses"; the pricing rule is chained-journey.ts). The place is captured on the way, BEFORE the
   // departure photo, and most trips have none — so it is listed as "if-needed" and never "now".
   const car = afterSubmitGuidance({
     arrivalPhotoOwed: true,
@@ -184,14 +185,38 @@ export function runOutstationSubmitExpenseStepsTests() {
       ["validation", "next"],
       ["payroll", "next"],
     ],
-    "a car trip is told it can add a stop on the way, and the departure photo is still what is owed now",
+    "a car trip is told it can capture the next place, and the departure photo is still what is owed now",
   );
-  assert.match(car[1].detail, /My claims/, "it says where a stop is added");
+  assert.match(car[1].title, /Capture the next place/);
+  assert.match(car[1].detail, /top of this page/, "it says where the next place is captured");
+  assert.match(car[1].detail, /live photo/, "a car trip with photos takes one");
   assert.match(car[1].detail, /before the trip's last day ends/, "and until when — the window the server enforces");
-  assert.ok(
-    !osama.some((item) => item.key === "stops") && !meeting.some((item) => item.key === "stops"),
-    "a train, bus or non-travel claim is never offered a stop",
-  );
+  // Owner, 2026-11-03: "what if he is trans and no car what is he supposed to capture?"
+  assert.match(osama[1].detail, /attach that leg's ticket and capture your location/, "no car: the ticket and the location");
+  assert.match(osama[1].detail, /No fuel/);
+  assert.ok(!/live photo/.test(osama[1].detail), "never a photo of a car that does not exist");
+  const productManagerByBus = afterSubmitGuidance({
+    arrivalPhotoOwed: false,
+    destination: "Assiut",
+    isCarTrip: false,
+    isNonTravel: false,
+    isTicketBased: true,
+    photosWaived: true,
+    ticketsAttached: 0,
+  });
+  assert.match(productManagerByBus[1].detail, /capture your location there, and attach that leg's ticket if you have one/);
+  const nsmByCar = afterSubmitGuidance({
+    arrivalPhotoOwed: false,
+    destination: "Assiut",
+    isCarTrip: true,
+    isNonTravel: false,
+    isTicketBased: false,
+    photosWaived: true,
+    ticketsAttached: 0,
+  });
+  assert.match(nsmByCar[1].detail, /capture your location there/);
+  assert.ok(!/live photo/.test(nsmByCar[1].detail), "a role with no photos is asked for none");
+  assert.ok(!meeting.some((item) => item.key === "stops"), "a non-travel claim has no next place");
 
   // ── 4. The wizard is driven by these rules and never resets in silence ───────
   const wizard = read("src/components/outstation/mobile-outstation-wizard.tsx");
@@ -269,10 +294,6 @@ export function runOutstationSubmitExpenseStepsTests() {
   assert.ok(list.includes("{departureDue || ticketDue ? ("), "a missing ticket is an Action needed too");
   assert.ok(list.includes("{ticketDue ? (") && list.includes("<MissingTicketCard"), "the ticket is attachable inside the claim");
   assert.ok(list.includes("rowNowAndNext(stages, { departureDue, ticketDue })"), "every row says what is now and what is next");
-  assert.ok(
-    list.includes("{submission.canAddJourneyStop ? (") && list.includes("add a stop in each new governorate"),
-    "a car claim that can still take a stop says so on its row, not only inside the closed detail",
-  );
-  assert.ok(list.includes("<JourneyStopCard"), "and the stop is still captured inside the claim, on the same page");
+  assert.ok(!list.includes("<JourneyStopCard"), "the next place is captured at the top of the page, not inside a closed claim");
   assert.ok(wizard.includes(`isCarTrip: !isNonTravel && transportationType === "car",`), "the screen after Submit knows a car trip");
 }
