@@ -294,6 +294,66 @@ what triggered the Dependabot updater runs four seconds later; those runs failed
 production deploy of the commit merged seconds earlier**. So an alert that cannot fail the audit
 still cost a deploy. The mechanism is recorded in `docs/agents-session-traps-clusters.md`.
 
+### `glob` — GHSA-3g3m-2fjr-6pw4 · MEDIUM
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `minimatch` one below. |
+| Alert | #19 on `gawishtheit/phoenix-people-workforce`, opened 2026-11-03 16:11 Cairo, root `pnpm-lock.yaml` |
+| Scope | **`runtime`**, because `@sentry/nextjs` is a production dependency, but this code only runs during the build |
+| Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
+| Patched version | **14.0.2 only** — no 13.x release carries the fix, and `@sentry/bundler-plugins` 11.10.0, its newest, still asks for `^13.0.6` |
+| How it arrives | `glob@13.0.6` ← `@sentry/bundler-plugins` ← `@sentry/nextjs`, and the development tool `c8`. `glob@7.2.3` under `exceljs` is below the affected range |
+| What it is | A walk cancelled through `signal` keeps reading directories in the background |
+
+**The flaw needs a cancel signal, and Sentry never passes one.** The whole of its use is
+`build/cjs/core/glob.js`: `glob(patterns, { absolute: true, nodir: true, ...options })`, and its callers
+pass only `ignore` or `root`. A search of the installed package for `signal:` found none (3 Nov 2026).
+`next.config.ts` is the only file that loads `@sentry/nextjs/config`, and only on a build that holds a
+Sentry token. Nothing else outside the frozen application imports `glob`.
+
+**What would reverse this.** Any one of these:
+
+1. **Code in this repository calls `glob` with a `signal`**, or Sentry's build tools start to.
+2. **The advisory is re-scored above MEDIUM**, which would let it fail the audit on a `runtime` package.
+3. **Sentry's build tools accept a patched `glob`.** Take it in the next dependency refresh.
+
+### `minimatch` — GHSA-g3hv-75wg-m249 · MEDIUM
+
+| | |
+| --- | --- |
+| **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `glob` one above. |
+| Alert | #20 on `gawishtheit/phoenix-people-workforce`, opened 2026-11-03 16:11 Cairo, root `pnpm-lock.yaml` |
+| Scope | **`runtime`**, because `@sentry/nextjs` and `exceljs` are production dependencies |
+| Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
+| Patched version | **11.0.1 only** — 3.1.5, 5.1.9 and 10.2.6, the three we resolve, are each the newest of their line |
+| How it arrives | `10.2.6` ← `glob@13.0.6` above, and development tools. `3.1.5` ← `glob@7.2.3` ← `archiver-utils` ← `archiver` ← `exceljs`, and ESLint. `5.1.9` ← `readdir-glob` ← `archiver` ← `exceljs` |
+| What it is | A crafted glob pattern multiplies during preprocessing and uses up CPU and memory |
+
+**Only 10.2.6 holds the flawed code, and no user reaches it.** `firstPhasePreProcess` appears in the
+installed 10.2.6 and nowhere in 3.1.5 or 5.1.9, which the advisory's `< 11.0.1` range catches by number
+alone. `glob` does run 10.2.6 at the `optimizationLevel: 2` the flaw needs, so the safety here is who
+writes the pattern: Sentry's build tools and `next.config.ts`, never a request. Nothing outside the frozen
+application imports `minimatch`. `exceljs` uses `archiver` only to write zip files, and never calls its
+`glob` or `directory`.
+
+**Forcing the fix is the wrong trade.** `minimatch@3.1.5` exports a callable function, which its
+callers depend on, and 11.x does not: the same break `pnpm-workspace.yaml` records for
+`brace-expansion` 5.x would be likely here, in ESLint and the Excel exports (not tested). `exceljs` 4.4.0
+is already its newest release and asks for `archiver ^5.0.0`, and 120 files import it.
+
+**What would reverse this.** Any one of these:
+
+1. **Code in this repository or a request-time path passes a pattern a user wrote** to `minimatch` or
+   `glob`. The acceptance rests on who writes the pattern, so this is the condition that matters.
+2. **The advisory is re-scored above MEDIUM**, which would let it fail the audit on a `runtime` package.
+3. **`exceljs` moves off these lines, or `exceljs` is replaced for another reason.** Re-read the chain then.
+
+🔴 **`check-dependabot-alerts.mjs` KEEPS PRINTING `bump to 14.0.2` AND `bump to 11.0.1` FOR THESE TWO, ON PURPOSE.** It adds
+`risk ACCEPTED` only to an alert outside the audited tree, and both of these are in the root lockfile, so
+a recorded acceptance can never read as a reason to leave something that could turn `checks` red. Read
+the two rows above before acting on those lines.
+
 ## Reading it
 
 ```bash
