@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, createElement, useContext, useState, type ReactNode } from "react";
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 
-import type { CrmFirstRead } from "@/lib/phoenix-crm/first-read";
+import { firstReadArrived, type CrmFirstRead } from "@/lib/phoenix-crm/first-read";
 
 const CrmFirstReadContext = createContext<CrmFirstRead | null>(null);
 
@@ -14,7 +14,9 @@ const CrmFirstReadContext = createContext<CrmFirstRead | null>(null);
  */
 export function CrmFirstReadProvider({ children, firstRead }: { children: ReactNode; firstRead: CrmFirstRead | null }) {
   const [held] = useState(firstRead);
-  console.info(`[first-read-probe] provider prop=${firstRead?.id.slice(0, 8) ?? "null"} held=${held?.id.slice(0, 8) ?? "null"}`);
+  useEffect(() => {
+    firstReadArrived(held, firstRead);
+  }, [firstRead, held]);
   return createElement(CrmFirstReadContext.Provider, { value: held }, children);
 }
 

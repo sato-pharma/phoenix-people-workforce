@@ -22,31 +22,51 @@ const run = () => {
   );
 };
 
-const CLIENT = "src/lib/phoenix-crm/first-read.ts";
+const LIB = "src/lib/phoenix-crm/first-read.ts";
+const PROVIDER = "src/components/phoenix-crm/first-read.ts";
 const SERVER = "src/lib/phoenix-crm/server/first-read.ts";
 const mutants = [
   {
-    name: "remembered by the object again, the old code",
-    file: CLIENT,
-    edits: [
-      ["const firstMet = new Map<string, number>();", "const firstMet = new WeakMap<CrmFirstRead, number>();"],
-      ["firstMet.get(firstRead.id)", "firstMet.get(firstRead)"],
-      ["firstMet.set(firstRead.id, met)", "firstMet.set(firstRead, met)"],
-      ["firstMet.set(firstRead.id, Number.NEGATIVE_INFINITY)", "firstMet.set(firstRead, Number.NEGATIVE_INFINITY)"],
-    ],
-    expect: "RED Back restores the read in a new object",
+    name: "a read under a screen already up is not marked",
+    file: LIB,
+    edits: [["if (arriving !== null && arriving !== held) firstReadSpent(arriving);", ""]],
+    expect: "RED a read that arrived under a screen already up",
   },
   {
-    name: "the page stamps no id",
+    name: "the screen's own first read gets marked too",
+    file: LIB,
+    edits: [["if (arriving !== null && arriving !== held) firstReadSpent(arriving);", "if (arriving !== null) firstReadSpent(arriving);"]],
+    expect: "the screen's own first read is left alone",
+  },
+  {
+    name: "the provider never reports an arrival",
+    file: PROVIDER,
+    edits: [["firstReadArrived(held, firstRead);", ""]],
+    expect: "RED a read arriving under a screen already up is marked",
+  },
+  {
+    name: "no age check on a read met for the first time",
+    file: LIB,
+    edits: [["if (now - firstRead.startedAt > FIRST_READ_LIFETIME_MS) return null;", ""]],
+    expect: "RED a read this old is refused",
+  },
+  {
+    name: "the page does not say when it started the read",
     file: SERVER,
-    edits: [["id: randomUUID(), ", ""]],
-    expect: "RED every read the page starts carries its own id",
+    edits: [["startedAt: Date.now(), ", ""]],
+    expect: "RED every read the page starts says when",
   },
   {
     name: "a drawn read is never marked used",
-    file: CLIENT,
-    edits: [["firstMet.set(firstRead.id, Number.NEGATIVE_INFINITY);", ""]],
+    file: LIB,
+    edits: [["firstMet.set(firstRead, Number.NEGATIVE_INFINITY);", ""]],
     expect: "RED browser Back must read afresh",
+  },
+  {
+    name: "a check on Next's hidden marks comes back",
+    file: SERVER,
+    edits: [["const target = phoenixCrmFirstReadTarget(overview, requested, surface);", 'void "next-router-state-tree"; const target = phoenixCrmFirstReadTarget(overview, requested, surface);']],
+    expect: "RED a check on Next's request marks can never fire",
   },
 ];
 

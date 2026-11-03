@@ -91,7 +91,7 @@ page.on("request", (r) => {
     } catch {
       top = "unreadable";
     }
-    console.log(`  ${stamp()} [page request] ${url.pathname} prefetch=${r.headers()["next-router-prefetch"] ?? "no"} treeTop=${top}`);
+    console.log(`  ${stamp()} [page request] ${url.pathname} prefetch=${r.headers()["next-router-prefetch"] ?? "no"} hmr=${r.headers()["next-hmr-refresh"] ?? "no"} treeTop=${top}`);
   }
   if (url.searchParams.has("_rsc") || r.headers().rsc === "1") pageRequests.push(`${url.pathname}${r.headers()["next-router-prefetch"] ? " (prefetch)" : ""}`);
   else if (r.isNavigationRequest() && r.frame() === page.mainFrame()) pageRequests.push(url.pathname);
@@ -162,47 +162,57 @@ try {
     console.log(`  the lower sections ${shown ? "appeared" : "NEVER appeared"} after a further ${Math.round((Date.now() - started) / 1000)} s`);
     await report("team-settled", mark);
   } else if (flow === "rep-nav") {
-    // Cold from the chooser, so the module arrives by client navigation; then away and Back.
     await go("/employee-portals/field-crm");
     await report("chooser");
-    let mark = calls.length;
+    const PLAN = "/employee-portals/field-crm/plan";
+    const drawn = () => page.waitForFunction(() => document.querySelectorAll('[class*="animate-pulse"]').length === 0, null, { timeout: 180_000 }).then(() => true).catch(() => false);
+    const ownReads = (since) => calls.slice(since).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length;
+    const pagesAsked = (since) => pageRequests.slice(since).filter((p) => p.endsWith("/field-crm/visits")).length;
+    const isVisitsPage = (r) => (new URL(r.url()).searchParams.has("_rsc") || r.request().headers().rsc === "1") && new URL(r.url()).pathname.endsWith("/field-crm/visits");
+
+    const firstMark = calls.length;
     await page.locator('a[href$="/field-crm/visits"]').first().click();
     await page.waitForURL("**/field-crm/visits", { timeout: 180_000 });
     await settle();
-    // Let the screen finish first: a read is spent only once it has drawn.
-    await page.waitForFunction(() => document.querySelectorAll('[class*="animate-pulse"]').length === 0, null, { timeout: 60_000 }).catch(() => console.log("  Visits still shows a skeleton after 60 s"));
-    await page.waitForTimeout(5000);
-    const drawnAt = Date.now();
-    await report("visits-from-chooser", mark);
-    console.log(`  VERDICT chooser: the browser asked for the Visits read itself ${calls.slice(mark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length} time(s); 0 means the page handed it over`);
-    const pressBack = async (label, waitUntil) => {
-      console.log(`  ${stamp()} --- about to press Back (${label})`);
-      await page.waitForTimeout(Math.max(0, waitUntil - Date.now()));
-      console.log(`  pressing Back ${Math.round((Date.now() - drawnAt) / 1000)} s after Visits first drew (${label})`);
+    console.log(`  the first open ${(await drawn()) ? "drew" : "NEVER drew"}`);
+    await page.waitForTimeout(3000);
+    await report("visits-from-chooser", firstMark);
+    console.log(`  VERDICT first open: the browser read Visits itself ${ownReads(firstMark)} time(s); 0 means the page handed it over`);
+
+    const scenario = async (label, { refresh = null, noMark = false, waitMs = 0 }) => {
+      console.log(`  ${stamp()} === scenario: ${label}`);
+      await page.evaluate((value) => { window.__phxNoMark = value; }, noMark);
+      if (refresh === "settled") {
+        // The same call a saved visit makes (visit-log-form.tsx), waiting until its answer has reached the screen.
+        const answered = page.waitForResponse(isVisitsPage, { timeout: 180_000 });
+        await page.evaluate(() => window.next.router.refresh());
+        await answered;
+        await page.waitForTimeout(6000);
+      }
+      if (refresh === "inflight") {
+        await page.evaluate((target) => { window.next.router.refresh(); window.next.router.push(target); }, PLAN);
+        await page.waitForURL(`**${PLAN}`, { timeout: 180_000 });
+        await settle();
+      } else {
+        await clientGo(PLAN);
+      }
+      await page.waitForTimeout(waitMs);
       const readMark = calls.length;
       const pageMark = pageRequests.length;
-      await page.goBack({ timeout: 180_000 });
-      await settle();
       const answerMark = visitAnswers.length;
-      const pressedAt = Date.now();
-      const drew = await page.waitForFunction(() => document.querySelectorAll('[class*="animate-pulse"]').length === 0, null, { timeout: 180_000 }).then(() => true).catch(() => false);
-      console.log(`  the day ${drew ? "drew" : "NEVER drew"}, ${Math.round((Date.now() - pressedAt) / 1000)} s after the wait began`);
+      console.log(`  ${stamp()} pressing Back`);
+      await page.goBack({ timeout: 180_000 });
+      await page.waitForTimeout(3000);
+      const drew = await drawn();
       await page.waitForTimeout(3000);
       await report(`back-${label}`, readMark);
-      console.log(`  answers to the Visits read since the mark: ${visitAnswers.slice(answerMark).join(", ") || "none yet"}; all so far: ${visitAnswers.join(", ") || "none"}`);
-      const ownReads = calls.slice(readMark).filter((c) => c.split("?")[0] === "/api/phoenix-crm/visits").length;
-      const askedAgain = pageRequests.slice(pageMark).filter((p) => p.endsWith("/field-crm/visits"));
-      console.log(`  VERDICT back ${label}: the browser read Visits itself ${ownReads} time(s); the router asked the server for the Visits page ${askedAgain.length} time(s). Either one above 0 is fresh; both 0 is the day from before.`);
-      console.log(`  page requests on Back: ${pageRequests.slice(pageMark).join(" | ") || "none"}`);
+      console.log(`  VERDICT ${label}: the browser read Visits itself ${ownReads(readMark)} time(s); the router asked the server for the Visits page ${pagesAsked(pageMark)} time(s); the day ${drew ? "drew" : "NEVER drew"}; answers to its reads: ${visitAnswers.slice(answerMark).join(", ") || "none"}. Either count above 0 is fresh; both 0 is the old read.`);
     };
-    mark = calls.length;
-    await clientGo("/employee-portals/field-crm/plan");
-    await report("plan-from-visits", mark);
-    await pressBack("soon", 0);
-    mark = calls.length;
-    await clientGo("/employee-portals/field-crm/plan");
-    await report("plan-again", mark);
-    await pressBack("late", Date.now() + 35_000);
+
+    await scenario("plain-back", {});
+    await scenario("refresh-control-fix-off", { refresh: "settled", noMark: true });
+    await scenario("refresh-then-back", { refresh: "settled" });
+    await scenario("refresh-left-before-answer", { refresh: "inflight", waitMs: 35_000 });
   } else {
     const landing = await go("/employee-portals");
     console.log(`home ${landing?.status()}`);

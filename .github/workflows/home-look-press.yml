@@ -46,6 +46,10 @@ jobs:
           test "$NEXT_PUBLIC_SUPABASE_URL" = "https://cifwmndunmlxjhyjugxa.supabase.co"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           ! env | grep -q ozucdzovmcqvepbozvqf
+      - name: The fix's own test, unbroken and broken
+        run: node --no-warnings scripts/ci-press/back-mutants.mjs
+      - name: Add the probe and the control switch
+        run: node --no-warnings scripts/ci-press/apply-probe.mjs
       - name: Start the server
         run: |
           sudo fallocate -l 6G /mnt/phx-look-swap && sudo chmod 600 /mnt/phx-look-swap && sudo mkswap /mnt/phx-look-swap >/dev/null && sudo swapon /mnt/phx-look-swap || echo "no extra swap"
