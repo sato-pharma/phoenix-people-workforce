@@ -219,7 +219,12 @@ export function runProductionPlanningCompositionEditorTests() {
     "🔴 the enums come from the module's own kernel — a retyped list is how a select and the " +
       "table's own CHECK start to disagree",
   );
-  assert.match(workspace, /COMPOSITION_BASES\.map\(/, "every basis is offered");
+  // Only `per_strip` is ever held back, and only from a product that names no strips.
+  assert.match(
+    workspace,
+    /COMPOSITION_BASES\.filter\(\s*\(basis\) => basis === lineBasis \|\| basisFitsProduct\(basis, selectedProductOf\(data\)\?\.stripsPerBox\),\s*\)\.map\(/,
+    "every basis the product can use is offered",
+  );
   assert.match(workspace, /MATERIAL_SUPPLIERS\.map\(/, "and every supplier");
   assert.match(
     workspace,
@@ -332,7 +337,7 @@ export function runProductionPlanningCompositionEditorTests() {
 
   // Every basis the select offers has to be nameable, or an option renders blank and he picks it by
   // position.
-  assert.equal(COMPOSITION_BASES.length, 5, "five bases; a sixth needs a label in both catalogues");
+  assert.equal(COMPOSITION_BASES.length, 6, "six bases; a seventh needs a label in both catalogues");
   assert.equal(MATERIAL_SUPPLIERS.length, 3, "three suppliers, one of them the unsettled state");
 
   // ── The formula is the FIRST section in the tab ────────────────────────────────────────────────

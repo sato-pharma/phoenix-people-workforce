@@ -47,6 +47,11 @@ export type RunGeometry = {
    * more saleable unit, which at 30 to a box would make it a thirtieth of a box.
    */
   readonly sampleInOwnBox?: boolean;
+  /**
+   * Blister strips in one saleable box: 3 for Saginkgo (owner, 2026-11-03). Absent means the product
+   * does not count strips, and its strip count reads zero.
+   */
+  readonly stripsPerBox?: bigint | null;
 };
 
 export type PlanRequest = {
@@ -68,6 +73,8 @@ export type RunYield = {
   readonly totalBoxes: bigint;
   /** What a `per_box` material counts: `totalBoxes`, less the samples when they wear their own box. */
   readonly perBoxCount: bigint;
+  /** What a `per_strip` material counts: the strips in the saleable boxes, plus one a sample box. */
+  readonly stripCount: bigint;
   readonly totalVolumeMl: bigint;
   readonly totalDoses: bigint;
   /** Volume that fills neither a bottle nor a sample. Normally zero; never silently dropped. */
@@ -110,7 +117,8 @@ function packingFor(
   geometry: RunGeometry,
   goodUnits: bigint,
   sampleUnits: bigint,
-): Pick<RunYield, "packagingSets" | "perBoxCount" | "totalBoxes"> {
+): Pick<RunYield, "packagingSets" | "perBoxCount" | "stripCount" | "totalBoxes"> {
+  const stripsPerBox = geometry.stripsPerBox ?? BigInt(0);
   if (geometry.sampleInOwnBox) {
     // Saginkgo: 100 samples are 100 boxes of five, and the 500 capsules in them are still capsules, so
     // the set count stays in the saleable unit the tile prints it in.
@@ -118,6 +126,9 @@ function packingFor(
     return {
       packagingSets: goodUnits + (sampleUnits * geometry.sampleUnitMl) / geometry.goodUnitMl,
       perBoxCount: saleableBoxes,
+      // "the box is 3 شرايط sample is one" (owner, 2026-11-03). Only a sample in its own box adds a
+      // strip here: any other sample is already inside the box count below.
+      stripCount: stripsPerBox > BigInt(0) ? saleableBoxes * stripsPerBox + sampleUnits : BigInt(0),
       totalBoxes: saleableBoxes + sampleUnits,
     };
   }
@@ -126,7 +137,7 @@ function packingFor(
   // 40,000 sachets are 3,334 cartons of twelve, not 3,333 with four sachets silently dropped — and
   // `per_box` materials (the carton, the film) read this count, so flooring it under-ordered them.
   const totalBoxes = ceilDiv(packagingSets, geometry.unitsPerBox);
-  return { packagingSets, perBoxCount: totalBoxes, totalBoxes };
+  return { packagingSets, perBoxCount: totalBoxes, stripCount: totalBoxes * stripsPerBox, totalBoxes };
 }
 
 /**

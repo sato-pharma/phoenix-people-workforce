@@ -15,7 +15,7 @@
 export type WireLevel = "full" | "read" | "none";
 export type WireUnitKind = "mass" | "count";
 export type WireSupplier = "sato" | "factory" | "shared_unsettled";
-export type WireBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit" | "per_box";
+export type WireBasis = "per_dose" | "per_packaging_set" | "per_good_unit" | "per_sample_unit" | "per_box" | "per_strip";
 /**
  * The unit a product's geometry is counted in: `ml` for a syrup, `g` for a powder in sachets, `mg`
  * for a tablet (155 mg is not a whole gram, and the geometry columns are integers).
@@ -40,6 +40,8 @@ export type WireProduct = {
   unitsPerBox: string;
   /** True when one sample is a whole box of its own, as Saginkgo's box of five capsules is. */
   sampleInOwnBox?: boolean;
+  /** Blister strips in one saleable box, for a product whose foil is counted by the strip. */
+  stripsPerBox?: string | null;
   /**
    * What the four `…Ml` figures above are counted in. The arithmetic never cared — a run is
    * `runVolumeMl / doseMl` whatever the unit — but the LABELS did, and a powder in 5 g sachets was

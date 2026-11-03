@@ -119,6 +119,8 @@ export function basisCountFor(basis: CompositionBasis, run: RunGeometryResult): 
       return run.sampleUnits;
     case "per_box":
       return run.perBoxCount;
+    case "per_strip":
+      return run.stripCount;
   }
 }
 
@@ -138,6 +140,8 @@ function basisCountForOneRun(basis: CompositionBasis, run: RunGeometryResult): b
       return ceilDiv(run.sampleUnits, run.runs);
     case "per_box":
       return ceilDiv(run.perBoxCount, run.runs);
+    case "per_strip":
+      return ceilDiv(run.stripCount, run.runs);
   }
 }
 

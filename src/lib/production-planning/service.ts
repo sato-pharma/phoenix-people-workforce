@@ -58,6 +58,7 @@ import {
 } from "./requirements";
 import {
   coerceMeasureUnit,
+  basisFitsProduct,
   COMPOSITION_BASES,
   formatPct,
   formatQty,
@@ -119,7 +120,7 @@ export { T as PRODPLAN_TABLES };
 // Explicit column lists, never `select("*")`: a `*` read is how a column added for one screen
 // quietly starts travelling to every other one.
 const PRODUCT_COLUMNS =
-  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, sample_in_own_box, measure_unit, factory_location_id, default_sample_units, is_active, notes";
+  "id, code, name_ar, name_en, manufacturer_name, run_volume_ml, dose_ml, good_unit_ml, sample_unit_ml, whole_runs_only, units_per_box, sample_in_own_box, strips_per_box, measure_unit, factory_location_id, default_sample_units, is_active, notes";
 /** Which materials belong to which product. Before Guamusin every material belonged to the only one. */
 const PRODUCT_MATERIAL_COLUMNS = "product_id, material_id, sort_order, is_active, supplier";
 const MATERIAL_COLUMNS =
@@ -433,6 +434,7 @@ async function loadProductionPlanningDataAtLevel(level: ProductionPlanningLevel)
       wholeRunsOnly: row.whole_runs_only !== false,
       unitsPerBox: BigInt(row.units_per_box),
       sampleInOwnBox: row.sample_in_own_box === true,
+      stripsPerBox: row.strips_per_box == null ? null : BigInt(row.strips_per_box),
     },
   }));
 
@@ -1370,6 +1372,7 @@ export async function getProductionPlanningWorkspace(
       wholeRunsOnly: product.geometry.wholeRunsOnly,
       unitsPerBox: product.geometry.unitsPerBox.toString(),
       sampleInOwnBox: product.geometry.sampleInOwnBox === true,
+      stripsPerBox: product.geometry.stripsPerBox == null ? null : product.geometry.stripsPerBox.toString(),
       measureUnit: product.measureUnit,
       factoryLocationId: factoryLocationIdFor(data, product),
       notes: product.notes,
@@ -2080,6 +2083,14 @@ export async function saveMaterialAndComposition(access: AccessContext, body: Re
     const basis = COMPOSITION_BASES.find((candidate) => candidate === body.basis);
     const supplier = MATERIAL_SUPPLIERS.find((candidate) => candidate === body.supplier);
     if (!basis) throw new ProductionPlanningInputError(errorsFor(body).unknownBasis, "basis");
+    if (basis === "per_strip") {
+      // A strip line on a product with no strips would save and then ask for nothing, for ever.
+      const owner = await db.from(T.products).select("strips_per_box").eq("id", productId).maybeSingle();
+      if (owner.error) failure(owner.error, "read the product");
+      if (!basisFitsProduct(basis, owner.data?.strips_per_box)) {
+        throw new ProductionPlanningInputError(errorsFor(body).stripBasisNeedsStrips, "basis");
+      }
+    }
     if (!supplier) throw new ProductionPlanningInputError(errorsFor(body).unknownSupplier, "supplier");
     const qtyPerBasis = parseNonNegativeQty(asScalar(body.qtyPerBasis), "qtyPerBasis");
     if (qtyPerBasis <= BigInt(0)) throw new ProductionPlanningInputError(errorsFor(body).qtyMustBePositive, "qtyPerBasis");
