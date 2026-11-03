@@ -135,11 +135,11 @@ export function EmailSuppressionPanel() {
                 <PortalDesktopTable
                   cols={
                     <colgroup>
+                      <col className="w-[20%]" />
                       <col className="w-[22%]" />
-                      <col className="w-[24%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[22%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[20%]" />
                       <col className="w-[12%]" />
                     </colgroup>
                   }
@@ -148,8 +148,8 @@ export function EmailSuppressionPanel() {
                     <tr>
                       <th className="px-3 py-3">Person</th>
                       <th className="px-3 py-3">Address</th>
-                      <th className="px-3 py-3">Why</th>
-                      <th className="px-3 py-3">Since</th>
+                      <th className="break-words px-3 py-3">Why</th>
+                      <th className="break-words px-3 py-3">Since</th>
                       <th className="px-3 py-3">Provider said</th>
                       <th className="px-3 py-3" />
                     </tr>
@@ -159,8 +159,8 @@ export function EmailSuppressionPanel() {
                       <tr className="align-top" key={row.address}>
                         <td className="break-words px-3 py-2 font-semibold text-slate-950">{personLine(row)}</td>
                         <td className="break-words px-3 py-2">{row.address}</td>
-                        <td className="px-3 py-2">{REASON_LABEL[row.reason] ?? row.reason}</td>
-                        <td className="px-3 py-2">{cairoDate(row.blockedAt)}</td>
+                        <td className="break-words px-3 py-2">{REASON_LABEL[row.reason] ?? row.reason}</td>
+                        <td className="break-words px-3 py-2">{cairoDate(row.blockedAt)}</td>
                         <td className="break-words px-3 py-2 text-xs">{row.providerWords ?? "Nothing"}</td>
                         <td className="px-3 py-2 text-right">{action(row)}</td>
                       </tr>

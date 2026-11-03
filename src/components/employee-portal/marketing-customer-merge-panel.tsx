@@ -173,6 +173,7 @@ export function MarketingCustomerMergePanel({ onMerged }: { onMerged: () => void
             <div className="flex flex-wrap gap-2">
               {groups.map((group) => (
                 <Button
+                  className="h-auto max-w-full whitespace-normal break-words py-1 text-left"
                   disabled={isMerging}
                   key={group[0].id}
                   onClick={() => pick(group[0].id, group[1].id)}

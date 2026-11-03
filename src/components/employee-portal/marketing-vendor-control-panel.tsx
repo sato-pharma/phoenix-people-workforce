@@ -132,12 +132,12 @@ export function MarketingVendorControlPanel() {
               <PortalDesktopTable
                 cols={
                   <colgroup>
-                    <col className="w-[30%]" />
-                    <col className="w-[22%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
                   </colgroup>
                 }
               >
@@ -145,9 +145,9 @@ export function MarketingVendorControlPanel() {
                   <tr>
                     <th className="px-3 py-3">Vendor</th>
                     <th className="px-3 py-3">State</th>
-                    <th className="px-3 py-3 text-right">Codes loaded</th>
-                    <th className="px-3 py-3 text-right">Codes waiting</th>
-                    <th className="px-3 py-3 text-right">Customers</th>
+                    <th className="break-words px-3 py-3 text-right">Codes loaded</th>
+                    <th className="break-words px-3 py-3 text-right">Codes waiting</th>
+                    <th className="break-words px-3 py-3 text-right">Customers</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
