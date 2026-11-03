@@ -5,6 +5,7 @@ import {
   BOTTOM_BAR_REFERENCE_WIDTH,
   BOTTOM_BAR_TABS,
   bottomBarWordBudgetPx,
+  FALLBACK_LABEL_FONT_FAMILY,
   SIDEBAR_LABEL_SNAPSHOT_PATH,
 } from "../src/config/sidebar-metrics.ts";
 import { isEmployeePortalOwnedRoute } from "../src/lib/employee-portal/routes.ts";
@@ -209,8 +210,10 @@ export function runEmployeePortalBottomNavTests() {
   // label quietly spending the headroom that bought back.
   //
   // Measured, not modelled: widths come from the snapshot `pnpm run ui:measure-sidebar-labels`
-  // writes in real Chromium at the bar's own 10px/900. A label with no entry FAILS rather than
-  // being skipped, so adding one cannot bypass the check.
+  // writes in real Chromium at the bar's own 10px/900, in two faces, because the stack draws with the
+  // first family a phone can see and one width only describes the machine that took it. The bar has
+  // to fit in both: the script's face and Arial, where a phone with none of the earlier families
+  // lands. A label with no entry FAILS rather than being skipped, so adding one cannot bypass the check.
   assert.equal(
     BOTTOM_BAR_TABS,
     2 + MAX_BOTTOM_NAV_CUSTOM,
@@ -227,42 +230,51 @@ export function runEmployeePortalBottomNavTests() {
     "a bottom-bar label may be at most two words — the span is a fixed two lines tall and words do not break",
   );
 
-  const floors = (
-    JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as Record<string, Record<string, number>>
-  )["bottom-bar"];
-  assert.ok(
-    floors && Object.keys(floors).length > 0,
-    `${SIDEBAR_LABEL_SNAPSHOT_PATH} holds no "bottom-bar" map — run pnpm run ui:measure-sidebar-labels`,
-  );
-
-  const unmeasured = allEntries
-    .filter((entry) => typeof floors[entry.label] !== "number")
-    .map((entry) => entry.label);
-  assert.deepEqual(
-    [...new Set(unmeasured)],
-    [],
-    "every bottom-bar label needs a measured floor — run `pnpm run ui:measure-sidebar-labels` after adding or renaming one",
-  );
-
-  // Worst case: the two fixed ends plus the four widest floors anything could be pinned to.
-  const widestFour = allEntries
-    .map((entry) => ({ label: entry.label, px: floors[entry.label] }))
-    .sort((a, b) => b.px - a.px)
-    .slice(0, BOTTOM_BAR_TABS - 2);
-  const worstBar = [
-    { label: HOME_ENTRY.label, px: floors[HOME_ENTRY.label] },
-    ...widestFour,
-    { label: PROFILE_ENTRY.label, px: floors[PROFILE_ENTRY.label] },
+  type BarFloors = Record<string, number>;
+  const snapshot = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as {
+    "bottom-bar"?: BarFloors;
+    fallback?: { "bottom-bar"?: BarFloors };
+  };
+  const faces: [string, BarFloors | undefined][] = [
+    ["the measuring machine's face", snapshot["bottom-bar"]],
+    [FALLBACK_LABEL_FONT_FAMILY, snapshot.fallback?.["bottom-bar"]],
   ];
-  const needed = worstBar.reduce((sum, tab) => sum + tab.px, 0);
+
   const budget = bottomBarWordBudgetPx();
-  assert.ok(
-    needed <= budget,
-    `the worst-case bottom bar needs ${needed}px of label but only ${budget}px fits at ` +
-      `${BOTTOM_BAR_REFERENCE_WIDTH}px (${needed - budget}px over) — ` +
-      `${worstBar.map((tab) => `${tab.label} ${tab.px}`).join(" | ")}. Shorten a label or merge two ` +
-      `tabs; do NOT shrink the type or reach for an ellipsis, both are owner rules.`,
-  );
+  for (const [face, floors] of faces) {
+    assert.ok(
+      floors && Object.keys(floors).length > 0,
+      `${SIDEBAR_LABEL_SNAPSHOT_PATH} holds no "bottom-bar" map in ${face} — run pnpm run ui:measure-sidebar-labels`,
+    );
+
+    const unmeasured = allEntries
+      .filter((entry) => typeof floors[entry.label] !== "number")
+      .map((entry) => entry.label);
+    assert.deepEqual(
+      [...new Set(unmeasured)],
+      [],
+      `every bottom-bar label needs a measured floor in ${face} — run \`pnpm run ui:measure-sidebar-labels\` after adding or renaming one`,
+    );
+
+    // Worst case: the two fixed ends plus the four widest floors anything could be pinned to.
+    const widestFour = allEntries
+      .map((entry) => ({ label: entry.label, px: floors[entry.label] }))
+      .sort((a, b) => b.px - a.px)
+      .slice(0, BOTTOM_BAR_TABS - 2);
+    const worstBar = [
+      { label: HOME_ENTRY.label, px: floors[HOME_ENTRY.label] },
+      ...widestFour,
+      { label: PROFILE_ENTRY.label, px: floors[PROFILE_ENTRY.label] },
+    ];
+    const needed = worstBar.reduce((sum, tab) => sum + tab.px, 0);
+    assert.ok(
+      needed <= budget,
+      `the worst-case bottom bar needs ${needed}px of label in ${face} but only ${budget}px fits at ` +
+        `${BOTTOM_BAR_REFERENCE_WIDTH}px (${needed - budget}px over) — ` +
+        `${worstBar.map((tab) => `${tab.label} ${tab.px}`).join(" | ")}. Shorten a label or merge two ` +
+        `tabs; do NOT shrink the type or reach for an ellipsis, both are owner rules.`,
+    );
+  }
 
   // Pin the arithmetic the assertion above rests on, so narrowing the reference or growing the
   // chrome cannot quietly make the sweep generous.

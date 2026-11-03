@@ -10,7 +10,8 @@
  * Measured in TWO faces per rail. This browser draws the stack with the first family it can see, which
  * on the Windows laptop is Segoe UI, not Aptos, whatever a computed style prints. So "admin" and
  * "portal" hold THIS machine's face, and "fallback" holds the same labels in Arial, where a machine
- * with none of the earlier families lands. The width test holds the budget against both.
+ * with none of the earlier families lands. The width test holds the budget against both, and the portal
+ * bottom bar's test does the same with its "bottom-bar" maps.
  *
  * Measured PER SHELL since #2353's follow-up. The admin rail renders labels at 13px/600/-0.01em and
  * the employee portal at 12px/700 — a label that appears in both (e.g. "Territory Management") is
@@ -26,6 +27,7 @@ import { chromium } from "playwright";
 
 import {
   BOTTOM_BAR_LABEL_FONT_CSS,
+  FALLBACK_BOTTOM_BAR_LABEL_FONT_CSS,
   FALLBACK_LABEL_FONT_FAMILY,
   fallbackLabelFontCss,
   labelFontCss,
@@ -126,26 +128,32 @@ for (const { labels, shell } of shells) {
 // not from employeePortalNavigationSections, and what is stored is the width of each label's
 // longest WORD rather than the label itself: the span wraps, so that word is the narrowest a tab
 // can ever be laid out and therefore the floor the fit test has to add up. Storing the whole label
-// would re-import the nowrap assumption the wrap fix removed.
-await page.setContent(`<style>
+// would re-import the nowrap assumption the wrap fix removed. Two faces here as well: the bar's six
+// floors add up against a budget, so a wider face can overflow a phone that the first face fitted.
+async function measureLongestWords(fontCss: string, labels: string[]): Promise<Record<string, number>> {
+  await page.setContent(`<style>
   body{margin:0}
-  #probe{position:absolute;white-space:nowrap;width:auto;${BOTTOM_BAR_LABEL_FONT_CSS}}
+  #probe{position:absolute;white-space:nowrap;width:auto;${fontCss}}
 </style><span id="probe"></span>`);
 
+  return page.evaluate((list: string[]) => {
+    const probe = document.getElementById("probe") as HTMLElement;
+    const out: Record<string, number> = {};
+    for (const label of list) {
+      out[label] = Math.max(
+        ...label.split(" ").filter(Boolean).map((word) => {
+          probe.textContent = word;
+          return Math.ceil(probe.getBoundingClientRect().width);
+        }),
+      );
+    }
+    return out;
+  }, labels);
+}
+
 const barLabels = [...new Set([HOME_ENTRY, PROFILE_ENTRY, ...PORTAL_NAV_REGISTRY].map((e) => e.label))].sort();
-snapshot["bottom-bar"] = await page.evaluate((list: string[]) => {
-  const probe = document.getElementById("probe") as HTMLElement;
-  const out: Record<string, number> = {};
-  for (const label of list) {
-    out[label] = Math.max(
-      ...label.split(" ").filter(Boolean).map((word) => {
-        probe.textContent = word;
-        return Math.ceil(probe.getBoundingClientRect().width);
-      }),
-    );
-  }
-  return out;
-}, barLabels);
+fallback["bottom-bar"] = await measureLongestWords(FALLBACK_BOTTOM_BAR_LABEL_FONT_CSS, barLabels);
+snapshot["bottom-bar"] = await measureLongestWords(BOTTOM_BAR_LABEL_FONT_CSS, barLabels);
 
 {
   const resolved = await page.evaluate(() => {
@@ -153,8 +161,10 @@ snapshot["bottom-bar"] = await page.evaluate((list: string[]) => {
     return `${cs.fontSize} / ${cs.fontWeight} / ${cs.fontFamily}`;
   });
   const widest = Object.entries(snapshot["bottom-bar"]).sort((a, b) => b[1] - a[1])[0];
+  const widestFallback = Object.entries(fallback["bottom-bar"]).sort((a, b) => b[1] - a[1])[0];
   console.log(`bottom-bar: ${barLabels.length} labels at ${resolved}`);
   console.log(`bottom-bar: widest word "${widest[0]}" at ${widest[1]}px`);
+  console.log(`bottom-bar: widest word in ${FALLBACK_LABEL_FONT_FAMILY} "${widestFallback[0]}" at ${widestFallback[1]}px`);
 }
 
 await browser.close();

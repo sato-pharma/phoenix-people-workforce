@@ -312,6 +312,19 @@ export function fallbackLabelFontCss(shell: SidebarShell): string {
   return labelFontCss(shell).replace(LABEL_FONT_FAMILY, `font-family:${FALLBACK_LABEL_FONT_FAMILY}`);
 }
 
+/**
+ * The bar's label in the fallback face alone: 10px, at 700 where the span asks for 900, on purpose.
+ *
+ * Arial's own family stops at Bold, and a machine that lands on Arial or a metric twin draws a 900 in that
+ * Bold. Probed 2026-11-03 in headless Chromium 153: Liberation Sans at 900 measured every bar label the
+ * same as Arial at 700, worst bar 284px. Only Windows answers `font-family:Arial;font-weight:900` with
+ * Arial Black, a different and wider face (worst bar 324px), and Windows draws this stack in Segoe UI long
+ * before it reaches Arial. So 900 here would hold the bar to a face no one is served, and make the
+ * snapshot depend on who ran the script. A constant beside `fallbackLabelFontCss` rather than a branch in
+ * it, because the bar stays out of `SidebarShell` (see the note on that section).
+ */
+export const FALLBACK_BOTTOM_BAR_LABEL_FONT_CSS = `font-size:10px;font-weight:700;font-family:${FALLBACK_LABEL_FONT_FAMILY}`;
+
 export const SIDEBAR_LABEL_SNAPSHOT_PATH = "tests/fixtures/sidebar-label-widths.json";
 
 /** The command that re-measures every sidebar label and rewrites the snapshot, from the primary checkout. */
