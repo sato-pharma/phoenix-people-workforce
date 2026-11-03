@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logWarning } from "@/lib/observability/log";
 import { forgetPageTimingHours, pageTimingRowsBefore } from "@/lib/observability/page-timing-store";
-import { isSupabaseTimeout } from "@/lib/reports/vacancies";
+import { isSupabaseTimeout } from "@/lib/supabase/errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const PAGE_TIMINGS_RECORD_RPC = "phx_page_timings_record";

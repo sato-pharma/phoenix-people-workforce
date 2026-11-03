@@ -161,6 +161,7 @@ export function runPageTimingsTests() {
     assert.equal(await flushPageTimings({ client: taking, now: later }), 0, "the next tick has nothing to send");
     assert.equal(calls.length, 1, "no second RPC, so no hour is counted twice");
     resetPageTimingStore();
+    assert.doesNotMatch(code("src/lib/observability/page-timing-flush.ts"), /@\/lib\/reports/, "the flush loads no report: process-health imports it to keep its own graph small");
 
     // ── first_data is the page's own data read, never the shell's chatter ─────────────────────────
     const ORIGIN = "https://phoenix-hr.satopharma.com";

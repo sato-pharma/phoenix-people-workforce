@@ -125,16 +125,25 @@ export async function runShellChatterTests() {
     assert.equal(bundle.unreadMessages, null, "no count is null, never zero — zero would clear a badge that may be lit");
   }
 
-  // The list fills a missing id from the auth row or the employee record, and this statement cannot.
-  // A session holding only one id offers no count, so the pulse never overrides what the list shows.
+  // A session with no HR id (an admin account): the list finds the employee by the login id, so the
+  // statement is asked under that same key, and the badge stays live on every pulse.
   {
-    const { client } = fakeClient({ data: { events: [], states: [], unread_messages: 0 }, error: null });
+    const { client, rpcCalls } = fakeClient({ data: { events: [], states: [], unread_messages: 2 }, error: null });
     const loginOnly = await listInAppNoticeBundleForViewer({ ...REP, hrId: null }, 8, client);
-    assert.equal(loginOnly.unreadMessages, null, "a session with only a login id leaves the badge to the menu's own read");
+    assert.equal(loginOnly.unreadMessages, 2, "a session with only a login id keeps its live count");
+    assert.equal(rpcCalls[0].args.p_msg_hr_id, "pd0030", "asked under the employee key the list resolves from the login id");
+    assert.equal(rpcCalls[0].args.p_login_id, "pd0030", "and by the login itself");
+  }
+
+  // A session with no login id: the list would read the login from the auth row, and this statement
+  // cannot, so it is asked for no count at all. The migration answers null when both ids are blank.
+  {
+    const { client, rpcCalls } = fakeClient({ data: { events: [], states: [], unread_messages: null }, error: null });
     const hrOnly = await listInAppNoticeBundleForViewer({ ...REP, loginId: null }, 8, client);
-    assert.equal(hrOnly.unreadMessages, null, "and so does a session with only an HR id");
-    const both = await listInAppNoticeBundleForViewer(REP, 8, client);
-    assert.equal(both.unreadMessages, 0, "a session holding both ids keeps the count, zero included");
+    assert.equal(hrOnly.unreadMessages, null, "the menu reads its own count once");
+    assert.equal(rpcCalls[0].args.p_msg_hr_id, "", "no HR id is sent, so the statement scans no messages for a count nobody would use");
+    assert.equal(rpcCalls[0].args.p_login_id, "", "and no login");
+    assert.equal(rpcCalls[0].args.p_hr_id, "pd-0030", "the bell's own read is untouched");
   }
 
   // ── 1b. A database the migration has not reached: the four reads, exactly as before ──────────
@@ -193,6 +202,8 @@ export async function runShellChatterTests() {
     assert.match(bundle, /supabase\.rpc\("phx_in_app_notices", \{/, "the bundle asks the one function");
     assert.match(bundle, /if \(rpc\.error && !isMissingRpcError\(rpc\.error\)\) throw rpc\.error;/, "only a MISSING function falls back — any other error is the bell's error");
     assert.doesNotMatch(inApp, /PGRST202/, "the bell asks the one shared rule and keeps no copy of it");
+    assert.match(code("src/lib/crm/reads.ts"), /export \{ isMissingRpcError as isMissingCrmRpcError \};/, "the CRM's name for it is one line, never a second rule");
+    assert.doesNotMatch(code("src/lib/supabase/errors.ts"), /^import /m, "the rule's file imports nothing, so a reader on the shell's path loads no domain");
     assert.match(bundle, /await legacyNoticeReads\(/, "the fallback is the old reads, kept in one place");
     assert.doesNotMatch(bundle, /await archiveStaleApprovalNotifications\(/, "the approver archive is never awaited on the bell's path again");
     assert.match(bundle, /scheduleStaleApprovalArchive\(/, "it is scheduled after the response instead");
@@ -364,22 +375,24 @@ export async function runShellChatterTests() {
   // ── 6. Page views go to /api/activity/track in one batch per tab ─────────────────────────────
   {
     const tracker = code("src/components/activity/activity-tracker.tsx");
+    const pageViews = code("src/lib/activity/page-view-queue.ts");
     const route = code("app/api/activity/track/route.ts");
-    assert.match(tracker, /onSignOutStart\(flushActivityQueue\);/, "a sign-out sends the queued page views while the session still exists");
+    assert.doesNotMatch(pageViews, /^import /m, "the queue is a leaf, so the sign-out can call it directly");
+    assert.doesNotMatch(tracker, /fetch\(/, "the tracker sends nothing itself");
     const routeLimit = /const MAX_EVENTS_PER_REQUEST = (\d+);/.exec(route);
-    const trackerLimit = /export const ACTIVITY_BATCH_LIMIT = (\d+);/.exec(tracker);
+    const trackerLimit = /export const ACTIVITY_BATCH_LIMIT = (\d+);/.exec(pageViews);
     assert.ok(routeLimit && trackerLimit, "both sides name their batch limit");
     assert.equal(trackerLimit?.[1], routeLimit?.[1], "a full queue is exactly what the route accepts in one request — never a dropped tail");
-    assert.match(tracker, /export const ACTIVITY_FLUSH_INTERVAL_MS = 30_000;/, "one request per tab every thirty seconds");
-    assert.match(tracker, /body: JSON\.stringify\(\{ events \}\),\s*keepalive: true,/, "the batch is the route's `events` array, sent keepalive so a closing tab still delivers it");
-    assert.equal((tracker.match(/fetch\(ENDPOINT/g) ?? []).length, 1, "ONE fetch in the file — the one that sends a batch");
-    const queueFn = functionBody(tracker, "function queueActivityBeacon(");
+    assert.match(pageViews, /export const ACTIVITY_FLUSH_INTERVAL_MS = 30_000;/, "one request per tab every thirty seconds");
+    assert.match(pageViews, /body: JSON\.stringify\(\{ events \}\),\s*keepalive: true,/, "the batch is the route's `events` array, sent keepalive so a closing tab still delivers it");
+    assert.equal((pageViews.match(/fetch\(ENDPOINT/g) ?? []).length, 1, "ONE fetch in the file — the one that sends a batch");
+    const queueFn = functionBody(pageViews, "function queueActivityBeacon(");
     assert.doesNotMatch(queueFn, /fetch\(/, "queueing a page view sends nothing by itself");
     assert.match(queueFn, /if \(queue\.length >= ACTIVITY_BATCH_LIMIT\) \{\s*flushActivityQueue\(\);\s*return;\s*\}/, "a full queue goes at once");
     assert.match(queueFn, /flushTimer = window\.setTimeout\(\(\) => \{\s*flushTimer = null;\s*flushActivityQueue\(\);\s*\}, ACTIVITY_FLUSH_INTERVAL_MS\);/, "otherwise the first entry starts the thirty-second clock");
-    assert.match(tracker, /queue\.push\(\{ path, enteredAt: enteredAtIso, durationMs: Math\.round\(durationMs\) \}\)/, "each entry carries its own enteredAt, so the server records the true time however long it waited");
-    const flush = functionBody(tracker, "function flushActivityQueue(");
-    assert.match(flush, /while \(queue\.length > 0\) sendBatch\(queue\.splice\(0, ACTIVITY_BATCH_LIMIT\)\);/, "a flush sends everything, in route-sized batches");
+    assert.match(pageViews, /queue\.push\(\{ path, enteredAt: enteredAtIso, durationMs: Math\.round\(durationMs\) \}\)/, "each entry carries its own enteredAt, so the server records the true time however long it waited");
+    const flush = functionBody(pageViews, "function flushActivityQueue(");
+    assert.match(flush, /while \(queue\.length > 0\) sending\.push\(sendBatch\(queue\.splice\(0, ACTIVITY_BATCH_LIMIT\)\)\);/, "a flush sends everything, in route-sized batches");
     assert.match(tracker, /function flush\(\) \{[\s\S]*?flushActivityQueue\(\);\s*\}/, "hiding or leaving the tab flushes the queue — a hidden tab may never get its tick");
     assert.match(tracker, /window\.addEventListener\("pagehide", flush\);/);
     assert.match(route, /const events = extractEvents\(body\)\.slice\(0, MAX_EVENTS_PER_REQUEST\);/, "the route already reads the array");

@@ -1,4 +1,4 @@
-import { isMissingRpcError } from "@/lib/supabase/missing-rpc";
+import { isMissingRpcError } from "@/lib/supabase/errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -638,18 +638,19 @@ export async function listInAppNoticeBundleForViewer(
     let readStates: (rowIds: string[]) => Promise<NotificationUserStateRow[]>;
     let unreadMessages: number | null = null;
 
-    // The list resolves a missing id from the auth row or the employee record (resolveSender), which
-    // this statement does not read. A session holding only one id could count fewer messages than the
-    // list shows, so it offers no count and the menu reads its own once.
-    const sessionHoldsBothMessageIds = Boolean(normalizeHrId(access.hrId) && cleanText(access.loginId));
+    // The envelope is asked under the identity the messages list resolves (resolveSender in
+    // internal-messages/service.ts), without that lookup's two reads. A session's HR id is its auth
+    // row's, and with no HR id the list finds the employee by the login id, which is the key
+    // employeeHrId already holds. A session with no login id cannot be asked, because the list would
+    // read it from the auth row: it sends neither id, the statement skips the scan and answers null,
+    // and the menu reads its own count once.
+    const messageLoginId = cleanText(access.loginId);
 
     const rpc = await supabase.rpc("phx_in_app_notices", {
       p_hr_id: employeeHrId,
       p_user_id: identity.userId ?? "",
-      // The envelope's identity is the session's own ids, the same strings the messages list reads
-      // with first (internal-messages/service.ts, "ONE WAVE, NOT TWO"); the menu re-reads on open.
-      p_msg_hr_id: normalizeHrId(access.hrId) ?? "",
-      p_login_id: cleanText(access.loginId),
+      p_msg_hr_id: messageLoginId ? employeeHrId : "",
+      p_login_id: messageLoginId,
       p_categories: allowedCategories,
       p_today: today,
       p_limit: readLimit,
@@ -667,10 +668,7 @@ export async function listInAppNoticeBundleForViewer(
       events = Array.isArray(payload.events) ? (payload.events as InAppNotificationEventRow[]) : [];
       const states = Array.isArray(payload.states) ? (payload.states as NotificationUserStateRow[]) : [];
       readStates = async () => states;
-      unreadMessages =
-        sessionHoldsBothMessageIds && typeof payload.unread_messages === "number" && Number.isFinite(payload.unread_messages)
-          ? payload.unread_messages
-          : null;
+      unreadMessages = typeof payload.unread_messages === "number" && Number.isFinite(payload.unread_messages) ? payload.unread_messages : null;
     }
 
     const newestFirst = events
