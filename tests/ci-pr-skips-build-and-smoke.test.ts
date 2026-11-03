@@ -27,6 +27,8 @@ import { readFileSync } from "node:fs";
 
 const WORKFLOW = ".github/workflows/ci.yml";
 const SHIP_SKILL = ".claude/skills/ship/SKILL.md";
+const TRAPS_CLUSTERS = "docs/agents-session-traps-clusters.md";
+const TRAPS_ACCOUNT = "docs/agents-session-traps.md";
 
 /** The steps whose cost this change removes from a pull request. */
 const HEAVY_STEPS = [
@@ -105,5 +107,23 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     /node scripts\/ci-build-risk\.mjs/,
     `${SHIP_SKILL} no longer names scripts/ci-build-risk.mjs, the one thing that answers whether this ` +
       "PR built, so a session has to guess what its green checks covered.",
+  );
+
+  // 5. So do the traps. The clusters file is what trap-injector.mjs hands every session, and the
+  // account is where it sends them to read more. The account's dated snapshot of the old AGENTS.md
+  // §2.1 keeps the old line on purpose, so this asks for the present-tense claims only.
+  const clusters = readFileSync(TRAPS_CLUSTERS, "utf8");
+  assert.doesNotMatch(
+    clusters,
+    /runs NO tests/,
+    `${TRAPS_CLUSTERS} says a docs-only PR runs no tests again, and sessions are shown that line as the ` +
+      "rule. ci.yml has run the whole suite on every pull request since 2026-10-06.",
+  );
+  const traps = readFileSync(TRAPS_ACCOUNT, "utf8");
+  assert.doesNotMatch(
+    traps,
+    /`validate` never runs the tests|fast-paths and runs no tests/,
+    `${TRAPS_ACCOUNT} describes the docs-only fast path as live again. It was removed on 2026-10-06; ` +
+      "its account stays, in the past tense.",
   );
 }

@@ -1282,13 +1282,29 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
 
-## A docs-only PR's `validate` never runs the tests
+## A docs-only PR used to skip the tests, and no longer does
+
+**The fast path below was removed from `ci.yml` on 2026-10-06. Every pull request now runs the whole
+suite, docs-only included, in the `unit` jobs behind `checks`, so a docs-only PR's red is real.**
+
+What a green PR has not run today is the same for docs and code, and it first runs on the push to
+`main`, the branch that deploys to production:
+
+- the login smoke test, the canvas check and the standalone assembly, on every PR
+- the build, unless a route or build config file changed (`scripts/ci-build-risk.mjs` decides)
+
+So the check that matters after any merge is still the run on `main`'s NEW head. **A short `validate`
+says nothing about tests any more**, because it holds none on any PR: on pull request 50 of
+2026-11-03 `validate` took 38s while `unit` took 3m47s. Read `checks`. Do not bring a fast path back:
+the file list it relied on was wrong twice, and `tests/ci-gate-parity.test.ts` refuses it.
+
+The rest of this section is the account of why it went.
 
 **Measured 2026-09-01, after three PRs shipped `main` red without a single red PR check.**
 
-`ci.yml` detects a documentation-only change and skips the expensive STEPS while still reporting
-every required check name — so a docs PR costs seconds instead of four minutes. That part works as
-designed. What is easy to miss is that **the fast path is `pull_request`-only**:
+`ci.yml` detected a documentation-only change and skipped the expensive STEPS while still reporting
+every required check name, so a docs PR cost seconds instead of four minutes. **The fast path was
+`pull_request`-only**:
 
 | event | detector answers | what runs |
 | --- | --- | --- |
@@ -1297,20 +1313,16 @@ designed. What is easy to miss is that **the fast path is `pull_request`-only**:
 
 Both lines above are quoted from the real job logs of #2868 and its merge commit `9c161d35f`.
 
-So for a docs-only change the test suite's **first ever run is the push to `main`** — the branch
-that deploys to production. A green PR there is not weak evidence, it is **no evidence**: the tests
-were never executed. #2862, #2864 and #2866 each showed `validate pass` in about ten seconds, and
-`main` was red from #2864 onward because the relocation dropped `AGENTS.md` below a slug floor
-pinned in `tests/memory-index-reachability.test.ts`. Nobody noticed for three merges.
+So for a docs-only change the test suite's **first ever run was the push to `main`**. A green PR
+there was not weak evidence, it was **no evidence**: the tests were never executed. #2862, #2864 and
+#2866 each showed `validate pass` in about ten seconds, and `main` was red from #2864 onward because
+the relocation dropped `AGENTS.md` below a slug floor pinned in
+`tests/memory-index-reachability.test.ts`. Nobody noticed for three merges.
 
-**The tell is the duration.** A `validate` that finishes in ~10s ran no tests; one that takes
-minutes did. When a docs-only PR goes green, the check that matters is the run on `main`'s NEW head
-after merging — which AGENTS.md already told us to do, and which the ten-second green makes very
-easy to skip.
-
-Fail-closed is deliberate on both sides: the detector answers `false` if it cannot resolve the file
-list, and refuses to assume docs-only. Do not "fix" the asymmetry by extending the fast path to
-pushes — that would remove the only run that catches this class of failure at all.
+It happened again after that. #5182 was seven `.claude/cloud-context/*.md` files: both required
+checks passed in about ten seconds, then `validate` failed on `main` on that merge and the two after
+it, and Railway withheld all three deploys. That is what removed the fast path, and `ci.yml`'s header
+holds the full account.
 ## `node --test` on a test file in this repo proves nothing
 
 Measured 2026-09-01. Every suite here is an **exported function** — `tests/memory-index-reachability.test.ts`
@@ -1331,9 +1343,9 @@ time the file under test had been **deliberately broken** — a load-bearing slu
 exactly the condition the suite exists to catch. Still `pass 1`. The failure mode is the dangerous direction:
 it never goes red, so it reads as a clean verification rather than as a broken harness.
 
-This matters most on a **docs-only PR**, where `validate` fast-paths and runs no tests at all (see the
-docs-only section above). A session reaching for a local run precisely because CI will not do one is the
-session most likely to get the vacuous green.
+This mattered most on a **docs-only PR** while CI skipped the tests there (see the docs-only section
+above, removed 2026-10-06), because a session reached for a local run precisely when CI would not do one.
+The green is just as vacuous on any PR today.
 
 The real invocation imports the module and calls the export:
 
