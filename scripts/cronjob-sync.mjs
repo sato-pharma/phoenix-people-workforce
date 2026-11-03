@@ -220,6 +220,32 @@ const JOBS = {
     // One indexed read of the open sessions, then at most 20 sends — none while the switch is off.
     requestTimeout: 300,
   },
+  "marketing-pharmacy-code-sync": {
+    title: "Phoenix — pharmacy-code sync",
+    path: "/api/cron/marketing-pharmacy-code-sync",
+    // 02:47 Cairo nightly (owner, 2026-11-03). Additive and idempotent; a new vendor starts hidden; it
+    // refuses to run if it would retire too many codes. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [2], minutes: [47], mdays: [-1], months: [-1], wdays: [-1] },
+    // One function call over about 100,000 candidate rows, plus two read-only counts.
+    requestTimeout: 300,
+  },
+  "whatsapp-handset-reminder": {
+    title: "Phoenix — HR handset 14-day reminder",
+    path: "/api/cron/whatsapp-handset-reminder",
+    // 10:37 Cairo daily, Friday included (owner, 2026-11-03). Tells the Super Admin only, from seven
+    // days with no send from the phone. Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [10], minutes: [37], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read and a few Meta reads, then at most one message.
+    requestTimeout: 300,
+  },
+  "github-workflow-watch": {
+    title: "Phoenix — watch the checks on GitHub",
+    path: "/api/cron/github-workflow-watch",
+    // Hourly on :21 (owner, 2026-11-03). Matches JOB_SCHEDULES exactly.
+    schedule: { hours: [-1], minutes: [21], mdays: [-1], months: [-1], wdays: [-1] },
+    // Eight GitHub reads, each cut at 15 seconds, and at most one message.
+    requestTimeout: 300,
+  },
   "phoenix-crm-daily-digest": {
     title: "Phoenix — CRM daily digest",
     path: "/api/cron/phoenix-crm-daily-digest",

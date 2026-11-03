@@ -87,6 +87,11 @@ export type WhatsAppWebhookRouting = {
   active: boolean | null;
   /** Without the `messages` field subscribed, config looks fine and no CV ever arrives. */
   messagesSubscribed: boolean | null;
+  /**
+   * Whether a message sent from the handset's own app is echoed to us. Not a routing problem: applicants
+   * still arrive without it. It is what the handset's 14-day clock reads (whatsapp-handset-clock.ts).
+   */
+  echoesSubscribed: boolean | null;
   /** A per-number override, when the number carries one. It wins over the app-level URL. */
   numberOverrideUrl: string | null;
   /** Human-readable reasons, safe to put straight into a log or an alert. */
@@ -117,9 +122,12 @@ export function evaluateWebhookRouting(input: {
   const messagesSubscribed = input.subscription
     ? (input.subscription.fields ?? []).some((field) => field?.name === "messages")
     : null;
+  const echoesSubscribed = input.subscription
+    ? (input.subscription.fields ?? []).some((field) => field?.name === "smb_message_echoes")
+    : null;
   const numberOverrideUrl = input.numberOverrideUrl;
 
-  const base = { active, callbackUrl, messagesSubscribed, numberOverrideUrl };
+  const base = { active, callbackUrl, echoesSubscribed, messagesSubscribed, numberOverrideUrl };
   if (!input.answerable) {
     return { ...base, ok: null, problems: [] };
   }

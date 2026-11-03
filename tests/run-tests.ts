@@ -2947,6 +2947,9 @@ import { runPediaSharkiaHanySaadHoldTests } from "./pedia-sharkia-hany-saad-hold
 import { runPhoenixCrmBoardReadsTests } from "./phoenix-crm-board-reads.test.ts";
 import { runPhoenixCrmTerritoryBundleTests } from "./phoenix-crm-territory-bundle.test.ts";
 import { runPhoenixCrmNoticesSeenPreviewTests } from "./phoenix-crm-notices-seen-preview.test.ts";
+import { runGithubWorkflowWatchTests } from "./github-workflow-watch.test.ts";
+import { runWhatsappHandsetClockTests } from "./whatsapp-handset-clock.test.ts";
+import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-sync-job.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11705,6 +11708,9 @@ await runTest(
 );
 
 await runTest("a local preview never clears a person's Phoenix CRM new badge: /api/phoenix-crm/notices/seen answers it 204 without reaching the notification tables", runPhoenixCrmNoticesSeenPreviewTests);
+await runTest("the checks on GitHub (3 Nov 2026): every scheduled workflow is watched, an overdue one alerts, and being blind fails rather than reading clean", runGithubWorkflowWatchTests);
+await runTest("the HR handset's 14-day clock (3 Nov 2026): the stages, him only, honest wording, and a lost echoes field is not a routing fault", runWhatsappHandsetClockTests);
+await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts hidden, both guards survive, and it refuses a mass retirement", runMarketingPharmacyCodeSyncJobTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
