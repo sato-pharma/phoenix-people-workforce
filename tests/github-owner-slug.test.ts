@@ -20,7 +20,7 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SELF = "tests/github-owner-slug.test.ts";
 
 /** Accounts that owned these repositories before. Assembled, so this file never names one itself. */
-const RETIRED_OWNERS = [["Gawish", "1997"].join("-")];
+const RETIRED_OWNERS = [["Gawish", "1997"].join("-"), ["gawish", "theit"].join("")];
 
 /** Every repository the owner account holds. A reference to one of these must name the current owner. */
 const OWN_REPOSITORIES = [

@@ -129,7 +129,7 @@ export function describeProjection(p, { owner = GITHUB_OWNER, now = new Date() }
 }
 
 function readUsage(owner, year, month) {
-  const raw = execFileSync("gh", ["api", `users/${owner}/settings/billing/usage?year=${year}&month=${month}`], {
+  const raw = execFileSync("gh", ["api", `organizations/${owner}/settings/billing/usage?year=${year}&month=${month}`], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 30_000,
@@ -149,7 +149,7 @@ export function describeReadFailure(error) {
   }
   if (/gh auth login|not logged|authentication token/i.test(text)) return "no GitHub token reached the step (ACTIONS_BILLING_READ_TOKEN is unset)";
   if (/\b(403|404)\b|Resource not accessible|Not Found/i.test(text)) {
-    return 'GitHub refused the billing read. The token needs the account permission "Plan: Read-only" (github.com/settings/personal-access-tokens): add it to the phoenix-synthetic-dispatch token, or store a token that has it as ACTIONS_BILLING_READ_TOKEN';
+    return 'GitHub refused the billing read. The token needs the organization permission "Administration: Read-only" (github.com/settings/personal-access-tokens): add it to the phoenix-synthetic-dispatch token, or store a token that has it as ACTIONS_BILLING_READ_TOKEN';
   }
   return `the billing read failed (${String(error?.message || error).split("\n")[0].slice(0, 200)})`;
 }

@@ -39,8 +39,8 @@ refuseUnknownFlags({
   known: ["--env", "--sha", "--services", "--out", "--from-env"],
 });
 
-export const REPO = "gawishtheit/phoenix-people-workforce";
-export const IMAGE_REPO = "ghcr.io/gawishtheit/phoenix-people-workforce";
+export const REPO = "Phoenix-HR-CRM/phoenix-people-workforce";
+export const IMAGE_REPO = "ghcr.io/phoenix-hr-crm/phoenix-people-workforce";
 export const RAILWAY_API = "https://backboard.railway.com/graphql/v2";
 export const PROJECT_ID = "dc218ad3-99b7-4aff-be38-953a57524a71";
 export const PRODUCTION_URL = "https://phoenix-hr.satopharma.com";

@@ -24,7 +24,7 @@ export const RETIRED_CHECK_NAMES = ['lint', 'typecheck', 'test'];
  * read them from (moved to a new account on 2026-10-26). `tests/github-owner-slug.test.ts` refuses any
  * other account name in code, CI, scripts, hooks and tests.
  */
-export const GITHUB_OWNER = 'gawishtheit';
+export const GITHUB_OWNER = 'Phoenix-HR-CRM';
 export const REPO = `${GITHUB_OWNER}/phoenix-people-workforce`;
 
 /**

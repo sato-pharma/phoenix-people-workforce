@@ -55,7 +55,7 @@ export function runActionsCostAlarmTests() {
   near(p.projectedNet, 131.1 + 13.8 * 20.5 - 18, "the month's end is today's spend plus the rate over the days left, less the allowance");
   assert.ok(p.finding, "🔴 a month that ends near $396 against a $300 budget must be a finding");
   assert.equal(cairoDay(p.stopDate!), "Tue 24 Nov", "the day the $300 is reached at this rate");
-  const lines = describeProjection(p, { owner: "gawishtheit", now }).join("\n");
+  const lines = describeProjection(p, { owner: "Phoenix-HR-CRM", now }).join("\n");
   assert.match(lines, /reached on Tue 24 Nov \(Cairo\)/);
   assert.match(lines, /release gate holds every deploy/, "the line must say what a stop does, not only that it happens");
   assert.doesNotMatch(lines, /weak reading/, "seven days is not a weak reading");
@@ -75,7 +75,7 @@ export function runActionsCostAlarmTests() {
   assert.ok(spent.finding);
   assert.ok(spent.net >= 300);
   assert.match(
-    describeProjection(spent, { owner: "gawishtheit", now: new Date("2026-11-03T08:00:00Z") }).join("\n"),
+    describeProjection(spent, { owner: "Phoenix-HR-CRM", now: new Date("2026-11-03T08:00:00Z") }).join("\n"),
     /ALREADY reached/,
     "🔴 a budget already reached must say Actions has stopped, not name a future day",
   );
@@ -88,7 +88,7 @@ export function runActionsCostAlarmTests() {
   );
   assert.equal(early.windowDays, 2, "🔴 the account's part-empty first day was counted as a full day");
   near(early.dailyGross, 13.8, "🔴 the first day pulled the rate down");
-  assert.match(describeProjection(early, { owner: "gawishtheit" }).join("\n"), /weak reading/, "a rate on two days must say it is weak");
+  assert.match(describeProjection(early, { owner: "Phoenix-HR-CRM" }).join("\n"), /weak reading/, "a rate on two days must say it is weak");
   //    …but kept when it is the only complete day there is, so the first morning still has a reading.
   const firstMorning = projectActionsCost([row("2026-10-26", 4), row("2026-10-27", 2)], { now: new Date("2026-10-27T09:00:00Z"), budget: 300 });
   assert.equal(firstMorning.windowDays, 1);
@@ -97,7 +97,7 @@ export function runActionsCostAlarmTests() {
   const none = projectActionsCost([row("2026-10-26", 4)], { now: new Date("2026-10-26T15:00:00Z"), budget: 300 });
   assert.equal(none.windowDays, 0);
   assert.equal(none.finding, false);
-  assert.match(describeProjection(none, { owner: "gawishtheit" }).join("\n"), /no complete day of usage yet/);
+  assert.match(describeProjection(none, { owner: "Phoenix-HR-CRM" }).join("\n"), /no complete day of usage yet/);
 
   // 6. On the 1st, the rate still has last month's complete days behind it, and none of them is
   //    counted as this month's spend.
