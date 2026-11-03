@@ -153,7 +153,7 @@ on 2026-09-28 once the move was verified, so `postgres.railway.internal` no long
    `region: "europe-west4-drams3a"` → only then set the image, so the first boot happens in the right
    place. Railway co-locates a container with its volume, and `serviceInstance.region` reads `null` even
    when it is correct — **read the VOLUME's region, or `railway status`, never that field.**
-2. **New → GitHub Repo → `it-gawish-hr/phoenix-people-workforce`.** Name the service
+2. **New → GitHub Repo → `gawishtheit/phoenix-people-workforce`.** Name the service
    `phoenix-headwind`.
 3. On that service, **Settings → Build**:
    - **Root Directory** = `infra/headwind-phoenix-actions`
