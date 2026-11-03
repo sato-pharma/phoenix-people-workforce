@@ -29,10 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [Dependabot's first scan took about 30 minutes, 3 Nov 2026](dependabot-alerts-first-scan-takes-thirty-minutes.md) - alerts now on for the new repository; until the scan ended the check said OK on a zero that meant nothing.
-- [A held pull request must be a draft](a-held-pull-request-must-be-a-draft.md) - a hold said in one chat cannot stop another session's box offering the merge; 54 merged that way on 3 Nov.
-- [Archive refs did not move to the new repository, 2026-11-03](archive-refs-did-not-move-to-the-new-repository-2026-11-03.md) - 1,721 refs were on this one disk only; on his choice all went to `refs/backups` on GitHub, 0 left disk-only; 131 tips still are not accounted for on main.
-- [The sidebar width fixture measures Segoe UI, not Aptos](the-sidebar-width-fixture-measures-segoe-ui-not-aptos.md) - headless Chromium here cannot see Aptos; a label must now fit in Arial's metrics too (PR 67), and only Helvetica Neue stays unmeasured.
 
 
 

@@ -113,19 +113,74 @@ export function outcomeOfReadFailure(err) {
  * or nobody is looking, and that is the same absent-answer-as-negative-answer shape that cost four
  * separate defects in the roll-up tool on 2026-09-30. `vulnerability-alerts` answers 204 when enabled
  * and 404 when not, so it separates the two.
+ *
+ * 🔴 AND SWITCHED ON IS NOT THE SAME AS LOOKED. Measured 2026-11-03 on the moved repository: the switch
+ * read true at 15:43 and this check printed "OK" on a zero, with GitHub's dependency list still 404 and
+ * twenty alerts yet to appear at 16:11. So an empty alert list also asks whether that list holds anything.
+ * Only an empty one: the read took 14 seconds on 1,812 packages, and a listed alert already proves the
+ * scan ran. A caller that does not pass the reading gets no graph, which `judgeAlerts` will not call clean.
+ *
+ * @param {{ skipped?: string, switchedOff?: boolean, alerts?: ReadonlyArray<object> }} [read] result of `readOpenAlerts()`.
+ * @returns {{ enabled: true, graph?: DependencyGraph } | { enabled: false } | { unknown: string }}
  */
-export function alertsEnabled() {
+export function alertsEnabled(read) {
   try {
     execFileSync('gh', ['api', `repos/${REPO}/vulnerability-alerts`], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 30000,
     });
-    return { enabled: true };
   } catch (err) {
     if (/404/.test(String(err?.stderr ?? ''))) return { enabled: false };
     return { unknown: `could not tell (${String(err?.message ?? err).split('\n')[0]})` };
   }
+  return read?.alerts?.length === 0 ? { enabled: true, graph: readDependencyGraph() } : { enabled: true };
+}
+
+/**
+ * What GitHub's dependency list held when it was read.
+ *
+ * @typedef {{ filled: true, packages: number } | { filled: false } | { unknown: string }} DependencyGraph
+ */
+
+/** @returns {DependencyGraph} */
+function readDependencyGraph() {
+  try {
+    const raw = execFileSync(
+      'gh',
+      ['api', `repos/${REPO}/dependency-graph/sbom`, '--jq', '.sbom.packages | length'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 },
+    );
+    return outcomeOfGraphCount(raw);
+  } catch (err) {
+    return outcomeOfGraphFailure(err);
+  }
+}
+
+/**
+ * The count the dependency list answered with, pure. Only a positive whole number is a filled list.
+ *
+ * @param {unknown} raw what `gh --jq` printed.
+ * @returns {DependencyGraph}
+ */
+export function outcomeOfGraphCount(raw) {
+  const text = String(raw ?? '').trim();
+  if (!/^\d+$/.test(text)) return { unknown: `the dependency list answered ${JSON.stringify(text)}, not a count` };
+  const packages = Number(text);
+  return packages > 0 ? { filled: true, packages } : { filled: false };
+}
+
+/**
+ * What a failed dependency-list read means, pure. A 404 is the answer GitHub gave before its first scan.
+ * The alerts were read a moment earlier, so the repository itself is not what is missing. Anything else
+ * was never read, which is the skip-not-fail rule in the file header.
+ *
+ * @param {{ stderr?: unknown, message?: string }} err what `execFileSync` threw.
+ * @returns {DependencyGraph}
+ */
+export function outcomeOfGraphFailure(err) {
+  if (/\b404\b/.test(String(err?.stderr ?? ''))) return { filled: false };
+  return { unknown: `the dependency list could not be read (${String(err?.message ?? err).split('\n')[0]})` };
 }
 
 /**
@@ -350,7 +405,7 @@ export function describeAlert(row, decisions) {
  * does for the roll-up's classification.
  *
  * @param {{ skipped?: string, switchedOff?: boolean, alerts?: ReadonlyArray<object> }} read result of `readOpenAlerts()`.
- * @param {{ enabled?: boolean, unknown?: string }} enabled result of `alertsEnabled()`.
+ * @param {{ enabled?: boolean, unknown?: string, graph?: DependencyGraph }} enabled result of `alertsEnabled(read)`.
  * @param {Map<number, { recorded: string }>} [decisions] recorded risk decisions, by alert number.
  * @returns {{ exitCode: 0|1, errors: string[], notes: string[], failing: AlertRow[], other: AlertRow[], unreachable: AlertRow[] }}
  */
@@ -391,10 +446,35 @@ export function judgeAlerts(read, enabled, decisions) {
       );
       return { exitCode: 1, errors, notes, failing, other, unreachable };
     }
-    const how = enabled?.enabled === true
-      ? 'and alerts are switched ON, so the zero was looked for'
-      : `though ${enabled?.unknown ?? 'whether alerts are switched on could not be read'}`;
-    notes.push(`OK — no open alerts (${how}).`);
+    const graph = enabled?.graph;
+    if (enabled?.enabled === true && graph && 'filled' in graph && graph.filled === false) {
+      // 🔴 The same false green from the other side: switched on, and nothing scanned yet.
+      errors.push(
+        'ERROR: zero open alerts, but GitHub\'s dependency list for this repo is empty, so GitHub has not '
+          + 'scanned it and that zero means nothing. After alerts were switched on here on 3 Nov 2026 the '
+          + 'first alerts took about 30 minutes, so re-run this then. If the list stays empty, the '
+          + 'dependency graph is off in the repository\'s Security settings.',
+      );
+      return { exitCode: 1, errors, notes, failing, other, unreachable };
+    }
+    if (enabled?.enabled === true && graph && 'packages' in graph) {
+      // The second sentence is the part no reading can close: on 3 Nov 2026 the list was filled by 16:00
+      // and the first alert came at 16:11, and nothing GitHub answers separates those minutes from a
+      // finished scan.
+      notes.push(
+        `OK — no open alerts (alerts are switched ON and GitHub's dependency list holds ${graph.packages} `
+          + 'packages, so the zero was looked for). Within about 30 minutes of alerts being switched on, '
+          + 'a zero can still be early: nothing GitHub answers tells those minutes from a finished scan.',
+      );
+      return { exitCode: 0, errors, notes, failing, other, unreachable };
+    }
+    // Exit 0, as for any reading it never obtained. Never "OK": a zero whose scan could not be confirmed
+    // was the false green, and the unread half must not borrow the clean half's word.
+    const unread = enabled?.enabled === true
+      ? (graph && 'unknown' in graph ? graph.unknown : 'the dependency list was not read')
+      : (enabled?.unknown ?? 'whether alerts are switched on could not be read');
+    notes.push(`zero open alerts listed, though ${unread}.`);
+    notes.push('this is not a pass: nothing confirms GitHub has scanned this repo.');
     return { exitCode: 0, errors, notes, failing, other, unreachable };
   }
 

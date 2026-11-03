@@ -22,7 +22,8 @@
 // vulnerable or nobody is looking, so a bare zero is never reported as clean: `vulnerability-alerts`
 // (204 enabled / 404 disabled) is read alongside, and a zero from a repo with alerts SWITCHED OFF
 // exits 1 saying so. That absent-answer-in-the-shape-of-a-negative-one is the exact class that cost
-// four separate defects in the roll-up tool the same day.
+// four separate defects in the roll-up tool the same day. A zero with alerts on but GitHub's dependency
+// list still empty exits 1 too: it is the same blind zero, before the first scan has run.
 //
 //   node scripts/check-dependabot-alerts.mjs          # exit 1 on an open HIGH+ alert, or a blind zero
 //   node scripts/check-dependabot-alerts.mjs --json   # the whole reading
@@ -57,7 +58,7 @@ refuseUnknownFlags({
 
 const asJson = process.argv.includes('--json');
 const read = readOpenAlerts();
-const enabled = read.skipped ? { unknown: 'not read — the alerts themselves could not be read' } : alertsEnabled();
+const enabled = read.skipped ? { unknown: 'not read — the alerts themselves could not be read' } : alertsEnabled(read);
 // An alert whose risk decision is already written down must not keep demanding one. Unreadable file,
 // moved file, no rows: `readRecordedDecisions` returns an empty map and every alert keeps its demand,
 // which is the fail-closed direction — see its header.

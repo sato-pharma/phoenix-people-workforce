@@ -1902,7 +1902,7 @@ let autoloadedIndexBytes = null;
       // wrong trail, exactly as the required-checks section above does.
       console.log(`  -> COULD NOT READ the alerts (${read.skipped}). Do NOT read this as clean.`);
     } else {
-      const verdict = judgeAlerts(read, alertsEnabled());
+      const verdict = judgeAlerts(read, alertsEnabled(read));
       for (const line of verdict.errors) console.log(`  -> ${line}`);
       for (const line of verdict.notes) console.log(`  ${line}`);
       if (verdict.exitCode !== 0) {

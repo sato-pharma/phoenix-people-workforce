@@ -14,6 +14,8 @@ import {
   classifyAlerts,
   describeAlert,
   judgeAlerts,
+  outcomeOfGraphCount,
+  outcomeOfGraphFailure,
   outcomeOfReadFailure,
   readRecordedDecisions,
 } from "../scripts/dependabot-alerts.mjs";
@@ -39,7 +41,8 @@ import {
  *      reach. The live API answers whatever is true today (zero open alerts, when this was written),
  *      so a CLI that owned its own exits would have its failing paths verified by nobody, ever.
  *   1. A skip exits 0 AND says it is not a pass.
- *   2. Zero alerts with alerts SWITCHED OFF exits 1 — a zero nobody looked for is not evidence.
+ *   2. Zero alerts with alerts SWITCHED OFF, or switched on with GitHub's dependency list still empty,
+ *      exits 1 — a zero nobody looked for is not evidence. A zero it could not confirm never reads OK.
  *   3. An unreadable severity is graded urgent, not quiet.
  *   4. HIGH+ exits 1 and names the bump; moderate/low alone exits 0 and says nothing is urgent.
  *   5. The tool is read-only and merges nothing.
@@ -114,17 +117,60 @@ export function runDependabotAlertsTests() {
   assert.match(blind.errors.join("\n"), /SWITCHED OFF/);
   assert.match(blind.errors.join("\n"), /nobody is looking/);
 
-  const honestZero = judgeAlerts({ alerts: [] }, { enabled: true });
+  const honestZero = judgeAlerts({ alerts: [] }, { enabled: true, graph: { filled: true, packages: 1812 } });
   assert.equal(honestZero.exitCode, 0);
   assert.match(
     honestZero.notes.join("\n"),
-    /switched ON, so the zero was looked for/,
+    /^OK — no open alerts \(alerts are switched ON and GitHub's dependency list holds 1812 packages, so the zero was looked for\)/,
     "an honest zero must say WHY it counts as evidence, not merely that it is zero",
+  );
+  assert.match(
+    honestZero.notes.join("\n"),
+    /can still be early/,
+    "the minutes between a filled list and the first alert cannot be read, so the sentence must say so",
   );
 
   const unknownZero = judgeAlerts({ alerts: [] }, { unknown: "could not tell (403)" });
   assert.equal(unknownZero.exitCode, 0, "an unreadable ON/OFF must not manufacture a failure either");
   assert.match(unknownZero.notes.join("\n"), /though could not tell \(403\)/);
+
+  // 2a. SWITCHED ON IS NOT THE SAME AS LOOKED
+  // Measured 2026-11-03: the switch read true at 15:43 and this printed "OK" on a zero, while the
+  // dependency list still answered 404 and twenty alerts were yet to appear at 16:11.
+  const unscanned = judgeAlerts(
+    { alerts: [] },
+    { enabled: true, graph: outcomeOfGraphFailure({ stderr: "gh: Not Found (HTTP 404)\n" }) },
+  );
+  assert.equal(unscanned.exitCode, 1, "a zero before GitHub's first scan must fail, not pass");
+  assert.match(unscanned.errors.join("\n"), /dependency list for this repo is empty/);
+  assert.doesNotMatch(unscanned.notes.join("\n"), /OK/, "a zero nobody scanned must never read OK");
+  const emptyList = judgeAlerts({ alerts: [] }, { enabled: true, graph: outcomeOfGraphCount("0\n") });
+  assert.equal(emptyList.exitCode, 1, "a dependency list answering zero packages is the same blind zero");
+
+  // Never read is a skip, exit 0, and never the word OK. Each of these must say it is not a pass,
+  // including the bare `{ enabled: true }` a caller gets by not passing the reading to `alertsEnabled`.
+  const unreadGraphs = [
+    outcomeOfGraphFailure({ message: "Command failed: gh", stderr: "gh: Internal Server Error (HTTP 500)\n" }),
+    outcomeOfGraphFailure({ message: "spawnSync gh ETIMEDOUT" }),
+    outcomeOfGraphCount(""),
+    outcomeOfGraphCount("null"),
+    undefined,
+  ];
+  for (const graph of unreadGraphs) {
+    const unread = judgeAlerts({ alerts: [] }, { enabled: true, graph });
+    const said = unread.notes.join("\n");
+    assert.equal(unread.exitCode, 0, `an unread list must skip, not fail: ${JSON.stringify(graph)}`);
+    assert.doesNotMatch(said, /OK/, `an unread list must never read OK: ${JSON.stringify(graph)}`);
+    assert.match(said, /not a pass/, `an unread list must say it is not a pass: ${JSON.stringify(graph)}`);
+  }
+  assert.doesNotMatch(unknownZero.notes.join("\n"), /OK/, "an unread switch must never read OK either");
+  assert.match(unknownZero.notes.join("\n"), /not a pass/);
+  assert.deepEqual(outcomeOfGraphCount("1812\n"), { filled: true, packages: 1812 });
+  assert.equal(
+    judgeAlerts({ alerts: [alert({ severity: "low" })] }, { enabled: true }).exitCode,
+    0,
+    "a listed alert already proves the scan ran, so it needs no dependency-list read",
+  );
 
   // 2b. A 403 THAT SAYS THE ALERTS ARE OFF IS THE BLIND REPO, NOT A BAD TOKEN
   // GitHub's literal answer on 2026-11-03, for a repository moved the day before and a token holding
@@ -470,7 +516,7 @@ export function runDependabotAlertsTests() {
     "repo-doctor must PRINT a Dependabot section - it already pages a live API, and an early warning "
       + "nobody runs warns nobody",
   );
-  assert.match(doctor, /judgeAlerts\(read, alertsEnabled\(\)\)/, "the section must use the shared judgement");
+  assert.match(doctor, /judgeAlerts\(read, alertsEnabled\(read\)\)/, "the section must use the shared judgement");
   assert.match(
     doctor,
     /skipped \(--no-auth\)\. This check reads the live alerts API\./,
