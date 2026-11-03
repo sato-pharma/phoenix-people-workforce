@@ -26,6 +26,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 const WORKFLOW = ".github/workflows/ci.yml";
+const SHIP_SKILL = ".claude/skills/ship/SKILL.md";
 
 /** The steps whose cost this change removes from a pull request. */
 const HEAVY_STEPS = [
@@ -86,5 +87,23 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     "`push: main` is gone. That is the production deploy gate: Railway's Wait for CI waits on the " +
       "check suites attached to the pushed commit, so removing it ships every merge unverified, " +
       "silently. It is also now the ONLY place the build runs at all.",
+  );
+
+  // 4. The ship skill describes THIS gate, not the docs-only fast path removed on 2026-10-06. It kept
+  // telling sessions a docs-only PR ran no tests for four weeks after that, so a session could report
+  // a real red as impossible, or a real green as proving nothing.
+  const ship = readFileSync(SHIP_SKILL, "utf8");
+  assert.doesNotMatch(
+    ship,
+    /docs_only|ran no tests|skips node setup|tests first run after the merge|first time the tests ran/,
+    `${SHIP_SKILL} describes the docs-only fast path again, but ci.yml runs the whole suite on every ` +
+      "pull request. What a PR does skip is the login smoke test and, unless a route or build config " +
+      "changed, the build.",
+  );
+  assert.match(
+    ship,
+    /node scripts\/ci-build-risk\.mjs/,
+    `${SHIP_SKILL} no longer names scripts/ci-build-risk.mjs, the one thing that answers whether this ` +
+      "PR built, so a session has to guess what its green checks covered.",
   );
 }
