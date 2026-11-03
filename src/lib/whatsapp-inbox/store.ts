@@ -7,6 +7,7 @@
 import crypto from "node:crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { writeAuditLog } from "@/lib/admin/audit";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { logError, logInfo } from "@/lib/observability/log";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
@@ -19,6 +20,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
 import { pickInboxCvs, type InboxDocumentMessage } from "@/lib/whatsapp-inbox/cv-pick";
 import { findWhatsAppInboxLine, whatsAppInboxLineLabel } from "@/lib/whatsapp-inbox/lines";
+import { isPhoneMatchLink } from "@/lib/whatsapp-inbox/phone-link";
 import type { InboxReadState } from "@/lib/whatsapp-inbox/read-state";
 import {
   addInboxPositionRecord,
@@ -70,6 +72,10 @@ export type InboxConversationSummary = {
   replyWindowOpen: boolean;
   candidate: { id: string; name: string } | null;
   employee: { hrId: string; name: string } | null;
+  /** Phoenix linked this chat itself, because the number can only mean this candidate. */
+  linkedByPhone: boolean;
+  /** When the oldest message nobody has answered arrived; null when nobody is waiting or it is not read here. */
+  waitingSince: string | null;
   /** The job(s) this person applied for and where, newest first; empty when nothing says. */
   positions: Array<{ family: CandidateRoleFamily; label: string; regionLabel: string | null; areaName: string | null }>;
   /** The newest file this person sent in the chat (their CV), so it opens from the list; null when none. */
@@ -123,6 +129,7 @@ type ConversationRow = {
   unread_count: number;
   candidate_id: string | null;
   employee_hr_id: string | null;
+  linked_by_hr_id: string | null;
 };
 
 type MessageRow = {
@@ -154,7 +161,7 @@ type MessageRow = {
 };
 
 const CONVERSATION_COLUMNS =
-  "id, phone_number_id, contact_key, contact_wa_id, contact_user_id, contact_name, contact_username, last_message_at, last_inbound_at, last_message_preview, last_direction, unread_count, candidate_id, employee_hr_id";
+  "id, phone_number_id, contact_key, contact_wa_id, contact_user_id, contact_name, contact_username, last_message_at, last_inbound_at, last_message_preview, last_direction, unread_count, candidate_id, employee_hr_id, linked_by_hr_id";
 
 const MESSAGE_COLUMNS =
   "id, conversation_id, wamid, direction, origin, phone_number_id, message_type, body, media_id, media_mime_type, media_file_name, media_storage_path, media_byte_size, media_fetch_attempts, media_fetch_error, template_name, reply_to_wamid, historical, sent_at, status, failure_detail, event, sent_by_hr_id, saved_to_candidate_id, saved_file_id";
@@ -310,9 +317,12 @@ function summarize(
   now: number,
   positions: Map<string, PositionRecord[]>,
   cvs: Map<string, CvSummary>,
+  waitingSince?: ReadonlyMap<string, string>,
 ): InboxConversationSummary {
   return {
     cv: cvs.get(row.id) ?? null,
+    linkedByPhone: Boolean(row.candidate_id) && isPhoneMatchLink(row.linked_by_hr_id),
+    waitingSince: waitingSince?.get(row.id) ?? null,
     positions: (positions.get(row.id) ?? []).map((record) => ({
       areaName: record.areaName,
       family: record.family,
@@ -359,20 +369,56 @@ export function clampInboxListLimit(value: number | null | undefined): number {
   return Math.max(1, Math.min(INBOX_LIST_MAX, wanted));
 }
 
+/** How far back "Waiting for us" looks. A chat older than this has gone cold, and the pile says how far it reaches. */
+export const INBOX_WAITING_WINDOW_DAYS = 30;
+
+type WaitingChatRow = {
+  conversation_id: string;
+  waiting_since: string;
+  phone_number_id: string;
+  candidate_id: string | null;
+  contact_wa_id: string | null;
+};
+
+async function readWaitingChats(now: number): Promise<WaitingChatRow[]> {
+  const since = new Date(now - INBOX_WAITING_WINDOW_DAYS * 86_400_000).toISOString();
+  const { data, error } = await getSupabaseAdmin().rpc("whatsapp_inbox_waiting_chats", { p_since: since });
+  if (error) throw error;
+  return (data ?? []) as WaitingChatRow[];
+}
+
 export async function listInboxConversations(input: {
   /** Who is reading: the Talent Acquisition seat never sees a chat with an HR applicant (owner, 2026-10-20). */
   access: Pick<AccessContext, "role" | "scope">;
   phoneNumberId?: string | null;
   search?: string | null;
-  /** "unread" keeps the chats with something unread, "read" the chats with nothing unread. */
+  /** "unread" keeps the chats with something unread, "read" the chats with nothing unread, "waiting" the chats nobody has answered. */
   readState?: InboxReadState | null;
   position?: string | null;
   region?: string | null;
   area?: string | null;
   limit?: number;
-}): Promise<{ conversations: InboxConversationSummary[]; totalCount: number; totalUnread: number; areaOptions: string[] }> {
+}): Promise<{
+  conversations: InboxConversationSummary[];
+  totalCount: number;
+  totalUnread: number;
+  /** How many chats are waiting for a reply; null when that could not be read, which is not zero. */
+  totalWaiting: number | null;
+  areaOptions: string[];
+}> {
   const supabase = getSupabaseAdmin();
   const limit = clampInboxListLimit(input.limit);
+  const waitingOnly = input.readState === "waiting";
+  // The pile is the one thing asked for when it is the filter, so there a failed read is an error
+  // shown on the list. Beside any other filter the chats still load and the tile says it is unknown.
+  const nowForWaiting = Date.now();
+  let waitingRead: WaitingChatRow[] | null = null;
+  try {
+    waitingRead = await readWaitingChats(nowForWaiting);
+  } catch (error) {
+    if (waitingOnly) throw error;
+    logError("Could not read which WhatsApp chats are waiting for a reply", { error, labels: { event: "whatsapp_inbox_waiting_read_failed" } });
+  }
   // The position lives in the recruitment tables, not on the chat, so a position filter reads every
   // chat the other filters allow (up to the list ceiling) and narrows them here; the page is cut
   // after. Without one, the database cuts the page as before. Region and area ride on the position.
@@ -389,10 +435,11 @@ export async function listInboxConversations(input: {
     .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
     .select(CONVERSATION_COLUMNS, { count: "exact" })
     .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(position || fenced ? INBOX_LIST_MAX : limit);
+    .limit(position || fenced || waitingOnly ? INBOX_LIST_MAX : limit);
   if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
   if (input.readState === "unread") query = query.gt("unread_count", 0);
   if (input.readState === "read") query = query.eq("unread_count", 0);
+  if (waitingOnly) query = query.gte("last_inbound_at", new Date(nowForWaiting - INBOX_WAITING_WINDOW_DAYS * 86_400_000).toISOString());
   const search = sanitizeInboxSearch(input.search);
   if (search) {
     const value = ilikeContainsValue(search);
@@ -422,9 +469,27 @@ export async function listInboxConversations(input: {
   const hiddenUnread = fenced ? await inboxConversationsHiddenFrom(input.access, unreadAll.map(fenceRowOf)) : new Set<string>();
   const totalUnread = unreadAll.filter((row) => !hiddenUnread.has(row.id)).reduce((sum, row) => sum + row.unread_count, 0);
 
+  // Waiting is counted like Unread: on the number chosen, past the fence, whatever else is filtered.
+  const waitingOnLine = (waitingRead ?? []).filter((row) => !input.phoneNumberId || row.phone_number_id === input.phoneNumberId);
+  const hiddenWaiting = fenced
+    ? await inboxConversationsHiddenFrom(
+        input.access,
+        waitingOnLine.map((row) => fenceRowOf({ candidate_id: row.candidate_id, contact_wa_id: row.contact_wa_id, id: row.conversation_id })),
+      )
+    : new Set<string>();
+  const waitingSince = new Map(
+    waitingOnLine.filter((row) => !hiddenWaiting.has(row.conversation_id)).map((row) => [row.conversation_id, row.waiting_since]),
+  );
+  // Oldest first in the pile, so a chat that has waited longest is not the one that sinks.
+  const considered = waitingOnly
+    ? matched
+        .filter((row) => waitingSince.has(row.id))
+        .sort((left, right) => String(waitingSince.get(left.id)).localeCompare(String(waitingSince.get(right.id))))
+    : matched;
+
   // Without a position filter only the page's own chats are placed, as before the fence.
-  const positions = await positionsFor(position ? matched : matched.slice(0, limit));
-  const narrowed = position ? matched.filter((row) => matchesInboxPlaceFilter(positions.get(row.id) ?? [], place)) : matched;
+  const positions = await positionsFor(position ? considered : considered.slice(0, limit));
+  const narrowed = position ? considered.filter((row) => matchesInboxPlaceFilter(positions.get(row.id) ?? [], place)) : considered;
   // The Area menu lists the areas people chose for this position and region, whatever area is picked now.
   const areaOptions = inboxAreaOptions(positions.values(), place);
   const rows = narrowed.slice(0, limit);
@@ -439,10 +504,10 @@ export async function listInboxConversations(input: {
   const now = Date.now();
   return {
     areaOptions,
-    conversations: rows.map((row) => summarize(row, names, now, positions, cvs)),
+    conversations: rows.map((row) => summarize(row, names, now, positions, cvs, waitingSince)),
     // Fenced and unfiltered by position: every chat was read when the count fits the ceiling, so the
     // fenced length is exact; past it, the database count less the chats this read hid.
-    totalCount: position
+    totalCount: position || waitingOnly
       ? narrowed.length
       : fenced
         ? (count ?? 0) <= read.length
@@ -450,6 +515,7 @@ export async function listInboxConversations(input: {
           : Math.max((count ?? 0) - hiddenChats.size, rows.length)
         : Math.max(count ?? 0, rows.length),
     totalUnread,
+    totalWaiting: waitingRead ? waitingSince.size : null,
   };
 }
 
@@ -624,7 +690,8 @@ function phoneTail(value: string | null | undefined): string | null {
 
 /**
  * People this chat might belong to: candidates and employees whose phone matches, then name matches
- * for `search`. Only ever SUGGESTS — a shared phone is not the same person, so a human links.
+ * for `search`. Only ever SUGGESTS — a shared phone is not the same person, so a human links. Phoenix
+ * links by itself only where the number leaves one answer: `linkInboxChatsByPhone`.
  */
 export async function findInboxPeople(input: { conversationId?: string | null; search?: string | null }): Promise<InboxPersonOption[]> {
   const supabase = getSupabaseAdmin();
@@ -717,14 +784,14 @@ export async function linkInboxConversation(input: {
     employeeHrId = (data as { hr_id: string }).hr_id;
   }
 
-  const linked = Boolean(input.candidateId || employeeHrId);
+  // Who decided is kept on an Unlink too: it is what stops the phone match linking the chat again.
   const { error } = await supabase
     .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
     .update({
       candidate_id: input.candidateId,
       employee_hr_id: employeeHrId,
-      linked_at: linked ? new Date().toISOString() : null,
-      linked_by_hr_id: linked ? (hrIdForStorage(input.access.hrId) ?? input.access.loginId ?? null) : null,
+      linked_at: new Date().toISOString(),
+      linked_by_hr_id: hrIdForStorage(input.access.hrId) ?? input.access.loginId ?? "unknown",
       updated_at: new Date().toISOString(),
     })
     .eq("id", input.conversationId);
@@ -734,6 +801,29 @@ export async function linkInboxConversation(input: {
     after: { candidateId: input.candidateId, employeeHrId },
     before: { candidateId: row.candidate_id, employeeHrId: row.employee_hr_id },
   };
+}
+
+/**
+ * Links the chats whose number can only mean one candidate. The rules are in the database function,
+ * and a person's own link or Unlink is never touched. Runs on the inbound-intake cron tick, so a chat
+ * links within a tick of the candidate's record appearing. One audit row per pass that linked anything.
+ */
+export async function linkInboxChatsByPhone(maxChats = 500): Promise<{ linked: number }> {
+  const { data, error } = await getSupabaseAdmin().rpc("whatsapp_inbox_link_chats_by_phone", { p_limit: maxChats });
+  if (error) throw error;
+  const links = (data ?? []) as Array<{ conversation_id: string; candidate_id: string }>;
+  if (links.length > 0) {
+    await writeAuditLog({
+      actorLoginId: "system",
+      entityType: "whatsapp_inbox_conversation",
+      newValues: { links },
+      summary: `Linked ${links.length} WhatsApp ${links.length === 1 ? "chat" : "chats"} to candidates by phone number.`,
+    });
+    logInfo("WhatsApp chats linked to candidates by phone", {
+      labels: { event: "whatsapp_inbox_phone_links", linked: links.length },
+    });
+  }
+  return { linked: links.length };
 }
 
 // ── Attachments ──────────────────────────────────────────────────────────────────────────────────

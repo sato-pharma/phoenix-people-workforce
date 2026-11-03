@@ -42,6 +42,7 @@ import { loadAutoReplyOverrides } from "@/lib/recruitment/inbound/whatsapp-auto-
 import { sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import { isWhatsAppImportSender } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { bySendersOnlyCandidate } from "@/lib/recruitment/inbound/whatsapp-session-link";
+import { NOT_A_PHONE_MATCH_LINK } from "@/lib/whatsapp-inbox/phone-link";
 
 /** How far back "we already handled this sender" looks. Matches the classify session's own day-ish
  *  rhythm and Meta's 24h service window, so a person who writes again tomorrow is asked again. */
@@ -349,7 +350,9 @@ export async function findResumeCandidate(input: { waId: string }): Promise<stri
     .from("whatsapp_inbox_conversations")
     .select("candidate_id")
     .eq("contact_key", input.waId)
-    .not("candidate_id", "is", null);
+    .not("candidate_id", "is", null)
+    // The phone match says who a chat is with, for people reading the inbox. It never starts the bot.
+    .or(NOT_A_PHONE_MATCH_LINK);
   if (error) throw error;
   let ids = Array.from(
     new Set(((chats ?? []) as Array<{ candidate_id: string | null }>).map((row) => row.candidate_id).filter(Boolean)),
