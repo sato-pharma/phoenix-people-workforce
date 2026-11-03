@@ -418,6 +418,8 @@ export const PP = {
   sheetPackagingSets: "إجمالي العبوات الكاملة",
   sheetTotalBoxes: "إجمالي العلب (الكراتين)",
   sheetSaleableBoxes: "علب البيع بدون العينات",
+  sheetStripsPerBox: "عدد الشرائط في العلبة",
+  sheetTotalStrips: "إجمالي الشرائط",
   sheetColBasisLabel: "أساس الحساب",
   sheetColQtyPerBasis: "الكمية لكل أساس",
   sheetColBasisCount: "عدد الأساس",
@@ -757,6 +759,8 @@ export const PP_EN: Record<ProductionPlanningStringKey, string> = {
   sheetPackagingSets: "Total full packaging sets",
   sheetTotalBoxes: "Total boxes (cartons)",
   sheetSaleableBoxes: "Saleable boxes, without the samples",
+  sheetStripsPerBox: "Strips per box",
+  sheetTotalStrips: "Total strips",
   sheetColBasisLabel: "Basis",
   sheetColQtyPerBasis: "Quantity per basis",
   sheetColBasisCount: "Basis count",
@@ -1320,6 +1324,8 @@ export const BASIS_LABELS = {
   per_sample_unit: "لكل عينة",
   /** The carton he counts in — 12 sachets for Guamusin, consumed once per box and not once per sachet. */
   per_box: "لكل علبة (كرتونة)",
+  /** One blister strip, as Saginkgo's foil is counted: 3 a box and 1 a sample. */
+  per_strip: "لكل شريط",
 } as const;
 
 /** The same labels with the product's own dose written into the per-dose one. */
@@ -1510,6 +1516,7 @@ export const BASIS_LABELS_EN = {
   per_good_unit: "per saleable unit",
   per_sample_unit: "per sample",
   per_box: "per box (carton)",
+  per_strip: "per strip",
 } as const;
 
 /** The same labels with the product's own dose written into the per-dose one. */
@@ -1610,6 +1617,7 @@ export const ALARM_SEVERITY_LABELS_EN = {
  */
 export type ProductionPlanningErrorKey =
   | "unknownBasis"
+  | "stripBasisNeedsStrips"
   | "runLabelRequired"
   | "priceMustBePositive"
   | "unknownCurrency"
@@ -1637,6 +1645,7 @@ export type ProductionPlanningErrorKey =
 
 export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "أساس الحساب غير معروف.",
+  stripBasisNeedsStrips: "هذا المنتج لا يحدد عدد الشرائط في العلبة، فلا يمكن الحساب لكل شريط.",
   runLabelRequired: "اسم التشغيلة مطلوب.",
   priceMustBePositive: "السعر يجب أن يكون أكبر من صفر.",
   unknownCurrency: "العملة غير معروفة.",
@@ -1663,6 +1672,7 @@ export const PRODUCTION_PLANNING_ERRORS: Record<ProductionPlanningErrorKey, stri
 
 export const PRODUCTION_PLANNING_ERRORS_EN: Record<ProductionPlanningErrorKey, string> = {
   unknownBasis: "Unknown calculation basis.",
+  stripBasisNeedsStrips: "This product does not say how many strips its box holds, so a per-strip line cannot be counted.",
   runLabelRequired: "A run name is required.",
   priceMustBePositive: "A price must be greater than zero.",
   unknownCurrency: "Unknown currency.",

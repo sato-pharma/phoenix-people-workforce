@@ -5,6 +5,7 @@ import ExcelJS from "exceljs";
 
 import { dosesPerRun, type RunGeometry, yieldForRuns } from "../src/lib/production-planning/geometry.ts";
 import {
+  basisFitsProduct,
   coerceMeasureUnit,
   MEASURE_UNITS_PER_LARGE,
   type MaterialSupplier,
@@ -20,6 +21,8 @@ import {
   type ProductionPlanningData,
 } from "../src/lib/production-planning/service.ts";
 import {
+  basisLabelsAr,
+  basisLabelsEn,
   buildSampleUnitsHintAr,
   buildSampleUnitsHintEn,
   measureUnitLabelsAr,
@@ -50,17 +53,22 @@ import { stripSqlComments } from "./support/comment-strip.ts";
  *  1. **The formula is the certificate's, to the microgram.** It is read back OUT of the migration,
  *     and the five weighed lines must add to the certificate's 300 mg.
  *  2. **A batch is 1,000 boxes exactly** — 30,000 capsules, 9 kg, nothing left over.
- *  3. **Sato's list is four things and there is no leaflet.** The foil is Sato's with no line until
- *     its weight per box is known: a row reading "no composition", never a zero.
+ *  3. **Sato's list is five things and there is no leaflet.** In the seed the foil is Sato's with no
+ *     line, a row reading "no composition", never a zero. Its amount arrived in its own migration.
  *  4. **The shell is one bought item**, not gelatin and titanium dioxide on a purchase order.
  *  5. **A capsule never reads "tablet"**, and `mg_capsule` keeps the milligram divisor: through a
  *     divisor of 1,000 the batch tile would read 9,000 kg.
  *  6. **A free sample is a whole box of five capsules** (**"بوكس شريط واحد فيه خمسة"**), on the screen
  *     and in the sheet's own formulas, and no other product's figures move.
+ *  7. **The foil is counted by the strip** (**"0.002285 aluminum quaty per box and the box is 3 شرايط
+ *     sample is one so divide by 3"**): 2.285 g a box, a third of that a sample, and only a product
+ *     that says how many strips its box holds can carry such a line.
  */
 
 const MIGRATION = "supabase/migrations/20261103155601_production_planning_saginkgo_seed.sql";
 const SCHEMA_MIGRATION = "supabase/migrations/20261103155559_production_planning_sample_in_own_box.sql";
+const STRIP_SCHEMA_MIGRATION = "supabase/migrations/20261103215927_production_planning_strip_basis.sql";
+const FOIL_MIGRATION = "supabase/migrations/20261103215929_production_planning_saginkgo_foil.sql";
 
 const MEDCARE = "loc-medcare-badr";
 const HOCHSTER = "loc-hochster";
@@ -106,7 +114,7 @@ function linkedMaterials(sql: string): { code: string; sortOrder: number; suppli
 }
 
 function compositionRows(sql: string): { code: string; basis: LoadedComposition["basis"]; qty: string; supplier: LoadedComposition["supplier"] }[] {
-  const pattern = /\('([A-Z0-9_]+)',\s*'(per_dose|per_box|per_sample_unit)',\s*([0-9.]+),\s*'(sato|factory)'/g;
+  const pattern = /\('([A-Z0-9_]+)',\s*'(per_dose|per_box|per_sample_unit|per_strip)',\s*([0-9.]+),\s*'(sato|factory)'/g;
   return [...sql.matchAll(pattern)].map((match) => ({
     basis: match[2] as LoadedComposition["basis"],
     code: match[1]!,
@@ -162,7 +170,7 @@ function product(overrides: Partial<LoadedProduct> & Pick<LoadedProduct, "code" 
 }
 
 /** Saginkgo at Med Care, built from the MIGRATION itself, beside a product at another factory. */
-function planningData(sql: string, stock: ProductionPlanningData["stock"] = []): ProductionPlanningData {
+function planningData(sql: string, stock: ProductionPlanningData["stock"] = [], geometry: RunGeometry = GEOMETRY): ProductionPlanningData {
   const linked = linkedMaterials(sql);
   const materials = linked.map(({ code, sortOrder }) => material(code, sortOrder));
   const compositions = compositionRows(sql).map(
@@ -192,7 +200,7 @@ function planningData(sql: string, stock: ProductionPlanningData["stock"] = []):
     materialIdsByProductId: new Map([["prod-saginkgo", new Set(materials.map((item) => item.id))]]),
     materials,
     prices: [],
-    products: [product({ code: "SAGINKGO", factoryLocationId: MEDCARE, geometry: GEOMETRY, id: "prod-saginkgo" })],
+    products: [product({ code: "SAGINKGO", factoryLocationId: MEDCARE, geometry, id: "prod-saginkgo" })],
     settings: {
       alarmDryRun: true,
       alarmEnabled: false,
@@ -335,11 +343,11 @@ export async function runProductionPlanningSaginkgoTests() {
     assert.equal(rowOf(plan, code).excludedReason, "factory_supplies", `${code} shows what a run consumes and stops there`);
   }
 
-  // 🔴 The foil is Sato's and still a ROW WITH NO COMPOSITION, never a row with a zero.
+  // 🔴 On the seed alone the foil is Sato's and a ROW WITH NO COMPOSITION, never a row with a zero.
   const foil = rowOf(plan, "BLISTER_ALU_SAGINKGO");
   assert.equal(foil.supplier, "sato", "the aluminium is Sato's, from the link");
-  assert.equal(foil.excludedReason, "no_composition", "and its weight per box has not been entered");
-  assert.equal(foil.contributesToBuyList, false, "so nothing is bought until he gives the amount");
+  assert.equal(foil.excludedReason, "no_composition", "and the seed does not carry its weight");
+  assert.equal(foil.contributesToBuyList, false, "so nothing is bought from the seed alone");
 
   assert.equal(rowOf(plan, "BOX_SAGINKGO_SAMPLE").needed, "0", "no sample box until an order names samples");
 
@@ -426,6 +434,112 @@ export async function runProductionPlanningSaginkgoTests() {
   assert.equal(cellLabelled(PP_EN.sheetSaleableBoxes), 984, "the boxes the 30-capsule box material reads");
   assert.equal(cellLabelled(PP_EN.sheetTotalBoxes), 1_084, "plus the sample boxes");
   assert.equal(cellLabelled(PP_EN.tileSurplus), 84, "and the same surplus as the screen");
+
+  // ── 🔴 The foil, by the strip: "the box is 3 شرايط sample is one so divide by 3" ─────────────
+  const foilSql = sqlOf(FOIL_MIGRATION);
+  const stripped: RunGeometry = { ...GEOMETRY, stripsPerBox: BigInt(3) };
+  const withFoil = sql + foilSql;
+  assert.match(foilSql, /set strips_per_box = 3\s+where code = 'SAGINKGO'/, "three strips a box, on Saginkgo only");
+  const foilRows = compositionRows(foilSql);
+  assert.deepEqual(foilRows.map((row) => [row.code, row.basis, row.supplier]), [["BLISTER_ALU_SAGINKGO", "per_strip", "sato"]], "one line, Sato's");
+  // 0.002285 kg is 2,285,000 micrograms a box. A third of it, rounded UP so a formula never under-orders.
+  assert.equal(microgramsOf(foilRows[0]!.qty), Math.ceil(2_285_000 / 3), "his figure divided by 3");
+
+  const foilBatch = computePlan(planningData(withFoil, [], stripped), { mode: "runs", productId: "prod-saginkgo", requestedQty: "1", sampleUnits: "0" });
+  const foilInBatch = rowOf(foilBatch, "BLISTER_ALU_SAGINKGO");
+  assert.equal(foilInBatch.basisCount, "3000", "1,000 boxes of 3 strips");
+  assert.equal(foilInBatch.rawNeeded, "2.285001", "2.285 kg a batch, the rounding costing one milligram");
+  assert.equal(foilInBatch.needed, "2.353551", "plus the 3% default: 2.285001 × 1.03 = 2.35355103, to the field's six places");
+  assert.equal(foilInBatch.excludedReason, null, "it has an amount now");
+  assert.equal(foilInBatch.contributesToBuyList, true, "so it reaches Sato's buy list");
+
+  const foilSampled = computePlan(planningData(withFoil, [], stripped), { mode: "total_boxes", productId: "prod-saginkgo", requestedQty: "1000", sampleUnits: "100" });
+  const foilWithSamples = rowOf(foilSampled, "BLISTER_ALU_SAGINKGO");
+  assert.equal(foilWithSamples.basisCount, "3052", "984 boxes of 3 strips plus 100 samples of one");
+  assert.equal(foilWithSamples.rawNeeded, "2.324608", "3,052 strips at 0.761667 g, 2.324607684 kg, to the field's six places");
+
+  // The other counts do not move because a product says how many strips it has.
+  for (const code of ["GINKGO_EXTRACT", "CAPSULE_EMPTY_SAGINKGO", "BOX_SAGINKGO", "BOX_SAGINKGO_SAMPLE"]) {
+    assert.equal(rowOf(foilSampled, code).basisCount, rowOf(sampled, code).basisCount, `${code} is not counted by the strip`);
+  }
+
+  // 🔴 A product with no strips has no strip count, and cannot be given a line that asks for nothing.
+  assert.equal(yieldForRuns(GEOMETRY, BigInt(1), BigInt(100)).stripCount, BigInt(0), "no strips, no count");
+  assert.equal(basisFitsProduct("per_strip", null), false, "a per-strip line is refused without strips");
+  assert.equal(basisFitsProduct("per_strip", undefined), false, "an older wire row is the same");
+  assert.equal(basisFitsProduct("per_strip", "3"), true, "and allowed with them");
+  assert.equal(basisFitsProduct("per_box", null), true, "the older bases are every product's");
+  // A sample that does not wear its own box is already inside the box count, so it adds no strip.
+  const stripsInShared = yieldForRuns({ ...stripped, sampleInOwnBox: false }, BigInt(1), BigInt(100));
+  assert.equal(stripsInShared.stripCount, stripsInShared.totalBoxes * BigInt(3), "boxes times strips, and no sample added twice");
+
+  // The schema widens and never narrows, on the formula and on a saved plan's snapshot alike.
+  const stripSchema = sqlOf(STRIP_SCHEMA_MIGRATION);
+  for (const constraint of ["prodplan_compositions_basis_check", "prodplan_plan_lines_basis_check"]) {
+    const check = block(stripSchema, `add constraint ${constraint}`, "]));");
+    for (const basis of ["per_dose", "per_packaging_set", "per_good_unit", "per_sample_unit", "per_box", "per_strip"]) {
+      assert.ok(check.includes(`'${basis}'::text`), `${constraint} allows ${basis}`);
+    }
+  }
+  assert.match(stripSchema, /add column if not exists strips_per_box integer;/, "empty for every older product");
+
+  const measure = { dose: "300", goodUnit: "300", measureUnit: "mg_capsule", sampleUnit: "1,500" } as const;
+  assert.equal(basisLabelsEn(measure).per_strip, "per strip");
+  assert.equal(basisLabelsAr(measure).per_strip, "لكل شريط");
+
+  // And the sheet counts the same strips through its own cells, on the foil's own row.
+  const { buffer: foilBuffer } = await buildProductionPlanningWorkbook(
+    {
+      materials: [],
+      plan: foilSampled,
+      products: [
+        {
+          code: "SAGINKGO",
+          doseMl: "300",
+          factoryLocationId: MEDCARE,
+          goodUnitMl: "300",
+          id: "prod-saginkgo",
+          manufacturerName: "Med Care Badr",
+          measureUnit: "mg_capsule",
+          nameAr: "ساجنكو",
+          nameEn: "Saginkgo",
+          notes: null,
+          runVolumeMl: "9000000",
+          sampleInOwnBox: true,
+          sampleUnitMl: "1500",
+          stripsPerBox: "3",
+          unitsPerBox: "30",
+          wholeRunsOnly: true,
+        },
+      ],
+    } as unknown as WireWorkspace,
+    { lang: "en" },
+  );
+  const foilBook = new ExcelJS.Workbook();
+  await foilBook.xlsx.load(foilBuffer as unknown as ArrayBuffer);
+  const foilSheet = foilBook.worksheets[0]!;
+  const rowLabelled = (target: ExcelJS.Worksheet, label: string): number | null => {
+    for (let index = 1; index <= target.rowCount; index += 1) {
+      if (String(target.getCell(index, 1).value ?? "").startsWith(label)) return index;
+    }
+    return null;
+  };
+  assert.equal(evaluateCell(foilSheet, `B${rowLabelled(foilSheet, PP_EN.sheetStripsPerBox)}`), 3, "the input the owner can change");
+  assert.equal(evaluateCell(foilSheet, `B${rowLabelled(foilSheet, PP_EN.sheetTotalStrips)}`), 3_052, "984 × 3 + 100, by formula");
+  const foilSheetRow = rowLabelled(foilSheet, "BLISTER_ALU_SAGINKGO");
+  assert.ok(foilSheetRow, "the foil has a row in the materials table");
+  assert.equal(evaluateCell(foilSheet, `E${foilSheetRow}`), 3_052, "and that row reads the strip count, not a typed zero");
+  assert.equal(rowLabelled(sheet, PP_EN.sheetTotalStrips), null, "a product with no strips gets no strip rows");
+
+  // 🔴 The read is a string, so a missing name here reaches nothing the compiler can see, and the
+  // refusal and the list need a database and a browser. Their source is what can be held still.
+  const serviceSource = readFileSync("src/lib/production-planning/service.ts", "utf8");
+  assert.match(serviceSource, /sample_in_own_box, strips_per_box, measure_unit,/, "the product read names the column");
+  assert.match(serviceSource, /stripsPerBox: row\.strips_per_box == null \? null : BigInt\(row\.strips_per_box\)/, "the loader keeps it");
+  assert.match(serviceSource, /stripsPerBox: product\.geometry\.stripsPerBox == null \? null : product\.geometry\.stripsPerBox\.toString\(\)/, "and the screen and the sheet receive it");
+  assert.match(serviceSource, /if \(!basisFitsProduct\(basis, owner\.data\?\.strips_per_box\)\) \{\s+throw new ProductionPlanningInputError\(errorsFor\(body\)\.stripBasisNeedsStrips/, "the save refuses a per-strip line on a product with no strips");
+  const workspaceSource = readFileSync("src/components/production-planning/production-planning-workspace.tsx", "utf8");
+  assert.match(workspaceSource, /basis === lineBasis \|\| basisFitsProduct\(basis, selectedProductOf\(data\)\?\.stripsPerBox\)/, "and the Settings list does not offer it");
 
   // ── A shared material's stock belongs to the factory that holds it ──────────────────────────
   const aerosilElsewhere = computePlan(

@@ -70,7 +70,9 @@ export type CompositionBasis =
    * sachets, so it is consumed once per box and not once per sachet. For Ivyronc `unitsPerBox` is 1,
    * which makes this identical to `per_packaging_set`, so adding it moved none of his figures.
    */
-  | "per_box";
+  | "per_box"
+  /** One blister strip. Saginkgo's foil: 3 strips a box and 1 a sample (owner, 2026-11-03). */
+  | "per_strip";
 
 /**
  * Who brings a material. `shared_unsettled` is not an oversight — it is the honest answer for the
@@ -90,7 +92,18 @@ export const COMPOSITION_BASES: readonly CompositionBasis[] = [
   "per_good_unit",
   "per_sample_unit",
   "per_box",
+  "per_strip",
 ] as const;
+
+/**
+ * Whether a formula line on this basis can mean anything on this product. A product that does not
+ * say how many strips its box holds has no strip count, so `per_strip` there would be a line that
+ * quietly asks for nothing. The Settings list hides it and the save refuses it.
+ */
+export function basisFitsProduct(basis: CompositionBasis, stripsPerBox: bigint | number | string | null | undefined): boolean {
+  if (basis !== "per_strip") return true;
+  return stripsPerBox !== null && stripsPerBox !== undefined && Number(stripsPerBox) > 0;
+}
 
 export const MEASURE_UNITS: readonly MeasureUnit[] = ["ml", "g", "mg", "mg_capsule"] as const;
 
