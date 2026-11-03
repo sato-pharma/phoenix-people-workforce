@@ -2178,6 +2178,7 @@ export const accessRegistry = [
   // agreed in January still reproduces in June. REQUIRED audit row (production_plan).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/plans", permission: { resource: "production_planning", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/stock", permission: { resource: "production_planning", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/stock/expiry", permission: { resource: "production_planning", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   // 🔴 A price change moves what an order costs, so its audit row is written with
   // writeRequiredAuditLog: an unrecorded price change is a failed price change.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/production-planning/prices", permission: { resource: "production_planning", action: "update" }, guard: "domain-helper", csrfRequired: true }),

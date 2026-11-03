@@ -120,6 +120,13 @@ export type WireMaterial = {
   /** Every LOT, soonest expiry first. Several rows can share a `locationId`. */
   stock: WireStockRow[];
   /**
+   * The lots whose expiry date has come, oldest first. They are off every held figure and stay here
+   * for the accounts. Optional because a saved fixture may predate them.
+   */
+  expiredStock?: WireStockRow[];
+  /** Those lots summed server-side in BigInt, for the same reason as `heldByLocation`. */
+  expiredTotalDisplay?: string | null;
+  /**
    * The lots SUMMED per location — computed server-side, in BigInt base units.
    *
    * 🔴 The screen must not add the lots itself. `qtyDisplay` figures are decimal strings and

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: 0c04efb3-07cb-4951-a5b4-067a48ed21f3
-  modified: 2026-11-03T11:42:48.403Z
+  modified: 2026-11-03T13:58:16.365Z
 ---
 
 The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free memory fell to 2,018 MB), and hosted staging serves an old revision with `/api/dev-auth` answering 404. A workflow on a throwaway branch with no pull request did the press instead, about 10 minutes a run. Copies of both files: `~/.claude/docs/visit-press-2026-11-03/` (`visit-press.yml`, `press.mjs`). Used for [[visit-retry-post-deploy-reads-owed-2026-11-03]].
@@ -23,5 +23,15 @@ The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free me
 - A `/hr/...` page answering plain-text 500 with `Failed to proxy ... socket hang up` in the server log is `next dev`'s proxy dropping during a slow compile or a heap restart. The same page answered 200 through `/hr` once compiled. It cost three runs and a wrong first explanation, so read that log line before calling a page broken, and prove it by opening the page again after it compiled.
 - `ERR_CONNECTION_REFUSED` or `chrome-error://chromewebdata/` is the server restarting at its heap cap, even at 5,632 MB, after about four heavy pages. Press few pages per run.
 - A permission `redirect()` after the `(admin)` loading shell answers 200 and moves on the client, more than 6 seconds later on a cold server. Use `page.waitForURL` with a long timeout; a fixed wait read Milestones and Spotlight as open when both send her home.
+
+**The SFE press, 3 Nov 2026, nine runs and no feature defect** (copy: `~/.claude/docs/sfe-press-2026-11-03/press.mjs`). Each of these stopped a run:
+- `dev-auth` without `loginId=` signs in as `dev.preview`, and a write with a foreign key to `app_auth_users` answers 500 (23503). Pass the real login id.
+- `dev-auth` with no `hrId` gets no CRM viewer, so a Super Admin preview is sent home. Pass a real HR id. `next=/admin` for a Super Admin is the heaviest page there is and restarted the server; send `next` to the page under test.
+- Waiting for "a hydrated button" passes on the sidebar before the page's own table is ready. Wait on the control you are about to click.
+- A page draws a hidden phone card and a desktop row, and the card comes first in the DOM. Use `table:visible`.
+- A filter on a row's buttons moves to the next person when a question replaces them. Hold a row with `nth`.
+- `innerText` returns CSS uppercase, so "Prepared" reads "PREPARED". Match case-insensitively.
+- `CrmSelect` is a search box, so it has no `option` list to read.
+- Staging holds no polyclinics. Seed one for the run and delete it in `finally`.
 
 **Tooling traps:** commit and push in separate commands so the secret scan sees the commit.

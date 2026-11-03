@@ -93,6 +93,46 @@ function parseIsoDateUtc(value: string): number | null {
   return stamp;
 }
 
+/** Is this a real calendar date, written year-month-day? Rejects 31 February as well as a bad shape. */
+export function isIsoDate(value: string): boolean {
+  return parseIsoDateUtc(value) !== null;
+}
+
+/**
+ * Which lots are still stock, and which have expired.
+ *
+ * The owner, 2026-11-03: when the expiry date comes the quantity leaves his stock and goes to a
+ * column of its own, so it can still be read for the accounts. A lot is expired ON its date, the same
+ * day `evaluateExpiry` calls it expired.
+ *
+ * 🔴 This is a reading of the lot, never a stored move. Nothing has to run for it to happen, so a
+ * missed cron cannot leave dead material covering a batch, and a corrected date brings the lot back
+ * with nothing to undo. Every reader of held stock takes `live`, which is what takes an expired lot
+ * off the buy list, the reorder alarm and the workbook together.
+ *
+ * A dated lot standing at zero is on neither side: it was used up or moved to another date, so it
+ * must not show as the next expiry, and nothing expired with it. An undated zero stays in `live`,
+ * because "the factory counted none" is a report the Stock tab shows.
+ */
+export function splitExpiredLots<T extends { readonly expiryDate: string | null; readonly qty: bigint }>(
+  lots: readonly T[],
+  today: string,
+): { live: T[]; expired: T[] } {
+  const live: T[] = [];
+  const expired: T[] = [];
+  for (const lot of lots) {
+    if (lot.expiryDate === null) {
+      live.push(lot);
+      continue;
+    }
+    if (lot.qty <= BigInt(0)) continue;
+    const daysLeft = daysBetweenDates(today, lot.expiryDate);
+    if (daysLeft !== null && daysLeft <= 0) expired.push(lot);
+    else live.push(lot);
+  }
+  return { live, expired };
+}
+
 /** The critical band, in days before expiry. His ruling, 2026-10-09: "keep the critical band at 30 days". */
 export const CRITICAL_BAND_DAYS = 30;
 
