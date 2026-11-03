@@ -164,6 +164,18 @@ Never invent one. A guessed figure arrives on the buy list as a real number, in 
 material he actually buys. This is Guamusin's single missing input, exactly as the lemon flavour's
 per-dose figure is Ivyronc's.
 
+## The leaflet, added 2026-11-03
+
+The sheet he followed "100%" names no leaflet, so Guamusin shipped with none and its screens had no
+row for one. He reported it on 2026-11-03 (*"in production planner in guamusin no field for
+pamphlets"*) and, asked as a multiple choice, answered **one per box**. `LEAFLET_GUAMUSIN` is
+Guamusin's own material, because artwork is not interchangeable between products, and Sato supplies
+it, as it does every other product's leaflet. Six runs need 10,000.
+
+It has no stock row until he counts it: an absent row says *never counted*, a zero says *counted, and
+none*. The reorder alarm reads it as out of stock in the meantime, which is what it does for any
+material with a formula line and nothing held.
+
 ## The measure unit
 
 The geometry columns are arithmetically unit-free: `run_volume_ml / dose_ml / good_unit_ml /

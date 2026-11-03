@@ -29,19 +29,8 @@
 
 
 ## Inbox — new notes land here
-- [Salma Sabry's record made from her letter, 2026-11-03](salma-sabry-record-made-from-the-letter-2026-11-03.md) - his choice; identity and pay blank on purpose, her joining form is closed.
-- [The customer merge keeps refusing different lines, 2026-11-03](customer-merge-keeps-refusing-different-lines.md) - his choice by multiple choice; never offer to widen it without a real pair from him.
-- [Visit retry: post-deploy reads owed, 3 Nov 2026](visit-retry-post-deploy-reads-owed-2026-11-03.md) - first-day resend log, reminders heartbeat, new flag count; the real-browser press ran on staging and pull request 34 carries its two fixes.
-- [A real-browser press can run on a GitHub runner](a-real-browser-press-can-run-on-a-github-runner.md) - one-off job on a throwaway branch, staging only, when the laptop's memory floor stops a dev server.
-- [Stand-ins and the cache server declined, 2026-11-03](stand-ins-and-cache-server-declined-2026-11-03.md) - his decision in plain-word questions; never offer either again without a new measured need.
-- [ROI customer double count measured at zero, 2026-11-03](roi-customer-double-count-measured-zero-2026-11-03.md) - EGP 0 of 88,051.56 inflated; request_count cannot detect it, count one row_id per customer.
-- [Staging's demo identities replaced with real data, 2026-11-03](staging-employees-hold-demo-identities-2026-11-03.md) - his choice; pre-images in `staging_reconcile_backup_20261103`; a later drift alert is a real HR change and refreshing stays his decision.
-- [The home's open times on Small, 2026-11-03](portal-home-speed-on-small-before-medium-2026-11-03.md) - the figures to beat after Medium: 2.69 s median, 41% over 3 s, the slow tail unchanged; how to count an open.
-- [A hire date's history survives only in probation reminders, 2026-11-03](hire-date-history-survives-only-in-probation-reminders.md) - saves leave no audit row; Medical Reps only; a date moved away and back leaves no live reminders.
 - [A held pull request must be a draft](a-held-pull-request-must-be-a-draft.md) - a hold said in one chat cannot stop another session's box offering the merge; 54 merged that way on 3 Nov.
-- [A seat starts on the job offer's date, 2026-11-03](seat-start-follows-the-job-offer-2026-11-03.md) - his ruling; 40 rows corrected with a backup; Toka Zaki and Mahmoud Khaled still owed from 8 Nov, when moving them changes no credit.
-- [A runner press must wait for hydration before it clicks](a-runner-press-must-wait-for-hydration-before-it-clicks.md) - a click with no request in the server log and no page error means the press beat the script, not that the feature is broken.
-- [Archive refs did not move to the new repository, 2026-11-03](archive-refs-did-not-move-to-the-new-repository-2026-11-03.md) - 1,721 refs and 3,167 commits exist on this one disk only; 131 tips are not accounted for on main; pushing them is his word.
+- [Archive refs did not move to the new repository, 2026-11-03](archive-refs-did-not-move-to-the-new-repository-2026-11-03.md) - 1,721 refs were on this one disk only; on his choice all went to `refs/backups` on GitHub, 0 left disk-only; 131 tips still are not accounted for on main.
 
 
 
