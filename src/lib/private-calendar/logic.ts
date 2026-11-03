@@ -313,12 +313,15 @@ export function isPrivateCalendarGlobalViewer(
   globalHrIds: readonly string[] = configuredPrivateCalendarGlobalHrIds(),
 ) {
   // HR Resourcing — the Talent Acquisition seat — added 2026-10-08: the owner ticked Private
-  // Calendars for her on the access blueprint.
+  // Calendars for her on the access blueprint. HR Administration — the HR Operations Specialist —
+  // added 2026-11-03: the owner chose "Open it for her" when asked. Neither decides a dispute (Super
+  // Admin only), and nothing this calendar prints carries an amount.
   if (
     access.scope === "system" ||
     access.role === "CEO" ||
     access.role === "Super Admin" ||
-    access.role === "HR Resourcing"
+    access.role === "HR Resourcing" ||
+    access.role === "HR Administration"
   ) {
     return true;
   }
