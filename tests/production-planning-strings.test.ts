@@ -310,6 +310,68 @@ export function runProductionPlanningStringsTests() {
   assert.ok(withSamples.includes("108,000 كيس (9,000 علبة)"), `9,000 and not 10,000 — ${withSamples}`);
   assert.ok(!withSamples.includes("108,000 كيس (10,000"), "never the sample-inclusive box count");
 
+  // 🔴 A PART-BOX IS STILL A BOX IN THE BRACKET TOO (owner, 2026-10-24). Saginkgo's 1,000 boxes with
+  // 100 samples yield 29,500 capsules, and the engine's total of 1,084 is 984 of them plus 100 sample
+  // boxes. A floor here printed 983 on production on 3 Nov 2026, beside that total.
+  const saginkgoParts = {
+    goodUnitMl: "300",
+    goodUnits: "29,500",
+    measureUnit: "mg_capsule",
+    runs: "1",
+    runVolumeLitres: "9",
+    sampleUnitMl: "1,500",
+    sampleUnits: "100",
+    shortfallBoxes: null,
+    surplusBoxes: "84",
+    totalBoxes: "1,084",
+    totalVolumeLitres: "9",
+    unitsPerBox: "30",
+  } as const;
+  assert.equal(
+    buildPlannerSentence(saginkgoParts),
+    "1 تشغيلة × 9 كجم = 9 كجم — 29,500 كبسولة (984 علبة) 300 مجم و 100 عينة 1,500 مجم، بزيادة 84 علبة عن المطلوب",
+    "the Arabic bracket rounds a part-box up, and the capsule word stays singular after 29,500",
+  );
+  assert.equal(
+    buildPlannerSentenceEn(saginkgoParts),
+    "1 run × 9 kg = 9 kg — 29,500 capsules (984 boxes) of 300 mg and 100 samples of 1,500 mg, 84 boxes over the request",
+    "the English bracket rounds it up as well",
+  );
+
+  // The hint's plural belongs to that one phrase: three to ten take it, and no other wording moves.
+  const saginkgoMeasure: ProductMeasure = {
+    dose: "300",
+    goodUnit: "300",
+    measureUnit: "mg_capsule",
+    sampleUnit: "1,500",
+    unitsInOwnSampleBox: "5",
+  };
+  assert.ok(buildSampleUnitsHintAr(saginkgoMeasure).includes("فيها 5 كبسولات "), "five capsules take the plural");
+  assert.ok(
+    buildSampleUnitsHintAr({ ...saginkgoMeasure, unitsInOwnSampleBox: "12" }).includes("فيها 12 كبسولة "),
+    "and twelve take the singular, so the word follows the count",
+  );
+  assert.equal(saleableUnitWordAr("mg_capsule"), "كبسولة", "the shared capsule word stays singular");
+  assert.ok(
+    requestModeLabelsAr({ measureUnit: "mg_capsule", unitsPerBox: "30" }).total.includes("30 كبسولة في العلبة"),
+    "and the request label keeps reading through it",
+  );
+  assert.equal(
+    buildSampleUnitsHintAr(ivyronc),
+    "العينة 40 مل من نفس حجم التشغيلة — تقلل عدد الوحدات 100 مل وتستهلك عبوة كاملة",
+    "Ivyronc's hint does not move",
+  );
+  assert.equal(
+    buildSampleUnitsHintAr(guamusin),
+    "العينة 5 جم من نفس حجم التشغيلة — تقلل عدد الوحدات 5 جم وتستهلك عبوة كاملة",
+    "nor does Guamusin's",
+  );
+  assert.equal(
+    buildSampleUnitsHintAr({ dose: "155", goodUnit: "155", measureUnit: "mg", sampleUnit: "155" }),
+    "العينة 155 مجم من نفس حجم التشغيلة — تقلل عدد الوحدات 155 مجم وتستهلك عبوة كاملة",
+    "nor a tablet's",
+  );
+
   const ivyHint = buildSampleUnitsHintAr(ivyronc);
   assert.ok(
     ivyHint.includes("40 مل") && ivyHint.includes("100 مل"),

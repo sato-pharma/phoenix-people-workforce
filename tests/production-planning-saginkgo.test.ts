@@ -380,7 +380,7 @@ export async function runProductionPlanningSaginkgoTests() {
     "the field says what a sample is",
   );
   assert.ok(
-    buildSampleUnitsHintAr({ dose: "300", goodUnit: "300", measureUnit: "mg_capsule", sampleUnit: "1,500", unitsInOwnSampleBox: "5" }).includes("علبة مستقلة فيها 5 كبسولة"),
+    buildSampleUnitsHintAr({ dose: "300", goodUnit: "300", measureUnit: "mg_capsule", sampleUnit: "1,500", unitsInOwnSampleBox: "5" }).includes("علبة مستقلة فيها 5 كبسولات"),
     "in both languages",
   );
 
