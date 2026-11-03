@@ -92,7 +92,8 @@ for (const mutant of mutants) {
   const broken = run();
   writeFileSync(mutant.file, original);
   const output = `${broken.stdout}\n${broken.stderr}`;
-  if (broken.status !== 0 && output.includes(mutant.expect)) console.log(`CAUGHT ${mutant.name}: ${mutant.expect}`);
+  // The message must come from a failed assertion: a crash prints the source line too, and would read as caught.
+  if (broken.status !== 0 && output.includes("AssertionError") && output.includes(mutant.expect)) console.log(`CAUGHT ${mutant.name}: ${mutant.expect}`);
   else {
     console.log(`SURVIVED ${mutant.name}, exit ${broken.status}\n${output.slice(0, 800)}`);
     notCaught += 1;

@@ -260,7 +260,7 @@ function testThePagesAndTheHook() {
   const provider = code("src/components/phoenix-crm/first-read.ts");
   assert.match(provider, /const \[held\] = useState\(firstRead\);/, "RED held from the first render, so a refresh cannot run the screen's effect again");
   assert.ok(squeeze(provider).includes("useEffect(() => { firstReadArrived(held, firstRead); }, [firstRead, held]);"), "RED a read arriving under a screen already up is marked, or Back draws it");
-  assert.ok(server.includes("startedAt: Date.now()"), "RED every read the page starts says when, which is how one left behind is refused");
+  assert.ok(code("src/lib/phoenix-crm/server/first-read.ts").includes("startedAt: Date.now()"), "RED every read the page starts says when, which is how one left behind is refused");
 }
 
 export async function runPhoenixCrmFirstReadTests() {
