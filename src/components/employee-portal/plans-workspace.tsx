@@ -2385,6 +2385,7 @@ export function PlansWorkspace({
               conflictWarning={rowConflictWarning.get(row.key) ?? null}
               dayNote={dayGroupByDate.get(row.activityDate)?.dayNote ?? row.notes ?? ""}
               key={row.key}
+              marketingPartners={workspace.marketingDoubleVisitPartners}
               medicalRepOptions={workspace.medicalRepOptions}
               onOpen={() => setSheetKey(row.key)}
               row={row}
@@ -3299,12 +3300,14 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 function MobileDayCard({
   conflictWarning,
   dayNote,
+  marketingPartners,
   medicalRepOptions,
   onOpen,
   row,
 }: {
   conflictWarning: string | null;
   dayNote: string;
+  marketingPartners: readonly MarketingDoubleVisitPartner[];
   medicalRepOptions: MedicalRepOption[];
   onOpen: () => void;
   row: DraftItem;
@@ -3379,7 +3382,7 @@ function MobileDayCard({
           {rule.showPartner ? (
             row.attendees ? (
               <p className="text-xs font-semibold text-violet-700">
-                {rule.label} - {row.attendees}
+                {rule.label} - {findMarketingDoubleVisitPartner(marketingPartners, row.attendees)?.fullName ?? row.attendees}
               </p>
             ) : (
               <p className="flex items-center gap-1 text-xs font-bold text-amber-700">

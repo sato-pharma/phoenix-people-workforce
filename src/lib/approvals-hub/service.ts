@@ -32,7 +32,7 @@ import {
 import { canonicalPersonHrId, isSamePerson } from "@/lib/auth/identity-aliases";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { employeeRecordName, resolveEmployeeRecordName } from "@/lib/employees/record-name";
+import { employeeShownName, resolveEmployeeRecordName } from "@/lib/employees/record-name";
 import { logStructured } from "@/lib/observability/log";
 import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
@@ -1029,28 +1029,24 @@ function deciderDisplayName(
     employees.find((e) => hrIdsMatch(e.hrId, hrId))
     ?? employees.find((e) => hrIdsMatch(e.hrId, canonicalPersonHrId(hrId)));
   if (!employee) return hrId;
-  // The RECORD name, not displayName — the same rule the snapshot resolver below uses. Without it
-  // one card reads "<record name> … Decided by <nickname>", two names for two people on one row.
-  const name = employeeRecordName(employee);
+  // The same read rule the snapshot resolver below uses, so both halves of one card name the person
+  // the same way (owner, 2026-11-03: every screen shows the display name).
+  const name = employeeShownName(employee);
   return employee.jobTitle ? `${name} (${employee.jobTitle})` : name;
 }
 
 /**
- * Resolves a persisted employee_name snapshot to the employee RECORD's current name, falling back
- * to the raw snapshot when the id cannot be resolved. Keeps the persisted column itself raw (audit
- * trail) while every-day list/card views show the name the employee master holds today.
+ * Resolves a persisted employee_name snapshot to the person's current DISPLAY name, falling back to
+ * the raw snapshot when the id cannot be resolved. Keeps the persisted column itself raw (audit
+ * trail) while every-day list/card views show the name the company uses for them.
  *
- * It resolves to the RECORD name, not to `displayName`. displayName is nickname-first by design —
- * EmployeeDirectoryRow's own type comment reserves `fullName` for "persisted workflow audit
- * snapshots", and a stored `employee_name` is precisely that. Resolving to displayName is why one
- * outstation request read as the record name on the outstation queue (PRs #4135, #4136) and as a
- * nickname here, for the same person on the same day.
+ * Owner, 2026-11-03: every screen, email and non-legal export shows a person by their display name.
+ * That reverses his 2026-09-21 "align the decided-by name to the record name too": writes still stamp
+ * the full name, and reads show the display name.
  *
- * `deciderDisplayName` above resolves the same way (owner, 2026-09-21: "align the decided-by name
- * to the record name too"). It is not reading a snapshot — it names a live person beside their job
- * title — but both halves of one card must say the same name for the same person, so it too reads
- * the record name. The one displayName left in this file is the stuck-approvals manager PICKER,
- * which is a live chooser of people and not a name rendered onto a request.
+ * `deciderDisplayName` above resolves the same way. It is not reading a snapshot — it names a live
+ * person beside their job title — but both halves of one card must say the same name for the same
+ * person. The outstation queue reads the same rule, through `@/lib/employees/record-name`.
  */
 function liveEmployeeName(
   employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
@@ -1059,7 +1055,7 @@ function liveEmployeeName(
 ): string {
   if (!hrId) return rawName;
   const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
-  return resolveEmployeeRecordName(employee ? employeeRecordName(employee) : null, hrId, rawName);
+  return resolveEmployeeRecordName(employee ? employeeShownName(employee) : null, hrId, rawName);
 }
 
 /** The job title his HR record carries — "Group Product Manager", not the plan's own kind — or the fallback. */

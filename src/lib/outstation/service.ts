@@ -211,6 +211,7 @@ import {
 import {
   liveOutstationEmployeeName,
   loadLiveOutstationEmployeeNames,
+  loadLiveOutstationRecordNames,
   outstationRecordName,
   withLiveOutstationEmployeeNames,
 } from "@/lib/outstation/employee-name";
@@ -901,25 +902,46 @@ function campaignRuleOutcome(input: {
 export { outstationRecordName };
 
 /**
- * The READ side of the same rule.
+ * The READ side.
  *
  * `employee_name` on a request row is a snapshot taken at submit time, so a later correction to
  * the employee record never reaches rows already written — that is why the 2026-09-21 repair had
  * to be applied to 432 live rows by hand instead of fixing one record each. Every list a human
  * reads a name from therefore resolves it live, with ONE cached directory read for the whole list.
  *
+ * `employeeName` becomes the DISPLAY name (owner, 2026-11-03). `employeeRecordName` keeps the
+ * record's full name beside it, because a request read here also goes on to stamp the payroll
+ * ledger (pushAcceptedOutstationExpenseToPayroll), and a nickname must never land on that row.
+ *
  * The stored column itself is left exactly as written: it stays the audit trail of what was true
  * on the day, and nothing here writes to it. An HR id the directory does not know — an imported
  * row, a person never in the master — keeps its stored name rather than blanking.
  */
-async function withLiveRequestNames<T extends { employeeHrId: string; employeeName: string }>(
-  requests: T[],
-): Promise<T[]> {
+async function withLiveRequestNames<
+  T extends { employeeHrId: string; employeeName: string; employeeRecordName?: string | null },
+>(requests: T[]): Promise<T[]> {
+  if (requests.length === 0) return [];
+  const recordNames = await loadLiveOutstationRecordNames();
   return withLiveOutstationEmployeeNames(
-    requests,
+    requests.map((request) => ({
+      ...request,
+      employeeRecordName: liveOutstationEmployeeName(
+        recordNames,
+        request.employeeHrId,
+        request.employeeRecordName || request.employeeName,
+      ),
+    })),
     (request) => ({ hrId: request.employeeHrId, storedName: request.employeeName }),
     (request, employeeName) => ({ ...request, employeeName }),
   );
+}
+
+/** One request, for a path that has just written it and hands it back to a screen. */
+async function withLiveRequestName<
+  T extends { employeeHrId: string; employeeName: string; employeeRecordName?: string | null },
+>(request: T): Promise<T> {
+  const [named] = await withLiveRequestNames([request]);
+  return named;
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
@@ -1790,10 +1812,12 @@ async function outstationSubmitActionUrl(hrId: string | null | undefined, reques
 // immediate auto-approve is what actually makes the request "submitted" in
 // practice). Not fired on later edits to an already-approved request.
 async function notifyOutstationSubmitted(
-  request: OutstationExpenseRequest,
+  storedRequest: OutstationExpenseRequest,
   options: { heldForReview?: boolean; reviewReason?: string | null } = {},
 ) {
   try {
+    // The mail names the person by their display name (owner, 2026-11-03); the row keeps the full one.
+    const request = await withLiveRequestName(storedRequest);
     // To = the employee himself, Cc = his direct manager, Bcc = active Super Admins. The CEO is
     // never on this email in any slot other than his own To when he is the one submitting (owner,
     // 2026-08-08): when the direct manager is the CEO (every NSM, and 18 others), the skip-level
@@ -2023,7 +2047,7 @@ async function notifyOutstationDecision(input: {
   request: OutstationExpenseRequest;
 }) {
   try {
-    const r = input.request;
+    const r = await withLiveRequestName(input.request);
     const amount = formatEgp(r.claimedTotalAmount || r.expectedTotalAmount);
     const reason = text(input.comment);
     await Promise.allSettled([
@@ -2736,7 +2760,10 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     employeeArea: text(row.area) || null,
     employeeHrId: text(row.employee_hr_id),
     employeeLine: text(row.line) || null,
+    // Both start as the stored snapshot. withLiveRequestNames turns `employeeName` into the display
+    // name for a reader; `employeeRecordName` is what a payroll-ledger stamp reads, so it stays full.
     employeeName: text(row.employee_name),
+    employeeRecordName: text(row.employee_name),
     employeeRole: text(row.employee_role),
     expectedTotalAmount: numberValue(row.expected_total_amount),
     fuelAmount: numberValue(row.fuel_amount),
@@ -3694,7 +3721,7 @@ export async function approveOutstationRequestForPayroll(
     expenseTripId: outstationPayrollTripId(request.id),
     gate,
     payrollExpenseRows,
-    request,
+    request: await withLiveRequestName(request),
   };
 }
 
@@ -4271,7 +4298,7 @@ export async function createManagerExpenseAsAdmin(
     }
   }
 
-  return created;
+  return withLiveRequestName(created);
 }
 
 export async function updateManagerExpenseAsAdmin(
@@ -4747,7 +4774,7 @@ export async function rejectOutstationRequestAsAdmin(
   await afterResponse("outstation_notice:rejected", () =>
     notifyOutstationDecision({ comment, decision: "reject", request: rejected }),
   );
-  return rejected;
+  return withLiveRequestName(rejected);
 }
 
 /** One queue row's decision, narrowed to the fields the outstation workflow actually needs. */
@@ -7361,6 +7388,8 @@ export async function listHeldOutstationRequests(
   // One reading of "today", not one per row: a list computed either side of Cairo midnight would
   // otherwise drop or keep a trip depending on where in the loop it happened to fall.
   const today = cairoTodayIso();
+  // This list reads the rows itself, so it resolves the name an approver sees itself.
+  const liveNames = await loadLiveOutstationEmployeeNames();
 
   return (data as Array<Record<string, unknown>>)
     .map(mapOutstationRequestRow)
@@ -7386,7 +7415,7 @@ export async function listHeldOutstationRequests(
       blocker: gate.blocker ?? "unknown",
       destination: text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—",
       employeeHrId: request.employeeHrId,
-      employeeName: request.employeeName,
+      employeeName: liveOutstationEmployeeName(liveNames, request.employeeHrId, request.employeeName),
       employeeRole: request.employeeRole,
       id: request.id,
       lastAttemptAt: request.workloadLastAttemptAt,

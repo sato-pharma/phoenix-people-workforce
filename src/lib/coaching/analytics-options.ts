@@ -44,7 +44,7 @@ export function buildCoachingAnalyticsFilterOptions(
     ]),
     medicalReps: toOptionMap([
       ...employees.map((employee) => ({
-        label: `${formatEmployeeDisplayName(employee.fullName, employee.hrId)} (${formatHrIdForDisplay(employee.hrId) ?? employee.hrId})`,
+        label: `${formatEmployeeDisplayName(employee.displayName, employee.hrId)} (${formatHrIdForDisplay(employee.hrId) ?? employee.hrId})`,
         value: employee.hrId,
       })),
       ...reports.map((report) => ({

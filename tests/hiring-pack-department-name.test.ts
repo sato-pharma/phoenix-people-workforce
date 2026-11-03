@@ -71,6 +71,13 @@ function printReader(row: EmployeeDbRow, joined: { id: number; name: string | nu
 }
 
 export function runHiringPackDepartmentNameTests() {
+  // The papers are legal documents, so a nickname never reaches them (owner, 2026-11-03).
+  assert.equal(
+    mapEmployeeFacts({ ...employeeRow(null), nickname: "Yasmen A." }, null).fullName,
+    "Yasmen Adel",
+    "a person with a nickname keeps the full name on every paper",
+  );
+
   // ── 1. A department that IS in the lookup table ──────────────────────────────────────────────
   //
   // The headline. Sales is 140 of the 162 people carrying a department in production, so this is

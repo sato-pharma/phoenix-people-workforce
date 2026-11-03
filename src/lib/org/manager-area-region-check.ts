@@ -10,6 +10,7 @@
 // AREA a team hangs off, not only its name, so it has to hold the whole team list anyway — and one
 // list beats an embed whose shape changes with the foreign key.
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -95,7 +96,7 @@ export async function findManagerAreaDrift(): Promise<{
       }),
       loadPaged<Record<string, unknown>>(
         "employees",
-        "hr_id,full_name,job_title,region_name,area_id,team_id,employment_status",
+        "hr_id,full_name,nickname,job_title,region_name,area_id,team_id,employment_status",
         "hr_id",
         (row) => (String(row.employment_status ?? "").toLowerCase() === "active" ? row : null),
       ),
@@ -114,9 +115,11 @@ export async function findManagerAreaDrift(): Promise<{
         const teamId = numberOrNull(row.team_id);
         const team = teamId === null ? undefined : teamById.get(teamId);
         const teamAreaId = team?.areaId ?? null;
+        const fullName = textOrNull(row.full_name);
         return {
           hrId: String(row.hr_id ?? ""),
-          fullName: textOrNull(row.full_name),
+          // The finding's message prints this field; nothing here matches on it.
+          fullName: fullName ? resolveEmployeeDisplayName(fullName, textOrNull(row.nickname), textOrNull(row.hr_id)) : null,
           jobTitle: textOrNull(row.job_title),
           regionName: textOrNull(row.region_name),
           areaId,

@@ -61,6 +61,8 @@ export type OrgSeat = {
 export type OrgPerson = {
   hrId: string;
   fullName: string;
+  /** The name a sheet prints: the nickname the company uses, else the full name. */
+  displayName?: string | null;
   nameAr: string | null;
   jobTitle: string | null;
 };
@@ -320,7 +322,7 @@ function describe(
   // with whoever used to sit there.
   const territory = seat?.areaName ?? seat?.regionName ?? "Egypt";
   return {
-    title: person?.fullName ?? `${territory} — vacant seat`,
+    title: person?.displayName ?? person?.fullName ?? `${territory} — vacant seat`,
     titleAr: person?.nameAr ?? null,
     roleLabel: TIER_ROLE_LABEL[seat?.tier ?? ""] ?? "Sales",
     territory,

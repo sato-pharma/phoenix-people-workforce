@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache.js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { DEVICE_MAPPING_CACHE_TAG, invalidateDeviceMappingCache } from "@/lib/dashboard/invalidation";
 import {
@@ -120,6 +121,7 @@ type MappingDbRow = {
 type EmployeeDbRow = {
   full_name: string | null;
   hr_id: string;
+  nickname: string | null;
 };
 
 type LatestPunchDbRow = {
@@ -164,7 +166,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
       .order("id"),
     supabase
       .from("employees")
-      .select("hr_id,full_name")
+      .select("hr_id,full_name,nickname")
       .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
       .order("full_name", { ascending: true }),
     // ONE ROW PER DEVICE USER, folded by the database. This used to pull the newest 5,000 raw
@@ -186,7 +188,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
   const employees = ((employeeResult.data ?? []) as EmployeeDbRow[])
     .filter((row) => row.hr_id)
     .map((row) => ({
-      fullName: row.full_name?.trim() || row.hr_id,
+      fullName: resolveEmployeeDisplayName(row.full_name?.trim() || row.hr_id, row.nickname, row.hr_id),
       hrId: row.hr_id,
     }));
   const employeeNames = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee.fullName]));

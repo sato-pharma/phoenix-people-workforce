@@ -18,6 +18,7 @@
 //        resolveClosingPublishRecipients).
 // BCC  — Omar Anwar (Super Admin), named explicitly by the owner.
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isSalesNotificationExcluded } from "@/lib/sales/sales-notification-exclusions";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
@@ -54,23 +55,34 @@ const LINE_PRODUCT_MANAGER_ROLES = ["Product Manager", "Group Product Manager"] 
 // now case-insensitive on the canonical HR_ID, which is strictly safer: the literal Set.has this
 // replaced would have stopped excluding her the moment a seat row returned "b-156".
 
-type EmployeeRow = { hr_id: string; full_name: string; work_email: string | null; employment_status: string | null };
+type EmployeeRow = {
+  hr_id: string;
+  full_name: string;
+  nickname: string | null;
+  work_email: string | null;
+  employment_status: string | null;
+};
+
+/** The name only. Who receives the notice is decided by the seat and the role, never by this. */
+function shownName(row: EmployeeRow): string {
+  return resolveEmployeeDisplayName(row.full_name, row.nickname, row.hr_id);
+}
 
 function isActiveEmployee(row: EmployeeRow | undefined, warnings: string[], context: string): row is EmployeeRow {
   if (!row) return false;
   if (String(row.employment_status ?? "").trim().toLowerCase() !== "active") {
-    warnings.push(`${context}: ${row.full_name} (${row.hr_id}) is not active — skipped.`);
+    warnings.push(`${context}: ${shownName(row)} (${row.hr_id}) is not active — skipped.`);
     return false;
   }
   if (!String(row.work_email ?? "").trim()) {
-    warnings.push(`${context}: ${row.full_name} (${row.hr_id}) has no work email on file — skipped.`);
+    warnings.push(`${context}: ${shownName(row)} (${row.hr_id}) has no work email on file — skipped.`);
     return false;
   }
   return true;
 }
 
 function toRecipient(row: EmployeeRow): ClosingPublishRecipient {
-  return { hrId: row.hr_id, name: row.full_name, email: String(row.work_email).trim() };
+  return { hrId: row.hr_id, name: shownName(row), email: String(row.work_email).trim() };
 }
 
 /**
@@ -95,7 +107,7 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
       supabase.from("app_auth_users").select("hr_id,role").eq("is_active", true).in("role", [...FIXED_CC_ROLES]),
       supabase
         .from("employees")
-        .select("hr_id,full_name,work_email,employment_status")
+        .select("hr_id,full_name,nickname,work_email,employment_status")
         .in("hr_id", [...NAMED_CC_HR_IDS, ...NAMED_BCC_HR_IDS]),
       supabase
         .from("app_auth_users")
@@ -141,7 +153,7 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
 
     const allHrIds = [...new Set([...lineMemberHrIds, ...nsmHrIds, ...fixedRoleHrIds, ...pmHrIds])];
     const employeeResult = allHrIds.length > 0
-      ? await supabase.from("employees").select("hr_id,full_name,work_email,employment_status").in("hr_id", allHrIds)
+      ? await supabase.from("employees").select("hr_id,full_name,nickname,work_email,employment_status").in("hr_id", allHrIds)
       : { data: [] as EmployeeRow[], error: null };
     if (employeeResult.error) throw employeeResult.error;
 
@@ -160,7 +172,7 @@ export async function resolveClosingPublishRecipients(officialLine: string): Pro
       const employee = employeeByHrId.get(hrId);
       if (!employee || String(employee.employment_status ?? "").trim().toLowerCase() !== "active") return;
       seenTeam.add(hrId);
-      team.push({ hrId: employee.hr_id, name: employee.full_name });
+      team.push({ hrId: employee.hr_id, name: shownName(employee) });
     };
     for (const hrId of lineMemberHrIds) {
       addTeam(hrId);

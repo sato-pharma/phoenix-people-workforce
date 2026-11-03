@@ -2894,7 +2894,10 @@ export async function closeOrphanedDirectOrder(
   const directory = await getEmployeeDirectoryRows({ includeInactive: true });
   const requesterKey = canonicalHrIdKey(detail.request.requesterHrId);
   const requester = directory.find((employee) => canonicalHrIdKey(employee.hrId) === requesterKey) ?? null;
+  // `requesterLabel` is written into the audit summary and the event message below, which are stored
+  // text, so it stays the full name. What this screen answers with reads the display name.
   const requesterLabel = requester?.fullName.trim() || detail.request.requesterHrId;
+  const requesterShownName = requester?.displayName?.trim() || requesterLabel;
   if (!requester) {
     // An id the master does not hold is NOT read as a departure — same rule as
     // `selectOrphanedRequests`. It is a directory problem, and closing a real order over one would
@@ -2907,7 +2910,7 @@ export async function closeOrphanedDirectOrder(
   }
   if (isActiveLifecycleStatus(requester.employmentStatus)) {
     badRequest(
-      `${requesterLabel} is still employed, so this return is theirs to answer — they can correct ` +
+      `${requesterShownName} is still employed, so this return is theirs to answer — they can correct ` +
         "and resubmit it themselves. This action only clears an order whose requester has left the company.",
     );
   }

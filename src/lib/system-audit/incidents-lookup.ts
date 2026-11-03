@@ -14,6 +14,7 @@
 import { cairoOffsetMinutes } from "@/lib/format/cairo-zone";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { ilikeContainsValue, searchableTerm } from "@/lib/supabase/search-filter";
+import { currentPersonNames } from "@/lib/system-audit/person-names";
 
 type Client = ReturnType<typeof getSupabaseAdmin>;
 
@@ -52,7 +53,8 @@ export async function lookupAuditPeople(query: string, override?: Client): Promi
   if (text.length > 80) throw new Error("Type at most 80 characters to find a person.");
   const pattern = personSearchPattern(text);
   if (!pattern) return [];
-  const { data, error } = await client(override)
+  const supabase = client(override);
+  const { data, error } = await supabase
     .from("system_audit_occurrences")
     .select("hr_key, hr_id_display, employee_name")
     .not("hr_key", "is", null)
@@ -60,13 +62,16 @@ export async function lookupAuditPeople(query: string, override?: Client): Promi
     .order("last_event_at", { ascending: false })
     .limit(PEOPLE_SCAN);
   if (error) throw new Error(`The person lookup failed: ${error.message}`);
+  const rows = (data ?? []) as Array<{ hr_key: string | null; hr_id_display: string | null; employee_name: string | null }>;
+  // The search above runs on the stored name; what the option prints is the person's current name.
+  const names = await currentPersonNames(rows.map((row) => row.hr_key), supabase);
   const byKey = new Map<string, AuditPersonOption>();
-  for (const row of (data ?? []) as Array<{ hr_key: string | null; hr_id_display: string | null; employee_name: string | null }>) {
+  for (const row of rows) {
     if (!row.hr_key || byKey.has(row.hr_key)) continue;
     byKey.set(row.hr_key, {
       hrKey: row.hr_key,
       hrId: row.hr_id_display?.trim() || row.hr_key.toUpperCase(),
-      name: row.employee_name?.trim() || "Name not recorded",
+      name: names.get(row.hr_key) ?? (row.employee_name?.trim() || "Name not recorded"),
     });
   }
   return Array.from(byKey.values())

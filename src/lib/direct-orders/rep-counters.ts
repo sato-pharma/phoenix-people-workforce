@@ -4,6 +4,7 @@ import {
   resolveDirectOrderReportScope,
   resolveVisibleRequesterHrIds,
 } from "@/lib/direct-orders/service";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { EMPLOYEE_AREA_SELECT, resolveEmployeeAreaName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -115,7 +116,7 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
       .select("requested_by_hr_id, status, suggestions_refused"),
     // The area from the `area_id` LINK — see employee-org-labels.ts: 29 reps have a link and no
     // label, so this counter showed them with a blank area.
-    supabase.from("employees").select(`hr_id, full_name, job_title, ${EMPLOYEE_AREA_SELECT}`),
+    supabase.from("employees").select(`hr_id, full_name, nickname, job_title, ${EMPLOYEE_AREA_SELECT}`),
     // Fetched as a set rather than joined, so a rejected order can be tested against it without a
     // second round trip per row — every one of those is a cross-region hop (Railway
     // `europe-west4` to Supabase `eu-central-1`), and this table already makes three.
@@ -148,7 +149,9 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
       hrId: String(employee?.hr_id ?? hrId),
       // Owner's standing rule: human-readable names, never raw codes. Falling back to the HR id is
       // still better than a blank, but it is flagged as unknown rather than dressed up as a name.
-      name: String(employee?.full_name ?? `(unknown — ${hrId})`),
+      name: employee?.full_name
+        ? resolveEmployeeDisplayName(String(employee.full_name), employee.nickname as string | null, String(employee.hr_id ?? hrId))
+        : `(unknown — ${hrId})`,
       role: String(employee?.job_title ?? role ?? ""),
       areaName: resolveEmployeeAreaName(employee) ?? "",
       held: 0,

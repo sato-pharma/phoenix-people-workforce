@@ -870,7 +870,7 @@ export function mergeRequestAndLedgerExpenses<
 }
 
 /**
- * Show the employee's CURRENT record name on rows that were written with an older one.
+ * Show the employee's CURRENT display name (owner, 2026-11-03) on rows that stored their full name.
  *
  * `specialist` is a snapshot: both sources freeze the name at write time, so a correction to the
  * employee record never travels backwards into rows already stored. One cached directory read

@@ -314,9 +314,9 @@ export async function getRepTripVisitWorkload(input: {
   for (const emp of directory) {
     if (!emp.fullName) continue;
     const empCrm = emp.crmId == null ? null : Number(emp.crmId);
-    if (empCrm != null && !Number.isNaN(empCrm)) nameByOwnerKey.set(String(empCrm), emp.fullName);
+    if (empCrm != null && !Number.isNaN(empCrm)) nameByOwnerKey.set(String(empCrm), emp.displayName);
     const empHrKey = canonicalHrIdKey(emp.hrId);
-    if (empHrKey) nameByOwnerKey.set(`hr:${empHrKey}`, emp.fullName);
+    if (empHrKey) nameByOwnerKey.set(`hr:${empHrKey}`, emp.displayName);
   }
 
   const checkinRows = await queryCheckins<CrmCheckinRow>({

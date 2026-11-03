@@ -29,6 +29,7 @@ import {
   type DirectOrderFieldEvidenceGap,
 } from "@/lib/direct-orders/field-evidence-gap";
 import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-input";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1207,11 +1208,11 @@ export async function listDirectOrderPharmacyValidations(
         .filter(Boolean),
     ),
   );
-  const { data: employees } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", hrIds);
+  const { data: employees } = await supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", hrIds);
   const nameByHr = new Map(
-    ((employees ?? []) as Array<{ hr_id: string; full_name: string | null }>).map((e) => [
+    ((employees ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>).map((e) => [
       e.hr_id.toUpperCase(),
-      e.full_name ?? e.hr_id,
+      resolveEmployeeDisplayName(e.full_name ?? e.hr_id, e.nickname, e.hr_id),
     ]),
   );
 
@@ -1348,10 +1349,11 @@ export async function getDirectOrderPharmacyValidationForRequest(
     // tables before, and an exact-cased join against employees.hr_id silently returns nothing.
     const { data: employeeRow } = await supabase
       .from("employees")
-      .select("full_name")
+      .select("full_name, nickname")
       .ilike("hr_id", hr)
       .maybeSingle();
-    requesterName = (employeeRow as { full_name?: string | null } | null)?.full_name ?? hr;
+    const requester = employeeRow as { full_name?: string | null; nickname?: string | null } | null;
+    requesterName = resolveEmployeeDisplayName(requester?.full_name ?? hr, requester?.nickname, hr);
   }
 
   return mapValidationRow(supabase, row, (pharmacyRow as ValidationPharmacyRow | null) ?? undefined, requesterName);

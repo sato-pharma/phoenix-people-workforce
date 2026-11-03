@@ -41,6 +41,7 @@
 
 import { unstable_cache } from "next/cache";
 
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
@@ -199,13 +200,18 @@ const loadRepTerritoriesCached = unstable_cache(
       areasBySeat.set(row.rep_seat_id, list);
     }
 
-    const territories: RepTerritory[] = [];
-    for (const seat of (seatsRes.data ?? []) as Array<{
+    const seatRows = (seatsRes.data ?? []) as Array<{
       full_name: string | null;
       hr_id: string | null;
       seat_id: string | null;
       seat_tier: string | null;
-    }>) {
+    }>;
+    // The view carries `full_name` only: a rep is printed by his display name, read by HR id, and a
+    // failed name read keeps the view's name.
+    const repNames = await namesByHrId(seatRows.map((seat) => seat.hr_id)).catch(() => null);
+
+    const territories: RepTerritory[] = [];
+    for (const seat of seatRows) {
       if (seat.seat_tier !== "REP" || !seat.hr_id || !seat.seat_id) continue;
       const areas = areasBySeat.get(seat.seat_id);
       if (!areas || areas.length === 0) continue;
@@ -215,7 +221,7 @@ const loadRepTerritoriesCached = unstable_cache(
         hrId: seat.hr_id,
         line: areas[0].lineCode,
         repKey: canonicalHrIdKey(seat.hr_id) ?? seat.hr_id,
-        repName: seat.full_name?.trim() || seat.hr_id,
+        repName: repNames?.get(seat.hr_id) || seat.full_name?.trim() || seat.hr_id,
       });
     }
     return territories;

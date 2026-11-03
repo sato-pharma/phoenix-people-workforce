@@ -1299,6 +1299,40 @@ function dateRangesOverlap(leftStart: string, leftEnd: string, rightStart: strin
   return leftStart <= rightEnd && rightStart <= leftEnd;
 }
 
+/**
+ * 🔒 A MANAGER IS PRINTED BY THEIR DISPLAY NAME (owner, 2026-11-03). `manager_name` and
+ * `manager_of_manager_name` stay the raw snapshot the request was written with; they are resolved here
+ * at READ, by HR id, for the screens and emails. An unknown id or a failed read keeps the stored name,
+ * and a failed name read never fails the page. The directory read is TTL-cached and request-deduped.
+ */
+async function withManagerDisplayNames<
+  T extends Pick<VacationRequestRecord, "managerHrId" | "managerName" | "managerOfManagerHrId" | "managerOfManagerName">,
+>(rows: T[]): Promise<T[]> {
+  if (rows.length === 0) return rows;
+  try {
+    const nameByKey = new Map<string, string>();
+    for (const employee of await getEmployeeDirectoryRows({ includeInactive: true })) {
+      const key = canonicalHrIdKey(employee.hrId);
+      if (key && employee.displayName) nameByKey.set(key, employee.displayName);
+    }
+    const nameFor = (hrId: string | null, stored: string | null) =>
+      nameByKey.get(canonicalHrIdKey(hrId) ?? "") ?? stored;
+    return rows.map((row) => ({
+      ...row,
+      managerName: nameFor(row.managerHrId, row.managerName),
+      managerOfManagerName: nameFor(row.managerOfManagerHrId, row.managerOfManagerName),
+    }));
+  } catch {
+    return rows;
+  }
+}
+
+/** One row read for an email or a decision screen, its managers already in their display names. */
+async function mapVacationRowForDisplay(row: VacationRequestDbRow): Promise<VacationRequestRecord> {
+  const [mapped] = await withManagerDisplayNames([mapVacationRow(row)]);
+  return mapped;
+}
+
 function mapVacationRow(row: VacationRequestDbRow, canDecide = false): VacationRequestRecord {
   return {
     balanceAfterDays: numberValue(row.balance_after_days),
@@ -3770,7 +3804,7 @@ export async function createVacationRequest(access: AccessContext, input: Create
     throwVacationDatabaseError(error);
   }
 
-  const request = mapVacationRow(data as VacationRequestDbRow);
+  const request = await mapVacationRowForDisplay(data as VacationRequestDbRow);
   try {
     await createVacationApprovalSteps({ approvers: approvalRecipients, requestId: request.id });
   } catch (error) {
@@ -3949,7 +3983,7 @@ export async function createVacationRequestAsAdmin(access: AccessContext, input:
     .single();
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-  const request = mapVacationRow(data as VacationRequestDbRow);
+  const request = await mapVacationRowForDisplay(data as VacationRequestDbRow);
 
   await insertVacationEvent({
     actorHrId: resolveEmployeeIdentityId(access),
@@ -3994,7 +4028,7 @@ export async function updateVacationRequestAsAdmin(access: AccessContext, input:
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
   if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
-  const request = mapVacationRow(data as VacationRequestDbRow);
+  const request = await mapVacationRowForDisplay(data as VacationRequestDbRow);
 
   await insertVacationEvent({
     actorHrId: resolveEmployeeIdentityId(access),
@@ -4245,7 +4279,7 @@ async function fetchVacationRequestById(id: string) {
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
   if (!data) return null;
-  const request = mapVacationRow(data as VacationRequestDbRow);
+  const request = await mapVacationRowForDisplay(data as VacationRequestDbRow);
   const [reviews, attachments] = await Promise.all([
     fetchEvidenceReviewsForRequests([request.id]),
     fetchVacationAttachmentsForRequests([request.id]),
@@ -4319,7 +4353,7 @@ async function returnVacationToEmployee(args: {
     .single();
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
   if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
-  const returned = mapVacationRow(data as VacationRequestDbRow);
+  const returned = await mapVacationRowForDisplay(data as VacationRequestDbRow);
   await insertVacationEvent({
     actorHrId: input.actorHrId,
     actorLoginId: input.actorLoginId,
@@ -4667,7 +4701,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
     decidedRow = data as VacationRequestDbRow;
   }
-  const updated = mapVacationRow(decidedRow);
+  const updated = await mapVacationRowForDisplay(decidedRow);
 
   const genericStep = genericStepName(step.stepKey);
   const eventMessage = isFinal
@@ -4948,7 +4982,7 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     .single();
 
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-  const updated = mapVacationRow(data as VacationRequestDbRow);
+  const updated = await mapVacationRowForDisplay(data as VacationRequestDbRow);
 
   await insertVacationEvent({
     actorHrId: input.actorHrId,
@@ -5197,7 +5231,7 @@ export async function resubmitVacationRequest(
     .single();
   if (error) throwVacationDatabaseError(error);
   if (!data) throw new Error("Vacation request was updated by another user. Refresh and try again.");
-  const resubmitted = mapVacationRow(data as VacationRequestDbRow);
+  const resubmitted = await mapVacationRowForDisplay(data as VacationRequestDbRow);
 
   if (datesChanged) {
     const { error: resetError } = await getSupabaseAdmin()
@@ -5369,7 +5403,7 @@ export async function assignVacationManagementApprover(
     .from(vacationRequestsTable)
     .update({
       manager_hr_id: approver.hrId,
-      manager_name: approver.displayName,
+      manager_name: approver.fullName,
       status: "pending_manager",
       updated_at: now,
     })
@@ -5378,7 +5412,7 @@ export async function assignVacationManagementApprover(
     .select("*")
     .single();
   if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-  const updated = mapVacationRow(data as VacationRequestDbRow);
+  const updated = await mapVacationRowForDisplay(data as VacationRequestDbRow);
 
   await insertVacationEvent({
     actorHrId: resolveEmployeeIdentityId(access),
@@ -5463,7 +5497,7 @@ export async function getVacationActionCenterData(access: AccessContext): Promis
       if (extraData && extraData.length > 0) {
         const extraMapped = await markVacationDecisionAccess(
           access,
-          (extraData as VacationRequestDbRow[]).map((row) => mapVacationRow(row)),
+          await withManagerDisplayNames((extraData as VacationRequestDbRow[]).map((row) => mapVacationRow(row))),
         );
         const extraEnriched = await enrichVacationRows(extraMapped);
         for (const row of extraEnriched) {
@@ -7135,9 +7169,11 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   );
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: clean, visibleEmployeeHrIds });
 
-  const scopedRows = (data ?? [])
-    .map((row) => mapVacationRow(row as VacationRequestDbRow))
-    .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds));
+  const scopedRows = await withManagerDisplayNames(
+    (data ?? [])
+      .map((row) => mapVacationRow(row as VacationRequestDbRow))
+      .filter((row) => canSeeVacation(access, row, visibleEmployeeHrIds)),
+  );
   // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the approval-step read,
   // the evidence/event enrichment, the holiday months, the unfiltered re-read and the last SLA run
   // used to wait on each other in a line, and none reads another's answer. markVacationDecisionAccess

@@ -120,7 +120,12 @@ export function runNotificationRecipientAddressResolutionTests() {
   );
   assert.match(
     systemSource,
-    /\.select\("work_email, name:full_name"\)/,
-    "the recipient lookup must select full_name, the column that actually exists",
+    /\.select\("work_email, name:full_name, nickname"\)/,
+    "the recipient lookup must select full_name, the column that actually exists, and nickname, so the greeting reads the display name",
+  );
+  assert.match(
+    systemSource,
+    /name: employeeName \?\? row\?\.name \?\? null,/,
+    "the employee's display name outranks the login's copy, which still holds the full name until that person's record is next saved",
   );
 }

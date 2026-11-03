@@ -1,3 +1,4 @@
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -15,6 +16,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type EmployeeRecord = {
   hrId: string;
   fullName: string | null;
+  /** The name the screen prints: the nickname the company uses, else the full name. */
+  displayName: string | null;
   /** The person's real job title, e.g. "Medical Rep" / "National Sales Manager". */
   jobTitle: string | null;
   managerHrId: string | null;
@@ -26,7 +29,7 @@ function queryKeys(hrIds: readonly (string | null | undefined)[]): string[] {
 }
 
 /**
- * Look up `full_name`, `job_title` and `manager_hr_id` for a set of HR ids, keyed by canonical id.
+ * Look up the name, `job_title` and `manager_hr_id` for a set of HR ids, keyed by canonical id.
  *
  * Chunked at 100: a PostgREST `.in()` puts every id in the URL and past a few hundred comes back
  * empty with no error, which here would blank every name on the screen rather than raise. At this
@@ -43,12 +46,13 @@ export async function loadEmployeeRecords(
   for (let index = 0; index < keys.length; index += 100) {
     const { data, error } = await supabase
       .from("employees")
-      .select("hr_id, full_name, job_title, manager_hr_id")
+      .select("hr_id, full_name, nickname, job_title, manager_hr_id")
       .in("hr_id", keys.slice(index, index + 100));
     if (error) throw error;
     for (const row of (data ?? []) as Array<{
       hr_id: string;
       full_name: string | null;
+      nickname?: string | null;
       job_title: string | null;
       manager_hr_id: string | null;
     }>) {
@@ -57,6 +61,7 @@ export async function loadEmployeeRecords(
       byKey.set(key, {
         hrId: row.hr_id,
         fullName: row.full_name ?? null,
+        displayName: row.full_name ? resolveEmployeeDisplayName(row.full_name, row.nickname, row.hr_id) : null,
         jobTitle: row.job_title ?? null,
         managerHrId: row.manager_hr_id ?? null,
       });
@@ -71,7 +76,7 @@ export function employeeName(
   hrId: string | null | undefined,
 ): string | null {
   const key = canonicalHrIdKey(hrId);
-  return key ? directory.get(key)?.fullName ?? null : null;
+  return key ? directory.get(key)?.displayName ?? null : null;
 }
 
 /** The person's real job title, or null when they are not on file. Never a code. */

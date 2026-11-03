@@ -1,19 +1,16 @@
 /**
- * The employee RECORD name — one definition, for every screen that renders a persisted
- * `employee_name` snapshot back to a human.
+ * The two names a persisted `employee_name` snapshot deals in — one definition of each.
  *
- * `EmployeeDirectoryRow.displayName` is nickname-first by design, and its own type comment says
- * where each name belongs: displayName for live UI, `fullName` for "legal/payroll documents,
- * persisted workflow audit snapshots, and identity-matching logic". A workflow row's stored
- * `employee_name` is exactly the third of those — an audit snapshot — so the name it is WRITTEN
- * with and the name it is READ BACK with are both the record's full name.
+ *   - WRITE: `employeeRecordName` is what a new row stamps: the record's full name, the
+ *     audit-snapshot and payroll-feeding name. Unchanged.
+ *   - READ: `employeeShownName` is what every screen and email prints for a row already written:
+ *     the display name (owner, 2026-11-03, reversing his 2026-09-21 "align the decided-by name to
+ *     the record name too"). Contracts, payslips, payroll sheets and workbooks that feed payroll,
+ *     government forms and salary letters keep the legal full name.
  *
- * Why this is its own module rather than a private helper in one domain: the rule was discovered
- * in outstation (PR #4135 fixed the write side, #4136 the read side) but it is not an outstation
- * fact. The approvals hub renders the same kind of snapshot for leave, excuses and weekly plans,
- * and resolved it to `displayName` — so one outstation request read as the record name on the
- * outstation queue and as a nickname in the hub, for the same person on the same day. Two copies
- * of a naming rule is how that gap opened; this module is the one copy.
+ * Why this is its own module rather than a private helper in one domain: outstation and the
+ * approvals hub render the same kind of snapshot, and two copies of a naming rule once showed one
+ * person under two names on one day. This module is the one copy.
  *
  * Nothing here writes. The stored column stays raw — it remains the audit trail of what was true
  * at submit time — and the resolution happens at render, which is what makes a corrected employee
@@ -34,7 +31,7 @@ function text(value: unknown) {
 }
 
 /**
- * The employee record's own name.
+ * WRITE SIDE: the employee record's own name, as a new row stamps it.
  *
  * `fullName` first, never `displayName`. It falls through to `displayName` and then the HR id only
  * so a record with a blank full name still yields something a human can read; it never yields an
@@ -45,8 +42,18 @@ export function employeeRecordName(employee: EmployeeRecordNameSource): string {
 }
 
 /**
- * The name to SHOW for one row that was already written, given the record name resolved for its
- * HR id (or nothing, when the directory could not answer for it).
+ * READ SIDE: the name a screen or an email prints for this person (owner, 2026-11-03).
+ *
+ * `displayName` first, then `fullName`, then the HR id, so it never yields an empty string. Never
+ * stamp this onto a row, and never print it on a legal or payroll document.
+ */
+export function employeeShownName(employee: EmployeeRecordNameSource): string {
+  return text(employee.displayName) || text(employee.fullName) || employee.hrId;
+}
+
+/**
+ * The name to SHOW for one row that was already written, given the name resolved for its HR id
+ * (or nothing, when the directory could not answer for it). Readers pass `employeeShownName`.
  *
  * Every fallback here lands on the stored name, deliberately:
  *

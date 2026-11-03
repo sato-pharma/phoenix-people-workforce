@@ -20,6 +20,7 @@
 // `milestoneKeysToSend`).
 
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -217,6 +218,9 @@ export async function processProbationMilestoneEmails(
 
   const dueKeys = due.flatMap(({ c, milestones }) => milestones.map((m) => probationMilestoneEventKey(c.id, m.day)));
   const toSend = milestoneKeysToSend(dueKeys, await readMilestoneEvents(dueKeys), PROBATION_MILESTONE_TO_HR_ID);
+  // The case stores the name it was opened with; the email shows the display name (owner, 2026-11-03).
+  // Best-effort: a failed read costs the nickname and nothing else.
+  const shownNames = await namesByHrId(due.map(({ c }) => c.employee_hr_id)).catch(() => null);
 
   const sentPerCase = await Promise.all(
     due.map(async ({ c, milestones }) => {
@@ -227,7 +231,7 @@ export async function processProbationMilestoneEmails(
           if (!toSend.has(eventKey)) continue;
 
           const ctx = await buildCaseContext(c.id, c.hire_date, today);
-          const employeeName = c.employee_name ?? c.employee_hr_id;
+          const employeeName = shownNames?.get(c.employee_hr_id) ?? c.employee_name ?? c.employee_hr_id;
           const title = `Probation ${m.label} — ${employeeName}`;
           const message = `${employeeName} reached ${m.label}. Progress: ${ctx.dvProgress} · ${ctx.provisionalScore} · ${ctx.riskStatus}.`;
 

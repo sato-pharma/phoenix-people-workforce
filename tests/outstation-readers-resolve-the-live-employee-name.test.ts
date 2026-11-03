@@ -2,25 +2,27 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { employeeShownName } from "../src/lib/employees/record-name.ts";
 import {
   applyLiveOutstationEmployeeNames,
   liveOutstationEmployeeName,
   outstationRecordName,
 } from "../src/lib/outstation/employee-name.ts";
 
-// PR #4135 fixed the WRITE side: a new outstation request now stamps the employee RECORD name
-// instead of the nickname-first display name. It could not fix the 432 rows already written —
-// `employee_name` and `specialist` are snapshots taken at submit time, so a correction to an
-// employee record never travels backwards, which is why the 2026-09-21 repair had to touch every
-// row by hand.
+// PR #4135 fixed the WRITE side: a new outstation request stamps the employee RECORD name, and that
+// stands. `employee_name` and `specialist` are snapshots taken at submit time, so a correction to an
+// employee record never travels backwards, which is why the 2026-09-21 repair had to touch 432 rows
+// by hand.
 //
 // This pins the READ side: the lists a human reads a name from resolve it live, so the NEXT
-// correction reaches the old rows on its own. The stored columns stay raw — they remain the audit
-// trail of what was true on the day, and nothing on this path writes.
+// correction reaches the old rows on its own, and they show the DISPLAY name (owner, 2026-11-03,
+// reversing the 2026-09-21 alignment to the record name). The stored columns stay raw — they remain
+// the audit trail of what was true on the day, and nothing on this path writes.
 
 const SERVICE = join(process.cwd(), "src/lib/outstation/service.ts");
 const EXPENSES = join(process.cwd(), "src/lib/outstation/expenses.ts");
 const PORTAL = join(process.cwd(), "src/lib/employee-portal/service.ts");
+const EMPLOYEE_NAME = join(process.cwd(), "src/lib/outstation/employee-name.ts");
 
 /** Every expense read in the portal service, named by the reader it calls. */
 const PORTAL_EXPENSE_READS = ["listPayrollExpenses(", "listOutstationRequestExpenses("];
@@ -48,7 +50,7 @@ export function runOutstationReadersResolveTheLiveEmployeeNameTests() {
   assert.equal(
     liveOutstationEmployeeName(directory, "B-184", "Sally.Saeed"),
     "Sally Saied Sedhom Mankrios Sedhom",
-    "a row frozen with the login handle must render the employee record's current name",
+    "a row frozen with the login handle must render the name the directory holds today",
   );
   assert.equal(
     liveOutstationEmployeeName(directory, "b-184", "Sally.Saeed"),
@@ -74,6 +76,27 @@ export function runOutstationReadersResolveTheLiveEmployeeNameTests() {
     liveOutstationEmployeeName(names({ "b-122": "B-122" }), "B-122", "Amr Naguib"),
     "Amr Naguib",
     "a record with no usable name of its own resolves to its HR id — the stored name is better",
+  );
+
+  // ── A read shows the nickname (owner, 2026-11-03) ─────────────────────────
+  const sally = { displayName: "Sally Saied", fullName: "Sally Saied Sedhom Mankrios Sedhom", hrId: "B-184" };
+  assert.equal(
+    liveOutstationEmployeeName(
+      names({ "b-184": employeeShownName(sally) }),
+      "B-184",
+      "Sally Saied Sedhom Mankrios Sedhom",
+    ),
+    "Sally Saied",
+    "a row stamped with the full name reads back as the display name",
+  );
+  const employeeNameSource = readFileSync(EMPLOYEE_NAME, "utf8");
+  assert.ok(
+    functionBody(employeeNameSource, "loadLiveOutstationEmployeeNames").includes("loadLiveNames(employeeShownName)"),
+    "the map every outstation reader resolves against must hold the display name",
+  );
+  assert.ok(
+    functionBody(employeeNameSource, "loadLiveOutstationRecordNames").includes("loadLiveNames(outstationRecordName)"),
+    "the map a payroll-ledger stamp resolves against must hold the record's full name",
   );
 
   // ── The list applier ──────────────────────────────────────────────────────
@@ -182,5 +205,24 @@ export function runOutstationReadersResolveTheLiveEmployeeNameTests() {
     outstationRecordName({ displayName: "Sally.Saeed", fullName: "Sally Saied", hrId: "B-184" }),
     "Sally Saied",
     "the write-side resolver still stamps the record name from its new home",
+  );
+
+  // A request read through the overlay carries the display name in `employeeName` and then goes on
+  // to stamp outstation_expenses, which payroll reads. The stamp must take the full name.
+  assert.ok(
+    readFileSync(join(process.cwd(), "src/lib/outstation/payroll-expense-mapping.ts"), "utf8").includes(
+      "specialist: request.employeeRecordName || request.employeeName,",
+    ),
+    "the payroll ledger's specialist must be stamped from employeeRecordName — employeeName is the " +
+      "display name on a request read through withLiveRequestNames",
+  );
+  assert.ok(
+    service.includes("employeeRecordName: text(row.employee_name),"),
+    "a request carries its stored name in employeeRecordName, so a stamp can read it after the overlay",
+  );
+  assert.match(
+    functionBody(service, "listHeldOutstationRequests"),
+    /employeeName: liveOutstationEmployeeName\(liveNames, request\.employeeHrId, request\.employeeName\)/,
+    "the held-requests list reads the rows itself, so it must resolve the name itself",
   );
 }

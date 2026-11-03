@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth/permissions";
 import { devSafePromiseAll } from "@/lib/utils/dev-safe-promise-all";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { pushIdentityOf } from "@/lib/notifications/push-identity";
 import { personalMailboxConnected } from "@/lib/personal-mailbox/service";
@@ -2681,7 +2682,7 @@ function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): Pa
 }
 
 /**
- * Show the employee's CURRENT record name on portal expense rows.
+ * Show the employee's CURRENT display name (owner, 2026-11-03) on portal expense rows.
  *
  * `specialist` is a snapshot frozen at write time, so a correction to an employee record never
  * reaches rows already stored — see employee-name.ts. The portal is not a self-only screen: the
@@ -5075,7 +5076,7 @@ export async function getEmployeePortalVacancies(
     // organogram primary moved no existing row and filled the two that showed nothing
     // (VAC-PD0019-DWF → Sharkia 1, VAC-B176-SPK → Behira 1).
     const seatIdsOnTheList = uniqueRows.map((row) => row.seat_id ?? null);
-    const [offerOutBySeat, predecessors, seatPlaces] = await Promise.all([
+    const [offerOutBySeat, predecessors, seatPlaces, managerNames] = await Promise.all([
       loadOfferOutBySeat(),
       loadVacancyPredecessors(uniqueRows.map((row) => row.replacement_for_hr_id ?? null)).catch(
         () => null,
@@ -5083,6 +5084,9 @@ export async function getEmployeePortalVacancies(
       seatIdsOnTheList.some(Boolean)
         ? loadVacancySeatPlaces(seatIdsOnTheList).catch(() => null)
         : Promise.resolve(null),
+      // `manager_name` is a raw snapshot: the page prints the display name, read by HR id. A failed
+      // name read keeps the stored name.
+      namesByHrId(uniqueRows.map((row) => row.manager_hr_id)).catch(() => null),
     ]);
 
     const vacancies = uniqueRows.map((row) => {
@@ -5106,7 +5110,7 @@ export async function getEmployeePortalVacancies(
         lineId: row.line_id,
         lineName: row.lines?.name ?? null,
         managerHrId: row.manager_hr_id,
-        managerName: row.manager_name,
+        managerName: managerNames?.get(row.manager_hr_id) ?? row.manager_name,
         note: row.note,
         // An accepted/sent letter on this open seat, looked up by the vacancy's own id. Only open
         // vacancies carry a key in the map, so a non-open row would read null here.

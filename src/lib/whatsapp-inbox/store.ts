@@ -8,6 +8,8 @@ import crypto from "node:crypto";
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { logError, logInfo } from "@/lib/observability/log";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
@@ -183,9 +185,7 @@ export function formatWhatsAppPhone(waId: string | null): string | null {
 async function namesFor(candidateIds: string[], hrIds: string[]) {
   const supabase = getSupabaseAdmin();
   const candidates = new Map<string, string>();
-  const employees = new Map<string, string>();
   const uniqueCandidates = Array.from(new Set(candidateIds.filter(Boolean)));
-  const uniqueHrIds = Array.from(new Set(hrIds.filter(Boolean)));
   for (let index = 0; index < uniqueCandidates.length; index += 50) {
     const { data } = await supabase
       .from("ats_candidates")
@@ -195,19 +195,17 @@ async function namesFor(candidateIds: string[], hrIds: string[]) {
       candidates.set(row.id, row.full_name?.trim() || "Unnamed candidate");
     }
   }
-  for (let index = 0; index < uniqueHrIds.length; index += 50) {
-    const { data } = await supabase
-      .from("employees")
-      .select("hr_id, full_name")
-      .in("hr_id", uniqueHrIds.slice(index, index + 50));
-    for (const row of (data ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
-      employees.set(row.hr_id, row.full_name?.trim() || "Unnamed employee");
-    }
-  }
+  const employees = await namesByHrId(hrIds);
   return { candidates, employees };
 }
 
 type Names = Awaited<ReturnType<typeof namesFor>>;
+
+/** The name an employee row prints in the link picker: the nickname the company uses, else the full name. */
+function linkOptionEmployeeName(employee: { hr_id: string; full_name: string | null; nickname: string | null }): string {
+  const fullName = employee.full_name?.trim();
+  return fullName ? resolveEmployeeDisplayName(fullName, employee.nickname, employee.hr_id) : "Unnamed employee";
+}
 
 type PositionRecord = InboxPositionRecord;
 
@@ -719,12 +717,12 @@ export async function findInboxPeople(input: { conversationId?: string | null; s
       }
       const { data: employees } = await supabase
         .from("employees")
-        .select("hr_id, full_name, job_title, mobile_number")
+        .select("hr_id, full_name, nickname, job_title, mobile_number")
         .ilike("mobile_number", `%${tail}`)
         .limit(10);
-      for (const employee of (employees ?? []) as Array<{ hr_id: string; full_name: string | null; job_title: string | null; mobile_number: string | null }>) {
+      for (const employee of (employees ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null; job_title: string | null; mobile_number: string | null }>) {
         if (phoneTail(employee.mobile_number) !== tail) continue;
-        add({ detail: employee.job_title, id: employee.hr_id, kind: "employee", name: employee.full_name?.trim() || "Unnamed employee", phoneMatch: true });
+        add({ detail: employee.job_title, id: employee.hr_id, kind: "employee", name: linkOptionEmployeeName(employee), phoneMatch: true });
       }
     }
   }
@@ -749,15 +747,15 @@ export async function findInboxPeople(input: { conversationId?: string | null; s
     // `hr_id` matches the term EXACTLY, not as a substring — the one arm here that is not a
     // contains — and it was the only value in this file spliced in with no delimiters of its own
     // at all, so a comma in it split the filter rather than failing to match.
-    const employeeClauses = [`full_name.ilike.${searchValue}`, `name_ar.ilike.${searchValue}`, `hr_id.ilike.${searchExact}`];
+    const employeeClauses = [`full_name.ilike.${searchValue}`, `nickname.ilike.${searchValue}`, `name_ar.ilike.${searchValue}`, `hr_id.ilike.${searchExact}`];
     if (digitsValue) employeeClauses.push(`mobile_number.ilike.${digitsValue}`);
     const { data: employees } = await supabase
       .from("employees")
-      .select("hr_id, full_name, job_title")
+      .select("hr_id, full_name, nickname, job_title")
       .or(employeeClauses.join(","))
       .limit(10);
-    for (const employee of (employees ?? []) as Array<{ hr_id: string; full_name: string | null; job_title: string | null }>) {
-      add({ detail: employee.job_title, id: employee.hr_id, kind: "employee", name: employee.full_name?.trim() || "Unnamed employee", phoneMatch: false });
+    for (const employee of (employees ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null; job_title: string | null }>) {
+      add({ detail: employee.job_title, id: employee.hr_id, kind: "employee", name: linkOptionEmployeeName(employee), phoneMatch: false });
     }
   }
 

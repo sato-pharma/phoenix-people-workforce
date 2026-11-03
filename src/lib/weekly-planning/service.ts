@@ -110,6 +110,7 @@ import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
 import { planItemStoredRegion } from "@/lib/weekly-planning/calendar";
 import { viewerMayEditPlan } from "@/lib/weekly-planning/plan-editor-state";
+import { planWithDisplayNames, plansWithDisplayNames } from "@/lib/weekly-planning/plan-display-names";
 import { planEmailMetrics, planNounLabel, planSentenceLabel } from "@/lib/weekly-planning/plan-labels";
 import {
   isPlanOwnerWithinViewerManagementChain,
@@ -909,8 +910,9 @@ function assertCeoReviewer(access: AccessContext) {
 // inactive approver decides nothing.
 async function assertSecondApprover(access: AccessContext, plan: PlanHeaderRow) {
   if (!isSecondApproverForManager(access.hrId, plan.manager_hr_id)) {
+    const named = await planWithDisplayNames(plan);
     throw new Error(
-      `Forbidden: only ${secondApproverLabelForManager(plan.manager_hr_id) ?? "the assigned second approver"} can decide this stage of a plan reporting to ${plan.manager_name ?? "this manager"}.`,
+      `Forbidden: only ${secondApproverLabelForManager(plan.manager_hr_id) ?? "the assigned second approver"} can decide this stage of a plan reporting to ${named.manager_name ?? "this manager"}.`,
     );
   }
   const directory = await getEmployeeDirectory();
@@ -940,9 +942,10 @@ async function marketingDoubleVisitContextFor(
     allowed: true,
     partners: marketingDoubleVisitPartners(
       directory.employees.filter(isActiveEmployee).map((candidate) => ({
-        fullName: candidate.fullName,
+        fullName: candidate.displayName,
         hrId: candidate.hrId,
         jobTitle: employeeTitle(candidate),
+        legalName: candidate.fullName,
       })),
       employee.hrId,
     ),
@@ -1158,7 +1161,8 @@ function normalizeItem(
           : "Marketing Double Visit requires choosing who you are visiting with.",
       );
     }
-    if (partner) attendees = partner.fullName;
+    // The picker offers the display name; `attendees` stays the raw snapshot.
+    if (partner) attendees = partner.legalName || partner.fullName;
   }
   return {
     activityDate,
@@ -1492,7 +1496,7 @@ function deferPlanNotice(label: string, task: () => Promise<unknown>): Promise<v
   return afterResponse(`weekly_plan_notice:${label}`, task);
 }
 
-async function notifyRecipients(input: {
+async function notifyRecipients(rawInput: {
   actionUrl: string;
   additionalMetadata?: Record<string, unknown>;
   emailCcRecipients?: Array<{ email?: string | null; hrId: string | null; userId?: string | null }>;
@@ -1512,6 +1516,8 @@ async function notifyRecipients(input: {
   recipients: Array<{ email?: string | null; hrId: string | null; userId?: string | null }>;
   title: string;
 }) {
+  // The email's details block prints the employee: their display name, the stored row stays raw.
+  const input = { ...rawInput, plan: await planWithDisplayNames(rawInput.plan) };
   // The actual submitted plan rows ride along so the weekly_plans email template can
   // render them as a table via the {{planTable}} variable.
   const planTable = buildPlanEmailTable(input.plan.employee_plan_items);
@@ -1854,15 +1860,16 @@ async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: st
       "Marketing Manager": portalPlanUrl,
       "Training Manager": portalPlanUrl,
     };
+    const named = await planWithDisplayNames(plan);
     await notifyRecipients({
       actionUrl,
       additionalMetadata: { roleHrefs },
       emailCcRecipients: ccRecipients,
       eventType: "plan_submitted",
-      message: `${plan.employee_name} submitted a ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+      message: `${named.employee_name} submitted a ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
       plan,
       recipients: managerRecipients,
-      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs manager review`,
+      title: `${named.employee_name}'s ${planNounLabel(plan.plan_kind)} needs manager review`,
     });
     return { errored, fellBackToSuperAdmin, recipientCount: managerRecipients.length };
   } catch (notifyError) {
@@ -1901,6 +1908,7 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
   }
 
   if (primary.length === 0) return;
+  const named = await planWithDisplayNames(plan);
   await notifyRecipients({
     actionUrl: `/admin/approvals/plan/${plan.id}`,
     // Tags this copy as awareness-only (vs. the manager's action-needed copy of the same
@@ -1909,10 +1917,10 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
     additionalMetadata: { audience: "hr_awareness" },
     emailMode: "none",
     eventType: "plan_submitted",
-    message: `${plan.employee_name} submitted a ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+    message: `${named.employee_name} submitted a ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
     plan,
     recipients: primary,
-    title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was submitted`,
+    title: `${named.employee_name}'s ${planNounLabel(plan.plan_kind)} was submitted`,
   });
 }
 
@@ -1930,19 +1938,20 @@ async function notifyManagerPlanCancelled(plan: PlanHeaderRow, comment: string |
   if (!plan.manager_hr_id) return;
   const reason = comment?.trim();
   // After the reply (deferPlanNotice): the plan is already cancelled when the manager is told.
-  await deferPlanNotice("cancelled", () =>
-    notifyRecipients({
+  await deferPlanNotice("cancelled", async () => {
+    const named = await planWithDisplayNames(plan);
+    await notifyRecipients({
       actionUrl: `/admin/approvals/plan/${plan.id}`,
       eventType: "plan_cancelled",
       message:
-        `${plan.employee_name} cancelled their ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
+        `${named.employee_name} cancelled their ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`
         + (reason ? ` Reason: ${reason}` : "")
         + " No review is needed.",
       plan,
       recipients: [{ hrId: plan.manager_hr_id }],
-      title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was cancelled`,
-    }),
-  );
+      title: `${named.employee_name}'s ${planNounLabel(plan.plan_kind)} was cancelled`,
+    });
+  });
 }
 
 // Single fan-out for a fresh submission: direct manager (review) + HR (awareness).
@@ -2242,13 +2251,14 @@ async function notifyCeo(plan: PlanHeaderRow) {
   await deferPlanNotice("manager_approved_ceo", async () => {
     try {
       const ceos = await authUsersByRole("CEO");
+      const named = await planWithDisplayNames(plan);
       await notifyRecipients({
         actionUrl: `/admin/approvals/plan/${plan.id}`,
         eventType: "plan_manager_approved",
-        message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+        message: `${named.manager_name ?? "The direct manager"} approved ${named.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
         plan,
         recipients: ceos.map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null })),
-        title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs CEO approval`,
+        title: `${named.employee_name}'s ${planNounLabel(plan.plan_kind)} needs CEO approval`,
       });
     } catch (error) {
       logError("Weekly plan failed to notify CEO", {
@@ -2268,13 +2278,14 @@ async function notifySecondApprover(plan: PlanHeaderRow) {
     try {
       const approverHrId = secondApproverHrIdForManager(plan.manager_hr_id);
       if (!approverHrId) return;
+      const named = await planWithDisplayNames(plan);
       await notifyRecipients({
         actionUrl: await planReviewActionUrl(approverHrId, plan.id),
         eventType: "plan_manager_approved",
-        message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It now needs your approval.`,
+        message: `${named.manager_name ?? "The direct manager"} approved ${named.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It now needs your approval.`,
         plan,
         recipients: [{ hrId: approverHrId }],
-        title: `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} needs your approval`,
+        title: `${named.employee_name}'s ${planNounLabel(plan.plan_kind)} needs your approval`,
       });
     } catch (error) {
       logError("Weekly plan failed to notify the second approver", {
@@ -2302,18 +2313,19 @@ async function notifyHr(plan: PlanHeaderRow, deciderLabel: string | null = null)
   // After the reply (deferPlanNotice): the status above is read now, from the row as it stands.
   await deferPlanNotice("final_approved_hr", async () => {
     try {
+      const named = await planWithDisplayNames(plan);
       await notifyRecipients({
         actionUrl: `/admin/approvals/plan/${plan.id}`,
         ...(autoAcknowledged ? { additionalMetadata: { audience: "hr_awareness" } } : {}),
         eventType: "plan_ceo_approved",
         message: autoAcknowledged
-          ? `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It was acknowledged automatically — no action needed.`
-          : `${approver} approved ${plan.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please review and acknowledge.`,
+          ? `${approver} approved ${named.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. It was acknowledged automatically — no action needed.`
+          : `${approver} approved ${named.employee_name}'s ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}. Please review and acknowledge.`,
         plan,
         recipients: await hrAcknowledgementRecipients(),
         title: autoAcknowledged
-          ? `${plan.employee_name}'s ${planNounLabel(plan.plan_kind)} was approved and acknowledged`
-          : `${plan.employee_name}'s approved ${planNounLabel(plan.plan_kind)} needs HR acknowledgement`,
+          ? `${named.employee_name}'s ${planNounLabel(plan.plan_kind)} was approved and acknowledged`
+          : `${named.employee_name}'s approved ${planNounLabel(plan.plan_kind)} needs HR acknowledgement`,
       });
     } catch (error) {
       logError("Weekly plan failed to notify HR", {
@@ -2366,11 +2378,12 @@ async function notifyEmployeeManagerApproved(plan: PlanHeaderRow) {
   // After the reply (deferPlanNotice), like every decision notice.
   await deferPlanNotice("manager_approved_employee", async () => {
     try {
+      const named = await planWithDisplayNames(plan);
       await notifyRecipients({
         actionUrl: `/employee-portals/plans?plan=${plan.id}`,
         emailMode: "none",
         eventType: "manager_approve",
-        message: `${plan.manager_name ?? "Your manager"} approved your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+        message: `${named.manager_name ?? "Your manager"} approved your ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
         plan,
         recipients: [{ hrId: plan.employee_hr_id }],
         title: `Your ${planNounLabel(plan.plan_kind)} was approved by your manager`,
@@ -3687,7 +3700,7 @@ export async function listMyOwnPlanSummaries(access: AccessContext): Promise<Own
   if (ids.length === 0) return [];
   const { data, error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
-    .select("id,employee_hr_id,manager_name,period_key,period_start_date,status,submitted_at,updated_at")
+    .select("id,employee_hr_id,manager_hr_id,manager_name,period_key,period_start_date,status,submitted_at,updated_at")
     .in("employee_hr_id", ids)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false });
@@ -3695,6 +3708,7 @@ export async function listMyOwnPlanSummaries(access: AccessContext): Promise<Own
   type OwnPlanRow = {
     id: string;
     employee_hr_id: string;
+    manager_hr_id: string | null;
     manager_name: string | null;
     period_key: string;
     period_start_date: string;
@@ -3702,8 +3716,9 @@ export async function listMyOwnPlanSummaries(access: AccessContext): Promise<Own
     submitted_at: string | null;
     updated_at: string;
   };
-  return ((data ?? []) as OwnPlanRow[])
-    .filter((row) => normalizeHrId(row.employee_hr_id) === normalizeHrId(access.hrId))
+  const ownRows = ((data ?? []) as OwnPlanRow[])
+    .filter((row) => normalizeHrId(row.employee_hr_id) === normalizeHrId(access.hrId));
+  return (await plansWithDisplayNames(ownRows))
     .map((row) => ({
       id: row.id,
       employeeHrId: row.employee_hr_id,
@@ -4655,13 +4670,14 @@ async function notifyManagerEditRequested(plan: PlanHeaderRow): Promise<void> {
   await deferPlanNotice("edit_requested", async () => {
     try {
       const actionUrl = await planReviewActionUrl(managerHrId, plan.id);
+      const named = await planWithDisplayNames(plan);
       await notifyRecipients({
         actionUrl,
         eventType: "plan_edit_requested",
-        message: `${plan.employee_name} requested to edit their submitted ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
+        message: `${named.employee_name} requested to edit their submitted ${planSentenceLabel(plan.plan_kind, plan.period_start_date, plan.period_end_date)}.`,
         plan,
         recipients: [{ hrId: managerHrId }],
-        title: `${plan.employee_name} requested to edit their ${planNounLabel(plan.plan_kind)}`,
+        title: `${named.employee_name} requested to edit their ${planNounLabel(plan.plan_kind)}`,
       });
     } catch (notifyError) {
       logError("Weekly plan failed to notify manager of edit request", {

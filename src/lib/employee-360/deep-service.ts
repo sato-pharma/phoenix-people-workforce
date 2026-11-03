@@ -675,14 +675,14 @@ export function buildDoubleVisitHistory(
     const otherKeys = partnerKeys.filter((k) => k !== key && k !== key2);
     // A Training Manager ANYWHERE on the visit makes it a training double visit the rep received.
     const isTm = partnerKeys.some((k) => tmIds.has(k));
-    const name = v.double_name ?? nameByHrId.get(key) ?? null;
+    const name = nameByHrId.get(key) ?? v.double_name ?? null;
     const visitBucket = classifyVisit(v.visit_type, v.comment, v.visit_type_description).bucket;
     const kind = visitBucket === "regular" ? "Regular" : visitBucket === "campaign" ? "Campaign" : "Other";
     events.push({
       date: v.visit_date,
       doubleHrId: resolvedHrId,
       doubleName: name,
-      double2Name: v.double2_name?.trim() || null,
+      double2Name: (key2 ? nameByHrId.get(key2) : null) ?? (v.double2_name?.trim() || null),
       otherNames: otherKeys.map((k) => nameByHrId.get(k) ?? null),
       isTrainingManager: isTm,
       kind,
@@ -697,7 +697,7 @@ export function buildDoubleVisitHistory(
       byVisitor.set(visitorKey, agg);
     };
     credit(key, name);
-    if (key2 && key2 !== key) credit(key2, v.double2_name?.trim() || nameByHrId.get(key2) || null);
+    if (key2 && key2 !== key) credit(key2, nameByHrId.get(key2) || v.double2_name?.trim() || null);
     for (const other of otherKeys) credit(other, nameByHrId.get(other) ?? null);
   }
   events.sort((a, b) => b.date.localeCompare(a.date));

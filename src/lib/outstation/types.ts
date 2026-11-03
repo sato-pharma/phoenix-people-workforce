@@ -336,7 +336,13 @@ export type OutstationExpenseRequest = {
   employeeArea: string | null;
   employeeHrId: string;
   employeeLine: string | null;
+  /** What a screen or email prints. On a request read through a live overlay, the display name. */
   employeeName: string;
+  /**
+   * The record's full name, for anything stamped from this request — the payroll ledger's
+   * `specialist`. Never printed. Optional only so a hand-built request can leave it out.
+   */
+  employeeRecordName?: string | null;
   employeeRole: string;
   expectedTotalAmount: number;
   fuelAmount: number;

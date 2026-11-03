@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     // Also joined: the deductions currently taken from annual leave, with the comment written for
     // the employee (owner, 2026-10-09). Null for a deduction paid from salary.
     const [candidates, pushedLineByCandidate, leaveBalanceCharges] = await Promise.all([
-      listCandidatesForMonth({ monthKey, category }),
+      listCandidatesForMonth({ monthKey, category, showDisplayNames: true }),
       loadActivePushedLineIdByCandidate(monthKey),
       loadLiveLeaveBalanceCharges(),
     ]);

@@ -1,5 +1,6 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
 import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isRegionalManagerHeldDistrict, isRepSeatHeldOffOrganogram } from "@/lib/org/sales-only-seats";
@@ -120,6 +121,7 @@ type EmployeeWorkRow = {
   /** Read ONLY to compute the hasWhatsApp boolean below — never placed on a row. */
   mobile_number: string | null;
   name_ar: string | null;
+  nickname: string | null;
   organogram_visible: boolean | null;
   /** The team LINK, and now the only source. `employees.team_name` beside it was a denormalized
    *  twin nobody wrote — 0 of 198 rows carried one against 152 real `team_id`s — and it was
@@ -154,6 +156,12 @@ function nodeKeyOf(row: Pick<AuTreeRow, "occupant_hr_id" | "seat_id">): string {
 export type SeatTreeRowDeps = {
   asOfMonth: string | null;
   displayNameFor: (hrId: string | null) => string;
+  /**
+   * The stored full name behind `row.fullName`. That field is what the chart's name fallback and its
+   * search match on, and a nickname two people share would match the wrong person. Left out, a row's
+   * `fullName` reads `displayNameFor`.
+   */
+  fullNameFor?: (hrId: string | null) => string;
   hireDateFor: (hrId: string | null) => string | null;
   offerOutBySeat: Awaited<ReturnType<typeof loadOfferOutBySeat>>;
   workFieldsFor: (hrId: string | null) => OrganogramWorkFields;
@@ -165,7 +173,7 @@ export type SeatTreeRowDeps = {
  */
 export function buildSeatTreeRows(
   tree: AuTreeRow[],
-  { asOfMonth, displayNameFor, hireDateFor, offerOutBySeat, workFieldsFor }: SeatTreeRowDeps,
+  { asOfMonth, displayNameFor, fullNameFor, hireDateFor, offerOutBySeat, workFieldsFor }: SeatTreeRowDeps,
 ): {
   isDropped: (s: AuTreeRow) => boolean;
   nodeKeyBySeat: Map<string, string>;
@@ -270,7 +278,7 @@ export function buildSeatTreeRows(
       // export through `employeeDepartmentName` instead — see OrganogramWorkFields.
       departmentName: null,
       displayName: displayNameFor(s.occupant_hr_id),
-      fullName: displayNameFor(s.occupant_hr_id),
+      fullName: (fullNameFor ?? displayNameFor)(s.occupant_hr_id),
       hireDate: hireDateFor(s.occupant_hr_id),
       hrId: nodeKey,
       jobTitle: TITLE_BY_TIER[s.seat_tier],
@@ -330,7 +338,7 @@ export async function buildOrganogramSeatReport(
     supabase
       .from("employees")
       .select(
-        "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, line_id, manager_hr_id, organogram_visible",
+        "hr_id, full_name, nickname, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, line_id, manager_hr_id, organogram_visible",
       ),
   );
   const teamLoad = Promise.resolve(supabase.from("teams").select("id, name"));
@@ -437,12 +445,14 @@ export async function buildOrganogramSeatReport(
   const teamNameFor = (employee: { team_id?: number | null }): string | null =>
     (typeof employee.team_id === "number" ? teamNameById.get(employee.team_id) : null) ?? null;
   const nameByHr = new Map<string, string>();
+  const fullNameByHr = new Map<string, string>();
   const hireDateByHr = new Map<string, string>();
   const workByHr = new Map<string, EmployeeWorkRow>();
   for (const e of (empData ?? []) as EmployeeWorkRow[]) {
     if (!e.hr_id) continue;
     const key = e.hr_id.trim().toLowerCase();
-    nameByHr.set(key, e.full_name ?? e.hr_id);
+    nameByHr.set(key, resolveEmployeeDisplayName(e.full_name ?? e.hr_id, e.nickname, e.hr_id));
+    fullNameByHr.set(key, e.full_name ?? e.hr_id);
     if (e.hire_date) hireDateByHr.set(key, e.hire_date);
     workByHr.set(key, e);
   }
@@ -479,6 +489,10 @@ export async function buildOrganogramSeatReport(
     if (!hrId) return "Vacant";
     return nameByHr.get(hrId.trim().toLowerCase()) ?? hrId;
   };
+  const fullNameFor = (hrId: string | null): string => {
+    if (!hrId) return "Vacant";
+    return fullNameByHr.get(hrId.trim().toLowerCase()) ?? hrId;
+  };
   // Null for vacant seats and HR_IDs with no recorded hire date.
   const hireDateFor = (hrId: string | null): string | null => {
     if (!hrId) return null;
@@ -488,6 +502,7 @@ export async function buildOrganogramSeatReport(
   const { rows, nodeKeyBySeat, isDropped } = buildSeatTreeRows(tree, {
     asOfMonth,
     displayNameFor,
+    fullNameFor,
     hireDateFor,
     offerOutBySeat,
     workFieldsFor,

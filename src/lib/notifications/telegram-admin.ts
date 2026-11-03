@@ -291,7 +291,7 @@ export async function getTelegramAdminControlCenter(access?: AccessContext | nul
       return {
         connectedAt: cleanText(row.linked_at) || null,
         department: employee?.departmentName ?? null,
-        employeeName: employee?.fullName ?? null,
+        employeeName: employee?.displayName ?? null,
         hrId: hrId || null,
         lastDeliveryAt: lastDeliveries.get(userId) ?? lastDeliveries.get(hrId) ?? null,
         line: employee?.lineName ?? null,
@@ -328,7 +328,7 @@ export async function getTelegramAdminControlCenter(access?: AccessContext | nul
         module: cleanText(event?.module) || null,
         nextAttemptAt: cleanText(row.next_attempt_at) || null,
         providerError: lastError,
-        recipient: employee?.fullName ?? cleanText(row.recipient_user_id) ?? hrId ?? null,
+        recipient: employee?.displayName ?? cleanText(row.recipient_user_id) ?? hrId ?? null,
         recipientHrId: hrId || null,
         sentAt: cleanText(row.sent_at) || null,
         status: deliveryStatus(row.status),

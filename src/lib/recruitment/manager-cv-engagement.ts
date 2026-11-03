@@ -40,7 +40,7 @@
 // role reaches this at all.
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
-import { tidyAllCapitalsName } from "@/lib/employees/display-name";
+import { resolvePersonDisplayName, tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { EMPLOYEE_AREA_SELECT, resolveEmployeeAreaName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -332,6 +332,12 @@ function displayNameOrNull(value: unknown): string | null {
   return text ? tidyAllCapitalsName(text) : null;
 }
 
+/** An `employees` row's printed name: the nickname the company uses, else the full name. */
+function employeeNameOrNull(row: Record<string, unknown>): string | null {
+  const fullName = textOrNull(row.full_name);
+  return fullName ? resolvePersonDisplayName(fullName, textOrNull(row.nickname), textOrNull(row.hr_id)) : null;
+}
+
 function titleCase(value: string): string {
   return value.length === 0 ? value : value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -514,7 +520,7 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   for (const batch of chunkIds(managerKeys.map((k) => k.toLowerCase()))) {
     const { data, error } = await supabase
       .from("employees")
-      .select(`hr_id,full_name,job_title,region_name,line_id,employment_status,last_working_date,${EMPLOYEE_AREA_SELECT}`)
+      .select(`hr_id,full_name,nickname,job_title,region_name,line_id,employment_status,last_working_date,${EMPLOYEE_AREA_SELECT}`)
       .in("hr_id", batch);
     if (error) {
       if (isMissingRelation(error)) break;
@@ -533,7 +539,7 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   for (const batch of chunkIds(stillMissing)) {
     const { data, error } = await supabase
       .from("employees")
-      .select(`hr_id,full_name,job_title,region_name,line_id,employment_status,last_working_date,${EMPLOYEE_AREA_SELECT}`)
+      .select(`hr_id,full_name,nickname,job_title,region_name,line_id,employment_status,last_working_date,${EMPLOYEE_AREA_SELECT}`)
       .in("hr_id", batch);
     if (error) {
       if (isMissingRelation(error)) break;
@@ -554,7 +560,7 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
     const inactive = inactiveEmploymentStatuses.has(status);
     managerMeta.set(key, {
       managerHrId: dir ? String(dir.hr_id) : key,
-      name: (dir && displayNameOrNull(dir.full_name)) || displayNameOrNull(fb.name),
+      name: (dir && employeeNameOrNull(dir)) || displayNameOrNull(fb.name),
       jobTitle: (dir && textOrNull(dir.job_title)) || fb.jobTitle,
       // The area from the `area_id` LINK, with `region_name` still behind it for a seat that has
       // no area at all. `employees.area_name` is a snapshot frozen at write time — see

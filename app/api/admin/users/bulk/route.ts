@@ -6,6 +6,7 @@ import { getAccessControlDashboard, phoenixLines, upsertAccessUser } from "@/lib
 import { assertPermission, parseRoleStrict, phoenixRoles } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelSpreadsheetValidation, spreadsheetTooLargeMessage, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
@@ -44,7 +45,7 @@ function parseActive(value: string) {
 }
 
 type TemplateDirectoryEmployee = {
-  fullName: string;
+  displayName: string;
   hrId: string;
   managerHrId: string | null;
   lineName: string | null;
@@ -56,7 +57,7 @@ async function loadEmployeeDirectoryFallback(
 ): Promise<TemplateDirectoryEmployee[]> {
   const { data: rawEmployees, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,job_title,line_id,manager_hr_id")
+    .select("hr_id,full_name,nickname,job_title,line_id,manager_hr_id")
     .not("hr_id", "is", null)
     // This directory becomes the bulk account-creation template. A leaver listed here invites an
     // admin to create a login for somebody who has left the company.
@@ -91,7 +92,7 @@ async function loadEmployeeDirectoryFallback(
   }
 
   return safeEmployees.map((row) => ({
-    fullName: row.full_name?.trim() || row.hr_id!,
+    displayName: resolveEmployeeDisplayName(row.full_name?.trim() || row.hr_id!, row.nickname, row.hr_id),
     hrId: row.hr_id!.trim(),
     jobTitle: row.job_title ?? null,
     lineName: row.line_id ? lineMap.get(row.line_id) ?? null : null,
@@ -108,7 +109,7 @@ async function loadTemplateDirectory(supabase: ReturnType<typeof getSupabaseAdmi
     const employees = directory.employees
       .filter((employee) => employee.hrId.trim())
       .map((employee) => ({
-        fullName: employee.fullName,
+        displayName: employee.displayName,
         hrId: employee.hrId.trim(),
         jobTitle: employee.jobTitle ?? employee.positionTitle ?? null,
         lineName: employee.lineName,
@@ -184,7 +185,7 @@ function buildTemplateWorkbook(
     directoryEmployees.forEach((employee) => {
       const row = template.addRow({
         hr_id: employee.hrId,
-        name: employee.fullName,
+        name: employee.displayName,
         role: "Employee",
         line: employee.lineName ?? "Other",
         manager_hr_id: employee.managerHrId ?? "",
@@ -224,7 +225,7 @@ function buildTemplateWorkbook(
     directory.addRows(
       directoryEmployees.map((employee) => ({
         hr_id: employee.hrId,
-        name: employee.fullName,
+        name: employee.displayName,
         jobTitle: employee.jobTitle ?? "N/A",
         line: employee.lineName ?? "Other",
         manager: employee.managerHrId,
@@ -430,7 +431,7 @@ export async function POST(request: Request) {
       const employee = directoryEmployees.find(
         (e) => e.hrId.trim().toLowerCase() === hrId.trim().toLowerCase(),
       );
-      const name = nameFromExcel || employee?.fullName || hrId || "Unnamed";
+      const name = nameFromExcel || employee?.displayName || hrId || "Unnamed";
       const resolvedLine = line || employee?.lineName || "Other";
 
       if (rowErrors.length > 0) {

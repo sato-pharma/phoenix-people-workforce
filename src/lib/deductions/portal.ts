@@ -22,7 +22,8 @@
 // legacy pair it replaced.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { salaryRecordsColumnForCategory } from "./calculations.ts";
@@ -511,16 +512,13 @@ export async function listPublishedDeductionCommentThreads(input?: {
   return attachDisputeDetail(threads);
 }
 
-/** Names for a set of HR ids (the people who decided and pushed), keyed by canonical id. */
+/** Display names (owner, 2026-11-03) for a set of HR ids, keyed by canonical id. */
 async function loadEmployeeNames(hrIds: Array<string | null | undefined>): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  const lookups = Array.from(new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId))));
-  if (lookups.length === 0) return names;
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, full_name").in("hr_id", lookups);
-  if (error) return names;
-  for (const row of (data ?? []) as Array<{ hr_id?: string | null; full_name?: string | null }>) {
-    const key = canonicalHrIdKey(row.hr_id);
-    const name = String(row.full_name ?? "").trim();
+  const index = await namesByHrId(hrIds);
+  for (const hrId of hrIds) {
+    const key = canonicalHrIdKey(hrId);
+    const name = index.get(hrId);
     if (key && name) names.set(key, name);
   }
   return names;
@@ -570,6 +568,7 @@ async function attachDisputeDetail(threads: AdminDeductionCommentThread[]): Prom
   const names = await loadEmployeeNames([
     ...Array.from(decisions.values()).map((row) => row.decided_by),
     ...Array.from(extras.values()).map((row) => row.pushed_by),
+    ...threads.map((thread) => thread.line?.employeeCode),
   ]);
   const nameFor = (hrId: string | null | undefined) => {
     const key = canonicalHrIdKey(hrId);
@@ -595,7 +594,11 @@ async function attachDisputeDetail(threads: AdminDeductionCommentThread[]): Prom
       } catch {
         replyAudience = null;
       }
-      return { ...thread, basis, replyAudience };
+      // The Disputes inbox names the employee by display name; the line's own column stays as stamped.
+      const line = thread.line
+        ? { ...thread.line, employeeName: nameFor(thread.line.employeeCode) ?? thread.line.employeeName }
+        : thread.line;
+      return { ...thread, line, basis, replyAudience };
     }),
   );
 }

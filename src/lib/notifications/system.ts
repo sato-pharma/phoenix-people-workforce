@@ -45,6 +45,7 @@ import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governan
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { noticeAlreadyReached, REACHED_DELIVERY_STATUSES } from "@/lib/notifications/stored-notice";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -748,12 +749,15 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
         // to the shared HR inbox for ~13h with no log line anywhere. A failed lookup must be loud.
         const { data: employee, error: employeeQueryError } = await supabase
           .from("employees")
-          .select("work_email, name:full_name")
+          .select("work_email, name:full_name, nickname")
           .eq("hr_id", resolvedHrId)
           .maybeSingle();
         if (employeeQueryError) throw employeeQueryError;
-        workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
-        employeeName = (employee as { name?: string | null } | null)?.name ?? null;
+        const employeeRow = employee as { name?: string | null; nickname?: string | null; work_email?: string | null } | null;
+        workEmail = employeeRow?.work_email ?? null;
+        employeeName = employeeRow?.name
+          ? resolveEmployeeDisplayName(employeeRow.name, employeeRow.nickname, resolvedHrId)
+          : null;
       } catch (employeeError) {
         if (!schemaMissing(employeeError, "employees")) {
           logError("Notification recipient work email lookup failed", {
@@ -767,7 +771,8 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     return {
       email: pickDeliverableEmail(workEmail, row?.auth_email),
       hrId: resolvedHrId,
-      name: row?.name ?? employeeName ?? null,
+      // The employee's display name first: a login saved before its nickname still holds the full name.
+      name: employeeName ?? row?.name ?? null,
       role: row?.role ?? null,
       userId: row?.login_id ?? (userId || null),
     };

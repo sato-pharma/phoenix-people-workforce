@@ -227,5 +227,50 @@ export async function runCrmPersonByHrKeyCacheTests(): Promise<void> {
     );
   }
 
+  // ── The doors name a person by their display name (owner, 2026-11-03) ─────────────────────────
+  {
+    // The 20261023153000 pins above still read that file. This later file replaced the two things
+    // that decide the name, so the trigger's deciding columns are FOUR now: a nickname edit left out
+    // of it is the same silent staleness hole, on every CRM screen at once.
+    const NAME_MIGRATION = "supabase/migrations/20261103213631_crm_doors_name_people_by_their_display_name.sql";
+    const nameSql = stripSqlComments(
+      readFileSync(new URL(`../${NAME_MIGRATION}`, import.meta.url), "utf8").replace(/\r\n/g, "\n"),
+    );
+    const calc = flat(functionBody(nameSql, "crm_person_by_hr_key_calc"));
+    assert.ok(
+      calc.includes("coalesce(nullif(btrim(e.nickname), ''), e.full_name) as full_name"),
+      "the name column carries the nickname, else the full name",
+    );
+    assert.ok(
+      calc.includes("nullif(btrim(coalesce(nullif(btrim(e.nickname), ''), e.full_name)), '') as full_name_nz"),
+      "and so does the blank-as-NULL slot, or the iReports360 branch keeps printing the legal name",
+    );
+    assert.ok(
+      calc.includes("select distinct on (upper(btrim(e.hr_id)))") &&
+        calc.includes("order by upper(btrim(e.hr_id)), e.hr_id"),
+      "one row per case-insensitive hr_id is untouched, because that is what stops a visit doubling",
+    );
+    assert.ok(
+      flat(nameSql).includes(
+        "create trigger crm_person_by_hr_key_sync after insert or delete or update of hr_id, crm_id, full_name, nickname on public.employees for each statement",
+      ),
+      "a nickname edit rebuilds the cache",
+    );
+    assert.ok(
+      nameSql.includes("select public.crm_person_by_hr_key_rebuild();") && nameSql.includes("refusing to commit"),
+      "the file rebuilds the rows it renamed and refuses to commit a cache that disagrees",
+    );
+    assert.ok(
+      nameSql.includes("revoke execute on function public.crm_person_by_hr_key_calc(text) from public, anon, authenticated;") &&
+        nameSql.includes("grant execute on function public.crm_person_by_hr_key_calc(text) to service_role;"),
+      "the replaced function stays out of a browser key's reach",
+    );
+    const inventory = readFileSync(new URL("../scripts/lib/migration-inventory.ts", import.meta.url), "utf8");
+    assert.ok(
+      inventory.includes("20261103213631_crm_doors_name_people_by_their_display_name.sql"),
+      "the file is in ACKNOWLEDGED_EXCEPTIONS, because apply-sql-file.mjs writes no ledger row",
+    );
+  }
+
   console.log("crm person-by-hr-key cache: OK");
 }

@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { EMPLOYEE_AREA_SELECT, resolveEmployeeAreaName } from "@/lib/employees/employee-org-labels";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -135,7 +136,7 @@ export async function loadMarketingRequestFullReport(access: AccessContext): Pro
     supabase.from("marketing_roi_request_facts").select("*").in("request_id", requestIds),
     // The area from the `area_id` LINK — `employees.area_name` is a snapshot frozen at write time
     // (29 rows have a link and no label, 4 disagree with it). See employee-org-labels.ts.
-    supabase.from("employees").select(`hr_id, full_name, region_name, line_id, ${EMPLOYEE_AREA_SELECT}`),
+    supabase.from("employees").select(`hr_id, full_name, nickname, region_name, line_id, ${EMPLOYEE_AREA_SELECT}`),
     lineIds.length > 0 ? supabase.from("lines").select("id, name").in("id", lineIds) : Promise.resolve({ data: [], error: null }),
     areaIds.length > 0 ? supabase.from("areas").select("id, name").in("id", areaIds) : Promise.resolve({ data: [], error: null }),
   ]);
@@ -182,7 +183,7 @@ export async function loadMarketingRequestFullReport(access: AccessContext): Pro
   for (const row of employeeRows) {
     const hrId = text(row, "hr_id");
     const fullName = text(row, "full_name");
-    if (hrId && fullName) directory.set(hrId.toUpperCase(), fullName);
+    if (hrId && fullName) directory.set(hrId.toUpperCase(), resolveEmployeeDisplayName(fullName, text(row, "nickname"), hrId));
   }
   const employeeByHrId = new Map<string, Row>();
   for (const row of employeeRows) {

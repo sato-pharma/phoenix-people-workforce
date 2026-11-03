@@ -553,7 +553,7 @@ export async function getIReports360RepDayVisits(input: {
 
   const rep = {
     crmId: employee.crmId == null ? null : String(employee.crmId),
-    fullName: employee.fullName ?? null,
+    fullName: employee.displayName ?? employee.fullName ?? null,
     hrId: employee.hrId,
   };
   // A rep with no CRM id is no longer an empty day: a rep hired after the CRM cutover has none, and

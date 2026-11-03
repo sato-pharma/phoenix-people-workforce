@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { currentPersonNames, withCurrentPersonNames } from "@/lib/system-audit/person-names";
 import type {
   AuditIssueInput,
   AuditOccurrenceInput,
@@ -207,7 +208,8 @@ export async function loadSystemAuditPage(
   input: { filters: SystemAuditFilters; sort: SystemAuditSort; limit: number; offset: number },
   override?: Client,
 ): Promise<SystemAuditPage> {
-  const { data, error } = await client(override).rpc("system_audit_page", {
+  const supabase = client(override);
+  const { data, error } = await supabase.rpc("system_audit_page", {
     p_filters: filtersPayload(input.filters),
     p_sort: input.sort,
     p_limit: input.limit,
@@ -215,7 +217,8 @@ export async function loadSystemAuditPage(
     p_after: null,
   });
   if (error) throw failure("page read", error);
-  return data as SystemAuditPage;
+  const page = data as SystemAuditPage;
+  return { ...page, rows: await withCurrentPersonNames(page.rows, supabase) };
 }
 
 /**
@@ -238,7 +241,7 @@ export async function* iterateSystemAuditExport(
     });
     if (error) throw failure("export read", error);
     const page = data as SystemAuditExportBatch;
-    yield page;
+    yield { ...page, rows: await withCurrentPersonNames(page.rows, supabase) };
     if (!page.next || page.rows.length === 0) return;
     after = page.next;
   }
@@ -314,6 +317,7 @@ export type AlertDetail = {
 
 type DetailRow = {
   issue_id: string;
+  hr_key: string | null;
   employee_name: string | null;
   role_at_event: string | null;
   module_label: string | null;
@@ -326,23 +330,26 @@ type DetailRow = {
 export async function loadAlertDetails(issueIds: string[], override?: Client): Promise<Map<string, AlertDetail>> {
   const details = new Map<string, AlertDetail>();
   if (issueIds.length === 0) return details;
-  const { data, error } = await client(override)
+  const supabase = client(override);
+  const { data, error } = await supabase
     .from("system_audit_occurrences")
-    .select("issue_id, employee_name, role_at_event, module_label, user_message, is_silent, technical_message")
+    .select("issue_id, hr_key, employee_name, role_at_event, module_label, user_message, is_silent, technical_message")
     .in("issue_id", issueIds)
     .eq("is_test", false)
     .is("triage_override", null)
     .order("occurred_at", { ascending: false })
     .limit(1000);
   if (error) throw failure("alert detail read", error);
-  for (const row of (data ?? []) as DetailRow[]) {
+  const rows = (data ?? []) as DetailRow[];
+  const names = await currentPersonNames(rows.map((row) => row.hr_key), supabase);
+  for (const row of rows) {
     let detail = details.get(row.issue_id);
     if (!detail) {
       const spoken = !row.is_silent && row.user_message?.trim() ? row.user_message.trim() : null;
       detail = { people: [], module: row.module_label?.trim() || null, text: spoken ?? (row.technical_message?.trim() || null) };
       details.set(row.issue_id, detail);
     }
-    const name = row.employee_name?.trim();
+    const name = names.get(row.hr_key) ?? row.employee_name?.trim();
     if (name && !detail.people.some((person) => person.name === name)) {
       detail.people.push({ name, role: row.role_at_event?.trim() || null });
     }

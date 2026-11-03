@@ -92,6 +92,7 @@
  * still never rides onto a line chart — only the managers on a kept marketer's own chain do.
  */
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { offerSeatKeyForVacancy, type SeatOfferOut } from "@/lib/offers/seat-offer-label";
@@ -124,6 +125,7 @@ export type HeadOfficeEmployeeRow = {
   job_title?: string | null;
   line_id?: number | null;
   manager_hr_id?: string | null;
+  nickname?: string | null;
   /** Read ONLY to compute the hasWhatsApp boolean — never placed on a row. */
   mobile_number?: string | null;
   name_ar?: string | null;
@@ -305,11 +307,16 @@ export function buildHeadOfficeOrganogramRows(
   // the stored casing.
   const emittedHrIdByKey = new Map<string, string>();
   const nameByKey = new Map<string, string>();
+  // `fullName` on a row stays the stored name, as on the seat path: search and the chart's name
+  // fallback match on it. The card, the manager line and the export read the display name.
+  const fullNameByKey = new Map<string, string>();
   for (const employee of branch) {
     const key = canonicalHrIdKey(employee.hr_id)!;
     const hrId = employee.hr_id!.trim();
+    const fullName = employee.full_name?.trim() || hrId;
     emittedHrIdByKey.set(key, hrId);
-    nameByKey.set(key, employee.full_name?.trim() || hrId);
+    nameByKey.set(key, resolveEmployeeDisplayName(fullName, employee.nickname, hrId));
+    fullNameByKey.set(key, fullName);
   }
 
   /** The manager key this person points at, before cycle checking. */
@@ -395,7 +402,7 @@ export function buildHeadOfficeOrganogramRows(
       // `employeeDepartmentName` instead. See OrganogramWorkFields.
       departmentName: null,
       displayName: nameByKey.get(key)!,
-      fullName: nameByKey.get(key)!,
+      fullName: fullNameByKey.get(key)!,
       hireDate: employee.hire_date ?? null,
       hrId,
       jobTitle: title,

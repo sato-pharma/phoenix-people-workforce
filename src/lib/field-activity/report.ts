@@ -169,7 +169,7 @@ export async function loadFieldActivityReport(input: {
 
   const subject: FieldActivitySubject = {
     hrId: employee.hrId,
-    name: employee.fullName,
+    name: employee.displayName,
     jobTitle: employee.jobTitle ?? null,
     lineName: employee.lineName ?? null,
     areaName: employee.areaName ?? null,
@@ -200,7 +200,7 @@ export async function loadFieldActivityReport(input: {
     })
   ).map(toVisitRow);
   // Everyone on a visit past its two slots, named from the directory (the door carries their ids only).
-  const nameByKey = new Map(directory.map((row) => [canonicalHrIdKey(row.hrId), row.fullName]));
+  const nameByKey = new Map(directory.map((row) => [canonicalHrIdKey(row.hrId), row.displayName]));
   for (const visit of visits) {
     if (visit.companions) visit.companions = visit.companions.map((companion) => ({ ...companion, name: nameByKey.get(canonicalHrIdKey(companion.hrId)) ?? null }));
   }

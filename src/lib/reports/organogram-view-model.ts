@@ -161,6 +161,8 @@ export function organogramSearchText(row: OrganogramRow) {
   return [
     row.hrId,
     row.fullName,
+    // The name the card prints, so a person is found by either name.
+    row.displayName,
     // Every employee record carries an Arabic name and HR types in Arabic. Without this the
     // organogram search answered "nobody" for a name spelled the way it appears on the person's
     // own contract — an empty result that reads as "she is not on the chart" rather than as a

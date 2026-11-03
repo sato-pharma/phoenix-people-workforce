@@ -54,7 +54,7 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { hrIdForStorage } from "@/lib/hr-id.ts";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id.ts";
 import { HR_OPS_REPORT_SOURCE_SYSTEM } from "@/lib/attendance/digest-rules.ts";
 import { getDigestSettings } from "@/lib/attendance/digest-service.ts";
 import { refreshableReviewWeek, tileReviewMonth, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
@@ -587,6 +587,17 @@ export async function runHrOpsBridge(lines: readonly HrOpsBridgeLine[], deps: Hr
 // The database
 // ---------------------------------------------------------------------------
 
+/** The full name a deduction line stores. A failed read falls back to the name on the draft. */
+async function loadFullNameForDeduction(hrId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("full_name")
+    .in("hr_id", hrIdLookupKeys(hrId))
+    .limit(1);
+  if (error) return null;
+  return ((data ?? []) as Array<{ full_name?: string | null }>)[0]?.full_name?.trim() || null;
+}
+
 const LINE_SELECT =
   "id,section,work_date,hr_id,hr_key,employee_name,flags,suggested_days,review_reason,decision,decided_days,decided_by_hr_id,decided_at";
 
@@ -688,7 +699,9 @@ export function liveBridgeDeps(): HrOpsBridgeDeps {
       return parseOutcome(data);
     },
     ensureCandidate: async (draft) => {
-      const inserted = await insertCandidateDrafts({ createdBy: BRIDGE_ACTOR, drafts: [draft], sourceLabel: "HR operations report" });
+      const fullName = await loadFullNameForDeduction(draft.employeeHrId);
+      const stamped = fullName ? { ...draft, employeeName: fullName } : draft;
+      const inserted = await insertCandidateDrafts({ createdBy: BRIDGE_ACTOR, drafts: [stamped], sourceLabel: "HR operations report" });
       const { data, error } = await getSupabaseAdmin()
         .from("deductions_candidates")
         .select("id")

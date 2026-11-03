@@ -181,6 +181,7 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
     const pool = query
       ? facets.people.filter((person) =>
         person.name.toLowerCase().includes(query)
+        || person.fullName.toLowerCase().includes(query)
         || person.territory.toLowerCase().includes(query)
         || person.roleLabel.toLowerCase().includes(query))
       : facets.people;

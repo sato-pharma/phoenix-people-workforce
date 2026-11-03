@@ -182,6 +182,11 @@ export async function getDecisionsMadeForMe(
     return (key ? nameByHrId.get(key) : null) ?? cleanText(hrId);
   };
   const deciderName = nameFor;
+  // The request's stored `employee_name` is a snapshot: the display name, read by HR id, else the stored one.
+  const ownerName = (row: Record<string, unknown>): string => {
+    const key = canonicalHrIdKey(cleanText(row.employee_hr_id));
+    return (key ? nameByHrId.get(key) : null) ?? cleanText(row.employee_name);
+  };
 
   // ── who is "my team" ────────────────────────────────────────────────────────
   // HR ids are mixed case in storage (AGENTS.md 2.1, Database), so compare canonical keys on
@@ -288,7 +293,7 @@ export async function getDecisionsMadeForMe(
       pushTeamRow({
         id: `decided-for-me:leave:${String(row.id)}`,
         module: "leave",
-        employeeName: cleanText(row.employee_name),
+        employeeName: ownerName(row),
         employeeHrId: cleanText(row.employee_hr_id),
         title: `Leave${historyDate(cleanText(row.start_date)) ? ` · from ${historyDate(cleanText(row.start_date))}` : ""}`,
         decision: normalizeDecidedForMeOutcome(row.manager_decision),
@@ -305,7 +310,7 @@ export async function getDecisionsMadeForMe(
       pushTeamRow({
         id: `decided-for-me:excuse:${String(row.id)}`,
         module: "excuse",
-        employeeName: cleanText(row.employee_name),
+        employeeName: ownerName(row),
         employeeHrId: cleanText(row.employee_hr_id),
         title: `${type} excuse${historyDate(cleanText(row.excuse_date)) ? ` · ${historyDate(cleanText(row.excuse_date))}` : ""}`,
         decision: normalizeDecidedForMeOutcome(row.manager_decision),
@@ -322,7 +327,7 @@ export async function getDecisionsMadeForMe(
       pushTeamRow({
         id: `decided-for-me:weekly_plan:${String(row.id)}`,
         module: "weekly_plan",
-        employeeName: cleanText(row.employee_name),
+        employeeName: ownerName(row),
         employeeHrId: cleanText(row.employee_hr_id),
         title: `${kind} · ${historyPlanPeriod(cleanText(row.period_start_date), cleanText(row.period_end_date), cleanText(row.period_key))}`,
         decision: normalizeDecidedForMeOutcome(row.status),

@@ -35,7 +35,7 @@
 //   * MARKET AWARENESS activities are read at their area and line, from their start date.
 
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
-import { tidyAllCapitalsName } from "@/lib/employees/display-name";
+import { resolvePersonDisplayName } from "@/lib/employees/display-name";
 import { loadContactPlacements } from "@/lib/crm/reps-list";
 import { collapseDuplicateVisitSubmissions, isCrmDoubleVisitRow, queryVisits } from "@/lib/crm/reads";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
@@ -344,12 +344,12 @@ async function loadNames(db: Db, hrIds: readonly string[]): Promise<Record<strin
   // Every casing, because employees.hr_id is stored as HR typed it.
   const variants = [...new Set(keys.flatMap((key) => [key, key.toLowerCase()]))];
   for (const part of chunks(variants)) {
-    const { data, error } = await db.from("employees").select("hr_id, full_name").in("hr_id", part);
+    const { data, error } = await db.from("employees").select("hr_id, full_name, nickname").in("hr_id", part);
     if (error) throw error;
-    for (const row of (data ?? []) as { hr_id: string | null; full_name: string | null }[]) {
+    for (const row of (data ?? []) as { hr_id: string | null; full_name: string | null; nickname: string | null }[]) {
       const key = hrKey(row.hr_id);
       const name = text(row.full_name);
-      if (key && name) out[key] = tidyAllCapitalsName(name);
+      if (key && name) out[key] = resolvePersonDisplayName(name, row.nickname, row.hr_id);
     }
   }
   return out;
