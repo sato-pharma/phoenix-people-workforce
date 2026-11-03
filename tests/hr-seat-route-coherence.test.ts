@@ -319,9 +319,9 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "Resourcing on the request desk — employee_documents is FALSE for her, so Hiring Documents and " +
     "HR Forms stay shut. POST /api/business-cards calls the same predicate",
   "/hr/admin/company-calendar":
-    "an inline const allowed = Finance Manager || HR Resourcing || canAccessSystemAdministratorWorkspace " +
-    "— TRUE for HR Resourcing, the only seat offered it, FALSE for Advisory and Operations. A read: " +
-    "she is not in CALENDAR_MANAGER_ROLES, so /api/calendar refuses her edits",
+    "an inline const allowed = Finance Manager || HR Resourcing || the HR Operations Specialist || " +
+    "canAccessSystemAdministratorWorkspace — TRUE for the two seats offered it, FALSE for Operations. " +
+    "A read: neither is in CALENDAR_MANAGER_ROLES, so /api/calendar refuses their edits",
   "/hr/admin/private-calendars":
     "canUsePrivateCalendarAdminSurface(access) -> isPrivateCalendarGlobalViewer — TRUE for HR " +
     "Resourcing, the only seat offered it, FALSE for Advisory and Operations",

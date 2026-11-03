@@ -232,7 +232,14 @@ function MonthCell({
   );
 }
 
-export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalendar }) {
+export function TalentAcquisitionCalendar({
+  calendar,
+  description,
+}: {
+  calendar: TalentCalendar;
+  /** The line under the title, for a seat this one's words are not true of: a viewer cannot press a free time. */
+  description?: string;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -278,10 +285,14 @@ export function TalentAcquisitionCalendar({ calendar }: { calendar: TalentCalend
             The calendar
           </h2>
           <p className="mt-1 break-words text-[11px] font-semibold leading-relaxed text-slate-500">
-            The Interview Calendar itself, in full — move between weeks, press a free time, open a
-            candidate&rsquo;s CV, export the week, ask for an interview — then your own next three
-            weeks, and the company month with its holidays, leave, events, birthdays and the days
-            your new joiners arrive.
+            {description ?? (
+              <>
+                The Interview Calendar itself, in full — move between weeks, press a free time, open a
+                candidate&rsquo;s CV, export the week, ask for an interview — then your own next three
+                weeks, and the company month with its holidays, leave, events, birthdays and the days
+                your new joiners arrive.
+              </>
+            )}
           </p>
         </div>
 

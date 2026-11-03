@@ -1154,6 +1154,7 @@ import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
+import { runHrOperationsOverviewTests } from "./hr-operations-overview.test.ts";
 import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
 import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runEmployeeRecordGapsTests } from "./employee-record-gaps.test.ts";
@@ -5145,6 +5146,10 @@ await runTest(
   + "stays outside recruitment and Business Cards; she sees and prints the salary there, and a salary she "
   + "sends is dropped)",
   runHrOperationsSpecialistAccessTests,
+);
+await runSuite(
+  "HR Operations Specialist landing page and sidebar",
+  runHrOperationsOverviewTests,
 );
 await runTest(
   "Hiring joiners panel (accepted offers from today on with free-text letter dates read and the record's "

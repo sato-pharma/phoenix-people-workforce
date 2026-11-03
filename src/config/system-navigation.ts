@@ -2318,9 +2318,8 @@ const hrNavigationSectionSeeds = [
       // shown a "Recruitment" heading (tests/cv-database-recruiting-boundary.test.ts), so her row
       // lives here. No permission: the calendar's own ownership is the gate, and every API route
       // asserts it. `excludedRoles` keeps the Super Admin's row under Recruitment, as above.
-      // HR Administration (the HR Operations Specialist, 2026-10-20) shares the row as a Viewer —
-      // the owner's "She can view it only"; seesWholeInterviewCalendar admits her, read only.
-      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
+      // The HR Operations Specialist's row moved beside her other calendars on 2026-11-03.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       // CV Lookup — owner, 2026-09-30: HR Operations may SEARCH the CV database and open only what
       // the search returns, and must not have the database itself.
       //
@@ -2534,7 +2533,11 @@ const hrNavigationSectionSeeds = [
       // The Talent Acquisition seat (2026-10-08) — ticked for her by the owner, see the note under
       // Employee Requests. "Events Calendar" because "Company Calendar" above is already /hr/hr-calendar; this
       // is the admin host of the portal events calendar (events, holidays, leave and birthdays).
-      { href: "/hr/admin/company-calendar", icon: CalendarHeart, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // The HR Operations Specialist shares it since 2026-11-03 (owner: "add hr calen dars").
+      { href: "/hr/admin/company-calendar", icon: CalendarHeart, label: "Events Calendar", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing", "HR Administration"], excludedRoles: ["Super Admin"] },
+      // Her view of the Interview Calendar (2026-10-20, the owner's "She can view it only");
+      // seesWholeInterviewCalendar admits her, read only. No permission: the calendar is its own gate.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Administration"], excludedRoles: ["Super Admin"] },
       { href: "/hr/admin/private-calendars", icon: CalendarFold, label: "Private Calendars", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // Last of the calendars on purpose (2026-10-16): the three above are the company's own — official,
       // events, private — and this one is the field force's submitted plans, a different thing.
@@ -2585,7 +2588,8 @@ const hrNavigationSectionSeeds = [
       // section in that change and its own page is titled "Vacation Report", so two rows reading
       // "Vacation Report" in one section would be a pair nobody can tell apart from the rail. The
       // company-wide register is this one; the leave module's own report is the row above.
-      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
+      // The HR Operations Specialist shares it since 2026-11-03 (companyVacationReportReaderRoles).
+      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations", "HR Administration"] },
       // "Other Approvals" IS NOT ON THIS RAIL AT ALL — retired from /hr on 2026-09-01, in two steps
       // on the same day and for two DIFFERENT reasons, which is why it is written down.
       //
@@ -2736,7 +2740,8 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/workspace", icon: Briefcase, label: "My Workspace", permissions: [{ resource: "employee_profile" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       { href: "/hr/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }] },
       { href: "/hr/workspace/excuses", icon: Clock, label: "Submit Excuse" },
-      { href: "/hr/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
+      // Her own punches: the company report is fenced off the HR Operations Specialist, this one is hers.
+      { href: "/hr/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }], roles: ["HR Resourcing", "HR Administration"], excludedRoles: ["Super Admin"] },
       { href: "/hr/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
     ],
     label: "My Requests",

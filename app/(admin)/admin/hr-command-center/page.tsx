@@ -2,12 +2,15 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { HrCommandCenter } from "@/components/hr/hr-command-center";
+import { HrOperationsOverview } from "@/components/hr/hr-operations-overview";
 import { TalentAcquisitionOverview } from "@/components/hr/talent-acquisition-overview";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { HR_OPERATIONS_SPECIALIST_SEAT } from "@/lib/auth/hr-functions";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getHrCommandCenterData, hrBundleForRole } from "@/lib/hr/command-center";
+import { getHrOperationsOverview } from "@/lib/hr/hr-operations-overview";
 import {
   getTalentAcquisitionOverview,
   TALENT_ACQUISITION_SEAT,
@@ -33,6 +36,10 @@ export const dynamic = "force-dynamic";
  * scratch build her overview landing page"*. Every other HR seat still gets `HrCommandCenter`,
  * unchanged, and the split is `hrBundleForRole(access.role) === TALENT_ACQUISITION_SEAT` — the same
  * lookup that already gates the address, so the two branches cannot disagree about who is who.
+ *
+ * THREE SINCE 2026-11-03. The HR Operations Specialist gets `HrOperationsOverview`, the same page
+ * built from her own work (owner: "design it to be identical in design and identy to the talnt
+ * acqyuisition"), split the same way on her bundle.
  *
  * It is one ROUTE and not two on purpose: the address is what `resolveLandingPathForRole` returns
  * for her and what the sidebar links, and giving her seat its own path would have meant teaching
@@ -109,6 +116,7 @@ async function HrCommandCenterContent({
   // loaders runs — they overlap heavily (offers, the recruitment dashboard, the directory) and
   // running both to pick a component afterwards would double every read on somebody's home page.
   const isTalentAcquisition = hrBundleForRole(access.role) === TALENT_ACQUISITION_SEAT;
+  const isHrOperationsSpecialist = hrBundleForRole(access.role) === HR_OPERATIONS_SPECIALIST_SEAT;
 
   // Both in parallel: neither needs the other, and the identity is a Storage lookup for the
   // uploaded photo on top of one row read — serialising them would put that latency in front of
@@ -117,7 +125,9 @@ async function HrCommandCenterContent({
   const [data, viewer] = await Promise.all([
     isTalentAcquisition
       ? getTalentAcquisitionOverview(access, { hiredWindow, month: calendarMonth, week })
-      : getHrCommandCenterData(access, { hiredWindow }),
+      : isHrOperationsSpecialist
+        ? getHrOperationsOverview(access, { month: calendarMonth, week })
+        : getHrCommandCenterData(access, { hiredWindow }),
     resolveViewerIdentityFromPage(access),
   ]);
 
@@ -151,7 +161,10 @@ async function HrCommandCenterContent({
   // `isTalentAcquisition` chose the loader above, so the shape that came back is the one this
   // branch wants — asserted with a `"calendar" in data` narrowing rather than a cast, so a loader
   // that ever returned the other shape would be a type error here instead of a blank page.
-  if (isTalentAcquisition && "calendar" in data) {
+  if (isHrOperationsSpecialist && "scoreboard" in data) {
+    return <HrOperationsOverview data={data} identity={identity} />;
+  }
+  if (isTalentAcquisition && "cvToday" in data) {
     return <TalentAcquisitionOverview data={data} identity={identity} />;
   }
   if ("groups" in data) {

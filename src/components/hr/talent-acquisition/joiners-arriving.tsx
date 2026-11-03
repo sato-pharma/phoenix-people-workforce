@@ -15,7 +15,7 @@
  * A FAILED READ IS SAID. The offers not loading draws the amber notice, never "nobody is joining".
  */
 
-import { CalendarCheck2, UserPlus } from "lucide-react";
+import { CalendarCheck2, UserPlus, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -42,6 +42,64 @@ export function TaJoinersArriving({
   className?: string;
   joiners: TalentJoiners;
 }) {
+  return (
+    <TaDatedPeople
+      className={className}
+      couldNotLoad="The offers"
+      emptyAction="See every offer"
+      emptyIcon={CalendarCheck2}
+      emptyLine="No accepted offer starts in the next fourteen days."
+      emptyTitle="Nobody is due to join"
+      footerNote="accepted offers only"
+      href={OFFERS_HREF}
+      hrefLabel="Open offers"
+      icon={UserPlus}
+      id="ta-joiners-arriving"
+      people={joiners}
+      title="Joiners arriving"
+      verb="joins"
+    />
+  );
+}
+
+/**
+ * The same list for any people on a date: the HR Operations Specialist's joiners, read from Hiring
+ * Documents, and the people leaving, read from Resignations. One row design, so her page and this
+ * one can never drift apart.
+ */
+export function TaDatedPeople({
+  className = "",
+  couldNotLoad,
+  emptyAction,
+  emptyIcon,
+  emptyLine,
+  emptyTitle,
+  footerNote,
+  href,
+  hrefLabel,
+  icon,
+  id,
+  people: joiners,
+  title,
+  verb,
+}: {
+  className?: string;
+  /** Named in the amber notice when the read failed, as "<what> could not be loaded". */
+  couldNotLoad: string;
+  emptyAction: string;
+  emptyIcon: LucideIcon;
+  emptyLine: string;
+  emptyTitle: string;
+  footerNote: string;
+  href: string;
+  hrefLabel: string;
+  icon: LucideIcon;
+  id: string;
+  people: TalentJoiners;
+  title: string;
+  /** Spoken in each row's accessible name: "Sara, Accountant, joins tomorrow". */
+  verb: string;
+}) {
   const rows = [...joiners.rows].sort(
     (left, right) => left.dateKey.localeCompare(right.dateKey) || left.name.localeCompare(right.name),
   );
@@ -59,25 +117,25 @@ export function TaJoinersArriving({
             <span aria-hidden="true" className="px-1.5 text-slate-300">
               ·
             </span>
-            accepted offers only
+            {footerNote}
           </span>
         ) : undefined
       }
-      href={OFFERS_HREF}
-      hrefLabel="Open offers"
-      icon={UserPlus}
-      id="ta-joiners-arriving"
+      href={href}
+      hrefLabel={hrefLabel}
+      icon={icon}
+      id={id}
       subtitle={`${shortDate(joiners.fromKey)} – ${shortDate(joiners.toKey)}`}
-      title="Joiners arriving"
+      title={title}
     >
       {!joiners.loaded ? (
-        <TaCouldNotLoad what="The offers" />
+        <TaCouldNotLoad what={couldNotLoad} />
       ) : rows.length === 0 ? (
         <TaEmpty
-          action={<TaQuietLink href={OFFERS_HREF}>See every offer</TaQuietLink>}
-          icon={CalendarCheck2}
-          line="No accepted offer starts in the next fourteen days."
-          title="Nobody is due to join"
+          action={<TaQuietLink href={href}>{emptyAction}</TaQuietLink>}
+          icon={emptyIcon}
+          line={emptyLine}
+          title={emptyTitle}
         />
       ) : (
         <ol className="divide-y divide-slate-100">
@@ -88,7 +146,7 @@ export function TaJoinersArriving({
             return (
               <li key={row.id}>
                 <Link
-                  aria-label={`${row.name}, ${row.title}, joins ${daysUntilLabel(joiners.fromKey, row.dateKey)}`}
+                  aria-label={`${row.name}, ${row.title}, ${verb} ${daysUntilLabel(joiners.fromKey, row.dateKey)}`}
                   className={`${TA_ROW_LINK_CLASS} items-center`}
                   href={row.href}
                 >
