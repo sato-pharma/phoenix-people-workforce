@@ -351,7 +351,7 @@ export function runSecretScanPushGuardTests(): void {
       if (!/C12/.test(reason) || !words.test(reason)) failures.push(`${label}: must be refused with ${words}; got "${reason.slice(0, 90)}"`);
       if (scannedFolders(log).length) failures.push(`${label}: a refusal has nothing to scan`);
     };
-    const expectQuiet = (label: string, session: string, command: string, tool?: string, extra?: NodeJS.ProcessEnv) => {
+    const expectQuiet = (label: string, session: string, command: string, tool?: string, extra?: Record<string, string>) => {
       rmSync(log, { force: true });
       const reason = refusalOf(runGuard(session, command, { ...env, ...extra }, tool));
       if (reason) failures.push(`${label}: must not be refused: ${reason.slice(0, 90)}`);
@@ -460,7 +460,7 @@ export function runSecretScanPushGuardTests(): void {
     expectRefusal("commit then push from a subfolder", sub, 'git commit -m "add it" && git push', /both commits and pushes/);
 
     // 15. What sends nothing, or is not a push at all, costs nothing, and the stand-down is unchanged.
-    const quietCases: Array<[string, string, string?, NodeJS.ProcessEnv?]> = [
+    const quietCases: Array<[string, string, string?, Record<string, string>?]> = [
       ["a delete", "git push origin --delete old"],
       ["a delete by refspec", "git push origin :old"],
       ["a delete by flag", "git push -d origin old"],
