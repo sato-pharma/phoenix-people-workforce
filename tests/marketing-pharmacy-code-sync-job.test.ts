@@ -47,7 +47,7 @@ export function runMarketingPharmacyCodeSyncJobTests() {
   assert.equal(ambiguousPairsNotice(0), null);
   const vendor = hiddenVendorNotice("New Vendor");
   assert.match(vendor.message, /New Vendor/, "a new hidden vendor is named");
-  assert.match(vendor.message, /No screen allows a vendor yet/, "and says plainly that no screen does this");
+  assert.match(vendor.message, /Marketing Control, Vendors/, "and names the screen that allows it");
   assert.match(ambiguousPairsNotice(3)?.title ?? "", /ambiguous: 3/);
 
   // 🔴 The vendors hidden before this job existed are never announced as new: the newest was made on 2026-08-19.
@@ -77,7 +77,7 @@ export function runMarketingPharmacyCodeSyncJobTests() {
   // Reading by age with a per-vendor key means the next night still tells, and tells once.
   assert.doesNotMatch(runner, /hiddenBefore|hiddenAfter/, "the notice must not rest on a diff around one run");
   assert.match(runner, /\.gte\("created_at", newVendorCutoffIso\(\)\)/, "new means recently created");
-  assert.match(runner, /tell\(hiddenVendorNotice\(vendor\.name\), `vendors:\$\{vendor\.id\}`\)/, "one notice per vendor id");
+  assert.match(runner, /tell\(hiddenVendorNotice\(vendor\.name\), `vendors:\$\{vendor\.id\}`, "\/admin\/marketing-requests\/control"\)/, "one notice per vendor id, opening the screen that allows it");
   assert.ok(
     runner.indexOf("if (refusal) throw") < runner.indexOf("await callSync()"),
     "the refusal must come before the sync, or it protects nothing",

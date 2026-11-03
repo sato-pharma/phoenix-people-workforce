@@ -94,6 +94,20 @@ export function previousScheduledFire(schedule: string, now: Date): Date | null 
   }
 }
 
+// The first moment this expression is due to fire strictly after `afterMs`. Null when it cannot be
+// evaluated. A line comment for the same reason as the note above.
+function nextScheduledFire(schedule: string, afterMs: number): Date | null {
+  try {
+    const expression = CronExpressionParser.parse(schedule.trim(), {
+      currentDate: new Date(afterMs),
+      tz: JOB_SCHEDULE_TIMEZONE,
+    });
+    return expression.next().toDate();
+  } catch {
+    return null;
+  }
+}
+
 function parseTimestamp(value: string | null): number | null {
   if (!value) return null;
   const ms = Date.parse(value);
@@ -229,7 +243,21 @@ export function assessJobHeartbeats(params: {
       // A job that has never reported is only overdue once a fire has come round SINCE we started
       // watching it — otherwise declaring a job alarms the moment the code deploys.
       const hadAChanceToRun = lastSuccessMs !== null || previousFireMs > firstSeenMs;
-      if (nowMs > deadline && !coveredByLastSuccess && hadAChanceToRun) overdueSinceMs = deadline;
+      if (nowMs > deadline && !coveredByLastSuccess && hadAChanceToRun) {
+        overdueSinceMs = deadline;
+      } else if (!coveredByLastSuccess && hadAChanceToRun) {
+        // A GRACE AT OR ABOVE THE GAP BETWEEN FIRES (owner, 2026-11-03). The test above measures from
+        // the LATEST fire, and when grace >= the gap the next fire arrives before that deadline does,
+        // so `nowMs > deadline` could never be true: 27 of the 59 declared jobs could never strand,
+        // the six pg_cron jobs among them, whatever the silence. Measure from the OLDEST fire nothing
+        // has answered instead. A job that answers on time never reaches this, because its next fire
+        // is in the future; a job whose grace is below the gap keeps the deadline above, so its
+        // `overdueSince` and everything keyed on it (job-refire, the audit detector) are unchanged.
+        const baselineMs = lastSuccessMs !== null ? lastSuccessMs + CLOCK_SKEW_TOLERANCE_MS : firstSeenMs;
+        const oldestUnanswered = nextScheduledFire(schedule, baselineMs);
+        const oldestDeadline = oldestUnanswered ? oldestUnanswered.getTime() + declaration.graceSeconds * 1000 : null;
+        if (oldestDeadline !== null && nowMs > oldestDeadline) overdueSinceMs = oldestDeadline;
+      }
     }
 
     if (overdueSinceMs !== null) {

@@ -138,6 +138,9 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // hour, so one missed fire stays quiet only if the next one lands. Must match scripts/cronjob-sync.mjs
   // exactly, in the SAME sitting. NO watchingSince: a new declaration.
   { slug: "phoenix-github-workflow-watch", kind: "cron", schedule: "21 * * * *", graceSeconds: 30 * MINUTE },
+  // Hourly: has a tablet held by a rep gone quiet. Reads the Headwind device list only (owner, 2026-11-03).
+  // Armed on merge by cron-autoarm.yml, in-house only. NO watchingSince: a new declaration.
+  { slug: "phoenix-tablet-fleet-watch", kind: "cron", schedule: "11 * * * *", graceSeconds: 30 * MINUTE },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match
