@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 4b3a6477-f031-4f09-9f02-03501af86b55
-  modified: 2026-11-03T12:45:50.493Z
+  modified: 2026-11-03T19:37:00.873Z
 ---
 
 Read 3 Nov 2026 about 14:30 Cairo. `git ls-remote origin` on `gawishtheit/phoenix-people-workforce` lists `refs/heads` and `refs/pull` only, no `refs/backups`. `repo-doctor` reports 1,935 local archive refs, 1,721 with no copy on origin: 1,580 distinct tips, 3,167 commits.
@@ -22,6 +22,8 @@ Classified by a read-only pass:
 A low share does not prove lost work, because later commits rewrite the same lines. Most of the 131 are stashes, rescues, break proofs, superseded roll-ups and pre-rebase copies.
 
 **Done 3 Nov 14:45 Cairo, on his multiple-choice pick "Back up all 1,721":** gitleaks read 2,872 commits, no leaks, with every one of the 2,865 commits going up covered. All 1,655 targets are on origin under `refs/backups/*` at the exact commit (66 refs shared a name and a commit with another, so one copy covers each pair). Re-read from `ls-remote`: 1,935 archive refs, 0 still disk-only. No workflow ran for these refs. Script: this session's `scratchpad/archive-push.mjs`.
+
+**Merged-branch clean-up, same day, each on his named word:** 111 merged branches whose tips GitHub holds on main or a pull request were deleted, 131 more were first copied to `refs/backups/merged-branch/<branch name>` at the exact commit, then deleted. `rescue/phoenix-mcp-source-pipeline-wip` was kept by his word: its connector source files are on no other branch and not on main.
 
 **Why:** "a merged tip lives on origin as `refs/pull/<n>/head`" stopped being true for every pull request before the move, since the new repository numbers from 1.
 

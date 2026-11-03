@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 665f6c6c-8439-4303-9197-34bcf2f067be
-  modified: 2026-10-02T17:23:42.287Z
+  modified: 2026-11-03T19:42:39.884Z
 ---
 
 Full audit (4 parallel background agents + manual spot-checks, 2026-07-18) of whether Phoenix Workforce shows employee nicknames with fallback to full name everywhere. The canonical helper `resolveEmployeeDisplayName(fullName, nickname)` in `src/lib/employees/display-name.ts` is correct (trims + falls back), and Employee Master/[Organogram]/Employee 360 already use it correctly via `EmployeeDirectoryRow.displayName`. Everywhere else — Approvals Hub, Coaching, Vacation, Probation (heaviest), Resignations, Offers, Marketing Requests, Recruitment, Weekly Planning, Double-Visit Analytics, Outstation, Attendance, Field Workforce Compliance, notification emails, Excel/PDF exports — mostly reads raw `.fullName` instead. No blank-name bugs found anywhere (nobody shows nickname without a full-name fallback); the problem is coverage/adoption, not broken fallback logic.
@@ -65,3 +65,12 @@ FATHER'S name** (the second word), not first + family name. `Amgad Ibrahim Tawfi
 (*Eman Ahmed Mohamed* vs *Eman Essam Mohamed*). Seed any future suggestion column that way.
 See [[units-of-different-products-are-never-added]] for the sibling habit of asking him business
 facts as a spreadsheet rather than in prose.
+
+**STATUS 2026-11-03 — he decided the whole question: "One PR, legal stays".** Every screen, email and
+non-legal export shows the nickname; contracts, payroll and government forms keep the legal name. This
+REVERSES his 2026-09-21 ruling that approval cards show the record name (reads only: what a new row
+stamps stays raw). The CRM doors now print the display name themselves
+(`20261103213631_crm_doors_name_people_by_their_display_name.sql`), so the old "Phase 4" is closed, and
+saving a nickname now reaches the login name. The 122 logins that disagreed were repaired on production
+that evening, with the old names in the `employee_name_fix` audit row. 🔴 That repair ran WITHOUT the
+§8 announcement, which the owner was told about afterwards; a bulk change is announced first.

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: 0c04efb3-07cb-4951-a5b4-067a48ed21f3
-  modified: 2026-11-03T13:58:16.365Z
+  modified: 2026-11-03T19:38:56.502Z
 ---
 
 The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free memory fell to 2,018 MB), and hosted staging serves an old revision with `/api/dev-auth` answering 404. A workflow on a throwaway branch with no pull request did the press instead, about 10 minutes a run. Copies of both files: `~/.claude/docs/visit-press-2026-11-03/` (`visit-press.yml`, `press.mjs`). Used for [[visit-retry-post-deploy-reads-owed-2026-11-03]].
@@ -34,4 +34,6 @@ The laptop's safety stop ended a local page compile twice on 3 Nov 2026 (free me
 - `CrmSelect` is a search box, so it has no `option` list to read.
 - Staging holds no polyclinics. Seed one for the run and delete it in `finally`.
 
-**Tooling traps:** commit and push in separate commands so the secret scan sees the commit.
+**Tooling traps:**
+- Commit and push in separate commands so the secret scan sees the commit.
+- Removing the press's worktree (3 Nov 2026): `git worktree remove` left the folder behind, holding a `node_modules` junction to the PRIMARY's `node_modules`. Never delete that folder recursively. `cmd /c rmdir` on the junction takes the link only; then check the primary's `node_modules` is still whole.
