@@ -2589,7 +2589,9 @@ const hrNavigationSectionSeeds = [
       // "Vacation Report" in one section would be a pair nobody can tell apart from the rail. The
       // company-wide register is this one; the leave module's own report is the row above.
       // The HR Operations Specialist shares it since 2026-11-03 (companyVacationReportReaderRoles).
-      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations", "HR Administration"] },
+      // It is the one row of this section on her rail, so it pays the hub arrow and the full name
+      // would clip by 14px; nothing beside it needs telling apart, so the short name reads true.
+      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Company Vacation Report", labelByRole: { "HR Administration": "Vacation Report" }, permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations", "HR Administration"] },
       // "Other Approvals" IS NOT ON THIS RAIL AT ALL — retired from /hr on 2026-09-01, in two steps
       // on the same day and for two DIFFERENT reasons, which is why it is written down.
       //

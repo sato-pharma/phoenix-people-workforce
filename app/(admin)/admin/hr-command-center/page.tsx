@@ -167,7 +167,7 @@ async function HrCommandCenterContent({
   if (isTalentAcquisition && "cvToday" in data) {
     return <TalentAcquisitionOverview data={data} identity={identity} />;
   }
-  if ("groups" in data) {
+  if ("groups" in data && !("calendar" in data)) {
     return <HrCommandCenter data={data} identity={identity} />;
   }
   redirect(resolveLandingPathForRole(access.role));

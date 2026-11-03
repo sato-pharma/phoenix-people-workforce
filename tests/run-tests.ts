@@ -5147,7 +5147,7 @@ await runTest(
   + "sends is dropped)",
   runHrOperationsSpecialistAccessTests,
 );
-await runSuite(
+await runTest(
   "HR Operations Specialist landing page and sidebar",
   runHrOperationsOverviewTests,
 );

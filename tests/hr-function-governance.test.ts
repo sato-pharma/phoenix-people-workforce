@@ -314,6 +314,7 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // tests/recruitment-manager-cv-engagement.test.ts rather than left to this comment. The report
   // is read-only and scoped to hiring activity — it holds no salary, no personnel record and no
   // payroll figure, so it crosses none of her named boundaries.
+  "src/lib/recruitment/interview-calendar.ts",
   "src/lib/recruitment/manager-cv-engagement.ts",
   // The job workbook. It names both seats because it IS the two job descriptions, one per seat —
   // but it grants nothing: every field is prose and an href, there is no permission, no gate and
