@@ -1949,6 +1949,7 @@ async function buildChannelEmailInput(
     bcc: input.email?.bcc,
     candidateEmail: input.email?.candidateEmail ?? null,
     cc: input.email?.cc,
+    chosenMailbox: input.email?.chosenMailbox ?? null,
     // The credential stamp (reset code / set-your-password link) rides through untouched.
     credentialEmail: input.email?.credentialEmail ?? null,
     ctaHref,

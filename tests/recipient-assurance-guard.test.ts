@@ -90,6 +90,40 @@ export function runRecipientAssuranceGuardTests() {
   );
   assert.equal(candidate.outcome, "pass", "an address the caller declared external is allowed through");
 
+  // ── A mailbox a person pressed for (New Hire Accounts, 3 Nov 2026) ─────────────────────────
+  // Hagar Abu zeid has no Sato mailbox, so her private email was refused at every try.
+  const noSatoMailbox = decideRecipientAssurance(
+    { chosenMailbox: "new.hire@gmail.com", declaredExternal: ["new.hire@gmail.com"], intendedHrId: "PD-1", systemInboxes: INBOXES, to: ["New.Hire@gmail.com"] },
+    DIRECTORY,
+  );
+  assert.deepEqual(noSatoMailbox, { outcome: "pass", to: ["new.hire@gmail.com"] }, "🔴 the chosen private mailbox reaches a person with no Sato mailbox");
+  const hasSatoMailbox = decideRecipientAssurance(
+    { chosenMailbox: "taha@gmail.com", declaredExternal: ["taha@gmail.com"], intendedHrId: "B-94", systemInboxes: INBOXES, to: ["taha@gmail.com"] },
+    DIRECTORY,
+  );
+  assert.deepEqual(hasSatoMailbox, { outcome: "pass", to: ["taha@gmail.com"] }, "🔴 a Sato mailbox nobody chose is not added beside the chosen one");
+
+  const undeclared = decideRecipientAssurance(
+    { chosenMailbox: "new.hire@gmail.com", intendedHrId: "PD-1", systemInboxes: INBOXES, to: ["new.hire@gmail.com"] },
+    DIRECTORY,
+  );
+  assert.equal(undeclared.outcome === "block" ? undeclared.code : null, "intended_recipient_has_no_address", "🔴 an undeclared address gets no way through by being named");
+  const notInTo = decideRecipientAssurance(
+    { chosenMailbox: "new.hire@gmail.com", declaredExternal: ["new.hire@gmail.com"], intendedHrId: "PD-1", systemInboxes: INBOXES, to: ["phoenix@satopharma.com"] },
+    DIRECTORY,
+  );
+  assert.equal(notInTo.outcome === "block" ? notInTo.code : null, "intended_recipient_has_no_address", "🔴 a shared inbox still cannot stand in for the person");
+  const beside = decideRecipientAssurance(
+    { chosenMailbox: "new.hire@gmail.com", declaredExternal: ["new.hire@gmail.com"], intendedHrId: "PD-1", systemInboxes: INBOXES, to: ["new.hire@gmail.com", "ali.mohamed@satopharma.com"] },
+    DIRECTORY,
+  );
+  assert.equal(beside.outcome === "block" ? beside.code : null, "intended_recipient_has_no_address", "🔴 it answers only when it is the whole of To");
+  const leakyChosen = decideRecipientAssurance(
+    { bcc: ["stranger@elsewhere.com"], chosenMailbox: "new.hire@gmail.com", declaredExternal: ["new.hire@gmail.com"], intendedHrId: "PD-1", systemInboxes: INBOXES, to: ["new.hire@gmail.com"] },
+    DIRECTORY,
+  );
+  assert.equal(leakyChosen.outcome === "block" ? leakyChosen.code : null, "unknown_recipient_address", "🔴 CC and BCC are still checked");
+
   // ── CC and BCC are policed too ─────────────────────────────────────────────────────────────
   // A wrong CC leaks a payslip just as effectively as a wrong To.
   const leakyCc = decideRecipientAssurance(

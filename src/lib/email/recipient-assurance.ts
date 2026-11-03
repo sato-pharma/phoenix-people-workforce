@@ -32,6 +32,13 @@ export type AssuranceDirectoryEntry = {
 
 export type RecipientAssuranceInput = {
   bcc?: string[];
+  /**
+   * The one mailbox a person pressed for, for the person this email is FOR (New Hire Accounts, owner 2026-11-03: "send
+   * via private email"). The register's own address, read on the server, never from a request. It answers "is the
+   * intended person addressed?" only when it is the WHOLE of To and already declared: a new hire with no Sato mailbox
+   * would otherwise be refused, and one with a Sato mailbox would get the link in a mailbox nobody chose.
+   */
+  chosenMailbox?: string | null;
   cc?: string[];
   /**
    * Addresses the caller states are legitimately outside the employee directory — a job
@@ -106,7 +113,9 @@ export function decideRecipientAssurance(
 
   let correction: string | null = null;
   const intendedHrId = normalizeHrId(input.intendedHrId);
-  if (intendedHrId) {
+  const chosenMailbox = normalize(input.chosenMailbox);
+  const onlyToChosenMailbox = Boolean(chosenMailbox) && to.length === 1 && to[0] === chosenMailbox && (declaredExternal.has(chosenMailbox) || knownAddresses.has(chosenMailbox));
+  if (intendedHrId && !onlyToChosenMailbox) {
     const intendedAddress = byHrId.get(intendedHrId) ?? null;
     if (!intendedAddress) {
       // The send names a person the directory cannot reach. Silently mailing the shared inbox

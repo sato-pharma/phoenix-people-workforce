@@ -63,6 +63,8 @@ export type PasswordSetupLinkResult = {
   deliveryMode: "copy" | "email" | "whatsapp";
   /** Email mode only: whether the mail really left. False means the link exists and the person does not have it. */
   emailDelivered?: boolean;
+  /** Email mode only: the first try did not leave and the outbox is still trying, so nobody can say yet. */
+  emailQueuedForRetry?: boolean;
   expiresAt: string;
   loginId: string;
   setupUrl?: string;
@@ -336,6 +338,7 @@ export async function sendPasswordSetupLink(input: {
           channels: ["email"],
           email: {
             candidateEmail: deliverableEmail,
+            chosenMailbox: input.emailTo ? deliverableEmail : null,
             // A live set-your-password link: never mirrored to the admin Telegram (owner, 23 Oct 2026).
             credentialEmail: "password_setup_link",
             // Greet the person by their real name. Without this the notification recipient
@@ -379,9 +382,12 @@ export async function sendPasswordSetupLink(input: {
           recipientUserId: loginId,
           title: purpose === "setup" ? systemAuthEmailText.accountSetupTitle : systemAuthEmailText.passwordResetTitle,
         })
-      : { deliveries: [{ channel: "email" as const, error: undefined, idempotencyKey: "manual", reason: "Link generated for manual sharing.", status: "skipped" as const }] };
-  const emailSent = emailResult.deliveries.some((delivery) => delivery.channel === "email" && delivery.status === "sent");
+      : { deliveries: [{ channel: "email" as const, error: undefined, idempotencyKey: "manual", queuedForRetry: false, reason: "Link generated for manual sharing.", status: "skipped" as const }] };
+  // A first try that did not leave is recorded `sent` with `queuedForRetry`, handed to the outbox. It is not a send:
+  // on 3 Nov 2026 the first private email was refused at every try while the audit row and the screen both said sent.
+  const emailSent = emailResult.deliveries.some((delivery) => delivery.channel === "email" && delivery.status === "sent" && !delivery.queuedForRetry);
   const emailDelivery = emailResult.deliveries.find((delivery) => delivery.channel === "email");
+  const emailQueuedForRetry = deliveryMode === "email" && emailDelivery?.queuedForRetry === true;
 
   // The number as a person dials it (01012345678), not the 20… form wa.me wants: the audit trail is
   // read by a human asking "which handset was this link opened on?".
@@ -414,7 +420,9 @@ export async function sendPasswordSetupLink(input: {
           ? "whatsapp_link_prepared"
           : deliveryMode === "email" && emailSent
             ? "email_sent"
-            : "link_generated_only",
+            : emailQueuedForRetry
+              ? "email_queued_for_retry"
+              : "link_generated_only",
       deliveryMode,
       emailTo: input.emailTo ?? null,
       expiresAt,
@@ -436,11 +444,13 @@ export async function sendPasswordSetupLink(input: {
         ? `WhatsApp message ready for ${user.name?.trim() || loginId} on ${whatsAppLocalNumber}. Open the chat and press send — the link is live from now.`
         : deliveryMode === "copy"
           ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
-          : !emailSent
-            ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
-            : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${deliverableEmail}.`,
+          : emailQueuedForRetry
+            ? "Link generated, but the email has not left yet. Phoenix will try again. If it does not arrive, send the link another way."
+            : !emailSent
+              ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
+              : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${deliverableEmail}.`,
     deliveryMode,
-    ...(deliveryMode === "email" ? { emailDelivered: emailSent } : {}),
+    ...(deliveryMode === "email" ? { emailDelivered: emailSent, emailQueuedForRetry } : {}),
     expiresAt,
     loginId,
     // 🔴 THE RAW LINK LEAVES THE SERVER FOR THE COPY WORKFLOW AND NOTHING ELSE, and the WhatsApp mode

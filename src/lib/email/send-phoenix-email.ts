@@ -375,6 +375,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
         {
           bcc,
           cc,
+          chosenMailbox: input.origin?.chosenMailbox ?? null,
           declaredExternal: input.externalRecipients,
           intendedHrId: input.origin?.recipientHrId ?? null,
           systemInboxes: resolveSystemInboxes(),

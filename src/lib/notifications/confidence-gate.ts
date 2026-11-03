@@ -48,6 +48,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // notices) can no longer be collateral damage of a volume check.
 
 export type NotificationOrigin = {
+  /** The one mailbox a person pressed for. Read by the Recipient Assurance Guard: see `chosenMailbox` there. */
+  chosenMailbox?: string | null;
   employeeHrId?: string | null;
   eventType?: string | null;
   identityStatus?: string | null;
