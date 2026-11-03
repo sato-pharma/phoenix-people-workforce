@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
--- Production Planner — Saginkgo 120 mg hard gelatin capsule, made at Med Care.
+-- Production Planner — Saginkgo 120 mg hard gelatin capsule, made at Med Care's Badr factory.
 --
--- WHAT THIS CHANGES: adds Med Care as a factory store, the Saginkgo product, five new materials, the
+-- WHAT THIS CHANGES: adds Med Care Badr as a factory store, the Saginkgo product, five new materials, the
 -- eight-row material list and the seven composition lines, and widens the measure_unit CHECK by one
 -- value, `mg_capsule`. Every insert is `on conflict do nothing`, so nothing that already exists is
 -- touched.
@@ -9,8 +9,8 @@
 -- WHY: owner, 2026-11-03, sending Med Care's Certificate of Composition with
 -- "العلبه ٣٠ كوكبسولات فارغه والومنيوم", then answering two questions:
 -- "1 batch = 1000 box , box = 30 capsula" and "sato 5 items except the leaflet no leaflet in this
--- product". So Sato brings the ginkgo extract, the empty capsules, the aluminium and the box; Med
--- Care brings the four excipients; and there is NO leaflet material at all.
+-- product", then naming the factory: "call it med care badr", because there is another Med Care.
+-- So Sato brings the ginkgo extract, the empty capsules, the aluminium and the box; Med Care brings the four excipients; and there is NO leaflet material at all.
 --
 -- ── The geometry ────────────────────────────────────────────────────────────────────────────────
 --
@@ -54,7 +54,7 @@
 --   delete from public.prodplan_products where code = 'SAGINKGO';  -- cascades its compositions and product_materials
 --   delete from public.prodplan_materials where code in ('GINKGO_EXTRACT', 'ASCORBIC_ACID',
 --     'CAPSULE_EMPTY_SAGINKGO', 'BLISTER_ALU_SAGINKGO', 'BOX_SAGINKGO');
---   delete from public.prodplan_locations where code = 'MEDCARE';
+--   delete from public.prodplan_locations where code = 'MEDCARE_BADR';
 -- The CHECK may then be narrowed back to ml, g and mg. The three shared materials are never deleted.
 --
 -- Production has NO point-in-time recovery — 7 daily backups are the whole recovery story.
@@ -72,9 +72,9 @@ alter table public.prodplan_products
   add constraint prodplan_products_measure_unit_check
   check (measure_unit = any (array['ml'::text, 'g'::text, 'mg'::text, 'mg_capsule'::text]));
 
--- ── 2. Med Care, the factory store ──────────────────────────────────────────────────────────────
+-- ── 2. Med Care Badr, the factory store ─────────────────────────────────────────────────────────
 insert into public.prodplan_locations (code, name_ar, name_en, is_factory, sort_order)
-values ('MEDCARE', 'مخزن المصنع — ميد كير', 'At the factory (Med Care)', true, 70)
+values ('MEDCARE_BADR', 'مخزن المصنع — ميد كير بدر', 'At the factory (Med Care Badr)', true, 70)
 on conflict (code) do nothing;
 
 -- ── 3. Saginkgo 120 mg ──────────────────────────────────────────────────────────────────────────
@@ -88,18 +88,18 @@ values (
   'SAGINKGO',
   'ساجنكو 120 مجم',
   'Saginkgo 120 mg',
-  'Med Care',
+  'Med Care Badr',
   'mg_capsule',
   9000000, 300, 300, 300, true, 30,
   0,
-  'Hard gelatin capsule, ginkgo biloba leaf extract 120 mg, toll-manufactured by Med Care for Sato Pharma. One batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg of fill at 300 mg a capsule (owner, 2026-11-03). A capsule IS the dose and IS the saleable unit. Sato supplies the extract, the empty capsules, the aluminium and the box; Med Care the four excipients. There is no leaflet in this product. Seeded 2026-11-03 from Med Care''s Certificate of Composition.'
+  'Hard gelatin capsule, ginkgo biloba leaf extract 120 mg, toll-manufactured by Med Care at its Badr factory for Sato Pharma. One batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg of fill at 300 mg a capsule (owner, 2026-11-03). A capsule IS the dose and IS the saleable unit. Sato supplies the extract, the empty capsules, the aluminium and the box; Med Care the four excipients. There is no leaflet in this product. Seeded 2026-11-03 from Med Care''s Certificate of Composition.'
 )
 on conflict (code) do nothing;
 
 update public.prodplan_products p
 set factory_location_id = l.id
 from public.prodplan_locations l
-where l.code = 'MEDCARE'
+where l.code = 'MEDCARE_BADR'
   and p.code = 'SAGINKGO'
   and p.factory_location_id is null;
 

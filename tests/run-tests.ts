@@ -11426,7 +11426,7 @@ await runTest(
   runProductionPlanningCarvibradineTests,
 );
 await runTest(
-  "Saginkgo 120 mg arrives as a capsule made at Med Care, and its formula is the certificate to the microgram: the five weighed lines read back out of the migration add to exactly 300 mg, one batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg with nothing left over and the tile reads 9 kg rather than 9,000; Sato brings the extract, the empty capsule, the box and the aluminium, which stays a row with no composition rather than a zero, Med Care brings the four excipients, there is no leaflet, the shell is one bought item, and a capsule never reads as a tablet",
+  "Saginkgo 120 mg arrives as a capsule made at Med Care's Badr factory, and its formula is the certificate to the microgram: the five weighed lines read back out of the migration add to exactly 300 mg, one batch is 1,000 boxes of 30 = 30,000 capsules = 9 kg with nothing left over and the tile reads 9 kg rather than 9,000; Sato brings the extract, the empty capsule, the box and the aluminium, which stays a row with no composition rather than a zero, Med Care brings the four excipients, there is no leaflet, the shell is one bought item, and a capsule never reads as a tablet",
   runProductionPlanningSaginkgoTests,
 );
 await runTest(

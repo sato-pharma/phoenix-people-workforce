@@ -32,11 +32,11 @@ import {
 import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
- * Production Planner — Saginkgo 120 mg, a capsule made at Med Care.
+ * Production Planner — Saginkgo 120 mg, a capsule made at Med Care's Badr factory.
  *
  * The owner sent Med Care's Certificate of Composition on 2026-11-03, then answered
  * **"1 batch = 1000 box , box = 30 capsula"** and **"sato 5 items except the leaflet no leaflet in
- * this product"**.
+ * this product"** and **"call it med care badr"**.
  *
  * ── What this file keeps true ───────────────────────────────────────────────────────────────────
  *
@@ -52,7 +52,7 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATION = "supabase/migrations/20261103154230_production_planning_saginkgo.sql";
 
-const MEDCARE = "loc-medcare";
+const MEDCARE = "loc-medcare-badr";
 const HOCHSTER = "loc-hochster";
 const SATO_STORE = "loc-sato";
 
@@ -176,7 +176,7 @@ function planningData(sql: string, stock: ProductionPlanningData["stock"] = []):
     locations: [
       { code: "HOCHSTER", id: HOCHSTER, isFactory: true, nameAr: "هوكستر", nameEn: "Hochster" },
       { code: "SATO_STORE", id: SATO_STORE, isFactory: false, nameAr: "مخزن ساتو", nameEn: "Sato store" },
-      { code: "MEDCARE", id: MEDCARE, isFactory: true, nameAr: "ميد كير", nameEn: "Med Care" },
+      { code: "MEDCARE_BADR", id: MEDCARE, isFactory: true, nameAr: "ميد كير بدر", nameEn: "Med Care Badr" },
     ],
     materialIdsByProductId: new Map([["prod-saginkgo", new Set(materials.map((item) => item.id))]]),
     materials,
@@ -284,7 +284,9 @@ export function runProductionPlanningSaginkgoTests() {
   );
 
   // ── The store, and the CHECK that lets the row in ───────────────────────────────────────────
-  assert.match(sql, /set factory_location_id = l\.id[\s\S]*?where l\.code = 'MEDCARE'[\s\S]*?and p\.code = 'SAGINKGO'/, "made at Med Care");
+  assert.match(sql, /set factory_location_id = l\.id[\s\S]*?where l\.code = 'MEDCARE_BADR'[\s\S]*?and p\.code = 'SAGINKGO'/, "made at Med Care's Badr factory");
+  assert.match(sql, /'Med Care Badr',\s*'mg_capsule',/, "his name for it: there is another Med Care");
+  assert.match(sql, /'At the factory \(Med Care Badr\)'/, "and the store carries the same name");
   assert.match(sql, /check \(measure_unit = any \(array\['ml'::text, 'g'::text, 'mg'::text, 'mg_capsule'::text\]\)\)/, "every older unit stays allowed");
 
   // ── One batch, through the real engine ──────────────────────────────────────────────────────
