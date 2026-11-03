@@ -12,6 +12,9 @@ import {
   venueCapNumberProblem,
   venueCapStateLabel,
   venueCapsExplainer,
+  venueExceptionLabel,
+  venueExceptionSetter,
+  venueHasException,
 } from "../src/lib/phoenix-crm/venue-cap-rules.ts";
 
 const MIGRATION = "supabase/migrations/20261102130045_phoenix_crm_venue_cap_admin.sql";
@@ -59,6 +62,24 @@ function runNumberRules(): void {
   assert.ok(venueCapStateLabel({ lifted: false, dailyCap: 7 }, 3).startsWith("7 visits a day"));
   assert.ok(venueCapStateLabel({ lifted: false, dailyCap: null }, 3).startsWith("3 visits a day"));
   assert.ok(venueCapStateLabel({ lifted: false, dailyCap: 5 }, 8).startsWith("8 visits a day"), "the label says what the door holds");
+
+  const venue = (change: { lifted?: boolean; dailyCap?: number | null; unplannedFree?: boolean }) => ({ lifted: false, dailyCap: null, unplannedFree: false, ...change });
+  assert.equal(venueHasException(venue({}), 3), false, "the company number is no exception");
+  assert.equal(venueHasException(venue({ dailyCap: 3 }), 3), false, "🔴 a stored number no higher than the company's is no exception: the door holds the greater");
+  assert.equal(venueHasException(venue({ dailyCap: 5 }), 8), false, "🔴 and nor is an older number the company has since passed");
+  assert.equal(venueHasException(venue({ dailyCap: 5 }), 3), true, "a raised number is");
+  assert.equal(venueHasException(venue({ lifted: true }), 3), true, "the switch is");
+  assert.equal(venueHasException(venue({ unplannedFree: true }), 3), true, "🔴 and so is a row freeing unplanned visits only");
+
+  assert.equal(venueExceptionLabel(venue({ lifted: true, dailyCap: 7 }), 3), "No cap", "the switch wins over a stored number");
+  assert.equal(venueExceptionLabel(venue({ dailyCap: 7 }), 3), "7 visits a day");
+  assert.equal(venueExceptionLabel(venue({ unplannedFree: true }), 3), "Unplanned visits carry no limit");
+  assert.equal(venueExceptionLabel(venue({ dailyCap: 7, unplannedFree: true }), 3), "7 visits a day · Unplanned visits carry no limit", "a venue with both says both");
+
+  const who = { lifted: false, liftedBy: "LIFT", liftedAt: "L", dailyCap: 7, dailyCapSetBy: "NUMBER", dailyCapSetAt: "N", unplannedBy: "UNPLANNED", unplannedAt: "U" };
+  assert.deepEqual(venueExceptionSetter({ ...who, lifted: true }, 3), { by: "LIFT", at: "L" }, "the switch answers first");
+  assert.deepEqual(venueExceptionSetter(who, 3), { by: "NUMBER", at: "N" }, "then the raised number");
+  assert.deepEqual(venueExceptionSetter({ ...who, dailyCap: 2 }, 3), { by: "UNPLANNED", at: "U" }, "🔴 a number that raises nothing never answers for the exception");
 
   const said = venueCapsExplainer({ companyCap: 3, offPlanDailyCap: 2, offPlanWeeklyCap: 8 });
   assert.ok(said.includes("2 a day") && said.includes("8 a week"), "🔴 the page says the unplanned limit still applies under a raised number");
@@ -141,10 +162,11 @@ function runMigrationRules(): void {
 
 function runGateRules(): void {
   const service = read("src/lib/phoenix-crm/server/venue-caps.ts");
-  assert.match(service, /export function canManageVenueCaps\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin && viewer\.canUpdate && !viewer\.isTestPersona;/, "the Super Admin, never a test account");
+  assert.match(service, /export function canManageVenueCaps\(viewer: PhoenixCrmViewer\): boolean \{\s*return canUseSfeFieldControls\(viewer\);/, "🔴 the Super Admin and the SFE Manager (owner, 2026-11-03)");
+  assert.ok(service.includes("p_seats: viewer.org.territories.map((seat) => seat.seatId)"), "🔴 the exceptions are read over every territory, a vacant one included");
   for (const fn of ["loadVenueCapsAdmin", "setVenueCap"]) {
     const body = service.slice(service.indexOf(`export async function ${fn}(`));
-    assert.match(body.slice(0, 200), /assertManager\(viewer\);/, `${fn} refuses everybody but the Super Admin itself`);
+    assert.match(body.slice(0, 200), /assertManager\(viewer\);/, `${fn} refuses everybody but those two itself`);
   }
   assert.ok(service.includes("seatsByPerson(viewer).get(hrId)"), "🔴 the seats are read here, never taken from the page");
   assert.ok(!/notifyPhoenixCrm|sendEmail/.test(service), "no message and no email goes to anybody");
@@ -155,13 +177,14 @@ function runGateRules(): void {
 
   const route = read("app/api/phoenix-crm/venue-caps/route.ts");
   assert.match(route, /assertSameOriginMutation\(request\)/, "a same-origin POST");
-  assert.match(route, /await assertPermission\(access, "phoenix_crm", "update"\)/, "it asks the permission first");
+  assert.match(route, /await assertPermission\(access, "phoenix_crm", "approve"\)/, "it asks approve, which the SFE Manager holds and update is not");
 
   assert.ok(read("src/lib/security/access-registry.ts").includes('pattern: "/api/phoenix-crm/venue-caps"'), "the route is on the registry");
   assert.ok(read("src/lib/system-audit/api-page-map.ts").includes('"/api/phoenix-crm/venue-caps": { admin: "/admin/field-crm/venue-caps" }'), "an error on it names its page");
   const nav = read("src/config/system-navigation.ts");
   const card = nav.slice(nav.indexOf('href: "/admin/field-crm/venue-caps"'), nav.indexOf('href: "/admin/field-crm/venue-caps"') + 400);
-  assert.ok(card.includes('roles: ["Super Admin"]'), "🔴 the card draws for the Super Admin alone");
+  assert.ok(card.includes('roles: ["Super Admin", "SFE Manager"]'), "🔴 the card draws for those two");
+  assert.ok(card.includes('{ resource: "phoenix_crm", action: "approve" }'), "🔴 and asks the verb the SFE Manager holds");
 }
 
 function runScreenRules(): void {
@@ -175,4 +198,10 @@ function runScreenRules(): void {
   assert.ok(screen.includes('"/api/phoenix-crm/venue-caps"'), "the page posts to its own route");
   assert.ok(screen.includes('next ? "lift" : "unlift"'), "🔴 the switch sends what it now says");
   assert.ok(screen.includes('dir="auto"'), "an Arabic venue name carries its own direction");
+
+  const exceptionBlock = screen.slice(screen.indexOf("const EXCEPTION_COLUMNS = ["));
+  const exceptionWidths = [...exceptionBlock.slice(0, exceptionBlock.indexOf("] as const;")).matchAll(/width: "(\d+)%"/g)].map((match) => Number(match[1]));
+  assert.equal(exceptionWidths.reduce((sum, width) => sum + width, 0), 100, "the exceptions table fits too");
+  assert.ok(screen.indexOf("Exceptions in force") >= 0 && screen.indexOf("Exceptions in force") < screen.indexOf('htmlFor="venue-caps-rep"'), "🔴 the exceptions come first, the ordinary module under them (owner, 2026-11-03)");
+  assert.ok(screen.includes('"Vacant territory"'), "a territory nobody holds says so");
 }

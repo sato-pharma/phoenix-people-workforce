@@ -1,6 +1,6 @@
 /**
- * Phoenix CRM — the Super Admin's Rep Exceptions page, server side: every rep, who has an exception, and the one
- * write. The rule, his words and what stays untouched are in `../rep-exception-rules.ts`.
+ * Phoenix CRM — the Rep Exceptions page of the Super Admin and the SFE Manager, server side: every rep, who has an
+ * exception, and the one write. The rule, his words and what stays untouched are in `../rep-exception-rules.ts`.
  *
  * 🔴 THE PAGE SAYS WHAT THE DOOR WILL DO. `repStanding` reads only rows on the seats a rep holds now, because
  * `phoenix_crm_offplan_rep_exempt` matches the seat AND the rep, and the seats sent to the write are read here,
@@ -8,7 +8,7 @@
  */
 
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
-import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canUseSfeFieldControls, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, textOrNull } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import {
@@ -37,13 +37,13 @@ type StoredRow = {
   created_at: string | null;
 };
 
-/** The Super Admin, and never a test account. */
+/** The Super Admin and the SFE Manager (owner, 2026-11-03), and never a test account. */
 export function canManageRepExceptions(viewer: PhoenixCrmViewer): boolean {
-  return viewer.isSuperAdmin && viewer.canUpdate && !viewer.isTestPersona;
+  return canUseSfeFieldControls(viewer);
 }
 
 function assertManager(viewer: PhoenixCrmViewer): void {
-  if (!canManageRepExceptions(viewer)) throw forbiddenError("Only the Super Admin manages rep exceptions.");
+  if (!canManageRepExceptions(viewer)) throw forbiddenError("Only the Super Admin and the SFE Manager manage rep exceptions.");
 }
 
 /** Everyone holding a rep seat, one entry per PERSON: both people on a shared seat, each person's every seat. */
@@ -119,27 +119,29 @@ export async function loadRepExceptionsAdmin(viewer: PhoenixCrmViewer, rawRep: u
     .sort((left, right) => left.name.localeCompare(right.name));
 
   const selected = reps.find((rep) => rep.hrId === personKey(textOrNull(rawRep))) ?? null;
-  // A chosen rep alone; otherwise everyone who has ever had one, the live ones first.
-  const shown = selected ? [selected] : reps.filter((rep) => stored.has(rep.hrId));
-  const rows: RepExceptionRow[] = shown
-    .map((rep) => {
-      const standing = standings.get(rep.hrId);
-      const live = standing?.live ?? null;
-      const hireDate = hireDates.get(rep.hrId) ?? null;
-      const window = live ? { from: live.from, until: live.until } : suggestedRepExceptionWindow(hireDate, today);
-      return {
-        ...rep,
-        hireDate,
-        on: Boolean(live),
-        ...window,
-        setByName: live?.grantedBy ? nameOf(names, live.grantedBy) : null,
-        setAt: live?.createdAt ?? null,
-      };
-    })
-    .sort((left, right) => Number(right.on) - Number(left.on) || left.name.localeCompare(right.name));
+  const toRow = (rep: RepExceptionPick): RepExceptionRow => {
+    const standing = standings.get(rep.hrId);
+    const live = standing?.live ?? null;
+    const hireDate = hireDates.get(rep.hrId) ?? null;
+    const window = live ? { from: live.from, until: live.until } : suggestedRepExceptionWindow(hireDate, today);
+    return {
+      ...rep,
+      hireDate,
+      on: Boolean(live),
+      ...window,
+      setByName: live?.grantedBy ? nameOf(names, live.grantedBy) : null,
+      setAt: live?.createdAt ?? null,
+    };
+  };
+
+  // 🔴 THE FIRST THING ON THE PAGE (owner, 2026-11-03: "the first thing that appears in the module are the reps who
+  // are taking exceptions"): every live one, whatever the filter says.
+  const exceptions = reps.filter((rep) => standings.get(rep.hrId)?.on).map(toRow);
+  // Under it, the ordinary module: a chosen rep alone, otherwise everyone who once had one and has none now.
+  const rows = (selected ? [selected] : reps.filter((rep) => stored.has(rep.hrId) && !standings.get(rep.hrId)?.on)).map(toRow);
 
   const { offPlanDailyCap, offPlanWeeklyCap } = viewer.config.settings;
-  return { today, offPlanDailyCap, offPlanWeeklyCap, reps, selected, rows };
+  return { today, offPlanDailyCap, offPlanWeeklyCap, reps, selected, exceptions, rows };
 }
 
 /** One switch or one change of dates, for one rep. No message and no email goes to anybody. */

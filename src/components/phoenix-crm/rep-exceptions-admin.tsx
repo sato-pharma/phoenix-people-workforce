@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * Phoenix CRM — the Super Admin's Rep Exceptions page (owner, 2026-11-03).
+ * Phoenix CRM — the Rep Exceptions page of the Super Admin and the SFE Manager (owner, 2026-11-03).
  *
- * Opens on everyone who has had an exception; the filter brings up any other rep. Each rep has a switch and two
- * dates, and a date change on a live exception has its own save.
+ * Opens on the exceptions in force, with who set each and when ("the first thing that appears"). Under them the ordinary
+ * module: everyone who once had one, or any rep the filter brings up. Each rep has a switch and two dates, and a date
+ * change on a live exception has its own save.
  *
  * It fits the screen: a phone draws cards, the desktop a `table-fixed` table whose colgroup and header row come
  * from ONE array, so the two cannot disagree. No `overflow-x`, no ellipsis.
@@ -111,12 +112,12 @@ export function RepExceptionsAdmin({ view }: { view: RepExceptionsAdminView }) {
     );
   }
 
-  function dateControls(row: RepExceptionRow, surface: "card" | "row") {
+  function dateControls(row: RepExceptionRow, place: string) {
     const dates = datesOf(row);
     const changed = dates.from !== row.from || dates.until !== row.until;
     const rowError = error?.hrId === row.hrId ? error.message : null;
-    const fromId = `rep-exception-${surface}-from-${row.hrId}`;
-    const untilId = `rep-exception-${surface}-until-${row.hrId}`;
+    const fromId = `rep-exception-${place}-from-${row.hrId}`;
+    const untilId = `rep-exception-${place}-until-${row.hrId}`;
     return (
       <div className="grid min-w-0 gap-2">
         <div className="grid min-w-0 grid-cols-2 gap-2">
@@ -155,7 +156,6 @@ export function RepExceptionsAdmin({ view }: { view: RepExceptionsAdminView }) {
   }
 
   function switchCell(row: RepExceptionRow) {
-    const setBy = [row.setByName ? `By ${row.setByName}` : null, row.setAt ? `${formatPhoenixLongDate(row.setAt)}, ${cairoClock24(row.setAt)}` : null].filter(Boolean).join(" · ");
     return (
       <div className="grid min-w-0 gap-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -170,13 +170,79 @@ export function RepExceptionsAdmin({ view }: { view: RepExceptionsAdminView }) {
           <span className="text-xs font-black text-slate-600">{busy === row.hrId ? "Saving" : row.on ? "On" : "Off"}</span>
         </div>
         <p className="break-words text-sm font-black text-slate-900">{repExceptionStateLabel(row, view.today, formatPhoenixLongDate)}</p>
-        {row.on && setBy ? <p className="break-words text-xs font-semibold text-slate-500">{setBy}</p> : null}
+        {row.on ? (
+          <>
+            <p className="break-words text-xs font-semibold text-slate-600" dir="auto">{`Set by ${row.setByName ?? "Not recorded"}`}</p>
+            <p className="break-words text-xs font-semibold text-slate-500">{row.setAt ? `${formatPhoenixLongDate(row.setAt)}, ${cairoClock24(row.setAt)}` : "When: Not recorded"}</p>
+          </>
+        ) : null}
       </div>
+    );
+  }
+
+  // A live rep who is also chosen in the filter is drawn in both lists, so every id carries its list's name.
+  function repList(rows: RepExceptionRow[], list: "live" | "other") {
+    return (
+      <>
+        <CrmCardsOnPhone>
+          {rows.map((row) => (
+            <CrmCard
+              accent={row.on ? "border-l-orange-500" : "border-l-slate-300"}
+              key={row.hrId}
+              meta={`${row.lineName} · ${row.areaName}`}
+              status={<CrmPill tone={row.on ? "warn" : "info"}>{row.on ? "No limit" : "Usual limit"}</CrmPill>}
+              title={
+                <span className="break-words font-black text-slate-900" dir="auto">
+                  {row.name}
+                </span>
+              }
+            >
+              <div className="grid min-w-0 gap-3">
+                {switchCell(row)}
+                {dateControls(row, `${list}-card`)}
+              </div>
+            </CrmCard>
+          ))}
+        </CrmCardsOnPhone>
+
+        <CrmTable columns={[...REP_COLUMNS.map((column) => column.width)]}>
+          <thead>
+            <tr>
+              {REP_COLUMNS.map((column) => (
+                <th className={crmThClassName} key={column.head}>
+                  {column.head}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.hrId}>
+                <td className={crmTdClassName}>{repCell(row)}</td>
+                <td className={crmTdClassName}>{dateControls(row, `${list}-row`)}</td>
+                <td className={crmTdClassName}>{switchCell(row)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </CrmTable>
+      </>
     );
   }
 
   return (
     <div className="grid min-w-0 gap-5">
+      <section className="min-w-0 border border-slate-200 bg-white">
+        <header className="min-w-0 border-b border-slate-200 px-4 py-3.5 sm:px-5">
+          <h2 className="text-base font-black text-slate-950">Exceptions in force</h2>
+          <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-600">Every rep the usual limit does not reach now or on dates already set, who set it and when.</p>
+        </header>
+        {view.exceptions.length === 0 ? (
+          <CrmEmpty message="Every rep is on the usual limit." title="No rep has an exception now" />
+        ) : (
+          repList(view.exceptions, "live")
+        )}
+      </section>
+
       <section className="min-w-0 border border-slate-200 bg-white">
         <header className="grid min-w-0 gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5">
           <div className="min-w-0">
@@ -185,7 +251,7 @@ export function RepExceptionsAdmin({ view }: { view: RepExceptionsAdminView }) {
           </div>
           <CrmField htmlFor="rep-exceptions-rep" label="Medical rep">
             <CrmSelect disabled={refreshing} id="rep-exceptions-rep" onChange={(event) => choose(event.target.value)} value={view.selected?.hrId ?? ""}>
-              <option value="">Everyone with an exception</option>
+              <option value="">Reps who had one before</option>
               {view.reps.map((rep) => (
                 <option key={rep.hrId} value={rep.hrId}>
                   {`${rep.name} · ${rep.lineName} · ${rep.areaName}`}
@@ -195,53 +261,7 @@ export function RepExceptionsAdmin({ view }: { view: RepExceptionsAdminView }) {
           </CrmField>
         </header>
 
-        {view.rows.length === 0 ? (
-          <CrmEmpty message="Choose a medical rep above to give one." title="No rep has an exception yet" />
-        ) : (
-          <>
-            <CrmCardsOnPhone>
-              {view.rows.map((row) => (
-                <CrmCard
-                  accent={row.on ? "border-l-orange-500" : "border-l-slate-300"}
-                  key={row.hrId}
-                  meta={`${row.lineName} · ${row.areaName}`}
-                  status={<CrmPill tone={row.on ? "warn" : "info"}>{row.on ? "No limit" : "Usual limit"}</CrmPill>}
-                  title={
-                    <span className="break-words font-black text-slate-900" dir="auto">
-                      {row.name}
-                    </span>
-                  }
-                >
-                  <div className="grid min-w-0 gap-3">
-                    {switchCell(row)}
-                    {dateControls(row, "card")}
-                  </div>
-                </CrmCard>
-              ))}
-            </CrmCardsOnPhone>
-
-            <CrmTable columns={[...REP_COLUMNS.map((column) => column.width)]}>
-              <thead>
-                <tr>
-                  {REP_COLUMNS.map((column) => (
-                    <th className={crmThClassName} key={column.head}>
-                      {column.head}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {view.rows.map((row) => (
-                  <tr key={row.hrId}>
-                    <td className={crmTdClassName}>{repCell(row)}</td>
-                    <td className={crmTdClassName}>{dateControls(row, "row")}</td>
-                    <td className={crmTdClassName}>{switchCell(row)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </CrmTable>
-          </>
-        )}
+        {view.rows.length === 0 ? <CrmEmpty message="Choose a medical rep above to give one." title="Choose a rep" /> : repList(view.rows, "other")}
       </section>
     </div>
   );

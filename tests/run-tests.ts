@@ -2176,6 +2176,7 @@ import { runPhoenixCrmVisitDetailEditTests } from "./phoenix-crm-visit-detail-ed
 import { runPhoenixCrmVisitRecordingTests } from "./phoenix-crm-visit-recording.test.ts";
 import { runPhoenixCrmVenueCapsTests } from "./phoenix-crm-venue-caps.test.ts";
 import { runPhoenixCrmRepExceptionsTests } from "./phoenix-crm-rep-exceptions.test.ts";
+import { runNewHireAccountsTests } from "./new-hire-accounts.test.ts";
 import { runPhoenixCrmDoubleVisitRequestsTests } from "./phoenix-crm-double-visit-requests.test.ts";
 import { runPhoenixCrmMyMapTests } from "./phoenix-crm-my-map.test.ts";
 import { runPhoenixCrmVisitProductManagerTests } from "./phoenix-crm-visit-product-manager.test.ts";
@@ -7847,6 +7848,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM: the Super Admin's Rep Exceptions page (owner, 2026-11-03 — \"open or close this feature by a toggle or be able to control duration for any rep\"). The switch writes or ends the dated row the visit door already reads, a change of dates leaves the old window as history, the page and the database refuse the same dates, a row on a seat the rep has left never reads as on, and only the Super Admin reaches the page, its route and its service.",
   runPhoenixCrmRepExceptionsTests,
+);
+
+await runTest(
+  "NEW HIRE ACCOUNTS: the SFE Manager sends a new hire their account and can change nobody's access (owner, 2026-11-03 — \"without changing in access or authorities or anything\")",
+  runNewHireAccountsTests,
 );
 
 await runTest(

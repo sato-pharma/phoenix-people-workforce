@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Phoenix CRM — the Super Admin's Polyclinic Caps page (owner, 2026-11-02).
+ * Phoenix CRM — the Polyclinic Caps page of the Super Admin and the SFE Manager (owner, 2026-11-02).
  *
- * One filter, the rep; then every polyclinic and centre on that rep's territory, each with the switch that takes
+ * Opens on every exception that stands, at which rep, who set it and when ("the first thing that appears", 2026-11-03).
+ * Under them the ordinary module: one filter, the rep; then every polyclinic and centre on that rep's territory, each with the switch that takes
  * the cap away and the number that raises it ("I can remove the cap for a rep in the chosen polyclinic, or I can
  * increase the ceiling of the cap"). A row that frees unplanned visits only says so, and can be ended here.
  *
@@ -38,10 +39,12 @@ import {
   venueCapNumberProblem,
   venueCapStateLabel,
   venueCapsExplainer,
+  venueExceptionLabel,
   venueKindLabel,
   type VenueCapAction,
   type VenueCapRow,
   type VenueCapsAdminView,
+  type VenueExceptionRow,
 } from "@/lib/phoenix-crm/venue-cap-rules";
 
 const VENUE_COLUMNS = [
@@ -49,6 +52,13 @@ const VENUE_COLUMNS = [
   { head: "Customers", width: "15%" },
   { head: "No cap", width: "18%" },
   { head: "Visits a day", width: "34%" },
+] as const;
+
+const EXCEPTION_COLUMNS = [
+  { head: "Polyclinic or centre", width: "27%" },
+  { head: "Rep", width: "31%" },
+  { head: "Exception", width: "20%" },
+  { head: "Set by", width: "22%" },
 ] as const;
 
 function whenText(name: string | null, at: string | null): string {
@@ -68,11 +78,120 @@ export function VenueCapsAdmin({ view }: { view: VenueCapsAdminView }) {
   const locked = busy !== null || refreshing;
   const selected = view.selected;
 
-  function choose(hrId: string) {
+  function choose(hrId: string, anchor = "") {
     setError(null);
     setConfirmEnd(null);
     setDrafts({});
-    startRefresh(() => router.push(hrId ? `${VENUE_CAPS_ADMIN_PATH}?rep=${encodeURIComponent(hrId)}` : VENUE_CAPS_ADMIN_PATH));
+    startRefresh(() => router.push(hrId ? `${VENUE_CAPS_ADMIN_PATH}?rep=${encodeURIComponent(hrId)}${anchor}` : VENUE_CAPS_ADMIN_PATH));
+  }
+
+  function exceptionReps(row: VenueExceptionRow) {
+    return (
+      <div className="grid min-w-0 gap-2">
+        {row.reps.length === 0 ? (
+          <div className="grid min-w-0 gap-1">
+            <span className="break-words font-black text-slate-900">{"Vacant territory"}</span>
+            <span className="break-words text-xs font-semibold text-slate-500">It can be changed here once a rep holds this territory.</span>
+          </div>
+        ) : (
+          row.reps.map((rep) => (
+            <div className="grid min-w-0 justify-items-start gap-1" key={rep.hrId}>
+              <span className="break-words font-black text-slate-900" dir="auto">
+                {rep.name}
+              </span>
+              <CrmButton disabled={refreshing} onClick={() => choose(rep.hrId, "#venue-cap-controls")} size="sm" variant="secondary">
+                Change
+              </CrmButton>
+            </div>
+          ))
+        )}
+        <span className="break-words text-xs font-semibold text-slate-600">{`${row.lineName} · ${row.areaName}`}</span>
+      </div>
+    );
+  }
+
+  function exceptionSetter(row: VenueExceptionRow) {
+    return (
+      <p className="break-words text-xs font-semibold text-slate-600" dir="auto">
+        {whenText(row.setByName, row.setAt) || "Not recorded"}
+      </p>
+    );
+  }
+
+  function exceptionsSection() {
+    return (
+      <section className="min-w-0 border border-slate-200 bg-white">
+        <header className="min-w-0 border-b border-slate-200 px-4 py-3.5 sm:px-5">
+          <h2 className="text-base font-black text-slate-950">Exceptions in force</h2>
+          <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-600">
+            {`Every polyclinic and centre not on the company number of ${view.companyCap} visits a day, at which rep, who set it and when.`}
+          </p>
+        </header>
+        {view.exceptions.length === 0 ? (
+          <CrmEmpty message={`Every polyclinic and centre is on the company number of ${view.companyCap} visits a day.`} title="No polyclinic has an exception" />
+        ) : (
+          <>
+            <CrmCardsOnPhone>
+              {view.exceptions.map((row) => (
+                <CrmCard
+                  accent="border-l-orange-500"
+                  key={row.sharedPlaceId}
+                  meta={venueKindLabel(row.kind)}
+                  status={
+                    <>
+                      <CrmPill tone="warn">{venueExceptionLabel(row, view.companyCap)}</CrmPill>
+                      {row.held ? <CrmPill tone="warn">On hold</CrmPill> : null}
+                    </>
+                  }
+                  title={
+                    <span className="break-words font-black text-slate-900" dir="auto">
+                      {row.name}
+                    </span>
+                  }
+                >
+                  <div className="grid min-w-0 gap-3">
+                    {exceptionReps(row)}
+                    {exceptionSetter(row)}
+                  </div>
+                </CrmCard>
+              ))}
+            </CrmCardsOnPhone>
+
+            <CrmTable columns={[...EXCEPTION_COLUMNS.map((column) => column.width)]}>
+              <thead>
+                <tr>
+                  {EXCEPTION_COLUMNS.map((column) => (
+                    <th className={crmThClassName} key={column.head}>
+                      {column.head}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {view.exceptions.map((row) => (
+                  <tr key={row.sharedPlaceId}>
+                    <td className={crmTdClassName}>
+                      <span className="break-words font-black text-slate-900" dir="auto">
+                        {row.name}
+                      </span>
+                      <div className="mt-1.5 flex min-w-0 flex-wrap gap-1.5">
+                        <CrmPill tone="info">{venueKindLabel(row.kind)}</CrmPill>
+                        {row.held ? <CrmPill tone="warn">On hold</CrmPill> : null}
+                      </div>
+                    </td>
+                    <td className={crmTdClassName}>{exceptionReps(row)}</td>
+                    <td className={crmTdClassName}>
+                      <p className="break-words text-sm font-black text-slate-900">{venueExceptionLabel(row, view.companyCap)}</p>
+                    </td>
+                    <td className={crmTdClassName}>{exceptionSetter(row)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </CrmTable>
+          </>
+        )}
+      </section>
+    );
   }
 
   async function act(venue: VenueCapRow, action: VenueCapAction, cap?: string) {
@@ -230,7 +349,9 @@ export function VenueCapsAdmin({ view }: { view: VenueCapsAdminView }) {
 
   return (
     <div className="grid min-w-0 gap-5">
-      <section className="min-w-0 border border-slate-200 bg-white">
+      {exceptionsSection()}
+
+      <section className="min-w-0 scroll-mt-20 border border-slate-200 bg-white" id="venue-cap-controls">
         <header className="grid min-w-0 gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5">
           <div className="min-w-0">
             <h2 className="text-base font-black text-slate-950">Rep</h2>

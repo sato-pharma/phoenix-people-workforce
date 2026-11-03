@@ -10,14 +10,14 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST = one switch or one number on one rep's polyclinic. The Super Admin's alone (owner, 2026-11-02: "in the
-// admin account only"); the service refuses everybody else.
+// POST = one switch or one number on one rep's polyclinic. The Super Admin's and the SFE Manager's (owner, 2026-11-03).
+// `approve` because the SFE Manager holds no `update`; the service refuses every other holder of `approve`.
 export async function POST(request: Request) {
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "phoenix_crm", "update");
+    await assertPermission(access, "phoenix_crm", "approve");
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const result = await setVenueCap(viewer, body);

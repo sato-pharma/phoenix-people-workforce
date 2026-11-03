@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// THE SUPER ADMIN'S POLYCLINIC CAPS — one rep, his polyclinics, a switch and a number on each.
+// POLYCLINIC CAPS — one rep, his polyclinics, a switch and a number on each. The Super Admin's, and the SFE Manager's
+// since 2026-11-03, when the page began opening on every exception that stands.
 //
 // Owner, 2026-11-02: "This module I filter by the medical rep. Then after I filter by the medical rep, all
 // his polyclinics appear. Okay, I have the option to, for example, open or close the toggle. When I open the
@@ -78,14 +79,70 @@ export type VenueCapRow = {
   unplannedFree: boolean;
 };
 
+/** One venue holding anything but the company number: the first thing the page shows (owner, 2026-11-03). */
+export type VenueExceptionRow = {
+  sharedPlaceId: string;
+  name: string;
+  kind: string;
+  held: boolean;
+  /** Whoever holds the territory now: two on a shared seat, none on a vacant one. */
+  reps: Array<{ hrId: string; name: string }>;
+  lineName: string;
+  areaName: string;
+  lifted: boolean;
+  dailyCap: number | null;
+  unplannedFree: boolean;
+  setByName: string | null;
+  setAt: string | null;
+};
+
 export type VenueCapsAdminView = {
   companyCap: number;
   offPlanDailyCap: number;
   offPlanWeeklyCap: number;
+  /** Every venue on any territory that holds an exception. The page opens on these, whichever rep is chosen. */
+  exceptions: VenueExceptionRow[];
   reps: VenueCapRepRow[];
   selected: VenueCapRepRow | null;
   venues: VenueCapRow[];
 };
+
+/**
+ * Whether a venue holds an exception. A stored number at or below the company's is not one, because the door holds the
+ * greater of the two, so that venue is on the company number whatever the column says.
+ */
+export function venueHasException(row: Pick<VenueCapRow, "lifted" | "dailyCap" | "unplannedFree">, companyCap: number): boolean {
+  return row.lifted || row.unplannedFree || effectiveVenueCap(companyCap, row.dailyCap) > companyCap;
+}
+
+/** Who answers for it, the strongest first: the switch, then the raised number, then the unplanned-only row. */
+export function venueExceptionSetter(
+  row: {
+    lifted: boolean;
+    liftedBy: string | null;
+    liftedAt: string | null;
+    dailyCap: number | null;
+    dailyCapSetBy: string | null;
+    dailyCapSetAt: string | null;
+    unplannedBy: string | null;
+    unplannedAt: string | null;
+  },
+  companyCap: number,
+): { by: string | null; at: string | null } {
+  if (row.lifted) return { by: row.liftedBy, at: row.liftedAt };
+  if (effectiveVenueCap(companyCap, row.dailyCap) > companyCap) return { by: row.dailyCapSetBy, at: row.dailyCapSetAt };
+  return { by: row.unplannedBy, at: row.unplannedAt };
+}
+
+/** The words for it in the list: "No cap", "5 visits a day", or the unplanned-only note. */
+export function venueExceptionLabel(row: Pick<VenueCapRow, "lifted" | "dailyCap" | "unplannedFree">, companyCap: number): string {
+  if (row.lifted) return "No cap";
+  const parts: string[] = [];
+  const number = effectiveVenueCap(companyCap, row.dailyCap);
+  if (number > companyCap) parts.push(`${number} visits a day`);
+  if (row.unplannedFree) parts.push("Unplanned visits carry no limit");
+  return parts.join(" · ");
+}
 
 /** What the page's one note says: what each control moves, and what stays. */
 export function venueCapsExplainer(view: Pick<VenueCapsAdminView, "companyCap" | "offPlanDailyCap" | "offPlanWeeklyCap">): string {

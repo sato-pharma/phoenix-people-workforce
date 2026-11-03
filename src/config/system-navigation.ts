@@ -40,6 +40,7 @@ import {
   Hourglass,
   IdCard,
   Inbox,
+  KeyRound,
   Landmark,
   Laptop,
   ListChecks,
@@ -4771,25 +4772,38 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
   },
   {
     // Any rep, a switch and the dates (owner, 2026-11-03: "open or close this feature by a toggle or be able to
-    // control duration for any rep"). The Super Admin's ALONE: `canManageRepExceptions` is the enforcing gate
-    // inside the page and the route; this card only draws the link.
+    // control duration for any rep"). The Super Admin's and, since 2026-11-03, the SFE Manager's:
+    // `canManageRepExceptions` is the enforcing gate inside the page and the route; this card only draws the link.
+    // 🔴 `approve`, NOT `update`: the SFE Manager holds no `update`.
     href: "/admin/field-crm/rep-exceptions",
     icon: CalendarClock,
     label: "Rep Exceptions",
-    description: "Switch the unplanned visit limit off for any rep and set the dates it applies.",
-    permissions: [{ resource: "phoenix_crm", action: "update" }],
-    roles: ["Super Admin"],
+    description: "See the exceptions in force, then switch the unplanned visit limit off for any rep and set the dates it applies.",
+    permissions: [{ resource: "phoenix_crm", action: "approve" }],
+    roles: ["Super Admin", "SFE Manager"],
   },
   {
     // One rep's polyclinics, a switch and a number on each (owner, 2026-11-02: "I can remove the cap for a rep in
-    // the chosen polyclinic, or I can increase the ceiling of the cap"). The Super Admin's ALONE:
-    // `canManageVenueCaps` is the enforcing gate inside the page and the route; this card only draws the link.
+    // the chosen polyclinic, or I can increase the ceiling of the cap"). The Super Admin's and, since 2026-11-03,
+    // the SFE Manager's: `canManageVenueCaps` is the enforcing gate inside the page and the route; this card only draws
+    // the link. `approve`, for the same reason as the Rep Exceptions card.
     href: "/admin/field-crm/venue-caps",
     icon: Building2,
     label: "Polyclinic Caps",
-    description: "Choose a rep, then switch the daily cap off at any of that rep's polyclinics or raise its number.",
-    permissions: [{ resource: "phoenix_crm", action: "update" }],
-    roles: ["Super Admin"],
+    description: "See every polyclinic holding an exception, then choose a rep to switch a daily cap off or raise its number.",
+    permissions: [{ resource: "phoenix_crm", action: "approve" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
+    // The SFE Manager sends a new rep or district manager their account (owner, 2026-11-03: "without changing in access or
+    // authorities or anything"). `canSendNewHireAccounts` is the enforcing gate inside the page and the route, and
+    // `user_admin` stays the Super Admin's: this page cannot change anybody's access.
+    href: "/admin/field-crm/new-hire-accounts",
+    icon: KeyRound,
+    label: "New Hire Accounts",
+    description: "New reps and district managers who have not set a password yet. Send each one their account by Sato email, private email or WhatsApp.",
+    permissions: [{ resource: "phoenix_crm", action: "approve" }],
+    roles: ["Super Admin", "SFE Manager"],
   },
   {
     // Load a territory's customer list from a sheet — the SFE's third route onto a list (the owner's
@@ -5433,8 +5447,10 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/field-crm/visit-recording",
           // A rep's polyclinics and their daily number: the same Super Admin's own controls over a rep's field work.
           "/admin/field-crm/venue-caps",
-          // Any rep's unplanned visit limit and its dates: the same Super Admin's controls.
+          // Any rep's unplanned visit limit and its dates: the same two people's controls.
           "/admin/field-crm/rep-exceptions",
+          // Getting a new rep or district manager into Phoenix: those two people's work on the field force again.
+          "/admin/field-crm/new-hire-accounts",
           // Beside the duplicates row: both are the SFE's work ON a rep's list rather than a board
           // that measures him, and a card left out of every band is appended to the FIRST one under a
           // heading nobody chose (tests/nav-hub-promotion catches that, and caught the row below).

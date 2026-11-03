@@ -107,14 +107,19 @@ function runMigrationRules(): void {
 
 function runGateRules(): void {
   const service = read("src/lib/phoenix-crm/server/rep-exceptions.ts");
-  assert.match(service, /export function canManageRepExceptions\(viewer: PhoenixCrmViewer\): boolean \{\s*return viewer\.isSuperAdmin && viewer\.canUpdate && !viewer\.isTestPersona;/, "the Super Admin, never a test account");
+  assert.match(service, /export function canManageRepExceptions\(viewer: PhoenixCrmViewer\): boolean \{\s*return canUseSfeFieldControls\(viewer\);/, "🔴 the Super Admin and the SFE Manager (owner, 2026-11-03)");
+  const access = read("src/lib/phoenix-crm/server/access.ts");
+  const gate = access.slice(access.indexOf("export function canUseSfeFieldControls("));
+  assert.match(gate.slice(0, 220), /if \(viewer\.isTestPersona\) return false;\s*if \(viewer\.isSuperAdmin\) return viewer\.canUpdate;\s*return viewer\.isSfeManager && viewer\.canApprove;/, "🔴 no test account, and no other holder of approve: a district manager holds it too");
   for (const fn of ["loadRepExceptionsAdmin", "setRepException"]) {
     const body = service.slice(service.indexOf(`export async function ${fn}(`));
-    assert.match(body.slice(0, 220), /assertManager\(viewer\);/, `${fn} refuses everybody but the Super Admin itself`);
+    assert.match(body.slice(0, 220), /assertManager\(viewer\);/, `${fn} refuses everybody but those two itself`);
   }
   assert.ok(service.includes("seatsByPerson(viewer).get(hrId)"), "🔴 the seats are read here, never taken from the page");
   assert.ok(service.includes("repExceptionDatesProblem(body.from, body.until, viewer.cairoToday)"), "the server asks the dates again");
   assert.ok(!/notifyPhoenixCrm|sendEmail/.test(service), "no message and no email goes to anybody");
+  assert.ok(service.includes("reps.filter((rep) => standings.get(rep.hrId)?.on).map(toRow)"), "🔴 every live exception is read, whatever the filter says");
+  assert.ok(service.includes("stored.has(rep.hrId) && !standings.get(rep.hrId)?.on"), "a live one is not listed twice when no rep is chosen");
 
   const page = read("app/(admin)/admin/field-crm/rep-exceptions/page.tsx");
   assert.match(page, /if \(!viewer \|\| !canManageRepExceptions\(viewer\)\) redirect\("\/admin"\);/, "the page redirects anybody else");
@@ -122,13 +127,14 @@ function runGateRules(): void {
 
   const route = read("app/api/phoenix-crm/rep-exceptions/route.ts");
   assert.match(route, /assertSameOriginMutation\(request\)/, "a same-origin POST");
-  assert.match(route, /await assertPermission\(access, "phoenix_crm", "update"\)/, "it asks the permission first");
+  assert.match(route, /await assertPermission\(access, "phoenix_crm", "approve"\)/, "it asks approve, which the SFE Manager holds and update is not");
 
   assert.ok(read("src/lib/security/access-registry.ts").includes('pattern: "/api/phoenix-crm/rep-exceptions"'), "the route is on the registry");
   assert.ok(read("src/lib/system-audit/api-page-map.ts").includes('"/api/phoenix-crm/rep-exceptions": { admin: "/admin/field-crm/rep-exceptions" }'), "an error on it names its page");
   const nav = read("src/config/system-navigation.ts");
   const at = nav.indexOf('href: "/admin/field-crm/rep-exceptions"');
-  assert.ok(nav.slice(at, at + 400).includes('roles: ["Super Admin"]'), "🔴 the card draws for the Super Admin alone");
+  assert.ok(nav.slice(at, at + 400).includes('roles: ["Super Admin", "SFE Manager"]'), "🔴 the card draws for those two");
+  assert.ok(nav.slice(at, at + 400).includes('{ resource: "phoenix_crm", action: "approve" }'), "🔴 and asks the verb the SFE Manager holds");
 }
 
 function runScreenRules(): void {
@@ -142,4 +148,7 @@ function runScreenRules(): void {
   assert.ok(screen.includes('"/api/phoenix-crm/rep-exceptions"'), "the page posts to its own route");
   assert.ok(screen.includes('next ? "open" : "close"'), "🔴 the switch sends what it now says");
   assert.ok(screen.includes('dir="auto"'), "an Arabic name carries its own direction");
+  assert.ok(screen.indexOf("Exceptions in force") >= 0 && screen.indexOf("Exceptions in force") < screen.indexOf("Unplanned visit limit"), "🔴 the exceptions come first, the ordinary module under them (owner, 2026-11-03)");
+  assert.ok(screen.includes('"Not recorded"'), "a row with no setter says so rather than leaving a blank");
+  assert.ok(screen.includes("`rep-exception-${place}-from-${row.hrId}`"), "🔴 a chosen live rep is drawn twice, so an id carries its section");
 }
