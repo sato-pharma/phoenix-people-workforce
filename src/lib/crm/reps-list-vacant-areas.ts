@@ -427,7 +427,7 @@ async function loadPeople(hrIds: readonly string[]): Promise<Map<string, HolderP
 }
 
 /** The three records for the vacancies in view, read in two rounds (the earlier seats come from round one). */
-async function loadLastHolders(
+export async function loadLastHolders(
   vacancies: readonly CoverageFilterVacancy[],
 ): Promise<{ lastBySeat: Map<string, SeatLastPerson>; names: Map<string, string> }> {
   if (vacancies.length === 0) return { lastBySeat: new Map(), names: new Map() };

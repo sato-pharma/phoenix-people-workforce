@@ -141,6 +141,9 @@ export const MODULES = [
     globs: [
       "src/lib/sales/{closing-deep-link,closing-details-span,closing-filter-narrowing,closing-load-gate,closing-publication-drift,closing-publish-destination,office-allocation-drift,source-coverage,source-quiet-periods,sos-month-complete,sos-dashboard,portal-sos-dashboard}.ts",
       "src/components/sales/{closing-details-panel,closing-details-standalone,closing-matrix-table,monthly-closing-workspace}.tsx",
+      "src/lib/reports/empty-seats.ts",
+      "src/components/reports/empty-seats-board.tsx",
+      "tests/vacancies-empty-seats*",
       "scripts/check-{closing-publication-drift,office-allocation-drift,sos-month-complete}.ts",
       "tests/closing-{deep-link-silent-substitution,details-span-notice,load-gate,matrix-head-never-ellipsises,office-respread,publication-drift,publish-email-destination,refresh-keeps-the-filter}*",
       "tests/{needs-you-board,sos-dashboard-packed-cache,sos-month-complete,source-coverage}*",

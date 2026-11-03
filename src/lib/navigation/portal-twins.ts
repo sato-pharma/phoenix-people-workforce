@@ -211,6 +211,7 @@ const TWIN_RULES: readonly TwinRule[] = [
   // that hop resolve before the (admin) layout's blanket redirect drops him on the portal home.
   { from: "/recruitment/manager-engagement", to: "/employee-portals/recruitment-engagement" },
   { from: "/reports/vacancies", to: "/employee-portals/vacancies" },
+  { from: "/reports/vacancies/empty-seats", to: "/employee-portals/vacancies/empty-seats" },
   // nav-declared: these two pages carried a portal branch that RENDERED the portal shell
   // inline instead of redirecting — which the group layout had already made unreachable —
   // and it was deleted 2026-08-30 (PR #2777). The destinations are the rows the portal

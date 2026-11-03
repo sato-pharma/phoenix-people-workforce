@@ -76,6 +76,7 @@ import {
   listOwnOutstationSubmissions,
 } from "@/lib/outstation/service";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
+import { canViewEmptySeatsBoard } from "@/lib/reports/empty-seats";
 import {
   canAccessCompanyOrganogram,
   getOrganogramReport,
@@ -728,13 +729,14 @@ export async function WorkspaceVacanciesPage() {
   // employees:create, not update, since the HR Operations Specialist seat (2026-10-20): she edits
   // the master but does not add to it, and POST /api/employees asserts create on every add.
   const canAddEmployee = await canAccess(access, "employees", "create");
+  const canViewEmptySeats = await canViewEmptySeatsBoard(access);
   return (
     <WorkspaceFrame
       description="View vacancies visible to your existing employee scope."
       icon={<Network className="h-3.5 w-3.5" />}
       title="Vacancies"
     >
-      <VacanciesReport canAddEmployee={canAddEmployee} initialError={initialError} initialReport={initialReport} />
+      <VacanciesReport canAddEmployee={canAddEmployee} canViewEmptySeats={canViewEmptySeats} initialError={initialError} initialReport={initialReport} />
     </WorkspaceFrame>
   );
 }

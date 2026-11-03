@@ -584,6 +584,58 @@ export async function loadManagerOwnVisitRows(input: {
   return readOwnVisitDetails({ end: input.end, isTest: input.isTest ?? false, managerHrIds: input.managerHrIds, start: input.start });
 }
 
+/**
+ * Every manager's own visit on an empty territory since a day, as the seat it fell on and its date, and nothing
+ * else: no manager, no customer, no verdict. For the Empty Seats board, which asks only whether anybody is going
+ * there, so unlike the rest of this file it is keyed by TERRITORY. It is no KPI: the board prints it as "logged".
+ *
+ * The seat is read off the customer, whichever list he came from: a rep's list (`customer_id`) or his own
+ * (`manager_customer_id`). A dropped customer still counts, since the visit happened. A visit neither list can
+ * place comes back with a null seat. A failed read throws; the caller says so on the page.
+ */
+export async function loadManagerVacantTerritoryVisits(input: { from: string }): Promise<Array<{ seatId: string | null; visitDate: string | null }>> {
+  const supabase = getSupabaseAdmin();
+  const visits = await fetchAllRowsKeyset<{
+    customer_id: string | null;
+    id: string;
+    manager_customer_id: string | null;
+    visit_date: string | null;
+  }>(
+    () =>
+      supabase
+        .from("phoenix_crm_manager_visits")
+        .select("id, customer_id, manager_customer_id, visit_date")
+        .eq("in_vacant_territory", true)
+        .eq("is_test", false)
+        .gte("visit_date", input.from),
+    { cursorColumn: "id", cursorOf: (row) => row.id },
+  );
+  const seatsOf = async (table: string, column: string, ids: ReadonlyArray<string | null>) => {
+    const seats = new Map<string, string>();
+    for (const part of chunk(dedupeIds(ids))) {
+      const { data, error } = await supabase.from(table).select(`id, ${column}`).in("id", part);
+      if (error) throw error;
+      for (const row of (data ?? []) as unknown as Row[]) {
+        const seatId = textOrNull(row[column]);
+        const id = textOrNull(row.id);
+        if (id && seatId) seats.set(id, seatId);
+      }
+    }
+    return seats;
+  };
+  const [repCustomers, ownCustomers] = await Promise.all([
+    seatsOf("phoenix_crm_customers", "seat_id", visits.map((row) => row.customer_id)),
+    seatsOf("phoenix_crm_manager_customers", "area_seat_id", visits.map((row) => row.manager_customer_id)),
+  ]);
+  return visits.map((row) => ({
+    seatId:
+      (row.customer_id ? repCustomers.get(row.customer_id) : undefined) ??
+      (row.manager_customer_id ? ownCustomers.get(row.manager_customer_id) : undefined) ??
+      null,
+    visitDate: row.visit_date,
+  }));
+}
+
 // His visits in full — who, where, which half, when, single or double (owner, 2026-10-20). The count above says
 // that he worked; this says what he did, and is read through this same door.
 export {
