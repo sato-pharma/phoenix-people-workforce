@@ -146,7 +146,7 @@ export function runDependabotAlertsTests() {
   const tokenRead = outcomeOfReadFailure({
     stderr: "gh: Resource not accessible by personal access token (HTTP 403)\n",
   });
-  assert.match(String(tokenRead.skipped), /token lacks/);
+  assert.match("skipped" in tokenRead ? tokenRead.skipped : "", /token lacks/);
   assert.equal(judgeAlerts(tokenRead, { unknown: "not read" }).exitCode, 0);
 
   // 3. AN UNREADABLE SEVERITY IS URGENT, NOT QUIET
