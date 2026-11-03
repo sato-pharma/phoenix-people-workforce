@@ -17,6 +17,7 @@
 // notified") — a person who has left is never copied, and nobody above them is reached around them.
 
 import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -27,6 +28,7 @@ export const DISPUTE_REPLY_MANAGER_LEVELS = 2;
 type EmployeeLite = {
   hr_id: string | null;
   full_name: string | null;
+  nickname: string | null;
   job_title: string | null;
   manager_hr_id: string | null;
   employment_status: string | null;
@@ -48,7 +50,7 @@ async function loadEmployee(hrId: string | null | undefined): Promise<EmployeeLi
   if (lookups.length === 0) return null;
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id, full_name, job_title, manager_hr_id, employment_status")
+    .select("hr_id, full_name, nickname, job_title, manager_hr_id, employment_status")
     .in("hr_id", lookups)
     .limit(1)
     .maybeSingle();
@@ -66,7 +68,7 @@ function toPerson(row: EmployeeLite): ResolvedDisputePerson | null {
   if (!hrId) return null;
   return {
     hrId,
-    name: String(row.full_name ?? "").trim() || "Employee",
+    name: resolveEmployeeDisplayName(String(row.full_name ?? "").trim(), row.nickname, hrId).trim() || "Employee",
     title: String(row.job_title ?? "").trim() || null,
   };
 }

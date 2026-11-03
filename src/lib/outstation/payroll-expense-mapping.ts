@@ -258,7 +258,10 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     reportId: options.reportId ?? undefined,
     requestType: "Outstation",
     row: 1,
-    specialist: request.employeeName,
+    // What outstation_expenses STORES and payroll reads (automated-payroll/recommend.ts), so it takes
+    // the record's full name. `employeeName` is the display name on a request read through a live
+    // overlay (owner, 2026-11-03), and that must never be stamped onto the ledger.
+    specialist: request.employeeRecordName || request.employeeName,
     status: "Approved",
     to: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     toDate: tripEndDate,

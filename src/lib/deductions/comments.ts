@@ -15,7 +15,8 @@ import { attachCommentAttachments, discardDisputeComment, storeDisputeAttachment
 import { loadTelegramReach, resolveDisputeAudience } from "./dispute-audience.ts";
 import { picturesNotice, picturesOnlyBody, tidyDisputeText } from "@/lib/dispute-center/text.ts";
 import type { DeductionDisputeDelivery, DeductionsComment } from "./types.ts";
-import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { notifyConversationMessage, notifyHrConversationMessage } from "@/lib/conversations/notify";
 import { logError } from "@/lib/observability/log";
 
@@ -45,25 +46,14 @@ function mapCommentRow(row: CommentRow): DeductionsComment {
 /**
  * Fill in each comment's authorName from the employees table. A deduction dispute is now a two-way
  * conversation — the employee on one side, the HR person who replies on the other — so every line
- * has to say who wrote it, by name and never by HR id (the owner's standing rule). Best-effort: an
- * unresolved id leaves authorName null and the row still renders.
+ * has to say who wrote it, by display name (owner, 2026-11-03) and never by HR id (the owner's
+ * standing rule). Best-effort: an unresolved id leaves authorName null and the row still renders.
  */
 async function attachAuthorNames(comments: DeductionsComment[]): Promise<DeductionsComment[]> {
   const ids = Array.from(new Set(comments.map((comment) => comment.authorHrId).filter((id): id is string => Boolean(id))));
   if (ids.length === 0) return comments;
-  const lookups = Array.from(new Set(ids.flatMap((id) => hrIdLookupKeys(id))));
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, full_name").in("hr_id", lookups);
-  if (error) return comments;
-  const nameByKey = new Map<string, string>();
-  for (const row of (data ?? []) as Array<{ hr_id?: string | null; full_name?: string | null }>) {
-    const key = canonicalHrIdKey(row.hr_id);
-    const name = String(row.full_name ?? "").trim();
-    if (key && name) nameByKey.set(key, name);
-  }
-  return comments.map((comment) => {
-    const key = canonicalHrIdKey(comment.authorHrId);
-    return { ...comment, authorName: (key && nameByKey.get(key)) || null };
-  });
+  const names = await namesByHrId(ids);
+  return comments.map((comment) => ({ ...comment, authorName: names.get(comment.authorHrId) }));
 }
 
 export async function listDeductionsComments(input: {
@@ -316,7 +306,7 @@ async function notifyDeductionsReply(input: {
       .limit(1)
       .maybeSingle();
     const employeeHrId = (lineRow as { employee_hr_id?: string | null } | null)?.employee_hr_id ?? null;
-    const employeeName = String((lineRow as { employee_name?: string | null } | null)?.employee_name ?? "").trim() || null;
+    const storedEmployeeName = String((lineRow as { employee_name?: string | null } | null)?.employee_name ?? "").trim() || null;
     if (!employeeHrId) {
       logError("Deductions reply has no published line to address", {
         labels: { event: "deductions_reply_no_line", candidateId: input.candidateId },
@@ -328,15 +318,10 @@ async function notifyDeductionsReply(input: {
     const audience = await resolveDisputeAudience(employeeHrId);
     const managerHrIds = audience.managers.map((manager) => manager.hrId);
 
-    let authorName: string | null = null;
-    if (input.authorHrId) {
-      const { data } = await getSupabaseAdmin()
-        .from("employees")
-        .select("full_name")
-        .in("hr_id", hrIdLookupKeys(input.authorHrId))
-        .maybeSingle();
-      authorName = String((data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null;
-    }
+    // Display names on the message (owner, 2026-11-03); the line's own column stays as stamped.
+    const names = await namesByHrId([input.authorHrId, employeeHrId]);
+    const authorName = names.get(input.authorHrId);
+    const employeeName = names.get(employeeHrId) ?? storedEmployeeName;
 
     await notifyConversationMessage({
       // The employee's OWN portal deductions page — where their published deductions and this
@@ -415,16 +400,8 @@ async function notifyDeductionsComment(input: {
 }): Promise<void> {
   try {
     // The employee's NAME, never their HR id: the owner's standing rule is that a human-readable
-    // name is shown everywhere, in the UI and in a message alike.
-    let authorName: string | null = null;
-    if (input.authorHrId) {
-      const { data } = await getSupabaseAdmin()
-        .from("employees")
-        .select("full_name")
-        .in("hr_id", hrIdLookupKeys(input.authorHrId))
-        .maybeSingle();
-      authorName = String((data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null;
-    }
+    // name is shown everywhere, in the UI and in a message alike — the display name (2026-11-03).
+    const authorName = (await namesByHrId([input.authorHrId])).get(input.authorHrId);
 
     await notifyHrConversationMessage({
       // The admin screen's Disputes tab, deep-linked to the exact candidate — NOT the portal page,

@@ -28,6 +28,86 @@ function draft(overrides: Partial<DeductionsCandidateDraft> = {}): DeductionsCan
 }
 
 export async function runDeductionsModuleSafetyTests(): Promise<void> {
+  // ── Display names on screens and emails, legal names on what feeds payroll (owner, 2026-11-03) ──
+  // publish.ts and push.ts STAMP candidate.employeeName onto the publication line, and the two
+  // workbooks feed payroll, so listCandidatesForMonth must stay opt-in: only a screen asks.
+  {
+    const service = readFileSync("src/lib/deductions/service.ts", "utf8");
+    assert.match(
+      service,
+      /\(input\.showDisplayNames \? known\?\.shownName : null\) \|\| storedName/,
+      "the display name wins only when the caller asked for it",
+    );
+    assert.match(
+      readFileSync("app/api/admin/deductions/candidates/route.ts", "utf8"),
+      /listCandidatesForMonth\(\{ monthKey, category, showDisplayNames: true \}\)/,
+      "the workspace is a screen, so it asks for the display name",
+    );
+    for (const file of [
+      "src/lib/deductions/publish.ts",
+      "src/lib/deductions/push.ts",
+      "src/lib/automated-payroll/deductions-source.ts",
+      "app/api/admin/deductions/export/route.ts",
+      "app/api/admin/deductions/export/master/route.ts",
+    ]) {
+      assert.ok(
+        !readFileSync(file, "utf8").includes("showDisplayNames"),
+        `${file} stamps a row or feeds payroll, so it must keep the name as stored`,
+      );
+    }
+    for (const file of [
+      "src/lib/deductions/comments.ts",
+      "src/lib/deductions/portal.ts",
+      "src/lib/dispute-center/events.ts",
+    ]) {
+      const source = readFileSync(file, "utf8");
+      assert.ok(source.includes("namesByHrId("), `${file} must resolve people through the shared display-name read`);
+      assert.ok(!/select\("[^"]*full_name/.test(source), `${file} must not read full_name to print a person`);
+    }
+    assert.match(
+      readFileSync("src/lib/dispute-center/deduction.ts", "utf8"),
+      /nameFor\(input\.names, input\.candidate\.employee_hr_id\) \?\?\s+input\.candidate\.employee_name/,
+      "a dispute shows the employee's display name first, and the stored name only as the fallback",
+    );
+    // Both attendance reports print the display name now, so what they hand a deduction line is a
+    // separate field. Reading `employeeName` there writes a nickname onto a payroll record.
+    assert.match(
+      readFileSync("src/lib/deductions/connectors/fingerprint.ts", "utf8"),
+      /employeeName: row\.employeeFullName \|\| row\.employeeName \|\| null,/,
+      "the monthly fingerprint connector stamps the full name",
+    );
+    assert.match(
+      readFileSync("src/lib/attendance/employee-day-report.ts", "utf8"),
+      /employeeName: dayReport\.employeeFullName,/,
+      "the day report's deduction line stamps the full name",
+    );
+    assert.match(
+      readFileSync("src/lib/deductions/connectors/crm.ts", "utf8"),
+      /employeeName: fullNameByHrIdKey\.get\(key\) \|\| recommendation\.employeeName,/,
+      "a CRM deduction stamps the full name by HR id, because the report it comes from prints the display name",
+    );
+    assert.match(
+      readFileSync("src/lib/private-calendar/service.ts", "utf8"),
+      /employeeName: fullNameByHrId\.get\(exception\.employeeHrId as string\) \|\|/,
+      "a No Records deduction, monthly or daily, stamps the full name",
+    );
+    assert.match(
+      readFileSync("src/lib/hr-ops-reports/bridge.ts", "utf8"),
+      /const fullName = await loadFullNameForDeduction\(draft\.employeeHrId\);/,
+      "a reviewed field day stamps the full name, whatever the report row prints",
+    );
+    assert.match(
+      readFileSync("src/lib/hr-ops-reports/office-section.ts", "utf8"),
+      /employeeName: input\.employee\.employeeFullName \|\| input\.employee\.employeeName,/,
+      "a Head Office report row stores the full name and prints the current name at read",
+    );
+    assert.match(
+      readFileSync("src/lib/vacation/service.ts", "utf8"),
+      /manager_name: approver\.fullName,/,
+      "a reassigned vacation request stores the approver's full name",
+    );
+  }
+
   // ── PR-1.1 Pagination ────────────────────────────────────────────────────
   // WIRING assertion, not a behaviour one. The bug was never that pagination
   // was wrong — it was that it was absent while a helper for it sat in the

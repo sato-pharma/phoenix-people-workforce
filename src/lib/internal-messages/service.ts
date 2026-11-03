@@ -1,6 +1,8 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { ilikeContainsValue, ilikeExactValue, quotedOrClause, searchableTerm } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -18,6 +20,7 @@ type AuthUserRow = {
 type EmployeeContactRow = {
   full_name?: string | null;
   hr_id?: string | null;
+  nickname?: string | null;
   work_email?: string | null;
 };
 
@@ -109,7 +112,20 @@ function schemaMissing(error: unknown) {
 }
 
 function displayNameForUser(user: AuthUserRow | null, employee?: EmployeeContactRow | null) {
-  return cleanText(user?.name) || cleanText(employee?.full_name) || cleanText(user?.login_id) || cleanText(user?.hr_id) || "Phoenix User";
+  const fullName = cleanText(employee?.full_name);
+  return (
+    (fullName && resolveEmployeeDisplayName(fullName, employee?.nickname, employee?.hr_id)) ||
+    cleanText(user?.name) ||
+    cleanText(user?.login_id) ||
+    cleanText(user?.hr_id) ||
+    "Phoenix User"
+  );
+}
+
+// What `internal_messages` stores in sender_name and recipient_name: the full name where there is one.
+// A reader gets the display name at read (`withCurrentDisplayNames`); the stored row is never rewritten.
+function storedNameForUser(user: AuthUserRow | null, employee?: EmployeeContactRow | null) {
+  return cleanText(employee?.full_name) || cleanText(user?.name) || cleanText(user?.login_id) || cleanText(user?.hr_id) || "Phoenix User";
 }
 
 function emailForUser(user: AuthUserRow | null, employee?: EmployeeContactRow | null) {
@@ -148,7 +164,7 @@ async function loadEmployeeByHrId(hrId: string | null | undefined) {
 
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,full_name,work_email")
+    .select("hr_id,full_name,nickname,work_email")
     .eq("hr_id", normalized.toUpperCase())
     .maybeSingle();
 
@@ -213,7 +229,7 @@ async function loadEmployeeByWorkEmail(email: string) {
 
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,full_name,work_email")
+    .select("hr_id,full_name,nickname,work_email")
     .ilike("work_email", term)
     // Current employees only, as in searchInternalMessageRecipients below.
     .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
@@ -283,10 +299,11 @@ async function resolveSender(access: AccessContext) {
     hrId,
     loginId,
     name: displayNameForUser(user, employee),
+    storedName: storedNameForUser(user, employee),
   };
 }
 
-async function resolveRecipient(value: string): Promise<InternalRecipientView> {
+async function resolveRecipient(value: string): Promise<InternalRecipientView & { storedName: string }> {
   const query = cleanText(value);
   if (!query) throw new Error("Recipient is required.");
 
@@ -301,8 +318,9 @@ async function resolveRecipient(value: string): Promise<InternalRecipientView> {
       throw new Error("That work email belongs to more than one employee. Use their HR ID instead.");
     }
     if (byWorkEmail.kind === "one") {
-      const recipient = mapRecipient(await loadAuthUsersForHrId(byWorkEmail.employee.hr_id), byWorkEmail.employee);
-      if (recipient) return recipient;
+      const holder = await loadAuthUsersForHrId(byWorkEmail.employee.hr_id);
+      const recipient = mapRecipient(holder, byWorkEmail.employee);
+      if (recipient) return { ...recipient, storedName: storedNameForUser(holder, byWorkEmail.employee) };
     }
   }
 
@@ -329,7 +347,7 @@ async function resolveRecipient(value: string): Promise<InternalRecipientView> {
     throw new Error("Recipient was not found. Use a Phoenix login ID, HR ID, or work email.");
   }
 
-  return recipient;
+  return { ...recipient, storedName: storedNameForUser(user, employee) };
 }
 
 function mapMessage(row: InternalMessageRow, viewer: { hrId: string | null; loginId: string | null }): InternalMessageView {
@@ -389,8 +407,8 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
       .limit(limit),
     supabase
       .from("employees")
-      .select("hr_id,full_name,work_email")
-      .or(`hr_id.ilike.${normalized},full_name.ilike.${pattern},work_email.ilike.${pattern}`)
+      .select("hr_id,full_name,nickname,work_email")
+      .or(`hr_id.ilike.${normalized},full_name.ilike.${pattern},nickname.ilike.${pattern},work_email.ilike.${pattern}`)
       // The app_auth_users half above is already restricted to is_active accounts; without the
       // same restriction here a resigned employee stayed searchable and addressable purely
       // because their employees row still carries a work_email.
@@ -407,9 +425,14 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
       .filter(([hrId]) => Boolean(hrId)),
   );
   const results = new Map<string, InternalRecipientView>();
+  // A login found by its login id has no employee row in the search's own results.
+  const names = await namesByHrId(((users ?? []) as AuthUserRow[]).map((user) => user.hr_id));
 
   for (const user of (users ?? []) as AuthUserRow[]) {
-    const recipient = mapRecipient(user, employeesByHrId.get(normalizeHrId(user.hr_id)) ?? null);
+    const recipient = mapRecipient(
+      { ...user, name: names.get(user.hr_id) ?? user.name },
+      employeesByHrId.get(normalizeHrId(user.hr_id)) ?? null,
+    );
     if (recipient) results.set(recipient.id.toLowerCase(), recipient);
   }
 
@@ -425,6 +448,16 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
       return recipientIdentity !== senderIdentity;
     })
     .slice(0, limit);
+}
+
+/** A stored sender_name / recipient_name is what was written then; the reader sees today's display name. */
+async function withCurrentDisplayNames(messages: InternalMessageView[]): Promise<InternalMessageView[]> {
+  const names = await namesByHrId(messages.flatMap((message) => [message.recipient.hrId, message.sender.hrId]));
+  return messages.map((message) => ({
+    ...message,
+    recipient: { ...message.recipient, name: names.get(message.recipient.hrId) ?? message.recipient.name },
+    sender: { ...message.sender, name: names.get(message.sender.hrId) ?? message.sender.name },
+  }));
 }
 
 export async function listInternalMessagesForViewer(access: AccessContext, limit = 20) {
@@ -476,7 +509,7 @@ export async function listInternalMessagesForViewer(access: AccessContext, limit
     if (early && early.rows === null) throw early.error;
     const rows = early?.rows ?? (await readMessageRows(filters));
 
-    const messages = rows.map((row) => mapMessage(row, sender));
+    const messages = await withCurrentDisplayNames(rows.map((row) => mapMessage(row, sender)));
     return {
       messages,
       unreadCount: messages.filter((message) => message.direction === "inbox" && !message.readAt).length,
@@ -506,10 +539,10 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
       recipient_email: recipient.email,
       recipient_hr_id: recipient.hrId,
       recipient_login_id: recipient.loginId,
-      recipient_name: recipient.name,
+      recipient_name: recipient.storedName,
       sender_hr_id: sender.hrId,
       sender_login_id: sender.loginId,
-      sender_name: sender.name,
+      sender_name: sender.storedName,
       source: "topbar",
       subject,
       updated_at: now,
@@ -607,6 +640,8 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
         email_error: emailError,
         email_provider_id: emailProviderId,
         email_status: emailStatus,
+        recipient_name: recipient.name,
+        sender_name: sender.name,
       }, sender),
       direction: "sent" as const,
     },

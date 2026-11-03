@@ -882,7 +882,8 @@ export function mapEmployeeFacts(
 ): HiringPackEmployeeFacts {
   return {
     hrId: row.hr_id,
-    fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id),
+    // The papers are legal documents: the full name, never the nickname (owner, 2026-11-03).
+    fullName: row.full_name?.trim() || row.hr_id,
     nameAr: cleanText(row.name_ar),
     nationalId: cleanText(row.national_id),
     gender: cleanText(row.gender),

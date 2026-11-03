@@ -2150,6 +2150,15 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // trg_employees_seat_start_follows_hire_date is present and `authenticated` cannot execute the new function,
   // both read in the same query. Re-applying it is a no-op (`create or replace`, `drop trigger if exists`).
   "20261103133000_seat_start_follows_the_job_offer.sql",
+
+  // Applied 2026-11-03 through scripts/apply-sql-file.mjs on staging and production, because the
+  // Supabase MCP's apply_migration returned {"status":"declined"} on staging and nothing had landed.
+  // That route writes NO ledger row. Verified by digest, not presence: on BOTH projects
+  // md5(pg_proc.prosrc) for public.crm_person_by_hr_key_calc is 1df4dc7c013a1518fb4d75ae5f6a471b, equal
+  // to this file's dollar-quoted body. The trigger crm_person_by_hr_key_sync names nickname, the function
+  // stays service_role only and crm_person_by_hr_key_reconcile() returned 0, read back the same evening.
+  // Re-applying it is a no-op (`create or replace`, `drop trigger if exists`, a rebuild).
+  "20261103213631_crm_doors_name_people_by_their_display_name.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

@@ -770,21 +770,26 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   // live rows — 5 of July 2026's 24 CRM candidates. A null title reads as "Saturday off" and would
   // silently weight those Saturdays to zero, under-deducting.
   const titleByHrIdKey = new Map<string, string | null>();
+  // What the deduction line stores: the full name. The report's own name is the display name.
+  const fullNameByHrIdKey = new Map<string, string | null>();
   {
     // FAILS CLOSED. The error used to be discarded, and the comment above says exactly what that
     // costs: with no titles every job title reads as null, a null title reads as "Saturday off",
     // and every Saturday is weighted to zero. A failed read therefore under-charged the whole
     // month's CRM deductions and looked like an ordinary result while doing it.
-    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,job_title,full_name");
     if (error) {
       throw new Error(
         `Failed to load job titles for the CRM day weighting: ${error.message}. ` +
           "Without them every Saturday weights to zero and the month under-charges.",
       );
     }
-    for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
+    for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null; full_name: string | null }>) {
       const key = canonicalHrIdKey(row.hr_id);
-      if (key) titleByHrIdKey.set(key, row.job_title);
+      if (key) {
+        titleByHrIdKey.set(key, row.job_title);
+        fullNameByHrIdKey.set(key, row.full_name?.trim() || null);
+      }
     }
   }
 
@@ -822,7 +827,7 @@ async function collectContinuingEmployeeCrmCandidates(input: {
       sourceSystem: "crm_visits_mirror",
       sourceRecordId: `${recommendation.importId}:${recommendation.recommendationKey}`,
       employeeHrId: recommendation.employeeCode,
-      employeeName: recommendation.employeeName,
+      employeeName: fullNameByHrIdKey.get(key) || recommendation.employeeName,
       monthKey: recommendation.monthKey,
       month: input.month,
       year: input.year,

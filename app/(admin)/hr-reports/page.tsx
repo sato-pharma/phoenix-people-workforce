@@ -7,6 +7,7 @@ import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadReportList, type HrOpsQueueReport } from "@/lib/hr-ops-reports/queue";
+import { withCurrentLineNames } from "@/lib/hr-ops-reports/line-names";
 import { viewReportWithLines } from "@/lib/hr-ops-reports/serialize";
 import { getReport, getReportLines } from "@/lib/hr-ops-reports/store";
 import { isUuid } from "@/lib/http/uuid";
@@ -56,7 +57,7 @@ export default async function HrOpsReportsPage({
     const id = pickReport(reports, mode, wanted);
     if (id) {
       const report = await getReport(id);
-      if (report) selected = viewReportWithLines(report, await getReportLines(id));
+      if (report) selected = viewReportWithLines(report, await withCurrentLineNames(await getReportLines(id)));
     }
   } catch (error) {
     loadError = error instanceof Error ? error.message : "The reports could not be loaded.";

@@ -1,8 +1,10 @@
 import { cache } from "react";
 
 import { getRequiredEnv } from "@/lib/env";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { pickDepartmentSafeVacancy } from "@/lib/employees/vacancy-matching";
-import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { quotedInList } from "@/lib/supabase/search-filter";
 
 // Open-vacancy lookups and the hire-time vacancy closer used by
 // src/lib/employees/employee-directory.ts. Kept in its own module (talks to
@@ -139,6 +141,37 @@ async function loadEmployeeFullName(hrId: string | null) {
   return compact(rows[0]?.full_name);
 }
 
+/**
+ * HR id → display name for the managers named on the open seats. `position_vacancies.manager_name`
+ * stays the raw snapshot; a seat prints its manager's display name, read here by id. Written on this
+ * module's own REST client because it must not pull in the Node-only Supabase client (see the top of
+ * the file). Chunked at 50 keys for the same reason as `namesByHrId`, and a failed chunk costs only
+ * the names in it: those seats keep the stored name, and the seat list still loads.
+ */
+async function loadManagerDisplayNames(hrIds: Array<string | null>) {
+  const keys = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
+  const names = new Map<string, string>();
+  for (let start = 0; start < keys.length; start += 50) {
+    try {
+      const params = new URLSearchParams({
+        hr_id: `in.(${quotedInList(keys.slice(start, start + 50))})`,
+        select: "hr_id,full_name,nickname",
+      });
+      const rows = await supabaseRest<Array<{ full_name: string | null; hr_id: string | null; nickname: string | null }>>(
+        `employees?${params}`,
+      );
+      for (const row of rows) {
+        const key = canonicalHrIdKey(row.hr_id);
+        const fullName = compact(row.full_name);
+        if (key && fullName) names.set(key, resolveEmployeeDisplayName(fullName, row.nickname, row.hr_id));
+      }
+    } catch {
+      continue;
+    }
+  }
+  return names;
+}
+
 // Memoized per-request (React cache()): getOpenWorkforceVacancies()/getOpenMedicalRepVacancies()
 // are reached independently from the same /overview + command-center request paths (via
 // getEmployeeDirectory()'s internal vacancy calls), so without this a single page load issued
@@ -212,6 +245,8 @@ const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
       vacancies = await loadRows(false);
     }
 
+    const managerNames = await loadManagerDisplayNames(vacancies.map((v) => v.manager_hr_id));
+
     return vacancies.map((v) => {
       const positionTitle = v.positions?.title ?? v.job_title ?? "";
       return {
@@ -222,7 +257,7 @@ const getOpenVacancies = cache(async (): Promise<VacancyLookupRow[]> => {
         lineId: v.line_id,
         lineName: v.lines?.name ?? "Unknown Line",
         managerHrId: v.manager_hr_id,
-        managerName: v.manager_name,
+        managerName: managerNames.get(canonicalHrIdKey(v.manager_hr_id) ?? "") ?? v.manager_name,
         positionId: v.position_id,
         positionTitle,
         regionName: v.region_name,

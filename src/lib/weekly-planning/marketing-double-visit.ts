@@ -23,9 +23,15 @@ const OFFERED_TO = new Set<string>(["Product Manager", "Group Product Manager"])
 const PARTNER_ROLES = new Set<string>(["Product Manager", "Group Product Manager", "Marketing Manager"]);
 
 export type MarketingDoubleVisitPartner = {
+  /** The name a person reads: the display name wherever the caller holds one. */
   fullName: string;
   hrId: string;
   jobTitle: string | null;
+  /**
+   * The legal name, when `fullName` is a display name. `attendees` is a raw snapshot: it is written
+   * with this and a saved plan holds it, so a saved partner must still be recognised by it.
+   */
+  legalName?: string | null;
 };
 
 export function isMarketingDoubleVisit(activityType: string | null | undefined, activityTitle: string | null | undefined) {
@@ -47,22 +53,35 @@ export function canPlanMarketingDoubleVisit(jobTitle: string | null | undefined,
  * caller owns that rule. The owner is removed however their HR id is cased or padded.
  */
 export function marketingDoubleVisitPartners(
-  candidates: ReadonlyArray<{ fullName: string; hrId: string; jobTitle: string | null }>,
+  candidates: ReadonlyArray<{ fullName: string; hrId: string; jobTitle: string | null; legalName?: string | null }>,
   ownerHrId: string | null | undefined,
 ): MarketingDoubleVisitPartner[] {
   return candidates
     .filter((candidate) => PARTNER_ROLES.has(resolveJobFunctionRole(candidate.jobTitle)))
     .filter((candidate) => !ownerHrId || !hrIdsMatch(candidate.hrId, ownerHrId))
-    .map((candidate) => ({ fullName: candidate.fullName, hrId: candidate.hrId, jobTitle: candidate.jobTitle }))
+    .map((candidate) => ({
+      fullName: candidate.fullName,
+      hrId: candidate.hrId,
+      jobTitle: candidate.jobTitle,
+      ...(candidate.legalName ? { legalName: candidate.legalName } : {}),
+    }))
     .sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
-/** The partner a stored or submitted name refers to, matched on the name alone (case and spacing ignored). */
+/**
+ * The partner a stored or submitted name refers to, matched on the name alone (case and spacing
+ * ignored): the name offered in the picker first, then the legal name a saved plan holds.
+ */
 export function findMarketingDoubleVisitPartner(
   partners: ReadonlyArray<MarketingDoubleVisitPartner>,
   name: string | null | undefined,
 ) {
   const key = String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
   if (!key) return null;
-  return partners.find((partner) => partner.fullName.trim().replace(/\s+/g, " ").toLowerCase() === key) ?? null;
+  const normalized = (value: string | null | undefined) => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const onlyMatch = (read: (partner: MarketingDoubleVisitPartner) => string | null | undefined) => {
+    const matches = partners.filter((partner) => normalized(read(partner)) === key);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  return onlyMatch((partner) => partner.fullName) ?? onlyMatch((partner) => partner.legalName);
 }

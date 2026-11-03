@@ -59,7 +59,7 @@ export async function runBirthdayNotifications(request: Request) {
     activeEmployees.map((employee) => ({
       areaName: "",
       birthDate: employee.birth_date ?? "",
-      fullName: resolveEmployeeDisplayName(employee.full_name, employee.nickname),
+      fullName: resolveEmployeeDisplayName(employee.full_name, employee.nickname, employee.hr_id),
       hireDate: "",
       hrId: employee.hr_id,
       jobTitle: "",

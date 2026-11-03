@@ -33,6 +33,7 @@
 // employees and burn the per-line idempotency key. `send`/`sendToRecipients` default to the live
 // orchestrator; the loaders default to the live org tree and employees table.
 
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { formatCurrencyValue, formatPhoenixLongDate } from "@/lib/i18n/format";
 import type { SystemNotificationResult } from "@/lib/notifications/system";
 import {
@@ -249,13 +250,19 @@ export async function notifyDeductionPushed(input: {
   sendToRecipients?: SendManyFn;
   loadOrg?: () => Promise<OrgIndex>;
   loadDirectManagerHrId?: (employeeHrId: string) => Promise<string | null>;
+  loadShownName?: (employeeHrId: string) => Promise<string | null>;
 }): Promise<DeductionPushNotificationResult> {
   const send = input.send ?? createSystemNotification;
   const sendToRecipients = input.sendToRecipients ?? createSystemNotificationForRecipients;
   const loadOrg = input.loadOrg ?? loadPhoenixCrmOrg;
   const loadDirectManagerHrId = input.loadDirectManagerHrId ?? loadDirectManagerHrIdDefault;
 
-  const { line } = input;
+  // The line's stored name stays raw, because payroll reads it. The notice prints the name the
+  // person goes by, and a failed read falls back to the stored one rather than losing the notice.
+  const loadShownName =
+    input.loadShownName ?? (async (hrId: string) => (await namesByHrId([hrId])).get(hrId));
+  const shownName = await loadShownName(input.line.employeeHrId).catch(() => null);
+  const line = shownName ? { ...input.line, employeeName: shownName } : input.line;
   const monthLabel = formatDeductionMonthLabel(line.monthKey);
   const employeeName = line.employeeName?.trim() || line.employeeHrId;
 

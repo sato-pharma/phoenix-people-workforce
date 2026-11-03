@@ -8,6 +8,7 @@ import {
 } from "@/lib/attendance/work-schedule";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 export type AttendancePolicyTargetType = "default" | "employee_hr_id" | "job_title";
 export type AttendancePolicyEventType = "absence" | "early_leave" | "exception" | "late" | "single_punch";
@@ -196,7 +197,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
       .order("id"),
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title")
+      .select("hr_id,full_name,nickname,job_title")
       .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
       .order("full_name"),
     loadActiveDeviceMappedHrIds(),
@@ -222,7 +223,7 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
     rulesByPolicy.set(rule.policy_id, list);
   }
 
-  const employeeRows = (employeeResult.data ?? []) as Array<{ full_name: string | null; hr_id: string; job_title: string | null }>;
+  const employeeRows = (employeeResult.data ?? []) as Array<{ full_name: string | null; hr_id: string; job_title: string | null; nickname: string | null }>;
   // Tracked = actively enrolled on a fingerprint device (office/HQ staff) OR a
   // field role by title (Medical Rep / DM / RSM). See isAttendanceTracked.
   const eligibleEmployeeRows = employeeRows.filter((row) =>
@@ -233,7 +234,12 @@ export async function getAttendancePolicyDashboard(): Promise<AttendancePolicyDa
   );
   const employees = eligibleEmployeeRows
     .filter((row) => row.hr_id)
-    .map((row) => ({ fullName: row.full_name?.trim() || row.hr_id, hrId: row.hr_id }));
+    .map((row) => ({
+      fullName: row.full_name?.trim() ? resolveEmployeeDisplayName(row.full_name.trim(), row.nickname, row.hr_id) : row.hr_id,
+      hrId: row.hr_id,
+    }))
+    // The query sorts by the stored name; the list reads by the printed one.
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
   const jobTitles = Array.from(new Set(eligibleEmployeeRows.map((row) => row.job_title?.trim()).filter((value): value is string => Boolean(value)))).sort();
 
   const policies = (policyRows as PolicyDbRow[]).map((policy) => ({

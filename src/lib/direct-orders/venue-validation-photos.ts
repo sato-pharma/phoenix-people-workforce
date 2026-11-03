@@ -1,3 +1,4 @@
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { hrIdLookupKeys, canonicalHrIdKey } from "@/lib/hr-id";
 import { MARKETING_EVIDENCE_BUCKET } from "@/lib/marketing-requests/evidence-photo-storage";
 import type { DirectOrderVenueValidationPhoto } from "@/lib/direct-orders/types";
@@ -132,11 +133,11 @@ async function loadNames(hrIds: Array<string | null>): Promise<(hrId: string | n
   const keys = Array.from(new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId))));
   const names = new Map<string, string>();
   if (keys.length > 0) {
-    const rows = await selectIn("employees", "hr_id", keys, "hr_id, full_name");
+    const rows = await selectIn("employees", "hr_id", keys, "hr_id, full_name, nickname");
     for (const row of rows) {
       const key = canonicalHrIdKey(text(row, "hr_id"));
       const name = text(row, "full_name");
-      if (key && name) names.set(key, name);
+      if (key && name) names.set(key, resolveEmployeeDisplayName(name, text(row, "nickname"), text(row, "hr_id")));
     }
   }
   // A name, never an HR id — an id nobody can resolve is said as such.

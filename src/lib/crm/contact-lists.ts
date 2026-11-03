@@ -35,6 +35,7 @@
 import { unstable_cache } from "next/cache";
 
 import { fetchAllRowsKeyset, keysetRanges } from "@/lib/supabase/paginated";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
@@ -439,10 +440,15 @@ export async function getDoctorListBoard(input: {
     const chunk = hrIds.slice(from, from + 50);
     const { data, error } = await getSupabaseAdmin()
       .from("employees")
-      .select("hr_id, full_name")
+      .select("hr_id, full_name, nickname")
       .in("hr_id", chunk);
     if (error) throw new Error(`Could not read rep names: ${error.message}`);
-    for (const row of data ?? []) nameByHrId.set(row.hr_id as string, (row.full_name as string) ?? "");
+    for (const row of data ?? []) {
+      nameByHrId.set(
+        row.hr_id as string,
+        row.full_name ? resolveEmployeeDisplayName(row.full_name as string, row.nickname as string | null, row.hr_id as string) : "",
+      );
+    }
   }
   for (const rep of reps) {
     rep.name = (rep.hrId ? nameByHrId.get(rep.hrId) : "") || `CRM account ${rep.agentCrmId} — not on the roster`;

@@ -1,4 +1,5 @@
-import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { DisputeCaseEvent, DisputeCaseEventType, DisputeCaseKind } from "./types.ts";
@@ -31,19 +32,12 @@ function isMissingTable(error: unknown): boolean {
 /** Full names for HR ids, keyed by canonical key. Best-effort: a failed read leaves names null. */
 export async function resolvePeopleNames(hrIds: Array<string | null | undefined>): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  const lookups = Array.from(new Set(hrIds.flatMap((id) => (id ? hrIdLookupKeys(id) : []))));
-  if (lookups.length === 0) return names;
-  for (let i = 0; i < lookups.length; i += 200) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("employees")
-      .select("hr_id, full_name")
-      .in("hr_id", lookups.slice(i, i + 200));
-    if (error) return names;
-    for (const row of (data ?? []) as Array<{ full_name?: string | null; hr_id?: string | null }>) {
-      const key = canonicalHrIdKey(row.hr_id);
-      const name = String(row.full_name ?? "").trim();
-      if (key && name) names.set(key, name);
-    }
+  // Display names: everything this map feeds is a screen or a notification (owner, 2026-11-03).
+  const index = await namesByHrId(hrIds);
+  for (const id of hrIds) {
+    const key = canonicalHrIdKey(id);
+    const name = index.get(id);
+    if (key && name) names.set(key, name);
   }
   return names;
 }

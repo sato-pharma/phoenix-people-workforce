@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { queryVisits } from "@/lib/crm/reads";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso, formatDateValue } from "@/lib/i18n/format";
 import { cairoBusinessDay } from "@/lib/phoenix-crm/calendar";
@@ -106,13 +107,13 @@ async function loadRosterNames(hrIds: readonly string[]): Promise<Map<string, st
   for (let start = 0; start < lookupKeys.length; start += 50) {
     const { data, error } = await supabase
       .from("employees")
-      .select("hr_id, full_name")
+      .select("hr_id, full_name, nickname")
       .in("hr_id", lookupKeys.slice(start, start + 50));
     if (error) continue;
-    for (const row of (data ?? []) as Array<{ full_name: string | null; hr_id: string | null }>) {
+    for (const row of (data ?? []) as Array<{ full_name: string | null; hr_id: string | null; nickname: string | null }>) {
       const key = row.hr_id?.trim().toLowerCase();
       const name = row.full_name?.trim();
-      if (key && name) names.set(key, name);
+      if (key && name) names.set(key, resolveEmployeeDisplayName(name, row.nickname, row.hr_id));
     }
   }
   return names;

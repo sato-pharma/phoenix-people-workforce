@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { hrOpsErrorResponse, reportIdOrNull } from "@/lib/hr-ops-reports/http";
+import { withCurrentLineNames } from "@/lib/hr-ops-reports/line-names";
 import { viewReportWithLines } from "@/lib/hr-ops-reports/serialize";
 import { getReport, getReportLines } from "@/lib/hr-ops-reports/store";
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!id) return NextResponse.json({ message: "That report does not exist." }, { status: 404 });
     const report = await getReport(id);
     if (!report) return NextResponse.json({ message: "That report does not exist." }, { status: 404 });
-    return NextResponse.json(viewReportWithLines(report, await getReportLines(id)));
+    return NextResponse.json(viewReportWithLines(report, await withCurrentLineNames(await getReportLines(id))));
   } catch (error) {
     return hrOpsErrorResponse(error, "Failed to load the report.");
   }

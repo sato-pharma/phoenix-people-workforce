@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache.js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import {
   ACTIVE_VIEW_CAP_SECONDS,
@@ -335,7 +336,7 @@ async function loadIdentityMaps(): Promise<IdentityMaps> {
   const [employees, accounts] = await Promise.all([
     fetchAll(
       "employees",
-      "hr_id,full_name,job_title,region_name,employment_status",
+      "hr_id,full_name,nickname,job_title,region_name,employment_status",
       (q) => q,
       50_000,
     ).then((result) => result.rows),
@@ -351,8 +352,9 @@ async function loadIdentityMaps(): Promise<IdentityMaps> {
   for (const row of employees) {
     const hr = normalizeHrId(str(row.hr_id));
     if (!hr) continue;
+    const fullName = str(row.full_name);
     employeeByHrId.set(hr, {
-      name: str(row.full_name) ?? hr,
+      name: fullName ? resolveEmployeeDisplayName(fullName, str(row.nickname), hr) : hr,
       jobTitle: str(row.job_title),
       team: str(row.region_name),
       status: str(row.employment_status),

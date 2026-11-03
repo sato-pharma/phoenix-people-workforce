@@ -37,8 +37,14 @@ the agent is kept — an employee whose name is an empty string must read as "no
 five Phoenix slots read the raw column. **Swap them and the door still runs**, which is why the test
 pins each site by name.
 
+**Since 2026-11-03 the two columns hold the DISPLAY name**, the nickname else the full name
+(`20261103213631_crm_doors_name_people_by_their_display_name.sql`; owner: "One PR, legal stays"). The
+column names did not change, so neither door's body did. Every CRM screen prints these columns, so they
+all read the name the rest of the system shows. A paper that needs the legal name reads
+`employees.full_name`, never a door.
+
 **Staleness.** `employees` is the only input, and an `AFTER … FOR EACH STATEMENT` trigger on it —
-insert, delete, or an update of `hr_id`, `crm_id` or `full_name` — rebuilds all 220 rows *through
+insert, delete, or an update of `hr_id`, `crm_id`, `full_name` or `nickname` — rebuilds all 220 rows *through
 `_calc()`* inside the writer's own transaction. A hire or a rename is therefore exact on the hot path.
 `crm_person_by_hr_key_reconcile()` runs every 15 minutes on pg_cron as a safety net for a write that
 bypasses the trigger (a TRUNCATE, a disabled trigger, a restore); it compares values, repairs, and

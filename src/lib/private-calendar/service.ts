@@ -708,13 +708,15 @@ export async function getCompanyNoActivityDays(input: {
     start: input.start,
   });
 
+  // These days become deduction lines, which store the full name, not the name the calendar prints.
+  const fullNameByHrId = new Map(employees.map((employee) => [employee.hrId, employee.fullName]));
   return exceptions
     .filter((exception) => exception.title === "No Activity Recorded" && exception.employeeHrId)
     .map((exception) => ({
       date: exception.date,
       description: exception.description,
       employeeHrId: exception.employeeHrId as string,
-      employeeName: exception.employeeName ?? exception.employeeHrId as string,
+      employeeName: fullNameByHrId.get(exception.employeeHrId as string) || (exception.employeeName ?? exception.employeeHrId as string),
     }));
 }
 

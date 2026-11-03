@@ -9,6 +9,7 @@
 import { unstable_cache } from "next/cache";
 
 import { buildCoverageFilterTree, type CoverageFilterTree } from "@/lib/crm/coverage-filters";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const clean = (value: string | null | undefined): string => (value ?? "").trim();
@@ -51,6 +52,11 @@ export const loadCoverageFilterTree = unstable_cache(
     if (regionRes.error) throw new Error(regionRes.error.message);
     if (lineRes.error) throw new Error(lineRes.error.message);
 
+    const seatRows = (seatsRes.data ?? []) as Array<Record<string, string | null>>;
+    // The view carries `full_name` only: a rep is printed by his display name, read by HR id, and a
+    // failed name read keeps the view's name.
+    const repNames = await namesByHrId(seatRows.map((row) => row.hr_id)).catch(() => null);
+
     return buildCoverageFilterTree({
       lineNames: namesFrom((lineRes.data ?? []) as Array<Record<string, string | null>>, "code", "name"),
       mapRows: ((mapRes.data ?? []) as Array<Record<string, string | null>>).map((row) => ({
@@ -61,8 +67,8 @@ export const loadCoverageFilterTree = unstable_cache(
         repSeatId: row.rep_seat_id,
       })),
       regionNames: namesFrom((regionRes.data ?? []) as Array<Record<string, string | null>>, "region_code", "region_name"),
-      seats: ((seatsRes.data ?? []) as Array<Record<string, string | null>>).map((row) => ({
-        fullName: row.full_name,
+      seats: seatRows.map((row) => ({
+        fullName: repNames?.get(row.hr_id) ?? row.full_name,
         hrId: row.hr_id,
         seatId: row.seat_id,
         seatTier: row.seat_tier,

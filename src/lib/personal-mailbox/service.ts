@@ -28,6 +28,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidatePersonalMailboxConnectionCache, PERSONAL_MAILBOX_CONNECTION_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { describeImapError, normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
 import { logError } from "@/lib/observability/log";
@@ -186,14 +187,15 @@ export async function resolveMailboxOwner(access: AccessContext): Promise<Person
     // it does not for a new hire whose company address was filled in after their login was made.
     const { data, error } = await db()
       .from("employees")
-      .select("work_email,full_name")
+      .select("work_email,full_name,nickname")
       .in("hr_id", hrIdLookupKeys(hrId))
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    const row = data as { work_email?: string | null; full_name?: string | null } | null;
+    const row = data as { work_email?: string | null; full_name?: string | null; nickname?: string | null } | null;
     workEmail = row?.work_email ?? null;
-    employeeName = row?.full_name?.trim() || null;
+    const fullName = row?.full_name?.trim();
+    employeeName = fullName ? resolveEmployeeDisplayName(fullName, row?.nickname, hrId) : null;
   }
 
   const { data: loginRow, error: loginError } = await db()

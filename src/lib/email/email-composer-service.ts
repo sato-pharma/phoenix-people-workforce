@@ -85,11 +85,12 @@ function employeeEmail(employee: EmployeeDirectoryRow) {
 }
 
 function employeeLabel(employee: EmployeeDirectoryRow) {
-  return `${employee.fullName} (${employee.hrId})`;
+  return `${employee.displayName} (${employee.hrId})`;
 }
 
 function employeeSearchText(employee: EmployeeDirectoryRow) {
   return [
+    employee.displayName,
     employee.fullName,
     employee.hrId,
     employee.workEmail,
@@ -148,11 +149,11 @@ function composerContextFromEmployee(employee: EmployeeDirectoryRow | null | und
   return {
     area: employee?.areaName ?? "",
     employeeHrId: employee?.hrId ?? "",
-    employeeName: employee?.fullName ?? "",
+    employeeName: employee?.displayName ?? "",
     jobTitle: employee?.positionTitle ?? employee?.jobTitle ?? "",
     line: employee?.lineName ?? "",
     managerName: employee?.managerName ?? "",
-    recipientName: employee?.fullName?.split(/\s+/)[0] ?? "",
+    recipientName: employee?.displayName?.split(/\s+/)[0] ?? "",
     summary: "",
   };
 }

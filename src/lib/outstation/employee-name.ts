@@ -14,15 +14,21 @@
  * The persisted column itself stays raw. Nothing here writes: the stored value remains the audit
  * trail of what was true at submit time, and the resolution happens at render.
  *
- * It resolves to the RECORD name, not to `displayName`, because displayName is nickname-first by
- * design — resolving to it would put the nicknames straight back on the screens the 2026-09-21
- * repair aligned to the record names.
+ * A reader shows the DISPLAY name (owner, 2026-11-03: every screen and email shows a person by their
+ * display name, reversing the 2026-09-21 alignment to the record name). A row stamped from a request
+ * this module has re-named must therefore take `employeeRecordName`, never `employeeName` — that is
+ * what `loadLiveOutstationRecordNames` is for: the payroll ledger's `specialist` keeps the full name.
  *
  * A leaver still resolves: the directory selects every employee row, with no status filter.
  */
 
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { employeeRecordName, resolveEmployeeRecordName } from "@/lib/employees/record-name";
+import {
+  employeeRecordName,
+  employeeShownName,
+  resolveEmployeeRecordName,
+  type EmployeeRecordNameSource,
+} from "@/lib/employees/record-name";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /**
@@ -42,7 +48,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
  */
 export const outstationRecordName = employeeRecordName;
 
-/** HR id key -> the employee record's name, resolved exactly as a new row would stamp it. */
+/** HR id key -> one name for that person: what a reader shows, or what a new row would stamp. */
 export type LiveOutstationEmployeeNames = ReadonlyMap<string, string>;
 
 const NO_LIVE_NAMES: LiveOutstationEmployeeNames = new Map();
@@ -57,24 +63,39 @@ const NO_LIVE_NAMES: LiveOutstationEmployeeNames = new Map();
  * then falls back to the stored name. A rename failing to propagate is a cosmetic miss; an
  * approvals queue that will not render because the directory blinked is an outage.
  */
-export async function loadLiveOutstationEmployeeNames(): Promise<LiveOutstationEmployeeNames> {
+async function loadLiveNames(
+  nameOf: (employee: EmployeeRecordNameSource) => string,
+): Promise<LiveOutstationEmployeeNames> {
   try {
     const { employees } = await getEmployeeDirectory();
     const names = new Map<string, string>();
     for (const employee of employees) {
       const key = canonicalHrIdKey(employee.hrId);
       if (!key) continue;
-      names.set(key, outstationRecordName(employee));
+      names.set(key, nameOf(employee));
     }
     return names;
   } catch (error) {
     console.log("Outstation live employee names unavailable, showing the stored names", {
       level: "warning",
-      tags: { component: "outstation", action: "loadLiveOutstationEmployeeNames" },
+      tags: { component: "outstation", action: "loadLiveNames" },
       extra: { message: error instanceof Error ? error.message : String(error) },
     });
     return NO_LIVE_NAMES;
   }
+}
+
+/** READ SIDE: what a screen or an email prints for each person — the display name. */
+export async function loadLiveOutstationEmployeeNames(): Promise<LiveOutstationEmployeeNames> {
+  return loadLiveNames(employeeShownName);
+}
+
+/**
+ * WRITE SIDE: the record's full name for each person, for a request that will stamp the payroll
+ * ledger (`employeeRecordName` on OutstationExpenseRequest). Never printed.
+ */
+export async function loadLiveOutstationRecordNames(): Promise<LiveOutstationEmployeeNames> {
+  return loadLiveNames(outstationRecordName);
 }
 
 /**

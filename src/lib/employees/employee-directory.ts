@@ -2776,6 +2776,42 @@ async function patchOptionalTable(path: string, payload: Record<string, unknown>
   }
 }
 
+/**
+ * The write that carries a saved employee's display name onto his logins (`app_auth_users.name`, read
+ * by the top bar, the sender line and every other reader of the login). Built from the row the save
+ * RETURNED, because a payload is not the stored record. Every spelling of the HR id, since logins
+ * hold mixed case. A test account keeps its own name; it holds no hr_id, and is fenced here as well.
+ */
+export function loginNameSyncFor(row: Pick<EmployeeDbRow, "full_name" | "hr_id" | "nickname"> | null | undefined) {
+  const fullName = compact(row?.full_name);
+  const keys = hrIdLookupKeys(row?.hr_id);
+  if (!fullName || keys.length === 0) return null;
+
+  const params = new URLSearchParams({ hr_id: textInFilter(keys), is_test_persona: "is.false" });
+  return {
+    path: `app_auth_users?${params}`,
+    payload: {
+      name: resolveEmployeeDisplayName(fullName, row?.nickname, row?.hr_id),
+      updated_at: new Date().toISOString(),
+    },
+  };
+}
+
+// The employee record is already saved when this runs, so a failure here is logged, never thrown.
+async function syncLoginDisplayName(row: EmployeeDbRow | null | undefined) {
+  const sync = loginNameSyncFor(row);
+  if (!sync) return;
+
+  try {
+    await patchOptionalTable(sync.path, sync.payload);
+  } catch (error) {
+    logError("Employee saved but the login's display name could not be updated", {
+      labels: { event: "employee_login_name_sync_failed", component: "employee-directory", hr_id: row?.hr_id ?? null },
+      error,
+    });
+  }
+}
+
 async function replacementForVacancy(vacancyId: number | null | undefined) {
   if (!vacancyId) {
     return null;
@@ -2965,6 +3001,8 @@ export async function upsertEmployee(input: EmployeeMutationInput, actor?: Emplo
     },
     method: "POST",
   });
+
+  await syncLoginDisplayName(rows[0]);
 
   await Promise.all([
     upsertEmployeeCompensation(payload.hr_id, input),

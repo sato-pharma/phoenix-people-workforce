@@ -9,6 +9,7 @@
 // every code all come out of the same 133 rows. Reading a rep-only slice is the mistake this file
 // exists to avoid repeating.
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -59,7 +60,7 @@ export async function loadSpotlightOrg(): Promise<SpotlightOrgIndex> {
       "au_v_org_tree_sales",
       "seat_id, parent_seat_id, seat_tier, line_code, line_name, region_code, region_name, area_code, area_name, occupant_hr_id, is_vacant, seat_display_label",
     ),
-    selectAll("employees", "hr_id, full_name, name_ar, job_title"),
+    selectAll("employees", "hr_id, full_name, nickname, name_ar, job_title"),
   ]);
 
   const seats = new Map<string, OrgSeat>();
@@ -111,6 +112,7 @@ export async function loadSpotlightOrg(): Promise<SpotlightOrgIndex> {
     people.set(hrKey(hrId), {
       hrId,
       fullName,
+      displayName: resolveEmployeeDisplayName(fullName, text(row.nickname), hrId),
       nameAr: text(row.name_ar),
       jobTitle: text(row.job_title),
     });
@@ -124,7 +126,8 @@ export type SpotlightFacets = {
   lines: { code: string; name: string }[];
   regions: { code: string; name: string; lineCodes: string[] }[];
   areas: { code: string; name: string; regionCode: string | null; lineCodes: string[] }[];
-  people: { hrId: string; name: string; roleLabel: string; territory: string; lineName: string | null }[];
+  /** `name` is what the picker prints; `fullName` is there only so the search finds either name. */
+  people: { hrId: string; name: string; fullName: string; roleLabel: string; territory: string; lineName: string | null }[];
 };
 
 const TIER_LABEL: Record<string, string> = {
@@ -168,7 +171,8 @@ export function facetsFrom(index: SpotlightOrgIndex): SpotlightFacets {
     if (person && seat.tier !== "CEO" && !isRegionalManagerHeldDistrict(seat.seatId)) {
       people.push({
         hrId: person.hrId,
-        name: person.fullName,
+        name: person.displayName ?? person.fullName,
+        fullName: person.fullName,
         roleLabel: TIER_LABEL[seat.tier] ?? seat.tier,
         territory: seat.areaName ?? seat.regionName ?? "Egypt",
         lineName: seat.lineName,

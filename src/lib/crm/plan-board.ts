@@ -33,6 +33,7 @@ import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contac
 import { dayScanSlices, readCompanyWindow } from "@/lib/crm/reads";
 import { planEntryKeysetAfter } from "@/lib/crm/plan-entry-keyset";
 import { loadContactPlacements } from "@/lib/crm/reps-list";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
@@ -907,9 +908,14 @@ export async function getPlanVerificationBoard(input: {
   const nameByHrId = new Map<string, string>();
   for (let from = 0; from < hrIds.length; from += IN_CHUNK) {
     const chunk = hrIds.slice(from, from + IN_CHUNK);
-    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, full_name").in("hr_id", chunk);
+    const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id, full_name, nickname").in("hr_id", chunk);
     if (error) throw new Error(`Could not read rep names: ${error.message}`);
-    for (const row of data ?? []) nameByHrId.set(row.hr_id as string, (row.full_name as string) ?? "");
+    for (const row of data ?? []) {
+      nameByHrId.set(
+        row.hr_id as string,
+        row.full_name ? resolveEmployeeDisplayName(row.full_name as string, row.nickname as string | null, row.hr_id as string) : "",
+      );
+    }
   }
   for (const plan of plans) {
     plan.repName =
@@ -975,12 +981,12 @@ export async function getPlanVerificationBoard(input: {
     const chunk = missingHrIds.slice(from, from + IN_CHUNK);
     const { data, error } = await getSupabaseAdmin()
       .from("employees")
-      .select("hr_id, full_name, employment_status")
+      .select("hr_id, full_name, nickname, employment_status")
       .in("hr_id", chunk);
     if (error) throw new Error(`Could not read rep names: ${error.message}`);
     for (const row of data ?? []) {
       employeeByHrId.set(row.hr_id as string, {
-        name: (row.full_name as string) ?? "",
+        name: row.full_name ? resolveEmployeeDisplayName(row.full_name as string, row.nickname as string | null, row.hr_id as string) : "",
         status: (row.employment_status as string | null) ?? null,
       });
     }

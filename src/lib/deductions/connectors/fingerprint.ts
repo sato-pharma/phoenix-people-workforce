@@ -56,7 +56,7 @@ export async function collectFingerprintCandidates(input: {
       sourceSystem: "fingerprint_report",
       sourceRecordId: `${row.employeeHrId}:${row.dateIso}`,
       employeeHrId: row.employeeHrId,
-      employeeName: row.employeeName || null,
+      employeeName: row.employeeFullName || row.employeeName || null,
       monthKey,
       month: input.month,
       year: input.year,

@@ -28,6 +28,7 @@ import { loadManagerPlanHalfDays, managerHalfDayText, type ManagerPlanHalfDay } 
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { readAllPrivateCalendarRows, type PrivateCalendarItem, type PrivateCalendarPlanActivity } from "@/lib/private-calendar/logic";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { plansWithDisplayNames } from "@/lib/weekly-planning/plan-display-names";
 import { weekOfLabel } from "@/lib/weekly-planning/plan-labels";
 import { dropPendingRevisionsOfPlansOfRecord } from "@/lib/weekly-planning/plan-revisions";
 
@@ -109,6 +110,7 @@ type PlanHeaderRow = {
   employee_name: string | null;
   employee_plan_items: PlanItemRow[] | null;
   id: string;
+  manager_hr_id: string | null;
   manager_name: string | null;
   parent_plan_id: string | null;
   period_key: string | null;
@@ -116,7 +118,7 @@ type PlanHeaderRow = {
 };
 
 const PLAN_SELECT =
-  "id,employee_hr_id,employee_name,manager_name,parent_plan_id,period_key,status," +
+  "id,employee_hr_id,employee_name,manager_hr_id,manager_name,parent_plan_id,period_key,status," +
   "employee_plan_items(id,activity_date,activity_type,activity_title,objective,area,location_text,notes,start_time,end_time,double_visit_medical_rep_name,sort_order)";
 
 function cleanText(value: string | null | undefined) {
@@ -350,7 +352,8 @@ export async function loadPlanPrivateCalendarItems(
     const items: PrivateCalendarItem[] = [];
     // A revision awaiting its decisions (manager_approved is in the list above) is left out while
     // the approved plan it revises is the plan of record, or the week would be read twice.
-    for (const header of dropPendingRevisionsOfPlansOfRecord(headers)) {
+    // The stored names are snapshots: the calendar prints the display name, read by HR id.
+    for (const header of await plansWithDisplayNames(dropPendingRevisionsOfPlansOfRecord(headers))) {
       for (const item of header.employee_plan_items ?? []) {
         const date = cleanText(item.activity_date).slice(0, 10);
         // A week straddles a month boundary, so the header's period overlapping the range does not

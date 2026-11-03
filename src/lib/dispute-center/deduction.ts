@@ -315,7 +315,13 @@ async function buildCase(input: {
       unit,
     },
     employeeHrId: input.candidate.employee_hr_id ?? input.candidate.employee_hr_id_compact ?? "",
-    employeeName: input.candidate.employee_name ?? input.line?.employee_name ?? input.candidate.employee_hr_id ?? "",
+    // The display name (owner, 2026-11-03); both stored columns stay as they were stamped.
+    employeeName:
+      nameFor(input.names, input.candidate.employee_hr_id) ??
+      input.candidate.employee_name ??
+      input.line?.employee_name ??
+      input.candidate.employee_hr_id ??
+      "",
     events: input.events,
     facts,
     factsIncomplete,
@@ -417,6 +423,7 @@ export async function listDeductionCases(access: AccessContext): Promise<Dispute
   const names = await resolvePeopleNames([
     ...commentRows.map((row) => row.author_hr_id),
     ...Array.from(decisions.values()).map((row) => row.decided_by),
+    ...Array.from(candidates.values()).map((row) => row.employee_hr_id),
   ]);
 
   const cases: DisputeCase[] = [];
@@ -462,6 +469,7 @@ export async function loadDeductionCase(access: AccessContext, candidateId: stri
   const names = await resolvePeopleNames([
     ...commentRows.map((row) => row.author_hr_id),
     decisions.get(candidateId)?.decided_by ?? null,
+    candidate.employee_hr_id,
   ]);
   return buildCase({
     candidate,
@@ -788,6 +796,7 @@ export async function requestDeductionReopen(
   const { candidates } = await loadParts([input.candidateId]);
   const candidate = candidates.get(input.candidateId);
   if (!candidate) throw notFoundError("That deduction no longer exists.");
+  const shownName = nameFor(await resolvePeopleNames([candidate.employee_hr_id]), candidate.employee_hr_id);
   await recordCaseEvent({
     actorHrId: participant.viewerHrId,
     actorRole: access.role,
@@ -803,7 +812,7 @@ export async function requestDeductionReopen(
     employeeHrId: candidate.employee_hr_id ?? "",
     eventKey: `reopen_requested:${new Date().toISOString()}`,
     kind: "deduction",
-    message: `${candidate.employee_name ?? "An employee"} asked you to look again at the ${monthKeyLabel(String(candidate.month_key ?? ""))} ${categoryLabel(candidate.category)} deduction: "${reason}"`,
+    message: `${shownName ?? candidate.employee_name ?? "An employee"} asked you to look again at the ${monthKeyLabel(String(candidate.month_key ?? ""))} ${categoryLabel(candidate.category)} deduction: "${reason}"`,
     recipientHrIds: await reviewerHrIdsFor("deduction", candidate.employee_hr_id ?? null),
     ref: input.candidateId,
     title: `Reopen asked — ${categoryLabel(candidate.category)} deduction`,

@@ -54,6 +54,15 @@ export function runMarketingDoubleVisitTests() {
   assert.equal(findMarketingDoubleVisitPartner(partners, "Rasha Owner"), null);
   assert.equal(findMarketingDoubleVisitPartner(partners, ""), null);
 
+  // A name two partners share is refused, because the plan stores whoever it resolves to. Each one
+  // is still found by the legal name a saved plan holds.
+  const sharedName = [
+    { fullName: "Aya Mohamed", hrId: "B-911", jobTitle: null, legalName: "Aya Mohamed Ali" },
+    { fullName: "Aya Mohamed", hrId: "B-912", jobTitle: null, legalName: "Aya Mohamed Salem" },
+  ];
+  assert.equal(findMarketingDoubleVisitPartner(sharedName, "Aya Mohamed"), null);
+  assert.equal(findMarketingDoubleVisitPartner(sharedName, "Aya Mohamed Salem")?.hrId, "B-912");
+
   // 4. Recognised the way it is stored, and never confused with Coaching or a rep Double Visit.
   assert.equal(isMarketingDoubleVisit("Other", MARKETING_DOUBLE_VISIT_TITLE), true);
   assert.equal(isMarketingDoubleVisit(MARKETING_DOUBLE_VISIT_TITLE, ""), true);

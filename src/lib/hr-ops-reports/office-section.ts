@@ -49,7 +49,7 @@ const SKIP_NOTES: Record<ReconcileSkipOutcome, string> = {
 };
 
 export type OfficeDayInput = {
-  employee: { hrId: string; employeeName: string; jobTitle: string; department: string };
+  employee: { hrId: string; employeeName: string; employeeFullName?: string; jobTitle: string; department: string };
   dateIso: string;
   /** Null when no active policy matches the person: judged on every working day, company weekend. */
   policy: Pick<AttendanceFlexPolicyGroupDbRow, "judgment_mode" | "working_weekdays" | "policy_name" | "scheduled_start" | "scheduled_end"> | null;
@@ -153,7 +153,7 @@ export function judgeOfficeDay(input: OfficeDayInput): (Omit<HrOpsLineDraft, "hr
   };
   const line = {
     areaName: null,
-    employeeName: input.employee.employeeName,
+    employeeName: input.employee.employeeFullName || input.employee.employeeName,
     flags: [] as HrOpsFlag[],
     hrId: input.employee.hrId,
     hrKey: canonicalHrIdKey(input.employee.hrId),

@@ -11,6 +11,7 @@
 // an empty days[] with a clear reason, rather than silently reusing a different formula here.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
 import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import {
@@ -107,14 +108,19 @@ async function listEmployeesWithOutstandingAttendanceCandidates(): Promise<FlexE
   );
   if (wanted.size === 0) return [];
 
-  const { data: employeeRows, error: employeeError } = await supabase.from("employees").select("hr_id,full_name,job_title");
+  const { data: employeeRows, error: employeeError } = await supabase.from("employees").select("hr_id,full_name,nickname,job_title");
   if (employeeError) throw employeeError;
   const result: FlexEligibleEmployeeOption[] = [];
-  for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null; job_title: string | null }>) {
+  for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null; job_title: string | null }>) {
     const compact = compactDeductionsHrId(row.hr_id);
     const hrId = normalizeAttendanceHrId(row.hr_id);
     if (!compact || !hrId || !wanted.has(compact)) continue;
-    result.push({ employeeName: row.full_name?.trim() || hrId, hrId, jobTitle: row.job_title?.trim() ?? "" });
+    const fullName = row.full_name?.trim();
+    result.push({
+      employeeName: fullName ? resolveEmployeeDisplayName(fullName, row.nickname, row.hr_id) : hrId,
+      hrId,
+      jobTitle: row.job_title?.trim() ?? "",
+    });
   }
   return result;
 }
@@ -199,7 +205,11 @@ export type EmployeeDayReportRow = {
 
 export type EmployeeDayByDayReport = {
   employeeHrId: string;
+  /** The name the screen prints: the nickname the company uses, else the full name. */
   employeeName: string;
+  /** The stored full name, and the only name written onto a deduction candidate: that row feeds
+   * payroll, which keeps the legal name. Never printed by this report. */
+  employeeFullName: string;
   jobTitle: string;
   /** For live-recalculating a day's EGP value client-side as its deduction days are edited —
    * the grid calls the server's own calculateDeductionAmountFromBaseSalary with the charged
@@ -219,7 +229,7 @@ export type EmployeeDayByDayReport = {
   holidayCalendarReachable: boolean;
 };
 
-type EmployeeRow = { hr_id: string; full_name: string | null; job_title: string | null; base_salary: number | null };
+type EmployeeRow = { hr_id: string; full_name: string | null; nickname: string | null; job_title: string | null; base_salary: number | null };
 type PolicyRuleDbRow = AttendancePolicyRuleRow & { deduction_value?: number | string | null };
 
 export async function getEmployeeDayByDayReport(input: {
@@ -237,7 +247,7 @@ export async function getEmployeeDayByDayReport(input: {
   // casing is not guaranteed to match a pre-normalized .eq() filter.
   const [employeeResult, flexPolicies, ruleResult, context, leaveMap, excuseMap, exceptionMap, planMap, punchMap, outageDates, crmActivity] =
     await Promise.all([
-      supabase.from("employees").select("hr_id,full_name,job_title,base_salary"),
+      supabase.from("employees").select("hr_id,full_name,nickname,job_title,base_salary"),
       loadAttendanceFlexPolicyGroups({ activeOnly: true }),
       supabase
         .from("attendance_policy_rules")
@@ -261,7 +271,10 @@ export async function getEmployeeDayByDayReport(input: {
   if (!employee) throw validationError(`No employee found for ${input.employeeHrId}.`);
 
   const jobTitle = employee.job_title?.trim() ?? "";
-  const employeeName = employee.full_name?.trim() || hrId;
+  const employeeFullName = employee.full_name?.trim() || hrId;
+  const employeeName = employee.full_name?.trim()
+    ? resolveEmployeeDisplayName(employeeFullName, employee.nickname, employee.hr_id)
+    : hrId;
 
   // Resolved PER DAY, not once for the whole admin-chosen range — an arbitrary range can
   // span a policy change (new scheduled_start/flex_minutes/required_minutes/brackets, or
@@ -451,6 +464,7 @@ export async function getEmployeeDayByDayReport(input: {
     dateFromIso: input.dateFromIso,
     dateToIso: input.dateToIso,
     days,
+    employeeFullName,
     employeeHrId: hrId,
     employeeName,
     holidayCalendarReachable: context.holidayCalendarReachable,
@@ -587,11 +601,12 @@ export async function getAllEmployeesFingerprintDeductionsSummary(input: {
 
 async function loadEmployeeNameMap(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name");
+  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name,nickname");
   if (error) throw error;
-  for (const row of (data ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
+  for (const row of (data ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
     const key = compactDeductionsHrId(row.hr_id);
-    if (key && row.full_name?.trim()) map.set(key, row.full_name.trim());
+    const fullName = row.full_name?.trim();
+    if (key && fullName) map.set(key, resolveEmployeeDisplayName(fullName, row.nickname, row.hr_id));
   }
   return map;
 }
@@ -723,7 +738,7 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
       // getFingerprintAttendanceReport emits, so the two keys always agree.)
       sourceRecordId: `${hrId}:${input.dateIso}`,
       employeeHrId: hrId,
-      employeeName: dayReport.employeeName,
+      employeeName: dayReport.employeeFullName,
       monthKey,
       month,
       year,

@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveAttendanceExceptionNotesPatch } from "@/lib/attendance/exception-notes";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 
 export type AttendanceExceptionStatus = "approved" | "pending" | "rejected";
 
@@ -34,6 +35,7 @@ type ExceptionDbRow = {
 type EmployeeNameRow = {
   full_name: string | null;
   hr_id: string;
+  nickname: string | null;
 };
 
 // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
@@ -165,11 +167,11 @@ export async function getAttendanceExceptions(
   for (const batch of chunk(hrIds)) {
     const { data: empData } = await supabase
       .from("employees")
-      .select("hr_id,full_name")
+      .select("hr_id,full_name,nickname")
       .in("hr_id", batch);
     for (const emp of (empData ?? []) as EmployeeNameRow[]) {
       const normalized = normalizeAttendanceHrId(emp.hr_id) ?? emp.hr_id;
-      if (emp.full_name) nameMap.set(normalized, emp.full_name.trim());
+      if (emp.full_name) nameMap.set(normalized, resolveEmployeeDisplayName(emp.full_name.trim(), emp.nickname, emp.hr_id));
     }
   }
 

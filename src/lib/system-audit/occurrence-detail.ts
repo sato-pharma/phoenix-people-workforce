@@ -10,9 +10,11 @@
  * so this runs only behind assertSystemAdministratorWorkspaceAccess.
  */
 
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { withCurrentPersonNames } from "@/lib/system-audit/person-names";
 import { loadUserScreenSummaries } from "@/lib/system-audit/user-screens";
 import {
   SYSTEM_AUDIT_STATUS_LABELS,
@@ -250,12 +252,13 @@ async function resolveActorNames(actors: string[], supabase: Client): Promise<Ma
   }
   if (people.length === 0) return names;
   const keys = Array.from(new Set(people.flatMap((actor) => hrIdLookupKeys(actor))));
-  const { data, error } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", keys);
+  const { data, error } = await supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", keys);
   if (error) throw new Error(`The names of the people in the status trail could not be read: ${error.message}`);
   const byKey = new Map<string, string>();
-  for (const row of (data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>) {
+  for (const row of (data ?? []) as Array<{ hr_id: string | null; full_name: string | null; nickname: string | null }>) {
     const key = canonicalHrIdKey(row.hr_id);
-    if (key && row.full_name?.trim()) byKey.set(key, row.full_name.trim());
+    const fullName = row.full_name?.trim();
+    if (key && fullName) byKey.set(key, resolveEmployeeDisplayName(fullName, row.nickname, row.hr_id));
   }
   for (const actor of people) {
     const key = canonicalHrIdKey(actor);
@@ -347,7 +350,8 @@ export async function loadOccurrenceDetail(id: string, override?: Client): Promi
     .maybeSingle();
   if (occurrenceError) throw new Error(`The occurrence could not be read: ${occurrenceError.message}`);
   if (!occurrenceRow) return null;
-  const occurrence = mapOccurrence(occurrenceRow as Row);
+  const stored = mapOccurrence(occurrenceRow as Row);
+  const occurrence = (await withCurrentPersonNames([stored], supabase))[0] ?? stored;
 
   const [issueResult, historyResult, fixesResult, reproTrail, screens, screenshots] = await Promise.all([
     supabase

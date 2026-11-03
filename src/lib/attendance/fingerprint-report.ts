@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import {
   normalizeAttendanceHrId,
   resolveActiveAttendancePolicy,
@@ -68,6 +69,8 @@ export type FingerprintReportColumn = {
 
 export type FingerprintReportRow = Record<FingerprintReportColumnKey, string> & {
   dateIso: string;
+  // What a deduction line stores: the full name. `employeeName` is what a screen prints.
+  employeeFullName?: string;
   // Set when an approved Am/Pm-Only vacation covered part of this day — the
   // "Complete" status above was judged against a halved required-minutes
   // window, not the full day, so downstream display should not call it a
@@ -78,6 +81,7 @@ export type FingerprintReportRow = Record<FingerprintReportColumnKey, string> & 
 };
 
 export type FingerprintPolicyDetailRow = {
+  employeeFullName?: string;
   department: string;
   effectiveFrom: string;
   effectiveTo: string;
@@ -133,6 +137,7 @@ type RawPunchRow = {
 };
 
 type EmployeeRow = {
+  nickname?: string | null;
   base_salary: number | null;
   department_id: number | null;
   employment_status: string | null;
@@ -365,6 +370,11 @@ function contains(value: string, filter: string) {
   return !filter || value.toLowerCase().includes(filter.toLowerCase());
 }
 
+// The screen prints the display name, and HR may still type the legal one.
+function nameMatches(row: { employeeFullName?: string; employeeName: string }, filter: string) {
+  return contains(row.employeeName, filter) || contains(row.employeeFullName ?? "", filter);
+}
+
 function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["filters"]) {
   // Exact-match scoping (self-service portal): lock to a single employee. This
   // must be an exact normalized comparison, never a substring, or one employee's
@@ -376,7 +386,7 @@ function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["
   if (
     !contains(row.deviceUserId, filters.deviceUserId) ||
     !contains(row.employeeHrId, filters.employeeHrId) ||
-    !contains(row.employeeName, filters.employeeName) ||
+    !nameMatches(row, filters.employeeName) ||
     !contains(row.jobTitle, filters.jobTitle) ||
     !contains(row.department, filters.department) ||
     !contains(row.status, filters.status) ||
@@ -390,6 +400,7 @@ function textMatches(row: FingerprintReportRow, filters: FingerprintReportData["
     row.deviceUserId,
     row.employeeHrId,
     row.employeeName,
+    row.employeeFullName,
     row.jobTitle,
     row.department,
     row.date,
@@ -409,7 +420,7 @@ function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: Fingerp
   }
   if (
     !contains(row.employeeHrId, filters.employeeHrId) ||
-    !contains(row.employeeName, filters.employeeName) ||
+    !nameMatches(row, filters.employeeName) ||
     !contains(row.jobTitle, filters.jobTitle) ||
     !contains(row.department, filters.department)
   ) {
@@ -420,6 +431,7 @@ function employeePolicyMatches(row: FingerprintPolicyDetailRow, filters: Fingerp
   return [
     row.employeeHrId,
     row.employeeName,
+    row.employeeFullName,
     row.jobTitle,
     row.department,
     row.policyName,
@@ -568,7 +580,7 @@ export async function getFingerprintAttendanceReport(input: {
   const [employeeResult, policyRows, ruleResult, deviceMappedHrIds] = await Promise.all([
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,department_id,base_salary,employment_status,last_working_date")
+      .select("hr_id,full_name,nickname,job_title,department_id,base_salary,employment_status,last_working_date")
       .order("full_name"),
     loadAttendanceFlexPolicyGroups({ activeOnly: true }),
     supabase
@@ -642,8 +654,9 @@ export async function getFingerprintAttendanceReport(input: {
         department,
         effectiveFrom: policy?.effective_from ?? "",
         effectiveTo: policy?.effective_to ?? "",
+        employeeFullName: employee.full_name?.trim() || employee.hr_id,
         employeeHrId: normalizeHrId(employee.hr_id) ?? employee.hr_id,
-        employeeName: employee.full_name?.trim() || employee.hr_id,
+        employeeName: resolveEmployeeDisplayName(employee.full_name?.trim() || employee.hr_id, employee.nickname, employee.hr_id),
         graceMinutes: policy?.grace_minutes == null ? "" : String(policy.grace_minutes),
         jobTitle: employee.job_title?.trim() || "",
         policyName: policy?.policy_name?.trim() || "No active policy",
@@ -876,7 +889,10 @@ export async function getFingerprintAttendanceReport(input: {
       deviceUserId: bucket.deviceUserId,
       earlyLeaveMinutes: hasApprovedException ? "0" : status.earlyLeaveMinutes,
       employeeHrId: bucket.employeeHrId,
-      employeeName: employee?.full_name?.trim() || bucket.employeeHrId,
+      employeeFullName: employee?.full_name?.trim() || bucket.employeeHrId,
+      employeeName: employee
+        ? resolveEmployeeDisplayName(employee.full_name?.trim() || bucket.employeeHrId, employee.nickname, employee.hr_id)
+        : bucket.employeeHrId,
       graceMinutes: policy?.grace_minutes == null ? "" : String(policy.grace_minutes),
       halfDayVacationPart: halfDayVacationPart ?? undefined,
       hasException: hasApprovedException,

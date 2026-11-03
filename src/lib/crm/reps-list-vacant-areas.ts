@@ -84,6 +84,7 @@ import {
   regionsForLine,
   withActivity,
 } from "@/lib/crm/reps-list-board";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -408,9 +409,10 @@ async function loadPeople(hrIds: readonly string[]): Promise<Map<string, HolderP
     full_name: string | null;
     hr_id: string | null;
     last_working_date: string | null;
+    nickname: string | null;
   }>(
     hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)),
-    (chunk) => supabase.from("employees").select("hr_id, full_name, employment_status, last_working_date").in("hr_id", chunk),
+    (chunk) => supabase.from("employees").select("hr_id, full_name, nickname, employment_status, last_working_date").in("hr_id", chunk),
     "employee records",
   );
   const people = new Map<string, HolderPerson & { name: string }>();
@@ -420,7 +422,7 @@ async function loadPeople(hrIds: readonly string[]): Promise<Map<string, HolderP
     people.set(key, {
       employmentStatus: row.employment_status,
       lastWorkingDate: row.last_working_date,
-      name: (row.full_name ?? "").trim(),
+      name: row.full_name?.trim() ? resolveEmployeeDisplayName(row.full_name.trim(), row.nickname, row.hr_id) : "",
     });
   }
   return people;

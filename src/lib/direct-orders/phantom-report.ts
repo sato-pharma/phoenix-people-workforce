@@ -5,6 +5,7 @@ import {
   renderPhoenixMetadataTableText,
 } from "@/emails/phoenix-email-layout";
 import { sendTemplatedEmail } from "@/lib/email-templates/service";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -59,20 +60,6 @@ async function resolveOwnerAndCeoEmails(): Promise<string[]> {
   return [...emails];
 }
 
-/** Resolve rep names once, so the report reads in names and never in HR codes (owner rule). */
-async function resolveNames(hrIds: string[]): Promise<Map<string, string>> {
-  const ids = hrIds.filter(Boolean);
-  if (ids.length === 0) return new Map();
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", ids);
-  return new Map(
-    ((data ?? []) as Array<{ hr_id: string; full_name: string | null }>).map((e) => [
-      e.hr_id.toUpperCase(),
-      e.full_name ?? e.hr_id,
-    ]),
-  );
-}
-
 /**
  * Email the phantom report. Best-effort: a failure here is logged, never thrown, because the sweep
  * has already recorded every finding in the audit log — the email is the alert, not the record.
@@ -89,7 +76,8 @@ export async function sendDirectOrderPhantomReport(rows: PhantomReportRow[]): Pr
       return;
     }
 
-    const nameByHr = await resolveNames(rows.map((r) => r.requesterHrId ?? "").filter(Boolean));
+    // Rep names resolved once, so the report reads in names and never in HR codes (owner rule).
+    const nameByHr = await namesByHrId(rows.map((r) => r.requesterHrId));
     const totalValue = rows.reduce((sum, r) => sum + r.salesValue, 0);
 
     const summary =
@@ -100,7 +88,7 @@ export async function sendDirectOrderPhantomReport(rows: PhantomReportRow[]): Pr
       label: r.phoenixPharmacyCode,
       value:
         `${r.pharmacyName} - ${r.orders} order${r.orders === 1 ? "" : "s"}, ${money(r.salesValue)} - ` +
-        `submitted by ${r.requesterHrId ? nameByHr.get(r.requesterHrId.toUpperCase()) ?? r.requesterHrId : "unknown"} - ` +
+        `submitted by ${r.requesterHrId ? nameByHr.get(r.requesterHrId) ?? r.requesterHrId : "unknown"} - ` +
         `${r.daysOnProbation} days on probation`,
     }));
 

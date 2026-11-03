@@ -4,18 +4,18 @@ import { join } from "node:path";
 
 import {
   employeeRecordName,
+  employeeShownName,
   resolveEmployeeRecordName,
 } from "../src/lib/employees/record-name.ts";
 import { outstationRecordName } from "../src/lib/outstation/employee-name.ts";
 
-// PRs #4135 and #4136 aligned the outstation write and read paths to the employee RECORD name.
-// The approvals hub resolved the SAME kind of persisted `employee_name` snapshot — leave, excuses
-// and weekly plans — to `displayName`, which is nickname-first by design. So one outstation
-// request read as the record name on the outstation queue and as a nickname in the hub, for the
-// same person on the same day.
+// Owner, 2026-11-03: every screen, email and non-legal export shows a person by their display name,
+// which REVERSES his 2026-09-21 "align the decided-by name to the record name too". Writes still
+// stamp the employee RECORD name; reads show the display name.
 //
-// This pins two things: the rule has ONE definition that both domains share, and the hub uses it.
-// Two copies of a naming rule is exactly how that gap opened, so a re-fork must fail here.
+// This pins two things: each side of the rule has ONE definition that both domains share, and the
+// hub reads through it. Two copies of a naming rule once showed one person under two names on one
+// day (the record name on the outstation queue, a nickname in the hub), so a re-fork must fail here.
 
 const APPROVALS_HUB = join(process.cwd(), "src/lib/approvals-hub/service.ts");
 
@@ -55,11 +55,32 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
     "a record with no name at all yields the HR id — the rule never yields an empty string",
   );
 
+  // ── The read side: what a screen prints (owner, 2026-11-03) ───────────────
+  assert.equal(
+    employeeShownName({
+      fullName: "Khaled Mohamed Ali Bedair",
+      displayName: "Khaled Bedair",
+      hrId: "A-2",
+    }),
+    "Khaled Bedair",
+    "a read shows the nickname-first display name, not the full name a row was stamped with",
+  );
+  assert.equal(
+    employeeShownName({ fullName: "  Dina   Hamdy  Fadel ", displayName: "  ", hrId: "B-12" }),
+    "Dina Hamdy Fadel",
+    "a blank display name falls back to the full name, trimmed the same way",
+  );
+  assert.equal(
+    employeeShownName({ fullName: null, displayName: null, hrId: "B-13" }),
+    "B-13",
+    "a record with no name at all yields the HR id — the rule never yields an empty string",
+  );
+
   // ── The guards, all of which land on the stored snapshot ──────────────────
   assert.equal(
     resolveEmployeeRecordName("Khaled Mohamed Ali Bedair", "A-2", "Khaled Bedair"),
     "Khaled Mohamed Ali Bedair",
-    "a resolved record name replaces the snapshot the row was written with",
+    "a resolved name replaces the snapshot the row was written with",
   );
   assert.equal(
     resolveEmployeeRecordName(null, null, "Historic Import Name"),
@@ -82,7 +103,7 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
     "with nothing stored either, the HR id is still better than an empty cell",
   );
 
-  // ── ONE definition, two spellings ─────────────────────────────────────────
+  // ── ONE write-side definition, two spellings ──────────────────────────────
   assert.equal(
     outstationRecordName,
     employeeRecordName,
@@ -99,10 +120,13 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
     "liveEmployeeName must resolve through the shared rule",
   );
   assert.ok(
-    !resolver.includes("displayName"),
-    "liveEmployeeName must not reach for displayName — it renders a persisted workflow snapshot, " +
-      "and EmployeeDirectoryRow's own type comment reserves fullName for exactly that. Resolving " +
-      "to displayName puts the nicknames back on the cards the record-name repair aligned.",
+    resolver.includes("employeeShownName(employee)"),
+    "liveEmployeeName must read the display name through employeeShownName — owner, 2026-11-03: " +
+      "every screen shows a person by their display name",
+  );
+  assert.ok(
+    !resolver.includes("employeeRecordName("),
+    "liveEmployeeName must not read the write-side rule — that is the full name a row is stamped with",
   );
 
   // Every snapshot render in this file goes through the one resolver: ten call sites across leave,
@@ -140,8 +164,8 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
   assert.deepEqual(
     truncating,
     [],
-    "no card in the approvals hub may truncate its text. These render the employee RECORD name, " +
-      "which runs to four and five parts — at 375px the longest one in the employee master had " +
+    "no card in the approvals hub may truncate its text. A name can run to four and five parts, " +
+      "where a person has no nickname — at 375px the longest one in the employee master had " +
       "349px of itself hidden behind an ellipsis. Every one of these sits in a min-w-0 column " +
       "beside a shrink-0 sibling, so wrapping grows the row taller and never pushes the page " +
       "sideways. Truncating at: " + truncating.join(", "),
@@ -164,20 +188,19 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
   }
 
   // ── "Decided by …" says the same name the card above it says ──────────────
-  // Owner, 2026-09-21: "align the decided-by name to the record name too". Before that this file
-  // pinned deciderDisplayName to `employee.displayName`, on the reasoning that it names a live
-  // person rather than resolving a snapshot — true, and beside the point: one card was reading
-  // "<record name> … Decided by <nickname>", two naming rules on one row.
+  // Owner, 2026-11-03, reversing his own 2026-09-21 "align the decided-by name to the record name
+  // too": the card and its decider both show the display name. They must still agree, or one card
+  // reads "<one name> … Decided by <another name>", two naming rules on one row.
   const decider = functionBody(hub, "function deciderDisplayName(");
   assert.ok(
-    decider.includes("employeeRecordName(employee)"),
-    "deciderDisplayName must build its label from employeeRecordName(employee) — the SAME rule the " +
+    decider.includes("employeeShownName(employee)"),
+    "deciderDisplayName must build its label from employeeShownName(employee) — the SAME rule the " +
       "card's own name uses, so both halves of one row name the person the same way",
   );
   assert.ok(
-    !decider.includes("employee.displayName"),
-    "deciderDisplayName must not render displayName — that is the nickname-first field, and the " +
-      "record name is what the rest of this card shows",
+    !decider.includes("employeeRecordName("),
+    "deciderDisplayName must not read the write-side rule — that is the full name a row is stamped " +
+      "with, and the display name is what the rest of this card shows",
   );
   assert.ok(
     decider.includes("employee.jobTitle") && decider.includes("(${employee.jobTitle})"),
@@ -189,10 +212,9 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
       "account is not in the directory, and it must still resolve to the person behind that login",
   );
 
-  // ── The one displayName left in the hub, and why ──────────────────────────
+  // ── The manager picker shows the display name too ─────────────────────────
   assert.ok(
     functionBody(hub, "export async function getStuckApprovalsForReassignment(").includes("row.displayName"),
-    "the stuck-approvals manager PICKER still offers displayName — it chooses between live people " +
-      "rather than naming one onto a request, so it is deliberately not part of this alignment",
+    "the stuck-approvals manager PICKER offers displayName, the same name the cards around it show",
   );
 }

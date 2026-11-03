@@ -141,6 +141,24 @@ function testResolveRecipientNeverMatchesASignInEmail() {
   );
 }
 
+// Owner's decision, 2026-11-03: a persisted snapshot stays raw on write, and a reader gets the display name.
+function testTheStoredNameStaysRawAndTheReaderGetsTheDisplayName() {
+  const source = code("src/lib/internal-messages/service.ts");
+  const send = functionBody(source, /export async function sendInternalMessage\(/);
+  assert.match(send, /recipient_name: recipient\.storedName,/, "the stored recipient name is the full name, never the nickname of the day");
+  assert.match(send, /sender_name: sender\.storedName,/, "the stored sender name is the full name, never the nickname of the day");
+  assert.match(
+    functionBody(source, /function displayNameForUser\(/),
+    /resolveEmployeeDisplayName\(fullName, employee\?\.nickname, employee\?\.hr_id\)/,
+    "what a person reads is the display name",
+  );
+  assert.match(
+    functionBody(source, /export async function listInternalMessagesForViewer\(/),
+    /withCurrentDisplayNames\(rows\.map/,
+    "the inbox overlays today's display name on the stored row at read",
+  );
+}
+
 function testTheProfileWritesTheNameOnly() {
   const route = code("app/api/admin/profile/route.ts");
   const patch = functionBody(route, /export async function PATCH\(/);
@@ -183,6 +201,7 @@ export async function runInternalMessageRecipientWorkEmailTests() {
   testTheWorkEmailPicker();
   testTheLoginPickerIsDeterministic();
   testResolveRecipientNeverMatchesASignInEmail();
+  testTheStoredNameStaysRawAndTheReaderGetsTheDisplayName();
   testTheProfileWritesTheNameOnly();
   testTheSuperAdminListMailsOnlyARealMailbox();
 }

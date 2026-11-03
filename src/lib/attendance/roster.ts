@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { isFieldWorkforceFridayOnlyTitle } from "@/lib/field-workforce-compliance/weekend-policy";
 import { isIsoDate } from "@/lib/attendance/working-days";
 
@@ -11,6 +12,8 @@ export type AttendanceRosterEmployee = {
   activeToIso: string | null;
   department: string;
   employeeName: string;
+  // What a stored report line keeps: the full name. `employeeName` is what a screen prints.
+  employeeFullName?: string;
   hrId: string;
   jobTitle: string;
 };
@@ -25,6 +28,7 @@ type EmployeeRow = {
   hr_id: string;
   job_title: string | null;
   last_working_date: string | null;
+  nickname: string | null;
 };
 
 type DepartmentRow = { id: number; name: string | null };
@@ -54,7 +58,7 @@ export async function getAttendanceRoster(input: {
       .not("employee_hr_id", "is", null),
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,department_id,employment_status,hire_date,last_working_date"),
+      .select("hr_id,full_name,nickname,job_title,department_id,employment_status,hire_date,last_working_date"),
     supabase
       .from("departments")
       .select("id,name"),
@@ -108,7 +112,10 @@ export async function getAttendanceRoster(input: {
       department: typeof employee.department_id === "number"
         ? departmentMap.get(employee.department_id) ?? ""
         : "",
-      employeeName: employee.full_name?.trim() || hrId,
+      employeeFullName: employee.full_name?.trim() || hrId,
+      employeeName: employee.full_name?.trim()
+        ? resolveEmployeeDisplayName(employee.full_name.trim(), employee.nickname, employee.hr_id)
+        : hrId,
       hrId,
       jobTitle,
     });

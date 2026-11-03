@@ -993,7 +993,7 @@ const orgLines = [
     ["Delta (2)", "Salim Gomaa", DSM, ["Dakahlia 1", "Dakahlia 2", "Dakahlia 3", "Port Said – Domiat"]],
     ["Delta (3)", "Samaa AbdelRahman", DSM, ["Qalubeya", "Sharkia 1", "Sharkia 2", "Suez"]],
     ["Upper Egypt 1", "Nosiba Salah", DSM, ["Beni Suef", "Minia 1", "Minia 2"]],
-    ["Upper Egypt 2", "Weaam Mahmoud", DSM, ["Assuit 1", "Assuit 2", "Qena 1", "Qena 2", "Sohag 1", "Sohag 2"]],
+    ["Upper Egypt 2", "Weaam Gweed", DSM, ["Assuit 1", "Assuit 2", "Qena 1", "Qena 2", "Sohag 1", "Sohag 2"]],
   ]],
 ];
 const ph = (f, name) => `<div class="ph"><img src="${teamPhoto(f)}" alt="${name}"></div>`;

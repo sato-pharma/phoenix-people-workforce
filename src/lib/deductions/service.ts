@@ -9,6 +9,7 @@ import {
 } from "@/lib/automated-payroll/deduction-resync";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -1050,6 +1051,13 @@ export async function listCandidatesForMonth(input: {
    * looks weeks later. See `loadConfirmedDeductions`'s `countSupersededApprovedAfter`.
    */
   includeSuperseded?: boolean;
+  /**
+   * Name each row by the person's display name (owner, 2026-11-03) — for a SCREEN only. Off by
+   * default, and it must stay that way: publish.ts and push.ts STAMP `employeeName` onto the
+   * publication line, and the category and master workbooks feed payroll, so all four keep the name
+   * as stored.
+   */
+  showDisplayNames?: boolean;
 }): Promise<DeductionsCandidateWithDecision[]> {
   const monthKey = normalizeMonthKey(input.monthKey);
   const supabase = getSupabaseAdmin();
@@ -1096,9 +1104,10 @@ export async function listCandidatesForMonth(input: {
       const storedName = candidate.employeeName?.trim();
       return {
         ...candidate,
-        // The stored name wins when it exists — it is the name as at collection
-        // time. The directory only fills the gap that made a code appear.
-        employeeName: storedName || known?.fullName?.trim() || null,
+        // A screen asks for the display name. Otherwise the stored name wins when it
+        // exists — it is the name as at collection time — and the directory only fills
+        // the gap that made a code appear.
+        employeeName: (input.showDisplayNames ? known?.shownName : null) || storedName || known?.fullName?.trim() || null,
         hireDate: known?.hireDate ?? null,
         // Which of THIS candidate's days sit directly beside a governmental
         // holiday. Annotation only — it explains a row, it does not change what
@@ -1171,7 +1180,7 @@ export async function getHolidayBridgeDaysForMonth(
   }
 }
 
-type EmployeeDirectoryEntry = { fullName: string | null; hireDate: string | null };
+type EmployeeDirectoryEntry = { fullName: string | null; shownName: string | null; hireDate: string | null };
 
 /**
  * Compact-HR-key -> name and hire date, for display only.
@@ -1189,13 +1198,23 @@ type EmployeeDirectoryEntry = { fullName: string | null; hireDate: string | null
 async function getEmployeeDirectory(): Promise<Map<string, EmployeeDirectoryEntry>> {
   const map = new Map<string, EmployeeDirectoryEntry>();
   try {
-    const rows = await fetchAllRows<{ hr_id: string; full_name: string | null; hire_date: string | null }>(
-      () => getSupabaseAdmin().from("employees").select("hr_id, full_name, hire_date"),
+    const rows = await fetchAllRows<{
+      hr_id: string;
+      full_name: string | null;
+      nickname: string | null;
+      hire_date: string | null;
+    }>(
+      () => getSupabaseAdmin().from("employees").select("hr_id, full_name, nickname, hire_date"),
       "hr_id",
     );
     for (const row of rows) {
       const key = compactDeductionsHrId(String(row.hr_id ?? ""));
-      if (key) map.set(key, { fullName: row.full_name ?? null, hireDate: row.hire_date ?? null });
+      if (!key) continue;
+      map.set(key, {
+        fullName: row.full_name ?? null,
+        shownName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id).trim() || null,
+        hireDate: row.hire_date ?? null,
+      });
     }
   } catch {
     // Swallowed on purpose — see the doc comment above.
@@ -1279,7 +1298,11 @@ export async function getEmployeeMonthSummary(input: {
 }): Promise<EmployeeMonthDeductionSummary | null> {
   const compact = compactDeductionsHrId(input.employeeHrId);
   if (!compact) return null;
-  const candidates = await listCandidatesForMonth({ monthKey: input.monthKey, employeeHrIdCompact: compact });
+  const candidates = await listCandidatesForMonth({
+    monthKey: input.monthKey,
+    employeeHrIdCompact: compact,
+    showDisplayNames: true,
+  });
   return summarizeEmployeeMonthCandidates({ candidates, monthKey: input.monthKey });
 }
 

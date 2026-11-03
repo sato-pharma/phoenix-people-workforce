@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canDecideDirectOrderPharmacyValidations } from "@/lib/direct-orders/pharmacy-validation";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeVenueType, type VenueType } from "@/lib/venues/venue-type";
 
@@ -116,11 +117,13 @@ export async function listDirectOrderStuckVenues(access: AccessContext): Promise
   if (hrIds.length > 0) {
     const { data: people } = await supabase
       .from("employees")
-      .select("hr_id, full_name")
+      .select("hr_id, full_name, nickname")
       .in("hr_id", [...hrIds, ...hrIds.map((id) => id.toLowerCase()), ...hrIds.map((id) => id.toUpperCase())]);
-    for (const person of ((people ?? []) as Array<{ hr_id?: string | null; full_name?: string | null }>)) {
+    for (const person of ((people ?? []) as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>)) {
       const key = String(person.hr_id ?? "").toUpperCase();
-      if (key && person.full_name) nameByHr.set(key, person.full_name);
+      if (key && person.full_name) {
+        nameByHr.set(key, resolveEmployeeDisplayName(person.full_name, person.nickname, person.hr_id));
+      }
     }
   }
 

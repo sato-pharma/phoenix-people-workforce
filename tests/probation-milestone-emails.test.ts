@@ -183,6 +183,13 @@ export function runProbationMilestoneEmailsTests() {
     "neither lookup may go back to the exact-match `.in(…, hrIds)` that missed the mixed-case rows",
   );
 
+  // ── The email shows the display name, not the name the case stored (owner, 2026-11-03) ──
+  assert.match(
+    sweep,
+    /const employeeName = shownNames\?\.get\(c\.employee_hr_id\) \?\? c\.employee_name \?\? c\.employee_hr_id;/,
+    "the milestone email resolves the name by HR id, with the stored name only as the fallback",
+  );
+
   // ── Wiring: the sweep actually runs ──
   const dailyCron = src("app/api/notifications/daily/route.ts");
   assert.match(
