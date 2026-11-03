@@ -364,8 +364,9 @@ export function judgeListCheck(input: ListCheckInput): ListCheckVerdict {
   const partRows = scored.filter((row) => row.nameMatch === "part");
   if (partRows.length > 0) {
     const row = closest(partRows);
-    if (row.sameBrick === true) return verdict("check", "Part of the name matches, in the same brick, with no photo to compare.", row);
+    // The distance first: a brick is only what is left to say when no distance can be read.
     if (row.metres !== null) return verdict("check", `Part of the name matches, but the two places are ${row.metres} m apart.`, row);
+    if (row.sameBrick === true) return verdict("check", "Part of the name matches, in the same brick, with no photo to compare.", row);
     return verdict("check", "Part of the name matches, and the doctor has no validated place to compare with.", row);
   }
 
