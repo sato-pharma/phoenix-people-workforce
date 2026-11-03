@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   PAGE_TIMING_SOFT_BATCH_LIMIT,
   deviceClassOf,
+  isPageDataRequest,
   sanitizePageTimings,
 } from "../src/lib/observability/page-timing-intake.ts";
 import { flushPageTimings, type PageTimingsRpcClient } from "../src/lib/observability/page-timing-flush.ts";
@@ -22,7 +23,7 @@ import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
  * Record everything, and nobody (owner, 1 Nov 2026: "hourly medians per page, 30 days, no names").
  *
  * The browser beacon grew from two paint times to the whole hard load (first byte, first content, largest
- * content, interactive, first /api/ answer), the taps inside the app (RouteTransitionProvider knows the
+ * content, interactive, first answer to the page's own data read), the taps inside the app (RouteTransitionProvider knows the
  * tap and the arrival) and a device class; the server sums each hour in memory and writes it to
  * page_timings once the hour has ended; phx_prune_retention drops it at 30 days; the System Audit shows
  * the slowest pages of the week. What this pins: the intake drops everything that is not a page shape, a
@@ -150,6 +151,39 @@ export function runPageTimingsTests() {
     assert.equal(calls.length, 1, "no RPC for an empty flush");
     resetPageTimingStore();
 
+    // A timeout is not a refusal: the function may have committed, and it adds to an hour's row on conflict.
+    const timingOut = {
+      rpc: () => Promise.resolve({ data: null, error: { code: "", hint: "Request was aborted (timeout or manual cancellation)", message: "AbortError: Supabase request timed out." } }),
+    } as unknown as PageTimingsRpcClient;
+    recordPageTiming({ device: "high", kind: "hard", metrics: { lcp: 1200 }, path: VISITS }, tenPast);
+    assert.equal(await flushPageTimings({ client: timingOut, now: later }), 0, "a timed-out write reports nothing written");
+    assert.equal(pageTimingHoursHeld(), 0, "and its hour is forgotten, so the next tick cannot send it a second time");
+    assert.equal(await flushPageTimings({ client: taking, now: later }), 0, "the next tick has nothing to send");
+    assert.equal(calls.length, 1, "no second RPC, so no hour is counted twice");
+    resetPageTimingStore();
+    assert.doesNotMatch(code("src/lib/observability/page-timing-flush.ts"), /@\/lib\/reports/, "the flush loads no report: process-health imports it to keep its own graph small");
+
+    // ── first_data is the page's own data read, never the shell's chatter ─────────────────────────
+    const ORIGIN = "https://phoenix-hr.satopharma.com";
+    for (const pageRead of ["/api/phoenix-crm/list?week=2026-11-01", "/api/messages-archive/list", "/api/recruitment/interview-calendar"]) {
+      assert.equal(isPageDataRequest(`${ORIGIN}${pageRead}`, ORIGIN), true, `${pageRead} is the page's own data`);
+    }
+    for (const shellCall of [
+      "/api/auth/pulse",
+      "/api/activity/track",
+      "/api/telemetry/page-timing",
+      "/api/notifications/in-app",
+      "/api/messages",
+      "/api/messages/mailbox",
+      "/api/navigation/personal-layout",
+      "/api/approvals-hub/pending-count",
+      "/api/direct-orders/unbooked-count",
+    ]) {
+      assert.equal(isPageDataRequest(`${ORIGIN}${shellCall}`, ORIGIN), false, `${shellCall} is the shell's, on every page`);
+    }
+    assert.equal(isPageDataRequest(`${ORIGIN}/_next/static/chunk.js`, ORIGIN), false, "a script is not data");
+    assert.equal(isPageDataRequest("https://onesignal.com/api/v1/sync", ORIGIN), false, "another site's API is not this page's data");
+
     // ── The Slowest pages tab: the week folded per page, slowest first ───────────────────────────
     assert.deepEqual(
       readSummaryRow({ path: "/admin", kind: "hard", device: "high", metric: "lcp", count: "12", p50_ms: 900, p90_ms: 1800, max_ms: 4000 }),
@@ -182,7 +216,7 @@ export function runPageTimingsTests() {
       ".domInteractive",
       '"first-contentful-paint"',
       '"largest-contentful-paint"',
-      'includes("/api/")',
+      "isPageDataRequest(entry.name, window.location.origin)",
       "deviceClassOf(",
       "export function reportSoftNavigation(",
       "PAGE_TIMING_SOFT_BATCH_LIMIT",

@@ -229,9 +229,7 @@ export function isDatabaseSchemaMissing(error: unknown) {
   );
 }
 
-export function isSupabaseTimeout(error: unknown) {
-  return errorMessage(error).toLowerCase().includes("timed out");
-}
+export { isSupabaseTimeout } from "@/lib/supabase/errors";
 
 function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;

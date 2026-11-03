@@ -146,7 +146,7 @@ async function fetchWithTimeout(
     recordTiming("supabase.fetch", elapsedMs);
     recordTiming(isTimeout ? "supabase.fetch.timeout" : "supabase.fetch.failed", elapsedMs);
     if (isTimeout) {
-      // The MESSAGE is what every caller reads (`isSupabaseTimeout` in reports/vacancies.ts
+      // The MESSAGE is what every caller reads (`isSupabaseTimeout` in supabase/errors.ts
       // matches the words "timed out", and the heartbeat's 503 branch depends on it), so it is
       // kept exactly as it was.
       //

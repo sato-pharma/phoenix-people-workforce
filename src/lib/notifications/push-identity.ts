@@ -12,9 +12,8 @@ import { isReadOnlyViewer } from "@/lib/auth/read-only-viewer";
  * The server rendering the shell already holds the resolved session, so it answers the same question
  * for free and hands the result down as a prop (`pushHrId`).
  *
- * The rule itself is the context route's, unchanged, and that route stays live for the phone app
- * (mobile/src/lib/push.tsx reads `appId` and `hrId` from it). The two must agree, and
- * tests/shell-chatter.test.ts pins both to the same expression:
+ * The context route answers through this function too, and that route stays live for the phone app
+ * (mobile/src/lib/push.tsx reads `appId` and `hrId` from it), so the two cannot disagree:
  *   - uppercased, to match the form pushes are addressed to (src/lib/notifications/system.ts cleanHrId)
  *     and the form push_subscriptions.hr_id is stored in — OneSignal external ids are case-sensitive;
  *   - a test login gets NO identity: its hrId is the real person it mirrors, and OneSignal.login() with

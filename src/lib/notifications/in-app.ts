@@ -1,3 +1,4 @@
+import { isMissingRpcError } from "@/lib/supabase/errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
@@ -376,14 +377,6 @@ export type InAppNoticeBundle = {
 /** The admin client's two doors the bundle read uses, so a test can hand in a fake. */
 export type NoticeReadClient = Pick<ReturnType<typeof getSupabaseAdmin>, "from" | "rpc">;
 
-/** The RPC is not on this database yet (the migration has not run): PGRST202 / 42883. */
-function rpcMissing(error: unknown): boolean {
-  const code = typeof error === "object" && error !== null ? String((error as { code?: unknown }).code ?? "") : "";
-  if (code === "PGRST202" || code === "42883") return true;
-  const text = (error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`).toLowerCase();
-  return text.includes("could not find the function") || text.includes("function public.phx_in_app_notices");
-}
-
 type NoticeRpcPayload = {
   events?: unknown;
   states?: unknown;
@@ -645,13 +638,19 @@ export async function listInAppNoticeBundleForViewer(
     let readStates: (rowIds: string[]) => Promise<NotificationUserStateRow[]>;
     let unreadMessages: number | null = null;
 
+    // The envelope is asked under the identity the messages list resolves (resolveSender in
+    // internal-messages/service.ts), without that lookup's two reads. A session's HR id is its auth
+    // row's, and with no HR id the list finds the employee by the login id, which is the key
+    // employeeHrId already holds. A session with no login id cannot be asked, because the list would
+    // read it from the auth row: it sends neither id, the statement skips the scan and answers null,
+    // and the menu reads its own count once.
+    const messageLoginId = cleanText(access.loginId);
+
     const rpc = await supabase.rpc("phx_in_app_notices", {
       p_hr_id: employeeHrId,
       p_user_id: identity.userId ?? "",
-      // The envelope's identity is the session's own ids, the same strings the messages list reads
-      // with first (internal-messages/service.ts, "ONE WAVE, NOT TWO"); the menu re-reads on open.
-      p_msg_hr_id: normalizeHrId(access.hrId) ?? "",
-      p_login_id: cleanText(access.loginId),
+      p_msg_hr_id: messageLoginId ? employeeHrId : "",
+      p_login_id: messageLoginId,
       p_categories: allowedCategories,
       p_today: today,
       p_limit: readLimit,
@@ -659,7 +658,7 @@ export async function listInAppNoticeBundleForViewer(
       p_flooding_event_type: TALENT_ACQUISITION_FLOODING_EVENT_TYPE,
     });
 
-    if (rpc.error && !rpcMissing(rpc.error)) throw rpc.error;
+    if (rpc.error && !isMissingRpcError(rpc.error)) throw rpc.error;
     if (rpc.error) {
       const legacy = await legacyNoticeReads({ access, allowedCategories, client: supabase, employeeHrId, readLimit, today });
       events = legacy.events;

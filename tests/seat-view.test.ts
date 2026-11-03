@@ -380,11 +380,15 @@ export function runSeatViewTests(): void {
 
     // The MCP server bundles the notifications module and must hold no administrative IO: the
     // read-only check those writers ask stays in its dependency-free file, never seat-view.ts.
-    for (const path of ["src/lib/notifications/in-app.ts", "src/lib/outstation/service.ts", "app/api/notifications/push/context/route.ts"]) {
+    // The push context route asks it through the ONE push-identity rule (src/lib/notifications/push-identity.ts).
+    for (const path of ["src/lib/notifications/in-app.ts", "src/lib/outstation/service.ts", "src/lib/notifications/push-identity.ts"]) {
       const text = source(path);
       assert.ok(text.includes('from "@/lib/auth/read-only-viewer"'), `${path} asks the dependency-free read-only check`);
       assert.ok(!text.includes('from "@/lib/auth/seat-view"'), `${path} must not pull the seat-view signer into its bundle`);
     }
+    const pushContext = source("app/api/notifications/push/context/route.ts");
+    assert.ok(/const hrId = pushIdentityOf\(access\);/.test(pushContext), "the push context route answers through the push-identity rule, which asks the read-only check");
+    assert.ok(!pushContext.includes('from "@/lib/auth/seat-view"'), "the push context route must not pull the seat-view signer into its bundle");
     assert.ok(!/^import (?!type)/m.test(source("src/lib/auth/read-only-viewer.ts")), "read-only-viewer.ts imports nothing at runtime");
 
     const banner = source("src/components/layout/seat-view-banner.tsx");

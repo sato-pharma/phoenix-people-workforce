@@ -32,7 +32,6 @@ function writeRegistrationMemo(key: string | null, memo: PushRegistrationMemo): 
 
 function reportSubscriptionState(optedIn: boolean, subscriptionId: string | null, memoKey: string | null = null) {
   if (!subscriptionId) return;
-  writeRegistrationMemo(memoKey, { at: Date.now(), id: subscriptionId, optedIn });
   void fetch("/api/notifications/push/register", {
     body: JSON.stringify({
       deviceType: detectDeviceType(),
@@ -43,10 +42,16 @@ function reportSubscriptionState(optedIn: boolean, subscriptionId: string | null
     headers: { "Content-Type": "application/json" },
     keepalive: true,
     method: "POST",
-  }).catch(() => {
-    // Best-effort telemetry sync — a failed report just means push_subscriptions
-    // stays stale until the next change event or page load.
-  });
+  })
+    .then((response) => {
+      // Only an accepted report is remembered: a memo written for a failed one would skip the
+      // report on every page load for a week, and this browser would stay unreachable by push.
+      if (response.ok) writeRegistrationMemo(memoKey, { at: Date.now(), id: subscriptionId, optedIn });
+    })
+    .catch(() => {
+      // Best-effort telemetry sync — a failed report just means push_subscriptions
+      // stays stale until the next change event or page load.
+    });
 }
 
 /**
