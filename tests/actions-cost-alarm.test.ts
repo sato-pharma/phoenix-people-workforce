@@ -119,7 +119,7 @@ export function runActionsCostAlarmTests() {
   );
   assert.match(describeReadFailure({ stderr: "gh: Bad credentials (HTTP 401)" }), /expired or was revoked/, "🔴 a dead token was described as a missing permission");
   for (const stderr of ["gh: Resource not accessible by personal access token (HTTP 403)", "gh: Not Found (HTTP 404)"]) {
-    assert.match(describeReadFailure({ stderr }), /Plan: Read-only/, `a refused billing read must name the permission it needs: ${stderr}`);
+    assert.match(describeReadFailure({ stderr }), /Administration: Read-only/, `a refused billing read must name the permission it needs: ${stderr}`);
   }
   assert.match(describeReadFailure(new Error("socket hang up")), /the billing read failed \(socket hang up\)/);
 
