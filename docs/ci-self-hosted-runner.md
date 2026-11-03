@@ -1441,7 +1441,7 @@ verification for the exact commit SHA may be reused."* `push-typecheck-guard.mjs
 `<git-common-dir>/phx-remote-check/<sha>.json`, which `remote-check.mjs` writes when a run ends in a
 printed PASS or FAIL. It refuses a push solely when that record holds a typecheck FAIL for the exact
 commit being pushed, notes a reused PASS, and otherwise allows at once — no ssh, no wait, a 10s
-settings timeout. A chained `git commit && git push` now passes, because the new commit has no record.
+settings timeout. A chained `git commit && git push` now passes this guard, because the new commit has no record (`bash-guard.mjs` C12 refuses that shape for its own reason).
 Measured before: push p75 48s and p90 68s on 7-8 Oct, 146s p75 on 4-6 Oct, capped at 7 minutes.
 Pinned by `tests/push-typecheck-guard.test.ts`, which also asserts the fake remote-check is never
 called. The account below is kept for its history.

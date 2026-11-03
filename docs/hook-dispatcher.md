@@ -364,3 +364,61 @@ one — `main` behind, the refresh committed on the branch — and it must asser
 - **Pinned by** `tests/cloud-mirror-push-guard.test.ts`: seven cases, each building its own bare
   origin, work repo and memory directory under `CLAUDE_CONFIG_DIR`, so the suite never reads the
   laptop's real memory and passes on a runner that has none.
+
+## bash-guard C12 — a commit and a push are two commands
+
+**What happened.** On 3 Nov 2026 a single command, `git add … && git commit … && git push`, was
+allowed. C12 is a PreToolUse hook, so it runs before the whole command starts. The new commit did not
+exist yet, the branch had nothing past `origin/main`, and the scan read zero commits. The push carried
+a JWT: staging's public anon key, already on `main` in `.github/workflows/ci.yml`, so no harm this
+time. The very next push, with the commit in place, was refused for it with the `jwt` finding. A real
+key would have passed the same way, and once on GitHub the fix is rotation, not a revert.
+
+**Why it refuses rather than scanning the staged diff.** `gitleaks git --staged` was the other option,
+and it cannot close this shape, because that same command's `git add` has not run either. Measured on
+a fixture with the repo's own `.gitleaks.toml`:
+
+| The JWT's state when the scan runs | `--staged` | `origin/main..HEAD` |
+| --- | --- | --- |
+| Written, not yet added: what a hook sees of this shape | exit 0, clean | |
+| A file the command itself would write | exit 0, clean | |
+| Added | exit 1, found | |
+| Committed | | exit 1, found |
+
+Nothing readable at hook time is what the push will send, so the complete answer is to make the commit
+exist first. A real `pre-push` git hook would read the right commits, but the owner removed that gate
+on 2026-08-18 and it stays removed.
+
+**What it does.** It refuses when a command makes a commit (`git commit`, `cherry-pick`, `revert`, `am`,
+`merge`) and then pushes, before any of it runs. Run the commit, then a plain `git push` as a second
+command, and the ordinary scan reads the new commit. Through the real guard and the real gitleaks on a
+throwaway repository, that second command is refused (`1 commits scanned`, `leaks found: 1`, rule `jwt`)
+and the branch never reaches the origin.
+
+- **How it reads the command:** split at command positions by `commandSegments`, quoted text blanked,
+  comments dropped, so a commit message saying `git push` is not read as running one. It looks for
+  `git` anywhere in what is left, not only at the start, because `timeout 60 git push` and PowerShell's
+  own `if ($?) { git push }` are pushes too. A false refusal only costs splitting the command.
+- **Not refused:** a commit or a push alone, a push before the commit, a dry run, a push that only
+  deletes a branch, an aborted merge, `git pull` or `git rebase` before a push (they bring what the
+  remote holds or rewrite commits the scan can read), and any folder without `.gitleaks.toml`.
+- **Stand-down:** `PHX_SECRETS_OK=1`, unchanged, in the command or the environment. It skips the scan
+  as well, so it is only for a finding already read and judged a fixture. Splitting costs nothing.
+- **Pinned by** `tests/secret-scan-push-guard.test.ts`, sections 8 and 9, through the real hook.
+
+**What it costs.** This is the usual way a session pushes. In the Phoenix transcripts touched in the 14
+days to 3 Nov 2026, 2,607 of 4,279 push calls committed first, in 580 of the 745 sessions that pushed.
+So most sessions would meet the refusal once, at one extra step each, unless told first. The **Git**
+cluster of `docs/agents-session-traps-clusters.md` carries the cue, which the trap injector hands a
+session the first time it touches git.
+
+**What it still does not see.** These are limits of the scan, not of this refusal:
+
+- A commit made inside a script: `node scripts/x.mjs && git push` shows no commit to read.
+- A lone push C12's own pattern does not recognise, so no scan runs at all: `git -C <folder> push`
+  (67 of those 4,279 calls), `git -c <key=value> push`, `timeout 60 git push`, `if ($?) { git push }`.
+  That is why the refusal asks for a plain `git push`.
+- A push of something other than HEAD: the scan reads `origin/main..HEAD`, so
+  `git switch other && git push` and `git push origin other` read the wrong range.
+- A command run from a subfolder: both the scan and this refusal look for `.gitleaks.toml` in the
+  folder the push runs in, not in the folders above it.

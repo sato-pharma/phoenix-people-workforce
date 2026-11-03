@@ -34,6 +34,7 @@
 - [A real-browser press can run on a GitHub runner](a-real-browser-press-can-run-on-a-github-runner.md) - one-off job on a throwaway branch, staging only, when the laptop's memory floor stops a dev server.
 - [Stand-ins and the cache server declined, 2026-11-03](stand-ins-and-cache-server-declined-2026-11-03.md) - his decision in plain-word questions; never offer either again without a new measured need.
 - [ROI customer double count measured at zero, 2026-11-03](roi-customer-double-count-measured-zero-2026-11-03.md) - EGP 0 of 88,051.56 inflated; request_count cannot detect it, count one row_id per customer.
+- [Staging's employees hold demo identities, 2026-11-03](staging-employees-hold-demo-identities-2026-11-03.md) - 198 of 199; the drift check's "Fix: --apply" would overwrite them with real names and national IDs; his decision first.
 
 
 
