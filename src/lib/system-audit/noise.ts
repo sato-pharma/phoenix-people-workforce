@@ -73,9 +73,19 @@ const BROWSER_NETWORK_MESSAGES = new Set([
  * them as ours — but nothing in src/, app/ or public/ names either word (the test pins that).
  * Production, 31 Oct 2026: 27 + 1 rows, every one Brave on iPhone, five audit issues opened for a
  * fault no change of ours can reach. Matched on the raw message, which may be the JSON the browser's
- * own error event was stored as.
+ * own error event was stored as. Firefox on iPhone's reader-mode script (`window.__firefox__.reader`)
+ * is the same thing: 2 rows in 30 days to 3 Nov 2026.
  */
-const BROWSER_INJECTED_SCRIPT = /\bwindow\.ethereum\.selectedAddress\b|'[\w$]+\.standardSelectors'/;
+const BROWSER_INJECTED_SCRIPT = /\bwindow\.ethereum\.selectedAddress\b|'[\w$]+\.standardSelectors'|\bwindow\.__firefox__\b/;
+
+/**
+ * Node's own stack when the CALLER hung up while the request was still arriving: a phone lost signal
+ * mid-upload, and the route's read of the body threw. Nothing of ours failed and nobody was waiting
+ * for the answer, yet each one wrote a "hidden from the caller" row and often its route's own "failed"
+ * row too (68 rows in 30 days to 3 Nov 2026). Server rows only, and matched on the stack, because the
+ * message is whatever the route wrote. The person's own picture of the failed request stays.
+ */
+const CALLER_HUNG_UP = /\bError: aborted\s+at abortIncoming \(node:_http_server/;
 
 const STACK_FRAME_URL = /(?:@|\(|\bat\s+)(https?:\/\/[^\s)]+?):\d+:\d+/g;
 
@@ -151,6 +161,7 @@ export function classifyAppErrorNoise(row: AppErrorEventRow, options: NoiseOptio
   if (isClient && BROWSER_INJECTED_SCRIPT.test(raw)) return "browser_injected_script";
   // Exact messages only — "Connection closed." is not among them and stays a finding.
   if (isBenignClientDisconnect({ message: raw }) || isBenignClientDisconnect({ message })) return "benign_disconnect";
+  if (!isClient && CALLER_HUNG_UP.test(String(row.stack ?? ""))) return "benign_disconnect";
   if (isStaleDeployChunkError(new Error(message))) return "stale_deploy_chunk";
   if (isTransientRouterMountError(new Error(message))) return "router_mount_recovered";
   if (isTestAccountRow(row, options)) return "test_account";
