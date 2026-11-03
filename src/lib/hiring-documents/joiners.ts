@@ -52,6 +52,13 @@ type ContactRow = {
 
 type AcceptanceRow = { mobile: string | null; offer_id: string };
 
+type JoinerDetailsRow = {
+  bank_account: string | null;
+  hr_id: string;
+  national_id: string | null;
+  social_insurance_number: string | null;
+};
+
 function keyOf(hrId: string | null | undefined): string {
   return canonicalHrIdKey(hrId) ?? "";
 }
@@ -89,9 +96,9 @@ async function readDayOne(hrIds: readonly string[]): Promise<JoinerDayOneReads> 
   const supabase = getSupabaseAdmin();
   const spellings = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
   const keys = [...new Set(hrIds.map(keyOf).filter(Boolean))];
-  if (keys.length === 0) return { deviceCounts: new Map(), logins: new Set(), mailboxes: new Map() };
+  if (keys.length === 0) return { details: new Map(), deviceCounts: new Map(), logins: new Set(), mailboxes: new Map() };
 
-  const [logins, mailboxes, deviceCounts] = await Promise.all([
+  const [logins, mailboxes, deviceCounts, details] = await Promise.all([
     dayOneRead("account", async () => {
       const { data, error } = await supabase.from("app_auth_users").select("hr_id").in("hr_id", spellings).eq("is_active", true);
       if (error) throw new Error(error.message);
@@ -121,8 +128,27 @@ async function readDayOne(hrIds: readonly string[]): Promise<JoinerDayOneReads> 
       }
       return counts;
     }),
+    // THE NUMBERS STOP HERE. This is the one place on this screen they are read, and they leave as
+    // yes or no: a national ID and a bank account have no business in this panel's payload.
+    dayOneRead("details", async () => {
+      const { data, error } = await supabase
+        .from("employees")
+        .select("hr_id,national_id,social_insurance_number,bank_account")
+        .in("hr_id", spellings);
+      if (error) throw new Error(error.message);
+      return new Map(
+        ((data ?? []) as JoinerDetailsRow[]).map((row) => [
+          keyOf(row.hr_id),
+          {
+            bankAccount: Boolean(row.bank_account?.trim()),
+            insuranceNumber: Boolean(row.social_insurance_number?.trim()),
+            nationalId: Boolean(row.national_id?.trim()),
+          },
+        ]),
+      );
+    }),
   ]);
-  return { deviceCounts, logins, mailboxes };
+  return { details, deviceCounts, logins, mailboxes };
 }
 
 export async function getHiringJoiners(): Promise<HiringJoinersData> {

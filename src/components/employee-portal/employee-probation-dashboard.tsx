@@ -8,6 +8,7 @@ import { PortalDesktopTable } from "@/components/employee-portal/portal-primitiv
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
+import { employeeLeftWord } from "@/lib/employees/left-flag";
 import {
   calculateProbationProgress,
   classifyProbationRowZone,
@@ -687,6 +688,9 @@ export function EmployeeProbationDashboard({
                       {/* Employee */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <p className="font-semibold text-slate-800">{row.full_name}</p>
+                        {employeeLeftWord(row) ? (
+                          <p className="break-words text-xs font-bold text-phx-danger">{employeeLeftWord(row)}</p>
+                        ) : null}
                       </td>
 
                       {/* Job Title */}
@@ -811,6 +815,9 @@ export function EmployeeProbationDashboard({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-800">{row.full_name}</p>
+                      {employeeLeftWord(row) ? (
+                        <p className="break-words text-xs font-bold text-phx-danger">{employeeLeftWord(row)}</p>
+                      ) : null}
                       <p className="mt-0.5 text-xs text-slate-600">{row.job_title}</p>
                     </div>
                     <span

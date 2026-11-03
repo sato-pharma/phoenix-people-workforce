@@ -1149,6 +1149,7 @@ import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runHrOperationsSpecialistAccessTests } from "./hr-operations-specialist-access.test.ts";
 import { runHiringJoinersTests } from "./hiring-joiners.test.ts";
+import { runHiringLeaversTests } from "./hiring-leavers.test.ts";
 import { runHrResourcingSeatTests } from "./hr-resourcing-seat.test.ts";
 import { runAccessBoundariesTests } from "./access-boundaries.test.ts";
 import { runHrRemindersTests } from "./hr-reminders.test.ts";
@@ -5119,6 +5120,10 @@ await runTest(
   + "hire date winning; a save must carry every field; papers progress skips exit documents; the read "
   + "carries no money, and both routes assert before they touch anything)",
   runHiringJoinersTests,
+);
+await runTest(
+  "the Leavers tab and the left word: who has left, what they owe, the scan queue stays current staff, and flagging closes and decides nothing",
+  runHiringLeaversTests,
 );
 await runTest(
   "HR Resourcing seat (the Talent Acquisition seat holds what the owner ticked and nothing he left out: "

@@ -21,6 +21,7 @@
  * never fail because a queue is missing.
  */
 
+import { employeeLeftFlag, type EmployeeLeftFlag } from "@/lib/employees/left-flag";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import {
   getEmployeeDirectoryRows,
@@ -49,6 +50,8 @@ export class NewHireMailboxError extends Error {
 }
 
 export type NewHireMailboxTask = {
+  /** Set when they have left or declined, which closes nothing: HR still dismisses the task. */
+  employeeLeft: EmployeeLeftFlag | null;
   employeeFound: boolean;
   /** False when the hire has no active Phoenix login yet: connecting would be refused. */
   hasLogin: boolean;
@@ -274,6 +277,9 @@ export async function getNewHireMailboxQueue(): Promise<NewHireMailboxQueue> {
     const resolver = employees.get(canonicalHrIdKey(row.resolved_by_hr_id) ?? "");
     const emailAddress = row.email_address ?? null;
     return {
+      employeeLeft: employee
+        ? employeeLeftFlag({ employmentStatus: employee.employmentStatus, lastWorkingDate: employee.lastWorkingDate })
+        : null,
       employeeFound: Boolean(employee),
       hasLogin: withLogin.has(key),
       id: String(row.id ?? hrId),

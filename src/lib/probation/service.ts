@@ -738,6 +738,7 @@ async function buildProbationRows(access: AccessContext): Promise<ProbationRow[]
         crm_id: employee.crmId ?? "",
         days_remaining: probationDaysRemaining(employee.hireDate) ?? 0,
         employment_status: employee.employmentStatus ?? "",
+        last_working_date: employee.lastWorkingDate ?? null,
         // A `dv_state` projection of employee_probation's DV checkboxes stood here until
         // 2026-09-01. It answered null for every row this function ever returned, because the
         // table it read has been empty since the Case model took over provisioning. Anything

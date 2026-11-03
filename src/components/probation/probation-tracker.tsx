@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
+import { employeeLeftWord } from "@/lib/employees/left-flag";
 import {
   calculateProbationProgress,
   classifyProbationTrafficStatus,
@@ -783,6 +784,7 @@ export function ProbationTracker({
               >
                 <PortalRecordFields
                   fields={[
+                    ...(employeeLeftWord(row) ? [{ label: "No longer here", value: employeeLeftWord(row) as string }] : []),
                     { label: "Hiring Date", value: formatDate(row.hire_date) },
                     { label: "Probation Day / Status", value: row.probationDayStatus },
                     { label: "Direct Manager", value: row.manager_name ?? "—" },
@@ -852,6 +854,9 @@ export function ProbationTracker({
                     <tr className="align-top transition-colors hover:bg-slate-50/65" key={`feedback:${row.hr_id}`}>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
                         <span className="block break-words font-semibold text-text">{row.full_name}</span>
+                        {employeeLeftWord(row) ? (
+                          <span className="block break-words text-xs font-bold text-phx-danger">{employeeLeftWord(row)}</span>
+                        ) : null}
                         <span className="block break-words text-text-secondary">
                           Hired {formatDate(row.hire_date)}
                         </span>
@@ -941,6 +946,7 @@ export function ProbationTracker({
               >
                 <PortalRecordFields
                   fields={[
+                    ...(employeeLeftWord(row) ? [{ label: "No longer here", value: employeeLeftWord(row) as string }] : []),
                     { label: "Line", value: row.line_name },
                     { label: "Area", value: row.area_name },
                     { label: "Hire Date", value: formatDate(row.hire_date) },
@@ -1023,6 +1029,9 @@ export function ProbationTracker({
                     <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
                         <span className="block break-words font-semibold text-text">{row.full_name}</span>
+                        {employeeLeftWord(row) ? (
+                          <span className="block break-words text-xs font-bold text-phx-danger">{employeeLeftWord(row)}</span>
+                        ) : null}
                         <span className="block break-words text-text-secondary">{row.job_title}</span>
                       </td>
                       <td className={cn(probationTableCellClassName, "break-words align-top")}>
