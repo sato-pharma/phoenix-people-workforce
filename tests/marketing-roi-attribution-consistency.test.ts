@@ -145,7 +145,7 @@ export function runMarketingRoiAttributionConsistencyTests() {
 // roll-up as View Sales does, and carry the parent code the customer and distributor facts join on.
 function testDirectOrdersReachTheFactsThroughTheRollup() {
   const { body, file } = resolveLatestFunctionBody("phx_refresh_marketing_roi_facts");
-  const code = stripSqlComments(body).replace(/s+/g, " ");
+  const code = stripSqlComments(body).replace(/\s+/g, " ");
 
   const at = code.indexOf("direct_hits as materialized (");
   const end = code.indexOf("all_hits as materialized (", at);
@@ -154,27 +154,27 @@ function testDirectOrdersReachTheFactsThroughTheRollup() {
 
   assert.match(
     directHits,
-    /join marketing_roi_distributor_rollup ru on ru.marketing_normalized_name = md.normalized_name/,
+    /join marketing_roi_distributor_rollup ru on ru\.marketing_normalized_name = md\.normalized_name/,
     `${file}: the direct branch must reach sales codes through the roll-up`,
   );
   assert.match(
     directHits,
-    /lower(btrim(dopdc.distributor_code)) = lower(btrim(ru.sos_distributor_code))/,
+    /lower\(btrim\(dopdc\.distributor_code\)\) = lower\(btrim\(ru\.sos_distributor_code\)\)/,
     `${file}: a venue's sales code must be compared with a sales code, or no direct order ever matches`,
   );
   assert.doesNotMatch(
     directHits,
-    /btrim(md.distributor_code)/,
+    /btrim\(md\.distributor_code\)/,
     `${file}: a marketing distributor's own code matches no venue`,
   );
   assert.match(
     directHits,
-    /ru.parent_distributor_code as distributor_code/,
+    /ru\.parent_distributor_code as distributor_code/,
     `${file}: the customer and distributor facts join on the parent code, so a direct sale must carry it`,
   );
   assert.match(
     directHits,
-    /select distinct on (req.id, dor.id).*order by req.id, dor.id/,
+    /select distinct on \(req\.id, dor\.id\).*order by req\.id, dor\.id\b/,
     `${file}: one order counts once per request, even under a parent and a child code`,
   );
 }
