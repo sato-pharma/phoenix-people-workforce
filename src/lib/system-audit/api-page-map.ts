@@ -210,6 +210,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/phoenix-crm/master-list": { admin: "/admin/phoenix-crm/master-list" },
   "/api/phoenix-crm/recording": { admin: "/admin/field-crm/visit-recording", portal: "/employee-portals/field-crm" },
   "/api/phoenix-crm/refused-readings": { admin: "/admin/phoenix-crm/refused-readings", portal: "/employee-portals/field-crm" },
+  "/api/new-hire-accounts": { admin: "/admin/field-crm/new-hire-accounts" },
   "/api/phoenix-crm/rep-exceptions": { admin: "/admin/field-crm/rep-exceptions" },
   "/api/phoenix-crm/venue-caps": { admin: "/admin/field-crm/venue-caps" },
   "/api/phoenix-crm/validation-reviews": { admin: "/admin/field-crm/validation-reviews", portal: "/employee-portals/field-crm" },

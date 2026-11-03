@@ -908,6 +908,19 @@ export function canDecideValidationReviews(viewer: PhoenixCrmViewer): boolean {
 }
 
 /**
+ * The controls the Super Admin and the SFE Manager share over a rep's field work: Rep Exceptions, Polyclinic Caps and
+ * New Hire Accounts (owner, 2026-11-03: "I want the SFE to have the access"). Never a test account.
+ *
+ * Its own name, and not `canDecideValidationReviews`, because the two answer different questions and may part.
+ * The routes ask `approve`, the verb both hold; every other holder of `approve` stops here.
+ */
+export function canUseSfeFieldControls(viewer: PhoenixCrmViewer): boolean {
+  if (viewer.isTestPersona) return false;
+  if (viewer.isSuperAdmin) return viewer.canUpdate;
+  return viewer.isSfeManager && viewer.canApprove;
+}
+
+/**
  * WHICH SEATS a Place checks read covers: `null` is the whole company, a list of seat ids is one
  * district manager's own team (owner, 2026-10-13: "shows the check places only for his team").
  *

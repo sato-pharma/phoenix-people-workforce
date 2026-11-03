@@ -12,16 +12,17 @@ import { canManageRepExceptions, loadRepExceptionsAdmin } from "@/lib/phoenix-cr
 export const dynamic = "force-dynamic";
 
 /**
- * Rep exceptions — the Super Admin switches the unplanned visit limit off for any rep, for the dates he sets.
+ * Rep exceptions — the Super Admin or the SFE Manager switches the unplanned visit limit off for any rep, for the
+ * dates they set. The page opens on the exceptions in force, with who set each and when (owner, 2026-11-03).
  *
  * Owner, 2026-11-03: "build a module for admin only to open or close this feature by a toggle or be able to control
  * duration for any rep if needed exception".
  *
- * 🔴 THE SUPER ADMIN'S ALONE — `canManageRepExceptions`, on the page and inside every service it calls.
+ * 🔴 THOSE TWO ALONE — `canManageRepExceptions`, on the page and inside every service it calls.
  */
 export default async function PhoenixCrmRepExceptionsPage({ searchParams }: { searchParams: Promise<{ rep?: string | string[] }> }) {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "phoenix_crm", "update"))) redirect("/admin");
+  if (!(await canAccess(access, "phoenix_crm", "approve"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canManageRepExceptions(viewer)) redirect("/admin");
 
@@ -31,7 +32,7 @@ export default async function PhoenixCrmRepExceptionsPage({ searchParams }: { se
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Switch the unplanned visit limit off for any rep and set the dates it applies. The usual limit returns by itself after the last date."
+        description="The exceptions in force come first, with who set each one and when. Under them, switch the unplanned visit limit off for any rep and set the dates. The usual limit returns by itself after the last date."
         eyebrow="CRM"
         icon={<CalendarClock className="h-3.5 w-3.5" />}
         title="Rep exceptions"

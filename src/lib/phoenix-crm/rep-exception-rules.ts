@@ -78,6 +78,9 @@ export type RepExceptionsAdminView = {
   offPlanWeeklyCap: number;
   reps: RepExceptionPick[];
   selected: RepExceptionPick | null;
+  /** Every rep with a live exception. The page opens on these, whatever the filter says. */
+  exceptions: RepExceptionRow[];
+  /** The ordinary module under them: the chosen rep, or everyone who once had one and has none now. */
   rows: RepExceptionRow[];
 };
 

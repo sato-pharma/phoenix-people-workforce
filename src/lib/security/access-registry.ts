@@ -1235,12 +1235,15 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/download", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/delete", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  // The Super Admin's Polyclinic Caps page (owner, 2026-11-02): one switch or one number on one rep's venue.
-  // `update` at the route, and the module narrows it to the Super Admin alone.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/venue-caps", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  // The Super Admin's Rep Exceptions page (owner, 2026-11-03): one switch or one change of dates for one rep.
-  // `update` at the route, and the module narrows it to the Super Admin alone.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/rep-exceptions", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // The Polyclinic Caps page (owner, 2026-11-02; the SFE Manager too since 2026-11-03): one switch or one number on one
+  // rep's venue. `approve` at the route, and the module narrows it to those two.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/venue-caps", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // The Rep Exceptions page (owner, 2026-11-03; the SFE Manager too): one switch or one change of dates for one rep.
+  // `approve` at the route, and the module narrows it to those two.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/rep-exceptions", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // New Hire Accounts (owner, 2026-11-03): one setup link to one person. `approve` at the route, and the service narrows
+  // it to the Super Admin and the SFE Manager and to people who have not set a password yet. `user_admin` stays his.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-accounts", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // The Administrator approves or refuses a recorded visit (owner, 2026-10-16). The service asks
   // `canAdminister` again, so the matrix action is the floor, not the gate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/review", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),

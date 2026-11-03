@@ -38,8 +38,10 @@
 - [Staging's demo identities replaced with real data, 2026-11-03](staging-employees-hold-demo-identities-2026-11-03.md) - his choice; pre-images in `staging_reconcile_backup_20261103`; a later drift alert is a real HR change and refreshing stays his decision.
 - [The home's open times on Small, 2026-11-03](portal-home-speed-on-small-before-medium-2026-11-03.md) - the figures to beat after Medium: 2.69 s median, 41% over 3 s, the slow tail unchanged; how to count an open.
 - [A hire date's history survives only in probation reminders, 2026-11-03](hire-date-history-survives-only-in-probation-reminders.md) - saves leave no audit row; Medical Reps only; a date moved away and back leaves no live reminders.
+- [A held pull request must be a draft](a-held-pull-request-must-be-a-draft.md) - a hold said in one chat cannot stop another session's box offering the merge; 54 merged that way on 3 Nov.
 - [A seat starts on the job offer's date, 2026-11-03](seat-start-follows-the-job-offer-2026-11-03.md) - his ruling; 40 rows corrected with a backup; Toka Zaki and Mahmoud Khaled still owed from 8 Nov, when moving them changes no credit.
 - [A runner press must wait for hydration before it clicks](a-runner-press-must-wait-for-hydration-before-it-clicks.md) - a click with no request in the server log and no page error means the press beat the script, not that the feature is broken.
+- [Archive refs did not move to the new repository, 2026-11-03](archive-refs-did-not-move-to-the-new-repository-2026-11-03.md) - 1,721 refs and 3,167 commits exist on this one disk only; 131 tips are not accounted for on main; pushing them is his word.
 
 
 

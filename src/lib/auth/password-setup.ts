@@ -61,6 +61,8 @@ export type PasswordSetupPreview = {
 export type PasswordSetupLinkResult = {
   deliveryMessage: string;
   deliveryMode: "copy" | "email" | "whatsapp";
+  /** Email mode only: whether the mail really left. False means the link exists and the person does not have it. */
+  emailDelivered?: boolean;
   expiresAt: string;
   loginId: string;
   setupUrl?: string;
@@ -203,9 +205,37 @@ async function resolveWhatsAppNumber(user: { hr_id?: string | null }) {
   }
 }
 
+/**
+ * The one mailbox the person pressing the button chose, read from the employee register and from nowhere else. A chosen
+ * mailbox that is empty is a refusal, never a quiet send to the other one: New Hire Accounts names the address on the
+ * button it prints. A failed lookup degrades to "no address", the same as the two resolvers above.
+ */
+async function resolveChosenEmail(user: { hr_id?: string | null }, emailTo: "private" | "work") {
+  const hrId = String(user.hr_id ?? "").trim();
+  if (!hrId) return null;
+
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("employees")
+      .select("work_email, personal_email")
+      .eq("hr_id", hrId)
+      .maybeSingle();
+    const row = data as { personal_email?: string | null; work_email?: string | null } | null;
+    return pickDeliverableEmail(emailTo === "private" ? row?.personal_email : row?.work_email);
+  } catch {
+    return null;
+  }
+}
+
 export async function sendPasswordSetupLink(input: {
   actorLoginId?: string | null;
   deliveryMode?: "copy" | "email" | "whatsapp";
+  /**
+   * Which mailbox, for a caller that lets a person choose (New Hire Accounts, owner 2026-11-03). Left out, the mailbox is
+   * resolved as it always was. A private address is allowed here because a person pressed for this one person; the
+   * self-service reset code below still goes to the Sato mailbox alone.
+   */
+  emailTo?: "private" | "work";
   governanceReason?: string | null;
   loginId: string;
   origin?: string | null;
@@ -227,7 +257,10 @@ export async function sendPasswordSetupLink(input: {
   // login key phx-<hex>@auth.phoenix.local, not a mailbox. Including it would turn this error into
   // something far worse — a password link "sent" successfully into a hard bounce. pickDeliverableEmail
   // rejects it (and any .local address) even if a future caller passes it in by mistake.
-  const deliverableEmail = await resolveDeliverableEmail(user);
+  const deliverableEmail = input.emailTo ? await resolveChosenEmail(user, input.emailTo) : await resolveDeliverableEmail(user);
+  if (deliveryMode === "email" && !deliverableEmail && input.emailTo) {
+    throw new Error(`User ${loginId} has no ${input.emailTo === "private" ? "private" : "Sato"} email on the employee register.`);
+  }
   if (deliveryMode === "email" && !deliverableEmail) {
     throw new Error(
       `User ${loginId} has no deliverable email address (checked app_auth_users.email and employees.work_email). Use the copy-link delivery mode instead.`,
@@ -383,6 +416,7 @@ export async function sendPasswordSetupLink(input: {
             ? "email_sent"
             : "link_generated_only",
       deliveryMode,
+      emailTo: input.emailTo ?? null,
       expiresAt,
       reason: input.governanceReason ?? null,
       purpose,
@@ -406,6 +440,7 @@ export async function sendPasswordSetupLink(input: {
             ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
             : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${deliverableEmail}.`,
     deliveryMode,
+    ...(deliveryMode === "email" ? { emailDelivered: emailSent } : {}),
     expiresAt,
     loginId,
     // 🔴 THE RAW LINK LEAVES THE SERVER FOR THE COPY WORKFLOW AND NOTHING ELSE, and the WhatsApp mode

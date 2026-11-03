@@ -60,13 +60,20 @@ DONOT FOLLOW THE CAP IN THIS POLYCLINIC ONLY"* — Mohamed Ahmed Mohamed Hassan 
 - Migration `20261101162433_phoenix_crm_al_raee_polyclinic_no_cap.sql`. Pinned by
   `tests/phoenix-crm-offplan-exemption.test.ts` (`runLiftedVenueTests`). To end it, set `ended_at` on the row.
 
-## The Super Admin's Polyclinic Caps page (owner, 2026-11-02)
+## The Polyclinic Caps page (owner, 2026-11-02)
 
 *"This module I filter by the medical rep. Then after I filter by the medical rep, all his polyclinics appear. Okay, I
 have the option to, for example, open or close the toggle. When I open the toggle, then no cap for this rep in this
 polyclinic. And also have the option to, for example, instead of making the cap 3, make it 5, make it 7."* From here on
-an exception of this kind needs no migration. The page is `/admin/field-crm/venue-caps`, the Super Admin's alone
-(`canManageVenueCaps`, on the page and in the service).
+an exception of this kind needs no migration. The page is `/admin/field-crm/venue-caps`, the Super Admin's and, since
+2026-11-03, the SFE Manager's (`canManageVenueCaps`, on the page and in the service).
+
+**It opens on the exceptions** (owner, 2026-11-03: *"the first thing that appears in the module are the reps who are
+taking exceptions or the polyclinics who are taking exceptions at which rep. And who put this exception? And when?"*).
+The list reads every territory, a vacant one included, because an exception belongs to the territory. A venue is listed
+when its switch is on, when its number stands above the company's, or when a row frees its unplanned visits. A stored
+number at or below the company's is not listed, because the door holds the greater. A vacant territory says so and
+cannot be changed here, since the write needs a rep's seats. The choose-a-rep module sits under the list unchanged.
 
 - **The list:** every live venue of the rep's seats, all three kinds, held ones marked. Retired and test venues are not
   listed. A venue appears as soon as the rep captures it.
@@ -120,8 +127,9 @@ On 24 November the usual 2 a day and 8 a week apply again with no job and no han
 ## The Rep Exceptions page (owner, 2026-11-03)
 
 *"Build a module for admin only to open or close this feature by a toggle or be able to control duration for any rep if
-needed exception."* `/admin/field-crm/rep-exceptions`, the Super Admin's alone (`canManageRepExceptions`, never a test
-account). It opens on everyone who has had a dated exception; the filter brings up any other rep.
+needed exception."* `/admin/field-crm/rep-exceptions`, the Super Admin's and, since 2026-11-03, the SFE Manager's
+(`canManageRepExceptions`, never a test account). It opens on the exceptions in force with who set each and when. Under
+them sit the reps who once had one, and the filter brings up any other rep.
 
 - **The switch** writes or ends the same rep-wide dated row the first-month section above describes, so the door, the
   rep's allowance card and everything that stays are unchanged. The next new hire no longer needs a hand-written row.
@@ -151,11 +159,34 @@ account). It opens on everyone who has had a dated exception; the filter brings 
 - The allowance card tells the rep where the limit is lifted; a manager's off-plan card carries
   `OFF_PLAN_EXEMPT_CARD_TEXT`. Pinned by `tests/phoenix-crm-offplan-exemption.test.ts`.
 
+## New Hire Accounts (owner, 2026-11-03)
+
+*"I want him to be able to send the new accounts to the new hires, but without changing in access or authorities or
+anything."* `/admin/field-crm/new-hire-accounts`, for the Super Admin and the SFE Manager, sits beside these two pages
+because the same two people run them. Its code is in `src/lib/new-hire-accounts/`, outside the CRM module, because it
+reads logins and the audit trail and the module may not.
+
+- **Who is listed, and asked again at every press** (`isNewHireAccount`): an active login forced to set a password, on
+  Medical Rep or District Manager, active on the register, hired in the last 90 days or later. Somebody with a password
+  of their own can never be reached, so nobody's established account can be taken over from here.
+- **One press, one person.** Sato email reads `employees.work_email` alone, private email `employees.personal_email`
+  alone, WhatsApp `employees.mobile_number` alone. The address never comes from the request, and a channel with no address
+  cannot be pressed and says why.
+- **The sender is `sendPasswordSetupLink`, the one the access page uses.** It writes `force_password_reset`,
+  `session_version` and `updated_at`, and no role, line, manager or scope. `user_admin` and
+  `/api/admin/users/setup-link`, which reach anybody, stay the Super Admin's.
+- **WhatsApp puts the live link in the browser of the person who pressed**, inside the chat URL, until the new hire sets a
+  password. He asked for it, and each send leaves an audit row. The URL is never stored, and the screen never re-reads,
+  so it cannot be lost.
+- **A second press asks first**, because a new link cancels the last one. Last sent comes from the audit row, and an email
+  that did not leave says not delivered.
+- **A private address is for this person-pressed link only.** The self-service reset code still goes to the Sato mailbox.
+
 ## Limits worth knowing
 
 - **One visit per customer per day still applies**, so "five or six" means five or six different customers.
 - The hospital is not a shared place today (no shared-place row; the hospital account has one place). Its doctors are
   covered once the rep seats them in a venue of his own whose folded name contains "الجوي". Until then only visits to the
   hospital account itself are exempt.
-- A new exception is a row in `phoenix_crm_offplan_exemptions`, set by the Super Admin on the Polyclinic Caps page or
+- A new exception is a row in `phoenix_crm_offplan_exemptions`, set by the Super Admin or the SFE Manager on these pages or
   with the owner's word — never a settings change.

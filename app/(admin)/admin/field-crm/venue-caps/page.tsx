@@ -12,18 +12,19 @@ import { canManageVenueCaps, loadVenueCapsAdmin } from "@/lib/phoenix-crm/server
 export const dynamic = "force-dynamic";
 
 /**
- * Polyclinic caps — the Super Admin chooses a rep, and sets each of that rep's polyclinics.
+ * Polyclinic caps — the Super Admin or the SFE Manager chooses a rep, and sets each of that rep's polyclinics. The page
+ * opens on every exception that stands, at which rep, who set it and when (owner, 2026-11-03).
  *
  * Owner, 2026-11-02: "This module I filter by the medical rep. Then after I filter by the medical rep, all his
  * polyclinics appear ... When I open the toggle, then no cap for this rep in this polyclinic. And also have the
  * option to, for example, instead of making the cap 3, make it 5, make it 7."
  *
- * 🔴 THE SUPER ADMIN'S ALONE — `canManageVenueCaps`, on the page and inside every service it calls. The redirect
+ * 🔴 THOSE TWO ALONE — `canManageVenueCaps`, on the page and inside every service it calls. The redirect
  * rather than a message is deliberate: a page that does not describe itself to somebody who may not read it.
  */
 export default async function PhoenixCrmVenueCapsPage({ searchParams }: { searchParams: Promise<{ rep?: string | string[] }> }) {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "phoenix_crm", "update"))) redirect("/admin");
+  if (!(await canAccess(access, "phoenix_crm", "approve"))) redirect("/admin");
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
   if (!viewer || !canManageVenueCaps(viewer)) redirect("/admin");
 
@@ -33,7 +34,7 @@ export default async function PhoenixCrmVenueCapsPage({ searchParams }: { search
   return (
     <div className="space-y-5">
       <AdminPageHero
-        description="Choose a rep to see every polyclinic and centre on that rep's territory. Switch the cap off at any one of them, or raise its daily number."
+        description="The polyclinics holding an exception come first, with the rep, who set it and when. Under them, choose a rep to switch a cap off or raise a daily number."
         eyebrow="CRM"
         icon={<Building2 className="h-3.5 w-3.5" />}
         title="Polyclinic caps"
