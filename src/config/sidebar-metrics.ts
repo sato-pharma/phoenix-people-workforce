@@ -58,7 +58,10 @@ const ICON_GAP = 8;
  */
 const PIN_RESERVE = 24;
 
-/** ArrowUpRight `h-3.5 w-3.5` after the wrapper's `gap-1.5`. Hub (standalone) rows only. */
+/**
+ * ArrowUpRight `h-3.5 w-3.5` after the wrapper's `gap-1.5`. Hub (standalone) rows only, and never on a
+ * row left alone by a search, which the width test would otherwise not see.
+ */
 const HUB_ARROW = 14 + 6;
 
 /** NavBadge `min-w-[18px] px-1` (18 + 8) after the label wrapper's `gap-1.5`. */
