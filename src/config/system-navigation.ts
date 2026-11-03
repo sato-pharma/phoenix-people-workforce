@@ -31,6 +31,7 @@ import {
   FileSearch,
   FileSignature,
   FileSpreadsheet,
+  FileWarning,
   FileUp,
   Fingerprint,
   FlaskConical,
@@ -2270,6 +2271,7 @@ const hrNavigationSectionSeeds = [
       // could fail. This is what let the owner's instruction ("make Employee Directory appear in
       // her account") be honoured without handing her a write surface.
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
+      { href: "/hr/employees/record-gaps", icon: FileWarning, label: "Record Gaps", permissions: [{ resource: "employees", action: "read" }] },
       { href: "/hr/employee-360", icon: Contact, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       // Beside the Organogram since 2026-10-16: it is the same seat model read as a list of the empty
@@ -4051,6 +4053,13 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
   // "Other Approvals" moved to the sidebar's Approvals Hub section — see
   // adminNavigationSectionSeeds above.
   {
+    href: "/employees/record-gaps",
+    icon: FileWarning,
+    label: "Record Gaps",
+    description: "Active employees with a bank or insurance detail missing.",
+    permissions: [{ resource: "employees", action: "read" }],
+  },
+  {
     href: "/employees",
     icon: UsersRound,
     label: "Employees",
@@ -5107,6 +5116,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         sectionId: "hub-people-management",
         hrefs: [
           "/employees",
+          "/employees/record-gaps",
           "/contracts",
           "/resignations",
           "/retention",
