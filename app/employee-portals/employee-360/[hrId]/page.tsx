@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { Employee360View, type Employee360Subject } from "@/components/employee-360/employee-360-view";
+import { Employee360IncentiveSection } from "@/components/employee-360/incentive-section";
 import { PeriodFilter } from "@/components/employee-360/period-filter";
 import {
   EmployeePortalEmptyState,
@@ -12,6 +13,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { buildEmployee360Scope, canViewEmployee360Subject } from "@/lib/employee-360/access";
 import { getEmployee360Profile } from "@/lib/employee-360/deep-service";
+import { loadEmployee360PersonnelRecords } from "@/lib/employee-360/personnel-records";
 import { getEmployee360TeamHealth, type TeamHealthSummary } from "@/lib/employee-360/team-health";
 import { getEmployee360TeamLifecycle, type TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import { getTrainingManagerAnalytics, type TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
@@ -103,7 +105,8 @@ export default async function EmployeePortalEmployee360DetailPage({
   // Same 360-specific scope gate as the index page (self / team / hierarchy /
   // line / reps / company) — a viewer who can't open this subject is bounced back
   // to the browse list rather than seeing a half-built report.
-  if (!canViewEmployee360Subject(access, target, await buildEmployee360Scope(rows, access))) {
+  const scope = await buildEmployee360Scope(rows, access);
+  if (!canViewEmployee360Subject(access, target, scope)) {
     redirect(PORTAL_BASE_PATH);
   }
 
@@ -194,6 +197,8 @@ export default async function EmployeePortalEmployee360DetailPage({
     isSkillsSurveyMember(target) && !isSkillsSurveySubject(access, target.hrId)
       ? startSection(() => getSkillsSurveyHistoryForMember(access, target.hrId))
       : null;
+  // Never rejects: each section inside it fails on its own and is named on the page.
+  const personnelRead = loadEmployee360PersonnelRecords({ access, target, scope });
   // Phoenix CRM: plan compliance and visit frequency by grade, read in the subject's own scope.
   const crmInsightsRead = startSection(() =>
     loadEmployee360CrmInsights({
@@ -235,7 +240,7 @@ export default async function EmployeePortalEmployee360DetailPage({
   const profile = summary;
   // Team Health — coaching coverage of a field manager's own reps (DM/RM/NSM). The only section that
   // needs the profile, so it starts now and runs beside the reads already in flight.
-  const [teamHealthResult, teamLifecycleResult, tmAnalyticsResult, pmMarketingResult, crmInsightsResult, skillsSurveyResult] =
+  const [teamHealthResult, teamLifecycleResult, tmAnalyticsResult, pmMarketingResult, crmInsightsResult, skillsSurveyResult, personnel] =
     await Promise.all([
       isFieldManager
         ? startSection(() =>
@@ -255,6 +260,7 @@ export default async function EmployeePortalEmployee360DetailPage({
       pmMarketingRead,
       crmInsightsRead,
       skillsSurveyRead,
+      personnelRead,
     ]);
 
   // A section whose read fails says so on the page; it never silently disappears. Same order as before.
@@ -311,6 +317,12 @@ export default async function EmployeePortalEmployee360DetailPage({
               : null
           }
           unreadSections={unreadSections}
+          personnel={personnel}
+          incentiveSection={
+            personnel.incentiveSignIn ? (
+              <Employee360IncentiveSection access={access} scope={scope} signIn={personnel.incentiveSignIn} target={target} />
+            ) : null
+          }
           pmMarketing={pmMarketing}
           showExpenses={showExpenses}
           subject={subject}

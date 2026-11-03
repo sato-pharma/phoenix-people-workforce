@@ -33,6 +33,7 @@ const ROUTES = [
 ] as const;
 
 const PAGE = "app/(admin)/sales/database-mapping/page.tsx";
+const FINDER_ROUTE = "app/api/sales/mapping-database/address-findings/route.ts";
 
 function source(file: string) {
   return readFileSync(file, "utf8");
@@ -87,6 +88,18 @@ export function runCustomerMapReadGateTests() {
         guard.index < rateLimitIndex,
         `${file}: refuse the caller before charging the export rate limit, so a refused employee cannot burn the admin's quota`,
       );
+    }
+  }
+
+  // --- 2b. the wrong-town finder walks the same national list and writes rulings ---------------
+  {
+    const route = source(FINDER_ROUTE);
+    for (const [method, call] of [["GET", "scanAddressFindings("], ["POST", "ruleOnAddressFinding("]] as const) {
+      const body = route.slice(route.indexOf(`export async function ${method}(`));
+      const guard = REFUSING_GUARD.exec(body);
+      assert.ok(guard, `${FINDER_ROUTE} ${method} must refuse every role but Super Admin (or system scope) with a 403`);
+      assert.ok(guard.index < body.indexOf(call), `${FINDER_ROUTE} ${method}: the gate must run before ${call}`);
+      assert.ok(body.indexOf(call) > body.indexOf('assertPermission(access, "sales", "import")'), `${FINDER_ROUTE} ${method} must still assert sales:import`);
     }
   }
 

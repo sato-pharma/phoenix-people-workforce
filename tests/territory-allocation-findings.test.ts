@@ -209,4 +209,12 @@ export function runTerritoryAllocationFindingsTests() {
   assert.match(workspace, /items=\{area\.overlaps\.map\(/);
   assert.match(workspace, /items=\{area\.orphans\.map\(/);
   assert.match(workspace, /const folded = items\.slice\(FINDINGS_SHOWN\);/, "the rest fold behind a click, never off the page");
+
+  // ── 8. A mis-assigned brick links to its fix, for whoever can open the fix ─────────────────
+  assert.match(workspace, /href: canReviewBricks \? brickCorrectionHref\(overlap\.brickId\) : undefined/, "an overlap row links to that brick's correction, only for a viewer who can open it");
+  assert.match(workspace, />Review<\/Link>/, "it says Review, never Fix: the finding rests on pins, and a pin can be a guess");
+  const adminPage = readFileSync(new URL("../app/(admin)/sales/territory-management/page.tsx", import.meta.url), "utf8");
+  assert.match(adminPage, /canReviewBricks=\{access\.role === "Super Admin" \|\| access\.scope === "system"\}/, "the same bar as the Database Mapping page");
+  const portalPage = readFileSync(new URL("../app/employee-portals/territory-management/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(portalPage, /canReviewBricks/, "the portal never draws a link its roles would only be bounced from");
 }

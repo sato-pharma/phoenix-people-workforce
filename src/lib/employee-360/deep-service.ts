@@ -834,6 +834,8 @@ export type ExpenseSummary = {
 };
 export type OutstationSummary = {
   hasData: boolean;
+  /** Rejected requests: counted here, and left out of every other figure. */
+  rejectedCount: number;
   tripCount: number;
   claimedTotal: number;
   expectedTotal: number;
@@ -865,6 +867,7 @@ export type PayrollExpenseRow = {
   pm_workload: number | null;
 };
 export type OutstationRow = {
+  status?: string | null;
   claimed_total_amount: number | null;
   expected_total_amount: number | null;
   eligibility_status: string | null;
@@ -923,6 +926,7 @@ function emptyEmployeeExpenses(): EmployeeExpenses {
     },
     outstation: {
       hasData: false,
+      rejectedCount: 0,
       tripCount: 0,
       claimedTotal: 0,
       expectedTotal: 0,
@@ -1015,7 +1019,7 @@ async function readEmployeeExpenses(hrId: string, window: Employee360Window): Pr
       .limit(5000),
     supabase
       .from("outstation_expense_requests")
-      .select("claimed_total_amount,expected_total_amount,eligibility_status,territory_validation_status")
+      .select("status,claimed_total_amount,expected_total_amount,eligibility_status,territory_validation_status")
       .in("employee_hr_id", keys)
       .gte("trip_start_date", window.from)
       .lte("trip_start_date", `${window.to} 23:59:59+00`)
@@ -1226,13 +1230,19 @@ export function summarizePayrollExpenseRows(rows: readonly PayrollExpenseRow[]):
 /**
  * Outstation requests submitted in Phoenix (`outstation_expense_requests`). The product no longer
  * computes a variance or a fraud signal, so neither is read or shown; an eligibility or territory
- * issue still flags a request.
+ * issue still flags a request. A rejected request is left out and only counted, as in the payroll
+ * summary above: "Claimed" read higher than anything the person could ever be paid.
  */
 export function summarizeOutstationRequests(outRows: readonly OutstationRow[]): OutstationSummary {
   let claimedTotal = 0;
   let expectedTotal = 0;
   let flaggedCount = 0;
+  let rejectedCount = 0;
   for (const o of outRows) {
+    if (expenseApprovalState({ hrApproved: null, status: o.status }) === "rejected") {
+      rejectedCount += 1;
+      continue;
+    }
     claimedTotal += Number(o.claimed_total_amount ?? 0);
     expectedTotal += Number(o.expected_total_amount ?? 0);
     const eligIssue = o.eligibility_status != null && o.eligibility_status !== "eligible";
@@ -1249,7 +1259,8 @@ export function summarizeOutstationRequests(outRows: readonly OutstationRow[]): 
   }
   return {
     hasData: outRows.length > 0,
-    tripCount: outRows.length,
+    rejectedCount,
+    tripCount: outRows.length - rejectedCount,
     claimedTotal,
     expectedTotal,
     flaggedCount,

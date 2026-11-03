@@ -82,10 +82,10 @@ import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
-  dedupeHistoricalExpensesByTrip,
   listOutstationRequestExpenses,
   listPayrollExpenseReports,
   listPayrollExpenses,
+  mergeRequestAndLedgerExpenses,
 } from "@/lib/outstation/expenses";
 import {
   calculatePayrollParts,
@@ -2172,6 +2172,8 @@ export type MedicalRepPortalData = {
     /** Non-null when that semester is not fully loaded — names the months, so a rep can never read
      * a partial figure as their settled payout. See describeIncompleteWindow. */
     incentiveWindowNotice: string | null;
+    /** A manager's published closing could not be read, or his seat resolves no reach. Set only then. */
+    incentiveClosingUnread?: boolean;
     overviewAchievementPercent: number;
     overviewSales: number;
     overviewTarget: number;
@@ -2709,18 +2711,21 @@ async function listOutstationExpensesForPortal(hrIds?: Array<string | null | und
   );
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_expense_requests")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  // Paged: one response stops at 1,000 rows, and newest-first means a manager's OLDEST trips were the
+  // ones that fell off Team Comparison, with nothing on the screen to say so.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("outstation_expense_requests").select("*").order("created_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
     if (isMissingOutstationTable(error)) return [];
-    throw new Error(error.message);
+    throw error;
   }
 
   return withLivePortalExpenseNames(
-    ((data ?? []) as Array<Record<string, unknown>>)
+    data
       .map(mapOutstationExpenseToPayrollApproval)
       .filter((expense) => {
         if (normalizedFilter.size === 0) return true;
@@ -3605,10 +3610,8 @@ export async function getMedicalRepPortalData(
     // reads per product; every other consumer wants the dashboard, as before.
     const salesDashboard = scopedSales.dashboard;
     const portalSalesRecords = scopedSales.records;
-    const expenses = [
-      ...dedupeHistoricalExpensesByTrip(historicalExpenses, liveOutstationExpenses),
-      ...liveOutstationExpenses,
-    ];
+    const merged = mergeRequestAndLedgerExpenses(historicalExpenses, liveOutstationExpenses);
+    const expenses = [...merged.historical, ...merged.live];
 
     const base = await getEmployeePortalData(access, {
       payroll: payrollDashboard,
@@ -4208,6 +4211,7 @@ export async function getMedicalRepPortalData(
       incentiveWindowNotice: closingUnavailable
         ? "The published closing could not be read for your reach, so no incentive figure is shown."
         : describeIncompleteWindow(incentiveWindow),
+      incentiveClosingUnread: closingUnavailable,
       // The Pedia split, or null on every other line and in a closed semester. Null is what tells
       // the tab to render the single-figure presentation — it must never be read as "a split worth
       // zero", which is why the whole object is absent rather than its numbers being 0.
@@ -5401,10 +5405,8 @@ export async function getNsmTeamExpenses(
       scopedDsms.map((employee) => employee.hrId),
     );
 
-    const combinedExpenses = [
-      ...dedupeHistoricalExpensesByTrip(reportExpenses, liveOutstationExpenses),
-      ...liveOutstationExpenses,
-    ];
+    const merged = mergeRequestAndLedgerExpenses(reportExpenses, liveOutstationExpenses);
+    const combinedExpenses = [...merged.historical, ...merged.live];
 
     const lineExpenses = combinedExpenses.filter((expense) => {
       const canonicalHrId = normalizeHrIdForAccess(expense.hrId);

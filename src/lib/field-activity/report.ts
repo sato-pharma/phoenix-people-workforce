@@ -22,6 +22,8 @@ import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { expenseApprovalState, isRejectedStatus } from "@/lib/outstation/approval-state";
+import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { managerVisitWhereLines } from "@/lib/phoenix-crm/manager-visit-detail";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
@@ -127,6 +129,23 @@ function nullableNumber(value: unknown): number | null {
   if (value == null) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * What HR decided a trip is worth, or null while nobody has. `outstation_expense_requests` has no
+ * approved figure: it sits on the linked ledger row, under the same "OUTSTATION-<id>" reference. Reading
+ * a column the request does not have is why every trip on this report said "Not decided".
+ */
+export function decidedTripAmount(
+  requestStatus: string | null | undefined,
+  ledger: { approved_amount: number | null; hr_approved: boolean | null; status: string | null; total: number | null } | undefined,
+): number | null {
+  if (ledger) {
+    const state = expenseApprovalState({ hrApproved: ledger.hr_approved, status: ledger.status });
+    if (state === "approved") return payableExpenseAmount(ledger.approved_amount, ledger.total);
+    if (state === "rejected") return 0;
+  }
+  return isRejectedStatus(requestStatus) ? 0 : null;
 }
 
 export async function loadFieldActivityReport(input: {
@@ -256,7 +275,19 @@ export async function loadFieldActivityReport(input: {
       .lte("trip_start_date", `${toIso}T23:59:59`)
       .limit(500);
     if (error) throw new Error(`field activity: trips — ${error.message}`);
-    trips = rowsOf(data, "trips").map((record) => {
+    const tripRecords = rowsOf(data, "trips");
+    const ledgerByTrip = new Map<string, Parameters<typeof decidedTripAmount>[1]>();
+    if (tripRecords.length > 0) {
+      const { data: ledgerRows, error: ledgerError } = await supabase
+        .from("outstation_expenses")
+        .select("trip_id, total, approved_amount, hr_approved, status")
+        .in("trip_id", tripRecords.map((record) => `OUTSTATION-${String(record.id ?? "")}`));
+      if (ledgerError) throw new Error(`field activity: trip decisions — ${ledgerError.message}`);
+      for (const row of (ledgerRows ?? []) as unknown as Array<NonNullable<Parameters<typeof decidedTripAmount>[1]> & { trip_id: string }>) {
+        ledgerByTrip.set(row.trip_id, row);
+      }
+    }
+    trips = tripRecords.map((record) => {
       return {
         reference: `OUTSTATION-${String(record.id ?? "")}`,
         tripDate: String(record.trip_start_date ?? ""),
@@ -275,7 +306,7 @@ export async function loadFieldActivityReport(input: {
         meeting: money(record.meeting_amount),
         other: money(record.other_amount),
         claimedTotal: money(record.claimed_total_amount),
-        approvedTotal: nullableNumber(record.approved_total ?? null),
+        approvedTotal: decidedTripAmount(record.status as string | null, ledgerByTrip.get(`OUTSTATION-${String(record.id ?? "")}`)),
         status: (record.status as string | null) ?? null,
         eligibility: (record.eligibility_status as string | null) ?? null,
         recommendation: (record.approval_recommendation as string | null) ?? null,

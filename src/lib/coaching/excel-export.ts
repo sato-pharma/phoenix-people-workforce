@@ -1,3 +1,4 @@
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import ExcelJS from "exceljs";
 import { HOUSE_XLSX_DISPLAY_FONT, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
 
@@ -120,7 +121,7 @@ function toExcelDateTime(value: string | null | undefined) {
 }
 
 function normalizeHrId(value: string | null | undefined) {
-  return sanitizeExcelText(value).trim().toLowerCase();
+  return canonicalHrIdKey(sanitizeExcelText(value)) ?? "";
 }
 
 function setWorkbookMetadata(workbook: ExcelJS.Workbook) {

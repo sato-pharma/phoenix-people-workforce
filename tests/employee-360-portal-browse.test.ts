@@ -147,7 +147,7 @@ export function runEmployee360PortalBrowseTests() {
   // admin route, which would bounce a portal-mode role right back out).
   assert.match(detailSource, /resolveNavigationMode\(access\) !== "employee-portal"/);
   assert.match(detailSource, /redirect\("\/overview"\)/);
-  assert.match(detailSource, /canViewEmployee360Subject\(access, target, await buildEmployee360Scope\(rows, access\)\)/);
+  assert.match(detailSource, /const scope = await buildEmployee360Scope\(rows, access\);\s*if \(!canViewEmployee360Subject\(access, target, scope\)\)/);
   assert.match(detailSource, /redirect\(PORTAL_BASE_PATH\)/);
   assert.doesNotMatch(detailSource, /redirect\("\/employee-360"\)/, "the portal detail page must never redirect into the admin surface");
 

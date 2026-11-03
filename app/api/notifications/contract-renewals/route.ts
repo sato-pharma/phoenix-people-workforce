@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+
 import { contractRenewalReminderDaysAhead, getContractRenewalReminderCandidates } from "@/lib/contracts/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
@@ -56,7 +58,7 @@ function cairoDate() {
 }
 
 function cleanHrId(value: string | null | undefined) {
-  return String(value ?? "").trim().toUpperCase();
+  return canonicalHrIdForDisplay(value) ?? "";
 }
 
 function employeeDirectoryByHrId(rows: EmployeeDirectoryRow[]) {

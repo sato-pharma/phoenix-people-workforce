@@ -60,6 +60,7 @@ import {
   publishedPointsOnly,
   type MonthlyAchievementPoint,
 } from "@/lib/sales/employee-achievement";
+import { OUTSTATION_UNDECIDED_STATUSES } from "@/lib/outstation/undecided-claim";
 import { SALES_VS_TARGET_FLOOR } from "@/lib/sales/vs-target";
 
 /**
@@ -1341,7 +1342,7 @@ export async function getPortalHomeSnapshot(
             .from("outstation_expense_requests")
             .select("id", { count: "exact", head: true })
             .eq("employee_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-            .eq("status", "submitted"),
+            .in("status", [...OUTSTATION_UNDECIDED_STATUSES]),
         )
       : Promise.resolve(null);
 
@@ -1462,7 +1463,7 @@ export async function getPortalHomeSnapshot(
     : await Promise.all([repSalesPromise, mrRankPromise, fieldKpisPromise, doubleVisitPulsePromise]);
   const { mrSalesAchievement, monthlySalesTrend, mrAchievementPeriod } = repSales;
 
-  // Pending submitted expenses count.
+  // Expense claims still waiting for a decision.
   let mrPendingExpenseCount: PortalHomeSnapshot["mrPendingExpenseCount"] = null;
   try {
     const expData = expenseResult.status === "fulfilled" ? expenseResult.value : null;
