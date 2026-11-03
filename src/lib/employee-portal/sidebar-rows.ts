@@ -54,7 +54,7 @@ export const EMPLOYEE_PORTAL_SIDEBAR_ROWS: readonly EmployeePortalSidebarRow[] =
   { href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", section: "Approvals Hub" },
   { href: "/employee-portals/approvals/plan", label: "Plan Approvals", section: "Approvals Hub" },
   { href: "/employee-portals/marketing-requests/inbox", label: "Marketing Inbox", section: "Approvals Hub" },
-  { href: "/employee-portals/market-awareness/inbox", label: "Awareness Approvals", section: "Approvals Hub" },
+  { href: "/employee-portals/market-awareness/inbox", label: "Awareness Inbox", section: "Approvals Hub" },
   { href: "/employee-portals/approvals-hub", label: "Other Approvals", section: "Approvals Hub" },
 
   { href: "/employee-portals/source-of-sales", label: "Source of Sales", section: "Sales Data" },

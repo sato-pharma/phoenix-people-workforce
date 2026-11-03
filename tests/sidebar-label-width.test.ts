@@ -9,6 +9,7 @@ import {
 } from "../src/config/system-navigation.ts";
 import { getSections, usesFlatSidebar, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
 import {
+  FALLBACK_LABEL_FONT_FAMILY,
   labelBudgetPx,
   PORTAL_GEOMETRY_CHECKPOINT,
   portalNavClientWidthFor,
@@ -37,11 +38,16 @@ import {
  * so there an over-long label does not ellipsise — it pushes its row's badge out and overflows. Same
  * assertion, uglier failure.
  *
- * Widths are MEASURED, not modelled: the app resolves to Aptos, and a per-character advance model
- * was off by up to 9px on strings like "Weekly / Monthly Plans" — more than the ~5px of slack the
- * tightest label has. `pnpm run ui:measure-sidebar-labels` re-measures in headless Chromium and
- * rewrites the snapshot. A label with no snapshot entry FAILS here rather than being skipped, so
- * adding or renaming one cannot quietly bypass the check.
+ * Widths are MEASURED, not modelled: a per-character advance model was off by up to 9px on strings
+ * like "Weekly / Monthly Plans" — more than the ~5px of slack the tightest label has.
+ * `pnpm run ui:measure-sidebar-labels` re-measures in headless Chromium and rewrites the snapshot. A
+ * label with no snapshot entry FAILS here rather than being skipped, so adding or renaming one cannot
+ * quietly bypass the check.
+ *
+ * Each label has to fit in TWO faces. The font stack draws with the first family a machine can see, so
+ * one width only ever described the machine that took it: the script's own browser sees Segoe UI, not
+ * Aptos, and "Double Visit Data Integrity" passed here at 154px while a browser on Arial's metrics cut
+ * it at 159px. The snapshot's `fallback` half holds Arial, and a label must fit its row in both.
  *
  * The missing-entry half also runs before the push: tests/sidebar-label-snapshot.test.ts holds it with
  * no database import, so `node scripts/check-contracts.mjs` can run it. This file still needs
@@ -127,20 +133,31 @@ function worstCaseRows(): Measured[] {
 }
 
 export function runSidebarLabelWidthTests() {
-  const widths = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as Partial<
-    Record<SidebarShell, Record<string, number>>
-  >;
+  type ShellWidths = Partial<Record<SidebarShell, Record<string, number>>>;
+  const widths = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as ShellWidths & {
+    fallback?: ShellWidths;
+  };
   assert.ok(
     widths.admin && widths.portal,
     "the snapshot must hold a per-shell map — re-run `pnpm run ui:measure-sidebar-labels`",
   );
+  assert.ok(
+    widths.fallback?.admin && widths.fallback.portal,
+    `the snapshot must hold a per-shell map in ${FALLBACK_LABEL_FONT_FAMILY} — re-run \`pnpm run ui:measure-sidebar-labels\``,
+  );
+  const faces: [string, ShellWidths][] = [
+    ["the measuring machine's face", widths],
+    [FALLBACK_LABEL_FONT_FAMILY, widths.fallback],
+  ];
 
   const rows = worstCaseRows();
   assert.ok(rows.length > 100, `expected the full nav to resolve, got ${rows.length} rows`);
 
-  const missing = rows
-    .filter((row) => typeof widths[row.shell]?.[row.label] !== "number")
-    .map((row) => `${row.shell}: ${row.label}`);
+  const missing = faces.flatMap(([face, measured]) =>
+    rows
+      .filter((row) => typeof measured[row.shell]?.[row.label] !== "number")
+      .map((row) => `${row.shell} in ${face}: ${row.label}`),
+  );
   assert.deepEqual(
     [...new Set(missing)],
     [],
@@ -150,12 +167,14 @@ export function runSidebarLabelWidthTests() {
   const clipped: string[] = [];
   for (const row of rows) {
     const budget = labelBudgetPx({ badge: row.badge, hub: row.hub, shell: row.shell });
-    const width = widths[row.shell]![row.label];
-    if (width > budget) {
-      clipped.push(
-        `"${row.label}" [${row.shell}${row.badge ? " +badge" : ""}${row.hub ? " +hub" : ""}] needs ${width}px but gets ${budget}px ` +
-          `(${width - budget}px over; first seen as ${row.roles[0]})`,
-      );
+    for (const [face, measured] of faces) {
+      const width = measured[row.shell]![row.label];
+      if (width > budget) {
+        clipped.push(
+          `"${row.label}" [${row.shell}${row.badge ? " +badge" : ""}${row.hub ? " +hub" : ""}] needs ${width}px in ${face} but gets ${budget}px ` +
+            `(${width - budget}px over; first seen as ${row.roles[0]})`,
+        );
+      }
     }
   }
   assert.deepEqual(
