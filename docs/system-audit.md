@@ -320,6 +320,53 @@ came back.
 - "No deliverable address" — two active Medical Reps still have no Sato work email in Employee Master.
   Data, entered there, not code.
 
+## The 3 Nov 2026 digest, triaged
+
+27 new and 4 newly shared, 31 in all. Most of it was one database restart, one GitHub suspension and the
+server refusing what it should.
+
+**Fixed** — each pinned by a test that fires when the fix is removed:
+
+- **Send on a sales letter with no seat answered 500** — HR's own letter was missing a seat, and the
+  sentence held none of the words `offerJsonError` looks for, so a refusal read as a server fault. The
+  start-date sentence had the same hole. Both are now a 400, and the composer stops a missing seat before
+  it asks, as it already did for a missing date. `tests/offer-joining-form.test.ts`.
+- **Opening HR Forms raised a block nobody met** — the paper editor asks whether to draw the signature
+  panel; everyone but the Super Admin got a 403, the editor read that as a normal answer, and the screen
+  capture photographed it as a refusal. The read now answers `canManage: false` with no image and no word
+  of whether one is stored. The writes keep their 403. `tests/hiring-pack-document-marks.test.ts`.
+- **A Product Manager opening a marketing request met a false block** — the case file mounted the
+  conversation for every viewer, and its route refuses a viewer admitted only as a product's owner because
+  the conversation can carry customer details they are denied. The thread no longer mounts for them; the
+  route's gate did not move. `tests/marketing-request-case-file-page.test.ts`.
+- **A phone losing signal mid-upload read as a server fault** — Node's own `Error: aborted` at
+  `abortIncoming`, 68 rows in 30 days. Server rows with that stack now leave as `benign_disconnect`; any
+  other abort, and "Connection closed.", stay findings. Amr Mohamed Naguib's expense is the proof nothing
+  was lost: the attempt aborted at 21:58:11 and the claim saved at 21:58:15. `tests/system-audit-noise.test.ts`.
+- **Firefox on iPhone's reader script** (`window.__firefox__.reader`), 2 rows in 30 days — excluded as
+  `browser_injected_script`, with the own-code scan extended to it. `tests/system-audit-noise.test.ts`.
+
+**No change, and why:**
+
+- The database restarted on 1 Nov at 14:03:05 Cairo. That is the intake worker failure, the permission
+  overrides load failure, the Zoom due 500, the unread notices failure, the React #441 and the two
+  `/api/messages` 400s, all between 14:03:19 and 14:03:50.
+- Synthetic journeys refused 3 times on 2 Nov — the GitHub suspension. Already repaired on 3 Nov at 00:47.
+- The Customer Directory 403 for the SFE Manager — already fixed on `main`.
+- Territory sync 500 for a Medical Rep, 6 periods committed and 3 not started — deliberate. A partial run
+  still fails (`sync.ts`), and every drilldown role may run it by owner decision.
+- The attribution freshness sweep's lock timeout on 2 Nov at 20:05:11 — inside that sync's two minutes.
+  Probable cause, not proven, and once.
+- Business Cards hydration, twice from one person — `domRewriter=foreignAttrs=__gcrremoteframetoken`, an
+  external rewrite of the page.
+- The iReports360 live poll, the weekly export and the unplanned visit — network, once each.
+- Polyclinic day cap, already registered, place already decided, photo on its side, no nameplate, Google
+  150 m, request already waiting, sales sheet missing columns — the server refusing what it should.
+
+**Found, not fixed:** the CRM parity sweep refused the window 31 Jan to 1 Mar 2026, the vendor's answer
+missing 338 of the mirror's 11,574 rows, the same figure on 7 Oct, 15 Oct and 1 Nov. The code leaves it for
+a human to read, and nobody has.
+
 ## The Slowest pages tab (1 Nov 2026)
 
 `/admin/system-audit?tab=slow-pages` reads the last 7 days of `page_timings` through

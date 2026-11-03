@@ -59,7 +59,7 @@ import {
 } from "@/lib/offers/template-choice";
 import { cn } from "@/lib/utils";
 import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
-import { OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
+import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE, offerRequiresSeat } from "@/lib/offers/joining-form";
 import type {
   OfferFields,
   OfferJobTitle,
@@ -859,6 +859,11 @@ export function OfferComposer({
     // The server refuses it too; saying so here keeps a dateless letter from being saved and sent.
     if (!draft.startDate) {
       onReport(OFFER_START_DATE_REQUIRED_MESSAGE, "error");
+      return;
+    }
+    // The same for a sales letter with no seat: the hint under the field said so, and Send still went.
+    if (offerRequiresSeat(draft.title) && !draft.vacancyId) {
+      onReport(OFFER_SEAT_REQUIRED_MESSAGE, "error");
       return;
     }
     // ALWAYS save first, even when the draft is already saved. Before this, Send used the saved id

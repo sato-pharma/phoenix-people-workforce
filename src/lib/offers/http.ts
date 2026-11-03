@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { isForbiddenError } from "@/lib/auth/server";
+import { OFFER_SEAT_REQUIRED_MESSAGE, OFFER_START_DATE_REQUIRED_MESSAGE } from "@/lib/offers/joining-form";
 import { isOfferNotFound, isOfferSchemaMissing } from "@/lib/offers/service";
 
 /**
@@ -29,6 +30,11 @@ export function offerJsonError(error: unknown, fallback: string, defaultStatus =
   }
 
   const message = clientSafeErrorMessage(error, fallback);
+  // HR's own letter is missing a seat or a date, in sentences none of the words below match — so both
+  // answered 500 and read as a server fault (1 Nov 2026, the seat one). A refusal, by name.
+  if (message === OFFER_SEAT_REQUIRED_MESSAGE || message === OFFER_START_DATE_REQUIRED_MESSAGE) {
+    return NextResponse.json({ message, success: false }, { status: 400 });
+  }
   const lower = message.toLowerCase();
   if (lower.includes("not authenticated")) return NextResponse.json({ message, success: false }, { status: 401 });
   if (lower.includes("forbidden")) return NextResponse.json({ message, success: false }, { status: 403 });

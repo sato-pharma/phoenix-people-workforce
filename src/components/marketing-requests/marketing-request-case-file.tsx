@@ -922,11 +922,16 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
 
       {/* The conversation — open at ANY status, even after this request is rejected / cancelled
           (owner rule, 2026-09-22). This case-file page is the shared "open the request" destination
-          for the requester and every approver, so mounting the thread here reaches everyone. Every
-          message emails the requester, cc's everyone on the request, and pings them in-app / Telegram. */}
-      <div className="mt-6">
-        <RecordConversationThread base={`/api/marketing-requests/${header.requestId}/conversation`} />
-      </div>
+          for the requester and every approver, so mounting the thread here reaches them all. Every
+          message emails the requester, cc's everyone on the request, and pings them in-app / Telegram.
+          A viewer admitted ONLY as a product's owner reads this file with the customer's details held
+          back, and the conversation can carry them, so its route refuses them: asking anyway only
+          raised a false block on their screen (2 Nov 2026). The route's gate stays as it is. */}
+      {viewer.admittedAs.some((arm) => arm !== "product_owner") ? (
+        <div className="mt-6">
+          <RecordConversationThread base={`/api/marketing-requests/${header.requestId}/conversation`} />
+        </div>
+      ) : null}
     </main>
   );
 }

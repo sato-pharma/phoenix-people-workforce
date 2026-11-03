@@ -55,11 +55,12 @@ async function gate(request: Request, action: "read" | "update") {
   }
 }
 
+function isNotTheSuperAdmin(error: unknown) {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "FORBIDDEN";
+}
+
 function failure(error: unknown) {
-  const forbidden =
-    isForbiddenError(error) ||
-    (typeof error === "object" && error !== null && (error as { code?: unknown }).code === "FORBIDDEN");
-  if (forbidden) {
+  if (isForbiddenError(error) || isNotTheSuperAdmin(error)) {
     return Response.json(
       {
         error: "forbidden",
@@ -82,10 +83,20 @@ export async function GET(request: Request) {
     await gate(request, "read");
     const dataUri = await loadHrSignatureUri();
     return Response.json(
-      { present: dataUri !== null, dataUri },
+      { canManage: true, present: dataUri !== null, dataUri },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    // Everyone who prints papers opens the editor, and the editor asks here to learn whether to draw
+    // the signature panel. "Not yours" is the answer to that question, not a refusal: as a 403 it was
+    // photographed as a block she met (HR Forms, 2 Nov 2026) on a page where nothing had gone wrong.
+    // It carries no image, and whether one is stored stays unsaid. The writes still answer 403.
+    if (isNotTheSuperAdmin(error)) {
+      return Response.json(
+        { canManage: false, present: false, dataUri: null },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     return failure(error);
   }
 }

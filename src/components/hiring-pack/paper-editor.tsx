@@ -719,8 +719,8 @@ export function HiringPackPaperEditor({
    * What the server says about the stored signature: whether this viewer may touch it at all,
    * whether one exists, and the image itself so the panel can show what is stored.
    *
-   * THE SERVER DECIDES, NOT A PROP. `/api/hiring-pack/signature` answers 403 to anyone who is not a
-   * Super Admin, so `canManage` is read back from the real gate rather than re-derived from a role
+   * THE SERVER DECIDES, NOT A PROP. `/api/hiring-pack/signature` answers `canManage: false` to anyone
+   * who is not a Super Admin, so `canManage` is read back from the real gate rather than re-derived from a role
    * this component was handed — the two cannot drift, and a screen that offered the button to
    * somebody the route would refuse is exactly the kind of drift that produces a dead control.
    *
@@ -745,7 +745,7 @@ export function HiringPackPaperEditor({
    * may only write state from inside a callback. A fetcher that returns its answer can be awaited by
    * a click handler and `.then`-ed by an effect, and neither has to duplicate the parsing.
    *
-   * A 403 IS NOT AN ERROR HERE — it is the answer "this is not yours to manage", and it leaves the
+   * `canManage: false` OR A 403 IS NOT AN ERROR HERE — it is the answer "this is not yours to manage", and it leaves the
    * panel showing the stamp button alone with nothing red on screen. Anything else IS reported: a
    * Super Admin whose signature could not be read needs to know that before he places one and finds
    * the paper prints unsigned.
@@ -759,7 +759,10 @@ export function HiringPackPaperEditor({
       if (response.status === 403) {
         return { error: null, state: { canManage: false, dataUri: null, loaded: true, present: false } };
       }
-      const body = (await response.json()) as { dataUri?: string | null; message?: string; present?: boolean };
+      const body = (await response.json()) as { canManage?: boolean; dataUri?: string | null; message?: string; present?: boolean };
+      if (body?.canManage === false) {
+        return { error: null, state: { canManage: false, dataUri: null, loaded: true, present: false } };
+      }
       if (!response.ok) {
         return {
           error: body?.message ?? "The stored signature could not be read.",

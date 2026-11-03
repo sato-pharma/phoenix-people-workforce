@@ -97,6 +97,28 @@ export function runSystemAuditNoiseTests() {
     null,
     '"Connection closed." must be KEPT as a finding, never swallowed as a disconnect',
   );
+  // The caller hung up mid-body — the exact production stacks, 2 Nov 2026. Whatever the route wrote leaves.
+  const HUNG_UP = "Error: aborted\n    at abortIncoming (node:_http_server:921:17)\n    at socketOnClose (node:_http_server:914:3)";
+  assert.equal(
+    classifyAppErrorNoise(row({ source: "server", message: "API error hidden from the caller: Unable to submit outstation request.", stack: HUNG_UP })),
+    "benign_disconnect",
+    "a phone losing signal mid-upload is not a server fault",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({ source: "server", message: "Outstation submit failed", stack: `status=500\n${HUNG_UP}` })),
+    "benign_disconnect",
+    "the route's own row leads with its labels, and the same hang-up still leaves",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({ source: "server", message: "Outstation submit failed", stack: "status=500\nError: aborted\n    at runQuery (/app/.next/server/chunks/x.js:1:1)" })),
+    null,
+    "an abort that is not Node's own caller hang-up is a finding",
+  );
+  assert.equal(
+    classifyAppErrorNoise(row({ message: "Outstation submit failed", stack: HUNG_UP })),
+    null,
+    "server rows only",
+  );
 
   // ── Recovered by the app itself ────────────────────────────────────────────────────────────────
   assert.equal(classifyAppErrorNoise(row({ message: "Loading chunk 812 failed." })), "stale_deploy_chunk");
@@ -143,7 +165,12 @@ export function runSystemAuditNoiseTests() {
     null,
     "only the wallet shim's own global leaves — a selectedAddress of ours would stay a finding",
   );
-  // The exclusion is safe only while our code never names either word; the day it does, this fails.
+  assert.equal(
+    classifyAppErrorNoise(row({ message: "undefined is not an object (evaluating 'window.__firefox__.reader')", route: "/employee-portals" })),
+    "browser_injected_script",
+    "Firefox on iPhone's reader-mode script is the browser's script, not ours",
+  );
+  // The exclusion is safe only while our code never names these words; the day it does, this fails.
   const ownCode: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -158,7 +185,7 @@ export function runSystemAuditNoiseTests() {
     if (path.endsWith(NOISE_FILE)) continue;
     const text = readFileSync(path, "utf8");
     assert.ok(
-      !text.includes("ethereum.selectedAddress") && !text.includes("standardSelectors"),
+      !text.includes("ethereum.selectedAddress") && !text.includes("standardSelectors") && !text.includes("__firefox__"),
       `${path} names a word the System Audit treats as a browser's own script — narrow BROWSER_INJECTED_SCRIPT first`,
     );
   }
