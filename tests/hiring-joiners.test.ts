@@ -364,15 +364,21 @@ function testTheScanQueue() {
 
 function testWhatStandsReadyForDayOne() {
   const reads = {
+    details: new Map([
+      ["b-1", { bankAccount: true, insuranceNumber: true, nationalId: true }],
+      ["b-2", { bankAccount: false, insuranceNumber: false, nationalId: true }],
+      ["b-3", { bankAccount: true, insuranceNumber: true, nationalId: false }],
+    ]),
     deviceCounts: new Map([["b-1", 2]]),
     logins: new Set(["b-1"]),
     mailboxes: new Map<string, string | null>([["b-1", "connected"], ["b-2", "pending"], ["b-3", "not_needed"]]),
   };
-  assert.deepEqual(joinerDayOneFacts("b-1", reads), { devicesOutstanding: 2, hasActiveLogin: true, mailbox: "connected" }, "every read answered");
-  assert.deepEqual(joinerDayOneFacts("b-9", reads), { devicesOutstanding: 0, hasActiveLogin: false, mailbox: "none" }, "read, and nothing there");
+  const allThere = { bankAccount: true, insuranceNumber: true, nationalId: true };
+  assert.deepEqual(joinerDayOneFacts("b-1", reads), { details: allThere, devicesOutstanding: 2, hasActiveLogin: true, mailbox: "connected" }, "every read answered");
+  assert.deepEqual(joinerDayOneFacts("b-9", reads), { details: null, devicesOutstanding: 0, hasActiveLogin: false, mailbox: "none" }, "read, and nothing there");
   assert.deepEqual(
-    joinerDayOneFacts("b-1", { deviceCounts: null, logins: null, mailboxes: null }),
-    { devicesOutstanding: null, hasActiveLogin: null, mailbox: null },
+    joinerDayOneFacts("b-1", { details: null, deviceCounts: null, logins: null, mailboxes: null }),
+    { details: null, devicesOutstanding: null, hasActiveLogin: null, mailbox: null },
     "a failed read stays a failed read",
   );
 
@@ -382,32 +388,35 @@ function testWhatStandsReadyForDayOne() {
 
   assert.deepEqual(
     values({ dayOne: dayOne("b-1"), employeeHrId: "B-1", startKey: "2026-11-04" }),
-    ["record:Created:done", "account:Active:done", "mailbox:Connected:done", "device:2 issued:done"],
+    ["record:Created:done", "account:Active:done", "mailbox:Connected:done", "device:2 issued:done", "details:Complete:done"],
     "everything in place",
   );
   assert.deepEqual(
     values({ dayOne: dayOne("b-2"), employeeHrId: "B-2", startKey: "2026-11-20" }),
-    ["record:Created:done", "account:Not active yet:open", "mailbox:Pending:open", "device:None issued:neutral"],
+    ["record:Created:done", "account:Not active yet:open", "mailbox:Pending:open", "device:None issued:neutral", "details:No insurance number, bank account:open"],
     "weeks away: undone but not alarming, and no device is not a gap",
   );
   assert.deepEqual(
     values({ dayOne: dayOne("b-2"), employeeHrId: "B-2", startKey: "2026-11-05" }),
-    ["record:Created:done", "account:Not active yet:late", "mailbox:Pending:late", "device:None issued:neutral"],
-    "inside three days the undone turn late",
+    ["record:Created:done", "account:Not active yet:late", "mailbox:Pending:late", "device:None issued:neutral", "details:No insurance number, bank account:open"],
+    "inside three days the undone turn late, but an insurance number or bank account never turns red",
   );
   assert.deepEqual(
     values({ dayOne: dayOne("b-2"), employeeHrId: "B-2", startKey: "" }),
-    ["record:Created:done", "account:Not active yet:open", "mailbox:Pending:open", "device:None issued:neutral"],
+    ["record:Created:done", "account:Not active yet:open", "mailbox:Pending:open", "device:None issued:neutral", "details:No insurance number, bank account:open"],
     "no readable date has no countdown",
   );
+  const lastItem = (startKey: string) => values({ dayOne: dayOne("b-3"), employeeHrId: "B-3", startKey }).at(-1);
+  assert.equal(lastItem("2026-11-05"), "details:No national ID:late", "a missing national ID turns red inside three days");
+  assert.equal(lastItem("2026-11-20"), "details:No national ID:open", "and not weeks away");
   assert.deepEqual(
-    values({ dayOne: { devicesOutstanding: null, hasActiveLogin: null, mailbox: null }, employeeHrId: "B-2", startKey: "2026-11-04" }),
-    ["record:Created:done", "account:Not read:unread", "mailbox:Not read:unread", "device:Not read:unread"],
+    values({ dayOne: { details: null, devicesOutstanding: null, hasActiveLogin: null, mailbox: null }, employeeHrId: "B-2", startKey: "2026-11-04" }),
+    ["record:Created:done", "account:Not read:unread", "mailbox:Not read:unread", "device:Not read:unread", "details:Not read:unread"],
     "a failed read says so and never reads as a no, however close the day",
   );
   assert.deepEqual(
     values({ dayOne: dayOne(""), employeeHrId: null, startKey: "2026-11-04" }),
-    ["record:Not created yet:late", "account:After the record:neutral", "mailbox:After the record:neutral", "device:After the record:neutral"],
+    ["record:Not created yet:late", "account:After the record:neutral", "mailbox:After the record:neutral", "device:After the record:neutral", "details:After the record:neutral"],
     "no record: the rest waits for it",
   );
 
@@ -416,9 +425,17 @@ function testWhatStandsReadyForDayOne() {
   for (const secret of ["sealed_initial_password", "email_address", "login_id", "role", "value", "price", "cost"]) {
     assert.ok(!selects.includes(secret), `${secret} must never reach this panel`);
   }
-  assert.equal((service.match(/await dayOneRead\(|dayOneRead\("/g) ?? []).length, 3, "the three reads each go through the wrapper");
+  assert.equal((service.match(/await dayOneRead\(|dayOneRead\("/g) ?? []).length, 4, "the four reads each go through the wrapper");
   assert.ok(/async function dayOneRead[\s\S]*?catch \(error\)[\s\S]*?return null;/.test(service), "one failing read costs only its own lines");
   assert.ok(service.includes('.eq("status", "outstanding")') && service.includes('.eq("is_placeholder", false)'), "only a device actually out to this person counts");
+
+  // A national ID and a bank account are read to answer yes or no, and only that leaves the server.
+  assert.ok(selects.includes('"hr_id,national_id,social_insurance_number,bank_account"'), "the details read is exactly these columns");
+  assert.ok(/bankAccount: Boolean\(row\.bank_account\?\.trim\(\)\)/.test(service), "a bank account leaves as yes or no, and spaces are no");
+  assert.ok(/insuranceNumber: Boolean\(row\.social_insurance_number\?\.trim\(\)\)/.test(service), "an insurance number leaves as yes or no");
+  assert.ok(/nationalId: Boolean\(row\.national_id\?\.trim\(\)\)/.test(service), "a national ID leaves as yes or no");
+  const facts = joinerDayOneFacts("b-1", reads);
+  assert.ok(Object.values(facts.details ?? {}).every((value) => typeof value === "boolean"), "the payload holds booleans, never a number");
 
   const panel = stripComments(readFileSync("src/components/hiring-documents/hiring-joiners-panel.tsx", "utf8"));
   assert.equal(panel.split("renderDayOne(joiner)").length - 1, 2, "on the table and on the phone card");

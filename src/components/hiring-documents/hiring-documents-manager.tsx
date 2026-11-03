@@ -21,6 +21,7 @@ import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin
 import { Button } from "@/components/ui/button";
 import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
 import { HiringJoinersPanel } from "@/components/hiring-documents/hiring-joiners-panel";
+import { HiringLeaversPanel, useHiringLeavers } from "@/components/hiring-documents/hiring-leavers-panel";
 import { FieldLabel } from "@/components/ui/form-kit";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
@@ -66,7 +67,7 @@ type Props = {
   initialError: string | null;
 };
 
-type ActiveTab = "joiners" | "documents" | "capture" | "control";
+type ActiveTab = "joiners" | "leavers" | "documents" | "capture" | "control";
 
 // The sentinel, and the row filter under it, live in `@/lib/hiring-documents/filters` — the XLSX
 // export is built on the SERVER from the same filter state, and an export that does not match the
@@ -136,6 +137,7 @@ function getCompletionPercent(data: HiringDocumentsDashboardData | null) {
 
 export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveFiles, initialData, initialError }: Props) {
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("joiners");
+  const leavers = useHiringLeavers();
   const [arrivingCount, setArrivingCount] = React.useState<number | null>(null);
   // Whose papers are open beneath their row: one person at a time.
   const [openHrId, setOpenHrId] = React.useState<string | null>(null);
@@ -325,6 +327,8 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
   async function refreshDashboard() {
     setIsRefreshing(true);
     setError(null);
+    // Not awaited with the dashboard: its own failure says so on its own tab, never on this one.
+    void leavers.reload();
     try {
       const response = await fetch("/api/hiring-documents", { cache: "no-store" });
       const payload = await response.json();
@@ -547,6 +551,7 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
 
   const tabs: Array<{ id: ActiveTab; label: string }> = [
     { id: "joiners", label: arrivingCount === null ? "Joiners arriving" : `Joiners arriving · ${arrivingCount}` },
+    { id: "leavers", label: leavers.data ? `Leavers · ${leavers.data.leavers.length}` : "Leavers" },
     { id: "documents", label: `All employees · ${employees.length}` },
     { id: "capture", label: "Scan & Upload" },
     ...(canEditChecklist ? [{ id: "control" as const, label: "Checklist" }] : []),
@@ -766,6 +771,17 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
             />
           </div>
 
+          {/* Mounted on every tab too: back from filing a scan, the person's papers are still open. */}
+          <div className={activeTab === "leavers" ? undefined : "hidden"}>
+            <HiringLeaversPanel
+              canManage={canManage}
+              documents={documents}
+              onReceivePapers={openCapture}
+              onRetry={() => void leavers.reload()}
+              read={leavers}
+            />
+          </div>
+
           {activeTab === "capture" ? (
             <AdminTableShell
               description="Photograph a document and Phoenix turns the pages into one clean PDF, or upload a file the office scanner already produced. Attaching a document ticks it on the checklist."
@@ -780,6 +796,7 @@ export function HiringDocumentsManager({ canEditChecklist, canManage, canRemoveF
                   initialDocumentId={captureTarget?.documentId ?? null}
                   initialEmployeeHrId={captureTarget?.employeeHrId ?? null}
                   key={`${captureTarget?.employeeHrId ?? ""}:${captureTarget?.documentId ?? ""}`}
+                  leavers={leavers.data?.leavers ?? []}
                   onChanged={refreshDashboard}
                 />
               </div>

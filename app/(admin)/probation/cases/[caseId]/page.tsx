@@ -5,6 +5,8 @@ import { ProbationDecisionPanel } from "@/components/probation/probation-decisio
 import { ProbationAssessmentsPanel } from "@/components/probation/probation-assessments-panel";
 import { DevelopmentActionsControl } from "@/components/probation/development-actions-control";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { employeeLeftLabel } from "@/lib/employees/left-flag";
+import { readProbationEmployeeLeft } from "@/lib/probation/intelligence/cases";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { canReadAllProbation } from "@/lib/probation/service";
 import { buildConsolidatedReport } from "@/lib/probation/intelligence/consolidated-report";
@@ -53,6 +55,7 @@ export default async function ProbationCaseReportPage({
     );
   }
 
+  const employeeLeft = report.case.status === "active" ? await readProbationEmployeeLeft(report.case.employeeHrId) : null;
   const showDecision = canDecideProbation(access);
   const canSubmitSfe = canSubmitSfeAssessment(access);
   const canSubmitHr = canSubmitHrAssessment(access);
@@ -71,6 +74,12 @@ export default async function ProbationCaseReportPage({
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
+      {employeeLeft ? (
+        <p className="mb-4 border border-phx-line bg-white p-3 text-sm font-semibold text-phx-ink shadow-none" role="status">
+          <span className="font-black text-phx-danger">{employeeLeftLabel(employeeLeft)}.</span> This case is still open:
+          nothing has been closed or decided for them.
+        </p>
+      ) : null}
       {showDecision && (
         <div className="mb-4">
           <ProbationDecisionPanel

@@ -6,6 +6,7 @@
 // this function is safe under concurrency (it treats a unique-violation as "already exists").
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { employeeLeftFlag, type EmployeeLeftFlag } from "@/lib/employees/left-flag";
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -179,6 +180,23 @@ export async function filterResolvedProbationCases<T extends { employee_hr_id: s
     // Fail open on any unexpected error (schema missing, transient network) — behave as today.
     return rows;
   }
+}
+
+/**
+ * The word for the case page: this person has left, or declined, and the case is still open. It reports
+ * only. A decision stays with whoever holds it, and the decision path never reads this. Fails open, like
+ * the filter above: a failed lookup leaves the page as it was rather than taking it down.
+ */
+export async function readProbationEmployeeLeft(employeeHrId: string): Promise<EmployeeLeftFlag | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("employment_status, last_working_date")
+    .in("hr_id", [employeeHrId, employeeHrId.toLowerCase(), employeeHrId.toUpperCase()])
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as { employment_status: string | null; last_working_date: string | null };
+  return employeeLeftFlag({ employmentStatus: row.employment_status, lastWorkingDate: row.last_working_date });
 }
 
 /**

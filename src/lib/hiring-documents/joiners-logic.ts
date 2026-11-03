@@ -9,6 +9,7 @@ import type {
   HiringDocumentEmployeeRow,
   HiringJoiner,
   HiringJoinerDayOne,
+  HiringJoinerDetails,
   UpdateHiringJoinerInput,
 } from "@/lib/hiring-documents/types";
 import { daysBetweenKeys, joiningDayKey } from "@/lib/hr/talent-acquisition-logic";
@@ -143,14 +144,15 @@ export function joinerIsUrgent(
   return daysBetweenKeys(todayKey, joiner.startKey) <= HIRING_JOINER_SOON_DAYS;
 }
 
-/** The three reads behind Day one, each keyed by `canonicalHrIdKey`. Null means that read failed. */
+/** The four reads behind Day one, each keyed by `canonicalHrIdKey`. Null means that read failed. */
 export type JoinerDayOneReads = {
+  details: ReadonlyMap<string, HiringJoinerDetails> | null;
   deviceCounts: ReadonlyMap<string, number> | null;
   logins: ReadonlySet<string> | null;
   mailboxes: ReadonlyMap<string, string | null> | null;
 };
 
-/** One person's answers from the three reads. A read that failed stays null, never a "no". */
+/** One person's answers from the four reads. A read that failed stays null, never a "no". */
 export function joinerDayOneFacts(key: string, reads: JoinerDayOneReads): HiringJoinerDayOne {
   let mailbox: HiringJoinerDayOne["mailbox"] = null;
   if (reads.mailboxes) {
@@ -159,6 +161,7 @@ export function joinerDayOneFacts(key: string, reads: JoinerDayOneReads): Hiring
     else mailbox = status === "connected" || status === "not_needed" ? status : "pending";
   }
   return {
+    details: reads.details?.get(key) ?? null,
     devicesOutstanding: reads.deviceCounts ? (reads.deviceCounts.get(key) ?? 0) : null,
     hasActiveLogin: reads.logins ? reads.logins.has(key) : null,
     mailbox,
@@ -166,7 +169,7 @@ export function joinerDayOneFacts(key: string, reads: JoinerDayOneReads): Hiring
 }
 
 export type JoinerDayOneItem = {
-  key: "account" | "device" | "mailbox" | "record";
+  key: "account" | "details" | "device" | "mailbox" | "record";
   label: string;
   /** late is a thing not done with the joining day inside HIRING_JOINER_SOON_DAYS. */
   state: "done" | "late" | "neutral" | "open" | "unread";
@@ -174,9 +177,24 @@ export type JoinerDayOneItem = {
 };
 
 /**
+ * Which of the three are not on their record, on one line. ONLY A MISSING NATIONAL ID TURNS LATE: it is
+ * what they must carry in. An insurance number can follow the first day and 52 of 53 recent hires have
+ * no bank account recorded (production, 2026-11-03), so red there would mean nothing by being everywhere.
+ */
+function joinerDetailsItem(details: HiringJoinerDetails, notDone: "late" | "open"): Pick<JoinerDayOneItem, "state" | "value"> {
+  const missing = [
+    details.nationalId ? null : "national ID",
+    details.insuranceNumber ? null : "insurance number",
+    details.bankAccount ? null : "bank account",
+  ].filter(Boolean);
+  if (missing.length === 0) return { state: "done", value: "Complete" };
+  return { state: details.nationalId ? "open" : notDone, value: `No ${missing.join(", ")}` };
+}
+
+/**
  * What stands ready for a joiner's first day. It reports: the person reading it may not be able to do
  * these, and the HR Operations Specialist activates no account. Everything but the record hangs off
- * the record, so without one the other three say so rather than reading as undone.
+ * the record, so without one the others say so rather than reading as undone.
  */
 export function joinerDayOneItems(
   joiner: Pick<HiringJoiner, "dayOne" | "employeeHrId" | "startKey">,
@@ -191,10 +209,11 @@ export function joinerDayOneItems(
       { key: "account", label: "Account", state: "neutral", value: "After the record" },
       { key: "mailbox", label: "Mailbox", state: "neutral", value: "After the record" },
       { key: "device", label: "Device", state: "neutral", value: "After the record" },
+      { key: "details", label: "Details", state: "neutral", value: "After the record" },
     ];
   }
 
-  const { devicesOutstanding, hasActiveLogin, mailbox } = joiner.dayOne;
+  const { details, devicesOutstanding, hasActiveLogin, mailbox } = joiner.dayOne;
   const unread = { state: "unread", value: "Not read" } as const;
   const mailboxAnswer = {
     connected: { state: "done", value: "Connected" },
@@ -224,6 +243,7 @@ export function joinerDayOneItems(
           ? ({ state: "done", value: `${devicesOutstanding} issued` } as const)
           : ({ state: "neutral", value: "None issued" } as const)),
     },
+    { key: "details", label: "Details", ...(details === null ? unread : joinerDetailsItem(details, notDone)) },
   ];
 }
 
