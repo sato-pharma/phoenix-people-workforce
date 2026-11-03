@@ -23,6 +23,7 @@
 //       for a 23s job. Not installed = warn and ALLOW; the daily scan over main is the backstop.
 //       One command that commits AND pushes is refused outright: this runs before it starts, so the
 //       new commit does not exist to be scanned. Commit first, then push as a second command.
+//       It scans what each push sends, from where it runs, and refuses what it cannot name yet.
 //       PHX_SECRETS_OK=1 stands it down for a finding you have read and judged a fixture.
 //   C13 a MERGE of a PR that is a MEMBER of an open roll-up — the one merge that destroys the
 //       roll-up built to replace it — and, on the roll-up ITSELF, a merge carrying a member that
@@ -82,7 +83,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { gitLayout } from '../../scripts/lib/git-layout.mjs';
-import { commitsAhead, commitsThenPushes, pushTargetDir, scanBranchCommits, SECRET_SCAN_TIMEOUT_MS } from './lib/secret-scan.mjs';
+import {
+  commitsAhead,
+  pushRefusalReason,
+  pushScanPlan,
+  scanBranchCommits,
+  SECRET_SCAN_TIMEOUT_MS,
+  withKnownSubstitutions,
+} from './lib/secret-scan.mjs';
 import { REPO as PHOENIX_REPO } from '../../scripts/required-check-names.mjs';
 
 function deny(reason) {
@@ -1703,38 +1711,31 @@ try {
   // 🔴 ONE COMMAND THAT COMMITS AND PUSHES IS REFUSED BEFORE THE SCAN, BECAUSE THE SCAN CANNOT READ IT.
   // This hook runs before the whole command starts, so the new commit does not exist: the range is
   // empty on a fresh branch (3 Nov 2026, a JWT went out that way) and short of that commit on any
-  // other. Splitting the command is the fix, and the second command's scan reads the commit. The
-  // reading ignores the `--help` test below, which a commit message naming a flag would trip.
+  // other. Splitting the command is the fix, and the second command's scan reads the commit.
+  //
+  // 🔴 AND IT SCANS WHAT EACH PUSH SENDS, FROM WHERE IT RUNS. `pushScanPlan` reads the command word by
+  // word, so `timeout 90 git push`, `git -C "$WT" push`, `git push origin other` and a push from a
+  // subfolder all reach the scan. What it cannot name yet (a loop variable, a `$(…)`) is refused.
   //
   // `PHX_SECRETS_OK=1 <cmd>` pushes anyway — for a finding you have read and judged to be a fixture
   // or a test vector, which is the only honest reason to override a secret scanner.
   const SECRETS_STAND_DOWN =
     /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_SECRETS_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  // C20's reading, which reads only the session's folder; C12 reads through `pushScanPlan`.
   const GIT_PUSH =
     /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*git(?:\.exe)?\s+(?:-[^\s]+\s+|--[^\s]+\s+)*push(?:\s|$)/i;
 
   const pushText = withoutHeredocBodies(cmd);
-  const secretsStoodDown = SECRETS_STAND_DOWN.test(cmd) || process.env.PHX_SECRETS_OK === '1';
-  // Whole-line comments go first: an apostrophe in one would otherwise open a quote and hide the rest.
-  const commitThenPush =
-    !secretsStoodDown &&
-    /\bpush\b/.test(pushText) &&
-    commitsThenPushes(commandSegments(withoutHereStringBodies(pushText).replace(/^[ \t]*#.*$/gm, '')));
-  if (
-    commitThenPush ||
-    (GIT_PUSH.test(pushText) && !/--dry-run|--help|(?:^|\s)-h(?:\s|$)/.test(pushText) && !secretsStoodDown)
-  ) {
-    let scanRoot = '';
-    const pushMatch = GIT_PUSH.exec(pushText);
-    const cdTarget = pushTargetDir(
-      pushMatch ? pushText.slice(0, pushMatch.index + pushMatch[0].length) : pushText,
-      String(input?.cwd || process.cwd()),
-    );
-    for (const candidate of [cdTarget, input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
+  if (/\bpush\b/.test(pushText) && !SECRETS_STAND_DOWN.test(cmd) && process.env.PHX_SECRETS_OK !== '1') {
+    const standDown = String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+      ? '$env:PHX_SECRETS_OK=1; <the same command>'
+      : 'PHX_SECRETS_OK=1 <the same command>';
+    let sessionDir = '';
+    for (const candidate of [input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
       if (!candidate) continue;
       try {
         if (statSync(String(candidate)).isDirectory()) {
-          scanRoot = String(candidate);
+          sessionDir = String(candidate);
           break;
         }
       } catch {
@@ -1742,27 +1743,24 @@ try {
       }
     }
 
-    // `.gitleaks.toml` at the root is what identifies THIS repo; the hook is global and must not
-    // scan someone else's checkout. A branch with no commits past origin/main has nothing to scan.
-    const isThisRepo = Boolean(scanRoot) && existsSync(join(scanRoot, '.gitleaks.toml'));
-    if (isThisRepo && commitThenPush) {
+    // Whole-line comments go first: an apostrophe in one would otherwise open a quote and hide the rest.
+    const plan = pushScanPlan(
+      commandSegments(withKnownSubstitutions(withoutHereStringBodies(pushText)).replace(/^[ \t]*#.*$/gm, '')),
+      sessionDir,
+    );
+    if (plan.refuse) {
       deny(
-        'C12 — this command both commits and pushes, so it is refused before any of it runs. Nothing ' +
-          'has been staged, committed or pushed.\n\n' +
-          'The secret scan runs before the whole command starts, when the commit it has to read does ' +
-          'not exist yet, so it would check everything except what this push adds. On 3 Nov 2026 that ' +
-          'let a JWT out, and the next push was refused for it, too late.\n\n' +
-          'Run them as two commands: commit first, then a plain `git push` on its own, and the scan ' +
-          'reads the new commit.\n\n' +
-          'The stand-down also skips the scan and sends the commit unread, so it is only for a finding ' +
-          'you have already read and judged a fixture:\n  ' +
-          (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
-            ? '$env:PHX_SECRETS_OK=1; <the same command>'
-            : 'PHX_SECRETS_OK=1 <the same command>'),
+        pushRefusalReason(plan) +
+          '\n\nThe stand-down also skips the scan and sends the commits unread, so it is only for a ' +
+          `finding you have already read and judged a fixture:\n  ${standDown}`,
       );
     }
-    if (isThisRepo && commitsAhead(scanRoot) !== 0) {
-      const scan = scanBranchCommits(scanRoot);
+
+    // `.gitleaks.toml` at the root is what identifies THIS repo; the hook is global and must not
+    // scan someone else's checkout. A push with no commits past origin/main has nothing to scan.
+    for (const { root: scanRoot, range } of plan.targets ?? []) {
+      if (commitsAhead(scanRoot, range) === 0) continue;
+      const scan = scanBranchCommits(scanRoot, { range });
       const output = scan.output;
       const found = scan.status === 'found';
       const missing = scan.status === 'missing';
@@ -1771,7 +1769,7 @@ try {
         process.stdout.write(
           `C12 — the secret scan did not finish within ${SECRET_SCAN_TIMEOUT_MS / 1000}s, so this push ` +
             'was NOT scanned for secrets and goes ahead unscanned. The daily scheduled scan over main ' +
-            'still runs; to scan this branch by hand: `gitleaks git . --log-opts=origin/main..HEAD ' +
+            `still runs; to scan this branch by hand: \`gitleaks git . "--log-opts=${range}" ` +
             '--redact` in ' +
             scanRoot +
             '\n',
@@ -1797,13 +1795,10 @@ try {
             '\n\nThis runs BEFORE the push, which is the whole point: once a key reaches GitHub it ' +
             'is in the remote history whatever any check says afterwards, and the fix is then ' +
             'rotation, not a revert.\n\n' +
-            'Scanned: the commits this branch adds (origin/main..HEAD), which is exactly what the ' +
-            'push contributes. The tree itself is NOT scanned locally \u2014 every worktree carries real ' +
+            `Scanned: the commits this push adds (${range}), which is exactly what it contributes. ` +
+            'The tree itself is NOT scanned locally \u2014 every worktree carries real ' +
             '.env files by design, and they are gitignored, so they can never be pushed.\n\n' +
-            'If you have read the finding and it is a fixture or a test vector, push again as:\n  ' +
-            (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
-              ? '$env:PHX_SECRETS_OK=1; <the same command>'
-              : 'PHX_SECRETS_OK=1 <the same command>'),
+            `If you have read the finding and it is a fixture or a test vector, push again as:\n  ${standDown}`,
         );
       }
     }

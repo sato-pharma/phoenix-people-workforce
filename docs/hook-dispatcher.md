@@ -406,6 +406,55 @@ and the branch never reaches the origin.
   as well, so it is only for a finding already read and judged a fixture. Splitting costs nothing.
 - **Pinned by** `tests/secret-scan-push-guard.test.ts`, sections 8 and 9, through the real hook.
 
+### Which pushes it reads, where, and what range (3 Nov 2026)
+
+The refusal above left three holes. One regex, `GIT_PUSH`, decided whether a scan ran at all, and it
+missed pushes that do not start with `git push`. The scan always read `origin/main..HEAD`, whatever
+the push named. And `.gitleaks.toml` was looked for only in the folder the push ran in, so a push from
+a subfolder was not recognised as this repository's.
+
+All 7,616 commands holding `git` and `push` across the 1,380 Phoenix transcripts touched in the 14 days
+to 3 Nov 2026 were read back through the new reader without running anything. 5,091 are pushes, 2,938
+of them commit-then-push and 2,153 alone. Of the lone pushes, the old pattern never recognised **547**
+`timeout N git push`, **77** `git -C <folder> push` and **12** others (`if`, `for … do`, `{ }`), so
+**636 lone pushes, 30%, ran with no scan at all.**
+
+**How it reads a push now.** `pushScanPlan` in `lib/secret-scan.mjs` reads the command word by word
+through `lib/git-command.mjs`, the parser `push-typecheck-guard.mjs` already had. It moved to a library
+because a hook runs on import, so neither guard could import the other. `GIT_PUSH` is unchanged and is
+now C20's alone, since C20 reads only the session's folder and a wider regex would change it.
+
+| A push | What happens |
+| --- | --- |
+| `git -C <folder> push`, `git -c k=v push`, `timeout 60 git push`, `if ($?) { git push }` | Scanned |
+| `WT="…"; git -C "$WT" push`, `WT="…"; cd "$WT" && git push`, `$WT = "…"; Set-Location $WT; git push` | Scanned in that folder: a variable set earlier in the same command is read, and a `$(…)` around a branch or `rev-parse` is asked of git |
+| A folder it cannot name: an unset variable, a loop variable, a `$(mktemp -d)`, a folder that is not there | Refused, because no folder can be scanned. Allowed from a session outside this repository, which is not ours to refuse |
+| `git push origin other`, `other:refs/heads/x`, `+other`, `<sha>:refs/backups/x` | Scans `origin/main..other`, not HEAD |
+| `git push origin a b` | Scans both ranges in one run |
+| `git push origin HEAD` or a plain `git push` | Scans `origin/main..HEAD`, and the commits-ahead shortcut still skips an empty range |
+| `git switch other && git push`, `git checkout other; git push`, `git reset --hard x && git push` | Refused, because the scan would read the commit HEAD is on now, not the one it moves to. `git switch other && git push origin other` names it, and is scanned |
+| A ref that is not a commit yet: a branch this command makes, a loop variable, a typo | Refused |
+| `--all`, `--mirror`, `--tags` | Refused: push the refs one at a time |
+| Three or more repositories in one command | Refused, since each scan can take 20 s inside a 90 s hook budget |
+| A subfolder: `.gitleaks.toml` is looked for at `rev-parse --show-toplevel` | Scanned at the repository's root |
+| `git push origin :old`, `--delete`, `--dry-run`, `--help` | Not scanned: nothing leaves |
+| `git stash push`, `echo "git push"`, `git log --grep push`, a PR titled "git push", `git -C "$X" log push` | Not a push. No scan and no refusal |
+
+**What the refusals cost.** Read back over the same 2,153 lone pushes, it refuses 81, or 3.8%: 75 refs
+it cannot read, nearly all `$TIP:refs/backups/…` archive pushes inside a loop, 3 folders, 2 moved HEADs
+and 1 `--all`. The fix for any of them is to name the commit or split the command, and
+`PHX_SECRETS_OK=1` remains for a push already read. False reads from text inside `echo` and `grep`: 0.
+
+**The limits that remain, both deliberate:**
+
+- **A commit made inside a script** (`node scripts/foo.mjs && git push`) is not seen as a commit, because
+  the hook reads the command and not what a program does. The same goes for a push made by a script.
+- **A command whose quotes do not balance** (a stray apostrophe in unquoted text, about 3 of 5,091) can
+  hide a push inside what reads as one long quoted string.
+
+`PHX_SECRETS_OK=1` is unchanged: in the command or the environment, it stands down every part of C12.
+Pinned by `tests/secret-scan-push-guard.test.ts`, sections 10 to 16, through the real hook.
+
 **What it costs.** This is the usual way a session pushes. In the Phoenix transcripts touched in the 14
 days to 3 Nov 2026, 2,607 of 4,279 push calls committed first, in 580 of the 745 sessions that pushed.
 So most sessions would meet the refusal once, at one extra step each, unless told first. The **Git**
