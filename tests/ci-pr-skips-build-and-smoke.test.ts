@@ -29,6 +29,7 @@ const WORKFLOW = ".github/workflows/ci.yml";
 const SHIP_SKILL = ".claude/skills/ship/SKILL.md";
 const TRAPS_CLUSTERS = "docs/agents-session-traps-clusters.md";
 const TRAPS_ACCOUNT = "docs/agents-session-traps.md";
+const ENGINEERING_RULES = ".claude/rules/engineering.md";
 
 /** The steps whose cost this change removes from a pull request. */
 const HEAVY_STEPS = [
@@ -125,5 +126,13 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     /`validate` never runs the tests|fast-paths and runs no tests/,
     `${TRAPS_ACCOUNT} describes the docs-only fast path as live again. It was removed on 2026-10-06; ` +
       "its account stays, in the past tense.",
+  );
+
+  // 6. And the memory note a session working in CI is handed through its module's rules file.
+  assert.doesNotMatch(
+    readFileSync(ENGINEERING_RULES, "utf8"),
+    /going green in FOUR SECONDS is CORRECT/,
+    `${ENGINEERING_RULES} says a docs-only PR going green in seconds is correct again. That was true ` +
+      "only while the fast path existed, and today a green that quick would be a real fault.",
   );
 }
