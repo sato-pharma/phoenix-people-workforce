@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 02c71e47-935f-4697-b5b8-8eabc82249b3
-  modified: 2026-10-12T22:39:30.174Z
+  modified: 2026-11-03T11:40:53.269Z
 ---
 
 Hit live 2026-08-12 cleaning up `.claude/worktrees/ecstatic-mclaren-31e9fe` from the session that
@@ -47,6 +47,11 @@ There is no in-session workaround.
 4. The empty folder is deletable the moment the session ends. `pnpm run repo:doctor --fix` is the
    designed sweeper and explicitly only deletes husks proven to hold zero files — which this is —
    but it refuses while more than one Claude session is live, so it is a later step, not this one.
+
+**The app's move tool does not help either** (3 Nov 2026): `change_directory` answers "This session's
+working directory can't be moved (it runs in an isolated worktree…)". `find-worktree-holder.ps1` named
+this session's own `claude` as the only lasting holder, so the choice goes to him: archive the session,
+or a half removal that also deletes the hooks it is still running on.
 
 **Do NOT hand the job to a detached watcher and call it done.** Tried 2026-08-24 from the session
 inside `.claude/worktrees/priceless-lichterman-cdce98`: a background process (PID 27088) outside the

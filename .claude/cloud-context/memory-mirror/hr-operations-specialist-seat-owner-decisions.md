@@ -5,8 +5,10 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 061d8c97-37ba-4e99-8b5d-a309001b06a0
-  modified: 2026-11-03T10:40:00.655Z
+  modified: 2026-11-03T11:49:10.229Z
 ---
+
+🔴 **2026-11-03, his multiple-choice answers after the landing page shipped: PRIVATE CALENDARS IS HERS ("Open it for her"), and CANDIDATE FILES ON THE INTERVIEW CALENDAR STAY OPEN TO HER ("Leave it open")** even though a CV can state expected pay and `candidates` and `cv_lookup` stay shut. Never re-offer closing the files, and read the Private Calendars line in the next paragraph as overtaken. Nothing the Private Calendar lib prints carries an amount (grep read 3 Nov).
 
 🔴 **2026-11-03: HER OWN LANDING PAGE AND NEW SIDEBAR ROWS** — owner: "in aya the office coordinator account design it to be identical in design and identy to the talnt acqyuisition and godmode premium polish it and add hr calen dars and interview calendar and add some relevent modules in her account and side bar". She lands on `HrOperationsOverview`, built from the Talent Acquisition page's own parts, and gained function `hr_calendars`: Company, Events and Planning calendars, Vacancies Report, Company Vacation Report, her own Fingerprint Report. Her Interview Calendar stays VIEW only, and since this change the server enforces it: `mayRequestInterviews` refuses her seat (she had filed 0 requests on production). **Left out by Claude's call, each read for money first:** Spotlight (prints sales in EGP); Milestones (his 2026-09-23 "only super admin": every date of birth and hire date, widened only on his words naming it; his "relevent modules" does not name it); Early Birds (a Sync button that refuses her, and field-force work); **Private Calendars (every employee's punches and deduction days, against his 2026-10-20 "she reviews attendance only through her own Daily & Weekly Reports" — hers only on his word).** hr_calendar and weekly_plans carry in Workforce Compliance (prices days in EGP), CRM tools, the plans list, plan approvals and PM products: all fenced in `seat-page-fences.ts`.
 

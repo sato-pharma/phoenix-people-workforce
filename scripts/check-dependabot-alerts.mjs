@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Surfaces OPEN Dependabot alerts that will fail `validate`'s audit step, BEFORE a PR goes red.
+// Surfaces OPEN Dependabot alerts that will fail the audit step behind `checks`, BEFORE a PR goes red.
 //
-// WHY. `validate` runs `pnpm audit --audit-level=high --prod`. The moment the audit's data feed learns
+// WHY. The `static` job runs `pnpm audit --audit-level=high --prod`. The moment the audit's data feed learns
 // about a HIGH-or-worse advisory against a package in the production tree, EVERY open pull request goes
 // red — and by AGENTS.md §2.3 a red check suite on a `main` commit makes Railway mark that production
 // deploy SKIPPED, which does not resurrect on a re-run. Measured 2026-09-30: the same dependency passed
@@ -29,7 +29,7 @@
 //
 // 🔴 AND IT EXITS 1 ONLY FOR AN ALERT THE AUDIT CAN ACTUALLY REACH. `pnpm audit --prod` runs at the
 // repository root, so an alert in `development` scope, or in a manifest that audit never reads,
-// CANNOT turn `validate` red — those are printed with the reason and do not fail this check. Before
+// CANNOT turn `checks` red — those are printed with the reason and do not fail this check. Before
 // 2026-10-04 they were graded `WILL FAIL CI`: three of them were, with no patched version to bump
 // to, while the gate command itself exited 0 on "No known vulnerabilities found". The grading fails
 // CLOSED — only a positively-read reason downgrades an alert, so a wrong reading can only be noisy.
