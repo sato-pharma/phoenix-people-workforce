@@ -749,6 +749,7 @@ policy):
    | `phoenix-production-planning-fx` | `7 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-production-planning-reorder` | `11 6 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
+   | `phoenix-marketing-list-check` | `37 * * * *` | 1h | cron-job.org job, armed only after the first `scripts/marketing-list-check.ts --apply` (the seeds would be skipped otherwise) |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
    | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
    | `phoenix-mapping-guard-notify` | `5,20,35,50 * * * *` | 1h | cron-job.org job `8427700` |
@@ -850,6 +851,7 @@ policy):
    | `phoenix-notify-daily` | `hr` | The 06:36 daily bundle — birthdays, contract renewals, holiday reminders, the vacation, marketing and outstation SLA digests, and the notification-retention cleanup. A red means none of those notices went out that morning. |
    | `phoenix-production-planning-fx` | `production-planning in-house-only` | The one dollar rate a day that keeps every dollar-typed material price deriving a current pound figure. A red means the planner is costing the buy list on a stale rate. |
    | `phoenix-production-planning-reorder` | `production-planning in-house-only` | The Ivyronc reorder and expiry alarm, naming the materials whose cover has fallen to about one run. A red means nothing warned him, and the imported material takes about six months to arrive. |
+   | `phoenix-marketing-list-check` | `marketing list check` | Re-checks every validated marketing customer against the reps' doctor lists, sending nothing. A red means the approval flags and the list-check board have stopped following the lists. |
    | `phoenix-marketing-field-capture-nudge` | `marketing silent-when-clean` | Tells each rep which of his own validated marketing customers still have no field capture behind them, in-app, Telegram and push only. A red means that backlog went unnamed. |
    | `phoenix-marketing-invoice-overdue-nudge` | `marketing silent-when-clean` | Tells the requester and finance that an approved marketing request's invoice has passed its deadline. A red means a late invoice was raised with nobody. |
    | `phoenix-distributor-upload-overdue-nudge` | `sales silent-when-clean` | Tells the Super Admin and the SFE Manager which distributor files for the month just closed are later than they were last month. A red means a late file went unreported. |

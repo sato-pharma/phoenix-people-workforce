@@ -23,7 +23,7 @@ import { crmUrl, useCrmGet, type CrmResource } from "@/components/phoenix-crm/ap
 import { DailyPlanDaysFilter, DailyPlanSection, dailyPlanDaysSummary, useDailyPlanDays } from "@/components/phoenix-crm/daily-plan-report";
 import { countText, dayLabel, dayLabelWithYear, monthLabel, percentText, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { DayList, DaysToggle, LIST_WORDS, RefreshFailed, ReportList, SectionWaiting, type DayLine } from "@/components/phoenix-crm/report-list";
-import { CapacitySection, HeardSection, SamplesSection, StockSection } from "@/components/phoenix-crm/insight-reports";
+import { CapacitySection, HeardSection, ObjectionsByDoctorSection, SamplesSection, StockSection } from "@/components/phoenix-crm/insight-reports";
 import { VisitAskInbox } from "@/components/phoenix-crm/visit-asks";
 import { listText } from "@/components/phoenix-crm/labels";
 import {
@@ -73,6 +73,7 @@ import type {
   CoverageReportView,
   CustomerFrequencyReportView,
   FieldHeardView,
+  ObjectionsByDoctorView,
   MissingStockView,
   SamplesReportView,
   TrackingSheetReportView,
@@ -1847,6 +1848,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       ? "managers"
       : "heard"
     : (section === "managers" && view && !view.hasManagers) ||
+        (section === "objections" && view && !view.canReadTeamReports) ||
         ((section === "locations" || section === "exceptions" || section === "bricks" || section === "adoption" || INSIGHT_SECTIONS.includes(section)) &&
           view &&
           !view.canSeeLocations)
@@ -1950,10 +1952,11 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const heard = useCrmGet<FieldHeardView>(sectionUrl("heard"), "report");
   const stock = useCrmGet<MissingStockView>(sectionUrl("stock"), "report");
   const samples = useCrmGet<SamplesReportView>(sectionUrl("samples"), "report");
+  const objections = useCrmGet<ObjectionsByDoctorView>(sectionUrl("objections"), "report");
   // 🔴 EVERY SECTION HAS A KEY HERE. The Refresh button and the busy state read this map, so a
   // section added to `ReportSection` and forgotten here is a TS7053 at build and a crash the
   // moment that section is open. Caught on `frequency` before it shipped.
-  const active = { adoption, bricks, capacity, coverage, daily, exceptions, frequency, heard, locations, managers, plan, samples, stock, tracking, visits }[activeSection];
+  const active = { adoption, bricks, capacity, coverage, daily, exceptions, frequency, heard, locations, managers, objections, plan, samples, stock, tracking, visits }[activeSection];
 
   if (!view) {
     return (
@@ -2085,6 +2088,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       // The four insight boards of 2026-10-02: the same gate as every board above them, and the server
       // refuses each one to a medical rep as well.
       ...(view.canSeeLocations ? [offer("capacity"), offer("heard"), offer("stock"), offer("samples")] : []),
+      // Objections by doctor (owner, 2026-11-03): its own wider gate, because the CEO and the regional
+      // managers read it and `canSeeLocations` leaves them out. The server refuses it to a rep as well.
+      ...(view.canReadTeamReports ? [offer("objections")] : []),
       ];
   const sectionGroups = groupReportSections(sectionOptions);
   /**
@@ -2371,6 +2377,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <StockSection idPrefix={idPrefix} resource={stock} />
       ) : activeSection === "samples" ? (
         <SamplesSection idPrefix={idPrefix} resource={samples} />
+      ) : activeSection === "objections" ? (
+        <ObjectionsByDoctorSection idPrefix={idPrefix} resource={objections} today={today} />
       ) : (
         <ManagersSection idPrefix={idPrefix} resource={managers} today={today} />
       )}

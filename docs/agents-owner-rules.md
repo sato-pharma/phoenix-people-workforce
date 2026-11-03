@@ -4893,8 +4893,18 @@ holds the why.
   roles hold `phoenix_crm: read` for ONE report: what the field heard about their OWN products
   (`resolveSalesAccessScope`, the rule Sales already uses), company-wide, never by area, territory or
   rep. Every other Phoenix CRM read answers them with nothing, because they hold no seat.
-- **Counts only.** No report anywhere shows a "no objection" figure, a rate or a row per rep: that would
-  be an honesty figure, and golden rule #1 keeps those out of every screen but the integrity board.
+- **Counts only.** No report anywhere shows a "no objection" figure or a rate: that would be an honesty
+  figure, and golden rule #1 keeps those out of every screen but the integrity board. What the field heard
+  itself is unchanged: by product, speciality and area, with no row per rep.
+- **One separate list names the rep: Objections by doctor (owner, 3 November 2026).** He partly lifted the
+  no-row-per-rep rule for a per-doctor list for managers: each rep's doctors and what they objected to,
+  with the product, the day and the rep's note. Counts only: no percentage, rate, rank or score, sorted by
+  name and never by a count, with no "no objection" row and no blank. Readers are `readsTeamReports` alone
+  (Super Admin, SFE Manager, CEO, a manager on his own team); reps and the product audience are refused.
+  It never scores a rep: `tests/phoenix-crm-objections-by-doctor.test.ts` refuses an import of it from
+  ranks, KPIs, payroll, incentives, coaching and the integrity board. It reads
+  `phoenix_crm_countable_visits`, so copied iReports360 history stays out; What the field heard reads the
+  view that keeps that history. Module: `src/lib/phoenix-crm/objections-by-doctor.ts`.
 
 ### The rep's visit asks
 
@@ -9141,3 +9151,13 @@ serves the merged revision.
 `SEAT-PED-DM-D2`. **If Hany leaves,** a new Regional Manager does not inherit the seat by himself: occupy it.
 
 **Pinned by** `tests/pedia-sharkia-hany-saad-hold.test.ts`.
+
+## The doctor-list check (owner, 2026-10-27 and 2026-11-03)
+
+His words, 27 October: the name compared allowing one letter, *"The line must match"*, the GPS of the customer validation and of the doctor validation's live photo *"not more than 500 meters away from each other"*, and *"you must don't block but flag … in the approval window, you will show the two photos."* A marketing request is never on a nursery; hospitals and accounts compare with the AM list, a clinic or a doctor with the PM list. On 3 November he chose: the SFE Manager answers an unsure row with two photos side by side, the Super Admin can too, and every answer records who made it.
+
+**How it reads.** One row per customer and line in `marketing_customer_list_checks`. The area always comes from the photo's GPS through the nearest brick, never a hand-chosen area. A person's answer beats a pick, a pick beats a re-check, a typed name moves only on a person's "same doctor". States: on the list, check, not on the list, no rep holds the area, left the list, no location.
+
+**Three readings made tighter than his sentence, each from measuring the 114 customers on 3 November.** Twin given names are refused (the tolerance read احمد علي as محمد علي موسي). A different name reaches the queue only within 100 m (500 m sent 15 unrelated names there). The same name and the same brick proves a row only when no distance can be read, because his 27 October sheet accepted that, and 7.5 km apart in one brick is his flag.
+
+**Order of the first run.** Merge, read `/api/healthz` revision, announce (no point-in-time recovery, 7 daily backups), apply the pre-image with `scripts/apply-sql-file.mjs`, run `scripts/marketing-list-check.ts --apply`, confirm no picked row changed, and only then arm the hourly job `phoenix-marketing-list-check`.

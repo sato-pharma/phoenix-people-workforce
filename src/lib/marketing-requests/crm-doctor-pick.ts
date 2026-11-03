@@ -48,9 +48,54 @@ export type CrmListStatus = "on_list" | "not_on_list";
 export const NOT_ON_CRM_LIST_FLAG =
   "Not on the rep's Phoenix CRM list — this doctor's name was typed by hand at validation, not picked from a rep's list.";
 
-/** The flag sentence for a stored `crm_list_status`, or null. A NULL status predates the rule and is not flagged. */
-export function crmListFlag(status: unknown): string | null {
-  return status === "not_on_list" ? NOT_ON_CRM_LIST_FLAG : null;
+/** The owner's number for two photos at one place (2026-10-27). Lives here so this client-safe file needs nothing else. */
+export const CRM_LIST_SAME_PLACE_METRES = 500;
+
+/** The list check found nobody on the rep's list. Nobody typed anything, so the sentence must not say so. */
+export const CHECKED_NOT_ON_CRM_LIST_FLAG = "Not on the rep's Phoenix CRM list — the list check found nobody matching this customer on the rep's list.";
+export const LEFT_CRM_LIST_FLAG = "Left the rep's Phoenix CRM list — this doctor was on the rep's list and no longer is.";
+export const CRM_LIST_NEEDS_CHECK_FLAG = "Not confirmed on the rep's Phoenix CRM list — the list check found a possible match that a person still has to confirm.";
+export const CRM_LIST_NO_HOLDER_FLAG = "No rep holds this area on this line — this customer cannot be on a rep's Phoenix CRM list.";
+export const CRM_LIST_NURSERY_FLAG = "Looks like a nursery — the name says this is a nursery, and a marketing request is never on a nursery. A person has to check it.";
+
+function crmListFarFlag(metres: number): string {
+  const distance = metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${metres} m`;
+  return `Check the two photos — the customer and the doctor on the rep's list stand ${distance} apart, more than the ${CRM_LIST_SAME_PLACE_METRES} m allowed.`;
+}
+
+/** The list check's facts about a customer, where it has run (`marketing_customer_list_checks`). */
+export type CrmListFlagCheck = { looksLikeNursery?: boolean | null; metresApart?: number | null; state?: string | null };
+
+/**
+ * The one sentence every approval step prints, or null.
+ *
+ * With no check to read it answers as it always did: `not_on_list` was typed by hand, and a NULL status
+ * predates the rule and is not flagged. The check's facts come first because they are newer than the
+ * status. 🔴 "typed by hand" is printed only for a name someone really typed: a row the check itself marked
+ * reads `source = 'checked'` and gets its own sentence. It flags and never blocks.
+ */
+export function crmListFlag(status: unknown, options?: { check?: CrmListFlagCheck | null; source?: unknown }): string | null {
+  const check = options?.check ?? null;
+  if (check?.looksLikeNursery) return CRM_LIST_NURSERY_FLAG;
+  if (check?.state === "left_list") return LEFT_CRM_LIST_FLAG;
+  if (check?.state === "check") return CRM_LIST_NEEDS_CHECK_FLAG;
+  if (check?.state === "no_holder") return CRM_LIST_NO_HOLDER_FLAG;
+  if (check?.state === "on_list" && typeof check.metresApart === "number" && check.metresApart > CRM_LIST_SAME_PLACE_METRES) {
+    return crmListFarFlag(check.metresApart);
+  }
+  if (status !== "not_on_list") return null;
+  return options?.source === "checked" ? CHECKED_NOT_ON_CRM_LIST_FLAG : NOT_ON_CRM_LIST_FLAG;
+}
+
+/** The short form of a flag, for the chip under a card's customer name. */
+export function crmListFlagChip(flag: string): string {
+  if (flag === NOT_ON_CRM_LIST_FLAG) return "Not on the rep's CRM list — name typed by hand";
+  if (flag === CHECKED_NOT_ON_CRM_LIST_FLAG) return "Not on the rep's CRM list";
+  if (flag === LEFT_CRM_LIST_FLAG) return "Left the rep's CRM list";
+  if (flag === CRM_LIST_NEEDS_CHECK_FLAG) return "Rep's CRM list — not confirmed";
+  if (flag === CRM_LIST_NO_HOLDER_FLAG) return "No rep holds this area";
+  if (flag === CRM_LIST_NURSERY_FLAG) return "Looks like a nursery";
+  return "Check the two photos";
 }
 
 export type CrmDoctorAreaChoice = { seatId: string; areaName: string };
