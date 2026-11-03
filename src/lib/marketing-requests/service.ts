@@ -53,6 +53,7 @@ import {
   type RankedPharmacyCode,
   rankPharmacyCodeSuggestions,
 } from "@/lib/venues/pharmacy-code-suggestions";
+import { MARKETING_WAITING_DUE_SOON_DAYS, MARKETING_WAITING_OVERDUE_DAYS } from "@/lib/marketing-requests/finance-ageing";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 // Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
 // instead of copying them. Behaviour is unchanged for every caller below.
@@ -153,7 +154,8 @@ import type {
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
 import { resolveMarketingCustomerValidationBadge } from "@/lib/marketing-requests/customer-validation-badge";
-import { crmListFlag, UNPICKED_CRM_DOCTOR, type ResolvedCrmDoctorPick } from "@/lib/marketing-requests/crm-doctor-pick";
+import { crmListFlag, UNPICKED_CRM_DOCTOR, type CrmListFlagCheck, type ResolvedCrmDoctorPick } from "@/lib/marketing-requests/crm-doctor-pick";
+import { loadListCheckFlagFacts, loadListCheckTwoPhotos, type ListCheckTwoPhotos } from "@/lib/marketing-requests/crm-list-check-flags";
 import {
   resolveTargetCustomerLink,
   targetCustomerLinkSentence,
@@ -348,6 +350,8 @@ export type MarketingRequestDecisionSummary = {
    * sentence itself, from `crmListFlag`; null for a picked doctor and for a customer from before the rule.
    */
   customerCrmListFlag: string | null;
+  /** The customer's photo beside the doctor's on the rep's list, when the list check tied them. Never blocks. */
+  customerListCheckPhotos: ListCheckTwoPhotos | null;
   estimatedCost: number;
   expectedRoiValue: number;
   lineName: string | null;
@@ -3580,14 +3584,13 @@ export function classifyMarketingSla(input: { payDate: string | null; today: str
 // however long an approver sits on it, and only starts alerting once the pay date is nearly on
 // top of it — by which point the delay has already happened. These thresholds measure the other
 // axis: how long the CURRENT approval step has been waiting for a decision.
-const MARKETING_WAITING_DUE_SOON_DAYS = 3;
-const MARKETING_WAITING_OVERDUE_DAYS = 7;
+// The thresholds themselves (3 and 7 days) live in finance-ageing.ts, shared with that report's bands.
 
 /**
  * Key for the step-opened index below. A request can hold two steps sharing one `step_name` (a
  * chain that reviews at CEO twice, say), so the sequence — not the name — is what identifies a rung.
  */
-function marketingStepKey(requestId: string, sequence: number) {
+export function marketingStepKey(requestId: string, sequence: number) {
   return `${requestId}:${sequence}`;
 }
 
@@ -4265,7 +4268,7 @@ export async function getMarketingRequestDecisionSummary(
         // `speciality` does NOT exist on marketing_customers — naming it here threw
         // "column does not exist" and took the whole approval window down to its safe state.
         // The real column for the free-text qualifier is `other_type_description`.
-        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name, validation_status, validated_at, validated_by_hr_id, evidence_photo_captured_at, crm_list_status")
+        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name, validation_status, validated_at, validated_by_hr_id, evidence_photo_captured_at, crm_list_status, crm_list_source")
         .eq("id", request.customerId)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -4354,10 +4357,15 @@ export async function getMarketingRequestDecisionSummary(
     validation_status?: MarketingValidationStatus | null;
     validated_at?: string | null;
     validated_by_hr_id?: string | null;
+    crm_list_source?: string | null;
     crm_list_status?: string | null;
   } | null;
   const contactRow = contactResult.data as { contact_name?: string | null; mobile_number?: string | null } | null;
   const customerName = cleanText(customerRow?.display_name);
+  // The list check's two reads degrade to nothing, so neither can take this window down.
+  const [listCheckFacts, listCheckPhotos] = request.customerId
+    ? await Promise.all([loadListCheckFlagFacts(supabase, [request.customerId]), loadListCheckTwoPhotos(supabase, request.customerId)])
+    : [new Map<string, CrmListFlagCheck>(), null];
 
   // The retained shop-front photo, signed for this sitting. Same never-break-the-screen rule as
   // the overlap check below: an unreachable image degrades to "no photo retained", which is the
@@ -4417,7 +4425,11 @@ export async function getMarketingRequestDecisionSummary(
     status: request.status,
     chain,
     customerName: customerName ?? null,
-    customerCrmListFlag: crmListFlag(customerRow?.crm_list_status),
+    customerCrmListFlag: crmListFlag(customerRow?.crm_list_status, {
+      check: listCheckFacts.get(request.customerId ?? ""),
+      source: customerRow?.crm_list_source,
+    }),
+    customerListCheckPhotos: listCheckPhotos,
     estimatedCost: request.estimatedCost,
     expectedRoiValue: request.expectedRoiValue,
     lineName: requester?.lineName ?? null,
@@ -7097,6 +7109,8 @@ export async function createMarketingValidationRecord(
           chosen_area_name: doctorPicks.get(normalizedCustomer)?.chosenAreaName ?? null,
           chosen_area_seat_id: doctorPicks.get(normalizedCustomer)?.chosenAreaSeatId ?? null,
           created_by_hr_id: hrIdForStorage(actorHrId),
+          // Who answered, so the list check never overwrites a pick and the flag never says "typed" about a row nobody typed.
+          crm_list_source: doctorPicks.get(normalizedCustomer)?.crmListStatus === "on_list" ? "picked" : "typed",
           crm_list_status: doctorPicks.get(normalizedCustomer)?.crmListStatus ?? "not_on_list",
           customer_code: generateMarketingCode("MKT-HCP"),
           customer_type: normalizedCustomer.customerType,
@@ -7721,6 +7735,17 @@ export async function createMarketingValidationRecord(
       "@/lib/marketing-requests/direct-order-venue-sync"
     );
     await syncMarketingValidationToDirectOrdersQuietly(rows.map((row) => String(row.customer.id)));
+    // Is this customer on the rep's doctor list? Answered after the reply, for an existing customer too,
+    // and it never refuses the save: a failure here waits for the hourly pass, which re-reads everyone.
+    const listCheckCustomerIds = [...new Set(rows.map((row) => String(row.customer.id)))];
+    await afterResponse("marketing_list_check", async () => {
+      try {
+        const { runMarketingListCheck } = await import("@/lib/marketing-requests/crm-list-check");
+        await runMarketingListCheck(listCheckCustomerIds);
+      } catch (error) {
+        console.error("[marketing-list-check] the check after a validation save failed; the hourly pass will cover it", error);
+      }
+    });
     return rows;
   } catch (error) {
     // Order matters: the link rows FK to both, and pharmacies are deleted before customers so a
@@ -9094,7 +9119,7 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
   const [customersResult, typesResult] = await Promise.all([
     customerIds.length > 0
-      ? supabase.from("marketing_customers").select("id, display_name, crm_list_status").in("id", customerIds)
+      ? supabase.from("marketing_customers").select("id, display_name, crm_list_status, crm_list_source").in("id", customerIds)
       : Promise.resolve({ data: [], error: null }),
     typeIds.length > 0
       ? supabase.from("marketing_request_types").select("id, name").in("id", typeIds)
@@ -9104,8 +9129,9 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   if (typesResult.error) throw typesResult.error;
   const customerNameById = new Map(((customersResult.data ?? []) as Array<{ id: string; display_name?: string | null }>)
     .map((row) => [row.id, cleanText(row.display_name) ?? row.id] as const));
-  const customerCrmFlagById = new Map(((customersResult.data ?? []) as Array<{ id: string; crm_list_status?: string | null }>)
-    .map((row) => [row.id, crmListFlag(row.crm_list_status)] as const));
+  const listCheckFacts = await loadListCheckFlagFacts(supabase, customerIds);
+  const customerCrmFlagById = new Map(((customersResult.data ?? []) as Array<{ crm_list_source?: string | null; crm_list_status?: string | null; id: string }>)
+    .map((row) => [row.id, crmListFlag(row.crm_list_status, { check: listCheckFacts.get(row.id), source: row.crm_list_source })] as const));
   const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 
@@ -9569,7 +9595,7 @@ export async function getApproverDecidedRequests(
   const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
   const [customersResult, typesResult, employeeRows] = await Promise.all([
     customerIds.length > 0
-      ? supabase.from("marketing_customers").select("id, display_name, crm_list_status").in("id", customerIds)
+      ? supabase.from("marketing_customers").select("id, display_name, crm_list_status, crm_list_source").in("id", customerIds)
       : Promise.resolve({ data: [], error: null }),
     typeIds.length > 0
       ? supabase.from("marketing_request_types").select("id, name").in("id", typeIds)
@@ -9580,8 +9606,9 @@ export async function getApproverDecidedRequests(
   if (typesResult.error) throw typesResult.error;
   const customerNameById = new Map(((customersResult.data ?? []) as Array<{ display_name?: string | null; id: string }>)
     .map((row) => [row.id, cleanText(row.display_name) ?? row.id] as const));
-  const customerCrmFlagById = new Map(((customersResult.data ?? []) as Array<{ id: string; crm_list_status?: string | null }>)
-    .map((row) => [row.id, crmListFlag(row.crm_list_status)] as const));
+  const listCheckFacts = await loadListCheckFlagFacts(supabase, customerIds);
+  const customerCrmFlagById = new Map(((customersResult.data ?? []) as Array<{ crm_list_source?: string | null; crm_list_status?: string | null; id: string }>)
+    .map((row) => [row.id, crmListFlag(row.crm_list_status, { check: listCheckFacts.get(row.id), source: row.crm_list_source })] as const));
   const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 

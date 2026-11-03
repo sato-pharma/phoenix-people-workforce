@@ -876,10 +876,10 @@ export function FinanceCommandCenter({
             {data.marketing.awaitingMyStep > 0 ? (
               <QueueRow
                 count={data.marketing.awaitingMyStep}
-                href="/admin/marketing-requests/inbox"
+                href="/admin/marketing-requests/finance-ageing"
                 icon={<Megaphone aria-hidden="true" className="h-4 w-4" />}
                 label="Marketing requests to execute"
-                meta="Your Finance Execution step, after CEO approval"
+                meta="Your Finance Execution step, oldest first with the days waiting"
                 tone="amber"
               />
             ) : null}

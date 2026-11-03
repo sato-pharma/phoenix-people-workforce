@@ -7,6 +7,8 @@ import {
   type MarketingAdminPageOptions,
 } from "@/lib/marketing-requests/admin-page-access";
 import { canViewMarketingCoverageReportInAdminShell } from "@/lib/marketing-requests/coverage-report-access";
+import { canReadListCheckBoard } from "@/lib/marketing-requests/crm-list-check-rules";
+import { canViewMarketingFinanceAgeing } from "@/lib/marketing-requests/finance-ageing";
 
 /**
  * Page guard for the marketing admin-shell surfaces.
@@ -46,6 +48,27 @@ export async function assertMarketingCoverageReportAdminPageAccess() {
   const access = await resolveAccessContextFromPage();
   if (!canViewMarketingCoverageReportInAdminShell(access.role)) {
     redirect("/employee-portals/marketing-requests/coverage-report");
+  }
+  return access;
+}
+
+/** The Doctor-List Check admits exactly its four readers, through the board's own predicate. */
+export async function assertMarketingListCheckAdminPageAccess() {
+  const access = await resolveAccessContextFromPage();
+  if (!canReadListCheckBoard(access.role)) {
+    redirect("/employee-portals/marketing-requests");
+  }
+  return access;
+}
+
+/**
+ * Finance Ageing admits exactly three roles. It never goes through canAccessMarketingAdminPage, which
+ * always admits the marketing workflow roles this page must stay closed to.
+ */
+export async function assertMarketingFinanceAgeingAdminPageAccess() {
+  const access = await resolveAccessContextFromPage();
+  if (!canViewMarketingFinanceAgeing(access.role)) {
+    redirect("/employee-portals/marketing-requests");
   }
   return access;
 }

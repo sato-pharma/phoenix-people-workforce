@@ -20,6 +20,9 @@
  * rep: he does not choose who is on his list, and its size is the district manager's and SFE's
  * question. All four boards are manager-only (the server refuses each one to a medical rep), and none
  * of them judges how a rep worked or how honest he is.
+ *
+ * Objections by customer (owner, 2026-11-03) is drawn here too: it names the rep to say whose customers they
+ * are, by name and never by a count, and carries no percentage, no rank, no score and no total per rep.
  */
 
 import { useState } from "react";
@@ -27,7 +30,7 @@ import { useState } from "react";
 import type { CrmResource } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabel, monthLabel, percentText, plural } from "@/components/phoenix-crm/format";
 import { listText } from "@/components/phoenix-crm/labels";
-import { DayList, LIST_WORDS, RefreshFailed, ReportList, SectionWaiting, type DayLine } from "@/components/phoenix-crm/report-list";
+import { DayList, DaysToggle, LIST_WORDS, RefreshFailed, ReportList, SectionWaiting, type DayLine } from "@/components/phoenix-crm/report-list";
 import {
   CrmBlock,
   CrmButton,
@@ -46,8 +49,9 @@ import {
 import { capacityVerdictText, gradeTargetsText, type CapacityRow, type CapacityVerdict, type ListCapacity } from "@/lib/phoenix-crm/capacity-board";
 import { HEARD_BASIS_TEXT, heardTallyText, type HeardGrain, type HeardNote, type HeardRow } from "@/lib/phoenix-crm/field-heard";
 import type { MissingStockPharmacy, MissingStockProduct, StockChase } from "@/lib/phoenix-crm/missing-stock";
+import { objectionCustomerRows, type CustomerObjection, type ObjectionCustomerRow } from "@/lib/phoenix-crm/objections-by-customer";
 import type { SampleItemTotal, SamplesTerritoryRow } from "@/lib/phoenix-crm/samples-report";
-import type { CapacityBoardView, FieldHeardView, MissingStockView, SamplesReportView } from "@/lib/phoenix-crm/view-types";
+import type { CapacityBoardView, FieldHeardView, MissingStockView, ObjectionsByCustomerView, SamplesReportView } from "@/lib/phoenix-crm/view-types";
 
 // ── Words ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -778,6 +782,119 @@ export function SamplesSection({ idPrefix, resource }: { idPrefix: string; resou
             words={{ ...LIST_WORDS, title: "By territory", with: "Left something", without: "Nothing left" }}
           />
         </>
+      )}
+    </>
+  );
+}
+
+// ── Objections by customer ────────────────────────────────────────────────────────────────────────
+
+/** "Price — 2 PM", one line per objection, in the visit form's own order. */
+function customerObjectionLines(objections: ReadonlyArray<CustomerObjection>): string[] {
+  return objections.map((objection) => `${objection.label} — ${heardTallyText(objection)}`);
+}
+
+/** The visits behind a customer's counts, as days: the objection, the list, the products and the rep's note. */
+function objectionVisitDays(row: ObjectionCustomerRow): DayLine[] {
+  const byDay = new Map<string, string[]>();
+  for (const objection of row.objections) {
+    for (const visit of objection.visits) {
+      const products = visit.products.join(", ") || "No product recorded";
+      const lines = byDay.get(visit.visitDate) ?? [];
+      lines.push(`${objection.label} (${listText(visit.listType)}): ${products}${visit.note ? ` — “${visit.note}”` : ""}`);
+      byDay.set(visit.visitDate, lines);
+    }
+  }
+  return [...byDay].sort(([left], [right]) => right.localeCompare(left)).map(([date, lines]) => ({ date, lines }));
+}
+
+/**
+ * Objections by customer. Sorted by the rep's name, then the customer's, and never by a count; the only
+ * figures are how many times each objection was raised, AM and PM apart.
+ */
+export function ObjectionsByCustomerSection({ idPrefix, resource, today }: { idPrefix: string; resource: CrmResource<ObjectionsByCustomerView>; today: string }) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Gathering what the customers objected to" onRetry={resource.reload} />;
+  const rows = objectionCustomerRows(report);
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} onRetry={resource.reload} />
+      <TestNote includeTest={report.includeTest} />
+      <CrmBlock>
+        <CrmStatGrid>
+          <CrmStat label="Objections heard" note="Visits where a customer pushed back" value={amPmText(report.totals.objections.am, report.totals.objections.pm)} />
+          <CrmStat label="Customers" note="Who raised at least one" value={countText(report.totals.customers)} />
+          <CrmStat label="Reps" note="Whose customers these are" value={countText(report.totals.reps)} />
+        </CrmStatGrid>
+        <CrmNote className="mt-3" title="What the customer said, never a mark against the rep" tone="info">
+          Counts only, sorted by name. There is no percentage, no rank and no score here, and a visit where the customer raised nothing is never listed. A manager&apos;s report: reps never see it.
+        </CrmNote>
+      </CrmBlock>
+      {rows.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty message="A customer's objection shows here once a rep records one on a visit in these days." title="Nothing objected to yet" />
+        </div>
+      ) : (
+        <ReportList
+          columns={["24%", "24%", null, "16%"]}
+          explain="Each rep by name, then each of the rep's customers by name, and what the customer objected to. Open a row for the day, the products and the rep's note."
+          hasData={() => true}
+          headers={[
+            "Rep",
+            "Customer",
+            "What they objected to",
+            <span className="sr-only" key="visits">
+              The visits
+            </span>,
+          ]}
+          idPrefix={`${idPrefix}-objections`}
+          items={rows}
+          keyOf={(row) => row.key}
+          renderCard={(row, open, onToggle) => (
+            <CrmCard meta={[row.repName, ...row.territories].join(" · ")} title={row.customerName}>
+              <CrmFacts
+                facts={[
+                  { label: "Speciality", value: row.speciality ?? "—" },
+                  { label: "What they objected to", value: customerObjectionLines(row.objections).join(" · ") },
+                ]}
+              />
+              <div className="mt-3">
+                <DaysToggle onToggle={onToggle} open={open} />
+              </div>
+              {open ? (
+                <div className="mt-3">
+                  <DayList days={objectionVisitDays(row)} today={today} />
+                </div>
+              ) : null}
+            </CrmCard>
+          )}
+          renderCells={(row, open, onToggle) => (
+            <>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{row.repName}</p>
+                {row.territories.length > 0 ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.territories.join(", ")}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{row.customerName}</p>
+                {row.speciality ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.speciality}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                {customerObjectionLines(row.objections).map((line) => (
+                  <p className="break-words" key={line}>
+                    {line}
+                  </p>
+                ))}
+              </td>
+              <td className={crmTdClassName}>
+                <DaysToggle onToggle={onToggle} open={open} />
+              </td>
+            </>
+          )}
+          renderOpen={(row) => <DayList days={objectionVisitDays(row)} today={today} />}
+          searchWords={(row) => [row.repName, row.customerName, row.speciality, ...row.territories, ...row.objections.flatMap((objection) => [objection.label, ...objection.visits.flatMap((visit) => visit.products)])]}
+          words={{ ...LIST_WORDS, searchLabel: "Find a rep or customer", searchPlaceholder: "Rep, customer, territory or product", title: "By rep, then customer", with: "With objections", without: "None" }}
+        />
       )}
     </>
   );

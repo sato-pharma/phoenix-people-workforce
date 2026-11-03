@@ -135,6 +135,7 @@ const PINNED = [
   "scripts/import-pharmacy-code-references.ts",
   "scripts/learn-from-cleaned-dry-run.ts",
   "scripts/market-awareness-refire-pending-notices.ts",
+  "scripts/marketing-list-check.ts",
   "scripts/marketing-pharmacy-code-questions.ts",
   "scripts/master-map-preview.ts",
   "scripts/measure-production-planning-fit.mjs",

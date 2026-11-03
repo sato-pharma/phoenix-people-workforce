@@ -204,8 +204,8 @@ export async function runMarketingCrmDoctorPickTests() {
   assert.match(insert, /area_id: owner\.areaId \?\? null,/, "area_id still comes from the owner, never from the hand-chosen area");
   assert.doesNotMatch(insert, /extracted_area_name: [^,\n]*chosen/, "the GPS area is never overwritten by the chosen one");
   assert.match(service, /resolveCrmDoctorPick\(/, "the server re-checks every pick before anything is written");
-  assert.match(service, /evidence_photo_captured_at, crm_list_status"\)/, "the approval window reads the flag");
-  assert.match(service, /customerCrmListFlag: crmListFlag\(customerRow\?\.crm_list_status\)/, "the approval summary carries the flag sentence");
+  assert.match(service, /evidence_photo_captured_at, crm_list_status, crm_list_source"\)/, "the approval window reads the flag");
+  assert.match(service, /customerCrmListFlag: crmListFlag\(customerRow\?\.crm_list_status, \{\s*check: listCheckFacts\.get\(request\.customerId \?\? ""\),\s*source: customerRow\?\.crm_list_source,/, "the approval summary carries the flag sentence");
   assert.equal((service.match(/customerCrmListFlag: customerCrmFlagById\.get\(request\.customerId\)/g) ?? []).length, 2, "the inbox row and the history row both carry the flag");
 
   const pickService = code("src/lib/marketing-requests/crm-doctor-pick-service.ts");

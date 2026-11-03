@@ -9,6 +9,7 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 import { ValidatedEvidenceLink } from "@/components/validation/validated-evidence-link";
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { ListCheckTwoPhotos } from "@/components/marketing-requests/list-check-two-photos";
 import { NotOnCrmListFlag } from "@/components/marketing-requests/not-on-crm-list-flag";
 import { SamePharmacyCrossUseNotice } from "@/components/approvals-hub/same-pharmacy-cross-use-flag";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -274,6 +275,18 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
       {/* Typed by hand at validation — not on a rep's Phoenix CRM list (owner, 2026-10-23). First,
           because it changes how much the rest of the customer evidence can be trusted. */}
       <NotOnCrmListFlag flag={detail.customerCrmListFlag} />
+      {/* Beside the flag, never instead of a decision (owner, 2026-10-27: "you must don't block but
+          flag … in the approval window, you will show the two photos"). */}
+      {detail.customerListCheckPhotos ? (
+        <ListCheckTwoPhotos
+          customerName={detail.customerName}
+          customerPhotoUrl={detail.customerListCheckPhotos.customerPhotoUrl}
+          doctorName={detail.customerListCheckPhotos.doctorName}
+          doctorPhotoUrl={detail.customerListCheckPhotos.doctorPhotoUrl}
+          metresApart={detail.customerListCheckPhotos.metresApart}
+          reason={detail.customerListCheckPhotos.reason}
+        />
+      ) : null}
 
       {detail.customerValidation ? (
         <ValidatedEvidenceLink

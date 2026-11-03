@@ -242,7 +242,7 @@ export function runPhoenixCrmAdminSurfaceTests(): void {
   // ── 3. Every report says what it answers ──────────────────────────────────────────────────────
   {
     const sections = Object.keys(SECTION_TITLES) as ReportSection[];
-    assert.equal(sections.length, 15, "fifteen reports, as the tab offers them");
+    assert.equal(sections.length, 16, "sixteen reports, as the tab offers them");
     for (const section of sections) {
       const entry = REPORT_GUIDE[section];
       assert.ok(entry, `${section} is in the guide`);

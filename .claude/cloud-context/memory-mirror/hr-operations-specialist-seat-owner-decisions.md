@@ -8,7 +8,7 @@ metadata:
   modified: 2026-10-27T22:09:29.491Z
 ---
 
-🔴 **2026-11-02: THE EIGHT-PAPER LIMIT BELOW IS GONE** — owner: "OPEN IN HER ACCOUNT Contact the joiner, confirm papers and attendance time/ Receive the hiring papers/ OPEN HR FORMS FULL MODULE TO AYA". Current rule: `.claude/rules/hiring-documents.md`.
+🔴 **2026-11-02: THE EIGHT-PAPER LIMIT BELOW IS GONE** — owner: "OPEN IN HER ACCOUNT Contact the joiner, confirm papers and attendance time/ Receive the hiring papers/ OPEN HR FORMS FULL MODULE TO AYA". Current rule: `.claude/rules/hiring-documents.md`. Shipped as gawishtheit/phoenix-people-workforce#7, merged 2 Nov 18:20 Cairo on his word "merge 7 and 8 when green"; it is the old PR 6776 after the account move. She has not opened it yet (activity_events, read 3 Nov about 01:05 Cairo).
 
 🔴 **2026-10-28: Aya Tarek (OF-0005, Office Coordinator) now HOLDS the `HR Administration` seat** — owner asked "add all modules in hr operations specialist account to the office coordinator account", then picked "Specialist seat, no salary" over Yasmeena's HR Operations seat. Four writes done (role, session_version 1→2, access profile SELF, both metadata blocks; she had no live sessions). The seat's alerts that fell to him while it was empty now reach her. Her `employees.job_title` stays "Office Coordinator".
 

@@ -85,6 +85,7 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-production-planning-fx", kind: "cron", schedule: "7 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-production-planning-reorder", kind: "cron", schedule: "11 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-marketing-field-capture-nudge", kind: "cron", schedule: "50 6 * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-marketing-list-check", kind: "cron", schedule: "37 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-invoice-overdue-nudge", kind: "cron", schedule: "5 7 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-distributor-upload-overdue-nudge", kind: "cron", schedule: "20 7 * * *", graceSeconds: 1 * HOUR },
   // Every quarter hour, not daily, and that is the point. A held mapping change means the map is

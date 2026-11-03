@@ -963,7 +963,10 @@ import { runMarketingRequestTwinGuardTests } from "./marketing-request-twin-guar
 import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingRoiCoverageAuditTests } from "./marketing-roi-coverage-audit.test.ts";
+import { runMarketingFinanceAgeingTests } from "./marketing-finance-ageing.test.ts";
+import { runMarketingListCheckTests } from "./marketing-list-check.test.ts";
 import { runMarketingManagerScorecardTests } from "./marketing-manager-scorecard.test.ts";
+import { runPhoenixCrmObjectionsByCustomerTests } from "./phoenix-crm-objections-by-customer.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
@@ -8639,6 +8642,18 @@ await runTest(
 await runTest(
   "marketing manager scorecard and its Excel/PDF exports (per-manager totals, a shared sale counted once per manager AND company-wide, the files repeating the screen rather than re-querying, the Cairo day in the filename, and nothing anywhere that can block a request)",
   runMarketingManagerScorecardTests,
+);
+await runTest(
+  "marketing finance ageing (the waiting filter, the step clock, the bands, three readers, no execute control)",
+  runMarketingFinanceAgeingTests,
+);
+await runTest(
+  "marketing doctor-list check (one letter and the twin names, 500 m, a pick never overwritten, the flag wording, the board sums, the sheet layout)",
+  runMarketingListCheckTests,
+);
+await runTest(
+  "phoenix crm objections by customer (no none, no rate, no rank, refused roles, the import ban)",
+  runPhoenixCrmObjectionsByCustomerTests,
 );
 await runTest(
   "marketing customer area ownership (a customer belongs to a territory, so the rep hired into a resigned rep's patch inherits it with nothing re-stamped; same area other line sees it too; another area does not)",

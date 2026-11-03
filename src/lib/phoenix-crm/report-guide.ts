@@ -43,7 +43,8 @@ export type ReportSection =
   | "capacity"
   | "heard"
   | "stock"
-  | "samples";
+  | "samples"
+  | "objections";
 
 /** The report's name, as its title, its chip and its sheet in the workbook all read it. */
 export const SECTION_TITLES: Record<ReportSection, string> = {
@@ -62,6 +63,7 @@ export const SECTION_TITLES: Record<ReportSection, string> = {
   heard: "What the field heard",
   stock: "Missing stock",
   samples: "Samples by month",
+  objections: "Objections by customer",
 };
 
 /**
@@ -190,6 +192,11 @@ export const REPORT_GUIDE: Record<ReportSection, ReportEntry> = {
     family: "heard",
     note: "What was left, month by month",
     answers: "What was left with customers — samples and materials — month by month.",
+  },
+  objections: {
+    family: "heard",
+    note: "Each rep's customers, counts only",
+    answers: "Each rep's customers and what they objected to, with the product, the day and the rep's note. The objection is the customer's: counts only, and it never scores a rep.",
   },
 };
 

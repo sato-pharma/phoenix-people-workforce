@@ -1190,6 +1190,7 @@ function insightPack(patch: Partial<ReportsPackInput>): ReportsPackInput {
     heard: null,
     stock: null,
     samples: null,
+    objections: null,
     ...patch,
   };
 }
