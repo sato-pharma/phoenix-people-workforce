@@ -132,6 +132,9 @@ re-run does not resurrect. An open HIGH alert is that failure with the clock alr
   nothing could be listed. It does not stop this merge: the audit behind `checks` is still the gate. Say in the
   report that the alerts were not read, and that turning them on is the owner's click in the repository's
   Security settings.
+- **`dependency list for this repo is empty` (exit 1) is NOT an alert to bump either.** Alerts are on, but
+  GitHub has not scanned the repository yet, so the zero means nothing. Report the alerts as not read, the same
+  as `SWITCHED OFF`.
 - The alert appears here hours before the audit feed learns it, which is the whole window this buys.
   It is a read: it never merges anything, and **auto-merging these bumps was offered on 2026-09-30
   and declined** — every merge stays the owner's own word.

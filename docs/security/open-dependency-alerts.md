@@ -403,3 +403,16 @@ which hid that alerts had never been turned on after the 2 Nov move to
 `gawishtheit/phoenix-people-workforce`: a repository setting does not come across with the code.
 Turning them on is the owner's click, in the repository's Security settings. It is not a bump, and
 the audit behind `checks` is still the gate.
+
+🔴 **Switched on does not mean scanned.** On 3 Nov 2026 alerts read on at 15:43 and the check printed
+`OK` on a zero, while GitHub's dependency list (`dependency-graph/sbom`) still answered 404. It held
+1,812 packages by 16:00, and the first of 20 alerts came at 16:11. A zero now asks that list too:
+
+- **Empty or 404:** exit 1, saying GitHub has not scanned the repository.
+- **Could not be read:** exit 0 and "this is not a pass", like any other skip.
+- **Filled:** `OK`, with a warning. Between 16:00 and 16:11 the list was filled and the alerts were not
+  there yet, and nothing GitHub answers tells those minutes from a finished scan. A zero within about
+  30 minutes of switching alerts on can still be early, and the check says so.
+
+GraphQL `dependenciesCount` read 0 on all 33 manifests at 16:00 with the list already filled, so it
+is not a signal for this.
