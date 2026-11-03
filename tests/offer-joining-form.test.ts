@@ -125,6 +125,18 @@ async function run() {
   assert.equal(form.offerRequiresSeat(""), false);
   const send = flat("src/lib/offers/send.ts");
   assert.match(send, /if \(offerRequiresSeat\(offer\.title\) && !offer\.vacancyId\) \{? ?throw new Error\(OFFER_SEAT_REQUIRED_MESSAGE\)/, "Send refuses a sales offer with no seat");
+  //    That refusal is HR's to fix, so it answers 400 and never a 500 that reads as a server fault, and
+  //    the screen says it before asking at all. The seat one reached the System Audit (1 Nov 2026).
+  assert.match(
+    flat("src/lib/offers/http.ts"),
+    /if \(message === OFFER_SEAT_REQUIRED_MESSAGE \|\| message === OFFER_START_DATE_REQUIRED_MESSAGE\) \{ return NextResponse\.json\(\{ message, success: false \}, \{ status: 400 \}\)/,
+    "a missing seat or start date is a 400 refusal",
+  );
+  assert.match(
+    flat("src/components/offers/offer-composer.tsx"),
+    /if \(offerRequiresSeat\(draft\.title\) && !draft\.vacancyId\) \{ onReport\(OFFER_SEAT_REQUIRED_MESSAGE, "error"\); return; \}/,
+    "the composer stops a sales letter with no seat before it asks the server",
+  );
 
   // 4. THE NATIONAL ID FILLS AND CHECKS DATE OF BIRTH AND GENDER.
   assert.deepEqual(form.readEgyptianNationalId("29501150101234"), { birthDate: "1995-01-15", gender: "male" });

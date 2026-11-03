@@ -234,6 +234,13 @@ export async function runMarketingRequestCaseFilePageTests() {
     /referenceStatusSentence/,
     "the pharmacy code state must render as prose, never the raw word — a 'pending' chip is a failed lookup wearing a benign label",
   );
+  // A viewer admitted only as a product's owner is refused by the conversation's route, which can carry
+  // the customer details they are denied. Asking anyway raised a false block on their screen (2 Nov 2026).
+  assert.match(
+    viewSource,
+    /\{viewer\.admittedAs\.some\(\(arm\) => arm !== "product_owner"\) \? \(\s+<div className="mt-6">\s+<RecordConversationThread /,
+    "the thread must not mount for a viewer its route refuses",
+  );
   // Cairo, never raw UTC (standing rule).
   assert.match(
     viewSource,

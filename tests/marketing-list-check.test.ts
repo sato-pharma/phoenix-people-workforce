@@ -18,6 +18,7 @@ import {
   checkForRequest,
   latestRaisedObjection,
   type ListCheckBoardRow,
+  visitsSinceThen,
 } from "../src/lib/marketing-requests/crm-list-check-board.ts";
 import { buildListCheckWorkbook } from "../src/lib/marketing-requests/crm-list-check-export.ts";
 import { nearestDoctorPhotoPath, worstListCheckFlagFacts } from "../src/lib/marketing-requests/crm-list-check-flags.ts";
@@ -156,6 +157,17 @@ export async function runMarketingListCheckTests() {
   const sameBrickUnmeasured = judgeListCheck(input({ candidates: [candidate({ contactBrickId: "brick-1", name }, null)] }));
   assert.equal(sameBrickUnmeasured.state, "on_list", "with no distance to read, the same name and the same brick is his sheet's own answer");
   assert.equal(judgeListCheck(input({ candidates: [candidate({ name }, null)] })).state, "check", "no place and no brick proves nothing");
+
+  // Seen on the Check queue, 2026-11-03: both photos on screen, 243 m apart, and the sentence said "no photo to compare".
+  const partName = "محمد علي";
+  const partMeasured = judgeListCheck(
+    input({ candidates: [candidate({ name: partName, places: [{ brickId: "brick-1", photoPath: "doctor.jpg", point: metresNorth(243) }] }, null)] }),
+  );
+  assert.equal(partMeasured.state, "check");
+  assert.match(partMeasured.reason, /243 m apart/, "a distance that was measured is what the sentence says, whatever brick they share");
+  assert.doesNotMatch(partMeasured.reason, /no photo/, "the sentence never denies a photo the page is showing");
+  const partUnmeasured = judgeListCheck(input({ candidates: [candidate({ contactBrickId: "brick-1", name: partName }, null)] }));
+  assert.match(partUnmeasured.reason, /in the same brick, with no photo to compare/, "with nothing measured, the brick is still what is left to say");
 
   // Thinner evidence must stand closer.
   assert.equal(
@@ -456,6 +468,10 @@ export async function runMarketingListCheckTests() {
   assert.match(flags, /console\.error\("\[marketing-list-check\] the two photos could not be read/, "🔴 a failed read degrades; the decision screen always opens");
 
   const board2 = read("src/components/marketing-requests/marketing-list-check-board.tsx");
+  assert.equal(visitsSinceThen(1), "1 visit since then");
+  assert.equal(visitsSinceThen(0), "0 visits since then");
+  assert.equal(visitsSinceThen(1200), "1,200 visits since then");
+  assert.match(board2, /visitsSinceThen\(row\.visitsSincePay\)/, "the board prints the sentence that counts properly");
   assert.match(board2, /w-full table-fixed/, "the fits-the-screen rule");
   assert.doesNotMatch(board2, /overflow-x-auto|rounded|truncate/, "no sideways scroll, no round corner, no ellipsis");
   assert.doesNotMatch(read("src/components/marketing-requests/list-check-two-photos.tsx"), /rounded|truncate/);
