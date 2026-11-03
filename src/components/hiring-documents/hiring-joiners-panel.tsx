@@ -4,17 +4,22 @@ import { AlertTriangle, ChevronDown, ChevronUp, Mail, Phone, RefreshCw } from "l
 import * as React from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
+import { WhatsAppGlyph } from "@/components/organogram/whatsapp-button";
 import { Button } from "@/components/ui/button";
 import { CheckTile, FieldLabel, FormError } from "@/components/ui/form-kit";
 import { phxTextareaClassName } from "@/components/ui/form-tokens";
 import { Input } from "@/components/ui/input";
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
+import { systemLegalEntity } from "@/config/system-settings";
+import { joinerWhatsAppMessage } from "@/lib/hiring-documents/joiner-whatsapp";
 import {
   HIRING_JOINER_NOTES_MAX,
+  joinerDayOneItems,
   joinerIsUrgent,
   joinerPapersProgress,
   joinerStanding,
   joinersSummary,
+  type JoinerDayOneItem,
   type JoinerPapersProgress,
 } from "@/lib/hiring-documents/joiners-logic";
 import type {
@@ -26,6 +31,7 @@ import type {
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { daysUntilLabel } from "@/lib/hr/talent-acquisition-logic";
+import { toWhatsAppDialNumber, whatsAppSendUrl } from "@/lib/recruitment/whatsapp-templates/send-link";
 import { cn } from "@/lib/utils";
 
 type Draft = {
@@ -99,6 +105,14 @@ function formatSavedAt(iso: string): string {
 
 const MISSING_LABEL = { day: "day", papers: "papers", time: "time" } as const;
 
+const DAY_ONE_TONE: Record<JoinerDayOneItem["state"], string> = {
+  done: "text-phx-ok",
+  late: "font-black text-phx-danger",
+  neutral: "text-phx-ink-soft",
+  open: "text-phx-warn",
+  unread: "text-phx-ink-faint",
+};
+
 const headerClassName =
   "bg-phx-accent-soft px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
 const cellClassName = "border-b border-phx-line px-3 py-3 align-top";
@@ -111,7 +125,8 @@ const cellClassName = "border-b border-phx-line px-3 py-3 align-top";
  * One line per joiner, so the list reads at a glance; the confirmation form opens beneath its own row
  * as a joined panel, one at a time. It was a form in every row, which made each row a screen tall.
  *
- * It sends nothing: the mobile and the email are links that open the viewer's own phone and mail app.
+ * It sends nothing: the mobile, the email and the WhatsApp message are links that open the viewer's own
+ * phone, mail app and chat, with the message written and waiting for them to press send.
  * A failed read says so and offers a retry, never "nobody is joining".
  */
 export function HiringJoinersPanel({ canManage, documents, employees, onArrivingCount, onReceivePapers }: Props) {
@@ -228,7 +243,32 @@ export function HiringJoinersPanel({ canManage, documents, employees, onArriving
     );
   }
 
+  /**
+   * The chat with the message in the box. Null for a seat that cannot act here, a number WhatsApp could
+   * not open, or a checklist that did not load: with no papers to read, the message would tell the
+   * joiner they had handed everything in.
+   */
+  function whatsAppHref(joiner: HiringJoiner): string | null {
+    if (!canManage || !documents.some((document) => document.documentGroup === "required")) return null;
+    const number = toWhatsAppDialNumber(joiner.mobile);
+    if (!number) return null;
+    const draft = drafts[joiner.offerId] ?? draftOf(joiner);
+    const employee = employeeByKey.get(canonicalHrIdKey(joiner.employeeHrId) ?? "");
+    return whatsAppSendUrl(
+      number,
+      joinerWhatsAppMessage({
+        attendanceDate: draft.attendanceDate || null,
+        attendanceTime: draft.attendanceTime || null,
+        companyName: systemLegalEntity.legalNameEn,
+        documents,
+        employeeDocuments: employee?.documents ?? null,
+        name: joiner.name,
+      }),
+    );
+  }
+
   function renderContact(joiner: HiringJoiner) {
+    const whatsApp = whatsAppHref(joiner);
     return (
       <div className="space-y-1.5 text-phx-xs font-semibold">
         {joiner.mobile ? (
@@ -239,6 +279,18 @@ export function HiringJoinersPanel({ canManage, documents, employees, onArriving
         ) : (
           <p className="font-black text-phx-warn">No mobile on file</p>
         )}
+        {whatsApp ? (
+          <a
+            className="flex items-center gap-1.5 text-phx-accent hover:underline"
+            href={whatsApp}
+            rel="noopener noreferrer"
+            target="_blank"
+            title="Opens WhatsApp with the message written. You can change it, then press send."
+          >
+            <WhatsAppGlyph className="h-3.5 w-3.5 shrink-0" />
+            WhatsApp message
+          </a>
+        ) : null}
         {joiner.email ? (
           <a className="flex items-start gap-1.5 break-all text-phx-accent hover:underline" href={`mailto:${joiner.email}`}>
             <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -289,6 +341,19 @@ export function HiringJoinersPanel({ canManage, documents, employees, onArriving
           </Button>
         ) : null}
       </div>
+    );
+  }
+
+  function renderDayOne(joiner: HiringJoiner) {
+    return (
+      <ul aria-label="Ready for the first day" className="space-y-0.5 text-phx-xs font-semibold">
+        {joinerDayOneItems(joiner, todayKey).map((item) => (
+          <li className="break-words" key={item.key}>
+            <span className="text-phx-ink-soft">{item.label}: </span>
+            <span className={DAY_ONE_TONE[item.state]}>{item.value}</span>
+          </li>
+        ))}
+      </ul>
     );
   }
 
@@ -459,17 +524,17 @@ export function HiringJoinersPanel({ canManage, documents, employees, onArriving
             <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
               <colgroup>
                 <col className="w-[24%]" />
-                <col className="w-[24%]" />
-                <col className="w-[14%]" />
-                <col className="w-[16%]" />
                 <col className="w-[22%]" />
+                <col className="w-[16%]" />
+                <col className="w-[18%]" />
+                <col className="w-[20%]" />
               </colgroup>
               <thead>
                 <tr>
                   <th className={headerClassName}>Joiner</th>
                   <th className={headerClassName}>Contact</th>
-                  <th className={headerClassName}>Starts</th>
                   <th className={headerClassName}>Papers</th>
+                  <th className={headerClassName}>First day</th>
                   <th className={headerClassName}>Confirmed with them</th>
                 </tr>
               </thead>
@@ -480,10 +545,15 @@ export function HiringJoinersPanel({ canManage, documents, employees, onArriving
                   return (
                     <React.Fragment key={joiner.offerId}>
                       <tr>
-                        <td className={cellClassName}>{renderPeople(joiner)}</td>
+                        <td className={cellClassName}>
+                          <div className="space-y-2">
+                            <div>{renderPeople(joiner)}</div>
+                            <div>{renderStart(joiner)}</div>
+                          </div>
+                        </td>
                         <td className={cellClassName}>{renderContact(joiner)}</td>
-                        <td className={cellClassName}>{renderStart(joiner)}</td>
                         <td className={cellClassName}>{renderPapers(joiner)}</td>
+                        <td className={cellClassName}>{renderDayOne(joiner)}</td>
                         <td className={cellClassName}>
                           <div className="space-y-2">
                             <div>{renderStanding(joiner)}</div>
@@ -517,6 +587,7 @@ export function HiringJoinersPanel({ canManage, documents, employees, onArriving
                   </div>
                   {renderContact(joiner)}
                   {renderPapers(joiner)}
+                  {renderDayOne(joiner)}
                   <div>{renderStanding(joiner)}</div>
                   {renderToggle(joiner, panelId)}
                   {draft && openId === joiner.offerId ? (

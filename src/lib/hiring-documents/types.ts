@@ -196,11 +196,24 @@ export type UpdateHiringDocumentNotesInput = {
  * One person arriving: an ACCEPTED offer whose joining day is today or later, with what HR agreed
  * with them. No money: the letter's figures never reach this screen.
  */
+/**
+ * What else has to be in place by their first day, read beside the papers. NULL MEANS THE READ FAILED,
+ * which the screen says in words: it must never read as "no account" or "no device".
+ */
+export type HiringJoinerDayOne = {
+  /** Handed-over devices still out to them. No device is not a gap: not everyone is issued one. */
+  devicesOutstanding: number | null;
+  hasActiveLogin: boolean | null;
+  /** "none" means no mailbox task was ever opened for them. */
+  mailbox: "connected" | "none" | "not_needed" | "pending" | null;
+};
+
 export type HiringJoiner = {
   /** The day HR agreed they attend, `YYYY-MM-DD`. Null until it is agreed. */
   attendanceDate: string | null;
   /** The time HR agreed they attend, `HH:MM` on the 24-hour clock, Cairo local. */
   attendanceTime: string | null;
+  dayOne: HiringJoinerDayOne;
   email: string | null;
   /** Null until the joining form or Add Employee creates the record; papers are filed against it. */
   employeeHrId: string | null;

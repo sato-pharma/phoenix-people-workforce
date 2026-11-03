@@ -20,6 +20,12 @@ import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FILE_SOURCE_BADGE } from "@/lib/hiring-documents/file-source-badge";
 import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
+import {
+  hiringDocumentScanQueue,
+  nextScanQueueItem,
+  scanQueueKey,
+  scanQueueProgress,
+} from "@/lib/hiring-documents/scan-queue";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -110,6 +116,11 @@ export function HiringDocumentCapture({
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [queueRunning, setQueueRunning] = React.useState(false);
+  /** Filed or skipped on this walk through the queue. */
+  const [queuePassed, setQueuePassed] = React.useState<ReadonlySet<string>>(() => new Set());
+  // Read after an upload's awaits, where the state above is the value from before she may have left.
+  const queueRunningRef = React.useRef(false);
 
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
   const galleryInputRef = React.useRef<HTMLInputElement>(null);
@@ -123,6 +134,44 @@ export function HiringDocumentCapture({
     () => documents.find((document) => document.id === documentId) ?? null,
     [documents, documentId],
   );
+  const scanQueue = React.useMemo(
+    () => (canManage ? hiringDocumentScanQueue(documents, employees) : []),
+    [canManage, documents, employees],
+  );
+  const queueProgress = scanQueueProgress(scanQueue, queuePassed);
+
+  function runQueue(passed: ReadonlySet<string>) {
+    queueRunningRef.current = true;
+    setQueueRunning(true);
+    setQueuePassed(passed);
+    const next = nextScanQueueItem(scanQueue, passed);
+    if (next) {
+      setEmployeeHrId(next.employeeHrId);
+      setDocumentId(next.documentId);
+    }
+  }
+
+  function leaveQueue() {
+    queueRunningRef.current = false;
+    setQueueRunning(false);
+    setQueuePassed(new Set());
+  }
+
+  /** Past the paper on screen. The files effect then reads the next one's, so nothing here re-reads. */
+  function passQueuePaper() {
+    runQueue(new Set(queuePassed).add(scanQueueKey(employeeHrId, documentId)));
+  }
+
+  /** Choosing a person or a paper by hand means she has left the queue's order, so it lets go. */
+  function chooseEmployee(hrId: string) {
+    leaveQueue();
+    setEmployeeHrId(hrId);
+  }
+
+  function chooseDocument(id: string) {
+    leaveQueue();
+    setDocumentId(id);
+  }
 
   // Object URLs are a manual allocation the garbage collector will not reclaim. Held in a ref so
   // the unmount cleanup sees the CURRENT staged list — closing over the state directly would revoke
@@ -253,6 +302,10 @@ export function HiringDocumentCapture({
       );
       await reloadFiles();
       await onChanged();
+      // LAST, because `reloadFiles` still holds this paper: moving first would list its files under
+      // the next paper's heading. And never with pages still staged: an upload leaves them there, and
+      // they would then save under the wrong paper.
+      if (queueRunningRef.current && (mode === "scan" || stagedPages.length === 0)) passQueuePaper();
     } catch {
       setError("Unable to attach the document.");
     } finally {
@@ -325,13 +378,70 @@ export function HiringDocumentCapture({
         </AdminCallout>
       ) : null}
 
+      {canManage && queueRunning && queueProgress.position <= queueProgress.total ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-phx-accent bg-phx-accent-soft p-4">
+          <div className="min-w-0 flex-1 basis-56">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+              Paper {queueProgress.position} of {queueProgress.total}
+            </p>
+            <p className="mt-1 break-words text-sm font-black text-phx-ink" dir="auto">{selectedEmployee?.fullName}</p>
+            <p className="break-words text-sm font-semibold text-phx-ink-soft">{selectedDocument?.name}</p>
+            {stagedPages.length > 0 ? (
+              <p className="mt-1 text-phx-xs font-bold text-phx-warn">Save or discard the pages below before you skip this paper.</p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={busy !== null || stagedPages.length > 0} onClick={passQueuePaper} type="button" variant="secondary">
+              Skip
+            </Button>
+            <Button disabled={busy !== null} onClick={leaveQueue} type="button" variant="ghost">
+              Stop
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {canManage && queueRunning && queueProgress.position > queueProgress.total ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-phx-line bg-white p-4 shadow-none">
+          <p className="min-w-0 flex-1 basis-56 text-sm font-black text-phx-ink">
+            {queueProgress.skipped === 0
+              ? "The queue is finished. Every ticked paper has a scan on file."
+              : `The queue is finished. ${queueProgress.skipped} skipped ${queueProgress.skipped === 1 ? "paper is" : "papers are"} still without a scan.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {queueProgress.skipped > 0 ? (
+              <Button onClick={() => runQueue(new Set())} type="button" variant="secondary">
+                Go through skipped
+              </Button>
+            ) : null}
+            <Button onClick={leaveQueue} type="button" variant="ghost">
+              Close
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {canManage && !queueRunning && scanQueue.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-phx-line bg-white p-4 shadow-none">
+          <div className="min-w-0 flex-1 basis-56">
+            <p className="text-sm font-black text-phx-ink">
+              {scanQueue.length} {scanQueue.length === 1 ? "paper is" : "papers are"} ticked with no scan on file
+            </p>
+            <p className="mt-0.5 text-phx-xs font-semibold text-phx-ink-soft">
+              One at a time, newest hire first. Saving a scan moves to the next paper.
+            </p>
+          </div>
+          <Button onClick={() => runQueue(new Set())} type="button">
+            Start the queue
+          </Button>
+        </div>
+      ) : null}
+
       <Card className="space-y-4 border border-phx-line bg-white p-4 shadow-none">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={panelLabelClassName}>Employee</span>
             <SearchableSelect
               className={selectClassName}
-              onChange={(event) => setEmployeeHrId(event.target.value)}
+              onChange={(event) => chooseEmployee(event.target.value)}
               value={employeeHrId}
             >
               <option value="">Choose an employee</option>
@@ -346,7 +456,7 @@ export function HiringDocumentCapture({
             <span className={panelLabelClassName}>Document</span>
             <SearchableSelect
               className={selectClassName}
-              onChange={(event) => setDocumentId(event.target.value)}
+              onChange={(event) => chooseDocument(event.target.value)}
               value={documentId}
             >
               <option value="">Choose a document</option>
@@ -373,7 +483,7 @@ export function HiringDocumentCapture({
                     aria-pressed={document.id === documentId}
                     className={outstandingChoiceClassName(document.id === documentId)}
                     key={document.id}
-                    onClick={() => setDocumentId(document.id)}
+                    onClick={() => chooseDocument(document.id)}
                     type="button"
                   >
                     {document.name}
@@ -392,7 +502,7 @@ export function HiringDocumentCapture({
                       aria-pressed={document.id === documentId}
                       className={outstandingChoiceClassName(document.id === documentId)}
                       key={document.id}
-                      onClick={() => setDocumentId(document.id)}
+                      onClick={() => chooseDocument(document.id)}
                       type="button"
                     >
                       {document.name}
