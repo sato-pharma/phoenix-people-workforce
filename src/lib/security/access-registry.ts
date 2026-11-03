@@ -1238,6 +1238,9 @@ export const accessRegistry = [
   // The Super Admin's Polyclinic Caps page (owner, 2026-11-02): one switch or one number on one rep's venue.
   // `update` at the route, and the module narrows it to the Super Admin alone.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/venue-caps", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // The Super Admin's Rep Exceptions page (owner, 2026-11-03): one switch or one change of dates for one rep.
+  // `update` at the route, and the module narrows it to the Super Admin alone.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/rep-exceptions", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // The Administrator approves or refuses a recorded visit (owner, 2026-10-16). The service asks
   // `canAdminister` again, so the matrix action is the floor, not the gate.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/recording/admin/review", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
