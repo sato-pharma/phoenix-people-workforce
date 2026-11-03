@@ -26,6 +26,18 @@ import {
 export function runStagingHrSyncTests() {
   const source = readFileSync(new URL("../scripts/sync-staging-hr.mjs", import.meta.url), "utf8");
 
+  // 0. THE RUNNER READS THE ENVIRONMENT. On GitHub the secrets arrive in `env:` and there is no env
+  //    file, so a script that reads only the files fails every night before it compares a row. Both
+  //    database steps of the nightly check are held to it: this one and the backup schema audit.
+  for (const script of ["sync-staging-hr", "audit-backup-schemas"]) {
+    const text = readFileSync(new URL(`../scripts/${script}.mjs`, import.meta.url), "utf8");
+    const reader = text.slice(text.indexOf("function envVar(name)"), text.indexOf("for (const file of ENV_FILES)"));
+    assert.ok(
+      reader.includes("if (process.env[name]) return process.env[name];"),
+      `${script}.mjs must read the environment before the env files, or the nightly check dies on the runner`,
+    );
+  }
+
   // 1. THE DIRECTION GUARD. One edited env file is all it takes to point this at production, and
   //    every statement in the script is legal SQL against either database — nothing else would
   //    notice. These refs are the only thing standing in the way.
