@@ -109,6 +109,12 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     `${SHIP_SKILL} no longer names scripts/ci-build-risk.mjs, the one thing that answers whether this ` +
       "PR built, so a session has to guess what its green checks covered.",
   );
+  assert.doesNotMatch(
+    ship,
+    new RegExp("unit suite runs in `validate`|`validate` includes `pnpm audit`|turn `validate` red|`validate`'s audit"),
+    `${SHIP_SKILL} places the suite or the audit in \`validate\` again. Both have been behind \`checks\`, ` +
+      "in `unit` and `static`, since 2026-10-19; on a PR `validate` holds no tests at all.",
+  );
 
   // 5. So do the traps. The clusters file is what trap-injector.mjs hands every session, and the
   // account is where it sends them to read more. The account's dated snapshot of the old AGENTS.md

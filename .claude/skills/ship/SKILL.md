@@ -62,12 +62,15 @@ gh api repos/gawishtheit/phoenix-people-workforce/branches/main/protection/requi
 ```
 
 As of **2026-09-29** that returns **two**: **`validate`, `checks`** (`enforce_admins: true`).
-`checks` carries lint, `next typegen` and typecheck; **the unit suite runs in `validate`** (moved there
-2026-09-30 so it runs beside the typecheck rather than behind it — ~97s off every PR). #4527 had merged
+`validate` holds the build and the login smoke test, so on a PR it is short and holds no tests. **`checks`
+stands for the `static` job** (lint, `next typegen`, typecheck, the audit) **and the two `unit` jobs** (the
+suite): it does no work of its own and is green only when both succeeded and every test ran exactly once.
+They left `validate` on 2026-10-19 so the slowest job on `main` is the build alone. #4527 had merged
 the three former jobs to stop paying per-job minute rounding four times, so **`lint`, `typecheck` and
-`test` still do not exist as check names** — and the suite deliberately did not become a `test` job
-again, because a job named like a retired gate reads as gating when it does not (#3950). Anything in `gh pr checks` that protection
-does not name — `mobile` or `full-e2e` reading `skipping` — is not a gate and not a failure.
+`test` still do not exist as check names** — and the suite's job is deliberately `unit` and not `test`,
+because a job named like a retired gate reads as gating when it does not (#3950). `static` and `unit` are
+gating through `checks` although protection does not name them. Anything else in `gh pr checks` that
+protection does not name — `mobile` or `full-e2e` reading `skipping` — is not a gate and not a failure.
 
 🔴 **`mobile` is in that category NOW. `secret-scan` is not in the list at all — do not look for
 it.** `mobile` was required until 2026-09-29 and is not any more; it still reports, skipping when
@@ -105,8 +108,8 @@ node scripts/check-dependabot-alerts.mjs
 ```
 
 🔴 **A GREEN PR PROVES THE DEPENDENCY AUDIT PASSED WHEN IT RAN, AND NOTHING ABOUT WHEN YOU MERGE.**
-`validate` includes `pnpm audit --audit-level=high --prod`, which reads an advisory feed that moves
-on its own. Measured 2026-09-30: the same dependency passed that step at **16:11** and failed it at
+`static`, behind `checks`, runs `pnpm audit --audit-level=high --prod`, which reads an advisory feed that
+moves on its own. Measured 2026-09-30: the same dependency passed that step at **16:11** and failed it at
 **16:29** with nothing in the repository having changed. `main` runs the step AGAIN after the merge —
 and a red suite there makes Railway mark the production deploy `SKIPPED` for good (§2.3), which a
 re-run does not resurrect. An open HIGH alert is that failure with the clock already running.
@@ -118,7 +121,7 @@ re-run does not resurrect. An open HIGH alert is that failure with the clock alr
   answers "Already up to date" for everything else.
 - 🔴 **`open, but CANNOT fail the gate — <reason>` is NOT something to bump, and NOT something to
   wait for.** `pnpm audit --prod` runs at the root, so an alert in `development` scope or in a
-  manifest that audit never reads cannot turn `validate` red — the check prints it with its reason
+  manifest that audit never reads cannot turn `checks` red — the check prints it with its reason
   and exits 0. Measured 2026-10-04: three such alerts, none with a patched version, were being
   reported as `WILL FAIL CI` while the gate command itself passed, so the instruction above could
   not be followed by anyone. The decision and the fail-closed rule behind it:
@@ -126,7 +129,7 @@ re-run does not resurrect. An open HIGH alert is that failure with the clock alr
 - **`skipped — …` is NOT a pass.** It means nothing was read — no `gh`, not authenticated, no
   network, or a token without `security_events`. Report it as unread, never as clear.
 - **`SWITCHED OFF` (exit 1) is NOT an alert to bump.** Dependabot alerts are off for the repository, so
-  nothing could be listed. It does not stop this merge: `validate`'s audit is still the gate. Say in the
+  nothing could be listed. It does not stop this merge: the audit behind `checks` is still the gate. Say in the
   report that the alerts were not read, and that turning them on is the owner's click in the repository's
   Security settings.
 - The alert appears here hours before the audit feed learns it, which is the whole window this buys.
