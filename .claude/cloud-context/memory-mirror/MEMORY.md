@@ -29,9 +29,9 @@
 
 
 ## Inbox — new notes land here
-- [GitHub suspended the account, 2026-11-02](github-account-suspended-2026-11-02.md) - 403 on git and API; Polyclinic Caps commits unpushed in their worktree. Re-test with `git ls-remote`; never route around it.
-- [The sampler's postgresStartedAt moves without a restart](db-host-sampler-postgres-started-at-moves-without-a-restart.md) - prove a restart or compute size from `memTotalMb` and `pg_postmaster_start_time()`, never that field or the dashboard alone.
-- [Supabase showed outstanding invoices, 2026-11-02](supabase-outstanding-invoices-banner-2026-11-02.md) - Gawish organization, service-disruption warning; Future Talents Hub restricted; nothing on Medium, and Medium's cores are shared.
+- [Visit retry: post-deploy reads owed, 3 Nov 2026](visit-retry-post-deploy-reads-owed-2026-11-03.md) - first-day resend log, reminders heartbeat, new flag count; the real-browser press ran on staging and pull request 34 carries its two fixes.
+- [A real-browser press can run on a GitHub runner](a-real-browser-press-can-run-on-a-github-runner.md) - one-off job on a throwaway branch, staging only, when the laptop's memory floor stops a dev server.
+- [Stand-ins and the cache server declined, 2026-11-03](stand-ins-and-cache-server-declined-2026-11-03.md) - his decision in plain-word questions; never offer either again without a new measured need.
 
 
 
