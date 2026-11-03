@@ -163,6 +163,7 @@
   "a-rollup-ships-a-members-stale-head-not-its-latest": "engineering",
   "a-router-refresh-after-a-one-shot-action-erases-its-only-account": "notifications",
   "a-rule-script-run-in-the-primary-reads-its-stale-checked-out-code": "git-worktrees",
+  "a-runner-press-must-wait-for-hydration-before-it-clicks": "sessions",
   "a-runtime-built-postgrest-select-loses-its-type": "database",
   "a-saved-plan-file-is-a-snapshot-not-a-backlog": "sessions",
   "a-scoped-crm-drop-must-guard-every-table-it-deletes-from": "engineering",
