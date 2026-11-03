@@ -40,7 +40,7 @@ export function WizardStep({
         {index}
       </span>
       <span
-        className={`truncate text-phx-sm font-semibold ${
+        className={`min-w-0 break-words text-phx-sm font-semibold ${
           active ? "text-slate-900" : "text-slate-500"
         }`}
       >
@@ -104,7 +104,7 @@ export function Stat({
         {label}
       </p>
       <p
-        className="mt-1 truncate text-phx-md font-semibold text-slate-800"
+        className="mt-1 break-words text-phx-md font-semibold text-slate-800"
         title={value}
       >
         {value}
@@ -132,7 +132,7 @@ export function FieldValue({
         {label}
       </p>
       <p
-        className="mt-1 truncate text-phx-md font-semibold capitalize text-slate-800"
+        className="mt-1 break-words text-phx-md font-semibold capitalize text-slate-800"
         title={value}
       >
         {value}
@@ -160,7 +160,7 @@ export function SummaryValue({
         {label}
       </p>
       <p
-        className="mt-1 truncate text-phx-lg font-bold text-slate-900"
+        className="mt-1 break-words text-phx-lg font-bold text-slate-900"
         title={value}
       >
         {value}

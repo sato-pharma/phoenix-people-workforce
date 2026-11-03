@@ -79,11 +79,25 @@ import {
   readJourneyPricing,
   readJourneyStops,
   rebaseClaimOnNewFuel,
+  rebaseClaimOnStopTicket,
   withJourneyReason,
   type ChainedJourneyInput,
   type ChainedJourneyPricing,
   type OutstationJourneyStop,
 } from "@/lib/outstation/chained-journey";
+import {
+  isJourneyStopOpen,
+  journeyStopEvidenceKind,
+  journeyStopEvidenceRefusal,
+  journeyStopRule,
+  journeyStopRuleForNewClaim,
+  journeyStopWriteStatuses,
+  payrollRowHoldsPersonsFigure,
+  stopAlreadySavedFor,
+  ticketPathsOutsideStops,
+  type JourneyStopEvidence,
+  type JourneyStopRule,
+} from "@/lib/outstation/journey-stop-rules";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import {
   outstationCampaignRuleOutcome,
@@ -179,6 +193,7 @@ import {
 } from "@/lib/outstation/submit-recipients";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveRoleRecipientHrIds } from "@/lib/notifications/role-recipients";
+import { describeExpenseResyncNotApplied, type ExpenseResyncOutcome } from "@/lib/automated-payroll/expense-resync";
 import { logError, logInfo } from "@/lib/observability/log";
 import {
   canViewEmployeeExpenseScope,
@@ -3088,7 +3103,7 @@ export async function attachMissingTicketsToOwnOutstationRequest(
   if (!isOutstationClaimUndecided(existing.status)) {
     throw new Error(OUTSTATION_CLAIM_DECIDED_MESSAGE);
   }
-  const existingCount = existing.ticketAttachmentPaths.length;
+  const existingCount = ticketPathsOutsideStops(existing.ticketAttachmentPaths, existing.journeyStops ?? []).length;
   if (
     !canAttachMissingOutstationTicket({
       status: existing.status,
@@ -3130,11 +3145,12 @@ export async function attachMissingTicketsToOwnOutstationRequest(
       .from("outstation_expense_requests")
       .update({
         approval_reason: approvalReason,
-        attachment_count: uploaded.length,
+        // Added to, never replaced: a stop's own ticket may already sit on the claim.
+        attachment_count: existing.ticketAttachmentMetadata.length + uploaded.length,
         eligibility_reason: eligibility.eligibilityReason,
         eligibility_status: eligibility.eligibilityStatus,
-        ticket_attachment_metadata: uploaded,
-        ticket_attachment_paths: uploaded.map((attachment) => attachment.path),
+        ticket_attachment_metadata: [...existing.ticketAttachmentMetadata, ...uploaded],
+        ticket_attachment_paths: [...existing.ticketAttachmentPaths, ...uploaded.map((attachment) => attachment.path)],
       })
       .eq("id", requestId)
       .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
@@ -3451,6 +3467,7 @@ export async function getLinkedOutstationPayrollExpense(
 async function syncLinkedOutstationPayrollExpense(input: {
   access: AccessContext;
   linkedPayroll: LinkedOutstationPayrollExpense | null;
+  onPayrollResync?: (outcomes: ExpenseResyncOutcome[]) => void;
   request: OutstationExpenseRequest;
 }) {
   if (!input.linkedPayroll) return 0;
@@ -3466,7 +3483,7 @@ async function syncLinkedOutstationPayrollExpense(input: {
     fileName: workflowExpenseReportFileName(input.request.id),
     records: [expenseRecord],
     reportId: input.linkedPayroll?.reportId ?? null,
-  }, input.access, { allowWorkflowTripIds: true });
+  }, input.access, { allowWorkflowTripIds: true, onPayrollResync: input.onPayrollResync });
 
   return saved.length;
 }
@@ -4261,11 +4278,16 @@ export async function updateManagerExpenseAsAdmin(
   requestId: number,
   access: AccessContext,
   input: Partial<ManagerExpenseAdminInput>,
+  options?: { expectedRevision?: string },
 ): Promise<OutstationExpenseRequest> {
   await assertOutstationAdminAccess(access, "approve");
 
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
+  // The form holds the ticket figure it opened on, so a stop's ticket landing meanwhile would be lost.
+  if (options?.expectedRevision) {
+    assertOutstationClaimUnchanged({ current: existing.updatedAt, expected: options.expectedRevision });
+  }
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
   if (isOutstationExpenseInPayroll(linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
@@ -4340,8 +4362,9 @@ export async function updateManagerExpenseAsAdmin(
   // 2026-10-18): the stops and their road legs are the employee's live photos, so an edit re-prices
   // them with the edited dates, distance and destination rather than falling back to home and back.
   let journeyPricing: ChainedJourneyPricing | null = null;
-  if (!isMeetingExpense && transportationType === "car") {
-    fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
+  if (!isMeetingExpense) {
+    const travelsByCar = transportationType === "car";
+    if (travelsByCar) fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
     const stops = existing.journeyStops ?? [];
     if (stops.length > 0) {
       journeyPricing = priceChainedJourney({
@@ -4359,10 +4382,11 @@ export async function updateManagerExpenseAsAdmin(
         otherCarTripsByDay: await otherCarTripsByCairoDay(existing, journeyStopDays(stops)),
         residenceGovernorate,
         stops,
+        travel: travelsByCar ? "car" : "ticket",
         tripEndDate,
         tripStartDate,
       });
-      fuelAmount = journeyPricing.fuelAmount;
+      if (travelsByCar) fuelAmount = journeyPricing.fuelAmount;
     }
   }
   const existingTravelCost =
@@ -4495,7 +4519,7 @@ export async function updateManagerExpenseAsAdmin(
     updated_at: now,
   };
   if ((existing.journeyStops ?? []).length > 0) {
-    // Null when the edit made it a meeting or a non-car trip: the stops stay on record, unpriced.
+    // Null when the edit made it a meeting: the stops stay on record, unpriced.
     updatePayload.journey_pricing = journeyPricing;
     updatePayload.approval_reason = withJourneyReason(existing.approvalReason, journeyPricing);
   }
@@ -5548,9 +5572,6 @@ export async function captureOutstationDeparturePhoto(
   return { gateStatus, review };
 }
 
-/** A stop may be added only while nobody has decided the trip yet — the same list an extra ticket obeys. */
-const JOURNEY_STOP_OPEN_STATUSES = OUTSTATION_UNDECIDED_STATUSES;
-
 /**
  * The employee's OTHER live car trips touching the given Cairo days — the double-pay check for a
  * stop. A failed read throws: an unread sibling list must never price as "no other trip".
@@ -5597,7 +5618,7 @@ async function otherCarTripsByCairoDay(
 async function journeysWithStopsForEmployee(employeeHrId: string): Promise<Array<{ id: number; stopDays: string[] }>> {
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
-    .select("id, employee_hr_id, status, journey_stops")
+    .select("id, employee_hr_id, status, transportation_type, journey_stops")
     .in("employee_hr_id", hrIdLookupKeys(employeeHrId))
     // Only journeys that carry a stop (the column is NOT NULL, default []): the whole history would
     // ride every car submit and fall under PostgREST's silent 1,000-row ceiling.
@@ -5607,6 +5628,8 @@ async function journeysWithStopsForEmployee(employeeHrId: string): Promise<Array
   return ((data ?? []) as Array<Record<string, unknown>>)
     .filter((row) => normalizeHrIdForAccess(text(row.employee_hr_id)) === owner)
     .filter((row) => !text(row.status).startsWith("rejected"))
+    // A journey without a car pays no drive, so it is no reason to hold a car trip the same day.
+    .filter((row) => text(row.transportation_type).toLowerCase() === "car")
     .map((row) => ({ id: Number(row.id), stopDays: journeyStopDays(readJourneyStops(row.journey_stops)) }))
     .filter((journey) => journey.stopDays.length > 0);
 }
@@ -5630,7 +5653,10 @@ async function measureJourneyStop(input: {
   residence: { latitude: number; longitude: number };
   /** The arrival governorate already priced into the claim, so a later stop reads the same answer. */
   storedArrivalGovernorate: string | null;
-}): Promise<{ arrivalGovernorate: string | null; stop: Omit<OutstationJourneyStop, "photoPath"> }> {
+}): Promise<{
+  arrivalGovernorate: string | null;
+  stop: Omit<OutstationJourneyStop, "evidence" | "photoPath" | "ticketAmount" | "ticketPaths">;
+}> {
   const origin = pickJourneyLegOrigin({
     arrival: input.arrival,
     departure: input.departure,
@@ -5639,7 +5665,7 @@ async function measureJourneyStop(input: {
   });
   if (!origin) {
     throw new Error(
-      "The trip's earlier photos carry no location, so the drive to this stop cannot be measured. Ask a system administrator.",
+      "The trip's earlier captures carry no location, so the drive to this stop cannot be measured. Please contact HR.",
     );
   }
 
@@ -5726,6 +5752,7 @@ async function priceJourneyStops(input: {
   trip: { employeeHrId: string; id: number | null };
   tripEndDate: string;
   tripStartDate: string;
+  travel: "car" | "ticket";
 }): Promise<ChainedJourneyPricing> {
   const policy = await getActivePolicyForRole(resolveJobFunctionRole(input.employeeRole));
   return priceChainedJourney({
@@ -5735,6 +5762,7 @@ async function priceJourneyStops(input: {
     otherCarTripsByDay: await otherCarTripsByCairoDay(input.trip, journeyStopDays(input.stops)),
     residenceGovernorate: input.residenceGovernorate,
     stops: input.stops,
+    travel: input.travel,
     tripEndDate: input.tripEndDate,
     tripStartDate: input.tripStartDate,
   });
@@ -5769,6 +5797,9 @@ export async function rehearseOutstationJourneyStop(
     locationLabel?: string | null;
     longitude?: number | null;
     stops?: unknown;
+    /** What the leg's ticket would be; the file itself is never sent, nothing is stored. */
+    ticket?: { amount?: number | null; fileCount?: number | null } | null;
+    transportationType?: string | null;
     tripEndDate?: string | null;
     tripStartDate?: string | null;
   },
@@ -5796,6 +5827,15 @@ export async function rehearseOutstationJourneyStop(
   }
 
   const identity = await getEmployeeIdentity(access);
+  const rule = journeyStopRuleForNewClaim({
+    employeeRole: identity.employeeRole,
+    transportationType: input.transportationType,
+  });
+  const ticketAmount = roundMoney(Number(input.ticket?.amount ?? 0) || 0);
+  const ticketFileCount = Math.max(0, Math.trunc(Number(input.ticket?.fileCount ?? 0) || 0));
+  // A rehearsal never holds a photo: the camera stays on the screen, so that half is not asked here.
+  const refusal = journeyStopEvidenceRefusal({ hasPhoto: true, rule, ticketAmount, ticketFileCount });
+  if (refusal) throw new Error(refusal);
   // persist: false — a rehearsal writes nothing, not even a residence geocode.
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: false });
   if (!residence || !usablePosition(residence.residenceLatitude, residence.residenceLongitude)) {
@@ -5823,7 +5863,13 @@ export async function rehearseOutstationJourneyStop(
     // The first rehearsed stop reads the arrival's governorate from its position; later ones keep it.
     storedArrivalGovernorate: existingStops[0]?.legFrom === "arrival" ? existingStops[0].legFromGovernorate : null,
   });
-  const stop: OutstationJourneyStop = { ...measured.stop, photoPath: REHEARSAL_STOP_PHOTO_PATH };
+  const stop: OutstationJourneyStop = {
+    ...measured.stop,
+    evidence: journeyStopEvidenceKind(rule, ticketFileCount),
+    photoPath: rule.photo ? REHEARSAL_STOP_PHOTO_PATH : null,
+    ticketAmount,
+    ticketPaths: [],
+  };
   const distanceFromResidenceKm = Number(input.arrival.distanceFromResidenceKm);
   const pricing = await priceJourneyStops({
     arrival: {
@@ -5838,6 +5884,7 @@ export async function rehearseOutstationJourneyStop(
       residence.residenceAddress,
     ),
     stops: [...existingStops, stop],
+    travel: rule.paysFuel ? "car" : "ticket",
     trip: { employeeHrId: identity.employeeHrId, id: null },
     tripEndDate,
     tripStartDate,
@@ -5846,28 +5893,75 @@ export async function rehearseOutstationJourneyStop(
 }
 
 /**
- * Write a priced stop onto its claim: the money moves by exactly the fuel's change (never on a claim
- * already found not eligible), the approval reason is rebuilt, the write is pinned to the row's
- * exact `updated_at` and limited to undecided statuses, and an audit row records it. Shared by the
- * employee's own stop and a system administrator's missed stop (2026-11-03), so both move money
- * through one path.
+/** A system administrator's missed stop joins an undecided claim only, the same list as an extra ticket. */
+const JOURNEY_STOP_OPEN_STATUSES = OUTSTATION_UNDECIDED_STATUSES;
+
+/**
+ * A claim already accepted is already on its way to payroll, and the payout reads the payroll row.
+ * True only when the row now carries the claim: a row in a batch, a figure a person typed, a confirmed
+ * run that did not take it, or a failure all answer false. Never throws, because the stop is saved
+ * whatever happens here. Null when no payroll row was due.
+ */
+async function followStopToPayroll(
+  claim: OutstationExpenseRequest,
+  access: AccessContext,
+): Promise<boolean | null> {
+  if (!claim.status.startsWith("accepted")) return null;
+  try {
+    const linked = await getLinkedOutstationPayrollExpense(claim.id);
+    if (isOutstationExpenseInPayroll(linked) || payrollRowHoldsPersonsFigure(linked)) return false;
+    if (!linked) {
+      // The rule accepted this claim, not the employee, who holds no payroll approval of their own.
+      const release = await releaseOutstationRequestToPayrollIfReady(claim.id, systemAccessContext);
+      return release.released;
+    }
+    let notApplied: string[] = [];
+    await syncLinkedOutstationPayrollExpense({
+      access,
+      linkedPayroll: linked,
+      onPayrollResync: (outcomes) => {
+        notApplied = describeExpenseResyncNotApplied(outcomes);
+      },
+      request: claim,
+    });
+    return notApplied.length === 0;
+  } catch (syncError) {
+    logError("A stop changed an accepted claim but its payroll row did not follow", {
+      error: syncError instanceof Error ? syncError : new Error(String(syncError)),
+      labels: { event: "outstation_stop_payroll_sync_failed", requestId: String(claim.id) },
+    });
+    return false;
+  }
+}
+
+/**
+ * Write a priced stop onto its claim: the money moves by exactly the change (the fuel's on a car, the
+ * leg's ticket otherwise; never on a claim already found not eligible), the approval reason is
+ * rebuilt, the write is pinned to the row's exact `updated_at` and limited to the statuses a stop may
+ * still join, and an audit row records it. Shared by the employee's own stop and a system
+ * administrator's missed stop (2026-11-03), so both move money through one path.
  */
 async function writeJourneyStopToClaim(input: {
   access: AccessContext;
+  paysFuel: boolean;
   pricing: ChainedJourneyPricing;
   request: OutstationExpenseRequest;
   source: "employee_journey_stop" | "admin_journey_stop";
   stop: OutstationJourneyStop;
   stops: OutstationJourneyStop[];
+  /** The leg's ticket, stored already; only a stop without a car carries one. */
+  ticket?: { amount: number; uploaded: OutstationExpenseRequest["ticketAttachmentMetadata"] };
   token: { updated_at: string };
   writtenAt: string;
-}): Promise<OutstationExpenseRequest> {
+}): Promise<{ payrollSynced: boolean | null; updated: OutstationExpenseRequest }> {
   const { access, pricing, request, stops, token } = input;
   const supabase = getSupabaseAdmin();
   const capturedAt = input.writtenAt;
   const governorate = input.stop.governorate;
   const stopNumber = input.stop.stopNumber;
   const existingStops = stops.filter((entry) => entry.stopNumber !== stopNumber);
+  const stopTicketAmount = input.ticket?.amount ?? 0;
+  const uploadedTickets = input.ticket?.uploaded ?? [];
   // A trip the system already found NOT eligible keeps its money exactly as it is: a stop must
   // never raise the payable on a claim the approver is being told not to pay (risk review,
   // 2026-10-18 — the travel cost rose while the claim stood still). The chain is still priced and
@@ -5878,35 +5972,77 @@ async function writeJourneyStopToClaim(input: {
     : [
         `The trip is not eligible, so the stops did not change the claim; priced as a journey the fuel would be ${pricing.fuelAmount.toFixed(2)}.`,
       ];
-  const amounts = moneyMoves
-    ? rebaseClaimOnNewFuel({
-        claimedTotalAmount: request.claimedTotalAmount,
-        expectedTotalAmount: request.expectedTotalAmount,
-        expectedTotalFor: (travelCost) =>
-          reportExpectedTotal({
-            allowanceAmount: request.allowanceAmount,
-            eligibilityStatus: request.eligibilityStatus,
-            meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
-            otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
-            travelCost,
+  const expectedTotalFor = (travelCost: number) =>
+    reportExpectedTotal({
+      allowanceAmount: request.allowanceAmount,
+      eligibilityStatus: request.eligibilityStatus,
+      meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
+      otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
+      travelCost,
+    });
+  const unchanged = {
+    claimedTotalAmount: request.claimedTotalAmount,
+    expectedTotalAmount: request.expectedTotalAmount,
+    fuelAmount: request.fuelAmount,
+    reportTravelCost: request.reportTravelCost,
+    ticketAmount: request.ticketAmount,
+  };
+  const amounts = !moneyMoves
+    ? unchanged
+    : input.paysFuel
+      ? {
+          ...unchanged,
+          ...rebaseClaimOnNewFuel({
+            claimedTotalAmount: request.claimedTotalAmount,
+            expectedTotalAmount: request.expectedTotalAmount,
+            expectedTotalFor,
+            fuelAmount: request.fuelAmount,
+            newFuelAmount: pricing.fuelAmount,
+            reportTravelCost: request.reportTravelCost,
+            ticketAmount: request.ticketAmount,
           }),
-        fuelAmount: request.fuelAmount,
-        newFuelAmount: pricing.fuelAmount,
-        reportTravelCost: request.reportTravelCost,
-        ticketAmount: request.ticketAmount,
-      })
-    : {
-        claimedTotalAmount: request.claimedTotalAmount,
-        expectedTotalAmount: request.expectedTotalAmount,
-        fuelAmount: request.fuelAmount,
-        reportTravelCost: request.reportTravelCost,
-      };
+        }
+      : {
+          ...unchanged,
+          ...rebaseClaimOnStopTicket({
+            addedTicketAmount: stopTicketAmount,
+            claimedTotalAmount: request.claimedTotalAmount,
+            expectedTotalFor,
+            fuelAmount: request.fuelAmount,
+            reportTravelCost: request.reportTravelCost,
+            ticketAmount: request.ticketAmount,
+          }),
+        };
+  const ticketWrite =
+    uploadedTickets.length > 0
+      ? {
+          attachment_count: request.ticketAttachmentMetadata.length + uploadedTickets.length,
+          notes: [
+            request.notes,
+            moneyMoves
+              ? `Ticket for the leg to ${governorate ?? "the next place"} added with the stop (${formatEgp(stopTicketAmount)}).`
+              : `Ticket for the leg to ${governorate ?? "the next place"} kept with the stop (${formatEgp(stopTicketAmount)}), not paid: the trip is not eligible.`,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          ticket_attachment_metadata: [...request.ticketAttachmentMetadata, ...uploadedTickets],
+          ticket_attachment_paths: [...request.ticketAttachmentPaths, ...uploadedTickets.map((ticket) => ticket.path)],
+        }
+      : {};
+  // The stored ticket goes with a failed write: unlike a photo it is no evidence of anything until
+  // it sits on the claim, and it would look like a ticket nobody ever claimed.
+  const dropUploadedTickets = async () => {
+    if (uploadedTickets.length > 0) await deleteOutstationTicketAttachments(uploadedTickets.map((ticket) => ticket.path));
+  };
 
-  const { data, error } = await supabase
+  const stopWrite = supabase
     .from("outstation_expense_requests")
     .update({
       approval_reason: withJourneyReason(request.approvalReason, pricing, [...notEligibleNote, ...adminAddedStopNotes(stops)]),
-      ...(pricing.flags.length > 0 && request.approvalRecommendation === "auto_approve"
+      // An accepted claim is flagged in words and never sent back for review: nothing holds it.
+      ...(pricing.flags.length > 0 &&
+      request.approvalRecommendation === "auto_approve" &&
+      isOutstationClaimUndecided(request.status)
         ? { approval_recommendation: "hr_review" }
         : {}),
       claimed_total_amount: amounts.claimedTotalAmount,
@@ -5915,71 +6051,123 @@ async function writeJourneyStopToClaim(input: {
       journey_pricing: pricing,
       journey_stops: stops,
       report_travel_cost: amounts.reportTravelCost,
+      ticket_amount: amounts.ticketAmount,
+      ...ticketWrite,
       updated_at: capturedAt,
     })
     .eq("id", request.id)
     .eq("updated_at", (token as { updated_at: string }).updated_at)
-    .in("status", [...JOURNEY_STOP_OPEN_STATUSES])
+    .in("status", journeyStopWriteStatuses(request.employeeRole));
+  // A stop's ticket rewrites the claim's ticket lists. The missing-ticket attach deliberately moves no
+  // version, so its file is protected by the count it changes: this write and that one each pin it.
+  const { data, error } = await (uploadedTickets.length > 0
+    ? stopWrite.eq("attachment_count", request.attachmentCount)
+    : stopWrite
+  )
     .select("*")
     .maybeSingle();
   if (error) {
-    // The photo is already stored under its own path; it is left, never deleted — an orphaned
+    // A stop photo is already stored under its own path; it is left, never deleted — an orphaned
     // object is cheap, a deleted capture is evidence lost.
-    throw new Error(`The stop photo was uploaded but the trip could not be updated: ${error.message}`);
+    await dropUploadedTickets();
+    throw new Error(`The stop was captured but the trip could not be updated: ${error.message}`);
   }
   if (!data) {
-    throw new Error("This trip changed while the stop was being saved. Refresh and take the stop photo again.");
+    await dropUploadedTickets();
+    throw new Error("This trip changed while the stop was being saved. Refresh and capture the stop again.");
   }
   const updated = mapOutstationRequestRow(data as Record<string, unknown>);
 
-  await writeRequiredAuditLog({
-    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
-    entityId: String(updated.id),
-    entityType: "outstation_request",
-    newValues: {
-      claimedTotalAmount: updated.claimedTotalAmount,
-      fuelAmount: updated.fuelAmount,
-      journeyFlags: pricing.flags,
-      journeyMode: pricing.mode,
-      paidKm: pricing.paidKm,
-      source: input.source,
-      ...(input.stop.addedByAdmin ? { adminReason: input.stop.addedByAdmin.reason } : {}),
-      stopGovernorate: governorate,
-      stopNumber,
-    },
-    oldValues: {
-      claimedTotalAmount: request.claimedTotalAmount,
-      fuelAmount: request.fuelAmount,
-      stopCount: existingStops.length,
-    },
-    summary:
-      `${input.source === "admin_journey_stop" ? "System administrator" : "Employee"} added stop ${stopNumber} (${governorate ?? "governorate unknown"}) to outstation request ${updated.id}: ` +
-      `fuel ${formatEgp(request.fuelAmount)} → ${formatEgp(updated.fuelAmount)}` +
-      (pricing.flags.length > 0 ? `, flagged: ${pricing.flags.join(", ")}.` : "."),
-  });
+  // Only a total that moved has anything to follow.
+  const payrollSynced =
+    updated.claimedTotalAmount === request.claimedTotalAmount ? null : await followStopToPayroll(updated, access);
+  if (payrollSynced === false) {
+    // Whoever opens the claim reads it too: the employee is not the only one who should know.
+    const { error: markError } = await supabase
+      .from("outstation_expense_requests")
+      .update({
+        approval_reason: withJourneyReason(request.approvalReason, pricing, [
+          ...notEligibleNote,
+          ...adminAddedStopNotes(stops),
+          `Payroll did not follow this stop: the claim now says ${formatEgp(updated.claimedTotalAmount)}. Check what payroll pays.`,
+        ]),
+      })
+      .eq("id", updated.id);
+    if (markError) {
+      logError("A stop's payroll warning could not be written to the claim", {
+        error: new Error(markError.message),
+        labels: { event: "outstation_stop_payroll_mark_failed", requestId: String(updated.id) },
+      });
+    }
+  }
 
-  return updated;
+  // The stop and its money are already written, so a failed audit row is logged and never reported as
+  // a failed save: the employee would retry a stop that succeeded.
+  try {
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+      entityId: String(updated.id),
+      entityType: "outstation_request",
+      newValues: {
+        claimedTotalAmount: updated.claimedTotalAmount,
+        fuelAmount: updated.fuelAmount,
+        journeyFlags: pricing.flags,
+        journeyMode: pricing.mode,
+        paidKm: pricing.paidKm,
+        payrollSynced,
+        source: input.source,
+        ...(input.stop.addedByAdmin ? { adminReason: input.stop.addedByAdmin.reason } : {}),
+        stopEvidence: input.stop.evidence,
+        stopGovernorate: governorate,
+        stopNumber,
+        stopTicketAmount,
+      },
+      oldValues: {
+        claimedTotalAmount: request.claimedTotalAmount,
+        fuelAmount: request.fuelAmount,
+        stopCount: existingStops.length,
+      },
+      summary:
+        `${input.source === "admin_journey_stop" ? "System administrator" : "Employee"} added stop ${stopNumber} (${governorate ?? "governorate unknown"}) to outstation request ${updated.id}: ` +
+        (input.paysFuel
+          ? `fuel ${formatEgp(request.fuelAmount)} → ${formatEgp(updated.fuelAmount)}`
+          : `ticket ${formatEgp(stopTicketAmount)}`) +
+        (pricing.flags.length > 0 ? `, flagged: ${pricing.flags.join(", ")}.` : "."),
+    });
+  } catch (auditError) {
+    logError("A stop was saved but its audit row was not", {
+      error: auditError instanceof Error ? auditError : new Error(String(auditError)),
+      labels: { event: "outstation_stop_audit_failed", requestId: String(updated.id) },
+    });
+  }
+
+  return { payrollSynced, updated };
 }
 
 /**
- * Add a STOP to a car trip: the next place of a chained journey (owner rule, 2026-10-18 —
- * "Minya → Fayoum × 1.8, Fayoum → Beni Suef × 1.8, Beni Suef → Minya × 1.8, only governorate to
- * governorate, over 40 km"; pricing in chained-journey.ts).
+ * Add a STOP to a trip: the next place of a journey (owner rule, 2026-10-18 — "Minya → Fayoum × 1.8,
+ * Fayoum → Beni Suef × 1.8, Beni Suef → Minya × 1.8, only governorate to governorate, over 40 km";
+ * pricing in chained-journey.ts). What each person owes for it is journey-stop-rules.ts (owner,
+ * 2026-11-03): a car pays fuel, no car pays the leg's ticket, and a role with no photo evidence
+ * gives its location.
  *
  * The anti-abuse rules (owner, same evening: "make sure that no one abuses it"), each here
  * because this is the security boundary — the portal card only mirrors them:
  *
- *   - Only the employee on the trip, only a CAR trip, only while nobody has decided it and it is
- *     not in payroll, and only until the end of the trip's last Cairo day (the departure window).
- *   - A live in-app JPEG with a GPS position, or nothing is stored — refused like a departure photo
- *     without a location. The capture time is the SERVER's, never the phone's.
+ *   - Only the employee on the trip, only while nobody has decided it — or the system accepted a
+ *     National Sales Manager's claim — and it is not in payroll, and only until the end of the
+ *     trip's last Cairo day (the departure window).
+ *   - The evidence the rule asks for with a GPS position, or nothing is stored — refused before any
+ *     upload. The capture time is the SERVER's, never the phone's.
  *   - The place and its governorate are the reverse-geocode of that position; every distance is
- *     Google's road distance between two live photo positions. Nothing is typed.
+ *     Google's road distance between two captured positions. Only a ticket's amount is typed, and
+ *     it comes with its file.
  *   - At most MAX_JOURNEY_STOPS stops. Every stop photo has its own never-overwritten path.
  *   - Every suspicious shape — impossible speed, ping-pong, a stop at home, another trip filed for
  *     the same day, a weak GPS fix, a chain more than twice the old price — is FLAGGED onto the
  *     approval reason for the Super Admin and never refused (the 2026-08-09 flag-never-reject rule).
- *   - The money moves by exactly the fuel's change, so the claim still equals its components.
+ *   - The money moves by exactly the fuel's change or the ticket's amount, so the claim still
+ *     equals its components. On a claim already accepted, the payroll row follows it.
  *   - The final write matches the row's exact updated_at, so a second capture or a decision that
  *     lands in between makes this one fail rather than overwrite it.
  */
@@ -5987,13 +6175,22 @@ export async function captureOutstationJourneyStop(
   access: AccessContext,
   input: {
     accuracyMeters?: number | null;
-    imageDataUrl: string;
+    /** The card's key for this capture; a retry with it returns the stop already saved. */
+    captureKey?: string | null;
+    imageDataUrl?: string | null;
     latitude?: number | null;
     locationLabel?: string | null;
     longitude?: number | null;
     requestId: number;
+    ticket?: { amount: number; files: OutstationTicketAttachmentUploadInput[] } | null;
   },
-): Promise<{ pricing: ChainedJourneyPricing; request: OutstationExpenseRequest; stop: OutstationJourneyStop }> {
+): Promise<{
+  /** On an accepted claim, whether the payroll row now carries the new total; null when none was due. */
+  payrollSynced: boolean | null;
+  pricing: ChainedJourneyPricing;
+  request: OutstationExpenseRequest;
+  stop: OutstationJourneyStop;
+}> {
   const supabase = getSupabaseAdmin();
   // The concurrency token, read RAW and FIRST: the final update matches this exact text, so any
   // write after this point — another stop, an approval, an admin edit — makes this one fail.
@@ -6010,17 +6207,36 @@ export async function captureOutstationJourneyStop(
   if (!callerHrId || callerHrId !== normalizeHrIdForAccess(request.employeeHrId)) {
     throw forbiddenError("A stop can only be added by the employee on the trip.");
   }
-  if (request.expenseType !== "traveling" || request.transportationType !== "car") {
-    throw new Error("A stop can only be added to a car trip.");
+  if (request.expenseType !== "traveling") {
+    throw new Error("A stop can only be added to a trip.");
   }
-  if (!(JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status)) {
-    throw new Error(
-      "This trip has already been decided, so a stop can no longer be added. Ask a system administrator if it needs changing.",
-    );
+  // Before every refusal: the claim may have moved on since this capture saved, and that is no reason
+  // to tell the employee it failed.
+  const alreadySaved = stopAlreadySavedFor(request.journeyStops ?? [], text(input.captureKey));
+  if (alreadySaved && request.journeyPricing) {
+    return {
+      payrollSynced: await followStopToPayroll(request, access),
+      pricing: request.journeyPricing,
+      request,
+      stop: alreadySaved,
+    };
+  }
+  const rule = journeyStopRule({
+    employeeRole: request.employeeRole,
+    status: request.status,
+    transportationType: request.transportationType,
+  });
+  const decidedMessage =
+    "This trip has already been decided, so a stop can no longer be added. Ask a system administrator if it needs changing.";
+  if (!isJourneyStopOpen(request.status, request.employeeRole)) {
+    throw new Error(decidedMessage);
   }
   const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
   if (isOutstationExpenseInPayroll(linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
+  }
+  if (payrollRowHoldsPersonsFigure(linkedPayroll)) {
+    throw new Error(decidedMessage);
   }
   const capturedAt = new Date().toISOString();
   if (!isWithinDepartureWindow({ capturedAt, tripEndDate: request.tripEndDate })) {
@@ -6029,7 +6245,7 @@ export async function captureOutstationJourneyStop(
         "Ask a system administrator if this needs changing.",
     );
   }
-  if (!request.carEvidenceImagePath) {
+  if (rule.photo && !request.carEvidenceImagePath) {
     throw new Error("The arrival photo is missing, so a stop cannot be added yet — capture the arrival photo first.");
   }
   const existingStops = request.journeyStops ?? [];
@@ -6041,6 +6257,15 @@ export async function captureOutstationJourneyStop(
   if (!usablePosition(input.latitude, input.longitude)) {
     throw new Error(JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE);
   }
+  const ticketFiles = input.ticket?.files ?? [];
+  const stopTicketAmount = roundMoney(Number(input.ticket?.amount ?? 0) || 0);
+  const evidenceRefusal = journeyStopEvidenceRefusal({
+    hasPhoto: Boolean(input.imageDataUrl),
+    rule,
+    ticketAmount: stopTicketAmount,
+    ticketFileCount: ticketFiles.length,
+  });
+  if (evidenceRefusal) throw new Error(evidenceRefusal);
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
   if (!usablePosition(request.residenceLatitude, request.residenceLongitude)) {
@@ -6075,17 +6300,32 @@ export async function captureOutstationJourneyStop(
     residence: { latitude: Number(request.residenceLatitude), longitude: Number(request.residenceLongitude) },
     storedArrivalGovernorate: request.journeyPricing?.legs[0]?.toGovernorate ?? null,
   });
-  const governorate = measured.stop.governorate;
   const stopNumber = measured.stop.stopNumber;
-  const photoPath = await uploadOutstationJourneyStopImage({
-    capturedAtMs: new Date(capturedAt).getTime(),
-    employeeHrId: request.employeeHrId,
-    imageDataUrl: input.imageDataUrl,
-    requestId: request.id,
-    stopNumber,
-  });
+  const photoPath = rule.photo
+    ? await uploadOutstationJourneyStopImage({
+        capturedAtMs: new Date(capturedAt).getTime(),
+        employeeHrId: request.employeeHrId,
+        imageDataUrl: String(input.imageDataUrl),
+        requestId: request.id,
+        stopNumber,
+      })
+    : null;
+  const requestDraftId = `outstation-stop-${randomUUID()}`;
+  const uploadedTickets =
+    ticketFiles.length > 0
+      ? await uploadOutstationTicketAttachments(
+          ticketFiles.map((file) => ({ ...file, employeeHrId: request.employeeHrId, requestDraftId })),
+        )
+      : [];
 
-  const stop: OutstationJourneyStop = { ...measured.stop, photoPath };
+  const stop: OutstationJourneyStop = {
+    ...measured.stop,
+    ...(text(input.captureKey) ? { captureKey: text(input.captureKey) } : {}),
+    evidence: journeyStopEvidenceKind(rule, ticketFiles.length),
+    photoPath,
+    ticketAmount: stopTicketAmount,
+    ticketPaths: uploadedTickets.map((ticket) => ticket.path),
+  };
   const stops = [...existingStops, stop];
 
   const pricing = await priceJourneyStops({
@@ -6101,22 +6341,25 @@ export async function captureOutstationJourneyStop(
       request.residenceAddress,
     ),
     stops,
+    travel: rule.paysFuel ? "car" : "ticket",
     trip: { employeeHrId: request.employeeHrId, id: request.id },
     tripEndDate: request.tripEndDate,
     tripStartDate: request.tripStartDate,
   });
-  const updated = await writeJourneyStopToClaim({
+  const { payrollSynced, updated } = await writeJourneyStopToClaim({
     access,
+    paysFuel: rule.paysFuel,
     pricing,
     request,
     source: "employee_journey_stop",
     stop,
     stops,
+    ticket: { amount: stopTicketAmount, uploaded: uploadedTickets },
     token: token as { updated_at: string },
     writtenAt: capturedAt,
   });
 
-  return { pricing, request: updated, stop };
+  return { payrollSynced, pricing, request: updated, stop };
 }
 
 /**
@@ -6226,7 +6469,10 @@ export async function addOutstationJourneyStopAsAdmin(
   const stop: OutstationJourneyStop = {
     ...measured.stop,
     addedByAdmin: { by: adminName, reason },
+    evidence: "location",
     photoPath: ADMIN_ADDED_STOP_PHOTO_PATH,
+    ticketAmount: 0,
+    ticketPaths: [],
   };
   const stops = [...existingStops, stop];
   const pricing = await priceJourneyStops({
@@ -6242,13 +6488,15 @@ export async function addOutstationJourneyStopAsAdmin(
       request.residenceAddress,
     ),
     stops,
+    travel: "car",
     trip: { employeeHrId: request.employeeHrId, id: request.id },
     tripEndDate: request.tripEndDate,
     tripStartDate: request.tripStartDate,
   });
 
-  const updated = await writeJourneyStopToClaim({
+  const { updated } = await writeJourneyStopToClaim({
     access,
+    paysFuel: true,
     pricing,
     request,
     source: "admin_journey_stop",
@@ -6565,7 +6813,7 @@ export async function getOwnOutstationRequestsMissingTicket(
     .filter((row) =>
       canAttachMissingOutstationTicket({
         status: row.status,
-        ticketAttachmentCount: row.ticketAttachmentPaths.length,
+        ticketAttachmentCount: ticketPathsOutsideStops(row.ticketAttachmentPaths, row.journeyStops ?? []).length,
         transportationType: row.transportationType,
       }),
     )
@@ -6652,9 +6900,10 @@ export type MyOutstationSubmission = {
   /** How many times the departure photo has been replaced. 0 on a first capture. */
   departureRetakeCount: number;
   /**
-   * True while he may add a STOP (owner rule, 2026-10-18 — chained-journey.ts): his own car trip,
-   * arrival photo taken, nobody has decided it, the trip window still open, under the stop cap. The
-   * server re-checks every one of these and payroll as well; this only decides whether to offer it.
+   * True while he may capture the next place (owner rules, 2026-10-18 and 2026-11-03 —
+   * journey-stop-rules.ts): his own trip, its arrival photo taken if one is owed, still open, the
+   * trip window still open, under the stop cap. The server re-checks every one of these and payroll
+   * as well; this only decides whether to offer it.
    */
   canAddJourneyStop: boolean;
   /**
@@ -6668,17 +6917,31 @@ export type MyOutstationSubmission = {
     /** True when the approver has something to look at — the WORDING is the approver's only. */
     flagged: boolean;
     fuelAmount: number;
-    legs: Array<{ distanceKm: number | null; from: string; paid: boolean; to: string }>;
-    mode: "chained" | "single_destination";
+    legs: Array<{
+      distanceKm: number | null;
+      from: string;
+      fuelAmount: number;
+      paid: boolean;
+      reason: string;
+      ticketAmount: number;
+      to: string;
+    }>;
+    mode: ChainedJourneyPricing["mode"];
     modeReason: string;
     singleDestinationFuelAmount: number;
   } | null;
+  /** What a stop on this trip asks of this person (journey-stop-rules.ts). */
+  journeyStopRule: JourneyStopRule;
   journeyStops: Array<{
     capturedAt: string;
+    evidence: JourneyStopEvidence;
     governorate: string | null;
     locationLabel: string | null;
     stopNumber: number;
+    ticketAmount: number;
   }>;
+  /** This role carries no evidence photo at all (evidence-waiver.ts). */
+  photosWaived: boolean;
   /**
    * Where the arrival GPS point actually falls in Phoenix geography, split into its three
    * levels rather than left as one address string. Derived at read time from the stored
@@ -6751,20 +7014,24 @@ function buildMyOutstationSubmission(
 
   const journeyStops = request.journeyStops ?? [];
   const journeyPricing = journeyStops.length > 0 ? request.journeyPricing ?? null : null;
+  const stopRule = journeyStopRule({
+    employeeRole: request.employeeRole,
+    status: request.status,
+    transportationType: request.transportationType,
+  });
 
   return {
     allowanceAmount: request.allowanceAmount,
     amWorkload: request.amWorkload ?? 0,
     canAddJourneyStop:
       request.expenseType === "traveling" &&
-      request.transportationType === "car" &&
-      (JOURNEY_STOP_OPEN_STATUSES as readonly string[]).includes(request.status) &&
-      Boolean(request.carEvidenceImagePath) &&
+      isJourneyStopOpen(request.status, request.employeeRole) &&
+      (!stopRule.photo || Boolean(request.carEvidenceImagePath)) &&
       journeyStops.length < MAX_JOURNEY_STOPS &&
       isWithinDepartureWindow({ capturedAt: new Date().toISOString(), tripEndDate: request.tripEndDate }),
     canAttachMissingTicket: canAttachMissingOutstationTicket({
       status: request.status,
-      ticketAttachmentCount: request.ticketAttachmentPaths.length,
+      ticketAttachmentCount: ticketPathsOutsideStops(request.ticketAttachmentPaths, journeyStops).length,
       transportationType: request.transportationType,
     }),
     canCaptureDeparturePhoto: gate.blocker === "departure_photo",
@@ -6804,7 +7071,10 @@ function buildMyOutstationSubmission(
           legs: journeyPricing.legs.map((leg) => ({
             distanceKm: leg.distanceKm,
             from: leg.from,
+            fuelAmount: leg.fuelAmount,
             paid: leg.paid,
+            reason: leg.reason,
+            ticketAmount: leg.ticketAmount,
             to: leg.to,
           })),
           mode: journeyPricing.mode,
@@ -6812,11 +7082,14 @@ function buildMyOutstationSubmission(
           singleDestinationFuelAmount: journeyPricing.singleDestinationFuelAmount,
         }
       : null,
+    journeyStopRule: stopRule,
     journeyStops: journeyStops.map((stop) => ({
       capturedAt: stop.capturedAt,
+      evidence: stop.evidence,
       governorate: stop.governorate,
       locationLabel: stop.locationLabel,
       stopNumber: stop.stopNumber,
+      ticketAmount: stop.ticketAmount,
     })),
     meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
     notes: employeeVisibleNotes(request.notes),
@@ -6825,6 +7098,7 @@ function buildMyOutstationSubmission(
       text(request.residenceAddress) ||
       "—",
     otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
+    photosWaived: isOutstationEvidenceWaivedRole(request.employeeRole),
     overnightDays: request.overnightDays,
     pharmacyWorkload: request.pharmacyWorkload ?? null,
     pmWorkload: request.pmWorkload ?? 0,

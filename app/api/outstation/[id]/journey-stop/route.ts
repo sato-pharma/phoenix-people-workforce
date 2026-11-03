@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
+import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence";
 import { captureOutstationJourneyStop } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -13,13 +14,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * A STOP on a car trip — the next place of a chained journey (owner rule, 2026-10-18; pricing in
- * chained-journey.ts). Posted by the employee from the place itself, with a live photo and GPS.
+ * A STOP on a trip — the next place of a journey (owner rules, 2026-10-18 and 2026-11-03; pricing in
+ * chained-journey.ts, what each person owes in journey-stop-rules.ts). Posted by the employee from
+ * the place itself, with GPS and whatever evidence the rule asks: a live photo, a ticket, or neither.
  *
- * Every rule that matters — the caller owns the trip, a car trip, still undecided and out of
- * payroll, inside the trip window, a live photo with a position, at most six stops — is enforced
- * in the SERVICE. The permission check below only establishes that the caller may touch the
- * outstation module at all.
+ * Every rule that matters — the caller owns the trip, still open and out of payroll, inside the trip
+ * window, the evidence the rule asks with a position, at most six stops — is enforced in the SERVICE.
+ * The permission check below only establishes that the caller may touch the outstation module at all.
  */
 function journeyStopStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
@@ -73,25 +74,32 @@ export async function POST(
     }
 
     const body = (await request.json()) as Record<string, unknown>;
-    const imageDataUrl = String(body.imageDataUrl ?? "");
-    if (!imageDataUrl) {
-      return NextResponse.json(
-        { error: "missing_photo", message: "Take the stop photo before saving it." },
-        { status: 400 },
-      );
-    }
+    const imageDataUrl = typeof body.imageDataUrl === "string" && body.imageDataUrl ? body.imageDataUrl : null;
+    const rawTickets = Array.isArray(body.tickets) ? (body.tickets as Array<Record<string, unknown>>) : [];
+    const ticketAmount = Number(body.ticketAmount ?? 0);
 
-    // Read here, judged in the service: a photo with no position is refused there before anything
-    // is uploaded. Never cast the raw body field to a number: `Number(null)` is 0, a fix at 0,0.
+    // Read here, judged in the service: a stop with no position, or with the wrong evidence, is
+    // refused there before anything is uploaded. Never cast the raw body field to a number:
+    // `Number(null)` is 0, a fix at 0,0.
     const { latitude, longitude } = readDeparturePhotoPosition(body);
 
     const result = await captureOutstationJourneyStop(access, {
       accuracyMeters: readAccuracyInput(body.accuracyMeters),
+      captureKey: typeof body.captureKey === "string" ? body.captureKey.slice(0, 64) : null,
       imageDataUrl,
       latitude,
       locationLabel: typeof body.locationLabel === "string" ? body.locationLabel : null,
       longitude,
       requestId: id,
+      ticket: {
+        amount: Number.isFinite(ticketAmount) ? ticketAmount : 0,
+        files: rawTickets.map((entry) =>
+          parseOutstationTicketAttachmentDataUrl({
+            dataUrl: String(entry.dataUrl ?? ""),
+            fileName: String(entry.name ?? ""),
+          }),
+        ),
+      },
     });
 
     // The flag WORDING stays with the approver: telling the employee "Google needs about 58
@@ -100,8 +108,18 @@ export async function POST(
       claimedTotalAmount: result.request.claimedTotalAmount,
       flagged: result.pricing.flags.length > 0,
       fuelAmount: result.request.fuelAmount,
+      legs: result.pricing.legs.map((leg) => ({
+        distanceKm: leg.distanceKm,
+        from: leg.from,
+        fuelAmount: leg.fuelAmount,
+        paid: leg.paid,
+        reason: leg.reason,
+        ticketAmount: leg.ticketAmount,
+        to: leg.to,
+      })),
       mode: result.pricing.mode,
       modeReason: result.pricing.modeReason,
+      payrollSynced: result.payrollSynced,
       stopGovernorate: result.stop.governorate,
       stopNumber: result.stop.stopNumber,
       success: true,

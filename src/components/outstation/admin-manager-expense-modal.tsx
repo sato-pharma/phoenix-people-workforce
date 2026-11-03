@@ -583,7 +583,9 @@ export function AdminManagerExpenseModal({
       let response: Response;
       if (isEdit && request) {
         response = await fetch(`/api/admin/outstation/manager-expenses/${request.id}`, {
-          body: JSON.stringify(input),
+          // The version this form opened on: a stop's ticket landing meanwhile refuses the save,
+          // rather than the form's old figure overwriting it.
+          body: JSON.stringify({ ...input, expectedRevision: request.updatedAt }),
           headers: { "Content-Type": "application/json" },
           method: "PATCH",
         });

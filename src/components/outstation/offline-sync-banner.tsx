@@ -10,7 +10,7 @@ export function OfflineSyncBanner({
   if (!visible) return null;
 
   return (
-    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-medium text-amber-800">
+    <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-medium text-amber-800">
       <div className="flex items-center gap-2">
         <CloudOff className="h-3.5 w-3.5 shrink-0" />
         <span>

@@ -102,13 +102,13 @@ export function ExtraTicketRowEditor({
   }
 
   return (
-    <div className="rounded-md border border-orange-100 bg-orange-50/40 p-3">
+    <div className="border border-orange-100 bg-orange-50/40 p-3">
       <div className="space-y-2">
         {rows.map((row, index) => (
           <div key={index} className="flex flex-wrap items-center gap-2">
             <input
               accept="application/pdf,image/jpeg,image/png"
-              className="min-w-0 flex-1 text-xs text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-orange-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-700"
+              className="min-w-0 flex-1 text-xs text-slate-700 file:mr-3 file:border-0 file:bg-orange-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-orange-700"
               onChange={(event) => updateRow(index, { file: event.target.files?.[0] ?? null })}
               type="file"
             />
@@ -122,7 +122,7 @@ export function ExtraTicketRowEditor({
             />
             <button
               aria-label="Remove ticket"
-              className="rounded-md border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40"
+              className="border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-40"
               disabled={rows.length <= 1}
               onClick={() => removeRow(index)}
               type="button"
@@ -164,7 +164,7 @@ export function ExtraTicketRowEditor({
 
       <div className="mt-3 flex items-center gap-3">
         <button
-          className="inline-flex items-center gap-1 rounded-md bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
+          className="inline-flex items-center gap-1 bg-orange-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
           disabled={busy}
           onClick={() => void submit()}
           type="button"

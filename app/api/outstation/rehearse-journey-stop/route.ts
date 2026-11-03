@@ -25,6 +25,9 @@ function rehearsalStatus(error: unknown) {
   if (
     message.includes("missing") ||
     message.includes("invalid") ||
+    message.includes("required") ||
+    message.includes("must not") ||
+    message.includes("must be") ||
     message.includes("carry no location") ||
     message.includes("location")
   ) {
@@ -64,6 +67,8 @@ export async function POST(request: Request) {
       locationLabel: typeof body.locationLabel === "string" ? body.locationLabel : null,
       longitude,
       stops: body.stops,
+      ticket: { amount: numberOrNull(body.ticketAmount), fileCount: numberOrNull(body.ticketFileCount) },
+      transportationType: typeof body.transportationType === "string" ? body.transportationType : null,
       tripEndDate: typeof body.tripEndDate === "string" ? body.tripEndDate : null,
       tripStartDate: typeof body.tripStartDate === "string" ? body.tripStartDate : null,
     });

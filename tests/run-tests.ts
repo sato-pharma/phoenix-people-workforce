@@ -2635,6 +2635,7 @@ import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
 import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
 import { runOutstationJourneyStopRehearsalTests } from "./outstation-journey-stop-rehearsal.test.ts";
+import { runOutstationJourneyStopRulesTests } from "./outstation-journey-stop-rules.test.ts";
 import { runOutstationAdminMissedStopTests } from "./outstation-admin-missed-stop.test.ts";
 import { runStagingTestSignInTests } from "./staging-test-sign-in.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
@@ -10247,6 +10248,11 @@ await runTest(
 await runTest(
   "outstation journey-stop rehearsal (owner 2026-11-03): a test account rehearses a stop end to end — measured and priced through the real stop's one measurement and one pricing, refused to anyone else, and nothing is saved",
   runOutstationJourneyStopRehearsalTests,
+);
+
+await runTest(
+  "outstation stop rebuilt (owner 2026-11-03): each person owes the evidence their travel and role allow, a trip without a car pays tickets and no fuel, and stored stops still read",
+  runOutstationJourneyStopRulesTests,
 );
 
 await runTest(

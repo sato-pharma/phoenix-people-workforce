@@ -2,6 +2,7 @@
 
 import { FileText, ImageOff, Loader2, MapPin, Paperclip, Route, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { JourneyRouteLine, type JourneyRouteLeg } from "@/components/outstation/journey-route-line";
 import {
   phxButtonGhostClassName,
   phxButtonPrimaryClassName,
@@ -22,7 +23,8 @@ type Ticket = { contentType: string; name: string; url: string };
 type ApproverJourney = {
   flagReasons: string[];
   fuelAmount: number | null;
-  legs: Array<{ distanceKm: number | null; from: string; paid: boolean; reason: string; to: string }>;
+  legs: JourneyRouteLeg[];
+  mode: "chained" | "single_destination" | "ticket_journey" | null;
   modeReason: string | null;
   singleDestinationFuelAmount: number | null;
   stops: Array<{
@@ -30,9 +32,11 @@ type ApproverJourney = {
     /** Set when a system administrator added the stop: no photo, his reason. */
     addedByAdmin?: { by: string; reason: string } | null;
     capturedAt: string;
+    evidence: "live_photo" | "location" | "location_ticket";
     governorate: string | null;
     locationLabel: string | null;
     stopNumber: number;
+    ticketAmount: number;
     url: string | null;
   }>;
 };
@@ -45,14 +49,6 @@ type AttachmentsData = {
   missedStop?: MissedStopOffer | null;
   photos: ApproverTripPhoto[];
   tickets: Ticket[];
-};
-
-const LEG_REASON: Record<string, string> = {
-  different_governorates: "another governorate, over 40 km",
-  distance_unknown: "no road distance",
-  governorate_unknown: "governorate unknown",
-  same_governorate: "same governorate",
-  under_minimum_km: "40 km or less",
 };
 
 function egp(value: number | null): string {
@@ -73,7 +69,7 @@ function cairoDateTime(value: string): string {
   return STOP_TIME.format(date);
 }
 
-/** Every drive of the journey, the flags, and each stop's own live photo. */
+/** Every drive of the journey, the flags, and each place's own evidence. */
 function TripJourney({ journey }: { journey: ApproverJourney }) {
   return (
     <div className="border border-phx-line bg-white p-3">
@@ -82,23 +78,17 @@ function TripJourney({ journey }: { journey: ApproverJourney }) {
         {journey.stops.length === 1 ? "stop" : "stops"}
       </p>
       {journey.modeReason ? <p className="mt-2 text-xs leading-relaxed text-slate-700">{journey.modeReason}</p> : null}
-      <ul className="mt-2 space-y-1 text-xs text-slate-600">
-        {journey.legs.map((leg, index) => (
-          <li className="flex flex-wrap justify-between gap-x-3" key={`${index}-${leg.from}`}>
-            <span className="min-w-0 break-words">
-              {leg.from} → {leg.to}
-              {leg.distanceKm !== null ? ` · ${leg.distanceKm} km` : ""}
-            </span>
-            <span className={`font-bold ${leg.paid ? "text-emerald-700" : "text-slate-500"}`}>
-              {leg.paid ? "Paid" : `Not paid · ${LEG_REASON[leg.reason] ?? leg.reason}`}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-xs text-slate-600">
-        Fuel {egp(journey.fuelAmount)} · home to first destination and back would be{" "}
-        {egp(journey.singleDestinationFuelAmount)}
-      </p>
+      <div className="mt-2">
+        <JourneyRouteLine legs={journey.legs} />
+      </div>
+      {journey.mode === "ticket_journey" ? (
+        <p className="mt-2 text-xs text-slate-600">No fuel: this trip was made by ticket. The tickets are listed below.</p>
+      ) : (
+        <p className="mt-2 text-xs text-slate-600">
+          Fuel {egp(journey.fuelAmount)} · home to the first place and back would be{" "}
+          {egp(journey.singleDestinationFuelAmount)}
+        </p>
+      )}
       {journey.flagReasons.map((reason) => (
         <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800" key={reason}>
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -107,7 +97,7 @@ function TripJourney({ journey }: { journey: ApproverJourney }) {
       ))}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {journey.stops.map((stop) => {
-          const caption = `Stop ${stop.stopNumber}${stop.governorate ? ` · ${stop.governorate}` : ""}`;
+          const caption = stop.governorate ?? "Next place";
           return (
             <figure className="min-w-0" key={stop.stopNumber}>
               {stop.addedByAdmin ? (
@@ -119,9 +109,15 @@ function TripJourney({ journey }: { journey: ApproverJourney }) {
                 </p>
               ) : stop.url ? (
                 <ZoomablePhoto alt={caption} caption={caption} className="h-48 w-full bg-slate-100 object-contain" src={stop.url} />
-              ) : (
+              ) : stop.evidence === "live_photo" ? (
                 <p className="flex h-24 items-center justify-center gap-2 bg-slate-50 text-xs text-slate-500">
                   <ImageOff className="h-3.5 w-3.5" /> The photo could not be opened right now.
+                </p>
+              ) : (
+                <p className="text-xs font-bold text-slate-700">
+                  {stop.evidence === "location_ticket"
+                    ? `Location and ticket, ${egp(stop.ticketAmount)}. No photo is owed.`
+                    : "Location only. No photo is owed."}
                 </p>
               )}
               <figcaption className="mt-1 break-words text-xs text-slate-600">

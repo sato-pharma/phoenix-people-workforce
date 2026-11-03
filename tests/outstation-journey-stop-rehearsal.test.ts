@@ -94,8 +94,8 @@ export function runOutstationJourneyStopRehearsalTests(): void {
   // ── 4. The screen ───────────────────────────────────────────────────────────────────────────────
   assert.match(
     wizard,
-    /rehearsal: !isNonTravel && transportationType === "car" \? rehearsalTripFrom\(payload, carEvidence\) : null/,
-    "only a car trip is offered the rehearsal",
+    /rehearsal: !isNonTravel \? rehearsalTripFrom\(payload, carEvidence, employeeRole, transportationType\) : null/,
+    "every trip is offered the rehearsal, under the rule of the person it mirrors",
   );
   assert.match(wizard, /<JourneyStopRehearsal employeeHrId=\{employeeHrId\} trip=\{rehearsal\} \/>/);
   assert.match(rehearsalPanel, /fetch\("\/api\/outstation\/rehearse-journey-stop"/);

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { JourneyMoveOn } from "@/components/outstation/journey-move-on";
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
 import { OutstationPendingActions } from "@/components/outstation/outstation-pending-actions";
 import { SubmitExpenseMyClaims } from "@/components/outstation/submit-expense-my-claims";
@@ -140,6 +141,19 @@ export default async function EmployeePortalSubmitExpensePage() {
           departurePhotoDue={pendingActions.departurePhotoDue}
           employeeHrId={employeeHrId}
           missingTicket={pendingActions.missingTicket}
+        />
+        <JourneyMoveOn
+          employeeHrId={employeeHrId}
+          trips={(submissions ?? [])
+            .filter((submission) => submission.canAddJourneyStop)
+            .map((submission) => ({
+              acceptedClaim: submission.status === "accepted_by_system",
+              destination: submission.destination,
+              id: submission.id,
+              rule: submission.journeyStopRule,
+              tripEndDate: submission.tripEndDate,
+              tripStartDate: submission.tripStartDate,
+            }))}
         />
         <MobileOutstationWizard
           areaRepOptions={areaRepOptions}

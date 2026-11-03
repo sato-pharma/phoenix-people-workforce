@@ -35,6 +35,7 @@
  */
 
 import { cairoDateOnly } from "@/lib/outstation/departure-evidence";
+import type { JourneyStopEvidence } from "@/lib/outstation/journey-stop-rules";
 
 /** A drive between two governorates pays only when it is longer than this (owner, 2026-10-18). */
 export const CHAINED_LEG_MINIMUM_KM = 40;
@@ -60,10 +61,10 @@ export const CHAIN_REVIEW_MULTIPLE = 2;
  */
 export const MAX_JOURNEY_STOPS = 6;
 
-/** Where the drive to a stop is measured FROM — the latest live photo before the stop. */
+/** Where the drive to a stop is measured FROM — the latest capture before the stop. */
 export type JourneyLegOrigin = "arrival" | "departure" | "stop";
 
-/** One extra place on a journey, captured with its own live photo after the arrival photo. */
+/** One extra place on a journey, captured after the first one, by whatever evidence the person owes. */
 export type OutstationJourneyStop = {
   /** 2 for the first extra stop — the arrival photo is stop 1. */
   stopNumber: number;
@@ -75,7 +76,16 @@ export type OutstationJourneyStop = {
   /** Canonical governorate of the photo position (resolveGovernorate output), or null. */
   governorate: string | null;
   locationLabel: string | null;
-  photoPath: string;
+  /** How it was proved (journey-stop-rules.ts). A stored row with a photo and no kind is a live photo. */
+  evidence: JourneyStopEvidence;
+  /** The live photo; null for a stop proved by location or by location and ticket. */
+  photoPath: string | null;
+  /** This leg's ticket, on a trip without a car; 0 when there is none. */
+  ticketAmount: number;
+  /** The stored files of that ticket — they also sit on the claim's own ticket list. */
+  ticketPaths: string[];
+  /** The card's key for this capture, so a retry finds the stop it already saved. */
+  captureKey?: string;
   /**
    * The photo the drive to this stop is measured from: the stop before it, else the departure
    * photo when it was taken before this stop (it is where he left the first place from — Fayoum
@@ -132,7 +142,11 @@ export type JourneyLegReason =
   | "same_governorate"
   | "under_minimum_km"
   | "distance_unknown"
-  | "governorate_unknown";
+  | "governorate_unknown"
+  /** A drive on a trip without a car that a stop's own ticket answers for. */
+  | "ticket_leg"
+  /** The first or the last drive of such a trip — the claim's own tickets answer for those. */
+  | "ticket_on_claim";
 
 export type JourneyLeg = {
   from: string;
@@ -143,10 +157,13 @@ export type JourneyLeg = {
   paid: boolean;
   reason: JourneyLegReason;
   fuelAmount: number;
+  /** The ticket attached for this leg; 0 on a car trip, and on a leg with none. */
+  ticketAmount: number;
 };
 
 export type ChainedJourneyPricing = {
-  mode: "single_destination" | "chained";
+  /** `ticket_journey`: a trip without a car. The drives are listed, no fuel is paid, tickets are. */
+  mode: "single_destination" | "chained" | "ticket_journey";
   /** One plain sentence on why the journey is priced the way it is. */
   modeReason: string;
   /** Every drive of the journey, home to home. Empty for a trip with no extra stop. */
@@ -175,6 +192,8 @@ export type ChainedJourneyInput = {
   gpsAccuracyThresholdMeters?: number | null;
   /** The employee's OTHER live car trips, by Cairo day — a stop on such a day may be paid twice. */
   otherCarTripsByDay?: Record<string, number[]>;
+  /** How the person travelled; a trip without a car is listed drive by drive and pays no fuel. */
+  travel?: "car" | "ticket";
 };
 
 function roundMoney(value: number): number {
@@ -200,8 +219,26 @@ function dateOnly(value: string | null | undefined): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
 }
 
-function place(name: string, governorate: string | null): string {
-  return governorate ? `${name} (${governorate})` : name;
+function home(governorate: string | null): string {
+  return governorate ? `Home (${governorate})` : "Home";
+}
+
+/** A place on the route reads as its governorate: "Sohag", never "Stop 2 (Sohag)". */
+function placeName(governorate: string | null, fallback: string): string {
+  return governorate ?? fallback;
+}
+
+const FIRST_PLACE = "First place";
+const NEXT_PLACE = "Next place";
+const LEFT_FROM = "Where you left from";
+
+/** Who a flag sentence is about. */
+function stopSubject(stop: Pick<OutstationJourneyStop, "governorate">): string {
+  return stop.governorate ? `The stop in ${stop.governorate}` : "An added stop";
+}
+
+function stopObject(stop: Pick<OutstationJourneyStop, "governorate">): string {
+  return stop.governorate ? `the stop in ${stop.governorate}` : "an added stop";
 }
 
 /** Whether one drive pays, and why — the owner's governorate-to-governorate, over-40-km test. */
@@ -240,7 +277,8 @@ const FLAG_ORDER: ChainedJourneyFlag[] = [
  * A trip with no extra stop returns the old single-destination price, no legs and no flags.
  */
 export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyPricing {
-  const rate = finiteOrNull(input.fuelRatePerKm) ?? 0;
+  const ticketTravel = input.travel === "ticket";
+  const rate = ticketTravel ? 0 : finiteOrNull(input.fuelRatePerKm) ?? 0;
   const arrivalKm = finiteOrNull(input.arrival.distanceFromResidenceKm);
   const singleDestinationFuelAmount = roundMoney((arrivalKm ?? 0) * 2 * rate);
   const stops = [...input.stops].sort((a, b) => a.stopNumber - b.stopNumber);
@@ -252,8 +290,10 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
       flags: [],
       legs: [],
       mode: "single_destination",
-      modeReason: "One destination: priced home to destination and back.",
-      paidKm: roundKm((arrivalKm ?? 0) * 2),
+      modeReason: ticketTravel
+        ? "One destination, travelled by ticket: no fuel is paid."
+        : "One destination: priced home to destination and back.",
+      paidKm: ticketTravel ? 0 : roundKm((arrivalKm ?? 0) * 2),
       singleDestinationFuelAmount,
     };
   }
@@ -268,12 +308,33 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
   };
 
   // ── The drives, home to home ────────────────────────────────────────────────────────────────
-  const homeLabel = place("Home", input.residenceGovernorate);
-  const arrivalLabel = place("Arrival", input.arrival.governorate);
+  const homeLabel = home(input.residenceGovernorate);
+  const arrivalLabel = placeName(input.arrival.governorate, FIRST_PLACE);
   const legs: JourneyLeg[] = [];
-  const pushLeg = (from: string, to: string, fromGov: string | null, toGov: string | null, km: number | null) => {
-    const verdict = classifyJourneyLeg({ distanceKm: km, fromGovernorate: fromGov, toGovernorate: toGov });
+  const pushLeg = (
+    from: string,
+    to: string,
+    fromGov: string | null,
+    toGov: string | null,
+    km: number | null,
+    ticket: { amount: number; onStop: boolean } = { amount: 0, onStop: false },
+  ) => {
     const distanceKm = finiteOrNull(km);
+    if (ticketTravel) {
+      legs.push({
+        distanceKm,
+        from,
+        fromGovernorate: fromGov,
+        fuelAmount: 0,
+        paid: false,
+        reason: ticket.onStop ? "ticket_leg" : "ticket_on_claim",
+        ticketAmount: roundMoney(ticket.amount),
+        to,
+        toGovernorate: toGov,
+      });
+      return;
+    }
+    const verdict = classifyJourneyLeg({ distanceKm: km, fromGovernorate: fromGov, toGovernorate: toGov });
     legs.push({
       distanceKm,
       fromGovernorate: fromGov,
@@ -281,6 +342,7 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
       fuelAmount: verdict.paid && distanceKm != null ? roundMoney(distanceKm * rate) : 0,
       paid: verdict.paid,
       reason: verdict.reason,
+      ticketAmount: 0,
       to,
       toGovernorate: toGov,
     });
@@ -291,18 +353,21 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
   let previousGovernorate = input.arrival.governorate;
   const stopLegs: Array<{ leg: JourneyLeg; stop: OutstationJourneyStop }> = [];
   for (const [index, stop] of stops.entries()) {
-    const label = place(`Stop ${stop.stopNumber}`, stop.governorate);
+    const label = placeName(stop.governorate, NEXT_PLACE);
     // Only the FIRST stop can start from the departure photo; every later one starts from the
     // stop before it, whatever a hand-edited row claims.
     const fromDeparture = index === 0 && stop.legFrom === "departure";
-    const fromLabel = fromDeparture ? place("Departure photo", stop.legFromGovernorate) : previousLabel;
+    const fromLabel = fromDeparture ? placeName(stop.legFromGovernorate, LEFT_FROM) : previousLabel;
     const fromGovernorate = fromDeparture ? stop.legFromGovernorate : previousGovernorate;
     // A departure photo in ANOTHER governorate than the arrival is a drive between them that nothing
     // measured: it is listed with no road distance, so the journey is flagged and never priced on a guess.
     if (fromDeparture && fromGovernorate && previousGovernorate && fromGovernorate !== previousGovernorate) {
       pushLeg(previousLabel, fromLabel, previousGovernorate, fromGovernorate, null);
     }
-    pushLeg(fromLabel, label, fromGovernorate, stop.governorate, stop.legFromPreviousKm);
+    pushLeg(fromLabel, label, fromGovernorate, stop.governorate, stop.legFromPreviousKm, {
+      amount: stop.ticketAmount,
+      onStop: true,
+    });
     stopLegs.push({ leg: legs[legs.length - 1], stop });
     previousLabel = label;
     previousGovernorate = stop.governorate;
@@ -337,8 +402,8 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
         flag(
           "stop_gps_inaccurate",
           accuracy == null
-            ? `Stop ${stop.stopNumber}'s photo reported no GPS accuracy.`
-            : `Stop ${stop.stopNumber}'s GPS fix was accurate only to ${Math.round(accuracy)} m (the limit is ${Math.round(gpsLimit)} m).`,
+            ? `${stopSubject(stop)} reported no GPS accuracy.`
+            : `${stopSubject(stop)} had a GPS fix accurate only to ${Math.round(accuracy)} m (the limit is ${Math.round(gpsLimit)} m).`,
         );
       }
     }
@@ -346,31 +411,31 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
     if (otherTrips.length > 0) {
       flag(
         "another_trip_same_day",
-        `Another car trip (${otherTrips.map((id) => `#${id}`).join(", ")}) is also filed for ${day}, the day of stop ${stop.stopNumber} — the same drive may be paid twice.`,
+        `Another car trip (${otherTrips.map((id) => `#${id}`).join(", ")}) is also filed for ${day}, the day of ${stopObject(stop)} — the same drive may be paid twice.`,
       );
     }
     if (day && ((firstDay && day < firstDay) || (lastDay && day > lastDay))) {
       flag(
         "stop_outside_trip_dates",
-        `Stop ${stop.stopNumber} was photographed on ${day}, outside the trip's dates (${firstDay} to ${lastDay}).`,
+        `${stopSubject(stop)} was captured on ${day}, outside the trip's dates (${firstDay} to ${lastDay}).`,
       );
     }
     if (at != null && previousAt != null) {
       const minutes = (at - previousAt) / 60000;
       if (minutes < 0) {
-        flag("stop_out_of_order", `Stop ${stop.stopNumber} was photographed before the photo that comes before it.`);
+        flag("stop_out_of_order", `${stopSubject(stop)} was captured before the capture that comes before it.`);
       } else {
         if (minutes < STOP_MINIMUM_MINUTES_AFTER_PREVIOUS) {
           flag(
             "stop_too_soon",
-            `Stop ${stop.stopNumber} was photographed ${Math.round(minutes)} minutes after the previous photo — no time to work there.`,
+            `${stopSubject(stop)} was captured ${Math.round(minutes)} minutes after the previous capture — no time to work there.`,
           );
         }
         const driveMinutes = finiteOrNull(stop.legFromPreviousMinutes);
         if (driveMinutes != null && driveMinutes > 0 && minutes < driveMinutes * IMPOSSIBLE_SPEED_RATIO) {
           flag(
             "impossible_speed",
-            `Stop ${stop.stopNumber} was photographed ${Math.round(minutes)} minutes after the previous photo, but Google needs about ${Math.round(driveMinutes)} minutes to drive there.`,
+            `${stopSubject(stop)} was captured ${Math.round(minutes)} minutes after the previous capture, but Google needs about ${Math.round(driveMinutes)} minutes to drive there.`,
           );
         }
       }
@@ -379,26 +444,34 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
       if (stop.governorate !== previousStopGovernorate && visited.has(stop.governorate)) {
         flag(
           "revisits_governorate",
-          `Stop ${stop.stopNumber} goes back to ${stop.governorate}, a governorate this journey already visited.`,
+          `${stopSubject(stop)} goes back to a governorate this journey already visited.`,
         );
       }
       if (input.residenceGovernorate && stop.governorate === input.residenceGovernorate) {
         flag(
           "stop_in_home_governorate",
-          `Stop ${stop.stopNumber} is in ${stop.governorate}, the employee's home governorate — the journey may have gone home in between.`,
+          `${stopSubject(stop)} is in the employee's home governorate — the journey may have gone home in between.`,
         );
       }
       visited.add(stop.governorate);
     }
     previousStopGovernorate = stop.governorate;
-    if (leg.paid && day) paidStopLegsByDay.set(day, (paidStopLegsByDay.get(day) ?? 0) + 1);
+    // On a ticket journey no drive is paid in fuel, so the same check counts the crossings.
+    const crosses = ticketTravel
+      ? classifyJourneyLeg({
+          distanceKm: leg.distanceKm,
+          fromGovernorate: leg.fromGovernorate,
+          toGovernorate: leg.toGovernorate,
+        }).paid
+      : leg.paid;
+    if (crosses && day) paidStopLegsByDay.set(day, (paidStopLegsByDay.get(day) ?? 0) + 1);
     if (at != null) previousAt = at;
   }
   for (const [day, count] of paidStopLegsByDay) {
     if (count > MAX_PAID_STOP_LEGS_PER_DAY) {
       flag(
         "too_many_governorates_in_a_day",
-        `${count} paid drives between governorates on ${day} — more than ${MAX_PAID_STOP_LEGS_PER_DAY} in one day.`,
+        `${count} ${ticketTravel ? "moves" : "paid drives"} between governorates on ${day} — more than ${MAX_PAID_STOP_LEGS_PER_DAY} in one day.`,
       );
     }
   }
@@ -410,6 +483,18 @@ export function priceChainedJourney(input: ChainedJourneyInput): ChainedJourneyP
     const ordered = FLAG_ORDER.filter((name) => flags.has(name));
     return { ...pricing, flagReasons: ordered.map((name) => reasons.get(name) ?? name), flags: ordered };
   };
+
+  // Nothing here turns on a road distance or a governorate: no fuel is paid either way.
+  if (ticketTravel) {
+    return finish({
+      fuelAmount: 0,
+      legs,
+      mode: "ticket_journey",
+      modeReason: "Travelled by ticket, so no fuel is paid. Each leg is paid by its ticket on this claim.",
+      paidKm: 0,
+      singleDestinationFuelAmount: 0,
+    });
+  }
 
   if (unpriceable) {
     flag(
@@ -475,12 +560,18 @@ export function withJourneyReason(
   const cut = current.indexOf(JOURNEY_REASON_MARKER);
   const head = (cut >= 0 ? current.slice(0, cut) : current).trim();
   const sentences = [
-    // A journey priced as a chain ALWAYS says so, flagged or not: the employee's own photos moved
+    // A journey priced as a chain ALWAYS says so, flagged or not: the employee's own captures moved
     // the money, so the person deciding must see that it happened without opening anything.
     ...(pricing?.mode === "chained"
       ? [
           `Priced as a chain of drives: ${pricing.paidKm} km paid one way, fuel ${pricing.fuelAmount.toFixed(2)} ` +
             `(home and back would be ${pricing.singleDestinationFuelAmount.toFixed(2)}).`,
+        ]
+      : []),
+    ...(pricing?.mode === "ticket_journey"
+      ? [
+          `Travelled by ticket through ${pricing.legs.length - 1} places, no fuel paid; ` +
+            `tickets for the added places ${pricing.legs.reduce((sum, leg) => sum + leg.ticketAmount, 0).toFixed(2)}.`,
         ]
       : []),
     ...(pricing?.flagReasons ?? []),
@@ -502,6 +593,12 @@ function numberFieldOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** A live-photo stop needs its photo; a stop with no kind is an older row, which only a photo proves. */
+function readStopEvidence(kind: unknown, photoPath: string | null): JourneyStopEvidence | null {
+  if (kind === "location" || kind === "location_ticket") return kind;
+  return photoPath ? "live_photo" : null;
+}
+
 function parseJson(raw: unknown): unknown {
   if (typeof raw !== "string") return raw;
   try {
@@ -521,8 +618,9 @@ function readAddedByAdmin(raw: unknown): { addedByAdmin?: { by: string; reason: 
 
 /**
  * The stored `journey_stops` column, read defensively: anything that is not an array, and any entry
- * without a stop number, a capture time, a photo and a real position, is dropped rather than priced.
- * A hand-edited or half-written entry must never become a paid drive.
+ * without a stop number, a capture time, its evidence and a real position, is dropped rather than
+ * priced. A hand-edited or half-written entry must never become a paid drive. A row from before the
+ * evidence kinds has a photo and no kind, and reads as a live photo; no photo and no kind is dropped.
  */
 export function readJourneyStops(raw: unknown): OutstationJourneyStop[] {
   const value = parseJson(raw);
@@ -538,11 +636,15 @@ export function readJourneyStops(raw: unknown): OutstationJourneyStop[] {
     const photoPath = textOrNull(row.photoPath);
     if (!Number.isInteger(stopNumber) || stopNumber < 2) continue;
     if (latitude == null || longitude == null || (latitude === 0 && longitude === 0)) continue;
-    if (!capturedAt || instantMs(capturedAt) == null || !photoPath) continue;
+    if (!capturedAt || instantMs(capturedAt) == null) continue;
+    // An administrator's stop stored before the kinds holds a marker in place of a photo.
+    const evidence = row.addedByAdmin ? "location" : readStopEvidence(row.evidence, photoPath);
+    if (!evidence) continue;
     const legFrom = LEG_ORIGINS.has(row.legFrom as JourneyLegOrigin) ? (row.legFrom as JourneyLegOrigin) : "stop";
     stops.push({
       accuracyMeters: numberFieldOrNull(row.accuracyMeters),
       capturedAt,
+      evidence,
       governorate: textOrNull(row.governorate),
       latitude,
       legFrom,
@@ -556,10 +658,35 @@ export function readJourneyStops(raw: unknown): OutstationJourneyStop[] {
       returnHomeKm: numberFieldOrNull(row.returnHomeKm),
       routeError: textOrNull(row.routeError),
       stopNumber,
+      ticketAmount: Math.max(0, numberFieldOrNull(row.ticketAmount) ?? 0),
+      ticketPaths: Array.isArray(row.ticketPaths)
+        ? row.ticketPaths.filter((path): path is string => typeof path === "string" && path.length > 0)
+        : [],
       ...readAddedByAdmin(row.addedByAdmin),
+      ...(textOrNull(row.captureKey) ? { captureKey: String(textOrNull(row.captureKey)) } : {}),
     });
   }
   return stops.sort((a, b) => a.stopNumber - b.stopNumber);
+}
+
+/** What a place on a stored route was called before places read as their governorate. */
+function cleanStoredPlace(label: unknown): string {
+  const value = String(label ?? "");
+  const named = value.match(/^(?:Arrival|Stop \d+|Departure photo) \((.+)\)$/);
+  if (named) return named[1];
+  if (value === "Arrival") return FIRST_PLACE;
+  if (/^Stop \d+$/.test(value)) return NEXT_PLACE;
+  if (value === "Departure photo") return LEFT_FROM;
+  return value;
+}
+
+function readStoredLeg(leg: JourneyLeg): JourneyLeg {
+  return {
+    ...leg,
+    from: cleanStoredPlace(leg.from),
+    ticketAmount: numberFieldOrNull(leg.ticketAmount) ?? 0,
+    to: cleanStoredPlace(leg.to),
+  };
 }
 
 /** The stored `journey_pricing` snapshot, or null when it is missing or not the expected shape. */
@@ -567,13 +694,13 @@ export function readJourneyPricing(raw: unknown): ChainedJourneyPricing | null {
   const value = parseJson(raw);
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<ChainedJourneyPricing>;
-  if (row.mode !== "chained" && row.mode !== "single_destination") return null;
+  if (row.mode !== "chained" && row.mode !== "single_destination" && row.mode !== "ticket_journey") return null;
   if (!Array.isArray(row.legs) || !Array.isArray(row.flags)) return null;
   return {
     flagReasons: Array.isArray(row.flagReasons) ? row.flagReasons.map(String) : [],
     flags: row.flags,
     fuelAmount: numberFieldOrNull(row.fuelAmount) ?? 0,
-    legs: row.legs,
+    legs: row.legs.map(readStoredLeg),
     mode: row.mode,
     modeReason: String(row.modeReason ?? ""),
     paidKm: numberFieldOrNull(row.paidKm) ?? 0,
@@ -676,4 +803,29 @@ export function rebaseClaimOnNewFuel(input: {
       ? roundMoney(Math.max(0, input.claimedTotalAmount + expectedDelta))
       : expectedTotalAmount;
   return { claimedTotalAmount, expectedTotalAmount, fuelAmount: roundMoney(input.newFuelAmount), reportTravelCost };
+}
+
+/**
+ * The claim's totals once a stop's ticket joins it — the same arithmetic as an extra ticket, so a
+ * trip without a car comes out the same whichever way the ticket arrived. No fuel moves.
+ */
+export function rebaseClaimOnStopTicket(input: {
+  addedTicketAmount: number;
+  fuelAmount: number;
+  ticketAmount: number;
+  reportTravelCost: number | null;
+  claimedTotalAmount: number;
+  expectedTotalFor: (travelCost: number) => number;
+}): { ticketAmount: number; reportTravelCost: number; expectedTotalAmount: number; claimedTotalAmount: number } {
+  const added = roundMoney(Math.max(0, input.addedTicketAmount));
+  const travelBefore = input.reportTravelCost ?? roundMoney(input.fuelAmount + input.ticketAmount);
+  const reportTravelCost = roundMoney(travelBefore + added);
+  const expectedTotalAmount = roundMoney(input.expectedTotalFor(reportTravelCost));
+  return {
+    claimedTotalAmount:
+      input.claimedTotalAmount > 0 ? roundMoney(input.claimedTotalAmount + added) : expectedTotalAmount,
+    expectedTotalAmount,
+    reportTravelCost,
+    ticketAmount: roundMoney(input.ticketAmount + added),
+  };
 }

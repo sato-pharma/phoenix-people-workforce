@@ -265,7 +265,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Expenses
   { label: "My exp", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"], permission: { resource: "expenses", action: "read" } },
   { label: "Exp dash", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
-  { label: "My claims", fullLabel: "Expense Submissions", href: "/employee-portals/expense-submissions", icon: ReceiptText, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
+  { label: "My claims", fullLabel: "Expense Submissions", href: "/employee-portals/expense-submissions", icon: ReceiptText, flags: ["showExpenseSubmissionsTab"], permission: { resource: "expenses", action: "read" } },
   { label: "Submit exp", fullLabel: "Submit Expense", href: "/employee-portals/submit-expense", icon: Send, flags: ["showExpenseActionTab"], permission: { resource: "outstation", action: "create" } },
   // Support
   { label: "Support", fullLabel: "Request Support", href: "/employee-portals/contact-hr-support", icon: Headphones, flags: ["showSupportTab"], permission: { resource: "support_requests", action: "create" } },

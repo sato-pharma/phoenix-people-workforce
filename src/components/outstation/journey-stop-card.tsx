@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, CheckCircle2, Loader2, MapPin, TriangleAlert } from "lucide-react";
+import { Camera, CheckCircle2, Loader2, MapPin, TriangleAlert, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -8,41 +8,90 @@ import {
   getCompressedEvidenceCanvasSize,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
+import { JourneyRouteLine, type JourneyRouteLeg } from "@/components/outstation/journey-route-line";
+import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
+import { TICKET_FILE_ACCEPT } from "@/components/outstation/ticket-upload-card";
+import { Input } from "@/components/ui/input";
+import {
+  phxButtonAccentClassName,
+  phxHintClassName,
+  phxLabelClassName,
+} from "@/components/ui/form-tokens";
 import { JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE } from "@/lib/outstation/journey-stop-location";
+import { journeyStopEvidenceRefusal, type JourneyStopRule } from "@/lib/outstation/journey-stop-rules";
+import { checkTicketAttachmentFile } from "@/lib/outstation/ticket-attachment-limits";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
+import { cn } from "@/lib/utils";
 
-/** What the card hands its saver: the photo and the fix taken at the shutter. */
+/** What the card hands its saver: the fix, and whatever evidence the rule asked for with it. */
 export type JourneyStopCapture = {
   accuracyMeters: number | null;
-  imageDataUrl: string;
+  /** The live photo; null when the rule asks for none. */
+  imageDataUrl: string | null;
   latitude: number;
   locationLabel: string | null;
   longitude: number;
+  ticketAmount: number;
+  /** The ticket's files as they are; only a real stop reads them, a rehearsal sends the count. */
+  ticketFiles: File[];
 };
 
-/** What a saver reports back: the line to show, and whether the approver will look at the journey. */
-export type JourneyStopSaveResult = { flagged: boolean; message: string };
+/** What a saver reports back: the line to show, the route, and what the employee should know. */
+export type JourneyStopSaveResult = {
+  flagged: boolean;
+  legs?: JourneyRouteLeg[];
+  message: string;
+  /** False when an accepted claim's payroll figure did not follow the stop. */
+  payrollSynced?: boolean | null;
+};
 
 /** The real save: the stop joins the employee's own trip (POST /api/outstation/[id]/journey-stop). */
 async function saveStopToTrip(
   requestId: number,
-  nextStopNumber: number,
   capture: JourneyStopCapture,
+  captureKey: string,
 ): Promise<JourneyStopSaveResult> {
+  const tickets = await Promise.all(capture.ticketFiles.map(prepareTicketAttachment));
   const response = await fetch(`/api/outstation/${requestId}/journey-stop`, {
-    body: JSON.stringify(capture),
+    body: JSON.stringify({
+      accuracyMeters: capture.accuracyMeters,
+      captureKey,
+      imageDataUrl: capture.imageDataUrl,
+      latitude: capture.latitude,
+      locationLabel: capture.locationLabel,
+      longitude: capture.longitude,
+      ticketAmount: capture.ticketAmount,
+      tickets,
+    }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload?.message || `Upload failed (${response.status})`);
-  const place = typeof payload?.stopGovernorate === "string" ? ` in ${payload.stopGovernorate}` : "";
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.message || `This place could not be saved. Check your connection and try again.`);
+  const place = typeof payload?.stopGovernorate === "string" ? payload.stopGovernorate : "The next place";
   return {
     flagged: payload?.flagged === true,
-    message: `Stop ${payload?.stopNumber ?? nextStopNumber}${place} saved. ${
-      typeof payload?.modeReason === "string" ? payload.modeReason : ""
-    }`.trim(),
+    legs: Array.isArray(payload?.legs) ? (payload.legs as JourneyRouteLeg[]) : undefined,
+    message: `${place} is on your journey. ${typeof payload?.modeReason === "string" ? payload.modeReason : ""}`.trim(),
+    payrollSynced: typeof payload?.payrollSynced === "boolean" ? payload.payrollSynced : null,
   };
+}
+
+/** The one sentence that says what this person does here and what it pays. */
+function ruleSentence(rule: JourneyStopRule): string {
+  if (rule.photo) {
+    return "When you get there, take one live photo. A drive into another governorate over 40 km is paid one way, and so is the drive home from your last place. A place in the same governorate is recorded and changes nothing.";
+  }
+  if (rule.paysFuel) {
+    return "When you get there, capture your location. No photo is needed for your role. A drive into another governorate over 40 km is paid one way, and so is the drive home from your last place.";
+  }
+  if (rule.ticket === "required") {
+    return "When you get there, attach the ticket for this leg and capture your location. The ticket is paid. No fuel is paid on a trip without a car.";
+  }
+  if (rule.ticket === "none") {
+    return "When you get there, capture your location. No photo is needed for your role. Your claim is already accepted, so send this leg's ticket to HR, who add it to the trip. No fuel is paid on a trip without a car.";
+  }
+  return "When you get there, capture your location. No photo is needed for your role. Attach this leg's ticket if you have one: it is paid when attached. No fuel is paid on a trip without a car.";
 }
 
 type CaptureState =
@@ -50,39 +99,46 @@ type CaptureState =
   | { kind: "opening" }
   | { kind: "live" }
   | { kind: "saving" }
-  | { kind: "done"; flagged: boolean; message: string }
+  | { kind: "done"; result: JourneyStopSaveResult }
   | { kind: "error"; message: string };
 
 /**
- * A STOP on a car trip — the next place of a chained journey (owner rule, 2026-10-18: Minya →
- * Fayoum → Beni Suef → Minya is paid drive by drive when each drive crosses into another
- * governorate more than 40 km away; chained-journey.ts prices it).
+ * The next place of a trip (owner, 2026-11-03: "rebuild the stop from scratch"). One card, and the
+ * rule decides what it asks (journey-stop-rules.ts): a live photo, the location alone, or the location
+ * and that leg's ticket. The server enforces every one of those again — this card is the usability
+ * layer, never the security boundary. The place, its governorate and every distance come from the
+ * position on the server; only a ticket's amount is typed.
  *
- * The same camera as the departure photo, deliberately: camera only, no file picker, a fresh GPS
- * fix taken at the shutter (`maximumAge: 0`), the watermark burnt in, and no photo sent without a
- * position. The server enforces every one of those again — this card is the usability layer, never
- * the security boundary. The place, its governorate and every distance come from the photo's
- * position on the server; nothing here is typed.
+ * The camera is the departure photo's, deliberately: camera only, no file picker, a fresh GPS fix taken
+ * at the shutter (`maximumAge: 0`), the watermark burnt in, and nothing sent without a position.
  */
 export function JourneyStopCard({
+  acceptedClaim = false,
   employeeHrId,
-  nextStopNumber,
   onSaved,
   rehearsal,
   requestId,
+  rule,
 }: {
+  /** The claim was accepted when it was submitted, so a stop changes the accepted figure. */
+  acceptedClaim?: boolean;
   employeeHrId: string;
-  nextStopNumber: number;
   onSaved?: (requestId: number) => void;
   /**
-   * A test account's rehearsal (owner, 2026-11-03): the same camera and the same GPS rule, but the
-   * stop goes to this saver instead of a trip — its claim was never saved, so there is none.
+   * A test account's rehearsal (owner, 2026-11-03): the same capture and the same rule, but the stop
+   * goes to this saver instead of a trip — its claim was never saved, so there is none.
    */
   rehearsal?: { save: (capture: JourneyStopCapture) => Promise<JourneyStopSaveResult> };
   /** The trip the stop joins; null only for a rehearsal. */
   requestId: number | null;
+  rule: JourneyStopRule;
 }) {
   const [state, setState] = useState<CaptureState>({ kind: "idle" });
+  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
+  const [ticketAmount, setTicketAmount] = useState("");
+  // One key for one capture, kept through every retry, so a save whose answer was lost finds the stop
+  // it already made instead of paying its ticket again. A new one only after a save is confirmed.
+  const captureKeyRef = useRef<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // The shutter stays dead until the preview produces frames — a tap before that draws a black
@@ -126,20 +182,58 @@ export function JourneyStopCard({
     }
   }, []);
 
-  const capture = useCallback(async () => {
+  const readFix = useCallback(async () => {
+    // No location, no stop: the place and every distance come from this position.
+    const position = await new Promise<GeolocationPosition | null>((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (value) => resolve(value),
+        () => resolve(null),
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 12_000 },
+      );
+    });
+    const fix = usablePosition(position?.coords.latitude, position?.coords.longitude);
+    if (!fix) throw new Error(JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE);
+    const accuracyMeters = position?.coords.accuracy ?? null;
+    const location = await resolveEvidenceLocationStamp(
+      "/api/outstation/reverse-geocode",
+      fix.latitude,
+      fix.longitude,
+      accuracyMeters,
+    );
+    return { accuracyMeters, latitude: fix.latitude, location, longitude: fix.longitude };
+  }, []);
+
+  const save = useCallback(
+    async (capture: JourneyStopCapture) => {
+      let result: JourneyStopSaveResult;
+      if (rehearsal) {
+        result = await rehearsal.save(capture);
+      } else if (requestId != null) {
+        captureKeyRef.current ??= crypto.randomUUID();
+        result = await saveStopToTrip(requestId, capture, captureKeyRef.current);
+        captureKeyRef.current = null;
+      } else {
+        throw new Error("This place has no trip to join.");
+      }
+      stopCamera();
+      setState({ kind: "done", result });
+      if (requestId != null) onSaved?.(requestId);
+    },
+    [onSaved, rehearsal, requestId, stopCamera],
+  );
+
+  const takePhoto = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
     if (!video.videoWidth || !video.videoHeight) {
       setState({
         kind: "error",
-        message:
-          "The camera has not started yet — the preview is still blank. Wait for the picture to appear, then take the photo.",
+        message: "The camera has not started yet: the preview is still blank. Wait for the picture to appear, then take the photo.",
       });
       return;
     }
-
     setState({ kind: "saving" });
-
     try {
       const { height, width } = getCompressedEvidenceCanvasSize(video);
       const canvas = document.createElement("canvas");
@@ -148,95 +242,164 @@ export function JourneyStopCard({
       const context = canvas.getContext("2d");
       if (!context) throw new Error("This browser could not prepare the photo.");
       context.drawImage(video, 0, 0, width, height);
-
-      // No location, no stop: the place and every distance come from this position.
-      const position = await new Promise<GeolocationPosition | null>((resolve) => {
-        if (!navigator.geolocation) return resolve(null);
-        navigator.geolocation.getCurrentPosition(
-          (value) => resolve(value),
-          () => resolve(null),
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 12_000 },
-        );
-      });
-      const fix = usablePosition(position?.coords.latitude, position?.coords.longitude);
-      if (!fix) throw new Error(JOURNEY_STOP_LOCATION_REQUIRED_MESSAGE);
-      const { latitude, longitude } = fix;
-      const accuracyMeters = position?.coords.accuracy ?? null;
-      const location = await resolveEvidenceLocationStamp(
-        "/api/outstation/reverse-geocode",
-        latitude,
-        longitude,
-        accuracyMeters,
-      );
-
+      const { accuracyMeters, latitude, location, longitude } = await readFix();
       await drawEvidenceWatermark(context, canvas, {
         capturedAt: new Date().toISOString(),
         employeeHrId,
-        label: `Stop ${nextStopNumber}`,
+        label: "Next place",
         locationLines: location.lines,
         reference: requestId != null ? `Request: ${requestId}` : "Test claim — not saved",
       });
-
-      const stopCapture: JourneyStopCapture = {
+      await save({
         accuracyMeters,
         imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
         latitude,
         locationLabel: location.label,
         longitude,
-      };
-      let result: JourneyStopSaveResult;
-      if (rehearsal) {
-        result = await rehearsal.save(stopCapture);
-      } else if (requestId != null) {
-        result = await saveStopToTrip(requestId, nextStopNumber, stopCapture);
-      } else {
-        throw new Error("This stop has no trip to join.");
-      }
-
-      stopCamera();
-      setState({ flagged: result.flagged, kind: "done", message: result.message });
-      if (requestId != null) onSaved?.(requestId);
-    } catch (error) {
-      setState({
-        kind: "error",
-        message: error instanceof Error ? error.message : "The stop could not be saved.",
+        ticketAmount: 0,
+        ticketFiles: [],
       });
+    } catch (error) {
+      setState({ kind: "error", message: error instanceof Error ? error.message : "This place could not be saved." });
     }
-  }, [employeeHrId, nextStopNumber, onSaved, rehearsal, requestId, stopCamera]);
+  }, [employeeHrId, readFix, requestId, save]);
+
+  const amount = Number(ticketAmount) || 0;
+  const ticketProblem = rule.photo
+    ? null
+    : journeyStopEvidenceRefusal({ hasPhoto: true, rule, ticketAmount: amount, ticketFileCount: ticketFiles.length });
+
+  const captureLocation = useCallback(async () => {
+    setState({ kind: "saving" });
+    try {
+      const { accuracyMeters, latitude, location, longitude } = await readFix();
+      await save({
+        accuracyMeters,
+        imageDataUrl: null,
+        latitude,
+        locationLabel: location.label,
+        longitude,
+        ticketAmount: amount,
+        ticketFiles,
+      });
+    } catch (error) {
+      setState({ kind: "error", message: error instanceof Error ? error.message : "This place could not be saved." });
+    }
+  }, [amount, readFix, save, ticketFiles]);
+
+  function pickTicket(list: FileList | null) {
+    const picked = Array.from(list ?? []);
+    for (const file of picked) {
+      const verdict = checkTicketAttachmentFile(file);
+      if (!verdict.ok) {
+        setTicketFiles([]);
+        setState({ kind: "error", message: verdict.message });
+        return;
+      }
+    }
+    setTicketFiles(picked);
+    setState({ kind: "idle" });
+  }
 
   const busy = state.kind === "opening" || state.kind === "saving";
 
-  return (
-    <section className="border border-sky-200 bg-sky-50/60 p-4 sm:p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <MapPin className="h-4 w-4 text-sky-700" />
-        <span className="bg-sky-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-sky-800">
-          Add stop {nextStopNumber}
-        </span>
-        {rehearsal ? (
-          <span className="bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
-            Test account · not saved
-          </span>
+  if (state.kind === "done") {
+    const { result } = state;
+    return (
+      <section aria-label="The next place" className="border border-slate-200 bg-white p-4 sm:p-5">
+        <p className="flex items-start gap-2 text-phx-md font-semibold leading-relaxed text-emerald-700">
+          <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+          {result.message}
+        </p>
+        {result.legs && result.legs.length > 0 ? (
+          <div className="mt-3">
+            <JourneyRouteLine legs={result.legs} />
+          </div>
         ) : null}
-      </div>
-      <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-sky-950">
-        Moving on to work in another governorate before you go home? Take this photo when you get
-        there. A drive into another governorate more than 40 km away is paid one way, and so is the
-        drive home from your last stop. A stop in the same governorate is recorded but changes
-        nothing.
-      </p>
+        {result.flagged ? (
+          <p className="mt-3 flex items-start gap-2 text-phx-md leading-relaxed text-amber-800">
+            <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            {rehearsal
+              ? "On a real trip, the approver would review this journey before it is paid. The reasons are below."
+              : acceptedClaim
+                ? "This journey is marked on your claim for HR to read."
+                : "Your approver will review this journey before it is paid."}
+          </p>
+        ) : null}
+        {result.payrollSynced === false ? (
+          <p className="mt-3 flex items-start gap-2 text-phx-md leading-relaxed text-amber-800" role="alert">
+            <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            Your stop is saved, but the payroll figure did not move with it. Ask HR to check this claim.
+          </p>
+        ) : null}
+      </section>
+    );
+  }
 
-      {state.kind !== "done" ? (
+  return (
+    <section aria-label="The next place" className="border border-slate-200 bg-white p-4 sm:p-5">
+      <p className="flex flex-wrap items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">
+        <MapPin aria-hidden className="h-3.5 w-3.5" />
+        The next place
+        {rehearsal ? <span className="text-slate-500">Test account · not saved</span> : null}
+      </p>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">{ruleSentence(rule)}</p>
+      {acceptedClaim && rule.paysFuel ? (
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+          Your claim was accepted when you submitted it, so this changes the amount on it.
+        </p>
+      ) : null}
+
+      {rule.ticket !== "none" ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="min-w-0">
+            <span className={phxLabelClassName}>
+              This leg&apos;s ticket{rule.ticket === "optional" ? " (if you have one)" : ""}
+            </span>
+            <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 border border-dashed border-orange-400 bg-orange-50 px-3 py-2 text-center text-sm font-bold text-orange-800 transition hover:bg-orange-100">
+              <Upload aria-hidden className="h-4 w-4 shrink-0" />
+              {ticketFiles.length > 0
+                ? `${ticketFiles.length} file${ticketFiles.length === 1 ? "" : "s"} chosen, tap to change`
+                : "Take a photo of the ticket or choose a file"}
+              <input
+                accept={TICKET_FILE_ACCEPT}
+                className="hidden"
+                disabled={busy}
+                multiple
+                onChange={(event) => pickTicket(event.target.files)}
+                type="file"
+              />
+            </label>
+          </div>
+          <div className="min-w-0">
+            <label className={phxLabelClassName} htmlFor="journey-stop-ticket-amount">
+              What it cost (EGP)
+            </label>
+            <Input
+              disabled={busy}
+              id="journey-stop-ticket-amount"
+              inputMode="decimal"
+              min="0"
+              onChange={(event) => setTicketAmount(event.target.value)}
+              step="0.01"
+              type="number"
+              value={ticketAmount}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {rule.photo ? (
         <button
-          className="mt-3 inline-flex min-h-11 items-center gap-2 bg-sky-700 px-4 text-xs font-black text-white hover:bg-sky-800 disabled:opacity-60"
+          className={cn(phxButtonAccentClassName, "mt-4 min-h-12 w-full justify-center sm:w-auto")}
           disabled={busy || (state.kind === "live" && !videoReady)}
           onClick={() => {
-            if (state.kind === "live") void capture();
+            if (state.kind === "live") void takePhoto();
             else void openCamera();
           }}
           type="button"
         >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+          {busy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <Camera aria-hidden className="h-4 w-4" />}
           {state.kind === "live"
             ? videoReady
               ? "Take the photo"
@@ -247,7 +410,17 @@ export function JourneyStopCard({
                 ? "Opening camera…"
                 : "Open camera"}
         </button>
-      ) : null}
+      ) : (
+        <button
+          className={cn(phxButtonAccentClassName, "mt-4 min-h-12 w-full justify-center sm:w-auto")}
+          disabled={busy || ticketProblem !== null}
+          onClick={() => void captureLocation()}
+          type="button"
+        >
+          {busy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <MapPin aria-hidden className="h-4 w-4" />}
+          {state.kind === "saving" ? "Saving…" : "Capture my location"}
+        </button>
+      )}
 
       {state.kind === "live" ? (
         <div className="mt-3 border border-slate-200 bg-black">
@@ -261,41 +434,23 @@ export function JourneyStopCard({
             ref={videoRef}
           />
           {!videoReady ? (
-            <p className="bg-slate-900 px-3 py-2 text-center text-phx-xs font-bold text-white">
-              Starting the camera…
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {state.kind === "done" ? (
-        <div className="mt-3 space-y-1.5">
-          <p className="flex items-start gap-2 text-phx-md leading-relaxed text-emerald-700">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-            {state.message}
-          </p>
-          {state.flagged ? (
-            <p className="flex items-start gap-2 text-phx-md leading-relaxed text-amber-800">
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              {rehearsal
-                ? "On a real trip, the approver would review this journey before it is paid — the reasons are below."
-                : "Your approver will review this journey before it is paid."}
-            </p>
+            <p className="bg-slate-900 px-3 py-2 text-center text-phx-xs font-bold text-white">Starting the camera…</p>
           ) : null}
         </div>
       ) : null}
 
       {state.kind === "error" ? (
-        <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-rose-700">
-          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="mt-3 flex items-start gap-2 text-phx-md leading-relaxed text-rose-700" role="alert">
+          <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
           {state.message}
         </p>
       ) : null}
 
       {state.kind === "idle" ? (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-          <MapPin className="h-3.5 w-3.5" />
-          Your location is recorded with the photo. Without it, the stop is refused.
+        <p className={phxHintClassName}>
+          {ticketProblem && ticketFiles.length + amount > 0
+            ? ticketProblem
+            : "Your location is read where you stand. Without it, the place cannot be saved."}
         </p>
       ) : null}
     </section>
