@@ -128,9 +128,16 @@ export type PhoenixCrmSettings = {
    */
   callRateAmTarget: number;
   callRatePmTarget: number;
+  /**
+   * The visit retry's off switch (owner, 3 Nov 2026), so it can be stopped without a merge. Off, a rep's
+   * press behaves as it did before the queue existed and nothing held is sent by itself.
+   */
+  visitResendEnabled: boolean;
 };
 
 export const PHOENIX_CRM_DEFAULT_SETTINGS: PhoenixCrmSettings = {
+  // On (owner, 3 Nov 2026) — the column's own SQL default, the same way the caps below copy theirs.
+  visitResendEnabled: true,
   pmDailyCap: 15,
   amDailyCap: 5,
   // Three (owner, 2026-10-09). The same number as SHARED_PLACE_DAILY_CAP_DEFAULT in

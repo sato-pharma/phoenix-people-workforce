@@ -87,6 +87,7 @@ import {
   type NeedsYouSourceId,
   type NeedsYouSourceState,
 } from "./types";
+import { loadGithubAccountState, loadTelegramAccountState, loadWhatsAppAccountState } from "./vendor-accounts";
 
 export type NeedsYouAdapter = {
   id: NeedsYouSourceId;
@@ -1331,6 +1332,25 @@ const organogramSeatDrift: NeedsYouAdapter = {
   },
 };
 
+// ── The vendor accounts (owner, 3 Nov 2026, vendor-accounts-rules.ts) ──
+
+const VENDOR_NOT_YOURS = "A vendor account is the Super Admin's to settle";
+
+const vendorGithub: NeedsYouAdapter = {
+  id: "vendor-github",
+  load: async (access, now) => ownerOnlyQueue(access, VENDOR_NOT_YOURS) ?? loadGithubAccountState(now),
+};
+
+const vendorWhatsApp: NeedsYouAdapter = {
+  id: "vendor-whatsapp",
+  load: async (access) => ownerOnlyQueue(access, VENDOR_NOT_YOURS) ?? loadWhatsAppAccountState(),
+};
+
+const vendorTelegram: NeedsYouAdapter = {
+  id: "vendor-telegram",
+  load: async (access) => ownerOnlyQueue(access, VENDOR_NOT_YOURS) ?? loadTelegramAccountState(),
+};
+
 /**
  * THE REGISTRY. `service.ts` fans out over exactly this array, and
  * `tests/needs-you-never-under-reports.test.ts` holds its ids against `needsYouSourceIds` — so an
@@ -1361,6 +1381,9 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   closingPublicationDrift,
   officeAllocationDrift,
   organogramSeatDrift,
+  vendorGithub,
+  vendorWhatsApp,
+  vendorTelegram,
 ];
 
 /**

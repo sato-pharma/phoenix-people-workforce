@@ -51,6 +51,7 @@ import { movedDayReason } from "@/lib/phoenix-crm/offplan-day";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX } from "@/lib/phoenix-crm/unplanned-rules";
 import type { VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
+import { VISIT_WAITING_PILL } from "@/lib/phoenix-crm/visit-resend-rules";
 import { cn } from "@/lib/utils";
 
 /** Which customers a picker offers. */
@@ -293,8 +294,9 @@ export function VisitCustomerPicker({
                         const pharmacy = isPharmacyListType(customer.listType);
                         const where = pharmacy ? pharmacyWhereLine(customer.pharmacyPin) : null;
                         const pharmacyDetails = pharmacy && onPharmacyDetails ? () => onPharmacyDetails(customer.customerId) : null;
-                        // The allowance holds no place for this doctor: he is listed, with the way out, not offered.
-                        const blocked = mode === "out_of_plan" && offPlan ? offPlanBlock(offPlan, customer.customerId) : null;
+                        // The allowance holds no place for this doctor: he is listed, with the way out, not offered. A visit
+                        // already held on this phone is the same: listed, and never offered a second time.
+                        const blocked = customer.waitingToSend ? "waiting" : mode === "out_of_plan" && offPlan ? offPlanBlock(offPlan, customer.customerId) : null;
                         return (
                           <li className="min-w-0" key={customer.customerId}>
                             <button
@@ -317,7 +319,8 @@ export function VisitCustomerPicker({
                                 <span className="flex max-w-full flex-wrap gap-1">
                                   {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
                                   {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
-                                  {blocked ? <CrmPill tone="warn">{blocked === "day" ? "Plan for another day" : "This week is full"}</CrmPill> : null}
+                                  {customer.waitingToSend ? <CrmPill tone="orange">{VISIT_WAITING_PILL}</CrmPill> : null}
+                                  {blocked === "day" || blocked === "week" ? <CrmPill tone="warn">{blocked === "day" ? "Plan for another day" : "This week is full"}</CrmPill> : null}
                                   {customer.validateFirst ? <CrmPill tone="warn">{VALIDATE_FIRST_PILL}</CrmPill> : null}
                                 </span>
                               </span>

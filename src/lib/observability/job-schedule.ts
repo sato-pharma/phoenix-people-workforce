@@ -124,6 +124,10 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // minutes no other job holds (*/2 takes every even one). Must match scripts/cronjob-sync.mjs
   // exactly, and lands in the SAME sitting as its cron job. NO watchingSince: a new declaration.
   { slug: "phoenix-recruitment-whatsapp-reask", kind: "cron", schedule: "1,31 * * * *", graceSeconds: 1 * HOUR },
+  // Five ticks at 10:xx Cairo, every day (owner, 3 Nov 2026: the WhatsApp reminder to a slow approver). The route sends
+  // nothing on a Friday or Saturday and nothing until its three locks open, and still pings, so the check stays a straight
+  // daily one. Must match scripts/cronjob-sync.mjs exactly, and lands in the SAME sitting as its cron job.
+  { slug: "phoenix-approval-whatsapp-reminders", kind: "cron", schedule: "9,11,17,29,47 10 * * *", graceSeconds: 2 * HOUR },
   // 02:47 Cairo nightly (owner, 2026-11-03): the Sales -> Marketing pharmacy-code sync, until now run only
   // by hand. A minute no other job holds. Must match scripts/cronjob-sync.mjs exactly, in the SAME sitting.
   // NO watchingSince: a new declaration.

@@ -199,6 +199,8 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/visit-edit.ts": 1,
     "src/lib/phoenix-crm/server/visit-locations.ts": 1,
     "src/lib/phoenix-crm/server/visit-recordings.ts": 3,
+    // The retry asks "is this id on file?" for ids the phone made. A copied visit never holds one, so there is nothing to skip.
+    "src/lib/phoenix-crm/server/visit-resend-log.ts": 1,
     "src/lib/phoenix-crm/server/visit-report.ts": 3,
     "src/lib/phoenix-crm/server/visit-rollup.ts": 1,
     "src/lib/phoenix-crm/server/visits.ts": 2,

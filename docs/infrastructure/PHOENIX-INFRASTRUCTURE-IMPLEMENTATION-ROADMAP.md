@@ -65,6 +65,8 @@ with its own owner approval. None moves employee data to a new provider.
 | 2d | **The app's data cache survives a deploy.** Move the Next.js cache from the container's disk to a small Redis service inside the same Railway project and region, on Railway's private network. | There were 116 merges in two days, and 27 go-lives on 27 Oct; each go-live emptied the cache and re-ran the heavy reads. | Calls to `phx_sales_vs_target_range` and similar cached reads per working day down at least 50 %. |
 | 2e | Fewer API requests: the sign-in bundle, now read about 250,000 times in 55 hours (about 15 % of all API requests), kept briefly per session; the 30-second pulse's eleven reads folded into one; one batched read where a page now makes several. | Each request costs far more than its SQL; SQL work is about 13 % of the busy CPU, and the rest is shared by the API layer and Supabase's other services (split not measured). | Weekday API requests down at least 20 % from 650,000–740,000, with a role change or a disabled account still taking effect within the cache's lifetime. |
 
+**2d, declined by the owner on 3 Nov 2026.** He was offered the extra cache server again and chose to skip it. The final validation had already withdrawn it on 28 Oct, for no measured need. Do not offer it again without a new measurement.
+
 **2a so far, 28 Oct 2026:**
 
 - **The plan view: done.** Migration `20261028013400` puts the rep inside the plan-day group, so a filter on a rep reaches

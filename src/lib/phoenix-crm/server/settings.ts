@@ -73,7 +73,7 @@ async function readPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
   const [settingsResult, rolloutResult, ramadanResult] = await Promise.all([
     supabase
       .from("phoenix_crm_settings")
-      .select("pm_daily_cap, am_daily_cap, shared_place_daily_cap, offplan_daily_cap, offplan_weekly_cap, far_apart_km, visit_far_meters, weak_gps_meters, grade_targets")
+      .select("pm_daily_cap, am_daily_cap, shared_place_daily_cap, offplan_daily_cap, offplan_weekly_cap, far_apart_km, visit_far_meters, weak_gps_meters, grade_targets, visit_resend_enabled")
       .eq("id", 1)
       .maybeSingle(),
     supabase.from("phoenix_crm_line_rollout").select("line_code, opens_on").order("line_code"),
@@ -103,6 +103,8 @@ async function readPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
         // always comes from the constant, and cannot drift from the rule the KPI board is pinned to.
         callRateAmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRateAmTarget,
         callRatePmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRatePmTarget,
+        // Only an explicit false stops it: the column defaults to true and a null is not a decision.
+        visitResendEnabled: row.visit_resend_enabled !== false,
       }
     : PHOENIX_CRM_DEFAULT_SETTINGS;
 
@@ -169,6 +171,17 @@ export async function saveSettings(actorHrId: string, raw: unknown): Promise<voi
       updated_at: new Date().toISOString(),
       updated_by_hr_id: actorHrId,
     })
+    .eq("id", 1);
+  throwIfError(error);
+  forgetPhoenixCrmConfig();
+}
+
+/** The visit retry's off switch: its own write, so saving the numbers can never move it by accident. */
+export async function saveVisitResendSwitch(actorHrId: string, enabled: unknown): Promise<void> {
+  if (typeof enabled !== "boolean") throw validationError("Reload the page and try again.");
+  const { error } = await getSupabaseAdmin()
+    .from("phoenix_crm_settings")
+    .update({ visit_resend_enabled: enabled, updated_at: new Date().toISOString(), updated_by_hr_id: actorHrId })
     .eq("id", 1);
   throwIfError(error);
   forgetPhoenixCrmConfig();

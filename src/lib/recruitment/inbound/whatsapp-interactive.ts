@@ -21,6 +21,7 @@ import { menuViolations } from "@/lib/recruitment/inbound/whatsapp-classify-menu
 import type { OutboundLogContext } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 import { buildOutboundLogRow, recordOutboundMessage } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 import { addressedForGraph } from "@/lib/recruitment/inbound/whatsapp-recipient";
+import { isApprovalsLine } from "@/lib/whatsapp-inbox/lines";
 import { recordInboxOutbound, type InboxSendDetail } from "@/lib/whatsapp-inbox/record";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
@@ -69,6 +70,11 @@ async function postToGraph(
   context?: OutboundLogContext | null,
 ): Promise<WhatsAppSendResult> {
   const result = await sendToGraph(phoneNumberId, token, payload, event);
+
+  // 🔴 THE THIRD NUMBER HAS ITS OWN LEDGER (owner, 3 Nov 2026). An approver's reminder must not appear in the recruitment
+  // outbound report or the WhatsApp Inbox, and neither filters by line. Nothing goes unrecorded: the job claims a row in
+  // `approval_whatsapp_reminders` before it sends and writes this result back to it.
+  if (isApprovalsLine(phoneNumberId)) return result;
 
   // `to` is read back off the payload rather than passed separately: both callers set it from the
   // same value, and a second parameter is a second thing that can drift out of step with what was

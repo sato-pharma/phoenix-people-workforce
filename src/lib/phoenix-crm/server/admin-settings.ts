@@ -10,7 +10,7 @@
 import { validationError } from "@/lib/http/api-errors";
 import { effectiveRamadanRanges, UMM_AL_QURA_RAMADAN } from "@/lib/phoenix-crm/calendar";
 import { assertSettingsWriter, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { saveLineRollout, saveRamadanOverride, saveSettings } from "@/lib/phoenix-crm/server/settings";
+import { saveLineRollout, saveRamadanOverride, saveSettings, saveVisitResendSwitch } from "@/lib/phoenix-crm/server/settings";
 import type { PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 
 /** Ramadans shown: the running or next one and the two after it. */
@@ -78,6 +78,10 @@ export async function saveSettingsChange(viewer: PhoenixCrmViewer, raw: unknown)
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   if (body.kind === "settings") {
     await saveSettings(viewer.hrId, body.settings);
+    return;
+  }
+  if (body.kind === "visit_resend") {
+    await saveVisitResendSwitch(viewer.hrId, body.enabled);
     return;
   }
   if (body.kind === "line") {

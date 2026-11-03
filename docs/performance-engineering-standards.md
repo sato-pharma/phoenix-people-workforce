@@ -239,11 +239,45 @@ statement, not of the request, which cost ~450 ms at the peak.
   drop, stored gzipped like the Sales vs Target rows. Both planners' routes answer with
   `Server-Timing`. Measured before, on production at 02:25 Cairo: Weekly Stock 10.7 s to the response
   end (429 KB), Ranks 8.4 s (2.8 MB, 300 inline SVGs), call prep 1,150 ms; the after figures are read
-  the same way once it serves.
+  the same way once it serves. They are below.
 - **Deliberately not remembered:** the Business Review (it reads the LIVE engine, AGENTS.md §4, and
   its bundle is already cached), Source of Sales (a whole-line read is a sales-rules change), ROI
   Tracker and Coverage (KPI rules, 1.8 s and 4.6 s), Territory Drilldown. Still open from Stage 1, on
   purpose: `readOpenList` pages by OFFSET; the shell does not yet embed its stage durations.
+
+### The after figures (2 Nov 2026, production revision 229ff7f8f)
+
+A rep's own hard loads, desktop, in a rep's session, about 03:45 to 03:58 Cairo on Monday, against the Sunday table
+above. Quiet hours both, so trust the direction. The database host was still Small throughout.
+
+| Page | Sunday, usable (ms) | Monday, usable (ms) |
+| --- | --- | --- |
+| Phoenix CRM · Visits | ≈5,800 | 4,771 first, 2,440 second |
+| Phoenix CRM · List | 5,078 | 3,007 |
+| Phoenix CRM · Plan | 2,814 | 1,560 (no request of its own: the first read arrives in the render) |
+| Weekly Stock | 13,312 | about 10,900 with the cache empty, about 1,100 inside its five minutes |
+| Ranks | 8,971, 2,799 KB, 10,520 elements | about 2,200 first, about 2,000 second, 1,493 KB, 8,179 elements |
+
+The peak, from the edge logs and `activity_events`:
+
+| Window (Cairo) | Requests | A minute | People | Page views | Requests a page view |
+| --- | --- | --- | --- | --- | --- |
+| Sun 10:30–11:00 | 36,104 | 1,203 | 47 | 300 | 120 |
+| Mon 10:30–11:00 | 15,063 | 502 | 37 | 136 | 111 |
+| Mon 11:00–11:30 | 28,666 | 955 | 46 | 294 | 98 |
+| Mon 13:30–14:00 | 14,307 | 477 | 32 | 153 | 94 |
+
+- **The 502 is not all saving.** Monday's 10:30 was quieter by people and page views, so the fair figure is requests a
+  page view, down about 20 to 30%. The rep CRM's own reads fell 67 to 91%, and the rest of the volume is other surfaces:
+  `employees`, `phoenix_crm_visits`, direct orders, vacation approvals, notifications, the 30-second pulse.
+- **Each read's median about halved at the same hour:** `phoenix_crm_places` 451 → 147 ms, `phoenix_crm_customers` 473 →
+  182, `phoenix_crm_visits` 492 → 269, `employees` 312 → 214, the session bundle 97 → 61.
+- **Memory is still the binding limit.** At 955 a minute the host swapped hard (swap 193 → 772 MB, up to 6,360 swap-ins a
+  minute at 11:31–11:35 Cairo, free 227 MB) with CPU idle at 32 to 88%, and again at 14:00–14:10 Cairo. No out-of-memory
+  kill and no restart that day.
+- **Reps' own hard loads since 08:00 Cairo,** from the page timings: Visits ready at a median of 2,032 ms (33 samples),
+  Home 2,669 ms (24).
+- **Not read:** Railway's HTTP medians for the window, because the logs command returned no rows for a past range.
 
 ### The compute question
 

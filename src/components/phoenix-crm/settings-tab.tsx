@@ -250,6 +250,8 @@ function settingsFrom(draft: NumbersDraft): PhoenixCrmSettings | null {
     // not a Super-Admin knob — carried through as the constant, exactly as server/settings.ts does.
     callRateAmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRateAmTarget,
     callRatePmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRatePmTarget,
+    // Not one of these numbers: it has its own switch and its own save, and the server ignores this one.
+    visitResendEnabled: PHOENIX_CRM_DEFAULT_SETTINGS.visitResendEnabled,
   };
 }
 
@@ -471,6 +473,28 @@ export function SettingsTab({
       if (block && block.getBoundingClientRect().top < 0) block.scrollIntoView({ block: "start" });
     } catch (error) {
       setNumbersProblem(messageOf(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // ── The visit retry's off switch (owner, 3 Nov 2026) ──
+
+  const saveVisitResend = async (enabled: boolean) => {
+    if (locked) return;
+    setBusy("visit-resend");
+    setNotice(null);
+    try {
+      const next = await crmPost<PhoenixCrmSettingsView>(SETTINGS_PATH, { kind: "visit_resend", enabled }, "settings");
+      resource.replace(next);
+      setNotice({
+        key: "visit-resend",
+        tone: "good",
+        title: enabled ? "Visit retry is on" : "Visit retry is off",
+        message: enabled ? "A visit that loses signal stays on the phone and sends itself." : "A visit that loses signal asks the rep to try again, and nothing on a phone sends by itself.",
+      });
+    } catch (error) {
+      setNotice({ key: "visit-resend", tone: "bad", title: "The switch did not change", message: messageOf(error) });
     } finally {
       setBusy(null);
     }
@@ -943,6 +967,24 @@ export function SettingsTab({
         ) : (
           <ul className="divide-y divide-slate-100 border-t border-slate-100">{view.lines.map(lineRow)}</ul>
         )}
+      </div>
+
+      <div className="border-t border-slate-100">
+        <CrmBlock
+          actions={
+            <CrmButton busy={busy === "visit-resend"} disabled={locked} onClick={() => void saveVisitResend(!view.settings.visitResendEnabled)} size="sm">
+              {view.settings.visitResendEnabled ? "Turn off" : "Turn on"}
+            </CrmButton>
+          }
+          title="Visit retry"
+        >
+          {noticeNote("visit-resend", "mb-3")}
+          <p className="break-words text-sm font-medium leading-6 text-slate-500">
+            {view.settings.visitResendEnabled
+              ? "On. A visit that loses signal stays on the rep's phone and sends itself for up to two hours, until 02:00."
+              : "Off. A visit that loses signal asks the rep to try again, as it did before."}
+          </p>
+        </CrmBlock>
       </div>
 
       <div className="border-t border-slate-100">

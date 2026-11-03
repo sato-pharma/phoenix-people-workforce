@@ -28,6 +28,8 @@ export type TelegramWebhookStatus = {
   configuredUrl: string | null;
   error: string | null;
   expectedUrl: string | null;
+  /** The status Telegram answered a failed read with. A dead key and Telegram's own fault are not the same news. */
+  httpStatus?: number;
   lastErrorAt: string | null;
   lastErrorMessage: string | null;
   pendingUpdateCount: number | null;
@@ -161,6 +163,7 @@ export async function getTelegramWebhookStatus(): Promise<TelegramWebhookStatus>
         configuredUrl: null,
         error: cleanWebhookError(payload?.description) ?? `Telegram webhook status failed with ${response.status}.`,
         expectedUrl,
+        httpStatus: response.status,
         lastErrorAt: null,
         lastErrorMessage: null,
         pendingUpdateCount: null,
