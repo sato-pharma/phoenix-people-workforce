@@ -201,7 +201,9 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/visit-recordings.ts": 3,
     // The retry asks "is this id on file?" for ids the phone made. A copied visit never holds one, so there is nothing to skip.
     "src/lib/phoenix-crm/server/visit-resend-log.ts": 1,
-    "src/lib/phoenix-crm/server/visit-report.ts": 3,
+    // The fourth (2026-11-04) reads the other visits of a customer's days for the day order: one customer's history
+    // keeps the copied visits, which are exactly that history.
+    "src/lib/phoenix-crm/server/visit-report.ts": 4,
     "src/lib/phoenix-crm/server/visit-rollup.ts": 1,
     "src/lib/phoenix-crm/server/visits.ts": 2,
     "src/lib/phoenix-crm/server/week-progress.ts": 1,

@@ -41,6 +41,7 @@ export default async function PhoenixCrmVisitReportPage({
   const first = (value: string | string[] | undefined): string => (Array.isArray(value) ? (value[0] ?? "") : (value ?? ""));
   const initial: VisitReportInitial = {
     apply: first(params.apply) === "1",
+    customer: first(params.customer),
     fields: first(params.fields).split(",").map((key) => key.trim()).filter(Boolean),
     from: first(params.from),
     target: first(params.target),

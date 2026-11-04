@@ -405,6 +405,8 @@ const ROUTE_GATES: RouteGate[] = [
   get("visit-resend-report", "create"),
   { route: "visit-resend-report", method: "POST", action: "create", audit: "mutation", auditRequired: false },
   get("visit-report/views"),
+  // The Visit report's customer picker (owner, 2026-11-04) — names only, behind canReadVisitReport.
+  get("visit-report/customers"),
   post("visit-report/views", "read"),
   { route: "visit-report/views", method: "DELETE", action: "read", audit: "mutation", auditRequired: true },
   // The one-page start guide, English or Arabic. A plain `read` and no audit: it is a help page whose

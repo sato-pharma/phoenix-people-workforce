@@ -42,6 +42,7 @@ export async function GET(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
     const search = searchOf(request);
     const loaded = await loadVisitReport(viewer, {
+      customer: search.get("customer"),
       fields: (search.get("fields") ?? "").split(",").map((key) => key.trim()).filter(Boolean),
       from: search.get("from"),
       id: search.get("id"),

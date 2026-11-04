@@ -50,6 +50,7 @@ export async function POST(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as Record<string, unknown>;
     const view = await loadVisitReport(viewer, {
+      customer: body.customer,
       fields: body.fields,
       from: body.from,
       id: body.id,

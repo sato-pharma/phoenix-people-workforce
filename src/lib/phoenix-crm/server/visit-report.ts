@@ -15,6 +15,12 @@
  * door out of his own visits' table, are marked `ownVisit`, sit on no rep's row and in no dashboard figure, and
  * are never asked for a location or a photo.
  *
+ * 🔴 ONE DOCTOR OR ACCOUNT (owner, 2026-11-04: "filter by rep or area then filter by dr or polyclinic"). A rep's or a
+ * district's report may name one customer of those territories (`loadVisitReportCustomers` offers them). Its visits
+ * are then read by the CUSTOMER on those seats — every rep who ever held the seat, so the story survives a rep
+ * leaving — over up to a year (`VISIT_REPORT_MAX_DAYS_CUSTOMER`). The day-order facts still describe the whole day:
+ * the other visits of each day the customer was seen are read for the sequence alone and are never rows.
+ *
  * 🔴 WHO READS IT: the Super Admin and the SFE Manager across the company and the district manager across his
  * own team (`canReadVisitReport`; the team is `readableSeats`), refused with a 404 so the
  * report's existence is not confirmed to anybody else. The SFE Manager reads every field except the
@@ -37,6 +43,7 @@
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { placeNoteReachesManager } from "@/lib/phoenix-crm/place-note-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { canReadVisitReport, isLocationBlind, readsLocationDetail, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -62,9 +69,11 @@ import { buildVisitReportDashboard, countVisitReportFilled, visitReportDays } fr
 import {
   resolveVisitReportPeriod,
   resolveVisitReportSelection,
+  type VisitReportCustomerChoice,
   type VisitReportField,
   type VisitReportReaderTier,
   type VisitReportRow,
+  type VisitReportScopeCustomer,
   type VisitReportScopeDistrict,
   type VisitReportScopeManager,
   type VisitReportScopeRep,
@@ -240,6 +249,85 @@ async function resolveManager(viewer: PhoenixCrmViewer, id: string): Promise<Sco
   return found;
 }
 
+// ── One doctor or account ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Who the "Doctor or account" picker offers: the customers on the list, waiting to be validated, or met outside it.
+ * A dropped one is left out — the picker is for the people the seat still calls on — but a link naming one still opens.
+ */
+const CUSTOMER_PICKER_STATUSES = ["active", "pending", "outside"] as const;
+const CUSTOMER_STATUS_WORDS: Record<string, string> = { outside: "outside the list", pending: "not validated yet" };
+
+function rejectCustomerKind(kind: unknown): "rep" | "district" {
+  if (kind === "rep" || kind === "district") return kind;
+  throw validationError("Choose a rep or a district to report on one customer.");
+}
+
+/**
+ * The doctors, accounts and pharmacies of a rep's territory or of a district, for the picker (owner, 2026-11-04).
+ * Behind the report's own door and its own 404s: a rep or a district outside the viewer's reach answers exactly as
+ * the report does. Names only, by the customer — nothing the report itself would not print on a row.
+ */
+export async function loadVisitReportCustomers(viewer: PhoenixCrmViewer, input: { kind: unknown; id: unknown }): Promise<VisitReportScopeCustomer[]> {
+  assertReader(viewer);
+  const kind = rejectCustomerKind(input.kind);
+  if (typeof input.id !== "string" || !input.id) throw validationError("Choose a rep or a district.");
+  const names = await loadPeopleNames(readableSeats(viewer).map((seat) => seat.occupantHrId));
+  const target = resolveTarget(viewer, { id: input.id, kind }, names);
+  const seatIds = target.seats.map((seat) => seat.seatId);
+  if (seatIds.length > IN_ID_CHUNK) throw validationError("This district has too many territories to list its customers. Choose one rep.");
+  const includeTest = viewer.isTestPersona;
+  const rows = await fetchAllRowsKeyset<Row>(
+    () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let query: any = getSupabaseAdmin().from("phoenix_crm_customers").select("id, seat_id, name, list_type, speciality, status");
+      // A "Campaign visit N" holder only files the old system's campaign visits: it is no customer.
+      query = seatScoped(query, seatIds).in("status", [...CUSTOMER_PICKER_STATUSES]).eq("campaign_visit_holder", false);
+      if (!includeTest) query = query.eq("is_test", false);
+      return query;
+    },
+    { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+  );
+  const seatById = new Map(target.seats.map((seat) => [seat.seatId, seat]));
+  return rows
+    .map((row): VisitReportScopeCustomer => {
+      const name = String(row.name ?? "").trim() || "Unnamed customer";
+      const listType = String(row.list_type ?? "");
+      const seat = seatById.get(String(row.seat_id));
+      // Across a district the same name can sit on two territories, so each says whose it is.
+      const territory = kind === "district" && seat ? nameOf(names, seat.occupantHrId, "Vacant seat") : null;
+      const label = [name, listType, textOrNull(row.speciality), territory, CUSTOMER_STATUS_WORDS[String(row.status)] ?? null]
+        .filter(Boolean)
+        .join(" · ");
+      return { id: String(row.id), label, listType, name };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+/**
+ * The one customer a report names, or a 404 — one sentence for "no such customer" and "not on these territories",
+ * so a viewer learns nothing about a customer outside his reach. Any status: a link to a dropped one still opens.
+ */
+async function resolveReportCustomer(
+  seats: ReadonlyArray<OrgSeat>,
+  customerId: string,
+  includeTest: boolean,
+): Promise<VisitReportCustomerChoice & { seatId: string }> {
+  const missing = "This customer is not on this territory. Reload the page.";
+  // Not an id at all is the same 404 — and never reaches PostgREST, which would answer it with a 22P02.
+  if (!isUuid(customerId)) throw notFoundError(missing);
+  const [row] = await selectByIds<Row>("phoenix_crm_customers", "id, seat_id, name, list_type, is_test", "id", [customerId]);
+  const readable = new Set(seats.map((seat) => seat.seatId));
+  if (!row || !readable.has(String(row.seat_id)) || (!includeTest && row.is_test === true)) throw notFoundError(missing);
+  return { id: String(row.id), listType: String(row.list_type ?? ""), name: String(row.name ?? "").trim() || "Unnamed customer", seatId: String(row.seat_id) };
+}
+
+/** The columns the day order reads off a visit — the other visits of a customer's days, read for the sequence alone. */
+const SEQUENCE_VISIT_COLUMNS = "id, seat_id, customer_id, visit_date, captured_at, lat, lon, rep_hr_id, manager_hr_id";
+
+/** How many days go into one `.in("visit_date", …)`: well inside the URL, and a year of a doctor is fewer days than this. */
+const SEQUENCE_DAYS_CHUNK = 60;
+
 // ── Paged reads ──────────────────────────────────────────────────────────────────────────────────
 
 const VISIT_COLUMNS = [
@@ -260,6 +348,8 @@ async function readSeatRange(
   seatIds: readonly string[],
   window: { column: string; from: string; to: string },
   includeTest: boolean,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  narrow?: (query: any) => any,
 ): Promise<Row[]> {
   // A manager with no visit a rep logged on a readable territory has no seats to ask about — nothing to read.
   if (seatIds.length === 0) return [];
@@ -269,6 +359,7 @@ async function readSeatRange(
       let query: any = getSupabaseAdmin().from(table).select(columns);
       query = seatScoped(query, seatIds).gte(window.column, window.from).lte(window.column, window.to);
       if (!includeTest) query = query.eq("is_test", false);
+      if (narrow) query = narrow(query);
       return query;
     },
     { cursorColumn, cursorOf: (row) => (row[cursorColumn] == null ? null : String(row[cursorColumn])) },
@@ -430,6 +521,8 @@ export type LoadVisitReportInput = {
   from: unknown;
   to: unknown;
   fields: unknown;
+  /** One doctor or account of a rep's or a district's territories (owner, 2026-11-04); absent or empty for all. */
+  customer?: unknown;
 };
 
 export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisitReportInput): Promise<VisitReportView> {
@@ -441,7 +534,10 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   const fields = resolveVisitReportSelection(Array.isArray(input.fields) ? input.fields : [], visitReportTierOf(viewer));
   if (fields.length === 0) throw validationError("Choose at least one field to report.");
 
-  const period = resolveVisitReportPeriod({ cairoToday: viewer.cairoToday, from: input.from, kind, to: input.to });
+  const customerId = typeof input.customer === "string" && input.customer.trim() ? input.customer.trim() : null;
+  if (customerId) rejectCustomerKind(kind);
+
+  const period = resolveVisitReportPeriod({ cairoToday: viewer.cairoToday, customer: customerId !== null, from: input.from, kind, to: input.to });
   if (!period.ok) throw validationError(period.error);
 
   const includeTest = viewer.isTestPersona;
@@ -456,6 +552,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   let target: Resolved;
   let everyVisit: Row[];
   let ownVisits: ManagerDayVisit[] = [];
+  let chosenCustomer: VisitReportCustomerChoice | null = null;
   if (kind === "manager") {
     // A manager is read by HIMSELF: every visit a rep logged naming him on a territory this viewer reads, and the
     // single visits he logged alone — through the one door out of their table, as display rows under his name.
@@ -486,6 +583,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   } else {
     const scopeNames = await loadPeopleNames(readableSeats(viewer).map((seat) => seat.occupantHrId));
     target = resolveTarget(viewer, { id: input.id, kind }, scopeNames);
+    const customer = customerId ? await resolveReportCustomer(target.seats, customerId, includeTest) : null;
     everyVisit = await readSeatRange(
       "phoenix_crm_visits",
       VISIT_COLUMNS,
@@ -493,7 +591,15 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       target.seats.map((seat) => seat.seatId),
       { column: "visit_date", from: readFrom, to: period.to },
       includeTest,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      customer ? (query: any) => query.eq("customer_id", customer.id) : undefined,
     );
+    if (customer) {
+      // The report is now about him: the territories his visits sit on and his own, and nothing else of the district.
+      const held = new Set([customer.seatId, ...everyVisit.map((visit) => String(visit.seat_id))]);
+      chosenCustomer = { id: customer.id, listType: customer.listType, name: customer.name };
+      target = { ...target, name: `${customer.name} · ${target.name}`, seats: target.seats.filter((seat) => held.has(seat.seatId)) };
+    }
   }
   // Everyone on each visit past its three fixed places (owner, 2026-10-27), read once and carried on the row under
   // the door's own name, so the values and the names read it like any other column. Null on a visit saved before.
@@ -581,7 +687,17 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
           byIds,
         )
       : Promise.resolve<Row[]>([]),
-    needsUnplanned
+    needsUnplanned && chosenCustomer
+      ? selectByIds<Row>(
+          "phoenix_crm_unplanned_visits",
+          "visit_id, clarification, status, manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, admin_decided_by_hr_id, admin_decided_at, admin_note",
+          "visit_id",
+          visitIds,
+          byIds,
+          // Keyed by the visit: the table has no id column of its own.
+          "visit_id",
+        )
+      : needsUnplanned
       ? readSeatRange(
           "phoenix_crm_unplanned_visits",
           "visit_id, clarification, status, manager_decided_by_hr_id, manager_decided_at, manager_note, sfe_decided_by_hr_id, sfe_decided_at, sfe_note, admin_decided_by_hr_id, admin_decided_at, admin_note",
@@ -591,7 +707,9 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
           includeTest,
         )
       : Promise.resolve<Row[]>([]),
-    needsProvenance
+    needsProvenance && chosenCustomer
+      ? Promise.resolve<Row[]>([])
+      : needsProvenance
       ? readSeatRange(
           "phoenix_crm_visit_capture_provenance",
           "visit_id, fix_taken_at, fix_age_seconds, queued_seconds, device_install_id, app_revision, user_agent",
@@ -679,10 +797,49 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
   // Whose day a visit is ordered in: the rep's (or the manager on his own call) — or, on a manager's report, the
   // MANAGER's own day, since he moves from one rep to the next and the order, the gap and the distance are his.
   const sequencePerson = (visit: Row): string | null => target.personHrId ?? whoseVisit(visit);
-  const provenanceByVisit = new Map(provenanceRows.map((row) => [String(row.visit_id), row]));
+  // On one customer's report the day order still describes the whole day: the other visits of each day he was seen
+  // are read here, for the sequence alone — they become no row — with their phone-clock times beside them. His own
+  // visits' provenance is read by their ids, never a year of the seat's.
+  let sequenceSource = everyVisit;
+  let sequenceProvenance = provenanceRows;
+  if (chosenCustomer && (needsSequence || needsProvenance) && seatIds.length > 0) {
+    const days = dedupeIds(everyVisit.map((visit) => idOf(visit.visit_date)));
+    const chunks: string[][] = [];
+    for (let index = 0; index < days.length; index += SEQUENCE_DAYS_CHUNK) chunks.push(days.slice(index, index + SEQUENCE_DAYS_CHUNK));
+    const dayVisits = needsSequence
+      ? (
+          await Promise.all(
+            chunks.map((chunk) =>
+              readSeatRange(
+                "phoenix_crm_visits",
+                SEQUENCE_VISIT_COLUMNS,
+                "id",
+                seatIds,
+                { column: "visit_date", from: readFrom, to: period.to },
+                includeTest,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (query: any) => query.in("visit_date", chunk),
+              ),
+            ),
+          )
+        ).flat()
+      : [];
+    const byId = new Map(everyVisit.map((visit) => [String(visit.id), visit]));
+    for (const visit of dayVisits) if (!byId.has(String(visit.id))) byId.set(String(visit.id), visit);
+    sequenceSource = [...byId.values()];
+    sequenceProvenance = await selectByIds<Row>(
+      "phoenix_crm_visit_capture_provenance",
+      "visit_id, fix_taken_at, fix_age_seconds, queued_seconds, device_install_id, app_revision, user_agent",
+      "visit_id",
+      sequenceSource.map((visit) => String(visit.id)),
+      byIds,
+      "visit_id",
+    );
+  }
+  const provenanceByVisit = new Map(sequenceProvenance.map((row) => [String(row.visit_id), row]));
   const sequence = needsSequence
     ? computeVisitSequence(
-        everyVisit.map(
+        sequenceSource.map(
           (visit): SequenceInput => {
             const fix = textOrNull(provenanceByVisit.get(String(visit.id))?.fix_taken_at);
             return {
@@ -863,6 +1020,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
     selected: fields.map((field) => field.key),
     target: {
       id: String(input.id),
+      customer: chosenCustomer,
       kind: target.kind,
       name: target.name,
       // The REPS among them — a manager's own call is in the rows under his name, and is not a rep.

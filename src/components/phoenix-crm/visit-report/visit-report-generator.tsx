@@ -17,6 +17,10 @@
  * saved views (server-side, owner only, fields only), and — with no link to reopen — the last choice made
  * in this browser, ticked on arrival. None of them applies anything; Apply still does.
  *
+ * One doctor or account (owner, 2026-11-04: "filter by rep or area then filter by dr or polyclinic"): once a rep or
+ * a district is chosen, its customers are offered, and choosing one reads that customer's visits alone — every rep
+ * who held the seat — over up to a year, so whoever takes the seat next can read where it stands.
+ *
  * The choice rides in the page address so a link reopens the same report. The address is read-write only
  * from the page's own path — this file names no page route.
  */
@@ -53,6 +57,7 @@ import {
 } from "@/lib/phoenix-crm/visit-report-filters";
 import {
   VISIT_REPORT_CATEGORIES,
+  VISIT_REPORT_MAX_DAYS_CUSTOMER,
   VISIT_REPORT_SAVED_VIEWS_MAX,
   VISIT_REPORT_STARTER_SETS,
   VISIT_REPORT_VIEW_NAME_MAX,
@@ -60,6 +65,7 @@ import {
   visitReportFieldsFor,
   visitReportStarterFields,
   type VisitReportSavedView,
+  type VisitReportScopeCustomer,
   type VisitReportScopeView,
   type VisitReportTargetKind,
   type VisitReportView,
@@ -68,17 +74,20 @@ import {
 export type VisitReportInitial = {
   /** `rep:<seat id>`, `district:<seat id>` or `manager:<hr id>`, as the picker's own value. */
   target: string;
+  /** One doctor or account of that rep or district, by its id; empty for all of them. */
+  customer: string;
   from: string;
   to: string;
   fields: string[];
   apply: boolean;
 };
 
-type Applied = { kind: VisitReportTargetKind; id: string; from: string; to: string; fields: string[] };
+type Applied = { kind: VisitReportTargetKind; id: string; customer: string | null; from: string; to: string; fields: string[] };
 
 const REPORT_ENDPOINT = "/api/phoenix-crm/visit-report";
 const EXPORT_ENDPOINT = "/api/phoenix-crm/visit-report/export";
 const VIEWS_ENDPOINT = "/api/phoenix-crm/visit-report/views";
+const CUSTOMERS_ENDPOINT = "/api/phoenix-crm/visit-report/customers";
 
 /**
  * The last choice of fields, in THIS browser only — a convenience. The saved views are the durable store,
@@ -128,6 +137,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
   const offeredKeys = useMemo(() => new Set(offered.map((field) => field.key)), [offered]);
 
   const [target, setTarget] = useState(initial.target);
+  const [customer, setCustomer] = useState(initial.customer);
   const [from, setFrom] = useState(initial.from || scope.defaults.from);
   const [to, setTo] = useState(initial.to || scope.defaults.to);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
@@ -150,6 +160,13 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
   const resultRef = useRef<HTMLDivElement | null>(null);
 
   const parsedTarget = splitTarget(target);
+  // A manager's report is about the manager; one doctor or account is chosen on a rep or a district.
+  const offersCustomer = parsedTarget !== null && parsedTarget.kind !== "manager";
+  const customers = useCrmGet<VisitReportScopeCustomer[]>(
+    offersCustomer && parsedTarget ? crmUrl(CUSTOMERS_ENDPOINT, { id: parsedTarget.id, kind: parsedTarget.kind }) : null,
+    "customers",
+  );
+  const chosenCustomer = offersCustomer && customer ? customer : null;
 
   const toggleField = (key: string, on: boolean) =>
     setSelected((current) => {
@@ -193,7 +210,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       try {
         const answer = await crmPost<VisitReportView>(
           REPORT_ENDPOINT,
-          { fields: choice.fields, from: choice.from, id: choice.id, kind: choice.kind, to: choice.to },
+          { customer: choice.customer, fields: choice.fields, from: choice.from, id: choice.id, kind: choice.kind, to: choice.to },
           "view",
         );
         setView(answer);
@@ -209,6 +226,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
           target: `${choice.kind}:${choice.id}`,
           to: choice.to,
         });
+        if (choice.customer) params.set("customer", choice.customer);
         window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
       } catch (cause) {
         setError(messageOf(cause));
@@ -224,7 +242,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       setError("Choose a rep, a manager or a district first.");
       return;
     }
-    const period = resolveVisitReportPeriod({ cairoToday: scope.cairoToday, from, kind: parsedTarget.kind, to });
+    const period = resolveVisitReportPeriod({ cairoToday: scope.cairoToday, customer: chosenCustomer !== null, from, kind: parsedTarget.kind, to });
     if (!period.ok) {
       setError(period.error);
       return;
@@ -234,6 +252,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       return;
     }
     void run({
+      customer: chosenCustomer,
       fields: offered.filter((field) => selected.has(field.key)).map((field) => field.key),
       from: period.from,
       id: parsedTarget.id,
@@ -253,7 +272,10 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       const keys = offered.filter((field) => initial.fields.includes(field.key)).map((field) => field.key);
       // Deferred a tick: the report's own state is set by `run`, and an effect must not set state in the same
       // breath it runs (react-hooks/set-state-in-effect). No cleanup, so a development double-run still fires once.
-      if (keys.length > 0) queueMicrotask(() => void run({ fields: keys, from: initial.from, id: linked.id, kind: linked.kind, to: initial.to }));
+      const linkedCustomer = linked.kind !== "manager" && initial.customer ? initial.customer : null;
+      if (keys.length > 0) {
+        queueMicrotask(() => void run({ customer: linkedCustomer, fields: keys, from: initial.from, id: linked.id, kind: linked.kind, to: initial.to }));
+      }
       return;
     }
     if (initial.fields.length > 0) return;
@@ -302,8 +324,15 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       { from: shiftIsoDay(scope.cairoToday, -6), label: "Last 7 days", to: scope.cairoToday },
       { from: `${scope.cairoToday.slice(0, 7)}-01`, label: "This month", to: scope.cairoToday },
       { from: lastMonth.from, label: "Last month", to: lastMonth.to },
+      // One customer's story runs months, so the year is one press away once one is chosen.
+      ...(chosenCustomer
+        ? [
+            { from: shiftIsoDay(scope.cairoToday, -89), label: "Last 3 months", to: scope.cairoToday },
+            { from: shiftIsoDay(scope.cairoToday, -(VISIT_REPORT_MAX_DAYS_CUSTOMER - 1)), label: "Last 12 months", to: scope.cairoToday },
+          ]
+        : []),
     ];
-  }, [scope.cairoToday]);
+  }, [chosenCustomer, scope.cairoToday]);
 
   const downloadHref = applied
     ? crmUrl(EXPORT_ENDPOINT, {
@@ -312,6 +341,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
         id: applied.id,
         kind: applied.kind,
         to: applied.to,
+        ...(applied.customer ? { customer: applied.customer } : {}),
         ...visitReportFilterParams(filter),
       })
     : null;
@@ -320,8 +350,8 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
   const dirty = useMemo(() => {
     if (!applied) return false;
     const now = offered.filter((field) => selected.has(field.key)).map((field) => field.key).join(",");
-    return `${applied.kind}:${applied.id}` !== target || applied.from !== from || applied.to !== to || applied.fields.join(",") !== now;
-  }, [applied, from, offered, selected, target, to]);
+    return `${applied.kind}:${applied.id}` !== target || applied.customer !== chosenCustomer || applied.from !== from || applied.to !== to || applied.fields.join(",") !== now;
+  }, [applied, chosenCustomer, from, offered, selected, target, to]);
 
   useEffect(() => {
     if (view) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -354,7 +384,15 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
         <CrmBlock title="1 · Who and when">
           <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <CrmField htmlFor="visit-report-target" label="Rep, manager or district">
-              <CrmSelect id="visit-report-target" onChange={(event) => setTarget(event.target.value)} value={target}>
+              <CrmSelect
+                id="visit-report-target"
+                onChange={(event) => {
+                  setTarget(event.target.value);
+                  // A doctor of the last rep is not on the next one's list.
+                  setCustomer("");
+                }}
+                value={target}
+              >
                 <option value="">Choose a rep, a manager or a district</option>
                 {scope.reps.map((rep) => (
                   <option key={`rep:${rep.id}`} value={`rep:${rep.id}`}>
@@ -395,6 +433,39 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
               />
             </CrmField>
           </div>
+          {offersCustomer ? (
+            <div className="mt-3 grid min-w-0">
+              <CrmField
+                hint={
+                  customers.error
+                    ? customers.error
+                    : customers.data === null
+                      ? "Reading the customers."
+                      : `${countText(customers.data.length)} on the list, waiting for validation or met outside it. Choose one to read that customer's visits alone, by every rep who held the territory, over up to 12 months.`
+                }
+                htmlFor="visit-report-customer"
+                label="Customer"
+              >
+                <CrmSelect
+                  disabled={customers.data === null}
+                  id="visit-report-customer"
+                  onChange={(event) => setCustomer(event.target.value)}
+                  value={customer}
+                >
+                  <option value="">Every customer</option>
+                  {(customers.data ?? []).map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.label}
+                    </option>
+                  ))}
+                  {/* A link may name a customer the list no longer offers (dropped since): keep it chosen, by name unknown. */}
+                  {customer && customers.data && !customers.data.some((entry) => entry.id === customer) ? (
+                    <option value={customer}>The customer in the link</option>
+                  ) : null}
+                </CrmSelect>
+              </CrmField>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {chips.map((chip) => (
               <CrmButton
@@ -410,7 +481,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
             ))}
           </div>
           <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
-            One rep up to 92 days; a manager or a district up to 31 days. A manager&apos;s report holds every visit a rep logged
+            One rep up to 92 days; a manager or a district up to 31 days; one customer up to 12 months. A manager&apos;s report holds every visit a rep logged
             with that manager and, under the manager&apos;s own name, the visits made alone — those count in no rep&apos;s figure. Days after today are
             cut off.
           </p>
