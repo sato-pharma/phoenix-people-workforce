@@ -53,6 +53,7 @@ import {
   type RespreadMergeableSplit,
   type RespreadRow,
 } from "@/lib/sales/contribution-respread";
+import { classifyCustomerChannel, isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 import { isEpdaBonusDeductionActive } from "@/lib/sales/import-epda-bonus-deduction";
 import { areaProductKey } from "@/lib/sales/store-sales-city-split";
 
@@ -133,9 +134,16 @@ export function buildBulkAllocation(
  * RULE 2, from the October 2026 closing (owner, 2026-11-04) — see EPDA_CONTRIBUTION_START_PERIOD.
  *
  * Per product: EPDA-BULK's and EPDA-Pharmacies' units of it leave their invoiced areas and come back
- * by each area's share of the RETAIL units of that same product, retail being every other
- * distributor's rows (the main EPDA book included) and never a direct order. A product no retail
- * distributor sold this month has nothing to copy and keeps its invoiced areas.
+ * by each area's share of the PHARMACY units of that same product, from every other distributor
+ * (the main EPDA book included) and never a direct order. A product no pharmacy bought through
+ * another distributor this month has nothing to copy and keeps its invoiced areas.
+ *
+ * 🔴 PHARMACIES ONLY — STORES AND HOSPITALS ARE NEVER A WEIGHT (owner, 2026-11-04: "of the retail
+ * exclude stores and put the contribution on pharmacies only", for both books, hospitals left out).
+ * A row is a pharmacy when the repo's one customer classifier says so (`classifyCustomerChannel`)
+ * AND the closing's own warehouse rule for the month does not call it a store
+ * (`isStoreCustomerForPeriod`, the rule the city split and the rep ranking's Stores column ask), so
+ * a warehouse can never weigh here while being carved out as a store anywhere else.
  *
  * The rows arrive already reduced by the 15% and 30% (import-epda-bonus-deduction.ts), and they are
  * spread in whole units, so each area's EPDA share is a whole number too.
@@ -154,7 +162,7 @@ function buildEpdaContribution(
     const productCode = String(row.productCode ?? "").trim().toUpperCase();
     const group = byProduct.get(productCode) ?? { base: [], moved: [] };
     if (isEpdaContributionDistributor(row.distributorCode)) group.moved.push(row);
-    else group.base.push(row);
+    else if (isPharmacyRow(row, period)) group.base.push(row);
     byProduct.set(productCode, group);
   }
   return combineContributionRespreads(
@@ -172,6 +180,11 @@ function buildEpdaContribution(
  * booked. The EPDA rows themselves pass through the city split untouched (`isBulkAllocatedRow`), so
  * what moves is the same either way. September and earlier keep the invoiced rows they were
  * published with, and a month the city rule does not cover has no split rows to give.
+ *
+ * Since the same day's pharmacies-only ruling (`isPharmacyRow`) the city split cannot change a
+ * weight — it moves stores only, and a store no longer weighs — so these rows give the same shares
+ * as the invoiced ones. They are still the input, so the weights stay "as each rep's closing shows"
+ * should the city rule ever reach a pharmacy.
  */
 export function bulkAllocationRows<T>(
   rows: readonly T[],
@@ -179,6 +192,12 @@ export function bulkAllocationRows<T>(
   period: string | null | undefined,
 ): readonly T[] {
   return isEpdaContributionActive(period) && citySplitRows ? citySplitRows : rows;
+}
+
+/** A weight row for rule 2: a pharmacy by the one classifier, and not a store by the month's warehouse rule. */
+function isPharmacyRow(row: BulkAllocationRow, period: string | null | undefined): boolean {
+  if (classifyCustomerChannel(row.clientName, row.clientCode, row.distributorCode) !== "pharmacy") return false;
+  return !isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period, row.officialLine);
 }
 
 /** A row rule 2 reads at all: counted, not direct, not confidential, one of its products on its lines. */
