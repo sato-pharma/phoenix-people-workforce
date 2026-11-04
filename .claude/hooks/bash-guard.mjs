@@ -2113,7 +2113,7 @@ try {
       const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1];
       // 🔴 C10 AND C13 ARE PHOENIX'S OWN CI-COST RULES, SO THEY JUDGE PHOENIX'S PRs AND NO OTHER.
       // Until 2026-10-27 both took the bare number and asked `gh pr view <N>` from the session's
-      // folder — this repository — so `gh pr merge 50 --repo it-gawish-hr/phoenix-next` was judged
+      // folder — this repository — so `gh pr merge 50 --repo <owner>/phoenix-next` was judged
       // as PHOENIX's PR #50: its size, its checks, its roll-ups. Seen that day merging phoenix-next
       // 49, sato-anti-infective-app 6 and FTP-Portal 157. A `--repo`/`-R` naming any other
       // repository now steps both clauses aside; naming Phoenix itself keeps them judging, and their

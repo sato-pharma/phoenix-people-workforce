@@ -132,7 +132,7 @@ export function runRailwayDeployTriggersTests() {
     4,
     "🔴 sources and triggers both on the old owner agree with each other, so only the owner check can see it",
   );
-  assert.deepEqual(findTriggerGaps(liveFixed(), { owner: "GawishTheIT" }), [], "an owner differs from GitHub's casing, not from itself");
+  assert.deepEqual(findTriggerGaps(liveFixed(), { owner: "OMAR-3-XX" }), [], "an owner differs from GitHub's casing, not from itself");
 
   // Every project named is read once, the Phoenix one first, so the website's services are covered too.
   assert.deepEqual(projectIdsFrom({ RAILWAY_PROJECT_ID: "p1", RAILWAY_PROJECT_IDS: "p1, p2\np3" }), ["p1", "p2", "p3"]);
