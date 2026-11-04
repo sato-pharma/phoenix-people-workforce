@@ -11633,7 +11633,7 @@ await runTest(
   runSharedReadCacheTests,
 );
 await runTest(
-  "the four reference lists - employees, lines, areas and departments - are read once a minute per process and not by everyone: the employee superset names identity and placement but no compensation column at all, every list is keyset-paged on its own primary key with no cap, exactly the fourteen display readers and the two write paths import the module while payroll, automated payroll, deductions, daily deductions, attendance, notifications, approvals, marketing requests, sales, direct orders, auth and the employee importer keep their own fresh reads, each table has its own namespace so forgetting one list leaves the other three served, and the employee directory and the employee importer drop the copy where they already invalidate everything else",
+  "the four reference lists - employees, lines, areas and departments - are read once a minute per process and not by everyone: the employee superset names identity and placement but no compensation column at all, every list is keyset-paged on its own primary key with no cap, exactly the fifteen display readers and the two write paths import the module while payroll, automated payroll, deductions, daily deductions, attendance, notifications, approvals, marketing requests, sales, direct orders, auth and the employee importer keep their own fresh reads, each table has its own namespace so forgetting one list leaves the other three served, and the employee directory and the employee importer drop the copy where they already invalidate everything else",
   runReferenceListCacheTests,
 );
 await runTest(
