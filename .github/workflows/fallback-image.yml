@@ -232,9 +232,26 @@ jobs:
           docker image inspect "${pulled}" --format 'base image digest: {{index .RepoDigests 0}}' >> "$GITHUB_STEP_SUMMARY" || true
           echo "base image source: ${pulled}" >> "$GITHUB_STEP_SUMMARY"
 
+      # 🔴 THE BUILD RUNS THE RUNNER OUT OF MEMORY, AND IT READS AS A 45-MINUTE TIMEOUT. On 4 Nov 2026 three builds in a row
+      # died: one at "Collecting page data" with "The runner has received a shutdown signal", two with the Build step still
+      # in_progress at the limit and no log at all, because the runner had stopped answering. ci.yml's Build step measured the
+      # same stage on the same runner on 23 Oct (2 CPUs, 7.9 GB RAM, 3 GB swap; one `next build` process holds 6.1 GB there and
+      # its worker adds 1.0 GB). CI also splits the build in two; this route cannot, because it builds the Dockerfile Railway
+      # builds, one process, so swap is its whole safety net. A build container uses the host's swap.
+      - name: Add swap for the one-process build
+        run: |
+          sudo fallocate -l 6G /mnt/phx-build-swap && sudo chmod 600 /mnt/phx-build-swap \
+            && sudo mkswap /mnt/phx-build-swap >/dev/null && sudo swapon /mnt/phx-build-swap \
+            || echo "::warning::extra swap could not be added; building with the runner's own 3 GB"
+          free -m
+
       - name: Build the image (the repository's own Dockerfile, unchanged)
         run: |
           set -euo pipefail
+          # Memory every 30 seconds, because a runner that runs out takes its own explanation with it.
+          ( while sleep 30 >/dev/null 2>&1; do echo "memory: $(free -m | awk '/^Mem:/{print "available " $7 " MB"} /^Swap:/{print "swap used " $3 " of " $2 " MB"}' | paste -sd' ')"; done ) &
+          memory_watch=$!
+          trap 'kill "$memory_watch" 2>/dev/null || true' EXIT
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/phoenix-people-workforce"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
           set -a
