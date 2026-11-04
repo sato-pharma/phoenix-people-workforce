@@ -164,7 +164,7 @@
     "docx-preview": "^0.4.0",
     "dommatrix": "^1.0.3",
     "exceljs": "^4.4.0",
-    "framer-motion": "^14.4.0",
+    "framer-motion": "^14.7.1",
     "google-auth-library": "^11.1.0",
     "html-to-image": "^1.11.13",
     "imapflow": "^2.1.2",
