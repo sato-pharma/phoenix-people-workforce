@@ -13,6 +13,12 @@ import {
   isRepRankingLine,
 } from "@/lib/sales/closing-rep-ranking-export";
 import { rankingFiltersAreEmpty } from "@/lib/sales/closing-rep-ranking-filter";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import {
+  isSalesPeriodReleased,
+  loadSalesReleaseKeys,
+  readsUnpublishedSalesTools,
+} from "@/lib/sales/unpublished-sales-access";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
 import {
@@ -150,11 +156,20 @@ export async function POST(request: Request) {
       period: details.period,
     }).catch(() => null);
     const offered = scopedPortal?.availablePeriods ?? [];
+    // A workbook is a file that travels, so only the Super Admin and the SFE Manager download one
+    // before publication (owner, 2026-11-04: "close the rep ranking export until published too"). The
+    // CEO, Finance and Marketing keep the older months, and every month in the file's trend is
+    // published, so a published month cannot carry an unpublished one beside it.
+    const lineCode = resolveTargetLineCode(details.line);
+    const publishedKeys = readsUnpublishedSalesTools(access) ? null : await loadSalesReleaseKeys();
+    const released = publishedKeys
+      ? offered.filter((month) => isSalesPeriodReleased(month, lineCode, publishedKeys))
+      : offered;
     // Refused in plain words, and FIRST. Without this the builder would answer an unpublished month
     // with "cannot be built": `loadPortalMonthlyClosing` substitutes the newest published month,
     // and the builder drops a month that came back under a different name. Same sentence the
     // portal's own gate uses.
-    if (!offered.includes(details.period)) {
+    if (!released.includes(details.period)) {
       return Response.json(
         { error: unpublishedClosingMessage(details.line, details.period) },
         { status: 403 },
@@ -168,7 +183,7 @@ export async function POST(request: Request) {
     // distinct warehouse customers, never a customer name or code.
     const ranked = await buildScopedRepRankingExport({
       access,
-      availablePeriods: offered,
+      availablePeriods: released,
       includeUnpublished: readsUnpublished,
       filters,
       line: details.line,

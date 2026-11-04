@@ -340,6 +340,9 @@ export function runUnpublishedSalesNeverShownTests() {
   before("app/api/sales/monthly-import/batches/route.ts", "readsUnpublishedSalesTools(access)", "listSourceOfSalesUploadBatches()", "the upload list prints totals, and sales:read reaches every role");
   before("app/api/sales/truth-check/route.ts", "readsUnpublishedSalesTools(access)", "loadSalesTruthReport(", "the truth check reads any month, and sales:read reaches every role");
   before("app/api/sales/monthly-closing/premium-export/route.ts", "isSalesPeriodReleased(", "fillClosingEngine(", "a workbook must be refused before it is filled");
+  before("app/api/sales/monthly-closing/rep-ranking-export/route.ts", "if (!released.includes(details.period)) {", "await buildScopedRepRankingExport({", "the rep ranking workbook must be refused before it is built");
+  pin("app/api/sales/monthly-closing/rep-ranking-export/route.ts", "offered.filter((month) => isSalesPeriodReleased(month, lineCode, publishedKeys))", "only the Super Admin and the SFE Manager download it early");
+  pin("app/api/sales/monthly-closing/rep-ranking-export/route.ts", "availablePeriods: released", "and the trend is built from this list, so a published month cannot carry an unpublished one");
   before("app/api/sales/monthly-closing/premium-export/pdf/route.ts", "isSalesPeriodReleased(", "await renderRepCardPdf(", "the PDF beside the workbook must refuse too");
   assert.equal(
     source("src/lib/sales/monthly-closing-publication.ts").split("invalidateAchievementStampedCaches(").length - 1,

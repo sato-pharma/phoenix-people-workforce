@@ -127,7 +127,9 @@ export async function buildScopedRepRankingExport(input: {
    * Manager. Added 2026-10-13, when he asked why the admin download refused September and every
    * Anti Infective month turned out to be unpublished — September since 9 October, July and August
    * since the 12th — so a publish-gated builder could produce nothing at all for him. The portal
-   * export never passes it: there the publish gate is the whole point.
+   * export never passes it: there the publish gate is the whole point. Since 2026-11-04 the admin
+   * route also narrows `availablePeriods` to published months for all but the Super Admin and the SFE
+   * Manager, and that list is what the trend is built from.
    */
   includeUnpublished?: boolean;
   /**
