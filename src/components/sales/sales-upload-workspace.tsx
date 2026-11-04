@@ -181,11 +181,10 @@ function BonusDeductionTable({ lines }: { lines: EpdaDeductionLine[] }) {
   return (
     <div className="overflow-hidden rounded-[6px] border border-phx-line lg:col-span-2">
       <div className={darkHead}>Actual and reduced</div>
-      <CrmTable columns={["28%", "12%", "15%", "15%", "15%", "15%"]}>
+      <CrmTable columns={["24%", "19%", "19%", "19%", "19%"]}>
         <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
           <tr>
             <th className="break-words px-3 py-1.5">Product</th>
-            <th className="break-words px-3 py-1.5 text-right">Deducted</th>
             <th className="break-words px-3 py-1.5 text-right">Actual units</th>
             <th className="break-words px-3 py-1.5 text-right">Reduced units</th>
             <th className="break-words px-3 py-1.5 text-right">Actual value</th>
@@ -195,8 +194,10 @@ function BonusDeductionTable({ lines }: { lines: EpdaDeductionLine[] }) {
         <tbody>
           {lines.map((line) => (
             <tr className="border-t border-[#FFE8D6]" key={line.productCode}>
-              <td className="break-words px-3 py-1.5 align-top font-semibold text-phx-ink">{line.productName}</td>
-              <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{line.percent}%</td>
+              <td className="break-words px-3 py-1.5 align-top">
+                <span className="block font-semibold text-phx-ink">{line.productName}</span>
+                <span className="block tabular-nums text-phx-ink-2">{line.percent}% deducted</span>
+              </td>
               <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{num(line.actualUnits)}</td>
               <td className="break-words px-3 py-1.5 text-right align-top font-black tabular-nums text-phx-ink">{num(line.reducedUnits)}</td>
               <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{money(line.actualValue)}</td>
