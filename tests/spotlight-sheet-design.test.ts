@@ -488,3 +488,52 @@ export function runSpotlightSheetDesignTests() {
   assert.ok(injected.includes("&lt;b&gt;Ali&lt;/b&gt; &amp; Co"), "a name is text, never markup");
   assert.ok(!injected.includes("<b>Ali</b>"), "an unescaped tag from a name would restyle or break the sheet");
 }
+
+// ── NO SALES VALUE (owner, 2026-11-04) ────────────────────────────────────────────────────────────
+// "Rank by achievement without showing the sales value." A sheet that prints a target beside a
+// percentage gives the sales away, so the option hides EVERY EGP figure, sales and target alike.
+export async function runSpotlightHideValueTests() {
+  const { parseSelection } = await import("../src/lib/spotlight/request.ts");
+  const { normaliseSelection } = await import("../src/lib/spotlight/service.ts");
+
+  const base = {
+    window: { kind: "month", key: "2026-10" },
+    subject: "rep",
+    filters: {},
+    rankBy: "value",
+    direction: "top",
+    limit: 5,
+    layout: "both",
+  };
+
+  // The request: only an explicit false hides the money, so every existing caller keeps its sheet.
+  assert.equal(parseSelection(base).showValue, undefined, "absent means shown");
+  assert.equal(parseSelection({ ...base, showValue: true }).showValue, undefined, "true means shown");
+  assert.equal(parseSelection({ ...base, showValue: "no" }).showValue, undefined, "only a boolean false hides");
+  assert.equal(parseSelection({ ...base, showValue: false }).showValue, false, "false hides the money");
+
+  // The service: no value means no ranking by it, whatever the caller asked for.
+  const forced = normaliseSelection({ ...parseSelection({ ...base, showValue: false }), rankBy: "value" });
+  assert.equal(forced.rankBy, "achievement", "a sheet with no sales value must be ranked by achievement");
+  assert.equal(
+    normaliseSelection(parseSelection(base)).rankBy,
+    "value",
+    "a sheet that shows the value keeps the ranking it was asked for",
+  );
+
+  // The sheet: leaderboard AND hero pages print no money at all.
+  const rows = people(3);
+  const shown = spotlightDocumentHtml(result(rows, "both"));
+  const hiddenResult = result(rows, "both");
+  hiddenResult.selection = { ...hiddenResult.selection, rankBy: "achievement", showValue: false };
+  const hidden = spotlightDocumentHtml(hiddenResult);
+
+  assert.ok(shown.includes("EGP") && shown.includes('class="lb-value"'), "the default sheet still prints sales");
+  assert.ok(!hidden.includes("EGP"), "a sheet with no sales value prints no EGP figure anywhere, sales or target");
+  assert.ok(!hidden.includes('class="lb-value"'), "the leaderboard drops its Sales column");
+  assert.ok(!/>Sales</.test(hidden), "no Sales heading is left over an empty column");
+  assert.ok(!hidden.includes("Rank by sales value") && !hidden.includes("by sales value"), "the sheet never says it ranked by value");
+  for (let i = 1; i <= 3; i += 1) {
+    assert.ok(hidden.includes(`Subject Number ${i}<`), `Subject Number ${i} is still on the sheet`);
+  }
+}
