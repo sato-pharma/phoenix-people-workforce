@@ -2648,7 +2648,7 @@ import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
-import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
+import { runSpotlightHideValueTests, runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runSpotlightRepSelfTests } from "./spotlight-rep-self.test.ts";
 import { runSpotlightPortalLookTests } from "./spotlight-portal-look.test.ts";
 import { runPortalSingleHeaderTests } from "./portal-single-header.test.ts";
@@ -10323,6 +10323,11 @@ await runTest(
 await runTest(
   "spotlight sheet: the ranking paginates instead of clipping, sheets are numbered and balanced, nothing rasterises",
   runSpotlightSheetDesignTests,
+);
+
+await runTest(
+  "spotlight sheet: with the sales value unticked it ranks by achievement and prints no EGP figure",
+  runSpotlightHideValueTests,
 );
 
 await runTest(
