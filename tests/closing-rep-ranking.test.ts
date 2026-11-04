@@ -653,6 +653,7 @@ export async function runClosingRepRankingTests(): Promise<void> {
   await assertTheFilterNarrowsTheWholeFile();
 
   assertAdminRepRankingButton();
+  assertSpreadEpdaRowsAreNotStores();
 }
 
 /**
@@ -672,6 +673,23 @@ export async function runClosingRepRankingTests(): Promise<void> {
  * the defect this catches. One line list only — `lineHasOfficeChannel` — so a second list here
  * could not drift from the one the upload enforces.
  */
+/**
+ * AN EPDA ROW THE CLOSING SPREAD IS NEVER CARVED AS STORES AT ITS INVOICED AREA (owner's EPDA rule 2,
+ * 2026-11-04, from the October 2026 closing). The matrix has moved it to the areas that earned it, so
+ * a Stores figure at the invoiced area would drive that area's Distributor column below zero.
+ */
+function assertSpreadEpdaRowsAreNotStores(): void {
+  const row = (period: string, distributorCode: string) => ({
+    areaCode: "AB1", clientCode: "W1", clientName: "مخزن الحجاز", distributorCode, includedInClosing: true,
+    invoicePeriod: period, isDirect: false, officialLine: LINE, productCode: "SA001", salesValue: 9_000,
+  });
+  const october = carveChannelsByArea([row("2026-10", "EP-BK"), row("2026-10", "IS")] as unknown as ClosingDetailRow[], LINE);
+  assert.equal(october.stores.get("2026-10|AB1|SA001"), 9_000, "only the other distributor's warehouse row is Stores in October");
+  assert.equal(october.warehouseCustomers.size, 1, "and the spread EPDA customer is not counted as a warehouse");
+  const september = carveChannelsByArea([row("2026-09", "EP-BK")] as unknown as ClosingDetailRow[], LINE);
+  assert.equal(september.stores.get("2026-09|AB1|SA001"), 9_000, "September spread no Saginko, so its warehouse row stays Stores");
+}
+
 async function assertOfficeIsCnsThirdChannel(): Promise<void> {
   const rows = [
     { areaCode: "DK1", clientCode: "C9", clientName: "Sayed Pharmacy", distributorCode: "IS", includedInClosing: true, invoicePeriod: PERIOD, isDirect: false, productCode: "RF500", salesValue: 70_000 },

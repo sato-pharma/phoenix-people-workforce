@@ -3237,6 +3237,40 @@ He settled the rest in answers the same day: Ivyronc 30% (his other example, 100
 
 Each area × product total rounds once and its rows take whole shares by largest remainder, so a one-unit pharmacy line can store 0 or 1. EPDA-BULK's Ivyronc is one group across the whole book, because the closing ignores its invoiced area and spreads it by contribution; from October that spread lands whole units too (`wholeUnits` in `contribution-respread.ts`).
 
+## EPDA rule 2 — the EPDA books spread by each product's retail units, owner rule, 2026-11-04
+
+His words, typed: *"okay this was rule number one rule number 2 will be that u will get the total retail sales of every rep without epda bulk or epda-pharmacies then you will distribute the epda sales based on the contribution per area in retail sales but do not forget the 15% and 30% rule then add the direct sales and in exported xlsx sheet you will add a separate column that shows epda sales units"*.
+
+His answers the same day, as multiple choice: the products are **the three Sato items** (Ivyronc, Royafloxacin, Saginko; Lacto Advanced keeps its invoiced area); the share is measured by **the same product's units**; **both books** are spread; and for the column: *"never show that there are reduced units in the xlsx closing sheet, you will add a column per product share for epda after the spread"*, in **all three** downloads (normal closing, premium closing, rep ranking).
+
+### The rule
+
+- From the October 2026 closing on, EPDA-BULK (`EP-BK`) and EPDA-Pharmacies (`EP-PHS`) rows of Ivyronc `IV001` (Pedia), Royafloxacin `RO001` and Saginko `SA001` (Anti Infective) leave their invoiced areas.
+- Each product comes back by each area's share of that product's RETAIL units: every other distributor's included, non-confidential rows, the main EPDA book (`EP`) included, never a direct order. Direct is then added on top, as always.
+- Whole units per area. The rows are already reduced by rule 1 (above), so the spread moves reduced units and never deducts twice.
+- A product no retail distributor sold that month keeps its invoiced areas.
+- September keeps the rule it was published with (EPDA-BULK Ivyronc only, by Pedia value).
+
+### The EPDA tab
+
+Every closing download (the normal closing, admin and portal, the premium closing and the rep ranking) carries a tab named `EPDA` from October: region and area rows, one "<product> EPDA units" column per product, a total per column and never across products. It is drawn from one module, `src/lib/sales/closing-epda-sheet.ts`, fed by `epdaUnits` from `loadClosingStoreSplit` (the IN legs of the whole month's spread), and drawn on each reader's own scoped matrix. Nothing on it names a deduction, a bonus or a percentage. It is a tab rather than a column inside the matrix because the premium engine's matrix is a fixed template. A product with no retail sales that month was not spread, and the tab shows its units on the areas it stayed on, so the tab always holds every EPDA unit the closing holds.
+
+### The rows a reader sees carry the same spread
+
+`applyCreditedAreaView` (`closing-main-stores.ts`) splits each moved EPDA row into one share per receiving area, by that area's part of the product's spread, so the Details tab and every scoped portal file (rebuilt from those rows by `buildPortalClosingWorkbook`) put each area's EPDA units where the matrix does. Without it a District Manager's file disagreed with his screen by his whole EPDA share. The closing's own spread reads the raw rows (system access, source revealed), never this view, so it is never applied twice. Pinned by case 12 of `tests/closing-bulk-allocation.test.ts`.
+
+### The rep ranking's channel columns
+
+`carveChannelsByArea` (`closing-rep-ranking.ts`) never counts a spread EPDA row as Stores at its invoiced area. The matrix has already moved it, so a Stores figure there would drive that area's Distributor column below zero and inflate every receiving area's. Left out of Stores, the spread units read as distributor book wherever they landed. Pinned by `assertSpreadEpdaRowsAreNotStores` in `tests/closing-rep-ranking.test.ts`.
+
+### After the deploy
+
+`au.monthly_store_split_net` (what attribution and incentives read) is rewritten by every upload and by the publish gate, so October corrects itself on the next upload; run the period refresh once after the deploy anyway (`writeStoreSplitNetForPeriods` for 2026-10, then `phx_refresh_attribution_for_period`), so Anti Infective's attribution does not wait for one.
+
+### Known residual
+
+Rule 1 rounds each invoiced area's total once (his words: "rounding per area total"), and rule 2 then pools those totals, so a book can carry a few units more than one whole-book rounding. October, measured: Saginko 3,002 against 3,528 × 85% = 2,999; Royafloxacin 2,952 against 2,949.5; Pharmacies Ivyronc 212 against 211.4. Bulk Ivyronc is rounded as one book, 3,190. Changing it means changing rule 1, which is his call.
+
 ## No distributor's bonus is counted from September — owner rule, 2026-09-18
 
 His words, profanity left out: *"logged and published months, we can't touch them. So if you already calculated bonus in August … don't touch it. Starting from September, never a bonus in any … distributor is counted."* It restates what he said on 2026-09-07, the ruling that also took the discount factor out: *"we neglect the bonus and the value in any distributor sheet, we take the units and multiply by factory"* (quoted in `src/lib/sales/monthly-closing-details.ts`).
@@ -8116,7 +8150,8 @@ to fire, and the file restored byte-for-byte:
   spread, no-contribution-base, the city rule's refusal of an Office row, largest-remainder on a
   return, and the fold keeping `officeNet` isolated;
 - all three derivation points, the cache key (renamed to
-  `closing-store-split-with-bulk-and-office-respread`, so an entry written by the previous deploy can
+  `closing-store-split-with-bulk-and-office-respread`, and again on 2026-11-04 to
+  `closing-store-split-with-bulk-office-respread-and-epda-rule-2`, so an entry written by the previous deploy can
   never be read back as this shape), attribution on both measures and its period gate, and each of
   the three Office grids.
 

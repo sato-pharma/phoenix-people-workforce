@@ -18,7 +18,7 @@
 // reports it, and the workbook states it on the Total sheet as its own reconciliation line, so the
 // Difference row still proves the audit sheet reproduces the headline.
 
-import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
+import { buildBulkAllocation, epdaUnitsLanded, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
 import { buildOfficeRespread, mergeOfficeRespreadIntoSplit } from "@/lib/sales/closing-office-respread";
 import type { ClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import {
@@ -69,6 +69,8 @@ export type ClosingStoreSplitExport = {
    * would otherwise debit a brick for a customer the Closing Matrix left alone.
    */
   exemptStoreValueByBrick: ReadonlyMap<string, number>;
+  /** Per area|product, the EPDA units rule 2 landed there, whole month. For the EPDA tab only. */
+  epdaUnits: ReadonlyMap<string, number>;
 };
 
 /**
@@ -101,6 +103,7 @@ export function prepareClosingStoreSplit(
     movements: split.movements,
     net: split.net,
     officeNet: split.officeNet,
+    epdaUnits: split.epdaUnits ?? new Map(),
   };
 }
 
@@ -125,11 +128,13 @@ function deriveSplit(
   // that disagree with the screen's by exactly the Office drift, on the one path that exists because
   // the two once disagreed. It also carries the Office-only net out, which this path's Office grid
   // needs — see ClosingStoreSplitExport.officeNet.
-  return mergeOfficeRespreadIntoSplit(
+  const bulk = buildBulkAllocation(monthRows.rows, monthRows.period, monthRows.line);
+  const merged = mergeOfficeRespreadIntoSplit(
     mergeBulkAllocationIntoSplit(
       { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
-      buildBulkAllocation(monthRows.rows, monthRows.period, monthRows.line),
+      bulk,
     ),
     buildOfficeRespread(monthRows.rows, monthRows.period, monthRows.line),
   );
+  return { ...merged, epdaUnits: epdaUnitsLanded(bulk, monthRows.period, monthRows.rows) };
 }

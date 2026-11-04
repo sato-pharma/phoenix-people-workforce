@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
 import { directRowsCarryOwnArea, isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { CLOSING_EPDA_SHEET_NAME, closingEpdaSheetSpec } from "@/lib/sales/closing-epda-sheet";
 import { normalizeCode } from "@/lib/sales/master-data/definitions";
 import {
   emptyClosingCell,
@@ -3513,6 +3514,34 @@ function writeDashboardSheet(
 // Written as plain VALUES, not SUMIFS. Every xlsx this repo writes is recalculated by Excel on
 // open, and this sheet's figures come from the same office grid the Closing Matrix's "of wh.
 // Office" column was cached with — a live formula here could disagree with it after a single edit.
+// The EPDA tab (owner, 2026-11-04) — the grid is closing-epda-sheet.ts's, shared with the premium and
+// ranking downloads, so the three files cannot disagree about an area's EPDA units.
+function writeEpdaSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, epdaUnits: ReadonlyMap<string, number> | null | undefined) {
+  const spec = closingEpdaSheetSpec({ epdaUnits, matrix, periodLabel: matrix.period ? monthLabel(matrix.period) : null });
+  if (spec === null) return;
+  const sheet = workbook.addWorksheet(sanitizeSheetName(CLOSING_EPDA_SHEET_NAME), { views: [{ state: "frozen", ySplit: 5 }] });
+  bandHeader(sheet, matrix.line, matrix.period, spec.caption, spec.headers.length);
+  const body = spec.records.slice(0, -1);
+  const startRow = 4;
+  writeTable(sheet, startRow, {
+    columns: spec.headers.map((label, index) => ({
+      label,
+      ...(index >= 2 ? { numFmt: "#,##0", right: true } : {}),
+      width: spec.widths[index],
+    })),
+    rows: body,
+    title: "EPDA units by area",
+    totals: spec.records[spec.records.length - 1],
+  });
+  // Region bars in bold, so a region's own line reads as the sum of the areas under it.
+  spec.rowKinds.slice(0, -1).forEach((kind, index) => {
+    if (kind !== "group") return;
+    sheet.getRow(startRow + 2 + index).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
+    });
+  });
+}
+
 function writeOfficeSheet(workbook: ExcelJS.Workbook, office: MonthlyClosingMatrix, note?: string) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Office Allocation"), { views: [{ state: "frozen", xSplit: 2, ySplit: 4 }] });
   const products = office.columns;
@@ -3634,6 +3663,11 @@ export async function buildMonthlyClosingWorkbook(
      * per-store detail cannot be mistaken for the published figure.
      */
     storeSplitFrozen?: boolean;
+    /**
+     * Per area|product, the EPDA units rule 2 landed on each area (owner, 2026-11-04), whole month.
+     * Written as the EPDA tab after the matrix; absent or empty, there is no tab.
+     */
+    epdaUnits?: ReadonlyMap<string, number> | null;
     /**
      * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
      * injected (with the identical store split applied), `directCells` the direct money by region
@@ -3767,6 +3801,7 @@ export async function buildMonthlyClosingWorkbook(
   // read as 42,838. Omitting the sheet says "not available"; the fallback said something false. The
   // portal path below already guarded it this way, so this also makes the two agree.
   if (office) writeOfficeSheet(workbook, office, options?.filterNote);
+  writeEpdaSheet(workbook, matrix, options?.epdaUnits);
   // The master's two halves, immediately beside it: the same money split by channel so the retail
   // business and the direct business can each be read on their own. Both tie back to the master.
   if (options?.channels) {
@@ -4064,6 +4099,11 @@ export async function buildPortalClosingWorkbook(
   details: ClosingDetailsResult,
   /** This viewer's own Office grid, scoped exactly as `matrix` is. Null omits the breakdown. */
   office?: MonthlyClosingMatrix | null,
+  /**
+   * The whole month's EPDA units per area|product (owner, 2026-11-04). The tab is drawn on this
+   * viewer's own matrix, so only his own areas and products appear. Null or empty, no tab.
+   */
+  epdaUnits?: ReadonlyMap<string, number> | null,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
@@ -4106,6 +4146,7 @@ export async function buildPortalClosingWorkbook(
   const officeLayer = lineHasOfficeChannel(rebuiltMatrix.line) ? (office ?? null) : null;
   writeMatrixSheet(workbook, rebuiltMatrix, "Scoped to your own areas, region and products — never company-wide.", officeLayer);
   if (officeLayer) writeOfficeSheet(workbook, officeLayer, "Scoped to your own areas, region and products — never company-wide.");
+  writeEpdaSheet(workbook, rebuiltMatrix, epdaUnits);
   writeTargetAchievementSheet(workbook, rebuiltMatrix);
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);

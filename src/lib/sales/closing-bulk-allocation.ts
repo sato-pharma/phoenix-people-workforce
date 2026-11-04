@@ -40,9 +40,13 @@ import {
   isBulkAllocationActive,
   isBulkAllocationLine,
   isBulkDistributorCode,
+  isEpdaContributionActive,
+  isEpdaContributionDistributor,
+  isEpdaContributionProduct,
 } from "@/lib/sales/bulk-allocation-channel";
 import {
   buildContributionRespread,
+  combineContributionRespreads,
   emptyContributionRespread,
   mergeRespreadIntoSplit,
   type ContributionRespread,
@@ -50,6 +54,7 @@ import {
   type RespreadRow,
 } from "@/lib/sales/contribution-respread";
 import { isEpdaBonusDeductionActive } from "@/lib/sales/import-epda-bonus-deduction";
+import { areaProductKey } from "@/lib/sales/store-sales-city-split";
 
 /**
  * A closing detail row, narrowed to what this rule reads.
@@ -92,9 +97,10 @@ export function buildBulkAllocation(
   if (!isBulkAllocationActive(period)) return emptyContributionRespread();
   // A caller that names the line gets an early exit; one that does not is answered per row below,
   // so a cross-line row set (the export's, before narrowing) still only moves Pedia's bulk.
-  if (line !== undefined && line !== null && !isBulkAllocationLine(line)) {
+  if (line !== undefined && line !== null && !isBulkAllocationLine(line, period)) {
     return emptyContributionRespread();
   }
+  if (isEpdaContributionActive(period)) return buildEpdaContribution(rows, period, line);
 
   const base: BulkAllocationRow[] = [];
   const moved: BulkAllocationRow[] = [];
@@ -121,6 +127,85 @@ export function buildBulkAllocation(
   // From October the book's units are whole numbers and every area's share stays one (owner,
   // 2026-11-04: "never to put a decimal in units"). Earlier months keep what they published.
   return buildContributionRespread({ base, line: String(line ?? ""), moved, wholeUnits: isEpdaBonusDeductionActive(period) });
+}
+
+/**
+ * RULE 2, from the October 2026 closing (owner, 2026-11-04) — see EPDA_CONTRIBUTION_START_PERIOD.
+ *
+ * Per product: EPDA-BULK's and EPDA-Pharmacies' units of it leave their invoiced areas and come back
+ * by each area's share of the RETAIL units of that same product, retail being every other
+ * distributor's rows (the main EPDA book included) and never a direct order. A product no retail
+ * distributor sold this month has nothing to copy and keeps its invoiced areas.
+ *
+ * The rows arrive already reduced by the 15% and 30% (import-epda-bonus-deduction.ts), and they are
+ * spread in whole units, so each area's EPDA share is a whole number too.
+ */
+function buildEpdaContribution(
+  rows: readonly BulkAllocationRow[],
+  period: string | null | undefined,
+  line?: string | null,
+): BulkAllocation {
+  const namedLine = String(line ?? "").trim().toUpperCase();
+  const byProduct = new Map<string, { base: BulkAllocationRow[]; moved: BulkAllocationRow[] }>();
+  for (const row of rows) {
+    if (!isEpdaContributionCandidate(row, period)) continue;
+    // A caller that names its line gets that line's products only: Ivyronc is never Anti Infective's to move.
+    if (namedLine && String(row.officialLine ?? "").trim().toUpperCase() !== namedLine) continue;
+    const productCode = String(row.productCode ?? "").trim().toUpperCase();
+    const group = byProduct.get(productCode) ?? { base: [], moved: [] };
+    if (isEpdaContributionDistributor(row.distributorCode)) group.moved.push(row);
+    else group.base.push(row);
+    byProduct.set(productCode, group);
+  }
+  return combineContributionRespreads(
+    [...byProduct.values()].map(({ base, moved }) =>
+      buildContributionRespread({ base, line: String(line ?? ""), moved, shareBy: "units", wholeUnits: true }),
+    ),
+  );
+}
+
+/** A row rule 2 reads at all: counted, not direct, not confidential, one of its products on its lines. */
+function isEpdaContributionCandidate(row: BulkAllocationRow, period: string | null | undefined): boolean {
+  if (row.isDirect) return false;
+  if (!row.includedInClosing) return false;
+  if (row.isConfidential === true) return false;
+  if (!isBulkAllocationLine(row.officialLine, period)) return false;
+  return isEpdaContributionProduct(row.productCode);
+}
+
+/**
+ * Per area|product, every EPDA unit of rule 2's products where the closing has it — read by the EPDA
+ * tab of the three closing downloads (closing-epda-sheet.ts). Empty before October 2026.
+ *
+ * A spread product's units are its IN legs, every moved unit's new home. A product no retail
+ * distributor sold that month was not spread and keeps its invoiced areas, so its units are read off
+ * the EPDA rows themselves (`rows`) — without them the tab would drop a product the closing holds.
+ */
+export function epdaUnitsLanded(
+  bulk: Pick<BulkAllocation, "movements">,
+  period: string | null | undefined,
+  rows: readonly BulkAllocationRow[] = [],
+): Map<string, number> {
+  const landed = new Map<string, number>();
+  if (!isEpdaContributionActive(period)) return landed;
+  const spread = new Set<string>();
+  for (const leg of bulk.movements) {
+    spread.add(String(leg.productCode ?? "").trim().toUpperCase());
+    if (leg.inQty === 0) continue;
+    const key = areaProductKey(leg.areaCode, leg.productCode);
+    landed.set(key, (landed.get(key) ?? 0) + leg.inQty);
+  }
+  for (const row of rows) {
+    if (!isEpdaContributionDistributor(row.distributorCode)) continue;
+    if (!isEpdaContributionCandidate(row, period)) continue;
+    const productCode = String(row.productCode ?? "").trim().toUpperCase();
+    if (spread.has(productCode)) continue;
+    const units = Number(row.qty);
+    if (!Number.isFinite(units) || units === 0) continue;
+    const key = areaProductKey(String(row.areaCode ?? ""), productCode);
+    landed.set(key, (landed.get(key) ?? 0) + units);
+  }
+  return landed;
 }
 
 /**

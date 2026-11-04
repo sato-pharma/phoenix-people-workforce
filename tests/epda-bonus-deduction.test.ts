@@ -131,10 +131,11 @@ export function runEpdaBonusDeductionTests() {
       salesValue: 1000,
       ...over,
     });
+    // Retail Ivyronc, so October's rule 2 (each product by its own retail units) has a share to copy.
     const rows = [
-      rowOf({ areaCode: "D21", salesValue: 1000 }),
-      rowOf({ areaCode: "D15", salesValue: 1000 }),
-      rowOf({ areaCode: "D14", salesValue: 1000 }),
+      rowOf({ areaCode: "D21", productCode: "IV001", salesValue: 1000 }),
+      rowOf({ areaCode: "D15", productCode: "IV001", salesValue: 1000 }),
+      rowOf({ areaCode: "D14", productCode: "IV001", salesValue: 1000 }),
       rowOf({ areaCode: "AB1", distributorCode: "EP-BK", productCode: "IV001", qty: 3190, effectiveUnits: 3190, salesValue: 3190 * 30.375 }),
     ];
     const inOf = (period: string) => buildBulkAllocation(rows, period, "Pedia").movements.filter((leg) => leg.inQty !== 0);

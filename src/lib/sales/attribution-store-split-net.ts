@@ -122,7 +122,7 @@ export function buildStoreSplitNetPayload(
   // The Office one matters most of the three in size: Office was 61.5% of CNS August 2026, so a
   // respread the Closing Matrix applies and attribution does not would put every CNS rep's
   // achievement out by most of their line.
-  const bulkApplies = isBulkAllocationActive(period) && isBulkAllocationLine(officialLine);
+  const bulkApplies = isBulkAllocationActive(period) && isBulkAllocationLine(officialLine, period);
   const cityApplies = isStoreCitySplitActive(period) && isSplitEligibleLine(officialLine);
   const officeApplies = isOfficeRespreadPair(officialLine, period);
   if (!cityApplies && !bulkApplies && !officeApplies) return [];

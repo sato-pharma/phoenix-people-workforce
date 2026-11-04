@@ -6,6 +6,8 @@ import {
   type StoreSplitRow,
 } from "@/lib/sales/store-sales-city-split";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
+import { isBulkAllocatedRow, isEpdaContributionActive } from "@/lib/sales/bulk-allocation-channel";
+import { buildBulkAllocation, type BulkAllocationRow } from "@/lib/sales/closing-bulk-allocation";
 import { MASKED_SOURCE_DISTRIBUTORS } from "@/lib/sales/closing-source-mask";
 
 /**
@@ -196,6 +198,76 @@ export function applyCreditedAreaView<T extends ShareableRow & StoreSplitRow>(
       regionCode: place?.regionCode ?? clean.regionCode ?? "",
       regionName: place?.regionName ?? clean.regionName ?? "",
     });
+  }
+  return creditEpdaSpread(out, rows, { areaLabelOf: input.areaLabelOf, line, period });
+}
+
+/**
+ * 🔴 THE EPDA SPREAD, CREDITED ROW BY ROW — owner's EPDA rule 2, from the October 2026 closing.
+ *
+ * The matrix moves EPDA-BULK's and EPDA-Pharmacies' Ivyronc, Royafloxacin and Saginko onto the areas
+ * that earned them (closing-bulk-allocation.ts), and the city split above leaves those rows alone, so
+ * without this a viewer's rows kept them on the invoiced area. A District Manager's file is rebuilt
+ * from these rows (buildPortalClosingWorkbook), so his Matrix tab would have disagreed with his own
+ * screen by his whole share of the EPDA book, and listed none of it when the invoiced area is outside
+ * his scope.
+ *
+ * Each moved row becomes one share per receiving area, scaled by that area's part of the product's
+ * spread (its IN leg over all the IN legs). Every row of a product moves by the same fractions, so the
+ * shares of an area add back to exactly the units the matrix gave it, and value and units scale
+ * together so each share still multiplies out at the row's own price. Units stay fractional for that
+ * reason, as on a city-split share. The spread is computed from `allRows`, the whole month, exactly
+ * as the closing computes it; the caller scopes afterwards.
+ */
+function creditEpdaSpread<T extends ShareableRow & StoreSplitRow>(
+  rows: T[],
+  allRows: readonly T[],
+  input: { areaLabelOf: (areaCode: string) => AreaLabel | null; line: string; period: string },
+): T[] {
+  if (!isEpdaContributionActive(input.period)) return rows;
+  const bulk = buildBulkAllocation(allRows as unknown as BulkAllocationRow[], input.period, input.line);
+  const legsByProduct = new Map<string, { areaCode: string; inQty: number }[]>();
+  for (const leg of bulk.movements) {
+    if (!(leg.inQty > 0)) continue;
+    const product = String(leg.productCode ?? "").trim().toUpperCase();
+    const legs = legsByProduct.get(product) ?? [];
+    legs.push({ areaCode: String(leg.areaCode ?? "").trim().toUpperCase(), inQty: leg.inQty });
+    legsByProduct.set(product, legs);
+  }
+  if (legsByProduct.size === 0) return rows;
+
+  const out: T[] = [];
+  for (const row of rows) {
+    const record = row as unknown as BulkAllocationRow;
+    const product = String(row.productCode ?? "").trim().toUpperCase();
+    const legs = legsByProduct.get(product);
+    const moves = legs !== undefined
+      && isBulkAllocatedRow(record, input.period)
+      && record.includedInClosing
+      && !record.isDirect
+      && record.isConfidential !== true;
+    if (!moves) {
+      out.push(row);
+      continue;
+    }
+    const total = legs.reduce((sum, leg) => sum + leg.inQty, 0);
+    for (const leg of legs) {
+      const fraction = leg.inQty / total;
+      const place = input.areaLabelOf(leg.areaCode);
+      const effective = Number(row.effectiveUnits);
+      out.push({
+        ...row,
+        areaCode: leg.areaCode,
+        sheetAreaCode: leg.areaCode,
+        qty: (Number(row.qty) || 0) * fraction,
+        salesValue: (Number(row.salesValue) || 0) * fraction,
+        ...(Number.isFinite(effective) ? { effectiveUnits: effective * fraction } : {}),
+        areaName: place?.areaName ?? leg.areaCode,
+        sheetAreaName: place?.areaName ?? leg.areaCode,
+        regionCode: place?.regionCode ?? row.regionCode ?? "",
+        regionName: place?.regionName ?? row.regionName ?? "",
+      });
+    }
   }
   return out;
 }
