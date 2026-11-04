@@ -20,9 +20,9 @@ import { stripComments, stripHashComments, stripSqlComments } from "./support/co
  *      table is closed, never open; a released commit is remembered, a missing one is asked again.
  *   2. The probe. /api/readyz ANDs the gate into `ready`. A probe that computed the gate and then ignored
  *      it would pass every build and look healthy.
- *   3. The writer. ci.yml's `release-gate` job runs on a push to main only, needs exactly the required pair
- *      (`validate`, `checks`), uses the production secret that already exists, fails loud, and checks the
- *      row reads back.
+ *   3. The writer. ci.yml's `release-gate` job runs on a push to main only, needs exactly `checks` (lint,
+ *      typecheck and the suite; the CI build left the gate on 2026-11-04 and Telegrams him when red instead),
+ *      uses the narrow gate login, fails loud, and checks the row reads back.
  *   4. The table. Row level security on, nothing granted to the browser roles, the sha constrained to a full
  *      commit, nothing in the file that deletes a row.
  *   5. The window. The healthcheck is long enough to outlast a slow day of CI, in the file Railway reads and
@@ -213,7 +213,17 @@ export async function runReleaseGateTests(): Promise<void> {
   // ── 3. The writer ────────────────────────────────────────────────────────────────────────────────
   const workflow = stripHashComments(readFileSync(".github/workflows/ci.yml", "utf8"));
   const job = jobBlock(workflow, "release-gate");
-  assert.match(job, /^\s*needs:\s*\[\s*validate\s*,\s*checks\s*\]\s*$/m, "🔴 release-gate must need EXACTLY the required pair: validate and checks");
+  // Owner, 2026-11-04 ("Tests only"): the gate waits for lint, typecheck and the suite, not the CI build,
+  // which Railway duplicates. validate still runs on main and Telegrams him when red.
+  assert.match(job, /^\s*needs:\s*\[\s*checks\s*\]\s*$/m, "🔴 release-gate must need EXACTLY `checks` — lint, typecheck and the whole suite");
+  assert.doesNotMatch(job, /\bvalidate\b/, "🔴 the CI build no longer holds the deploy (owner, 2026-11-04) — never put validate back without his word");
+  const validateJob = jobBlock(workflow, "validate");
+  assert.match(
+    validateJob,
+    /- name: Tell the owner main's build or login test is red\s*\n\s*if: \$\{\{ failure\(\) && github\.event_name == 'push' && github\.ref == 'refs\/heads\/main' \}\}/,
+    "🔴 with validate out of the gate, a red build or login test on main must still reach him",
+  );
+  assert.match(validateJob, /api\.telegram\.org\/bot\$\{TELEGRAM_BOT_TOKEN\}\/sendMessage/, "the red-main alarm sends through Telegram");
   assert.doesNotMatch(job, /\bmobile\b|\bfull-e2e\b/, "mobile and the manual E2E never gated a merge, so they must not gate a deploy");
   assert.match(
     job,

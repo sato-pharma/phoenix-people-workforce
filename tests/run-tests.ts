@@ -6300,7 +6300,7 @@ await runTest(
   runCiCacheMainOnlyTests,
 );
 await runTest(
-  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, one with no commit at all is held too (fail closed, 2026-10-23), a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly validate and checks, fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
+  "the production release gate (owner, 2026-10-19): a production container with no row for its own commit is not ready, one with no commit at all is held too (fail closed, 2026-10-23), a container that is not production Railway is never held, only the word off switches it off, an unreadable table is closed and a released commit is remembered while a missing one is asked again; /api/readyz ANDs the gate into ready; ci.yml's release-gate job runs on a push to main only, needs exactly checks (the CI build left the gate 2026-11-04 and Telegrams him when red), fails loud and reads the row back; the table has row level security and nothing for the browser roles; and the healthcheck window outlasts a slow day of CI",
   runReleaseGateTests,
 );
 await runTest(

@@ -762,12 +762,26 @@ should overlap: the merge then reaches production when the SLOWER of the two end
    serving until the probe answers 2xx, and marks the deploy failed if it never does within
    `healthcheckTimeout` (900 s since this change; `.railway/railway.ts` since the 2026-10-23 cutover).
 3. The last job of `ci.yml`, **`release-gate`**, writes that row. It runs on a push to `main` only, needs
-   exactly the required pair (`validate`, `checks`), uses `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` (the secret
-   `migration-drift-check.yml` and `synthetic-journeys.yml` already use) and reads the row back before it
-   passes. A red check means no row, so the new container never takes traffic and the old one keeps serving.
+   exactly **`checks`** (lint, typecheck and the whole suite — `validate` left the gate on 2026-11-04, below),
+   connects as the narrow `release_gate_writer` login and reads the row back before it passes. A red check
+   means no row, so the new container never takes traffic and the old one keeps serving.
 
-**Nothing is skipped.** Every check still runs on every merge and a commit still cannot go live without all
-of them. What changes is that the build is no longer idle while they run.
+**Nothing is skipped.** Every check still runs on every merge. What changes is that the build is no longer
+idle while they run.
+
+**The CI build left the gate — 4 November 2026** (owner, asked *"what should the production gate wait
+for?"*, chose *"Tests only"*). Railway builds every merge itself; the CI build in `validate` was a second
+copy of it, and it was the slowest job, so production waited for it. Measured over eight merges on 3-4
+Nov 2026: Railway's build 281-602 s, `validate` on `main` 369-673 s — the gate waited 0 to 6.5 minutes past
+Railway, usually 3 to 4. Now `release-gate` needs `checks` only, so a merge goes live when the slower of
+Railway's build and `checks` (~4 min) ends.
+
+- **A commit that does not build still never ships** — Railway's own build fails and the old version keeps
+  serving.
+- **What is given up:** the login smoke test and the standalone checks no longer hold the deploy. A commit
+  that builds but breaks sign-in goes live. `validate` still runs on every push to `main`, and its last
+  step, *Tell the owner main's build or login test is red*, Telegrams him the run when it fails.
+- Never put `validate` back in `needs` without his word. Pinned by `tests/release-gate.test.ts`.
 
 **What the probe does and does not hold.**
 
