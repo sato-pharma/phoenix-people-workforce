@@ -99,6 +99,17 @@ export function runUnpublishedSalesNeverShownTests() {
     "a published month keeps every figure: the gate must not blank the months that are real",
   );
 
+  // January to June have no publication row and never will. His "Add Jan-Jun as history" ruling keeps
+  // them, on an empty key set too, which is what the loader answers for a month under the floor.
+  const june = row({ period: "2026-06" });
+  assert.deepEqual(withholdUnpublishedSales([june], new Set()), [june], "June is history, not an unpublished month");
+  const juneWithNoTarget = row({ period: "2026-06", hasTarget: false, targetValue: null, targetUnits: null });
+  assert.deepEqual(
+    withholdUnpublishedSales([juneWithNoTarget], new Set()),
+    [juneWithNoTarget],
+    "and history keeps a row with no target, which an unpublished month would drop",
+  );
+
   // Per line, not per month. An area code repeats across lines and each line publishes on its own day.
   const partlyPublished = withholdUnpublishedSales(
     [row({ lineCode: "cns" }), row({ lineCode: "pedia" })],
@@ -185,13 +196,17 @@ export function runUnpublishedSalesNeverShownTests() {
 
   // ── The Targets drill-down: `period` is in the query string ────────────────
   const breakdown = source("app/api/sales/targets/breakdown/route.ts");
-  const gateAt = breakdown.indexOf("if (!isRowPublished({ lineCode: line, period }, publishedKeys))");
+  const gateAt = breakdown.indexOf("if (!isSalesPeriodReleased(period, line, publishedKeys))");
   const firstReadAt = breakdown.indexOf("loadSourceBreakdownDetail(period");
   assert.ok(gateAt !== -1, "the drill-down must refuse an unpublished period");
   assert.ok(firstReadAt !== -1 && gateAt < firstReadAt, "and refuse it before a source row is read");
   assert.ok(
-    breakdown.includes("trend: trend.filter((point) => isRowPublished({ lineCode: line, period: point.period }, publishedKeys))"),
+    breakdown.includes("trend: trend.filter((point) => isSalesPeriodReleased(point.period, line, publishedKeys))"),
     "the trend returns every loaded month, so asking for a published one must not draw the unpublished one beside it",
+  );
+  assert.ok(
+    !breakdown.includes("isRowPublished(") && !page.includes("isRowPublished("),
+    "isRowPublished has no floor, so May and June would read as unpublished: these two must keep them as history",
   );
 
   // ── The brick drill-down ───────────────────────────────────────────────────

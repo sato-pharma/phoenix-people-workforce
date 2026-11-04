@@ -738,6 +738,9 @@ export function isRowPublished(
  * or the browser, so the sale is absent from the page payload and not merely left unprinted. A row
  * with no target is dropped outright: it holds nothing but a sale, and its presence alone would say
  * which area and product have sold.
+ *
+ * A month older than the floor is history and keeps its figures: it has no publication row and never
+ * will, and his "Add Jan-Jun as history" ruling keeps it showing.
  */
 export function withholdUnpublishedSales(
   rows: readonly AchievementRow[],
@@ -745,7 +748,7 @@ export function withholdUnpublishedSales(
 ): AchievementRow[] {
   const kept: AchievementRow[] = [];
   for (const row of rows) {
-    if (isRowPublished(row, publishedKeys)) kept.push(row);
+    if (row.period < SALES_VS_TARGET_FLOOR || isRowPublished(row, publishedKeys)) kept.push(row);
     else if (row.hasTarget) {
       kept.push({ ...row, actualUnits: 0, actualValue: 0, achievementValue: null, achievementUnits: null, hasActual: false });
     }

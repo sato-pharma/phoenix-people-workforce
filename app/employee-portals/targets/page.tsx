@@ -35,7 +35,8 @@ import {
   TARGETS_TERRITORY_UNRESOLVED_MESSAGE,
 } from "@/lib/sales/portal-targets";
 import { loadRepTargets } from "@/lib/sales/rep-targets";
-import { isRowPublished, loadPublishedPeriodKeys, withholdUnpublishedSales } from "@/lib/sales/vs-target";
+import { isSalesPeriodReleased } from "@/lib/sales/unpublished-sales-access";
+import { loadPublishedPeriodKeys, withholdUnpublishedSales } from "@/lib/sales/vs-target";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -125,7 +126,7 @@ export default async function PortalTargetsPage({
   try {
     const [achievement, publishedKeys, bound, areaName, productNames, productPrices, employeeNames] = await Promise.all([
       loadMonthlyAchievement(selectedPeriod),
-      // Below the July 2026 floor this is an empty set, which is the truth: nothing earlier was published.
+      // Below the July 2026 floor this is an empty set. Both gates below read that as history, not as closed.
       loadPublishedPeriodKeys(selectedPeriod, selectedPeriod),
       resolvePortalTargetsBound(access),
       loadAllCanonicalAreaNames(),
@@ -159,7 +160,7 @@ export default async function PortalTargetsPage({
     // The publication gate comes before all of it, for every role that reaches this page (owner,
     // 2026-11-04): every figure below is built from these rows, so an unpublished month's sale cannot
     // reach a roll-up or the page payload. Targets stay, which is why rows are not simply dropped.
-    salesPublished = isRowPublished({ lineCode: selectedLine, period: selectedPeriod }, publishedKeys);
+    salesPublished = isSalesPeriodReleased(selectedPeriod, selectedLine, publishedKeys);
     const mergedAchievement = applyAchievementAreaMerges(withholdUnpublishedSales(achievement, publishedKeys));
     const scopedRows = filterAchievementForScope(mergedAchievement, bound);
     const lineRows = scopedRows.filter((row) => row.lineCode === selectedLine);

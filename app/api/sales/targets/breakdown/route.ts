@@ -6,7 +6,8 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { unpublishedClosingMessage } from "@/lib/sales/closing-details-publication-gate";
 import { SALES_LINES, loadAreaTrend, loadSourceBreakdownDetail } from "@/lib/sales/monthly-targets";
 import { assertTargetsAreaInScope } from "@/lib/sales/portal-targets";
-import { SALES_VS_TARGET_FLOOR, isRowPublished, loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
+import { isSalesPeriodReleased } from "@/lib/sales/unpublished-sales-access";
+import { SALES_VS_TARGET_FLOOR, loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
       SALES_VS_TARGET_FLOOR,
       `${year}-${String(month).padStart(2, "0")}`,
     );
-    if (!isRowPublished({ lineCode: line, period }, publishedKeys)) {
+    if (!isSalesPeriodReleased(period, line, publishedKeys)) {
       const lineLabel = SALES_LINES.find((entry) => entry.code === line)?.label ?? line;
       return NextResponse.json(
         { success: false, error: unpublishedClosingMessage(lineLabel, period) },
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       rows,
-      trend: trend.filter((point) => isRowPublished({ lineCode: line, period: point.period }, publishedKeys)),
+      trend: trend.filter((point) => isSalesPeriodReleased(point.period, line, publishedKeys)),
       totalUnits,
       totalValue,
     });
