@@ -105,8 +105,8 @@ is the **record of each one it has actually been applied to**, so that "still op
 decision somebody made rather than an oversight nobody noticed. An alert with no row here has not
 been judged yet.
 
-🔴 **ALERT NUMBERS BELONG TO ONE REPOSITORY, AND THE 2 NOV 2026 MOVE RESTARTED THEM AT 1.** A row keeps a
-`#N` in its Alert cell only when that number is a live alert on `gawishtheit/phoenix-people-workforce`
+🔴 **ALERT NUMBERS BELONG TO ONE REPOSITORY, AND THE 2 NOV AND 4 NOV 2026 MOVES EACH RESTARTED THEM AT 1.** A row keeps a
+`#N` in its Alert cell only when that number is a live alert on `Omar-3-xx/phoenix-people-workforce`
 for the same advisory in the same manifest. A row from before the move with no such alert names its old
 number in words, so the check cannot read it, and a new alert that later reaches that number is never
 taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert
@@ -175,7 +175,7 @@ there is no action this repository can take either way.
 | | |
 | --- | --- |
 | **Decision** | **Accepted for this repository's audit gate only.** Recorded 2026-10-05 at the owner's instruction. |
-| Alert | #2, opened on this repository 2026-11-03 16:11 Cairo, `mobile/package-lock.json`. It was number 110 on the old repository, opened 2026-10-03 |
+| Alert | #2, opened on this repository 2026-11-04 03:02 Cairo, the same number it had on the previous repository, `mobile/package-lock.json`. Before that it was number 110 on the old repository, opened 2026-10-03 |
 | Scope | **`runtime`**, in a manifest the root audit never reads |
 | Patched version | **none exists** |
 | What it is | RSA PKCS#1 v1.5 signature verification accepts extra nested `DigestAlgorithm` elements |
@@ -306,7 +306,7 @@ still cost a deploy. The mechanism is recorded in `docs/agents-session-traps-clu
 | | |
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `minimatch` one below. |
-| Alert | #19 on `gawishtheit/phoenix-people-workforce`, opened 2026-11-03 16:11 Cairo, root `pnpm-lock.yaml` |
+| Alert | #19, opened on this repository 2026-11-04 03:02 Cairo, the same number it had on the previous repository, root `pnpm-lock.yaml` |
 | Scope | **`runtime`**, because `@sentry/nextjs` is a production dependency, but this code only runs during the build |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
 | Patched version | **14.0.2 only** — no 13.x release carries the fix, and `@sentry/bundler-plugins` 11.10.0, its newest, still asks for `^13.0.6` |
@@ -330,7 +330,7 @@ Sentry token. Nothing else outside the frozen application imports `glob`.
 | | |
 | --- | --- |
 | **Decision** | **Accepted. Not bumped, not overridden.** Recorded 2026-11-03 at the owner's instruction, choosing "Accept both" when asked about this alert and the `glob` one above. |
-| Alert | #20 on `gawishtheit/phoenix-people-workforce`, opened 2026-11-03 16:11 Cairo, root `pnpm-lock.yaml` |
+| Alert | #20, opened on this repository 2026-11-04 03:02 Cairo, the same number it had on the previous repository, root `pnpm-lock.yaml` |
 | Scope | **`runtime`**, because `@sentry/nextjs` and `exceljs` are production dependencies |
 | Severity | **MEDIUM**, so `--audit-level=high` does not fail on it |
 | Patched version | **11.0.1 only** — 3.1.5, 5.1.9 and 10.2.6, the three we resolve, are each the newest of their line |

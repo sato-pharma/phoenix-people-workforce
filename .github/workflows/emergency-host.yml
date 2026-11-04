@@ -53,7 +53,7 @@ concurrency:
 env:
   FLY_APP: ${{ vars.FLY_APP || 'phoenix-hr-standby' }}
   FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
-  IMAGE_REPO: ghcr.io/gawishtheit/phoenix-people-workforce
+  IMAGE_REPO: ghcr.io/omar-3-xx/phoenix-people-workforce
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:

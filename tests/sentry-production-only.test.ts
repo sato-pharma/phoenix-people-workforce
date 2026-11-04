@@ -347,7 +347,7 @@ function wiringTests() {
   }
   assert.match(nextConfigSource(), /telemetry: false/);
   assert.match(nextConfigSource(), /deploy: \{ env: "production" \}/, "each release is marked as a production deploy");
-  assert.match(nextConfigSource(), /setCommits: \{ repo: "gawishtheit\/phoenix-people-workforce", commit: release, ignoreMissing: true \}/, "commits are named explicitly and a missing integration is tolerated");
+  assert.match(nextConfigSource(), /setCommits: \{ repo: "Omar-3-xx\/phoenix-people-workforce", commit: release, ignoreMissing: true \}/, "commits are named explicitly and a missing integration is tolerated");
   for (const switchName of ["autoInstrumentServerFunctions", "autoInstrumentMiddleware", "autoInstrumentAppDirectory", "automaticVercelMonitors"]) {
     assert.match(nextConfigSource(), new RegExp(`${switchName}: false`), `${switchName} stays off`);
   }
