@@ -5162,7 +5162,7 @@ await runTest(
   "HR Operations Specialist access (the salary-blind seat is refused the company Fingerprint Report, "
   + "the Monthly Summary, Attendance Setup and the machine sync while every other holder of the key keeps "
   + "them; her attendance report is her own; she holds the hiring papers and the whole of HR Forms and "
-  + "stays outside recruitment and Business Cards; she sees and prints the salary there, and a salary she "
+  + "stays outside recruitment, with Business Cards opened to her 2026-11-04; she sees and prints the salary there, and a salary she "
   + "sends is dropped)",
   runHrOperationsSpecialistAccessTests,
 );
