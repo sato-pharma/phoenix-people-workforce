@@ -16,6 +16,15 @@ import {
   releasedPeriodsUpToFirstHole,
   salesScopeLineCodes,
 } from "../src/lib/sales/unpublished-sales-access.ts";
+import {
+  NO_SPOTLIGHT_WINDOWS,
+  SPOTLIGHT_DEFAULT_LINES,
+  lineSetKey,
+  spotlightLines,
+  windowKeyInForce,
+  windowsByLineSet,
+  windowsForLines,
+} from "../src/lib/spotlight/line-windows.ts";
 import { gateWindow, selectableWindows } from "../src/lib/spotlight/period.ts";
 
 /**
@@ -297,6 +306,45 @@ export function runUnpublishedSalesNeverShownTests() {
     "the picker follows the same gate, so it never offers what the export refuses",
   );
 
+  // ── The Spotlight offers a month for the lines that have published it ──────
+  // Owner, 2026-11-04: Anti-Infective published October while CNS and Pedia had not, and the picker
+  // hid October from a sheet that is only about Anti-Infective.
+  const octoberOnAntiInfective = new Set([...threeMonths, "anti_infective|2026-10"]);
+  const releasedFor = (keys: ReadonlySet<string>) => (period: string, lines: readonly string[]) =>
+    isSalesPeriodReleasedForLines(period, lines, keys);
+  const table = windowsByLineSet(releasedFor(octoberOnAntiInfective), firstOfNovember);
+  const offered = (lines: string[]) => windowsForLines(table, lines).month.map((window) => window.key)[0];
+  assert.equal(offered(["anti_infective"]), "2026-10", "the published line is offered October");
+  assert.equal(offered(["cns"]), "2026-09", "a line that has not published stops at September");
+  assert.equal(offered(["pedia", "anti_infective"]), "2026-09", "two lines wait for both");
+  assert.equal(offered([]), "2026-09", "no line ticked reads the three tracked lines, so it waits for all of them");
+  assert.equal(offered(["CNS", "pedia", "anti_infective"]), "2026-09", "case and order never change the answer");
+  // Ticking CNS after picking October takes October away; the sheet must fall back, never ask for it.
+  assert.equal(windowKeyInForce(windowsForLines(table, ["anti_infective"]).month, "2026-10"), "2026-10");
+  assert.equal(windowKeyInForce(windowsForLines(table, ["anti_infective", "cns"]).month, "2026-10"), "2026-09");
+  assert.equal(windowKeyInForce(NO_SPOTLIGHT_WINDOWS.month, "2026-10"), "", "nothing on offer leaves no period, so the button says why");
+  assert.equal(lineSetKey(["pedia", "CNS"]), lineSetKey([" cns", "pedia", "cns"]), "one spelling per set");
+  assert.equal(lineSetKey([]), lineSetKey(["anti_infective", "cns", "pedia"]), "an empty set is the three tracked lines");
+  assert.deepEqual(windowsForLines(table, ["head_office"]), NO_SPOTLIGHT_WINDOWS, "a line the Spotlight does not track offers nothing");
+  assert.deepEqual([...SPOTLIGHT_DEFAULT_LINES], ["cns", "pedia", "anti_infective"], "kept equal to the lines the sheet reads by default");
+  // The picker offers exactly what the export would accept, for every set it can build.
+  for (const lines of [["anti_infective"], ["cns"], ["cns", "pedia"], []]) {
+    const readLines = spotlightLines(lines);
+    for (const window of windowsForLines(table, lines).month) {
+      assert.equal(
+        gateWindow(window, firstOfNovember, (period) => isSalesPeriodReleasedForLines(period, readLines, octoberOnAntiInfective)).allowed,
+        true,
+        `${window.key} offered for ${readLines.join("+")} must pass the gate`,
+      );
+    }
+  }
+  assert.equal(
+    gateWindow({ kind: "month", key: "2026-10" }, firstOfNovember, (period) =>
+      isSalesPeriodReleasedForLines(period, spotlightLines(["cns"]), octoberOnAntiInfective)).allowed,
+    false,
+    "the export refuses October for CNS, which has not published it",
+  );
+
   // ── Each surface is wired to the gate. These need a live database, so read with comments removed ──
   const pin = (path: string, needle: string, why: string) => assert.ok(source(path).includes(needle), `${path}: ${why}`);
   // The refusal must come before the read it protects, or the data has been loaded for nothing and a
@@ -353,10 +401,11 @@ export function runUnpublishedSalesNeverShownTests() {
   before("app/api/sales/monthly-closing/consolidated-premium-export/route.ts", "isSalesPeriodReleased(", "buildConsolidatedPremiumClosing({", "and in its premium twin");
   before("app/api/sales/sos-dashboard/email-report/route.ts", "isSalesPeriodReleasedCompanyWide(", "buildAndEmailSosBiReport({ period })", "the by-hand send reads as the system, so nothing further down asks");
 
-  // Spotlight: the gate and the picker must read the same keys.
-  pin("src/lib/spotlight/service.ts", "isSalesPeriodReleasedCompanyWide(period, publishedKeys)", "the sheet is company-wide");
-  pin("app/api/spotlight/options/route.ts", 'selectableWindows("month", undefined, 18, isPublished)', "the picker must follow the gate");
-  pin("app/(admin)/spotlight/page.tsx", 'selectableWindows("month", undefined, 18, isPublished)', "on first paint too");
+  // Spotlight: the gate and the picker must read the same keys, for the SAME lines.
+  pin("src/lib/spotlight/service.ts", "isSalesPeriodReleasedForLines(period, readLines, publishedKeys)", "the sheet waits for the lines it reads");
+  pin("app/api/spotlight/options/route.ts", "isSalesPeriodReleasedForLines(period, lines, publishedKeys)", "the picker must follow the gate");
+  pin("app/(admin)/spotlight/page.tsx", "isSalesPeriodReleasedForLines(period, lines, publishedKeys)", "on first paint too");
+  pin("src/components/spotlight/spotlight-workspace.tsx", "windowsForLines(windowsByLines, lines)", "ticking a line re-offers its months");
 
   // The CEO's card.
   const ceo = source("src/lib/ceo/command-center.ts");
