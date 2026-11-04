@@ -196,6 +196,18 @@ jobs:
             echo "source=github (Railway unreadable — NOT verified against Railway)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # 🔴 THE BUILD RUNS THE RUNNER OUT OF DISK, AND A RUNNER THAT DOES LEAVES NO LOG. On 4 Nov 2026 run 41768605796 died 9
+      # minutes in: the runner's own process could not write its diagnostic file ("No space left on device" under
+      # /home/runner), so the Build step has no end time and no output at all. Docker keeps every layer on the root disk,
+      # and the Dockerfile holds node_modules twice plus the build. So the tools this job never uses go first, before the
+      # base image lands. setup-node has already run and its Node is left alone.
+      - name: Clear the disk for the image layers
+        run: |
+          df -m / /mnt
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          docker image prune -af >/dev/null || true
+          df -m / /mnt
+
       - name: Pull the base image, with fallbacks, under the name the Dockerfile uses
         run: |
           set -uo pipefail
@@ -232,9 +244,33 @@ jobs:
           docker image inspect "${pulled}" --format 'base image digest: {{index .RepoDigests 0}}' >> "$GITHUB_STEP_SUMMARY" || true
           echo "base image source: ${pulled}" >> "$GITHUB_STEP_SUMMARY"
 
+      # Swap for the one process, because this route builds the Dockerfile Railway builds and cannot split the build as
+      # ci.yml does. ci.yml measured the same stage on the same runner on 23 Oct 2026 (2 CPUs, 7.9 GB RAM, 3 GB swap; one
+      # `next build` process holds 6.1 GB there and its worker adds 1.0 GB). A build container uses the host's swap.
+      - name: Add swap for the one-process build
+        run: |
+          sudo fallocate -l 6G /mnt/phx-build-swap && sudo chmod 600 /mnt/phx-build-swap \
+            && sudo mkswap /mnt/phx-build-swap >/dev/null && sudo swapon /mnt/phx-build-swap \
+            || echo "::warning::extra swap could not be added; building with the runner's own 3 GB"
+          free -m
+
       - name: Build the image (the repository's own Dockerfile, unchanged)
         run: |
           set -euo pipefail
+          # Memory and disk every 30 seconds, because a runner that runs out takes its own explanation with it. Under 2 GB of
+          # disk the build is stopped, so the step ends as a failure with this log instead of as a dead runner with none.
+          ( while sleep 30 >/dev/null 2>&1; do
+              disk_free="$(df -m --output=avail / | tail -1 | tr -d ' ')"
+              echo "memory: $(free -m | awk '/^Mem:/{print "available " $7 " MB"} /^Swap:/{print "swap used " $3 " of " $2 " MB"}' | paste -sd' ') disk free ${disk_free} MB"
+              if [ "${disk_free}" -lt 2048 ]; then
+                echo "::error::The runner is down to ${disk_free} MB of disk, so the build was stopped before it could kill the runner."
+                docker system df || true
+                pkill -INT -x 'docker|docker-buildx' || true
+                break
+              fi
+            done ) &
+          memory_watch=$!
+          trap 'kill "$memory_watch" 2>/dev/null || true' EXIT
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/phoenix-people-workforce"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
           set -a
