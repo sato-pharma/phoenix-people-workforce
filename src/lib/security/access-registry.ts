@@ -701,7 +701,8 @@ export const accessRegistry = [
   // it. Rate-limited in the handler, and gated again on an HR authority role, as the page is.
   // Medical insurance (owner, 2026-11-04): members for the HR seats, every amount Super Admin only.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/members/export", permission: { resource: "medical_insurance", action: "export" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/movement-file", permission: { resource: "medical_insurance", action: "export" } }),
+  // The insurer's EDI file for the people ticked on the page. POST so the list rides in the body; it builds a file and changes nothing.
+  sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/movement-file", permission: { resource: "medical_insurance", action: "export" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/members", permission: { resource: "medical_insurance", action: "create" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["PATCH"], pattern: "/api/medical-insurance/members/:id", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/exceptions", permission: { resource: "medical_insurance", action: "update" } }),

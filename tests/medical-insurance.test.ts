@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 import { hrBundleGrants } from "../src/lib/auth/hr-functions.ts";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
@@ -23,8 +24,7 @@ import {
   type MemberFacts,
 } from "../src/lib/medical-insurance/eligibility.ts";
 import { parseInvoiceAmount, parseMedicalInsuranceInvoice, type ParsedInvoice, type ParsedInvoiceMember } from "../src/lib/medical-insurance/invoice-parser.ts";
-import type { MedicalInsuranceMemberRow } from "../src/lib/medical-insurance/view.ts";
-import { buildMedicalInsuranceMovementWorkbook } from "../src/lib/medical-insurance/workbooks.ts";
+import { buildMetLifeEdiWorkbook, METLIFE_EDI_TEMPLATE_PATH } from "../src/lib/medical-insurance/workbooks.ts";
 
 const POLICY = { endsOn: "2027-11-03", startsOn: "2026-11-01" };
 const PERIOD = { end: "2027-01-31", start: "2026-11-01" };
@@ -319,37 +319,70 @@ function testThePdfTextReadsOrSaysWhatItCouldNotRead() {
   assert.throws(() => parseMedicalInsuranceInvoice("A letter about something else"), /Nothing was saved/);
 }
 
-async function testTheInsurersFormListsFamilyOnTheirOwnLines() {
-  const registerRow = (overrides: Partial<MedicalInsuranceMemberRow>): MedicalInsuranceMemberRow => ({
-    category: "A", certificateNumber: "1", coverageEnd: null, coverageStart: POLICY.startsOn, endReason: null, hrId: "T-1", id: "m-1", jobTitle: null,
-    memberType: "employee", name: "Test Person", notes: null, open: true, principalMemberId: null, principalName: null, ...overrides,
-  });
-  const members = [
-    registerRow({}),
-    registerRow({ id: "m-2", memberType: "spouse", name: "Test Spouse", principalMemberId: "m-1" }),
-    registerRow({ id: "m-3", memberType: "child", name: "Test Child", principalMemberId: "m-1" }),
-    registerRow({ coverageEnd: "2026-11-01", id: "m-4", memberType: "child", name: "Ended Child", open: false, principalMemberId: "m-1" }),
-  ];
-  const actions = actionsFor(
-    [employee({ active: false, employmentStatus: "resigned", exitDay: "2026-11-02" }), employee({ hrId: "T-2", name: "New Person" })],
-    [member({ category: "A" })],
-  );
-  const { additions, buffer, deletions } = await buildMedicalInsuranceMovementWorkbook({
-    actions,
-    employees: [],
-    generatedAtIso: "2026-11-04T10:00:00.000Z",
-    members,
-    policy: { endsOn: POLICY.endsOn, groupCode: "G", id: "p", insurer: "Insurer", policyNumber: "1", startsOn: POLICY.startsOn, subOffice: "001" },
-  });
-  assert.equal(additions, 1);
-  assert.equal(deletions, 3, "the leaver and their two family still on cover; the one already ended is not listed");
+/** The EDI file is the insurer's own workbook with the ticked people on it, and the blank copy carries nobody. */
+async function testTheEdiFileIsTheInsurersOwnWorkbook() {
+  const template = readFileSync(METLIFE_EDI_TEMPLATE_PATH);
+  const templateText = Buffer.from(template).toString("latin1");
+  assert.ok(templateText.startsWith("PK"), "the template is an xlsx");
+  const blank = new ExcelJS.Workbook();
+  await blank.xlsx.load(template as unknown as ArrayBuffer);
+  const sheetNames = blank.worksheets.map((sheet) => sheet.name);
+  assert.deepEqual(sheetNames, ["Additions", "Bank account details ", "Deletions", "Salary Changes", "Subgroup-Suboff-Class Changes"], "the insurer's five sheets, in their order");
+  for (const sheet of blank.worksheets) {
+    sheet.eachRow((row) => row.eachCell((cell) => {
+      const value = String(cell.value ?? "");
+      assert.doesNotMatch(value, /\b[23]\d{13}\b|@[\w-]+\./, `the blank template carries no ID or email (${sheet.name}!${cell.address})`);
+    }));
+  }
+  assert.equal(blank.getWorksheet("Additions")?.getCell("A11").value ?? null, null, "no person is left on the template's Additions sheet");
 
-  const book = new ExcelJS.Workbook();
-  await book.xlsx.load(buffer);
-  const sheet = book.getWorksheet("Deletions");
+  const additionsFile = await buildMetLifeEdiWorkbook({
+    kind: "additions",
+    rows: [
+      {
+        birthDate: "1990-01-02",
+        category: "B",
+        coverageStartsOn: "2026-11-08",
+        email: "test.person@example.com",
+        fullName: "Test Middle Person Last",
+        gender: "male",
+        hireDate: "2026-11-08",
+        hrId: "T-1",
+        mobileNumber: "01000000000",
+        nationalId: "29001020100013",
+      },
+    ],
+  });
+  const additions = new ExcelJS.Workbook();
+  await additions.xlsx.load(additionsFile);
+  const styles = (await (await JSZip.loadAsync(additionsFile)).file("xl/styles.xml")?.async("string")) ?? "";
+  const fonts = [...(/<fonts[^>]*>([\s\S]*?)<\/fonts>/.exec(styles)?.[1] ?? "").matchAll(/<font\b[^>]*?(?:\/>|>([\s\S]*?)<\/font>)/g)].map((match) => match[1] ?? "");
+  const normalFont = Number(/<cellXfs[^>]*>\s*<xf [^>]*?fontId="(\d+)"/.exec(styles)?.[1]);
+  assert.equal(normalFont, 0, "a blank cell reads the first font slot, as the insurer's file has it");
+  assert.match(fonts[normalFont] ?? "", /<sz val="10"\/><name val="Arial"\/>/, "a blank cell keeps the insurer's Arial 10, not the library's Calibri");
+  assert.deepEqual(additions.worksheets.map((sheet) => sheet.name), sheetNames, "every sheet of theirs travels with the file");
+  const sheet = additions.getWorksheet("Additions");
   assert.ok(sheet);
-  assert.deepEqual([7, 8, 9].map((row) => [sheet.getCell(row, 1).value, sheet.getCell(row, 3).value]), [["M", "Test Person"], ["S", "Test Spouse"], ["C", "Test Child"]]);
-  assert.deepEqual([sheet.getCell(8, 4).value, sheet.getCell(8, 5).value, sheet.getCell(8, 6).value].map(Number), [2, 11, 2026], "family end on the leaver's day");
+  assert.equal(sheet.getCell("A8").value, "Dep. Type (M/S/C)", "their heading stays where it was");
+  const cell = (address: string) => {
+    const value = sheet.getCell(address).value;
+    return value && typeof value === "object" && "result" in value ? value.result : value;
+  };
+  assert.deepEqual(["A11", "B11", "C11", "D11", "E11", "F11", "G11", "I11"].map(cell), ["M", "T-1", "Test", "Middle", "Person Last", "29001020100013", "2026-11-08", "B"]);
+  assert.deepEqual(["J11", "K11", "L11", "M11"].map(cell), [2, 1, 1990, "M"], "birth day, month, year and sex as their formulas read the ID");
+  assert.match(String((sheet.getCell("J11").value as { formula?: string }).formula), /MID\(F11,6,2\)/, "the day stays their formula on column F");
+  assert.deepEqual(["Q11", "R11", "S11", "T11", "U11", "V11", "W11"].map(cell), [8, 11, 2026, "E-card", "Egyptian", "01000000000", "test.person@example.com"]);
+  assert.equal(cell("A12"), null, "one ticked person, one line");
+
+  const lines = Array.from({ length: 12 }, (_, index) => ({ certificateNumber: String(index + 1), coverageEndsOn: "2026-11-02", memberType: "employee" as const, name: `Leaver ${index + 1}` }));
+  const deletions = new ExcelJS.Workbook();
+  await deletions.xlsx.load(await buildMetLifeEdiWorkbook({ kind: "deletions", rows: lines }));
+  const gone = deletions.getWorksheet("Deletions");
+  assert.ok(gone);
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map((column) => gone.getCell(8, column).value), ["M", 1, "Leaver 1", 2, 11, 2026], "a certificate is a number, and the day is split as their columns are");
+  assert.equal(gone.getCell(19, 3).value, "Leaver 12", "twelve lines run past the template's ten");
+  assert.equal(gone.getCell(20, 3).value, "M- Member, S- Spouse, C- Child", "and push the form's own notes down rather than over them");
+  assert.equal(deletions.getWorksheet("Additions")?.getCell("A11").value ?? null, null, "a deletions file adds nobody");
 }
 
 function testNothingHereSendsOrPays() {
@@ -368,7 +401,7 @@ export async function runMedicalInsuranceTests() {
   testFamilyFollowTheirEmployee();
   testEveryComparisonStandingIsReached();
   testThePdfTextReadsOrSaysWhatItCouldNotRead();
-  await testTheInsurersFormListsFamilyOnTheirOwnLines();
+  await testTheEdiFileIsTheInsurersOwnWorkbook();
   testASeatNeverHoldsAnAmount();
   testNothingHereSendsOrPays();
 }
