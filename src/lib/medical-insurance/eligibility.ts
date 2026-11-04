@@ -112,8 +112,19 @@ export type MedicalInsuranceAction = {
   certificateNumber: string | null;
   category: MedicalInsuranceCategory | null;
   suggestedCategory: MedicalInsuranceCategory | null;
+  /** The category someone decided for a joiner who is not on the register yet. It beats the suggestion. */
+  decidedCategory: MedicalInsuranceCategory | null;
   dependants: number;
 };
+
+/**
+ * The category that goes on the insurer's additions form: one picked for this file, else the register's,
+ * else the one decided for the joiner, else the one the same job holds. Null means nobody has decided.
+ */
+export function additionCategory(action: MedicalInsuranceAction, picked?: unknown): MedicalInsuranceCategory | null {
+  if (picked === "A" || picked === "B" || picked === "C") return picked;
+  return action.category ?? action.decidedCategory ?? action.suggestedCategory;
+}
 
 export type KeptException = ExceptionFacts & { name: string };
 
@@ -190,6 +201,7 @@ export function buildMedicalInsuranceActions(input: {
       memberType: "employee",
       name: employee.name,
       reason: employee.hireDate && employee.hireDate > policy.startsOn ? "Joined after the policy started" : "Working when the policy started, and not on it",
+      decidedCategory: null,
       suggestedCategory: suggestCategory(employee.jobTitle, members, employeesByHrId),
       timing: window.from <= asOf ? "now" : "soon",
     });
@@ -205,6 +217,7 @@ export function buildMedicalInsuranceActions(input: {
       memberId: member.id,
       memberType: member.memberType,
       name: member.name,
+      decidedCategory: null,
       suggestedCategory: null,
     };
 
@@ -264,6 +277,7 @@ export function buildMedicalInsuranceActions(input: {
       memberType: member.memberType,
       name: member.name,
       reason: `Family of ${principal.name}, whose cover has ended`,
+      decidedCategory: null,
       suggestedCategory: null,
       timing: "now",
     });
