@@ -153,6 +153,9 @@ function runGuard(
   const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_MERGE_OK;
+  // C21 (a merge on red checks) runs first and has its own file, merge-checks-guard.test.ts; it is
+  // stood down here so every answer below is C10's or C13's, judged against these shims alone.
+  env.PHX_RED_MERGE_OK = "1";
   if (opts.minFiles !== undefined) env.PHX_MERGE_MIN_FILES = String(opts.minFiles);
   if (opts.ghDir) env.PATH = opts.ghDir + delimiter + (env.PATH ?? "");
 
@@ -180,6 +183,9 @@ function runGuardEnv(cwd: string, command: string, extra: Record<string, string>
   const env = { ...process.env, ...extra };
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_MERGE_OK;
+  // C21 (a merge on red checks) runs first and has its own file, merge-checks-guard.test.ts; it is
+  // stood down here so every answer below is C10's or C13's, judged against these shims alone.
+  env.PHX_RED_MERGE_OK = "1";
   delete env.PHX_SMOKE_OK;
   if (/PHX_SMOKE_OK=1/.test(command)) {
     /* the inline form is the point of that case — leave the command to carry it */
