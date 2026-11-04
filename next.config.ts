@@ -706,14 +706,18 @@ function withOptionalSentry(config: NextConfig): NextConfig {
     sourcemaps: { deleteSourcemapsAfterUpload: true },
     // The release is the commit sha. It is also marked as a production deploy, so Sentry shows when each release went
     // out and which errors first appeared in it. setCommits names the repository explicitly (the Docker build has no
-    // .git to read) and ignores a missing integration, so it only starts working once the GitHub integration is
-    // installed in Sentry and is silent until then.
+    // .git to read), so it only starts working once the GitHub integration is installed in Sentry.
+    // 🔴 `shouldNotThrowOnFailure`, NEVER `ignoreMissing` (2026-11-04). The plugin runs create → setCommits →
+    // finalize → deploy in that order, and a setCommits that throws skips the last two. On plugin 11 `ignoreMissing`
+    // maps to no CLI flag at all, so with no integration installed every production build logged
+    // "source-map upload skipped: API request failed: 400 Bad Request" and no release was ever finalized or marked
+    // deployed (deployCount 0, dateReleased null). The maps themselves upload through a separate step and were fine.
     ...(release
       ? {
           release: {
             name: release,
             deploy: { env: "production" },
-            setCommits: { repo: "Omar-3-xx/phoenix-people-workforce", commit: release, ignoreMissing: true },
+            setCommits: { repo: "Omar-3-xx/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true },
           },
         }
       : {}),

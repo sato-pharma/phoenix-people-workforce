@@ -347,7 +347,19 @@ function wiringTests() {
   }
   assert.match(nextConfigSource(), /telemetry: false/);
   assert.match(nextConfigSource(), /deploy: \{ env: "production" \}/, "each release is marked as a production deploy");
-  assert.match(nextConfigSource(), /setCommits: \{ repo: "Omar-3-xx\/phoenix-people-workforce", commit: release, ignoreMissing: true \}/, "commits are named explicitly and a missing integration is tolerated");
+  assert.match(nextConfigSource(), /setCommits: \{ repo: "Omar-3-xx\/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true \}/, "commits are named explicitly and a missing integration is tolerated");
+  // 2026-11-04: `ignoreMissing` is a no-op on plugin 11, so a missing GitHub integration threw out of setCommits and
+  // skipped finalize AND the deploy — every release read deployCount 0. Only `shouldNotThrowOnFailure` is honoured,
+  // and the INSTALLED plugin must still read that name, or a rename would bring the silent skip back.
+  assert.ok(!/ignoreMissing/.test(stripComments(nextConfigSource())), "ignoreMissing does nothing on plugin 11 — never the tolerance switch");
+  try {
+    const fromNextjs = createRequire(createRequire(import.meta.url).resolve("@sentry/nextjs/package.json"));
+    const managerSource = readFileSync(fromNextjs.resolve("@sentry/bundler-plugins/build/cjs/core/build-plugin-manager.js"), "utf8");
+    assert.match(managerSource, /setCommits\.shouldNotThrowOnFailure/, "the installed plugin must still honour shouldNotThrowOnFailure on setCommits");
+    assert.ok(managerSource.indexOf("cliInstance.setCommits(") < managerSource.indexOf("cliInstance.newDeploy("), "setCommits still runs before the deploy is recorded");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "MODULE_NOT_FOUND" && (error as { code?: string }).code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
+  }
   for (const switchName of ["autoInstrumentServerFunctions", "autoInstrumentMiddleware", "autoInstrumentAppDirectory", "automaticVercelMonitors"]) {
     assert.match(nextConfigSource(), new RegExp(`${switchName}: false`), `${switchName} stays off`);
   }
