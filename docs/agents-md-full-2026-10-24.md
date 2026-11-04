@@ -442,7 +442,7 @@ affected. Do not claim role safety from code inspection alone when real role tes
 gate** (the new container answers `/api/readyz` 503 until `validate` and `checks` passed on that
 commit — see §2). So a green CI is now a precondition of the
 deploy rather than a report on it, and the new failure mode is a deploy that never happened: confirm a
-deploy through `gh api repos/gawishtheit/phoenix-people-workforce/deployments` or `railway status`, and
+deploy through `gh api repos/Omar-3-xx/phoenix-people-workforce/deployments` or `railway status`, and
 what serves traffic via `/api/healthz` `revision` — **a merge plus a green PR is not evidence
 production moved.** Smoke-test on the live staging app (§3) before a risky
 production deploy when there is time. After a runtime-impacting production deploy, verify the public

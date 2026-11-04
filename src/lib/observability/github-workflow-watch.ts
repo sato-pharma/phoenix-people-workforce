@@ -21,7 +21,7 @@
 // THE GAP, stated plainly: if production itself is down this stays silent. `deploy-drift-check` covers
 // that from the other side, which is why it holds the shortest limit here.
 
-const OWNER = "gawishtheit";
+const OWNER = "Omar-3-xx";
 const REPO = "phoenix-people-workforce";
 const READ_TIMEOUT_MS = 15_000;
 const HOUR_MS = 60 * 60 * 1000;

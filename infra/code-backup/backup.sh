@@ -17,7 +17,7 @@ shopt -s nullglob
 : "${GOOGLE_DRIVE_OAUTH_CLIENT_SECRET:?}"
 : "${GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN:?}"
 
-OWNER="${CODE_BACKUP_OWNER:-gawishtheit}"
+OWNER="${CODE_BACKUP_OWNER:-Omar-3-xx}"
 FOLDER="${CODE_BACKUP_DRIVE_FOLDER:-phoenix-code-backup}"
 # Those APKs are in no clone, so a clone alone would lose them.
 RELEASE_REPOS="${CODE_BACKUP_RELEASE_REPOS:-hmdm-android}"

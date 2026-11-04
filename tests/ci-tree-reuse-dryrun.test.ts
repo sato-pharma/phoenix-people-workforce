@@ -134,7 +134,7 @@ function eligible(): Json {
         merge_commit_sha: SHA,
         base: { ref: "main" },
         head: { sha: PR_HEAD, repo: { full_name: REPO } },
-        user: { login: "gawishtheit", type: "User" },
+        user: { login: "Omar-3-xx", type: "User" },
       },
     ],
     runs: [

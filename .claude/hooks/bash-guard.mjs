@@ -1574,7 +1574,7 @@ try {
             'progress. It was 58% of that day\'s failed runs, and the real cause was the repository losing ' +
             'its Pro entitlement - nothing a retry could reach.\n' +
             'Do this instead:\n' +
-            '  gh api repos/gawishtheit/phoenix-people-workforce/branches/main --jq .protected   # false = the gate is off, entitlement lapsed\n' +
+            '  gh api repos/Omar-3-xx/phoenix-people-workforce/branches/main --jq .protected   # false = the gate is off, entitlement lapsed\n' +
             '  gh run list --workflow=ci.yml --branch <branch> --limit 5 --json databaseId,event,status,conclusion\n' +
             '  gh run rerun <id>   # the pull_request-sourced run: it keeps the event, so its checks reach the rollup\n' +
             'Then WAIT - dispatch lags 20-30 minutes during an Actions outage and events are not dropped. ' +
@@ -2113,7 +2113,7 @@ try {
       const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1];
       // 🔴 C10 AND C13 ARE PHOENIX'S OWN CI-COST RULES, SO THEY JUDGE PHOENIX'S PRs AND NO OTHER.
       // Until 2026-10-27 both took the bare number and asked `gh pr view <N>` from the session's
-      // folder — this repository — so `gh pr merge 50 --repo it-gawish-hr/phoenix-next` was judged
+      // folder — this repository — so `gh pr merge 50 --repo <owner>/phoenix-next` was judged
       // as PHOENIX's PR #50: its size, its checks, its roll-ups. Seen that day merging phoenix-next
       // 49, sato-anti-infective-app 6 and FTP-Portal 157. A `--repo`/`-R` naming any other
       // repository now steps both clauses aside; naming Phoenix itself keeps them judging, and their
