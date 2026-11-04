@@ -788,7 +788,7 @@ policy):
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
-   | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` · **in-house only** |
+   | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
    | `phoenix-system-audit-sweep` | `57 4 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
    | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 20m | cron-job.org job `8344730` |
@@ -897,7 +897,7 @@ policy):
    | `phoenix-direct-orders-probation` | `direct-orders` | The 90-day probation sweep: it promotes every provisional pharmacy that has earned a footprint and reports the ones whose window closed in silence, to the owner and the CEO. A red means neither happened. |
    | `phoenix-db-health-snapshot` | `platform` | Takes the query-statistics snapshot every six hours. A red means there is no recent baseline to compare a slow page against. |
    | `phoenix-territory-restamp` | `sales` | The nightly 03:20 territory restamp that keeps each customer's territory current against the master data. A red means sales rows are being attributed on a stale territory. |
-   | `phoenix-brick-move-drain` | `sales in-house-only` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. It has no external check, so only the in-house register watches it. |
+   | `phoenix-brick-move-drain` | `sales` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. |
    | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 integrity checks. They store their report and write every breach into the System Audit ledger, which the 04:57 daily message carries; they send nothing of their own. A red means last night's checks were neither stored nor reported. |
    | `phoenix-system-audit-sweep` | `platform in-house-only silent-when-clean` | The nightly 04:57 System Audit sweep: every detector in turn, the verifier, then one in-app and Telegram message, sent only when an issue is new, newly shared or reopened, so a quiet morning is correct. A red means last night's findings were not collected and nobody was told. |
    | `phoenix-crm-contact-lists` | `crm` | Rebuilds the CRM doctor and pharmacy contact lists every five minutes through hour 5. It pings directly rather than through the wrapper, because this route answers 500 without throwing. |
@@ -1068,7 +1068,7 @@ cannot report its own silence, and `phoenix-job-heartbeat-sweep` had no Healthch
 account was full. It has one now — read live 2026-10-15: status `up`, 4,454 pings, `*/15 * * * *` on
 Africa/Cairo with a 30-minute grace and both channels attached.
 
-🔴 **THE HOLE THAT REPLACED IT: `phoenix-brick-move-drain` has no external check.** It is declared,
+🔴 **THE HOLE THAT REPLACED IT, UNTIL 4 NOV 2026: `phoenix-brick-move-drain` had no external check.** It is declared,
 it is firing (the register recorded a success at 13:19 Cairo on 2026-10-15), and its `?create=1` is
 being refused because the project is at its ceiling — so the drain is watched inside Phoenix only. A
 monitoring layer that overstates its own coverage is worse than one that admits a gap, so this
@@ -1079,6 +1079,10 @@ paragraph exists instead of a green dashboard.
 **The same day, on his word, the fraud scan's check went to `phoenix-recruitment-whatsapp-reask`.** The count stays at 40 checks and 14 jobs without one. The re-ask's switch is still off, so for now its check proves only that the job fires, not that anyone was asked. The fraud scan pings once a week, so it adds one 404 refusal each Thursday, and the in-house sweep still watches it.
 
 **On 3 Nov 2026 `phoenix-approval-whatsapp-reminders` joined in-house only, so 55 jobs are declared and 15 have no check.** Healthchecks still holds its 40, and this job's pings are refused the same way.
+
+**On 4 Nov 2026, on his word, the Private Calendar gap notice's check went to `phoenix-brick-move-drain`.** The count stays at 40 checks, and the number of jobs without one does not change. The notice was already marked in-house only, and the in-house sweep and Sentry still watch it. It now adds one 404 refusal each Saturday, in place of the drain's three an hour.
+
+🔴 **A check cannot be moved through the API.** With one slot free, 39 checks held, `POST /api/v3/checks/` still answered 403 at 07:43 Cairo that day, for the new check and for restoring the deleted one. Only a ping with `?create=1` provisions past that limit. So a move is: delete the old check, ping the new slug at once, then tune it with `POST /api/v3/checks/<uuid>`, which is allowed. Any refused job that pings first takes the slot, so do it in one script. The ping key is on Railway only, so that script runs under `railway run`.
 
 **One declared job reports from INSIDE the database (2026-10-23).** `phoenix-crm-agent-crm-ids-reconcile`
 is the pg_cron job that alone keeps the departed-agent CRM id cache current; its command,

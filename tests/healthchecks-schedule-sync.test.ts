@@ -98,6 +98,18 @@ export async function runHealthchecksScheduleSyncTests() {
     "the fraud scan gave its check to the WhatsApp re-ask, so its row must stay in-house only",
   );
 
+  // A second moved on 4 Nov 2026, also on his word: the Private Calendar gap notice to the brick-move drain.
+  assert.equal(
+    bySlug.get("phoenix-brick-move-drain")?.externalSync,
+    true,
+    "the brick-move drain holds a Healthchecks check, so its row must not be marked in-house only",
+  );
+  assert.equal(
+    bySlug.get("private-calendar-gap-notice")?.externalSync,
+    false,
+    "the gap notice gave its check to the brick-move drain, so its row must stay in-house only",
+  );
+
   // The negative control. Without it, a marker regex that matched every row would pass the two
   // assertions above while silently switching the whole project off.
   assert.equal(
