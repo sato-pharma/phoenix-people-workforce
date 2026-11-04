@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { buildBulkAllocation, type BulkAllocationRow } from "../src/lib/sales/closing-bulk-allocation.ts";
 import {
   applyEpdaBonusDeduction,
   epdaBonusDeductionPercent,
@@ -9,7 +10,7 @@ import {
 /**
  * THE EPDA BONUS DEDUCTION — the owner's rule of 2026-11-04, from the October 2026 closing on:
  * Ivyronc loses 30%, Royafloxacin and Saginko 15%, on EPDA-BULK and EPDA-Pharmacies only, and units
- * stay whole numbers, made on each area's total.
+ * stay whole numbers, made on each area's total, and the closing's spread of the bulk book keeps them whole.
  *
  * What this pins: his own two examples, that no row ever carries a decimal, that nothing outside the
  * three products, the two books and the months moves, that the sheet's units survive in `rawRow`,
@@ -112,7 +113,44 @@ export function runEpdaBonusDeductionTests() {
     assert.deepEqual(mixed.map((r) => r.qty), [70, 100], "a book's other products are left alone");
   }
 
-  // 6. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
+  // 6. THE CLOSING'S SPREAD OF THE BULK BOOK'S IVYRONC STAYS WHOLE FROM OCTOBER. It moves the book by
+  //    each area's share of the other distributors' value, and those shares are never round numbers.
+  {
+    const rowOf = (over: Partial<BulkAllocationRow>): BulkAllocationRow => ({
+      areaCode: "D21",
+      clientCode: "C-1",
+      clientName: "صيدلية النور",
+      distributorCode: "PS",
+      includedInClosing: true,
+      isDirect: false,
+      officialLine: "Pedia",
+      productCode: "LA001",
+      qty: 10,
+      salesValue: 1000,
+      ...over,
+    });
+    const rows = [
+      rowOf({ areaCode: "D21", salesValue: 1000 }),
+      rowOf({ areaCode: "D15", salesValue: 1000 }),
+      rowOf({ areaCode: "D14", salesValue: 1000 }),
+      rowOf({ areaCode: "AB1", distributorCode: "EP-BK", productCode: "IV001", qty: 3190, effectiveUnits: 3190, salesValue: 3190 * 30.375 }),
+    ];
+    const inOf = (period: string) => buildBulkAllocation(rows, period, "Pedia").movements.filter((leg) => leg.inQty !== 0);
+
+    const october = inOf("2026-10");
+    assert.equal(october.length, 3);
+    assert.ok(october.every((leg) => Number.isInteger(leg.inQty)), "every area takes whole units");
+    assert.equal(october.reduce((sum, leg) => sum + leg.inQty, 0), 3190, "and the book's total is exact");
+    const money = october.reduce((sum, leg) => sum + leg.inValue, 0);
+    assert.ok(Math.abs(money - 3190 * 30.375) < 1e-6, "the value that left is the value that lands");
+    for (const leg of october) assert.ok(Math.abs(leg.inValue - leg.inQty * 30.375) < 1e-3, "an area's value is its units at the price");
+    const effective = buildBulkAllocation(rows, "2026-10", "Pedia").effectiveMovements.filter((leg) => leg.inQty !== 0);
+    assert.ok(effective.every((leg) => Number.isInteger(leg.inQty)), "the attribution measure is whole as well");
+
+    assert.ok(inOf("2026-09").some((leg) => !Number.isInteger(leg.inQty)), "September keeps what it published");
+  }
+
+  // 7. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
   //    here without a database, and a route that skipped it would announce the undeducted figure.
   {
     const normalized = readFileSync("src/lib/sales/normalizer/service.ts", "utf8");

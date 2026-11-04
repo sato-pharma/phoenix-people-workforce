@@ -49,6 +49,7 @@ import {
   type RespreadMergeableSplit,
   type RespreadRow,
 } from "@/lib/sales/contribution-respread";
+import { isEpdaBonusDeductionActive } from "@/lib/sales/import-epda-bonus-deduction";
 
 /**
  * A closing detail row, narrowed to what this rule reads.
@@ -117,7 +118,9 @@ export function buildBulkAllocation(
     base.push(row);
   }
 
-  return buildContributionRespread({ base, line: String(line ?? ""), moved });
+  // From October the book's units are whole numbers and every area's share stays one (owner,
+  // 2026-11-04: "never to put a decimal in units"). Earlier months keep what they published.
+  return buildContributionRespread({ base, line: String(line ?? ""), moved, wholeUnits: isEpdaBonusDeductionActive(period) });
 }
 
 /**

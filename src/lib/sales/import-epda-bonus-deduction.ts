@@ -38,13 +38,18 @@ export const EPDA_BONUS_DEDUCTION_PERCENT: Readonly<Record<string, number>> = {
 
 const normalizedCode = (value: unknown) => String(value ?? "").trim().toUpperCase();
 
+/** True for `2026-10` and every month after it. */
+export function isEpdaBonusDeductionActive(period: string | null | undefined): boolean {
+  return Boolean(period) && /^\d{4}-\d{2}/.test(String(period)) && String(period).slice(0, 7) >= EPDA_BONUS_DEDUCTION_START_PERIOD;
+}
+
 /** The percent this row's units lose, 0 when the rule does not reach it. */
 export function epdaBonusDeductionPercent(
   distributorCode: unknown,
   productCode: unknown,
   period: string | null | undefined,
 ): number {
-  if (!period || !/^\d{4}-\d{2}/.test(period) || period.slice(0, 7) < EPDA_BONUS_DEDUCTION_START_PERIOD) return 0;
+  if (!isEpdaBonusDeductionActive(period)) return 0;
   if (!(EPDA_BONUS_DEDUCTION_DISTRIBUTORS as readonly string[]).includes(normalizedCode(distributorCode))) return 0;
   return EPDA_BONUS_DEDUCTION_PERCENT[normalizedCode(productCode)] ?? 0;
 }

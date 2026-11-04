@@ -3235,7 +3235,7 @@ He settled the rest in answers the same day: Ivyronc 30% (his other example, 100
 
 `src/lib/sales/import-epda-bonus-deduction.ts` runs when the rows are stored, on both routes into `source_of_sales_import_rows`. A read-time net like the bulk allocation's was rejected: about thirty-five database functions read those rows directly, and any one a net missed would announce the undeducted figure. `raw_row` keeps the sheet's units and a re-upload starts again from the sheet, so changing a percentage means re-uploading that month's two books.
 
-Each area × product total rounds once and its rows take whole shares by largest remainder, so a one-unit pharmacy line can store 0 or 1. EPDA-BULK's Ivyronc is one group across the whole book, because the closing ignores its invoiced area and spreads it by contribution.
+Each area × product total rounds once and its rows take whole shares by largest remainder, so a one-unit pharmacy line can store 0 or 1. EPDA-BULK's Ivyronc is one group across the whole book, because the closing ignores its invoiced area and spreads it by contribution; from October that spread lands whole units too (`wholeUnits` in `contribution-respread.ts`).
 
 ## No distributor's bonus is counted from September — owner rule, 2026-09-18
 
