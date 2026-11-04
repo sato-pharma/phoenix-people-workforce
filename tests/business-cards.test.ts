@@ -8,7 +8,11 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef } from "p
 
 import {
   applyCardEdits,
+  applyRequestedCard,
   cardFieldsFor,
+  fallbackCardEmail,
+  latestRequestedCard,
+  withDoctorTitle,
   formatCardLineArea,
   formatCardMobile,
 } from "../src/lib/business-cards/card-content.ts";
@@ -119,9 +123,49 @@ export async function runBusinessCardsTests() {
     website: CARD_WEBSITE,
   });
 
-  const edited = applyCardEdits(fields, { email: "", name: "  Aya  M. Elsawy ", website: "example.com" } as never);
+  const edited = applyCardEdits(fields, { email: "", mobile: "", name: "  Aya  M. Elsawy ", website: "example.com" } as never);
   assert.equal(edited.name, "Aya M. Elsawy");
-  assert.equal(edited.email, "", "a blanked line stays blank — it is left off the card");
+  assert.equal(edited.mobile, "", "a blanked line stays blank — it is left off the card");
+  assert.equal(edited.email, "aya.elsawy@satopharma.com", "the email is NEVER blanked — a cleared box keeps the card's own address");
+  assert.equal(applyCardEdits(fields, { email: " New.Addr@satopharma.com " }).email, "New.Addr@satopharma.com", "a typed email prints");
+
+  // ── The email is never empty (owner, 2026-11-04): first.second@satopharma.com from the full name ──
+  const noEmail = cardFieldsFor({
+    areaName: null,
+    displayName: "Hagar",
+    fullName: "  Hagar  Abu-zeid Mostafa ",
+    jobTitle: null,
+    lineName: null,
+    mobileNumber: null,
+    workEmail: "  ",
+  });
+  assert.equal(noEmail.email, "hagar.abuzeid@satopharma.com", "no work email: first name dot second name, English letters only");
+  assert.equal(fallbackCardEmail(null, "Mahmoud Hosny"), "mahmoud.hosny@satopharma.com", "no full name: the display name");
+  assert.equal(fallbackCardEmail("Aya", null), "aya@satopharma.com", "one word: that word alone");
+  assert.equal(fallbackCardEmail("آية محمد", null), "", "no English letters: nothing honest to spell");
+
+  // ── The employee's own card reaches HR's screen (owner, 2026-11-04) ─────────────────────────────
+  const requests = [
+    { cardMobile: "01011112222", cardName: "Aya Old", createdAt: "2026-10-01T09:00:00+00:00", status: "Printed" },
+    { cardMobile: null, cardName: "Aya Newest", createdAt: "2026-11-03T09:00:00+00:00", status: "Cancelled" },
+    { cardMobile: "01033334444", cardName: "Aya M. Elsawy", createdAt: "2026-11-02T09:00:00+00:00", status: "In Progress" },
+  ];
+  const latest = latestRequestedCard(requests);
+  assert.equal(latest?.cardName, "Aya M. Elsawy", "the newest request that is not Cancelled stands for the card");
+  const synced = applyRequestedCard(fields, latest);
+  assert.equal(synced.name, "Aya M. Elsawy", "the name the employee set prints");
+  assert.equal(synced.mobile, "01033334444", "the mobile the employee set prints");
+  assert.equal(synced.email, fields.email, "the record's other lines stay");
+  assert.equal(applyRequestedCard(fields, { ...requests[0], cardMobile: null, cardName: "" }).mobile, "", "a mobile they cleared stays off");
+  assert.equal(applyRequestedCard(fields, { ...requests[0], cardName: "  " }).name, fields.name, "a request with no name keeps the record's name");
+  assert.deepEqual(applyRequestedCard(fields, null), fields, "nobody asked: the record");
+
+  // ── The Dr. toggle (owner, 2026-11-04) ───────────────────────────────────────────────────────────
+  assert.equal(withDoctorTitle(" Aya  Elsawy "), "Dr. Aya Elsawy", "the toggle prints Dr. before the name");
+  assert.equal(withDoctorTitle("Dr. Aya Elsawy"), "Dr. Aya Elsawy", "never Dr. Dr.");
+  assert.equal(withDoctorTitle("dr Aya"), "dr Aya", "a title already typed is left as typed");
+  assert.equal(withDoctorTitle("Drew Smith"), "Dr. Drew Smith", "a name that merely starts with Dr is still titled");
+  assert.equal(withDoctorTitle(""), "", "no name: nothing to title");
   assert.equal(edited.website, CARD_WEBSITE, "the company's website is not an editable line");
 
   assert.equal(cardFileName("Aya Elsawy", "card"), "business-card-Aya-Elsawy.pdf");

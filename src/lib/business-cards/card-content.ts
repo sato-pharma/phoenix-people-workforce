@@ -16,6 +16,8 @@ export type BusinessCardFields = {
 export type BusinessCardSource = {
   areaName: string | null;
   displayName: string;
+  /** The legal name — the made-up work address is built from it (see fallbackCardEmail). */
+  fullName?: string | null;
   jobTitle: string | null;
   lineName: string | null;
   mobileNumber: string | null;
@@ -80,10 +82,32 @@ export function formatCardLineArea(lineName: string | null | undefined, areaName
   return `${line} · ${area.toUpperCase()}`;
 }
 
+/** The company mail domain every card address is on. */
+export const CARD_EMAIL_DOMAIN = "satopharma.com";
+
+/**
+ * "first.second@satopharma.com" — the address a card prints when the register holds no work email.
+ *
+ * Owner, 2026-11-04: "Even if no email, get his first name dot his second name at satopharma.com,
+ * never make it empty." Built from the legal full name (else the display name): its first two words,
+ * English letters only, lowercase. A name with no English letters at all yields "" — there is nothing
+ * honest to spell, and the card then leaves the line off as before.
+ */
+export function fallbackCardEmail(fullName: string | null | undefined, displayName?: string | null): string {
+  const words = (name: string | null | undefined) =>
+    clean(name)
+      .split(" ")
+      .map((word) => word.toLowerCase().replace(/[^a-z]/g, ""))
+      .filter(Boolean);
+  const parts = words(fullName).length ? words(fullName) : words(displayName);
+  return parts.length ? `${parts.slice(0, 2).join(".")}@${CARD_EMAIL_DOMAIN}` : "";
+}
+
 export function cardFieldsFor(source: BusinessCardSource): BusinessCardFields {
   return {
     address: CARD_ADDRESS,
-    email: clean(source.workEmail).toLowerCase(),
+    // NEVER EMPTY (owner, 2026-11-04): the register's work email, else first.second@satopharma.com.
+    email: clean(source.workEmail).toLowerCase() || fallbackCardEmail(source.fullName, source.displayName),
     lineArea: formatCardLineArea(source.lineName, source.areaName),
     mobile: formatCardMobile(source.mobileNumber),
     name: clean(source.displayName),
@@ -92,7 +116,10 @@ export function cardFieldsFor(source: BusinessCardSource): BusinessCardFields {
   };
 }
 
-/** Applies what was typed on screen over the record's values. Blank means "leave this line off". */
+/**
+ * Applies what was typed on screen over the record's values. Blank means "leave this line off" —
+ * except the email, which is never left off (owner, 2026-11-04): a blanked email keeps the card's own.
+ */
 export function applyCardEdits(
   fields: BusinessCardFields,
   edits: Partial<Record<EditableCardField, unknown>> | null | undefined,
@@ -100,7 +127,48 @@ export function applyCardEdits(
   const next = { ...fields };
   for (const key of EDITABLE_CARD_FIELDS) {
     const value = edits?.[key];
-    if (typeof value === "string") next[key] = clean(value).slice(0, CARD_FIELD_MAX_LENGTH);
+    if (typeof value !== "string") continue;
+    const typed = clean(value).slice(0, CARD_FIELD_MAX_LENGTH);
+    if (key === "email" && !typed) continue;
+    next[key] = typed;
   }
   return next;
+}
+
+/**
+ * "Dr. Aya Elsawy" — the name with the doctor's title before it, for the per-card toggle on the HR
+ * screen (owner, 2026-11-04: "If I turn on this toggle, the card is printed with doctor and the name
+ * before it"). A name that already carries the title is left as it is, so it never prints "Dr. Dr.".
+ */
+export function withDoctorTitle(name: string): string {
+  const cleaned = clean(name);
+  if (!cleaned || /^(dr\.?|doctor)(\s|$)/i.test(cleaned)) return cleaned;
+  return `Dr. ${cleaned}`.slice(0, CARD_FIELD_MAX_LENGTH);
+}
+
+/** The two lines an employee sets for their own card when they ask HR to print it. */
+export type RequestedCardLines = { cardMobile: string | null; cardName: string | null; createdAt: string; status: string };
+
+/**
+ * The employee's own card as they last asked for it, laid over the record (owner, 2026-11-04: "one rep
+ * or an employee edit in how his business card want. It syncs in the main module in the admin").
+ *
+ * The LATEST request that is not Cancelled wins. Its name prints when it has one; its mobile prints as
+ * they sent it, and a request sent with the mobile cleared prints no mobile, as their own preview did.
+ */
+export function applyRequestedCard(fields: BusinessCardFields, request: RequestedCardLines | null | undefined): BusinessCardFields {
+  if (!request) return fields;
+  const name = clean(request.cardName).slice(0, CARD_FIELD_MAX_LENGTH);
+  return {
+    ...fields,
+    mobile: clean(request.cardMobile).slice(0, CARD_FIELD_MAX_LENGTH),
+    name: name || fields.name,
+  };
+}
+
+/** The request that stands for each person's card: newest first, Cancelled skipped. */
+export function latestRequestedCard<T extends RequestedCardLines>(requests: readonly T[]): T | null {
+  return [...requests]
+    .filter((request) => request.status !== "Cancelled")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
 }
