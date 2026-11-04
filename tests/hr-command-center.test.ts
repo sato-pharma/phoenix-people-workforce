@@ -268,6 +268,8 @@ const FUNCTIONS_WITH_NO_TILES = new Set([
   "hiring_desk",
   // The HR Operations Specialist's calendars and reports (2026-11-03): pages to open, not a queue.
   "hr_calendars",
+  // The medical insurance seat grant (2026-11-04): its list is on the module's own page.
+  "medical_insurance_members",
   "workforce_context",
   "recognition",
   // HR Reminders is the team's own notes page, not a queue this dashboard counts.

@@ -97,6 +97,8 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   phoenix_crm: "Phoenix CRM",
   probation: "Probation",
   production_planning: "Production Planner",
+  medical_insurance: "Medical Insurance",
+  medical_insurance_invoices: "Medical Insurance Invoices",
   recruitment: "Recruitment",
   report_it: "Report It",
   resignations: "Resignations",

@@ -339,6 +339,8 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   hiring_desk: [],
   // Names who is off today on her page; the row carries a leave type and dates, never an amount.
   hr_calendars: ["vacationsToday"],
+  // Who to add or remove is on the module's own page; this dashboard counts no queue for it.
+  medical_insurance_members: [],
   employee_requests: ["supportRequests"],
   /**
    * TWO sources since 2026-10-13, and both are for the Talent Acquisition seat's OWN overview page
@@ -786,6 +788,7 @@ const TILES_BY_FUNCTION: Record<
   hiring_paperwork: () => [],
   hiring_desk: () => [],
   hr_calendars: () => [],
+  medical_insurance_members: () => [],
   // NONE. Reading the chart, the calendars and the boards is context for her recruiting, not a
   // backlog — a tile here could only be invented.
   workforce_context: () => [],
@@ -1000,6 +1003,7 @@ const CHARTS_BY_FUNCTION: Record<
   hiring_paperwork: () => [],
   hiring_desk: () => [],
   hr_calendars: () => [],
+  medical_insurance_members: () => [],
   workforce_context: () => [],
   recognition: () => [],
   team_reminders: () => [],
