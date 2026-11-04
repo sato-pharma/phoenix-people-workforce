@@ -20,6 +20,7 @@ import { PHOENIX_TEMPLATE_CODE, PHOENIX_TEMPLATE_NAME } from "@/lib/sales/normal
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { recognizeWorkbookFiles } from "@/lib/sales/normalizer/multi-file";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import { applyEpdaBonusDeduction } from "@/lib/sales/import-epda-bonus-deduction";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview, type NormalizeFileResult, type NormalizePart, type NormalizePreview, type RecognizeOptions } from "@/lib/sales/recognize";
 import { decodeFileRow } from "@/lib/sales/sales-upload-files";
@@ -511,7 +512,9 @@ export async function persistNormalizedBatch(input: {
   const { coded } = input.result;
   const period = input.period ?? dominantPeriod(coded);
   // only rows in the chosen period are imported (one batch = one month, like the importer)
-  const rows = coded.filter((r) => r.invoiceDate === period);
+  // 🔴 EPDA's bonus deduction comes off here, before any total is taken, so the batch, its summaries and
+  // every report read the same whole units (import-epda-bonus-deduction.ts). `raw_row` keeps the sheet's.
+  const rows = applyEpdaBonusDeduction(coded.filter((r) => r.invoiceDate === period), (r) => r.invoiceDate);
   const totalQty = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0);
   const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);
   const totalValue = rows.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0);

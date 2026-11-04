@@ -21,6 +21,7 @@ import {
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { assertNotADuplicateUpload, repriceableUploadRow, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
+import { applyEpdaBonusDeduction } from "@/lib/sales/import-epda-bonus-deduction";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import {
   addClosingSales,
@@ -3372,7 +3373,24 @@ export async function persistDistributorSalesUpload(
   parsed: DistributorSalesValidationResult & { parsedRows: ParsedDistributorRow[] },
   uploadedBy: string,
 ) {
-  const { parsedRows, ...result } = parsed;
+  const { parsedRows: sheetRows, ...parsedResult } = parsed;
+  // 🔴 EPDA's bonus deduction, on this route too: the Normalizer's one-click import lands here
+  // (import-epda-bonus-deduction.ts). A blocked batch never counts, so it stays as the sheet said.
+  const parsedRows =
+    parsedResult.status === "validated" ? applyEpdaBonusDeduction(sheetRows, (row) => row.invoicePeriod ?? parsedResult.period) : sheetRows;
+  // The per-line summaries inserted below still carry the sheet's figures for a moment: the tail's
+  // phx_refresh_sos_import_summaries rebuilds them from the stored rows.
+  const result =
+    parsedRows === sheetRows
+      ? parsedResult
+      : {
+          ...parsedResult,
+          totals: {
+            ...parsedResult.totals,
+            totalQty: Number(parsedRows.reduce((sum, row) => sum + (Number.isFinite(row.qty) ? row.qty : 0), 0).toFixed(6)),
+            totalValue: Number(parsedRows.reduce((sum, row) => sum + (Number.isFinite(row.value) ? row.value : 0), 0).toFixed(6)),
+          },
+        };
 
   // Locked period: reject before writing anything (covers normal, normalizer-buffer, and Office paths).
   await assertPeriodNotLocked(result.period);
