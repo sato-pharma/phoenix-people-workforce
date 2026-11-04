@@ -479,7 +479,7 @@ function runWiringChecks(): void {
   );
   assert.match(
     splitNet,
-    /\["closing-store-split-with-bulk-and-office-respread"\]/,
+    /\["closing-store-split-with-bulk-office-respread-and-epda-rule-2"\]/,
     "the cache key must change with the payload shape: an entry from the previous deploy read back "
       + "as this shape hands the Office grid an undefined net",
   );

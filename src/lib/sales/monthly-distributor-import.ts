@@ -4649,6 +4649,12 @@ async function listLineProductsForClosing(line: string): Promise<SalesProductRef
  */
 export type MonthlyClosingParts = {
   combined: MonthlyClosingMatrix;
+  /**
+   * Per area|product, the EPDA units rule 2 landed on each area (owner, 2026-11-04), whole month —
+   * set by the store-split loader for the EPDA tab of the downloads (closing-epda-sheet.ts). Already
+   * inside `combined`; absent before October 2026 and on every line rule 2 does not reach.
+   */
+  epdaUnits?: ReadonlyMap<string, number>;
   retail: MonthlyClosingMatrix;
   directCells: MonthlyClosingDirectCell[];
   /**

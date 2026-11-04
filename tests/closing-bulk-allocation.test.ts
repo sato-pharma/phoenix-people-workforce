@@ -7,12 +7,18 @@ import {
   isBulkAllocatedProduct,
   isBulkAllocatedRow,
   isBulkAllocationActive,
+  isEpdaContributionActive,
 } from "../src/lib/sales/bulk-allocation-channel.ts";
 import {
   buildBulkAllocation,
+  bulkAllocationRows,
+  epdaUnitsLanded,
   mergeBulkAllocationIntoSplit,
   type BulkAllocationRow,
 } from "../src/lib/sales/closing-bulk-allocation.ts";
+import { buildClosingEpdaSheet, CLOSING_EPDA_SHEET_NAME, closingEpdaSheetSpec } from "../src/lib/sales/closing-epda-sheet.ts";
+import { applyCreditedAreaView, EPDA_SHARE_LABEL, isEpdaShareRow } from "../src/lib/sales/closing-main-stores.ts";
+import { classifyRowKind } from "../src/lib/sales/sos-pharmacy-actions.ts";
 import { buildOfficeAreaWeights } from "../src/lib/sales/office-allocation.ts";
 import {
   areaProductKey,
@@ -405,5 +411,213 @@ export function runClosingBulkAllocationTests() {
     }
     assert.equal(mixed.areaShare.has("AB1"), false, "least of all the area its own invoice names");
     assert.equal(mixed.net.has(key("AB1", "LA001")), false, "and the Lacto row keeps its invoiced area");
+  }
+
+  // 10. 🔴 RULE 2, FROM OCTOBER 2026 (owner, 2026-11-04): BOTH EPDA BOOKS, THREE PRODUCTS, EACH SPREAD BY
+  //     ITS OWN RETAIL UNITS. "you will get the total retail sales of every rep without epda bulk or
+  //     epda-pharmacies then you will distribute the epda sales based on the contribution per area in
+  //     retail sales ... then add the direct sales". Retail is every other distributor (the main EPDA
+  //     book included) and never a direct order.
+  {
+    const retail = (areaCode: string, productCode: string, qty: number, over: Partial<BulkAllocationRow> = {}) =>
+      baseRow({ areaCode, effectiveUnits: qty, productCode, qty, salesValue: qty * 10, ...over });
+    const epda = (distributorCode: string, areaCode: string, productCode: string, qty: number, line = "Pedia") =>
+      bulkRow({ areaCode, distributorCode, effectiveUnits: qty, officialLine: line, productCode, qty, salesValue: qty * 30 });
+    const inUnits = (allocation: ReturnType<typeof buildBulkAllocation>, product: string) =>
+      new Map(allocation.movements.filter((leg) => leg.productCode === product && leg.inQty !== 0).map((leg) => [leg.areaCode, leg.inQty]));
+
+    const pedia = [
+      retail("D21", "IV001", 60),
+      retail("D15", "IV001", 20, { distributorCode: "EP" }),
+      retail("D15", "IV001", 10),
+      // Priced far above the rest (a short-dated lot, a price change): by VALUE D14 would take most of
+      // the spread. The weights are the units, so its ten units weigh exactly what ten units weigh.
+      retail("D14", "IV001", 10, { salesValue: 5000 }),
+      // A lot of another product's money in D14 does not weight Ivyronc: the same product's units only.
+      retail("D14", "LA001", 5000),
+      // Nor does a direct order, however large: direct is added after the spread, never a weight.
+      retail("D14", "IV001", 900, { isDirect: true }),
+      epda("EP-BK", "AB1", "IV001", 300),
+      epda("EP-PHS", "D21", "IV001", 100),
+      epda("EP-BK", "AB1", "LA001", 50),
+    ];
+    assert.equal(isEpdaContributionActive("2026-10"), true);
+    assert.equal(isEpdaContributionActive("2026-09"), false, "September keeps the rule it was published with");
+    const october = buildBulkAllocation(pedia, "2026-10", "Pedia");
+    assert.deepEqual(
+      [...inUnits(october, "IV001")].sort(),
+      [["D14", 40], ["D15", 120], ["D21", 240]],
+      "400 Ivyronc from both books land 60:30:10, the retail Ivyronc units",
+    );
+    assert.equal(october.movedQty, 400, "both books moved, and nothing else");
+    assert.equal(october.net.has(key("AB1", "LA001")), false, "the books' other products keep their invoiced area");
+    assert.equal(october.net.get(key("AB1", "IV001"))?.qty, -300, "the bulk book leaves its invoiced area");
+    assert.equal(october.net.get(key("D21", "IV001"))?.qty, 140, "D21 gives up its pharmacy invoice and takes its share");
+    const pediaSeptember = buildBulkAllocation(pedia, "2026-09", "Pedia");
+    assert.equal(pediaSeptember.movedQty, 300, "in September only the bulk book moves, by value");
+
+    const anti = [
+      retail("D21", "RO001", 30, { officialLine: "Anti Infective" }),
+      retail("D15", "RO001", 70, { officialLine: "Anti Infective" }),
+      retail("D21", "SA001", 90, { officialLine: "Anti Infective" }),
+      retail("D15", "SA001", 10, { officialLine: "Anti Infective" }),
+      epda("EP-BK", "AB1", "RO001", 2952, "Anti Infective"),
+      epda("EP-BK", "AB1", "SA001", 3002, "Anti Infective"),
+    ];
+    const antiOctober = buildBulkAllocation(anti, "2026-10", "Anti Infective");
+    assert.deepEqual([...inUnits(antiOctober, "RO001")].sort(), [["D15", 2066], ["D21", 886]], "Royafloxacin by its own units, 30:70");
+    assert.deepEqual([...inUnits(antiOctober, "SA001")].sort(), [["D15", 300], ["D21", 2702]], "Saginko by its own units, 90:10");
+    for (const leg of antiOctober.movements) assert.ok(Number.isInteger(leg.inQty), "every area takes whole units");
+    assert.equal(buildBulkAllocation(anti, "2026-09", "Anti Infective").movedQty, 0, "Anti Infective never moved before October");
+
+    // A product no retail distributor sold has nothing to copy, and keeps its invoiced areas.
+    const unsold = buildBulkAllocation([...pedia, epda("EP-BK", "AB1", "RO001", 10, "Anti Infective")], "2026-10", "Anti Infective");
+    assert.equal(unsold.movedQty, 0, "no retail Royafloxacin, so nothing moves, and Pedia's Ivyronc is not this line's to move");
+
+    // The city split leaves every one of these rows alone, or the same units would move twice.
+    const pharmacyRo = { distributorCode: "EP-PHS", officialLine: "Anti Infective", productCode: "RO001" };
+    assert.equal(isBulkAllocatedRow(pharmacyRo, "2026-10"), true);
+    assert.equal(isBulkAllocatedRow(pharmacyRo, "2026-09"), false);
+    assert.equal(isBulkAllocatedRow({ ...pharmacyRo, distributorCode: "EP" }, "2026-10"), false, "the main EPDA book is retail");
+    assert.equal(isBulkAllocatedRow({ ...pharmacyRo, productCode: "LA001", officialLine: "Pedia" }, "2026-10"), false);
+    assert.equal(
+      isSplitEligible(baseRow({ clientName: "مخزن الحجاز", distributorCode: "EP-PHS", officialLine: "Anti Infective", productCode: "SA001" }), "2026-10"),
+      false,
+      "carved out of the city rule",
+    );
+  }
+
+  // 11. THE EPDA TAB OF THE THREE DOWNLOADS (owner, 2026-11-04): "a column per product share for epda
+  //     after the spread", and "never show that there are reduced units in the xlsx closing sheet".
+  {
+    const area = (areaCode: string, areaName: string, extra: Record<string, unknown> = {}) => ({ areaCode, areaName, ...extra });
+    const matrix = {
+      columns: [
+        { productCode: "IV001", productName: "Ivyronc" },
+        { productCode: "LA001", productName: "Lacto Advanced" },
+      ],
+      line: "Pedia",
+      period: "2026-10",
+      regions: [
+        { regionName: "Delta (1)", areas: [area("D21", "Tanta"), area("D15", "Mansoura")] },
+        { regionName: "Cairo", areas: [area("CA1", "Nasr City")] },
+        { regionName: "Delta (2)", areas: [area("D14", "Zagazig"), area("DIRECT", "Direct", { isDirect: true })] },
+      ],
+    } as unknown as Parameters<typeof closingEpdaSheetSpec>[0]["matrix"];
+    const epdaUnits = new Map([
+      [key("D21", "IV001"), 240],
+      [key("D15", "IV001"), 120],
+      [key("D14", "IV001"), 40],
+      [key("DIRECT", "IV001"), 999],
+    ]);
+    const spec = closingEpdaSheetSpec({ epdaUnits, matrix, periodLabel: "October 2026" });
+    assert.ok(spec, "October with EPDA units has a tab");
+    assert.deepEqual(spec.headers, ["Region", "Area", "Ivyronc EPDA units"], "one column per product that has EPDA units, Lacto none");
+    assert.deepEqual(spec.records, [
+      ["Delta (1)", "", 360],
+      ["Delta (1)", "Tanta", 240],
+      ["Delta (1)", "Mansoura", 120],
+      ["Delta (2)", "", 40],
+      ["Delta (2)", "Zagazig", 40],
+      ["Total", "", 400],
+    ], "an area with none is left out, the synthetic Direct area never shows, and the total is the whole spread");
+    assert.deepEqual(spec.rowKinds, ["group", "detail", "detail", "group", "detail", "total"]);
+    const words = [...spec.headers, spec.caption].join(" ").toLowerCase();
+    for (const banned of ["reduc", "deduct", "bonus", "%", "percent", "30", "15"]) {
+      assert.equal(words.includes(banned), false, `no word on the tab says "${banned}"`);
+    }
+    assert.equal(closingEpdaSheetSpec({ epdaUnits, matrix: { ...matrix, period: "2026-09" }, periodLabel: null }), null, "September has no tab");
+    assert.equal(closingEpdaSheetSpec({ epdaUnits, matrix: { ...matrix, periods: ["2026-10", "2026-11"] }, periodLabel: null }), null, "a multi-month file has no tab");
+    assert.equal(closingEpdaSheetSpec({ epdaUnits: new Map(), matrix, periodLabel: null }), null, "no units, no tab");
+    const sheet = buildClosingEpdaSheet({ epdaUnits, line: "Pedia", matrix, periodLabel: "October 2026" });
+    assert.equal(sheet?.name, CLOSING_EPDA_SHEET_NAME);
+    assert.equal(sheet?.rows.length, spec.records.length, "the premium tab carries the same grid");
+
+    // And the spread is what the tab reads: the IN legs of a rule-2 allocation, per area and product.
+    const landed = epdaUnitsLanded(buildBulkAllocation([
+      baseRow({ areaCode: "D21", effectiveUnits: 30, productCode: "IV001", qty: 30, salesValue: 300 }),
+      baseRow({ areaCode: "D15", effectiveUnits: 10, productCode: "IV001", qty: 10, salesValue: 100 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-PHS", effectiveUnits: 100, productCode: "IV001", qty: 100, salesValue: 3000 }),
+    ], "2026-10", "Pedia"), "2026-10");
+    assert.deepEqual([...landed].sort(), [[key("D15", "IV001"), 25], [key("D21", "IV001"), 75]]);
+    assert.equal(epdaUnitsLanded({ movements: [{ areaCode: "D21", inQty: 5, productCode: "IV001" } as never] }, "2026-09").size, 0, "nothing before October");
+
+    // A product no retail distributor sold is not spread, and the tab still shows it where it stays.
+    const unsoldRows = [
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 10, officialLine: "Anti Infective", productCode: "RO001", qty: 10, salesValue: 300 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 7, officialLine: "Anti Infective", productCode: "LA001", qty: 7, salesValue: 70 }),
+    ];
+    const kept = epdaUnitsLanded(buildBulkAllocation(unsoldRows, "2026-10", "Anti Infective"), "2026-10", unsoldRows);
+    assert.deepEqual([...kept], [[key("AB1", "RO001"), 10]], "Royafloxacin stays on its invoiced area and is on the tab; Lacto is not a rule-2 product");
+  }
+
+  // 12. A VIEWER'S ROWS CARRY THE SAME SPREAD (applyCreditedAreaView). A District Manager's file is
+  //     rebuilt from them, so they must put each area's EPDA share where the matrix put it.
+  {
+    const rows = [
+      baseRow({ areaCode: "D21", effectiveUnits: 60, productCode: "IV001", qty: 60, salesValue: 600 }),
+      baseRow({ areaCode: "D15", effectiveUnits: 30, productCode: "IV001", qty: 30, salesValue: 300 }),
+      baseRow({ areaCode: "D14", effectiveUnits: 10, productCode: "IV001", qty: 10, salesValue: 100 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 300, productCode: "IV001", qty: 300, salesValue: 9000 }),
+      // A pharmacy, so the city rule has nothing to say about it in either month.
+      bulkRow({ areaCode: "D21", clientName: "صيدلية الشفاء", distributorCode: "EP-PHS", effectiveUnits: 100, productCode: "IV001", qty: 100, salesValue: 3000 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 50, productCode: "LA001", qty: 50, salesValue: 500 }),
+    ];
+    const label = (code: string) => ({ areaName: `Area ${code}`, regionCode: "R1", regionName: "Region 1" });
+    const epdaBy = (out: readonly BulkAllocationRow[], field: "qty" | "salesValue") => {
+      const totals = new Map<string, number>();
+      for (const row of out) {
+        if (!String(row.distributorCode).startsWith("EP-") || row.productCode !== "IV001") continue;
+        totals.set(row.areaCode, Math.round(((totals.get(row.areaCode) ?? 0) + Number(row[field])) * 1e6) / 1e6);
+      }
+      return [...totals].sort();
+    };
+    const october = applyCreditedAreaView(rows as never[], { areaLabelOf: label, line: "Pedia", period: "2026-10" }) as BulkAllocationRow[];
+    assert.deepEqual(epdaBy(october, "qty"), [["D14", 40], ["D15", 120], ["D21", 240]], "each area's EPDA rows add to the matrix's share");
+    assert.deepEqual(epdaBy(october, "salesValue"), [["D14", 1200], ["D15", 3600], ["D21", 7200]], "and the value follows the units");
+    assert.ok(october.some((row) => row.areaCode === "AB1" && row.productCode === "LA001"), "Lacto keeps its invoiced area");
+    // 🔴 One unnamed row per area and book, in whole units — never a copy of a pharmacy's invoice in
+    // every receiving area, which named every EPDA pharmacy to every rep and, at fractional units,
+    // marked a real pharmacy as a wholesaler share in its own rep's action list.
+    const shares = october.filter((row) => String(row.distributorCode).startsWith("EP-") && row.productCode === "IV001");
+    assert.ok(shares.every((row) => isEpdaShareRow(row) && row.clientName === EPDA_SHARE_LABEL), "every EPDA row is an unnamed share");
+    assert.ok(shares.every((row) => Number.isInteger(row.qty) && row.effectiveUnits === row.qty), "in whole units");
+    assert.ok(!october.some((row) => row.clientName === "صيدلية الشفاء"), "no pharmacy's name reaches another area's rows");
+    assert.deepEqual(
+      shares.map((row) => `${row.areaCode}|${row.distributorCode}|${row.qty}`).sort(),
+      ["D14|EP-BK|30", "D14|EP-PHS|10", "D15|EP-BK|90", "D15|EP-PHS|30", "D21|EP-BK|180", "D21|EP-PHS|60"],
+      "one row per area and book, each book's units in its share",
+    );
+    assert.ok(shares.every((row) => classifyRowKind(row as never, new Set()) === "wholesalerShare"), "the action list reads a share, never a pharmacy");
+    assert.equal(
+      (october.find((row) => row.areaCode === "D15" && row.distributorCode === "EP-BK") as { areaName?: string } | undefined)?.areaName,
+      "Area D15",
+      "a share wears its new area's name",
+    );
+    const september = applyCreditedAreaView(rows as never[], { areaLabelOf: label, line: "Pedia", period: "2026-09" }) as BulkAllocationRow[];
+    assert.ok(
+      september.some((row) => row.areaCode === "D21" && row.distributorCode === "EP-PHS" && row.qty === 100),
+      "September never spread the pharmacy book, and its rows stay as invoiced",
+    );
+  }
+
+  // 13. THE WEIGHTS ARE EACH REP'S RETAIL AS HIS CLOSING SHOWS IT, AFTER THE CITY RULE (owner,
+  //     2026-11-04: "As each rep's closing shows"). A wholesaler in a multi-area city weighs on every
+  //     area the city rule shares it to, never only the area its invoice was booked on.
+  {
+    const rows = [
+      baseRow({ areaCode: "D12", clientCode: "W-9", clientName: "مخزن الحجاز فارما", effectiveUnits: 120, productCode: "IV001", qty: 120, salesValue: 37_800 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 100, productCode: "IV001", qty: 100, salesValue: 3_000 }),
+    ];
+    const city = splitStoreSalesAcrossCityAreas(rows, "2026-10");
+    const cityAreas = [...new Set(city.rows.filter((row) => row.distributorCode === "PS").map((row) => row.areaCode))].sort();
+    assert.ok(cityAreas.length > 1, "fixture check: the wholesaler is shared across its city");
+    const landedAreas = (allocation: ReturnType<typeof buildBulkAllocation>) =>
+      allocation.movements.filter((leg) => leg.inQty > 0).map((leg) => leg.areaCode).sort();
+    const october = buildBulkAllocation(bulkAllocationRows(rows, city.rows, "2026-10"), "2026-10", "Pedia");
+    assert.deepEqual(landedAreas(october), cityAreas, "the EPDA book lands where the closing credits the retail");
+    assert.equal(october.movements.reduce((sum, leg) => sum + leg.inQty, 0), 100, "and all of it lands");
+    assert.deepEqual(bulkAllocationRows(rows, city.rows, "2026-09"), rows, "September keeps the invoiced rows it was published with");
+    assert.deepEqual(bulkAllocationRows(rows, null, "2026-10"), rows, "a month with no city split has only the invoiced rows");
   }
 }

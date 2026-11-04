@@ -393,6 +393,7 @@ export async function POST(request: Request) {
         movements: storeSplitMovements,
         net: storeSplitNet,
         officeNet: storeSplitOfficeNet,
+        epdaUnits,
       } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, await sharedSplitPromise);
       // 🔴 THE OFFICE GRID TAKES THE OFFICE RESPREAD'S OWN NET, AND NOTHING ELSE OF `storeSplitNet`
       // (owner, 2026-10-09 — CNS, from the October closing). The matrix below moves the Office units
@@ -571,6 +572,7 @@ export async function POST(request: Request) {
         // retail half to derive the direct bridge from.
         directPlaced,
         directPlacedCells,
+        epdaUnits,
         filterNote,
         includeTargetSheet: !rowLevelActive,
         // ALWAYS carried, so the workbook shows what the SCREEN shows. Owner's rule, 2026-08-26:
@@ -788,6 +790,10 @@ export async function POST(request: Request) {
           shownDetails,
           // Same read as the skeleton, so the Office grid is never company-wide beside scoped sales.
           scopedPortal?.office ?? null,
+          // The EPDA tab: the whole month's spread, drawn on this viewer's own matrix only.
+          await loadClosingStoreSplit(details.line, details.period)
+            .then((split) => split.epdaUnits ?? null)
+            .catch(() => null),
         )
       : await buildClosingDetailsWorkbook(shownDetails);
     // These rows are already narrowed to this caller's own access, so a District Manager's file is

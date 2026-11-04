@@ -8,6 +8,7 @@ import {
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { isOfficeDistributorCode, lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import { isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
+import { isBulkAllocatedRow } from "@/lib/sales/bulk-allocation-channel";
 import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import type {
   MonthlyClosingCell,
@@ -214,6 +215,12 @@ export function carveChannelsByArea(
       office.set(key, (office.get(key) ?? 0) + value);
       continue;
     }
+    // 🔴 AN EPDA ROW THE CLOSING SPREAD IS NOT A STORE AT ITS INVOICED AREA. The matrix has already
+    // moved its units and value onto the areas that earned them (bulk-allocation-channel.ts, rule 2
+    // from October 2026), so carving it here as Stores at the area the invoice names would leave that
+    // area's Distributor column short by the whole book, below zero, and every receiving area's over.
+    // Left out of Stores, it reads as distributor book wherever the spread landed it.
+    if (isBulkAllocatedRow(row, row.invoicePeriod)) continue;
     if (!isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, row.invoicePeriod, line)) {
       continue;
     }

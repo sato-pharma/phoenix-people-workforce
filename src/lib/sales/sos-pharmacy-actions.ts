@@ -28,7 +28,7 @@
 //   · rows with no customer code — nothing to identify across months.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { MAIN_STORES_LABEL } from "@/lib/sales/closing-main-stores";
+import { isEpdaShareRow, MAIN_STORES_LABEL } from "@/lib/sales/closing-main-stores";
 import { closingAreaOf, type ClosingAreaRow } from "@/lib/sales/closing-row-area";
 import { MASKED_SOURCE_DISTRIBUTORS } from "@/lib/sales/closing-source-mask";
 
@@ -219,6 +219,8 @@ export function findSharedCustomerKeys(periods: readonly PeriodRows[]): Set<stri
 
 export function classifyRowKind(row: PharmacyActionRow, sharedKeys: ReadonlySet<string>): PharmacyRowKind {
   if (isMainStoresRow(row)) return "mainStores";
+  // An area's share of the EPDA books (rule 2) is a share, never a buyer that lost its code.
+  if (isEpdaShareRow(row)) return "wholesalerShare";
   if (!text(row.clientCode)) return "noCode";
   if (sharedKeys.has(pharmacyKeyOf(row))) return "wholesalerShare";
   return "pharmacy";

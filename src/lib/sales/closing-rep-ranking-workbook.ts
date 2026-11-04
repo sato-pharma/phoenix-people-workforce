@@ -11,6 +11,7 @@ import {
   type RankingDress,
 } from "@/lib/sales/closing-ranking-dress";
 import { CLOSING_ROWS_SHEET_NAME, closingRowsSheetSpec } from "@/lib/sales/closing-rows-sheet";
+import { CLOSING_EPDA_SHEET_NAME, type ClosingEpdaSheetSpec } from "@/lib/sales/closing-epda-sheet";
 import type { ClosingDetailRow } from "@/lib/sales/monthly-closing-details";
 import {
   DIRECT,
@@ -660,6 +661,12 @@ export async function buildRepRankingWorkbook(input: {
    * names, never codes; an empty map falls back to "Unnamed distributor" rather than printing one.
    */
   distributorNames?: ReadonlyMap<string, string>;
+  /**
+   * The EPDA tab (owner, 2026-11-04) — each area's EPDA units of each rule-2 product, after the
+   * spread, drawn by the caller on the closing month's own scoped matrix (closingEpdaSheetSpec).
+   * Absent or null, there is no tab.
+   */
+  epda?: ClosingEpdaSheetSpec | null;
 }): Promise<RepRankingWorkbookResult> {
   const { ranking } = input;
   const L = toLegacyShape(ranking, input.probationByName, input.carve, input.publications ?? []);
@@ -1806,6 +1813,58 @@ export async function buildRepRankingWorkbook(input: {
   // ONLY THE CLOSING MONTH, never the trend: the trend months are shown as figures on the
   // month-by-month tabs, and three months of invoice rows is a different and much larger file. The
   // caption names the month, so nobody has to infer it.
+  // THE EPDA TAB — owner, 2026-11-04: "a column per product share for epda after the spread", in
+  // all three closing downloads. The grid is closing-epda-sheet.ts's, shared with the two closing
+  // workbooks, so the three files cannot disagree about an area's EPDA units. Only the closing month.
+  function sheetEpda() {
+    const spec = input.epda ?? null;
+    if (spec === null) return null;
+    const HEAD = [...spec.headers];
+    const W = [...spec.widths];
+    const COLS = HEAD.length;
+    const ws = book.dress(
+      wb.addWorksheet(CLOSING_EPDA_SHEET_NAME, { properties: { tabColor: { argb: LABEL_GREY } } }),
+      `EPDA units by area, ${monthName(PERIOD)}`,
+    );
+
+    const totals = spec.records[spec.records.length - 1] ?? [];
+    const products = HEAD.slice(2);
+    // One card per product, never one across them: units of different products are never added.
+    const cards = products.slice(0, Math.max(1, Math.floor(COLS / 2))).map((label, index) => ({
+      label: label.toUpperCase(),
+      value: Number(totals[index + 2] ?? 0),
+      fmt: "#,##0",
+      sub: `${monthName(PERIOD)}, every area in this file`,
+    }));
+    let row = keycards(ws, 2, cards, COLS);
+    row = sectionLabel(ws, row, "EPDA UNITS BY AREA", spec.caption, COLS);
+    const headAt = row;
+    row = headerRow(ws, row, HEAD, W);
+
+    spec.records.forEach((record, index) => {
+      const kind = spec.rowKinds[index];
+      if (kind === "total") {
+        record.forEach((value, column) => {
+          cell(ws, row, column + 1, value, typeof value === "number" ? { numFmt: "#,##0" } : {});
+        });
+        totalRow(ws, row, COLS);
+      } else {
+        const group = kind === "group";
+        record.forEach((value, column) => {
+          cell(ws, row, column + 1, group && column === 1 ? "" : value, {
+            zebra: !group && index % 2 === 1,
+            ...(typeof value === "number" ? { numFmt: "#,##0" } : {}),
+            ...(group ? { font: bold(10, INK) } : {}),
+          });
+        });
+      }
+      row += 1;
+    });
+
+    ws.views = [{ state: "frozen", xSplit: 2, ySplit: headAt, showGridLines: false }];
+    return ws;
+  }
+
   function sheetRows() {
     const spec = closingRowsSheetSpec({
       distributorNames: input.distributorNames ?? new Map<string, string>(),
@@ -2080,6 +2139,7 @@ export async function buildRepRankingWorkbook(input: {
   sheetUnits();
   // Before Trust, deliberately: Trust lists the workbook's OWN tabs in their own order, so a sheet
   // added after it would be missing from the list it prints.
+  sheetEpda();
   sheetRows();
   sheetTrust();
 

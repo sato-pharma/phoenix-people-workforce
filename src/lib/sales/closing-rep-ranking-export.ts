@@ -27,6 +27,9 @@ import {
   searchedAreaCodes,
 } from "@/lib/sales/closing-rep-ranking-filter";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { closingEpdaSheetSpec } from "@/lib/sales/closing-epda-sheet";
+import { closingSheetMonthLabel } from "@/lib/sales/closing-review-sheets";
+import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE ONE ENTRY POINT THE EXPORT ROUTE CALLS.
@@ -184,10 +187,13 @@ export async function buildScopedRepRankingExport(input: {
   if (!matricesByPeriod.some((entry) => entry.period === period)) return null;
 
   const carve = carveChannelsByArea(input.rows, line);
-  const [seats, probation, publications] = await Promise.all([
+  const [seats, probation, publications, epdaUnits] = await Promise.all([
     loadRankingSeats(period),
     probationByUniqueName(periodEndDate(period) ?? period),
     loadRankingPublications(line),
+    // The EPDA tab's figures (owner, 2026-11-04), whole month, from the one loader every closing
+    // surface reads. A failed read costs the tab, never the ranking.
+    loadClosingStoreSplit(line, period).then((split) => split.epdaUnits ?? null).catch(() => null),
   ]);
 
   const ranking = buildRepRanking({
@@ -231,6 +237,11 @@ export async function buildScopedRepRankingExport(input: {
     // reasoning is in closing-rows-sheet.ts.
     details: input.rows,
     distributorNames: await loadDistributorNameIndex(),
+    // Drawn on the closing month's SCOPED and filtered matrix, so a reader sees only his own areas'
+    // EPDA units, exactly as the ranking beside it shows only his own areas.
+    epda: closingMatrix
+      ? closingEpdaSheetSpec({ epdaUnits, matrix: closingMatrix, periodLabel: closingSheetMonthLabel(period) })
+      : null,
     probationByName: probation,
     publications,
     ranking,
