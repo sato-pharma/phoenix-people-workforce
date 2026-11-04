@@ -1,7 +1,9 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
+import { salesDistributorCode } from "@/lib/sales/normalizer/distributor-templates";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
+import { secondLayoutProfile } from "@/lib/sales/normalizer/profiles";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 
 // ── Per-distributor RAW emergency template ─────────────────────────────────────────────────────
@@ -72,7 +74,9 @@ export function buildRawTemplateWorkbook(input: {
 
 // Resolve the distributor's profile (DB-first, honoring overrides) and emit its raw template.
 export async function buildRawDistributorTemplate(distributorCode: string): Promise<{ buffer: ExcelJS.Buffer; distributorName: string; headers: string[] }> {
-  const profile = await resolveDistributorProfile(distributorCode);
+  // EPDA Bulk 2 downloads its own layout. Its code goes no further than this: the sheet is stamped with the real distributor.
+  const realCode = salesDistributorCode(distributorCode);
+  const profile = realCode !== distributorCode ? secondLayoutProfile(realCode) : await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No distributor profile for ${distributorCode}.`);
   const headers = rawTemplateHeaders(profile);
   if (headers.length === 0) throw new Error(`Distributor ${distributorCode} has no recognizable columns to template.`);

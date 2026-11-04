@@ -18,6 +18,7 @@ import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type { BulkSlotStage } from "@/lib/sales/bulk-import-gating";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
+import { salesDistributorCode, withSecondTemplates } from "@/lib/sales/normalizer/distributor-templates";
 import { periodToAutoFill } from "@/lib/sales/upload-period-autofill";
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
@@ -1283,7 +1284,7 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
   );
 }
 
-function DistributorUpload({ selected, summary, productOptions, brickOptions, aiEnabled }: { selected: SalesDistributorEntry; summary?: DistributorProfileSummary; productOptions: MapOption[]; brickOptions: MapOption[]; aiEnabled: boolean }) {
+function DistributorUpload({ selected, templateCode, summary, productOptions, brickOptions, aiEnabled }: { selected: SalesDistributorEntry; templateCode: string; summary?: DistributorProfileSummary; productOptions: MapOption[]; brickOptions: MapOption[]; aiEnabled: boolean }) {
   // Bumped after a successful upload so the health panel ("Last monthly") re-reads.
   const [uploadNonce, setUploadNonce] = useState(0);
   return (
@@ -1294,7 +1295,7 @@ function DistributorUpload({ selected, summary, productOptions, brickOptions, ai
             <h2 className="text-lg font-black tracking-tight text-slate-900">{selected.name} <span className="font-mono text-sm text-phx-ink-faint">{selected.code}</span></h2>
             <p className="text-xs text-phx-ink-soft">{selected.monthlySupported ? "Monthly ✓" : "No monthly profile"}{selected.weeklySupported ? " · Weekly ✓" : ""}</p>
           </div>
-          <a className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink transition hover:border-phx-accent hover:text-phx-accent" href={`/api/sales/source-of-sales/raw-template?distributor=${encodeURIComponent(selected.code)}`}>
+          <a className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink transition hover:border-phx-accent hover:text-phx-accent" href={`/api/sales/source-of-sales/raw-template?distributor=${encodeURIComponent(templateCode)}`}>
             <Download className="h-4 w-4" />Emergency template
           </a>
         </div>
@@ -1349,8 +1350,12 @@ export function SalesUploadWorkspace({ distributors, summaries, batches, product
       </header>
       <UploadedSheetsPanel batches={batches} distributors={distributors} />
       {mode === "single" ? (
-        <DistributorWorkspaceShell distributors={distributors}>
-          {(selected) => <DistributorUpload aiEnabled={aiEnabled} brickOptions={brickOptions} productOptions={products} selected={selected} summary={summaries[selected.code]} />}
+        <DistributorWorkspaceShell distributors={withSecondTemplates(distributors)}>
+          {(picked) => {
+            // EPDA Bulk 2 keeps its name on screen and files under the real distributor.
+            const selected = { ...picked, code: salesDistributorCode(picked.code) };
+            return <DistributorUpload aiEnabled={aiEnabled} brickOptions={brickOptions} key={picked.code} productOptions={products} selected={selected} summary={summaries[selected.code]} templateCode={picked.code} />;
+          }}
         </DistributorWorkspaceShell>
       ) : (
         <BulkImportWorkspace aiEnabled={aiEnabled} brickOptions={brickOptions} distributors={distributors} productOptions={products} summaries={summaries} />
