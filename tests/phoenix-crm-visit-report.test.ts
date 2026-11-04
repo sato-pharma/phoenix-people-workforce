@@ -38,6 +38,7 @@ import {
   VISIT_REPORT_CATEGORIES,
   VISIT_REPORT_FIELDS,
   VISIT_REPORT_LEAD_KEYS,
+  VISIT_REPORT_MAX_DAYS_CUSTOMER,
   VISIT_REPORT_SAVED_VIEWS_MAX,
   VISIT_REPORT_STARTER_SETS,
   VISIT_REPORT_VIEW_NAME_MAX,
@@ -578,8 +579,8 @@ async function checkWorkbook(): Promise<void> {
 function checkStarterSets(): void {
   assert.deepEqual(
     VISIT_REPORT_STARTER_SETS.map((set) => set.label),
-    ["Daily activity", "Location", "Off-plan approvals"],
-    "the three sets the owner was offered",
+    ["Daily activity", "Location", "Off-plan approvals", "Customer history"],
+    "the three sets the owner was offered, and one doctor's or account's story (2026-11-04)",
   );
   for (const set of VISIT_REPORT_STARTER_SETS) {
     for (const key of set.keys) assert.ok(visitReportField(key), `${set.label} names ${key}, which is in the catalogue`);
@@ -600,6 +601,53 @@ function checkStarterSets(): void {
   const forSfe = visitReportStarterFields(location, "sfe").map((field) => field.key);
   assert.ok(!forSfe.includes("mockDevice") && forSfe.includes("integrityDetectors"), "the SFE Manager gets the cases, never the mock-location field");
   assert.ok(visitReportStarterFields(location, "superAdmin").some((field) => field.key === "mockDevice"), "the Super Admin gets all of it");
+}
+
+// ── 1 · one doctor or account (owner, 2026-11-04) ────────────────────────────────────────────────────
+
+function checkOneCustomer(): void {
+  const today = "2026-11-04";
+  assert.equal(VISIT_REPORT_MAX_DAYS_CUSTOMER, 365, "one doctor or account may be read over a year");
+  for (const kind of ["rep", "district"] as const) {
+    assert.equal(
+      resolveVisitReportPeriod({ cairoToday: today, customer: true, from: "2025-11-05", kind, to: today }).ok,
+      true,
+      `365 days exactly is allowed for one customer of a ${kind}`,
+    );
+    const tooLong = resolveVisitReportPeriod({ cairoToday: today, customer: true, from: "2025-11-04", kind, to: today });
+    assert.equal(tooLong.ok ? null : tooLong.error, "Choose at most 365 days for one customer.", `and day 366 is refused for a ${kind}, in words`);
+    assert.equal(resolveVisitReportPeriod({ cairoToday: today, customer: false, from: "2025-11-05", kind, to: today }).ok, false, `without a customer a ${kind} keeps its own cap`);
+  }
+  // A manager's report is about the manager: naming a customer never lifts his 31 days.
+  assert.equal(resolveVisitReportPeriod({ cairoToday: today, customer: true, from: "2026-10-04", kind: "manager", to: today }).ok, false, "a manager stays at 31 days");
+
+  // The story set: what was detailed, objected to, promised and written, for every reader — a district manager included.
+  const history = VISIT_REPORT_STARTER_SETS.find((set) => set.id === "customerHistory")!;
+  const forManager = visitReportStarterFields(history, "manager").map((field) => field.key);
+  assert.deepEqual(forManager, visitReportStarterFields(history, "superAdmin").map((field) => field.key), "a district manager gets the whole Customer history set");
+  for (const key of ["productsDetailed", "objection", "objectionNote", "nextStep", "nextStepDate", "comment", "detailComment"]) {
+    assert.ok(forManager.includes(key), `the Customer history set holds ${key}`);
+  }
+
+  const loader = source("src/lib/phoenix-crm/server/visit-report.ts");
+  const picker = loader.slice(loader.indexOf("export async function loadVisitReportCustomers("), loader.indexOf("async function resolveReportCustomer("));
+  assert.match(picker, /^export async function loadVisitReportCustomers\([^]*?assertReader\(viewer\)/, "the picker opens behind the report's own door");
+  assert.match(picker, /resolveTarget\(viewer,/, "and only for a rep or a district the viewer reads");
+  assert.match(picker, /\.eq\("campaign_visit_holder", false\)/, "a campaign-visit holder is no customer");
+  const resolve = loader.slice(loader.indexOf("async function resolveReportCustomer("), loader.indexOf("const SEQUENCE_VISIT_COLUMNS"));
+  assert.match(resolve, /readable\.has\(String\(row\.seat_id\)\)/, "a customer off the chosen territories is a 404");
+  assert.match(loader, /customer \? \(query: any\) => query\.eq\("customer_id", customer\.id\)/, "the visits are read by the customer, on the seat — every rep who held it");
+  assert.match(loader, /if \(customerId\) rejectCustomerKind\(kind\);/, "a manager's report refuses a customer");
+  assert.match(loader, /sequenceSource\.map\(/, "the day order is worked out over the whole day, not the customer's visits alone");
+
+  for (const path of ["app/api/phoenix-crm/visit-report/route.ts", "app/api/phoenix-crm/visit-report/export/route.ts"]) {
+    assert.match(source(path), /customer: (body\.customer|search\.get\("customer"\))/, `${path} passes the customer to the loader, so the screen and the file match`);
+  }
+  const registry = readFileSync(new URL("src/lib/security/access-registry.ts", ROOT), "utf8");
+  assert.match(registry, /pattern: "\/api\/phoenix-crm\/visit-report\/customers"/, "the picker's route is declared");
+  assert.match(source("app/api/phoenix-crm/visit-report/customers/route.ts"), /loadVisitReportCustomers\(viewer,/, "and answers through the gated loader");
+  const generator = source("src/components/phoenix-crm/visit-report/visit-report-generator.tsx");
+  assert.match(generator, /customer: applied\.customer/, "the download link carries the applied customer");
 }
 
 // ── 3 · the result filters ──────────────────────────────────────────────────────────────────────
@@ -925,6 +973,7 @@ export async function runPhoenixCrmVisitReportTests(): Promise<void> {
     ["1 · the selection and who reads it", checkSelection],
     ["1 · the period", checkPeriod],
     ["1 · the ready-made sets", checkStarterSets],
+    ["1 · one doctor or account", checkOneCustomer],
     ["2 · one visit's values", checkValues],
     ["2 · the sequence facts", checkSequence],
     ["3 · the dashboard", checkDashboard],

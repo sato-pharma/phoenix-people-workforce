@@ -117,4 +117,32 @@ recommended option except the third.
   report's own 404, and a save or a delete writes a `phoenix_crm_visit_report_saved_view` audit row past
   the response.
 
+## One doctor or account (4 Nov 2026)
+
+A team asked whether the system can follow the visits to one doctor over a period, so that the rep, or whoever takes
+the territory after a rep leaves, can see where things stand with that doctor. The owner asked for it on the Visit
+report: "filter by rep or area then filter by dr or polyclinic and get the mentioned report".
+
+- **The picker.** Once a rep or a district is chosen, a **Customer** list appears under it (the CRM says AM and PM, never doctor or account, on its screens)
+  (`loadVisitReportCustomers`, GET `/api/phoenix-crm/visit-report/customers`). It lists that territory's customers
+  that are on the list, waiting for validation or met outside it. Campaign-visit holders and dropped customers are
+  left out, but a link that names a dropped customer still opens. Across a district each name also says whose
+  territory it is on. It sits behind the report's own door and gives the same 404s.
+- **The read.** With a customer chosen, the visits are read by `customer_id` on the seat, not by the person. Every
+  rep who held the territory is in the history, which is the point: the next rep reads the last one's products,
+  objections, next steps and comments. `resolveReportCustomer` gives a 404 for a customer who is not on the chosen
+  seats, in the same words as for one that does not exist. A manager's report refuses a customer.
+- **A year.** One customer gets a few visits a month, so the period may run up to 365 days
+  (`VISIT_REPORT_MAX_DAYS_CUSTOMER`), and **Last 3 months** and **Last 12 months** buttons appear. Without a
+  customer, the 92-day and 31-day limits stay as they were.
+- **The day order stays true.** Visit number in the day, the gap and the distance from the previous visit still
+  describe the whole day. The other visits of each day the customer was seen are read for the sequence alone and
+  never become rows. Their phone-clock times are read by visit id, never a whole year of the seat's.
+- **Customer history** is the fourth ready-made set. It holds the date, who visited, the manager and product manager
+  on the visit, the customer, list, speciality, grade and place, the products detailed, samples, the objection and
+  its note, the next step and its date, the comment, the detailed comment, and the days since the last visit. A
+  district manager gets the whole set.
+- The title, the Excel file's name and the audit rows read "customer · rep or district". The link and the download
+  carry the same `customer`, so the screen and the file still match.
+
 Pinned by `tests/phoenix-crm-visit-report.test.ts`.
