@@ -195,13 +195,13 @@ function billedRow(certificate: string, name: string, totals: Record<MedicalInsu
     certificate,
     lines: MEDICAL_INSURANCE_PRODUCTS.map((product) => ({
       adjustment: 0,
-      coverType: "employee",
+      coverType: "MEM" as const,
       dependantCount: null,
       plan: "003",
       premium: totals[product],
       product,
       volume: 0,
-    })) as ParsedInvoiceMember["lines"],
+    })),
     name,
     statedTotal: null,
   };

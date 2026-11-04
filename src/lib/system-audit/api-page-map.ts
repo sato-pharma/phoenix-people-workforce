@@ -110,6 +110,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/retention": { admin: "/retention" },
   "/api/hiring-documents": { admin: "/hiring-documents", hr: "/hr/hiring-documents" },
   "/api/hiring-pack": { admin: "/hiring-pack", hr: "/hr/hiring-pack" },
+  "/api/medical-insurance": { admin: "/medical-insurance", hr: "/hr/medical-insurance" },
   "/api/hr-ops-reports": { hr: "/hr/hr-reports" },
   "/api/hr-reminders": { hr: "/hr/hr-reminders" },
   "/api/mailbox-offboarding": { admin: "/mailbox-offboarding", hr: "/hr/mailbox-offboarding" },
