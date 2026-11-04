@@ -1,4 +1,6 @@
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { logError } from "@/lib/observability/log";
+import { describeAlreadyLocked, isActiveLockConflict } from "@/lib/sales/monthly-closing-lock-conflict";
 import { normalizeClosingLine } from "@/lib/sales/monthly-closing-publication";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -109,19 +111,48 @@ export async function listLockedPeriodsForLine(
   }
 }
 
+export type LockClosingResult =
+  | { alreadyLocked: false; lock: ClosingLock }
+  | { alreadyLocked: true; lock: ClosingLock; message: string };
+
+async function alreadyLocked(lock: ClosingLock): Promise<LockClosingResult> {
+  // Best-effort: a name that cannot be read is left out of the sentence, never replaced by the id.
+  let lockedByName: string | null = null;
+  try {
+    lockedByName = lock.lockedBy ? (await namesByHrId([lock.lockedBy])).get(lock.lockedBy) : null;
+  } catch {
+    lockedByName = null;
+  }
+  return {
+    alreadyLocked: true,
+    lock,
+    message: describeAlreadyLocked({ line: lock.line, lockedAt: lock.lockedAt, lockedByName, period: lock.period }),
+  };
+}
+
 /**
  * Freeze (line, period). The RPC records the month's units and per-area breakdown in the same
  * statement that writes the lock, so the snapshot is provably the state that got frozen rather than
  * whatever the tables held by the time someone next looked.
+ *
+ * A month that is ALREADY locked — by an earlier press, another tab, or by publishing it, whose
+ * trigger takes the lock itself — is answered as `alreadyLocked`, not as a failure: the month is in
+ * exactly the state the caller asked for. It is checked before the RPC (which would otherwise
+ * compute a whole snapshot only to lose to the unique index) and again on the RPC's 23505, which is
+ * the race between two requests that both read "open". Nothing is logged for it, because nothing
+ * went wrong (monthly-closing-lock-conflict.ts). The existing lock is never touched.
  */
 export async function lockClosing(input: {
   actorHrId?: string | null;
   line: string;
   period: string;
-}): Promise<ClosingLock> {
+}): Promise<LockClosingResult> {
   const line = String(input.line ?? "").trim();
   const period = String(input.period ?? "").trim();
   if (!line || !period) throw new Error("A line and a period are required to lock a closing.");
+
+  const existing = await getClosingLock(line, period);
+  if (existing) return alreadyLocked(existing);
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.rpc("phx_lock_monthly_closing", {
@@ -129,18 +160,29 @@ export async function lockClosing(input: {
     p_line: line,
     p_period: period,
   });
+  if (error && isActiveLockConflict(error)) {
+    // The unique index has just said the month holds an active lock, so it is locked even if the
+    // read of who and when fails — the sentence then simply carries neither.
+    const winner = await getClosingLock(line, period);
+    return alreadyLocked(
+      winner ?? { line, lockedAt: "", lockedBy: null, period, snapshotCells: null, snapshotUnits: null },
+    );
+  }
   if (error) {
     logError("Failed to lock a monthly closing", { context: { line, period }, error });
     throw new Error(error.message || "Failed to lock the closing.");
   }
   const row = Array.isArray(data) ? data[0] : data;
   return {
-    line: String(row?.line ?? line),
-    lockedAt: String(row?.locked_at ?? ""),
-    lockedBy: row?.locked_by ? String(row.locked_by) : null,
-    period: String(row?.period ?? period),
-    snapshotCells: row?.snapshot_cells === null || row?.snapshot_cells === undefined ? null : Number(row.snapshot_cells),
-    snapshotUnits: row?.snapshot_units === null || row?.snapshot_units === undefined ? null : Number(row.snapshot_units),
+    alreadyLocked: false,
+    lock: {
+      line: String(row?.line ?? line),
+      lockedAt: String(row?.locked_at ?? ""),
+      lockedBy: row?.locked_by ? String(row.locked_by) : null,
+      period: String(row?.period ?? period),
+      snapshotCells: row?.snapshot_cells === null || row?.snapshot_cells === undefined ? null : Number(row.snapshot_cells),
+      snapshotUnits: row?.snapshot_units === null || row?.snapshot_units === undefined ? null : Number(row.snapshot_units),
+    },
   };
 }
 
