@@ -139,10 +139,14 @@ export function applyCardEdits(
  * "Dr. Aya Elsawy" — the name with the doctor's title before it, for the per-card toggle on the HR
  * screen (owner, 2026-11-04: "If I turn on this toggle, the card is printed with doctor and the name
  * before it"). A name that already carries the title is left as it is, so it never prints "Dr. Dr.".
+ *
+ * The title counts in every way people type it: "Dr.", "Dr", "Dr/", "Dr-" or "Dr:", with or without
+ * a space after it, and "Doctor". A real employee asked for "Dr/ Mohamed Hamed Salem", which the
+ * first version read as untitled and printed "Dr. Dr/ …". "Drew" is a name, not a title.
  */
 export function withDoctorTitle(name: string): string {
   const cleaned = clean(name);
-  if (!cleaned || /^(dr\.?|doctor)(\s|$)/i.test(cleaned)) return cleaned;
+  if (!cleaned || /^(doctor\b|dr(?:[./:\-\s]|$))/i.test(cleaned)) return cleaned;
   return `Dr. ${cleaned}`.slice(0, CARD_FIELD_MAX_LENGTH);
 }
 

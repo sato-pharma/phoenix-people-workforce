@@ -165,6 +165,15 @@ export async function runBusinessCardsTests() {
   assert.equal(withDoctorTitle("Dr. Aya Elsawy"), "Dr. Aya Elsawy", "never Dr. Dr.");
   assert.equal(withDoctorTitle("dr Aya"), "dr Aya", "a title already typed is left as typed");
   assert.equal(withDoctorTitle("Drew Smith"), "Dr. Drew Smith", "a name that merely starts with Dr is still titled");
+  // The production request that showed the gap (2026-11-04): "Dr/" was read as untitled.
+  assert.equal(withDoctorTitle("Dr/ Mohamed Hamed Salem"), "Dr/ Mohamed Hamed Salem", "a Dr/ title is never doubled");
+  assert.equal(withDoctorTitle("Dr/Mohamed Hamed"), "Dr/Mohamed Hamed", "nor with no space after it");
+  assert.equal(withDoctorTitle("Dr.Aya Elsawy"), "Dr.Aya Elsawy", "nor Dr. with no space");
+  assert.equal(withDoctorTitle("DR- Aya"), "DR- Aya", "nor Dr- in capitals");
+  assert.equal(withDoctorTitle("Dr: Aya"), "Dr: Aya", "nor Dr:");
+  assert.equal(withDoctorTitle("Doctor Aya"), "Doctor Aya", "nor the word Doctor");
+  assert.equal(withDoctorTitle("Dr"), "Dr", "a bare Dr is left alone");
+  assert.equal(withDoctorTitle("Doctorow Smith"), "Dr. Doctorow Smith", "a name that merely starts with Doctor is still titled");
   assert.equal(withDoctorTitle(""), "", "no name: nothing to title");
   assert.equal(edited.website, CARD_WEBSITE, "the company's website is not an editable line");
 
