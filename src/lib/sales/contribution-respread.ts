@@ -184,6 +184,28 @@ export function areaValueShares(base: readonly RespreadRow[]): Map<string, numbe
   return areaShare;
 }
 
+/**
+ * Each area's share of these rows' UNITS — the weights of EPDA's rule 2 (owner, 2026-11-04: "the
+ * same product's units"). Only ever handed the rows of ONE product, which is what makes adding the
+ * units meaningful. An area whose units net to nothing or less takes no share, as in the value rule.
+ */
+export function areaUnitShares(base: readonly RespreadRow[]): Map<string, number> {
+  const areaUnits = new Map<string, number>();
+  for (const row of base) {
+    const areaCode = String(row.areaCode ?? "").trim().toUpperCase();
+    if (!areaCode) continue;
+    const units = Number(row.qty);
+    if (!Number.isFinite(units) || units === 0) continue;
+    areaUnits.set(areaCode, (areaUnits.get(areaCode) ?? 0) + units);
+  }
+  const positive = [...areaUnits].filter(([, units]) => units > 0);
+  const totalUnits = positive.reduce((acc, [, units]) => acc + units, 0);
+  const areaShare = new Map<string, number>();
+  if (!(totalUnits > 0)) return areaShare;
+  for (const [areaCode, units] of positive) areaShare.set(areaCode, units / totalUnits);
+  return areaShare;
+}
+
 /** The row's effective units — the base the closing prices. Falls back to its invoice units. */
 function effectiveUnitsOf(row: RespreadRow): number {
   const effective = Number(row.effectiveUnits);
@@ -224,11 +246,13 @@ export function buildContributionRespread(input: {
   line: string;
   /** Spread whole units, with the value following them. The Office channel never asks for this. */
   wholeUnits?: boolean;
+  /** The weights: the line's sales value (the default, the Office rule) or one product's units. */
+  shareBy?: "units" | "value";
 }): ContributionRespread {
   const { moved, base } = input;
   if (moved.length === 0) return emptyContributionRespread();
 
-  const areaShare = areaValueShares(base);
+  const areaShare = input.shareBy === "units" ? areaUnitShares(base) : areaValueShares(base);
   if (areaShare.size === 0) return emptyContributionRespread();
 
   // ── The spread, PER PRODUCT, on ONE blended set of weights ─────────────────────────────────
@@ -346,6 +370,25 @@ export function buildContributionRespread(input: {
     net: netStoreSplitByAreaProduct(movements),
     areaShare,
     movedQty,
+  };
+}
+
+/**
+ * Several respreads as one, for a rule run once per product (EPDA's rule 2). Their legs never meet —
+ * each product is its own respread — so the lists simply join and the nets add. `areaShare` is left
+ * empty: there is no one share across products, and nothing reads it but the tests of one product.
+ */
+export function combineContributionRespreads(parts: readonly ContributionRespread[]): ContributionRespread {
+  const moving = parts.filter((part) => part.movements.length > 0 || part.effectiveMovements.length > 0);
+  if (moving.length === 0) return emptyContributionRespread();
+  if (moving.length === 1) return moving[0];
+  const movements = moving.flatMap((part) => part.movements);
+  return {
+    movements,
+    effectiveMovements: moving.flatMap((part) => part.effectiveMovements),
+    net: netStoreSplitByAreaProduct(movements),
+    areaShare: new Map(),
+    movedQty: round6(moving.reduce((sum, part) => sum + part.movedQty, 0)),
   };
 }
 

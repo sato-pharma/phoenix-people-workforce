@@ -80,6 +80,51 @@ export const BULK_ALLOCATION_PRODUCT_CODES = ["IV001"] as const;
  */
 export const BULK_ALLOCATION_START_PERIOD = "2026-09";
 
+/**
+ * 🔴 RULE 2, FROM THE OCTOBER 2026 CLOSING (owner, 2026-11-04): both EPDA books, three products, and
+ * each product spread by its OWN retail units. His words: "you will get the total retail sales of every
+ * rep without epda bulk or epda-pharmacies then you will distribute the epda sales based on the
+ * contribution per area in retail sales but do not forget the 15% and 30% rule then add the direct
+ * sales". His answers the same day: the three Sato items, the same product's units, both books.
+ *
+ * So from October the rule above widens in three directions at once: EPDA-Pharmacies joins the bulk
+ * sector, Royafloxacin and Saginko join Ivyronc (which brings Anti Infective in beside Pedia), and the
+ * weights are each product's own retail units instead of the line's value. The 15% and 30% are already
+ * off the stored rows (import-epda-bonus-deduction.ts), so the spread moves reduced units and never
+ * deducts again. September keeps the rule above and the numbers it was published with.
+ */
+export const EPDA_CONTRIBUTION_START_PERIOD = "2026-10";
+
+/** EPDA-BULK and EPDA-Pharmacies. The main EPDA book (`EP`) is retail and is one of the weights. */
+export const EPDA_CONTRIBUTION_DISTRIBUTOR_CODES = ["EP-BK", "EP-PHS"] as const;
+
+/** Ivyronc, Royafloxacin, Saginko. Every other product of the two books keeps its invoiced area. */
+export const EPDA_CONTRIBUTION_PRODUCT_CODES = ["IV001", "RO001", "SA001"] as const;
+
+/** The lines those three products are on (live master, read 2026-11-04): Ivyronc Pedia, the other two Anti Infective. */
+export const EPDA_CONTRIBUTION_LINES = ["Pedia", "Anti Infective"] as const;
+
+const squeezed = (value: unknown) => String(value ?? "").replace(/\s+/g, "").toUpperCase();
+
+/** True for `2026-10` and every month after it. A period that is not `YYYY-MM` answers false. */
+export function isEpdaContributionActive(period: string | null | undefined): boolean {
+  const trimmed = String(period ?? "").trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return false;
+  return trimmed >= EPDA_CONTRIBUTION_START_PERIOD;
+}
+
+/** True for EPDA-BULK and EPDA-Pharmacies. Tolerant of case and stray spaces. */
+export function isEpdaContributionDistributor(value: unknown): boolean {
+  const key = squeezed(value);
+  return EPDA_CONTRIBUTION_DISTRIBUTOR_CODES.some((code) => code === key);
+}
+
+/** True for the three products rule 2 spreads. */
+export function isEpdaContributionProduct(value: unknown): boolean {
+  const key = squeezed(value);
+  return Boolean(key) && EPDA_CONTRIBUTION_PRODUCT_CODES.some((code) => code === key);
+}
+
 /** True when a row's distributor code is the bulk sector's. Tolerant of case and stray spaces. */
 export function isBulkDistributorCode(value: unknown): boolean {
   return String(value ?? "").replace(/\s+/g, "").toUpperCase() === BULK_DISTRIBUTOR_CODE.toUpperCase();
@@ -96,10 +141,14 @@ export function isBulkAllocatedProduct(value: unknown): boolean {
   return BULK_ALLOCATION_PRODUCT_CODES.some((candidate) => candidate.toUpperCase() === key);
 }
 
-/** True when this line's bulk rows are allocated rather than left on their invoiced area. */
-export function isBulkAllocationLine(line: string | null | undefined): boolean {
+/**
+ * True when this line's bulk rows are allocated rather than left on their invoiced area. Pass the
+ * period: from October 2026 rule 2 reaches Anti Infective too. Without one, the September answer.
+ */
+export function isBulkAllocationLine(line: string | null | undefined, period?: string | null): boolean {
   const key = String(line ?? "").trim().toUpperCase();
-  return BULK_ALLOCATION_LINES.some((candidate) => candidate.toUpperCase() === key);
+  const lines: readonly string[] = isEpdaContributionActive(period) ? EPDA_CONTRIBUTION_LINES : BULK_ALLOCATION_LINES;
+  return lines.some((candidate) => candidate.toUpperCase() === key);
 }
 
 /**
@@ -142,6 +191,12 @@ export function isBulkAllocatedRow(
   period: string | null | undefined,
 ): boolean {
   if (!isBulkAllocationActive(period)) return false;
+  // Rule 2 from October: both books and three products, so the city split leaves all of them alone.
+  if (isEpdaContributionActive(period)) {
+    return isEpdaContributionDistributor(row.distributorCode)
+      && isBulkAllocationLine(row.officialLine, period)
+      && isEpdaContributionProduct(row.productCode);
+  }
   if (!isBulkDistributorCode(row.distributorCode)) return false;
   if (!isBulkAllocationLine(row.officialLine)) return false;
   return isBulkAllocatedProduct(row.productCode);

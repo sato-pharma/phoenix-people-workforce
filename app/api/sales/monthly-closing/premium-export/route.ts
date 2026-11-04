@@ -1,3 +1,4 @@
+import { buildClosingEpdaSheet } from "@/lib/sales/closing-epda-sheet";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -279,10 +280,20 @@ export async function POST(request: Request) {
       rows: payload.details ?? [],
     });
 
+    // The EPDA tab (owner, 2026-11-04): each area's EPDA units of each rule-2 product, after the
+    // spread. Drawn on the payload's own matrix, so a filtered file shows only its own areas.
+    const epdaSheet = buildClosingEpdaSheet({
+      epdaUnits: payload.epdaUnits,
+      line: payload.line,
+      matrix: payload.matrix,
+      periodLabel: payload.period ? closingSheetMonthLabel(payload.period) : null,
+    });
+
     const appendedSheets = [
       ...reviewSheets,
       ...(quarterGapSheet ? [quarterGapSheet] : []),
       ...(noOfficeSheet ? [noOfficeSheet] : []),
+      ...(epdaSheet ? [epdaSheet] : []),
       ...(rowsSheet ? [rowsSheet] : []),
     ];
 

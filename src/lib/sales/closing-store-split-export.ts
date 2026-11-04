@@ -18,7 +18,12 @@
 // reports it, and the workbook states it on the Total sheet as its own reconciliation line, so the
 // Difference row still proves the audit sheet reproduces the headline.
 
-import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
+import {
+  buildBulkAllocation,
+  bulkAllocationRows,
+  epdaUnitsLanded,
+  mergeBulkAllocationIntoSplit,
+} from "@/lib/sales/closing-bulk-allocation";
 import { buildOfficeRespread, mergeOfficeRespreadIntoSplit } from "@/lib/sales/closing-office-respread";
 import type { ClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import {
@@ -69,6 +74,8 @@ export type ClosingStoreSplitExport = {
    * would otherwise debit a brick for a customer the Closing Matrix left alone.
    */
   exemptStoreValueByBrick: ReadonlyMap<string, number>;
+  /** Per area|product, the EPDA units rule 2 landed there, whole month. For the EPDA tab only. */
+  epdaUnits: ReadonlyMap<string, number>;
 };
 
 /**
@@ -101,6 +108,7 @@ export function prepareClosingStoreSplit(
     movements: split.movements,
     net: split.net,
     officeNet: split.officeNet,
+    epdaUnits: split.epdaUnits ?? new Map(),
   };
 }
 
@@ -111,11 +119,8 @@ function deriveSplit(
   // Others take no share of an El Qema split (owner, 2026-09-08). This is the FALLBACK path —
   // the shared result above already carries the exclusion — so it has to be handed the same set,
   // or a caller that skipped the cache would produce a different workbook from the screen.
-  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(
-    monthRows.rows,
-    monthRows.period,
-    regions,
-  );
+  const cityPass = splitStoreSalesAcrossCityAreas(monthRows.rows, monthRows.period, regions);
+  const { exemptStoreValueByBrick, movements } = cityPass;
   // The EPDA-BULK allocation is folded in HERE TOO (owner, 2026-10-09). This path runs when the
   // screen's shared split could not be used — a failed read, or a row-level filter that narrowed the
   // population — and leaving it out would print a workbook whose Pedia areas disagree with the
@@ -125,11 +130,17 @@ function deriveSplit(
   // that disagree with the screen's by exactly the Office drift, on the one path that exists because
   // the two once disagreed. It also carries the Office-only net out, which this path's Office grid
   // needs — see ClosingStoreSplitExport.officeNet.
-  return mergeOfficeRespreadIntoSplit(
+  const bulk = buildBulkAllocation(
+    bulkAllocationRows(monthRows.rows, cityPass.rows, monthRows.period),
+    monthRows.period,
+    monthRows.line,
+  );
+  const merged = mergeOfficeRespreadIntoSplit(
     mergeBulkAllocationIntoSplit(
       { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
-      buildBulkAllocation(monthRows.rows, monthRows.period, monthRows.line),
+      bulk,
     ),
     buildOfficeRespread(monthRows.rows, monthRows.period, monthRows.line),
   );
+  return { ...merged, epdaUnits: epdaUnitsLanded(bulk, monthRows.period, monthRows.rows) };
 }

@@ -46,7 +46,7 @@ async function readMonthlyClosingPartsWithStoreSplit(input?: {
   const split = earlySplit && earlySplitFits
     ? await earlySplit
     : await loadClosingStoreSplit(parts.combined.line, parts.combined.period);
-  const { net, officeNet } = split;
+  const { net, officeNet, epdaUnits } = split;
   if (net.size === 0) return parts;
   const combined = applyStoreSplitToMatrix(parts.combined, net);
   // 🔴 THE ONE PLACE THE "GRAND TOTAL CANNOT CHANGE" INVARIANT IS ACTUALLY ASKED.
@@ -74,6 +74,7 @@ async function readMonthlyClosingPartsWithStoreSplit(input?: {
   }
   return {
     combined: combined.matrix,
+    ...(epdaUnits && epdaUnits.size > 0 ? { epdaUnits } : {}),
     retail: applyStoreSplitToMatrix(parts.retail, net).matrix,
     directCells: parts.directCells,
     // 🔴 THE OFFICE GRID TAKES THE OFFICE RESPREAD'S NET, AND NOTHING ELSE OF `net`.

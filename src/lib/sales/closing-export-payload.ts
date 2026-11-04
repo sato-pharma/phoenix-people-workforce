@@ -77,6 +77,12 @@ export type ClosingExportPayload = {
    * store row that moves — which is also what makes `matrix` minus this exactly the non-Office half.
    */
   office: Awaited<ReturnType<typeof loadMonthlyClosingPartsWithStoreSplit>>["office"];
+  /**
+   * Per area|product, the EPDA units rule 2 landed on each area, whole month (closing-epda-sheet.ts).
+   * Unfiltered on purpose: the EPDA tab is drawn on `matrix`'s own regions, areas and products, so
+   * the filter narrows it the same way it narrows the matrix. Null when the month has none.
+   */
+  epdaUnits: ReadonlyMap<string, number> | null;
   review: Awaited<ReturnType<typeof loadClosingPerformanceReview>>;
 };
 
@@ -197,6 +203,7 @@ export async function loadClosingExportPayload(
       priorMatrix,
       review,
     }),
+    epdaUnits: parts.epdaUnits ?? null,
     line: matrix.line,
     matrix,
     office,

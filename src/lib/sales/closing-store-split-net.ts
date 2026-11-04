@@ -39,8 +39,14 @@ import { CLOSING_STORE_SPLIT_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import {
   isBulkAllocationActive,
   isBulkAllocationLine,
+  isEpdaContributionActive,
 } from "@/lib/sales/bulk-allocation-channel";
-import { buildBulkAllocation, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
+import {
+  buildBulkAllocation,
+  bulkAllocationRows,
+  epdaUnitsLanded,
+  mergeBulkAllocationIntoSplit,
+} from "@/lib/sales/closing-bulk-allocation";
 import { buildOfficeRespread, mergeOfficeRespreadIntoSplit } from "@/lib/sales/closing-office-respread";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { isOfficeRespreadPair } from "@/lib/sales/office-distributor";
@@ -69,6 +75,7 @@ type CachedSplit = {
   movements: StoreSplitAreaMovement[];
   net: (readonly [string, NetCell])[];
   officeNet: (readonly [string, NetCell])[];
+  epdaUnits?: (readonly [string, number])[];
 };
 
 /** Everything one (line, period)'s city split produces. One computation, shared by both surfaces. */
@@ -89,6 +96,14 @@ export type ClosingStoreSplit = {
    * not move.
    */
   officeNet: Map<string, NetCell>;
+  /**
+   * Per area|product, the EPDA units rule 2 landed on that area (owner, 2026-11-04), for the EPDA tab
+   * of the three closing downloads (closing-epda-sheet.ts). Already inside `net`; reported on its own
+   * because nothing else can pick the EPDA legs back out of the merged movements.
+   *
+   * Empty before October 2026 and on every line but Pedia and Anti Infective.
+   */
+  epdaUnits?: Map<string, number>;
 };
 
 // The cache-key stamp. Passed as an ARGUMENT of the cached function, which unstable_cache folds into
@@ -135,17 +150,18 @@ const loadClosingStoreSplitUncached = async (
   // rulings from September on, the six words alone before that. Passed explicitly here because this
   // loader is the ONE place both the screen and the export read, so neither can use a different
   // rule from the other, and neither can restate a month the owner froze.
-  const { exemptStoreValueByBrick, movements } = cityApplies
-    ? splitStoreSalesAcrossCityAreas(details.rows, period, regions)
-    : { exemptStoreValueByBrick: new Map<string, number>(), movements: [] as StoreSplitAreaMovement[] };
+  const cityPass = cityApplies ? splitStoreSalesAcrossCityAreas(details.rows, period, regions) : null;
+  const { exemptStoreValueByBrick, movements } = cityPass
+    ?? { exemptStoreValueByBrick: new Map<string, number>(), movements: [] as StoreSplitAreaMovement[] };
   // THE EPDA-BULK ALLOCATION RIDES THE SAME NET (owner, 2026-10-09, from the September closing).
   // Folded in here, in the one loader both the screen and the export read, for the same reason the
   // city split is: two surfaces deriving one redistribution separately is the defect this module was
   // written to end. The two nets are added — both are zero-sum per product, so their sum is — and
   // the bulk rows are already refused by `isSplitEligible`, so nothing moves twice.
+  const bulk = buildBulkAllocation(bulkAllocationRows(details.rows, cityPass?.rows, period), period, line);
   const withBulk = mergeBulkAllocationIntoSplit(
     { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
-    buildBulkAllocation(details.rows, period, line),
+    bulk,
   );
   // THE OFFICE CHANNEL'S READ-TIME RESPREAD RIDES THE SAME NET (owner, 2026-10-09: "fix the Office
   // allocation to read-time shares"), from the September 2026 closing, CNS only. Folded in here for the
@@ -159,6 +175,7 @@ const loadClosingStoreSplitUncached = async (
     movements: merged.movements,
     net: Array.from(merged.net.entries()),
     officeNet: Array.from(merged.officeNet.entries()),
+    epdaUnits: Array.from(epdaUnitsLanded(bulk, period, details.rows).entries()),
   };
 };
 
@@ -172,7 +189,7 @@ const loadClosingStoreSplitUncached = async (
 // which is the one failure mode that prints a negative Closing Matrix (No Office) cell.
 const loadClosingStoreSplitCached = unstable_cache(
   loadClosingStoreSplitUncached,
-  ["closing-store-split-with-bulk-and-office-respread"],
+  ["closing-store-split-with-bulk-office-respread-and-epda-rule-2"],
   { revalidate: 3600, tags: [CLOSING_STORE_SPLIT_CACHE_TAG] },
 );
 
@@ -204,7 +221,7 @@ export async function loadClosingStoreSplit(
   // is split-eligible and September is after the split's August start — so the two tests can only
   // disagree if one of those dates is ever moved. Asked separately anyway: a gate that is correct by
   // coincidence silently drops a whole rule the day the coincidence ends.
-  const bulkApplies = isBulkAllocationActive(trimmedPeriod) && isBulkAllocationLine(trimmedLine);
+  const bulkApplies = isBulkAllocationActive(trimmedPeriod) && isBulkAllocationLine(trimmedLine, trimmedPeriod);
   // The Office read-time respread is a THIRD independent reason this result is not empty, with its
   // own line and start month (CNS, 2026-09). Asked separately for the same reason the bulk rule is:
   // today it is a subset of the city split's gate — CNS is split-eligible and September is after the
@@ -253,11 +270,14 @@ export async function loadClosingStoreSplit(
     // ruling ("make September's Office split recalculate like October", same day) a one-constant
     // change. If he re-publishes September, the net stamped then is computed by the live path and
     // therefore already carries the respread, so it freezes WITH it and this branch stays correct.
-    if (!officeApplies) return frozen;
+    // The EPDA tab's figures are recomputed live for a published month the same way, and for the same
+    // reason: the frozen table carries no channel, so it cannot say which part of its net was EPDA's.
+    const epdaApplies = isEpdaContributionActive(trimmedPeriod) && isBulkAllocationLine(trimmedLine, trimmedPeriod);
+    if (!officeApplies && !epdaApplies) return frozen;
     const live = await readGeographyStamp()
       .then((stamp) => loadClosingStoreSplitCached(trimmedLine, trimmedPeriod, stamp))
       .catch(() => null);
-    return { ...frozen, officeNet: new Map(live?.officeNet ?? []) };
+    return { ...frozen, officeNet: new Map(live?.officeNet ?? []), epdaUnits: new Map(live?.epdaUnits ?? []) };
   }
   const cached = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod, await readGeographyStamp());
   return {
@@ -265,6 +285,7 @@ export async function loadClosingStoreSplit(
     movements: cached.movements,
     net: new Map(cached.net),
     officeNet: new Map(cached.officeNet ?? []),
+    epdaUnits: new Map(cached.epdaUnits ?? []),
   };
 }
 
