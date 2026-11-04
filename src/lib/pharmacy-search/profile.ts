@@ -7,6 +7,11 @@
 
 import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
+import {
+  isSalesPeriodReleasedCompanyWide,
+  loadSalesReleaseKeys,
+  readsUnpublishedSalesTools,
+} from "@/lib/sales/unpublished-sales-access";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { googleMapsUrlFor, resolvePharmacyCoordinates } from "./locate";
@@ -190,9 +195,15 @@ async function loadReferenceCodes(
   })).filter((entry) => entry.customerCode.length > 0);
 }
 
-async function loadSales(pairs: Array<{ clientCode: string; distributorCode: string }>): Promise<PharmacySalesPeriod[]> {
+async function loadSales(
+  pairs: Array<{ clientCode: string; distributorCode: string }>,
+  viewer: SourceMaskViewer,
+): Promise<PharmacySalesPeriod[]> {
   if (pairs.length === 0) return [];
   const supabase = getSupabaseAdmin();
+  // Only the Super Admin and the SFE Manager read an unpublished month here (owner, 2026-11-04). These
+  // rows carry a product and no line, so a month opens once every line has published it.
+  const publishedKeys = readsUnpublishedSalesTools(viewer) ? null : await loadSalesReleaseKeys();
 
   const clientCodes = [...new Set(pairs.map((pair) => pair.clientCode))];
   const distributorCodes = [...new Set(pairs.map((pair) => pair.distributorCode))];
@@ -214,6 +225,7 @@ async function loadSales(pairs: Array<{ clientCode: string; distributorCode: str
     if (!allowed.has(key)) continue;
     const period = String(row.period ?? "").trim();
     if (!period) continue;
+    if (publishedKeys && !isSalesPeriodReleasedCompanyWide(period, publishedKeys)) continue;
 
     const entry = byPeriod.get(period) ?? { products: new Set<string>(), units: 0 };
     const units = Number(row.effective_units ?? 0);
@@ -364,6 +376,7 @@ export async function loadPharmacyProfile(
       distributorCodes
         .filter((entry) => !entry.fromReferenceList)
         .map((entry) => ({ clientCode: entry.customerCode, distributorCode: entry.distributorCode })),
+      viewer,
     ),
     resolvePharmacyCoordinates({ brickId: territory.brickId, name }),
   ]);

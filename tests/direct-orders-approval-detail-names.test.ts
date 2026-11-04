@@ -182,6 +182,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     retailLoadFailed: false,
     directLoadFailed: false,
     hiddenConfidentialCount: 0,
+    retailWithheldMonths: 0,
     retailMatchedPairs: 0,
     geographyCheck: null,
     ...overrides,

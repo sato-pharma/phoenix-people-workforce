@@ -47,6 +47,7 @@ import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
 import { loadAreaBrickMaster, loadClosingBrickSales, upperCode } from "@/lib/sales/closing-brick-sales";
 import { withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { lineName } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { SALES_HISTORY_FLOOR, loadUploadedPeriodsInRange } from "@/lib/sales/vs-target";
 
 type Row = Record<string, unknown>;
@@ -142,7 +143,7 @@ export async function loadBrickCoverageReport(
     };
   }
 
-  const [crmData, uploaded] = await Promise.all([
+  const [crmData, uploaded, publishedKeys] = await Promise.all([
     callPhoenixCrm<unknown>("phoenix_crm_report_brick_coverage", {
       p_seat_ids: seats.map((seat) => seat.seatId),
       p_from: period.from,
@@ -150,6 +151,7 @@ export async function loadBrickCoverageReport(
       p_include_test: includeTest,
     }),
     loadUploadedPeriodsInRange(SALES_HISTORY_FLOOR, period.to.slice(0, 7)),
+    loadSalesReleaseKeys(),
   ]);
 
   const chosenIds = new Set(seats.map((seat) => seat.seatId));
@@ -187,7 +189,11 @@ export async function loadBrickCoverageReport(
   // One read per line per landed month. Lines, not seats: the closing's brick grain is per line, and
   // two territories of the same line would otherwise fetch the same rows twice.
   const lines = [...new Set(seats.map((seat) => seat.lineCode).filter((code): code is string => Boolean(code)))];
-  const salesMonths = landedMonthsIn(period, uploaded);
+  // Sales of an unpublished month appear nowhere (owner, 2026-11-04). Asked per line in the read below,
+  // because each line publishes on its own day; a month no line has published is not named at all.
+  const salesMonths = landedMonthsIn(period, uploaded).filter((month) =>
+    lines.some((code) => isSalesPeriodReleased(month, code, publishedKeys)),
+  );
   const masked = { role: viewer.role, scope: scopeForRole(viewer.role) };
   // 🔴 EACH BATCH CARRIES THE LINE IT WAS ASKED FOR. `loadClosingBrickSales` takes the line and its
   // rows do not name it, so flattening the results loses the one fact the join needs — and a board
@@ -195,7 +201,9 @@ export async function loadBrickCoverageReport(
   // reads are built as `{ lineCode, rows }` pairs rather than a flat array for exactly that reason.
   const rawSales = await Promise.all(
     lines.flatMap((code) =>
-      salesMonths.map(async (month) => ({ lineCode: code, rows: await loadClosingBrickSales(lineName(code), month) })),
+      salesMonths
+        .filter((month) => isSalesPeriodReleased(month, code, publishedKeys))
+        .map(async (month) => ({ lineCode: code, rows: await loadClosingBrickSales(lineName(code), month) })),
     ),
   );
   // 🔴 The mask, before anything is summed.

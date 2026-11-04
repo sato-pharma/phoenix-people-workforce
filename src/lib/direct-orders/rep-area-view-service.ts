@@ -7,6 +7,8 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { expandAreaCodesForLine, foldAreaCodeForLine, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { closingRegionsAsOfDate } from "@/lib/sales/closing-organogram-regions";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { resolveAuLineCode } from "@/lib/sales/territory/skeleton";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -401,8 +403,15 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
   ).flat();
   // Each order stays only if it is the rep's own LINE and its pharmacy's area was the rep's in the
   // month it was COUNTED. Without the line test another line's orders in the same area leak in.
+  //
+  // And only once that month is published for the rep's line (owner, 2026-11-04). The Direct Orders
+  // workflow screens stay a work record; this one reports what the rep's AREA sold, so it is a sales
+  // figure and waits for the closing like every other.
+  const publishedKeys = await loadSalesReleaseKeys();
+  const repLineCode = resolveTargetLineCode(repLine);
   const requests = fetched.filter((request) => {
     if (!isDirectOrderOnRepLine(request.line, repLine)) return false;
+    if (!request.sales_month || !isSalesPeriodReleased(request.sales_month, repLineCode, publishedKeys)) return false;
     const pharmacy = pharmacyById.get(request.pharmacy_id);
     return Boolean(pharmacy && request.sales_month && scopeFor(request.sales_month).has(pharmacy.areaCode));
   });

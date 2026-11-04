@@ -277,7 +277,7 @@ export function runSalesVsTargetTests() {
   // target, yet the not-published panel's "A target of … is already loaded" sentence could never
   // render. It read `totals.targetValue`, and `totals` is built from PUBLISHED rows only — so for an
   // unpublished month it is 0 by construction. The target now comes from the raw rows of the month,
-  // beside pendingDirectValue, while the publication gate itself stays exactly as it was.
+  // while the publication gate itself stays exactly as it was.
   const septemberTargets = [
     row({ period: "2026-09", productCode: "P1", targetValue: 180_050.02, hasTarget: true, hasActual: false }),
     row({ period: "2026-09", productCode: "P2", targetValue: 120_035.02, hasTarget: true, hasActual: false }),
@@ -308,10 +308,9 @@ export function runSalesVsTargetTests() {
     0,
     "and the published totals' own target is 0 here too, which is exactly why the panel cannot quote it",
   );
-  assert.equal(
-    unpublishedSeptember.pendingDirectValue,
-    9_876.5,
-    "the booked value stays its own figure, and none of it is folded into the quoted target",
+  assert.ok(
+    !JSON.stringify(unpublishedSeptember).includes("9876.5"),
+    "the 9,876.50 sitting in the unpublished month leaves the split under no name at all (owner, 2026-11-04)",
   );
 
   const publishedJuly = splitPeriodAtPublication(loadedMonth, published);

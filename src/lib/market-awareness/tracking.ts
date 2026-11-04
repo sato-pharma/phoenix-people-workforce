@@ -6,6 +6,11 @@ import type {
   MarketAwarenessTrackingSeries,
 } from "@/lib/market-awareness/types";
 import { shiftPeriod } from "@/lib/sales/periods";
+import {
+  isSalesPeriodReleased,
+  loadSalesReleaseKeys,
+  newestPeriodPublishedForLines,
+} from "@/lib/sales/unpublished-sales-access";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 /**
@@ -76,20 +81,19 @@ function emptyPoint(period: string): MarketAwarenessTrackingPoint {
   return { period, indirectValue: 0, directValue: 0, totalValue: 0, units: null };
 }
 
-export async function loadLastClosedPeriod(): Promise<string | null> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("phx_market_awareness_last_closed_period");
-  if (error) throw toQueryError(error);
-  const value = typeof data === "string" ? data.trim() : null;
-  return value || null;
-}
-
 export async function buildTracking(request: TrackingRequest): Promise<MarketAwarenessTracking> {
   const baselinePeriods = baselinePeriodsFor(request.startPeriod, request.baselineMonths);
   const windowPeriods = windowPeriodsFor(request.startPeriod, request.durationMonths);
   const allPeriods = [...baselinePeriods, ...windowPeriods];
 
-  const lastClosedPeriod = await loadLastClosedPeriod();
+  // The month the figures run to is the newest one published on ALL of this activity's lines (owner,
+  // 2026-11-04). The tracking function answers for any month that holds data, so each line's rows are
+  // gated below as well.
+  const publishedKeys = await loadSalesReleaseKeys();
+  const lastClosedPeriod = newestPeriodPublishedForLines(
+    request.lines.map((line) => line.lineCode),
+    publishedKeys,
+  );
   const supabase = getSupabaseAdmin();
 
   const fromPeriod = allPeriods[0] ?? request.startPeriod;
@@ -125,7 +129,9 @@ export async function buildTracking(request: TrackingRequest): Promise<MarketAwa
     });
     if (error) throw toQueryError(error);
 
-    const rows = (data as TrackingRow[] | null) ?? [];
+    const rows = ((data as TrackingRow[] | null) ?? []).filter((row) =>
+      isSalesPeriodReleased(row.period, line.lineCode, publishedKeys),
+    );
     const brickByPeriod = new Map<string, MarketAwarenessTrackingPoint>();
     const areaByPeriod = new Map<string, MarketAwarenessTrackingPoint>();
     const areaBrickedByPeriod = new Map<string, number>();

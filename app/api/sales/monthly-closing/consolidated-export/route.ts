@@ -11,6 +11,12 @@ import {
   resolveConsolidatedPeriods,
 } from "@/lib/sales/closing-consolidated";
 import { buildConsolidatedClosingWorkbook } from "@/lib/sales/monthly-closing-consolidated-export";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import {
+  isSalesPeriodReleased,
+  loadSalesReleaseKeys,
+  readsUnpublishedSalesTools,
+} from "@/lib/sales/unpublished-sales-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +62,17 @@ export async function POST(request: Request) {
       );
     }
     const periods = resolveConsolidatedPeriods(body.periods);
+    // A workbook is a file that travels: every month in it must be published (owner, 2026-11-04).
+    if (!readsUnpublishedSalesTools(access)) {
+      const publishedKeys = await loadSalesReleaseKeys();
+      const lineCode = resolveTargetLineCode(line);
+      if (!periods.every((period) => isSalesPeriodReleased(period, lineCode, publishedKeys))) {
+        return NextResponse.json(
+          { success: false, error: "One of these months' closings is not published yet, so this workbook cannot be downloaded." },
+          { status: 403 },
+        );
+      }
+    }
 
     const result = await buildConsolidatedClosingWorkbook({
       access,

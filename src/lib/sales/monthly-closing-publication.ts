@@ -1,5 +1,9 @@
 import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
-import { invalidateClosingStoreSplitCache, invalidateCrmDailyForecastCache } from "@/lib/dashboard/invalidation";
+import {
+  invalidateAchievementStampedCaches,
+  invalidateClosingStoreSplitCache,
+  invalidateCrmDailyForecastCache,
+} from "@/lib/dashboard/invalidation";
 import { isHeadOfficeLine } from "@/lib/sales/access-scope";
 import {
   assertClosingPeriodComplete,
@@ -420,6 +424,7 @@ export async function publishClosing(input: {
   if (error) throw new Error(error.message);
   invalidateClosingStoreSplitCache(`closing published — ${line}/${period}`);
   invalidateCrmDailyForecastCache(`closing published — ${line}/${period}`);
+  invalidateAchievementStampedCaches(`closing published — ${line}/${period}`);
   bumpCustomer360Cache("monthly closing published");
 
   // Best-effort: a notification failure must never turn a successful publish into an error response.
@@ -481,5 +486,8 @@ export async function unpublishClosing(input: {
   if (error) throw new Error(error.message);
   invalidateClosingStoreSplitCache(`closing unpublished — ${input.line}/${period}`);
   invalidateCrmDailyForecastCache(`closing unpublished — ${input.line}/${period}`);
+  // The platform tile's key is the stamp, and the stamp does not see a publication: a withdrawn month
+  // would otherwise stay on it for up to five minutes.
+  invalidateAchievementStampedCaches(`closing unpublished — ${input.line}/${period}`);
   bumpCustomer360Cache("monthly closing unpublished");
 }

@@ -10,6 +10,9 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, readsUnpublishedSalesTools } from "@/lib/sales/unpublished-sales-access";
+import { loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { resolveClosingFileName } from "@/lib/sales/closing-export-file-name";
 import { buildClosingNoOfficeSheet } from "@/lib/sales/closing-no-office-sheet";
@@ -123,6 +126,24 @@ export async function POST(request: Request) {
       line: body.line ?? marketingOversight?.line ?? null,
       period: body.period ?? null,
     });
+
+    // The closing's page stays readable before publication for the roles that have it. A workbook is
+    // a file that travels, so only the Super Admin and the SFE Manager download one that early (owner,
+    // 2026-11-04). Asked of the month and line the payload RESOLVED, since both may arrive empty.
+    if (
+      !readsUnpublishedSalesTools(access)
+      && payload.period
+      && !isSalesPeriodReleased(
+        payload.period,
+        resolveTargetLineCode(payload.line),
+        await loadPublishedPeriodKeys(payload.period, payload.period),
+      )
+    ) {
+      return Response.json(
+        { error: "This month's closing is not published yet, so its workbook cannot be downloaded." },
+        { status: 403 },
+      );
+    }
 
     // Fill the OWNER'S engine — never rebuild it. The template is his own .xlsm with its two Excel
     // Tables, three pivots, two slicers, the Rep Card's INDEX/MATCH formulas and the VBA button bar

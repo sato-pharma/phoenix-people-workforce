@@ -29,6 +29,7 @@ import {
   SectionCard,
   TABLE_HEAD_CLASS,
   TABLE_ROW_CLASS,
+  TARGET_COLOR,
   achievementHex,
   achievementTone,
   chipClass,
@@ -111,6 +112,12 @@ export type TargetsWorkspaceProps = {
   lineTotal: LineTotal;
   byRegion: RegionRollup[];
   byDm: DmRollup[];
+  /**
+   * False while this line's Monthly Closing for the month is unpublished. The server has already taken
+   * the sales out of every row and roll-up (withholdUnpublishedSales), so their zeros are not figures:
+   * every place that prints a sale or a percentage says "not published" instead, never 0.
+   */
+  salesPublished: boolean;
   sourceFiles: SourceFile[];
   error: string | null;
   /** Render the write affordances. Server still enforces `sales:import` on every write route. */
@@ -294,12 +301,32 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
 function RollupList({
   entries,
   emptyLabel,
+  salesPublished,
 }: {
   entries: ReadonlyArray<{ name: string; actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null }>;
   emptyLabel: string;
+  salesPublished: boolean;
 }) {
   if (entries.length === 0) {
     return <p className="px-4 py-8 text-center text-xs text-slate-500">{emptyLabel}</p>;
+  }
+  // An unpublished month: the same rows, carrying the one figure it has.
+  if (!salesPublished) {
+    const maxTarget = Math.max(...entries.map((entry) => Math.abs(entry.targetValue)), 1);
+    return (
+      <ol className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
+        {entries.map((entry) => (
+          <li key={entry.name} className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-x-3 gap-y-1.5 px-4 py-3">
+            <p className="min-w-0 break-words text-phx-md font-bold text-slate-900">{entry.name}</p>
+            <span className="whitespace-nowrap text-right text-phx-md font-black tabular-nums text-sky-600">
+              {formatEgp(entry.targetValue)}
+            </span>
+            <ProportionBar fraction={Math.abs(entry.targetValue) / maxTarget} color={TARGET_COLOR} />
+            <span className="text-right text-phx-xs text-slate-500">target</span>
+          </li>
+        ))}
+      </ol>
+    );
   }
   const max = Math.max(...entries.map((entry) => Math.abs(entry.actualValue)), 1);
   return (
@@ -336,6 +363,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const canEdit = props.canEdit !== false;
   const basePath = props.basePath ?? "/sales/targets";
   const surface = props.surface ?? "sales";
+  const salesPublished = props.salesPublished;
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [unitEdits, setUnitEdits] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
@@ -482,11 +510,12 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
     const unitValue = unitEdits[key] ?? (row.targetUnits == null ? "" : String(row.targetUnits));
     const liveTarget = editValue === "" ? null : Number(editValue);
     return {
-      canDrill: row.actualValue !== 0,
+      canDrill: salesPublished && row.actualValue !== 0,
       detail: expanded[key],
       editValue,
       key,
-      liveAch: liveTarget && liveTarget !== 0 ? row.actualValue / liveTarget : null,
+      // null, not 0 / target: a month nobody has published has no percentage, and 0.0% would be a claim.
+      liveAch: salesPublished && liveTarget && liveTarget !== 0 ? row.actualValue / liveTarget : null,
       unitValue,
     };
   };
@@ -518,14 +547,14 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
     () =>
       props.byRegion
         .map((entry) => ({ ...entry, name: entry.region }))
-        .sort((left, right) => Math.abs(right.actualValue) - Math.abs(left.actualValue)),
+        .sort((left, right) => Math.abs(right.actualValue) - Math.abs(left.actualValue) || Math.abs(right.targetValue) - Math.abs(left.targetValue)),
     [props.byRegion],
   );
   const rankedDms = useMemo(
     () =>
       props.byDm
         .map((entry) => ({ ...entry, name: entry.dmName }))
-        .sort((left, right) => Math.abs(right.actualValue) - Math.abs(left.actualValue)),
+        .sort((left, right) => Math.abs(right.actualValue) - Math.abs(left.actualValue) || Math.abs(right.targetValue) - Math.abs(left.targetValue)),
     [props.byDm],
   );
 
@@ -539,32 +568,38 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
         stats={
           total ? (
             <>
-              <BandStat
-                label="With a target"
-                value={<CountUpNumber value={total.coveredActualValue} format={formatEgp} />}
-                note={
-                  notGraded === 0
-                    ? "every pound has a target behind it"
-                    : `${formatEgp(notGraded)} more has none, and still counts`
-                }
-              />
+              {salesPublished ? (
+                <BandStat
+                  label="With a target"
+                  value={<CountUpNumber value={total.coveredActualValue} format={formatEgp} />}
+                  note={
+                    notGraded === 0
+                      ? "every pound has a target behind it"
+                      : `${formatEgp(notGraded)} more has none, and still counts`
+                  }
+                />
+              ) : null}
               <BandStat
                 label="Target"
                 tone="sky"
                 value={<CountUpNumber value={total.targetValue} format={formatEgp} />}
                 note={`${props.rows.length.toLocaleString("en-US")} area x product rows`}
               />
-              <BandStat
-                label="Total sales"
-                value={<CountUpNumber value={total.actualValue} format={formatEgp} />}
-                note="every pound — this over Target is the Achievement"
-              />
+              {salesPublished ? (
+                <BandStat
+                  label="Total sales"
+                  value={<CountUpNumber value={total.actualValue} format={formatEgp} />}
+                  note="every pound — this over Target is the Achievement"
+                />
+              ) : (
+                <BandStat label="Total sales" value="Not published" note="appears when the Monthly Closing is published" />
+              )}
             </>
           ) : undefined
         }
-        ring={total ? <AchievementRing value={total.achievementValue} size={150} stroke={13} label="Achievement" premium={surface === "portal"} /> : undefined}
+        ring={total && salesPublished ? <AchievementRing value={total.achievementValue} size={150} stroke={13} label="Achievement" premium={surface === "portal"} /> : undefined}
         aside={
-          total ? (
+          total && salesPublished ? (
             <div className="border-l border-slate-100 pl-6">
               <p className={LABEL_CLASS}>Measured</p>
               <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-slate-900">{formatPct(measured)}</p>
@@ -608,6 +643,22 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
         <div className="border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3 text-xs font-semibold text-slate-800">{message}</div>
       ) : null}
 
+      {/* The same words the Sales vs Target panel uses for the same month. */}
+      {salesPublished ? null : (
+        <div className="flex items-start gap-3 border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" />
+          <div className="min-w-0 text-xs leading-5 text-slate-800">
+            <p className="font-bold">
+              {`Monthly Closing for ${lineLabel}, ${formatPeriod(props.selectedPeriod)}, has not been published yet.`}
+            </p>
+            <p>
+              This is not a zero. Sales are not final until reconciled and published, so only the targets show
+              here until then. Pick a published month to see results.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Ungraded sales banner — the same explanation Sales vs Target gives, in the same words, so
           the two screens cannot be read as disagreeing about what achievement measures. */}
       {total && notGraded !== 0 ? (
@@ -634,24 +685,36 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SectionCard
           title="By region"
-          subtitle={`${rankedRegions.length.toLocaleString("en-US")} region${rankedRegions.length === 1 ? "" : "s"} · ranked by sales`}
+          subtitle={`${rankedRegions.length.toLocaleString("en-US")} region${rankedRegions.length === 1 ? "" : "s"} · ranked by ${salesPublished ? "sales" : "target"}`}
           icon={MapPin}
         >
-          <RollupList entries={rankedRegions} emptyLabel="No regional sales in this line and month." />
+          <RollupList
+            entries={rankedRegions}
+            salesPublished={salesPublished}
+            emptyLabel={salesPublished ? "No regional sales in this line and month." : "No regional targets in this line and month."}
+          />
         </SectionCard>
         <SectionCard
           title="By district manager"
-          subtitle={`${rankedDms.length.toLocaleString("en-US")} manager${rankedDms.length === 1 ? "" : "s"} · ranked by sales`}
+          subtitle={`${rankedDms.length.toLocaleString("en-US")} manager${rankedDms.length === 1 ? "" : "s"} · ranked by ${salesPublished ? "sales" : "target"}`}
           icon={Users}
         >
-          <RollupList entries={rankedDms} emptyLabel="No sales attributed to a district manager here." />
+          <RollupList
+            entries={rankedDms}
+            salesPublished={salesPublished}
+            emptyLabel={salesPublished ? "No sales attributed to a district manager here." : "No targets attributed to a district manager here."}
+          />
         </SectionCard>
       </div>
 
       {/* ── The grid ── */}
       <SectionCard
         title={`Targets & achievement — ${lineLabel}`}
-        subtitle={`${formatPeriod(props.selectedPeriod)} · open a row to trace its sales to distributor and brick`}
+        subtitle={
+          salesPublished
+            ? `${formatPeriod(props.selectedPeriod)} · open a row to trace its sales to distributor and brick`
+            : `${formatPeriod(props.selectedPeriod)} · targets only until the Monthly Closing is published`
+        }
         icon={Table2}
         actions={
           canEdit ? (
@@ -683,7 +746,9 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
               {canEdit
                 ? "No targets and no sales yet for this line and month. Download the template, fill it and upload it — or pick a month whose distributor sales have been loaded."
-                : "No targets or sales for your territory in this line and month."}
+                : salesPublished
+                  ? "No targets or sales for your territory in this line and month."
+                  : "No targets for your territory in this line and month."}
             </p>
           </div>
         ) : (
@@ -718,7 +783,9 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                       <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-phx-xs">
                         <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                           <dt className="text-slate-500">Actual</dt>
-                          <dd className="whitespace-nowrap font-black tabular-nums text-slate-900">{formatEgp(row.actualValue)}</dd>
+                          <dd className="whitespace-nowrap font-black tabular-nums text-slate-900">
+                            {salesPublished ? formatEgp(row.actualValue) : "Not published"}
+                          </dd>
                         </div>
                         <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                           <dt className="text-slate-500">Unit price</dt>
@@ -857,7 +924,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                             </p>
                           </td>
                           <td className="px-3 py-3 text-right align-top font-bold tabular-nums text-slate-900">
-                            {formatEgpFull(row.actualValue)}
+                            {salesPublished ? formatEgpFull(row.actualValue) : "Not published"}
                           </td>
                           <td className="px-3 py-3 text-right align-top">
                             {canEdit ? (

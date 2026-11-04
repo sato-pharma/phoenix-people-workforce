@@ -41,6 +41,7 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { lineName, loadAreaNameMap, loadProductFamilyMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import {
   SALES_HISTORY_FLOOR,
   loadAchievementRange,
@@ -218,17 +219,23 @@ const loadAllCanonicalPortalSalesRows = cache(async (): Promise<CanonicalPortalS
   const { year, month } = currentCairoDateParts();
   const to = `${year}-${String(month).padStart(2, "0")}`;
 
-  const [rows, uploadedPeriods, productNames, productFamilies, areaNames] = await Promise.all([
+  const [rows, uploadedPeriods, publishedKeys, productNames, productFamilies, areaNames] = await Promise.all([
     loadAchievementRange(SALES_HISTORY_FLOOR, to),
     loadUploadedPeriodsInRange(SALES_HISTORY_FLOOR, to),
+    loadSalesReleaseKeys(),
     loadProductNameMap(),
     loadProductFamilyMap(),
     loadAreaNameMap(),
   ]);
 
+  // Sales of an unpublished month appear nowhere (owner, 2026-11-04). Per line, because each line
+  // publishes on its own day. These rows are what a portal payload and the rep's Incentive tab are
+  // built from, so nothing downstream can add an unpublished sale back.
+  const released = rows.filter((row) => isSalesPeriodReleased(row.period, row.lineCode, publishedKeys));
+
   // Merge Fayoum/Beni Suef BEFORE aggregating, so the two codes land in one bucket and are
   // summed here rather than silently deduplicated downstream.
-  const merged = applyAchievementAreaMerges(rows);
+  const merged = applyAchievementAreaMerges(released);
   const aggregates = aggregateCanonicalPortalRows(merged, uploadedPeriods);
 
   return aggregates

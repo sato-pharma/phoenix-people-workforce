@@ -189,6 +189,7 @@ export function DirectOrderRequestDetail({
     productPublicPrice,
     retailLoadFailed,
     hiddenConfidentialCount,
+    retailWithheldMonths,
     retailMatchedPairs,
     geographyCheck,
     orderInvoice = null,
@@ -982,7 +983,7 @@ export function DirectOrderRequestDetail({
           alone is not unique across distributors. */}
       <PanelSection title="Retail sales — from the distributors">
         <p className="mb-2 text-phx-xs font-bold text-slate-500">
-          all months on record
+          {retailWithheldMonths > 0 ? "published months on record" : "all months on record"}
           {retailMatchedPairs > 0 ? ` · matched on ${retailMatchedPairs} distributor code${retailMatchedPairs === 1 ? "" : "s"}` : ""}
         </p>
         {/* Confidential products are withheld from EVERY role, including CEO and Super Admin (owner
@@ -992,6 +993,15 @@ export function DirectOrderRequestDetail({
           <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-600 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
             {hiddenConfidentialCount} confidential product{hiddenConfidentialCount === 1 ? "" : "s"} hidden from this
             view. Figures below exclude {hiddenConfidentialCount === 1 ? "it" : "them"}.
+          </p>
+        ) : null}
+        {/* Same reasoning: a month held back until its closing publishes must not read as a month
+            this pharmacy did not buy. Owner, 2026-11-04. */}
+        {retailWithheldMonths > 0 ? (
+          <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-600 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)]">
+            {retailWithheldMonths} month{retailWithheldMonths === 1 ? "" : "s"} of this pharmacy&apos;s distributor
+            sales {retailWithheldMonths === 1 ? "is" : "are"} hidden until the closing is published. This is NOT
+            &quot;no sales&quot;.
           </p>
         ) : null}
         {retailLoadFailed ? (
@@ -1019,7 +1029,7 @@ export function DirectOrderRequestDetail({
             {pharmacyStanding?.noCodeNote ??
               "This pharmacy has no distributor customer code on file, so its retail sales cannot be matched."}
           </p>
-        ) : retailHistory.length === 0 ? (
+        ) : retailHistory.length === 0 && retailWithheldMonths > 0 ? null : retailHistory.length === 0 ? (
           /* Spec D2: WHY it is empty, not just that it is. A provisional pharmacy and an
              established one that simply has not bought both produce zero rows, and they are
              opposite risks — so the sentence comes from the domain, never from a count here. */

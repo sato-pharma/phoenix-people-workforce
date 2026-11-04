@@ -54,6 +54,7 @@ import {
   needsClosingDetail,
 } from "@/lib/business-review/pack/metrics";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { readsLiveBusinessReview } from "@/lib/sales/unpublished-sales-access";
 import {
   bandFor,
   getReviewCompany,
@@ -63,6 +64,7 @@ import {
   getReviewCompanyThresholds,
   getReviewDataset,
   loadBusinessReview,
+  NoPublishedReviewMonthError,
   loadReviewConcentration,
   REVIEW_LINE_CODES,
   payoutPercentageFor,
@@ -112,6 +114,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   const reviewWindow = {
     from: firstSearchParam(params?.from) ?? null,
     to: firstSearchParam(params?.to) ?? null,
+    publishedOnly: !readsLiveBusinessReview(access),
   };
   // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the review bundle is
   // the same for every viewer of a window — it depends on `from`/`to` alone, never on the scope — so
@@ -140,7 +143,21 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   }
 
   // ONE canonical range call for all three lines and every month in the window — never per scope.
-  const { review, resolution, available } = await (reviewLoad ?? loadBusinessReview(reviewWindow));
+  const loaded = await (reviewLoad ?? loadBusinessReview(reviewWindow)).catch((error: unknown) => {
+    if (error instanceof NoPublishedReviewMonthError) return null;
+    throw error;
+  });
+  if (!loaded) {
+    return shell(
+      <EmployeePortalEmptyState
+        message="No month has been published on all three lines yet, so there is nothing to show here."
+        title="No published month"
+      />,
+      "Executive sales review.",
+      "Read-only",
+    );
+  }
+  const { review, resolution, available } = loaded;
   const window = resolution.window;
   const coverage = review.coverage;
   // The span the figures ANSWER, which is the requested window minus any month whose distributor

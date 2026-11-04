@@ -833,6 +833,12 @@ export type DirectOrderApprovalDetail = {
    */
   hiddenConfidentialCount: number;
   /**
+   * Months of this pharmacy's distributor sales withheld from THIS viewer until their closing is
+   * published. A count only, never a figure. Without it an empty table reads as "it has not bought",
+   * which is false on the screen where money is approved.
+   */
+  retailWithheldMonths: number;
+  /**
    * How many (distributor, customer code) pairs the retail match actually ran against. A pharmacy
    * trading with three distributors but carrying one linked code shows a third of its sales — this
    * is what stops that partial view from reading as the complete picture.

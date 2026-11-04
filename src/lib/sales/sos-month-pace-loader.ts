@@ -26,6 +26,7 @@ import { loadAreaNameMap, type AchievementRow } from "@/lib/sales/monthly-target
 import { daysInPeriod } from "@/lib/sales/periods";
 import { salesLineCodeForOfficialLine } from "@/lib/sales/portal-targets";
 import { buildMonthPace, type MonthPaceResult } from "@/lib/sales/sos-month-pace";
+import { isSalesPeriodReleased, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { loadAchievementRange } from "@/lib/sales/vs-target";
 import { filterRowsForBound, resolveVsTargetBound, type VsTargetBound } from "@/lib/sales/vs-target-scope";
 import { getPortalWeeklyMonthFieldForce } from "@/lib/sales/weekly/portal-weekly-dashboard";
@@ -160,6 +161,12 @@ export async function loadPortalMonthPace(input: {
 
   // A failed direct read fails the strip (the route hides it) rather than showing areas behind that are
   // not, and a failed area-name read fails it rather than labelling areas with their codes.
+  //
+  // The weekly half is his carve-out and stays. The booked direct orders are the closing's own direct
+  // half, so they wait for the month's closing like any other sale (owner, 2026-11-04); a running month
+  // is not published, so the strip is weekly-only until then.
+  const publishedKeys = await loadSalesReleaseKeys();
+  const directReleased = isSalesPeriodReleased(period, lineCode, publishedKeys);
   const [achievement, bound, weekly, directRows, directInWeekly, areaNames] = await Promise.all([
     // The month through the achievement engine's token-keyed per-month cache (PERF-010, 2026-10-04)
     // rather than a raw phx_monthly_achievement call on every render. Same function underneath —
@@ -168,11 +175,13 @@ export async function loadPortalMonthPace(input: {
     loadAchievementRange(period, period),
     resolveVsTargetBound(input.access),
     getPortalWeeklyMonthFieldForce(input.access, `${period}-01`).catch(() => null),
-    rpcAll<ClosingDirectRow>(getSupabaseAdmin(), "phx_monthly_closing_direct", { p_line: input.line, p_period: period }, [
-      "region_code",
-      "area_code",
-      "product_code",
-    ]),
+    directReleased
+      ? rpcAll<ClosingDirectRow>(getSupabaseAdmin(), "phx_monthly_closing_direct", { p_line: input.line, p_period: period }, [
+          "region_code",
+          "area_code",
+          "product_code",
+        ])
+      : [],
     weeklyUploadCarriesDirect(period, input.line),
     loadAreaNameMap(),
   ]);

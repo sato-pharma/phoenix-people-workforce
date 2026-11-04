@@ -700,7 +700,7 @@ export function runCeoCommandCenterTests() {
   assert.match(
     ceoCommandCenterSource,
     /const closingPeriod = await closingPeriodPromise/,
-    "the closing period must come from latestPublishedClosingPeriod() and be awaited before the SoS load",
+    "the closing period must be the newest month published on every line, awaited before the SoS load",
   );
 
   // The upload console must keep seeing the NEWEST month — the person loading August has to watch

@@ -27,6 +27,9 @@ import {
 } from "@/lib/sales/closing-report-pdf";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, readsUnpublishedSalesTools } from "@/lib/sales/unpublished-sales-access";
+import { loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -139,6 +142,21 @@ export async function GET(request: Request) {
         line: requestedLine || marketingOversight?.line || null,
         period: (params.get("period") ?? "").trim() || null,
       });
+
+      // The same refusal as the workbook beside it: a PDF is a file that travels (owner, 2026-11-04).
+      // Asked of the month and line the payload RESOLVED, since both may arrive empty. A sealed link
+      // is not asked: it holds what its workbook already holds.
+      if (
+        !readsUnpublishedSalesTools(access)
+        && payload.period
+        && !isSalesPeriodReleased(
+          payload.period,
+          resolveTargetLineCode(payload.line),
+          await loadPublishedPeriodKeys(payload.period, payload.period),
+        )
+      ) {
+        return refusal(request, 403, "This month's closing is not published yet, so its PDF cannot be downloaded.");
+      }
     }
 
     const pdf = isRepCard
