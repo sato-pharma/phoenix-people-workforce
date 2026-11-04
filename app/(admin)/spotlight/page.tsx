@@ -5,8 +5,8 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { facetsFrom, loadSpotlightOrg } from "@/lib/spotlight/org";
-import { isSalesPeriodReleasedCompanyWide, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
-import { selectableWindows } from "@/lib/spotlight/period";
+import { isSalesPeriodReleasedForLines, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
+import { windowsByLineSet } from "@/lib/spotlight/line-windows";
 
 export const dynamic = "force-dynamic";
 
@@ -38,18 +38,10 @@ export default async function SpotlightPage() {
   const canExport = await canAccess(access, "spotlight", "export");
 
   const [index, publishedKeys] = await Promise.all([loadSpotlightOrg(), loadSalesReleaseKeys()]);
-  const isPublished = (period: string) => isSalesPeriodReleasedCompanyWide(period, publishedKeys);
-
-  return (
-    <SpotlightWorkspace
-      canExport={canExport}
-      facets={facetsFrom(index)}
-      windows={{
-        month: selectableWindows("month", undefined, 18, isPublished),
-        quarter: selectableWindows("quarter", undefined, 8, isPublished),
-        semester: selectableWindows("semester", undefined, 4, isPublished),
-        year: selectableWindows("year", undefined, 4, isPublished),
-      }}
-    />
+  // One table for every set of lines, so ticking a line re-offers months without another request.
+  const windowsByLines = windowsByLineSet((period, lines) =>
+    isSalesPeriodReleasedForLines(period, lines, publishedKeys),
   );
+
+  return <SpotlightWorkspace canExport={canExport} facets={facetsFrom(index)} windowsByLines={windowsByLines} />;
 }
