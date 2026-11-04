@@ -406,9 +406,11 @@ export function GroupedComboBox({
         {/* The picked names while the field is closed, as text that WRAPS. An input is one line, so at
             375px "Hager Abdelmaged and Mohamed Eleiwa" was cut off mid-name with no way to read the
             rest; the field grows a line instead (min-h-8, not h-8). The input stays mounted, see-
-            through and still holding the names for a screen reader, so a press anywhere opens it. */}
+            through and still holding the names for a screen reader, so a press anywhere opens it.
+            16px under md, 12px above, because globals.css floors every admin-shell input at 16px on
+            a phone (the iOS zoom fix) — the names must not shrink the moment the list closes. */}
         {showPickedNames ? (
-          <span aria-hidden className="min-w-0 flex-1 whitespace-normal break-words py-1.5 text-xs leading-snug text-slate-900">
+          <span aria-hidden className="min-w-0 flex-1 whitespace-normal break-words py-1.5 text-base leading-snug text-slate-900 md:text-xs">
             {joinNames(selected.map((item) => item.name))}
           </span>
         ) : null}
