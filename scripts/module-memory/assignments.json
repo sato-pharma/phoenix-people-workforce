@@ -1435,6 +1435,7 @@
   "the-retired-reconcile-deductions-folder-is-load-bearing": "git-worktrees",
   "the-roi-exact-attribution-chain-joins-on-distributor-NAME": "marketing",
   "the-roi-fast-rpc-needs-its-own-defaults-not-nulls": "marketing",
+  "the-roll-up-cannot-build-while-branch-protection-is-unreadable": "engineering",
   "the-sales-geography-has-no-governorate-layer": "org",
   "the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open": "marketing",
   "the-sfe-manager-decides-place-checks-on-approve-not-update": "phoenix-crm",
