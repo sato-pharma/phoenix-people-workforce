@@ -731,6 +731,29 @@ export function isRowPublished(
 }
 
 /**
+ * A month's rows with every sale of an unpublished (line, period) taken out and its target kept.
+ *
+ * For a screen that shows targets whether or not the month is closed, so it cannot simply drop the
+ * row as the Sales vs Target dashboard does. It runs on the server, before the rows reach a roll-up
+ * or the browser, so the sale is absent from the page payload and not merely left unprinted. A row
+ * with no target is dropped outright: it holds nothing but a sale, and its presence alone would say
+ * which area and product have sold.
+ */
+export function withholdUnpublishedSales(
+  rows: readonly AchievementRow[],
+  publishedKeys: ReadonlySet<string>,
+): AchievementRow[] {
+  const kept: AchievementRow[] = [];
+  for (const row of rows) {
+    if (isRowPublished(row, publishedKeys)) kept.push(row);
+    else if (row.hasTarget) {
+      kept.push({ ...row, actualUnits: 0, actualValue: 0, achievementValue: null, achievementUnits: null, hasActual: false });
+    }
+  }
+  return kept;
+}
+
+/**
  * The month the dashboard opens on.
  *
  * Two conditions, BOTH required: the month's (line-scoped) Monthly Closing is published, and
@@ -782,12 +805,16 @@ export function newestPublishedPeriod(publishedKeys: ReadonlySet<string>): strin
  * the dashboard shows is built from `rows` alone — so a month nobody has published never shows a
  * sale, however many raw rows it already holds.
  *
- * The two pending figures are what the "not published yet" panel quotes instead, and both come from
- * the RAW rows because nothing else carries them. `totals` is built from `rows`, so for an
- * unpublished month its target is 0 by construction: the panel's "a target of … is already loaded"
- * sentence read `totals.targetValue` and could never render — confirmed on production 2026-09-16,
- * where a CNS medical rep's September carried a 300,085.04 EGP target. Both figures are 0 once the
- * month is published, when the same money and target sit inside `totals` instead.
+ * The pending target is what the "not published yet" panel quotes instead, and it comes from the RAW
+ * rows because nothing else carries it. `totals` is built from `rows`, so for an unpublished month
+ * its target is 0 by construction: the panel's "a target of … is already loaded" sentence read
+ * `totals.targetValue` and could never render — confirmed on production 2026-09-16, where a CNS
+ * medical rep's September carried a 300,085.04 EGP target. It is 0 once the month is published, when
+ * the same target sits inside `totals` instead.
+ *
+ * No pending SALES figure exists on purpose (owner, 2026-11-04: sales of an unpublished month appear
+ * nowhere). The panel used to quote one as "of Direct Orders", but it summed every raw row, so once
+ * October's distributor files landed it would have printed the whole month's sales.
  */
 export function splitPeriodAtPublication(
   rawRowsForPeriod: AchievementRow[],
@@ -795,7 +822,6 @@ export function splitPeriodAtPublication(
 ): {
   rows: AchievementRow[];
   salesLoaded: boolean;
-  pendingDirectValue: number;
   pendingTargetValue: number;
 } {
   const rows = rawRowsForPeriod.filter((row) => isRowPublished(row, publishedKeys));
@@ -803,9 +829,6 @@ export function splitPeriodAtPublication(
   return {
     rows,
     salesLoaded,
-    pendingDirectValue: salesLoaded
-      ? 0
-      : rawRowsForPeriod.reduce((sum, row) => sum + row.actualValue, 0),
     // The target only, never the actual: a target is not a sale, so quoting it shows nothing the
     // publication gate is holding back.
     pendingTargetValue: salesLoaded

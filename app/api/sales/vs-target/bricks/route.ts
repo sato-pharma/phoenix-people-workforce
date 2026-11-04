@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { foldAreaCodeForLine } from "@/lib/sales/closing-area-merges";
-import { isValidVsTargetPeriod, loadBrickSales, rollupBricks } from "@/lib/sales/vs-target";
+import {
+  isRowPublished,
+  isValidVsTargetPeriod,
+  loadBrickSales,
+  loadPublishedPeriodKeys,
+  rollupBricks,
+} from "@/lib/sales/vs-target";
 import { filterBricksForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -39,7 +45,14 @@ export async function GET(request: Request) {
     }
 
     const bound = await resolveVsTargetBound(access);
-    const scoped = filterBricksForBound(await loadBrickSales(period), bound);
+    // PER ROW, BY THE ROW'S OWN LINE, as the dashboard above this panel gates its rows. An area code
+    // repeats across lines (CA1 is CNS and Pedia), so in a month one line has published, a period-wide
+    // check would hand over the bricks of the line that has not. A failed read throws to the 500 below.
+    const [brickRows, publishedKeys] = await Promise.all([
+      loadBrickSales(period),
+      loadPublishedPeriodKeys(period, period),
+    ]);
+    const scoped = filterBricksForBound(brickRows, bound).filter((row) => isRowPublished(row, publishedKeys));
 
     // MATCH THE AREA THE PAGE SHOWS, WHICH IS THE FOLDED ONE.
     //

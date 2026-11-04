@@ -35,6 +35,7 @@ import {
   TARGETS_TERRITORY_UNRESOLVED_MESSAGE,
 } from "@/lib/sales/portal-targets";
 import { loadRepTargets } from "@/lib/sales/rep-targets";
+import { isRowPublished, loadPublishedPeriodKeys, withholdUnpublishedSales } from "@/lib/sales/vs-target";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,10 +119,14 @@ export default async function PortalTargetsPage({
   let byRegion: RegionRollup[] = [];
   let byDm: DmRollup[] = [];
   let error: string | null = null;
+  // Closed until the publication read says otherwise, so a failed read can never show a sale.
+  let salesPublished = false;
 
   try {
-    const [achievement, bound, areaName, productNames, productPrices, employeeNames] = await Promise.all([
+    const [achievement, publishedKeys, bound, areaName, productNames, productPrices, employeeNames] = await Promise.all([
       loadMonthlyAchievement(selectedPeriod),
+      // Below the July 2026 floor this is an empty set, which is the truth: nothing earlier was published.
+      loadPublishedPeriodKeys(selectedPeriod, selectedPeriod),
       resolvePortalTargetsBound(access),
       loadAllCanonicalAreaNames(),
       loadProductNameMap(),
@@ -150,7 +155,12 @@ export default async function PortalTargetsPage({
 
     // Scope FIRST, then filter by the selected line, THEN roll up. Rolling up before scoping would
     // render a correct-looking grid above whole-line summary cards — an aggregate leak.
-    const mergedAchievement = applyAchievementAreaMerges(achievement);
+    //
+    // The publication gate comes before all of it, for every role that reaches this page (owner,
+    // 2026-11-04): every figure below is built from these rows, so an unpublished month's sale cannot
+    // reach a roll-up or the page payload. Targets stay, which is why rows are not simply dropped.
+    salesPublished = isRowPublished({ lineCode: selectedLine, period: selectedPeriod }, publishedKeys);
+    const mergedAchievement = applyAchievementAreaMerges(withholdUnpublishedSales(achievement, publishedKeys));
     const scopedRows = filterAchievementForScope(mergedAchievement, bound);
     const lineRows = scopedRows.filter((row) => row.lineCode === selectedLine);
 
@@ -215,7 +225,7 @@ export default async function PortalTargetsPage({
   return (
     <EmployeePortalPageShell
       badge="Sales"
-      description="Your areas' targets and achievement against loaded distributor sales, by product and month."
+      description="Your areas' targets, and how far they were reached once each month's closing is published."
       errorBoundaryTitle="Targets unavailable"
       title="Targets"
     >
@@ -230,6 +240,7 @@ export default async function PortalTargetsPage({
         lineTotal={lineTotal}
         byRegion={byRegion}
         byDm={byDm}
+        salesPublished={salesPublished}
         // Company-wide distributor-upload provenance — never surfaced on the scoped view.
         sourceFiles={[]}
         error={error}

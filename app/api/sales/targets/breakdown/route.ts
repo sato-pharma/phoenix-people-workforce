@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { loadAreaTrend, loadSourceBreakdownDetail } from "@/lib/sales/monthly-targets";
+import { currentCairoDateParts } from "@/lib/i18n/format";
+import { unpublishedClosingMessage } from "@/lib/sales/closing-details-publication-gate";
+import { SALES_LINES, loadAreaTrend, loadSourceBreakdownDetail } from "@/lib/sales/monthly-targets";
 import { assertTargetsAreaInScope } from "@/lib/sales/portal-targets";
+import { SALES_VS_TARGET_FLOOR, isRowPublished, loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -37,13 +40,37 @@ export async function GET(request: Request) {
     }
     await assertTargetsAreaInScope(access, area, line, period);
 
+    // THE PUBLICATION GATE, BEFORE A SOURCE ROW IS READ, AND FOR EVERY ROLE (owner, 2026-11-04). The
+    // grid above this panel withholds an unpublished month's sales, and its expander is hidden then,
+    // but `period` is in the query string. The keys run to the current month because the trend does
+    // not stop at `period`: it returns every month the line has loaded, so asking for September would
+    // otherwise draw October beside it.
+    const { year, month } = currentCairoDateParts();
+    const publishedKeys = await loadPublishedPeriodKeys(
+      SALES_VS_TARGET_FLOOR,
+      `${year}-${String(month).padStart(2, "0")}`,
+    );
+    if (!isRowPublished({ lineCode: line, period }, publishedKeys)) {
+      const lineLabel = SALES_LINES.find((entry) => entry.code === line)?.label ?? line;
+      return NextResponse.json(
+        { success: false, error: unpublishedClosingMessage(lineLabel, period) },
+        { status: 403 },
+      );
+    }
+
     const [rows, trend] = await Promise.all([
       loadSourceBreakdownDetail(period, line, area, product ?? ""),
       loadAreaTrend(line, area, product),
     ]);
     const totalUnits = rows.reduce((sum, row) => sum + row.units, 0);
     const totalValue = rows.reduce((sum, row) => sum + row.value, 0);
-    return NextResponse.json({ success: true, rows, trend, totalUnits, totalValue });
+    return NextResponse.json({
+      success: true,
+      rows,
+      trend: trend.filter((point) => isRowPublished({ lineCode: line, period: point.period }, publishedKeys)),
+      totalUnits,
+      totalValue,
+    });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
