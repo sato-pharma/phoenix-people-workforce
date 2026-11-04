@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, Lock, LockOpen, RefreshCw, Send, Sparkles, Table2, Trophy } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AdminCallout,
@@ -87,6 +87,14 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   const [locked, setLocked] = useState<boolean | null>(null);
   const [lockedAt, setLockedAt] = useState<string | null>(null);
   const [isLocking, setIsLocking] = useState(false);
+  // The server's "already locked, by whom, when" — shown instead of an error (see toggleLock).
+  const [lockNotice, setLockNotice] = useState<string | null>(null);
+  // Bumped after a Publish, whose database trigger locks the month itself: the lock state is read
+  // again so the button stops offering "Lock month" for a month that is already locked.
+  const [lockReadVersion, setLockReadVersion] = useState(0);
+  // A ref, not the isLocking state: it is set before the first await, so a second press can never
+  // send a second request while the first is still in flight, whatever React has rendered yet.
+  const lockRequestInFlight = useRef(false);
   const [tab, setTab] = useState<"matrix" | "details">("matrix");
   const [skippedPeriods, setSkippedPeriods] = useState<string[]>([]);
   // Cleared the moment the reader loads anything themselves: from then on what is on screen is what
@@ -222,28 +230,40 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
     return () => {
       cancelled = true;
     };
-  }, [canPublish, selectedLine, selectedPeriod]);
+  }, [canPublish, selectedLine, selectedPeriod, lockReadVersion]);
 
   async function toggleLock() {
     if (!selectedLine || !selectedPeriod) return;
+    if (lockRequestInFlight.current) return;
+    lockRequestInFlight.current = true;
+    const unlocking = locked === true;
     setIsLocking(true);
     setError(null);
+    setLockNotice(null);
     try {
       const response = await fetch("/api/sales/monthly-closing/lock", {
         body: JSON.stringify({ line: selectedLine, period: selectedPeriod }),
         headers: { "Content-Type": "application/json" },
-        method: locked ? "DELETE" : "POST",
+        method: unlocking ? "DELETE" : "POST",
       });
       if (!response.ok) {
         const text = await response.text();
         throw new Error(text || "Failed to update lock state.");
       }
-      const payload = (await response.json()) as { lock?: { lockedAt?: string } | null };
-      setLocked(!locked);
-      setLockedAt(locked ? null : payload.lock?.lockedAt ?? new Date().toISOString());
+      const payload = (await response.json()) as {
+        alreadyLocked?: boolean;
+        lock?: { lockedAt?: string } | null;
+        message?: string;
+      };
+      setLocked(!unlocking);
+      setLockedAt(unlocking ? null : payload.lock?.lockedAt || new Date().toISOString());
+      // Already locked (by a Publish, another tab or an earlier press) is the state that was asked
+      // for, so it is said plainly and never shown as an error.
+      if (!unlocking && payload.alreadyLocked && payload.message) setLockNotice(payload.message);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to update lock state.");
     } finally {
+      lockRequestInFlight.current = false;
       setIsLocking(false);
     }
   }
@@ -272,6 +292,10 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
         throw new Error(message || "Failed to update publish state.");
       }
       setPublished(!published);
+      // Publishing locks the month in the database (phx_freeze_published_closing), so the lock
+      // button must read the lock again — left alone it still offered "Lock month", and the press
+      // that followed is what failed on 2026-11-04.
+      if (method === "POST") setLockReadVersion((version) => version + 1);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to update publish state.");
     } finally {
@@ -294,6 +318,8 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
   async function reload(line: string, periods: string[], options?: { fresh?: boolean; keepFilter?: boolean }) {
     setIsLoading(true);
     setError(null);
+    // A notice about one month's lock never carries over to another.
+    setLockNotice(null);
     // The reader has picked a line or a month themselves, so the arrival link's substitution notice
     // no longer describes what is on screen.
     setDeepLinkMiss(null);
@@ -688,6 +714,12 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
               <div className="flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-4 py-2.5 text-xs font-semibold text-emerald-700 md:px-5">
                 <CheckCircle2 className="h-4 w-4" />
                 This month is published — sales managers and product managers can see it in their portal (scoped to their line / products).
+              </div>
+            ) : null}
+            {canPublish && lockNotice ? (
+              <div className="flex items-start gap-2 border-b border-emerald-100 bg-emerald-50/60 px-4 py-2.5 text-xs font-semibold text-emerald-700 md:px-5">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{lockNotice}</p>
               </div>
             ) : null}
             {/* The link that opened this page asked for a line or a month the closing does not

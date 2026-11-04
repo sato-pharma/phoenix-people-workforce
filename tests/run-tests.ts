@@ -1442,6 +1442,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosMappingBackfillRollupErrorsTests } from "./sos-mapping-backfill-rollup-errors.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
+import { runMonthlyClosingLockAlreadyLockedTests } from "./monthly-closing-lock-already-locked.test.ts";
 import { runCaptureTrustReadoutTests } from "./capture-trust-readout.test.ts";
 import { runCaptureTrustTests } from "./capture-trust.test.ts";
 import { runVenueDistanceRuleTests } from "./venue-distance-rule.test.ts";
@@ -6075,6 +6076,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("a mapping save reports a failed totals rebuild and stops the chain, never leaving a batch silently stale", runSosMappingBackfillRollupErrorsTests);
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
+await runTest("Monthly closing lock — an already-locked month answers 'already locked', never an error", runMonthlyClosingLockAlreadyLockedTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest(
   "NEVER CHANGE A PUBLISHED MONTH (owner, 2026-10-09): the bulk customer-map repair reads the live publications itself and refuses an --apply that would write into a published month — including the half a period check cannot see, where the target month is open but the repair, keyed on (distributor, customer) and ignoring the period, would reach a published month's rows anyway; it fails CLOSED when the publication table cannot be read, names the month and the row count, and a dry run still measures",

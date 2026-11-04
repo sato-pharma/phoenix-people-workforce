@@ -64,12 +64,17 @@ export async function POST(request: Request) {
     await assertPermission(access, "sales", "import");
 
     const body = (await request.json()) as { line?: string; period?: string };
-    const lock = await lockClosing({
+    const result = await lockClosing({
       actorHrId: resolveEmployeeIdentityId(access),
       line: String(body.line ?? ""),
       period: String(body.period ?? ""),
     });
-    return NextResponse.json({ success: true, locked: true, lock });
+    // An already-locked month is the state the caller asked for, so it is a 200 that says so —
+    // never the 500 "Lock request failed." it used to be (a Publish takes the lock itself).
+    if (result.alreadyLocked) {
+      return NextResponse.json({ success: true, locked: true, alreadyLocked: true, lock: result.lock, message: result.message });
+    }
+    return NextResponse.json({ success: true, locked: true, alreadyLocked: false, lock: result.lock });
   } catch (error) {
     return mapError(error);
   }
