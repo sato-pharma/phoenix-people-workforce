@@ -42,7 +42,7 @@ expects you to work out the scope; explain like to a smart non-engineer.
 
 Why each exists: `docs/agents-incident-history.md`.
 
-- **Never use `gh pr merge --auto`.** `main` is branch-protected with **2 required checks** — `validate`, `checks`; `allow_auto_merge: false`. 🔴 That list has rotted five times and `lint`, `typecheck`, `test` are NOT check names — read `branches/main/protection/required_status_checks` live; `node scripts/check-required-checks.mjs` catches a rotation.
+- **Never use `gh pr merge --auto`.** `main` is branch-protected with **2 required checks** — `validate`, `checks`; `allow_auto_merge: false`. 🔴 That list has rotted five times and `lint`, `typecheck`, `test` are NOT check names — read `branches/main/protection/required_status_checks` live; `node scripts/check-required-checks.mjs` catches a rotation. 🔴 **On the free plan protection answers 403 and GitHub merges a red PR** — bash-guard C21 refuses a merge on red, running or unreported checks, in every repo.
 - **Never commit onto local `main` in the primary.** Branch first; if you did: `git branch <name> <sha>`, then `git reset --keep origin/main` (never `--hard`), then a PR.
 - **Never run `gh pr update-branch` reflexively** (`strict: false`, ~16 Actions minutes); it acts on the SERVER — `git fetch` and `git merge --ff-only origin/<branch>` before your next push.
 - **A merge to `main` SHIPS TO PRODUCTION once that commit's CI is green** — never merge what you would not have serving employees within minutes.
