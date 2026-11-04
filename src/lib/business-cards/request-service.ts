@@ -17,9 +17,15 @@
  */
 
 import { assertPermission, hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
-import { cardFieldsFor, CARD_FIELD_MAX_LENGTH } from "@/lib/business-cards/card-content";
+import {
+  applyRequestedCard,
+  cardFieldsFor,
+  CARD_FIELD_MAX_LENGTH,
+  latestRequestedCard,
+  type RequestedCardLines,
+} from "@/lib/business-cards/card-content";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { HR_GENERALIST_SEAT, onePerPerson, resolveSeatOrStandInHrIds } from "@/lib/notifications/vacant-seat";
@@ -113,24 +119,67 @@ function rowToView(row: Record<string, unknown>): BusinessCardRequestRow {
 /**
  * The card the signed-in employee should see and edit — their name, job title,
  * line·area, mobile and email as the printed card would render them, taken from the
- * employee register. Returns null when the caller has no directory row.
+ * employee register, with the name and mobile of their latest request laid over it, so
+ * the page opens on the card they last asked for. Returns null when the caller has no
+ * directory row.
  */
 export async function getOwnBusinessCard(access: AccessContext): Promise<OwnBusinessCard | null> {
   const hrId = normalizeHrId(access.hrId);
   if (!hrId) return null;
 
-  const rows = await getEmployeeDirectoryRows({ includeInactive: true });
+  const [rows, mine] = await Promise.all([
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    listBusinessCardRequestsForViewer(access),
+  ]);
   const me = rows.find((row) => hrIdsMatch(row.hrId, hrId));
   if (!me) return null;
 
-  return cardFieldsFor({
+  const fields = cardFieldsFor({
     areaName: me.areaName,
     displayName: me.displayName || me.fullName,
+    fullName: me.fullName,
     jobTitle: me.jobTitle,
     lineName: me.lineName,
     mobileNumber: me.mobileNumber,
     workEmail: me.workEmail,
   });
+  return applyRequestedCard(fields, latestRequestedCard(mine));
+}
+
+/** One person's latest card request, as the HR screen lays it over the record. */
+export type LatestCardRequest = RequestedCardLines & { status: BusinessCardRequestStatus };
+
+/**
+ * Every employee's latest card request that is not Cancelled, keyed by `canonicalHrIdKey` (so a row
+ * written in any spelling of the id is found). This is how what an employee set on their own page
+ * reaches the Business Cards screen and the file it prints. Returns an empty map when the table is not
+ * provisioned; any other failure throws, so the caller can say the edits were not read rather than
+ * silently printing the record as if nobody had asked.
+ */
+export async function listLatestCardRequestsByPerson(): Promise<Map<string, LatestCardRequest>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(tableName)
+    .select("hr_id, card_name, card_mobile, created_at, status")
+    .neq("status", "Cancelled")
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (error) {
+    if (isMissingTable(error)) return new Map();
+    throw new Error(error.message);
+  }
+  const latest = new Map<string, LatestCardRequest>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const key = canonicalHrIdKey(row.hr_id as string);
+    if (!key || latest.has(key)) continue;
+    latest.set(key, {
+      cardMobile: (row.card_mobile as string | null) ?? null,
+      cardName: (row.card_name as string | null) ?? null,
+      createdAt: clean(row.created_at as string),
+      status: (clean(row.status as string) || "Pending") as BusinessCardRequestStatus,
+    });
+  }
+  return latest;
 }
 
 /**

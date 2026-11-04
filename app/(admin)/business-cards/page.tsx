@@ -28,11 +28,12 @@ export default async function BusinessCardsPage() {
 
 async function BusinessCardsContent() {
   let employees: BusinessCardEmployee[] = [];
+  let requestsUnread = false;
   let initialError: string | null = null;
   try {
-    employees = await listBusinessCardEmployees();
+    ({ employees, requestsUnread } = await listBusinessCardEmployees());
   } catch (error) {
     initialError = error instanceof Error ? error.message : "The staff list could not be loaded.";
   }
-  return <BusinessCardsManager employees={employees} initialError={initialError} />;
+  return <BusinessCardsManager employees={employees} initialError={initialError} requestsUnread={requestsUnread} />;
 }

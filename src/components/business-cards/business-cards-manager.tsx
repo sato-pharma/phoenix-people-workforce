@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { GroupedComboBox } from "@/components/ui/grouped-combobox";
 import type { ComboItem } from "@/components/ui/grouped-combobox";
 import { Input } from "@/components/ui/input";
-import { CARD_FIELD_MAX_LENGTH, EDITABLE_CARD_FIELDS } from "@/lib/business-cards/card-content";
+import { Switch } from "@/components/ui/switch";
+import { CARD_FIELD_MAX_LENGTH, EDITABLE_CARD_FIELDS, withDoctorTitle } from "@/lib/business-cards/card-content";
 import type { EditableCardField } from "@/lib/business-cards/card-content";
+import { cairoDate } from "@/lib/format/cairo-datetime";
 import { formatHireDate, hireMonthKey, hireMonthLabel, hireMonthOptions, NO_HIRE_MONTH } from "@/lib/business-cards/hire-month";
 import type { BusinessCardEmployee } from "@/lib/business-cards/service";
 import { cn } from "@/lib/utils";
@@ -20,10 +22,13 @@ import {
 
 // Choose people, correct anything the record has wrong, and download print-ready cards — every card
 // in one PDF, or a PDF per person. What each box shows is exactly what the card prints: the values
-// come from the same `cardFieldsFor` the server renders with, and only corrections travel back.
+// come from the same `cardFieldsFor` the server renders with, with the name and mobile the employee
+// set on their own page already laid over them, and only corrections travel back.
 
 type Mode = "combined" | "separate";
 type Edits = Record<string, Partial<Record<EditableCardField, string>>>;
+/** The people whose card prints "Dr." before the name — the toggle on each card. */
+type Doctors = Record<string, boolean>;
 
 const FIELD_LABELS: Record<EditableCardField, string> = {
   email: "Email",
@@ -37,8 +42,8 @@ const FIELD_LABELS: Record<EditableCardField, string> = {
 const inputClassName = "";
 const labelClassName = phxLabelClassName;
 
-function cardsBody(mode: Mode, hrIds: string[], edits: Edits) {
-  return { cards: hrIds.map((hrId) => ({ edits: edits[hrId], hrId })), mode };
+function cardsBody(mode: Mode, hrIds: string[], edits: Edits, doctors: Doctors) {
+  return { cards: hrIds.map((hrId) => ({ doctor: doctors[hrId] === true, edits: edits[hrId], hrId })), mode };
 }
 
 async function postCards(body: object): Promise<Response> {
@@ -60,8 +65,8 @@ const DOWNLOAD_FRAME = "business-cards-download";
 // would hold the whole file in memory before saving it. The server checks the request first, so a
 // refusal can still be shown here; then a hidden form posts it into a hidden frame, and the browser
 // saves the stream straight to disk as it arrives.
-async function streamZip(hrIds: string[], edits: Edits) {
-  const body = cardsBody("separate", hrIds, edits);
+async function streamZip(hrIds: string[], edits: Edits, doctors: Doctors) {
+  const body = cardsBody("separate", hrIds, edits, doctors);
   await postCards({ ...body, check: true });
 
   let frame = document.querySelector<HTMLIFrameElement>(`iframe[name="${DOWNLOAD_FRAME}"]`);
@@ -86,8 +91,8 @@ async function streamZip(hrIds: string[], edits: Edits) {
   form.remove();
 }
 
-async function requestCards(mode: Mode, hrIds: string[], edits: Edits): Promise<{ blob: Blob; fileName: string }> {
-  const response = await postCards(cardsBody(mode, hrIds, edits));
+async function requestCards(mode: Mode, hrIds: string[], edits: Edits, doctors: Doctors): Promise<{ blob: Blob; fileName: string }> {
+  const response = await postCards(cardsBody(mode, hrIds, edits, doctors));
   const fileName = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "business-cards.pdf";
   return { blob: await response.blob(), fileName };
 }
@@ -106,12 +111,15 @@ function saveBlob(blob: Blob, fileName: string) {
 export function BusinessCardsManager({
   employees,
   initialError,
+  requestsUnread = false,
 }: {
   employees: BusinessCardEmployee[];
   initialError: string | null;
+  requestsUnread?: boolean;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [edits, setEdits] = useState<Edits>({});
+  const [doctors, setDoctors] = useState<Doctors>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
@@ -177,12 +185,12 @@ export function BusinessCardsManager({
     setNotice(null);
     try {
       if (mode === "separate" && hrIds.length > 1) {
-        await streamZip(hrIds, edits);
+        await streamZip(hrIds, edits, doctors);
         setNotice(
           `Your browser is saving the ZIP of ${hrIds.length} PDFs as it is built (about ${Math.ceil(hrIds.length * 2.7)} MB) — check your downloads.`,
         );
       } else {
-        const { blob, fileName } = await requestCards(mode, hrIds, edits);
+        const { blob, fileName } = await requestCards(mode, hrIds, edits, doctors);
         saveBlob(blob, fileName);
       }
     } catch (caught) {
@@ -198,7 +206,7 @@ export function BusinessCardsManager({
     setBusy(`preview-${hrId}`);
     setError(null);
     try {
-      const { blob } = await requestCards("separate", [hrId], edits);
+      const { blob } = await requestCards("separate", [hrId], edits, doctors);
       const url = URL.createObjectURL(blob);
       if (tab) tab.location.href = url;
       else window.location.assign(url);
@@ -229,6 +237,16 @@ export function BusinessCardsManager({
           icon={<IdCard className="h-5 w-5" />}
           title="Business Cards"
         />
+
+        {requestsUnread ? (
+          <AdminCallout tone="warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              The names and numbers employees set on their own cards could not be read just now, so these cards show the
+              record alone. Refresh the page before printing.
+            </span>
+          </AdminCallout>
+        ) : null}
 
         {error ? (
           <AdminCallout tone="danger">
@@ -338,7 +356,8 @@ export function BusinessCardsManager({
             {chosen.map((employee) => {
               const edited = Boolean(edits[employee.hrId]);
               const mobile = valueOf(employee, "mobile");
-              const email = valueOf(employee, "email");
+              // A blanked email box never blanks the card — the server keeps the card's own address.
+              const email = valueOf(employee, "email") || employee.fields.email;
               return (
                 <section className="border border-slate-200/90 bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.06)] sm:p-5" key={employee.hrId}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -354,12 +373,26 @@ export function BusinessCardsManager({
                           .filter(Boolean)
                           .join(" · ")}
                       </p>
+                      {employee.requested ? (
+                        <p className="mt-0.5 text-xs font-semibold text-phx-accent-press">
+                          Name and mobile as {employee.name} set them on their own card, {cairoDate(employee.requested.createdAt)} ·{" "}
+                          {employee.requested.status}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-2 text-xs font-bold text-phx-ink-soft">
+                        <Switch
+                          checked={doctors[employee.hrId] === true}
+                          label={`Print Dr. before ${employee.name}'s name`}
+                          onChange={(on) => setDoctors((current) => ({ ...current, [employee.hrId]: on }))}
+                        />
+                        Dr.
+                      </label>
                       {edited ? (
                         <Button className="rounded-none" onClick={() => resetPerson(employee.hrId)} size="sm" type="button" variant="ghost">
                           <RotateCcw />
-                          Use the record
+                          {employee.requested ? "Use their card" : "Use the record"}
                         </Button>
                       ) : null}
                       <Button
@@ -409,13 +442,18 @@ export function BusinessCardsManager({
                             id={id}
                             maxLength={CARD_FIELD_MAX_LENGTH}
                             onChange={(event) => setField(employee, field, event.target.value)}
-                            placeholder={field === "name" ? "Required" : "Left off the card"}
+                            placeholder={field === "name" ? "Required" : field === "email" ? "Always printed" : "Left off the card"}
                             value={valueOf(employee, field)}
                           />
                         </div>
                       );
                     })}
                   </div>
+                  {doctors[employee.hrId] && valueOf(employee, "name") ? (
+                    <p className="mt-2 text-xs font-semibold text-phx-accent-press">
+                      The card prints: {withDoctorTitle(valueOf(employee, "name"))}
+                    </p>
+                  ) : null}
                   {!mobile || !email ? (
                     <p className="mt-2 text-xs font-semibold text-amber-800">
                       {!mobile && !email ? "No mobile and no email" : !mobile ? "No mobile" : "No email"} — that line and its icon
