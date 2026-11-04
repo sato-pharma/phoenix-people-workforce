@@ -158,7 +158,7 @@ const loadClosingStoreSplitUncached = async (
   // city split is: two surfaces deriving one redistribution separately is the defect this module was
   // written to end. The two nets are added — both are zero-sum per product, so their sum is — and
   // the bulk rows are already refused by `isSplitEligible`, so nothing moves twice.
-  const bulk = buildBulkAllocation(bulkAllocationRows(details.rows, cityPass?.rows, period), period, line);
+  const bulk = buildBulkAllocation(bulkAllocationRows(details.rows, cityPass?.rows, period), period, line, regions);
   const withBulk = mergeBulkAllocationIntoSplit(
     { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
     bulk,

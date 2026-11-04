@@ -55,7 +55,7 @@ import {
 } from "@/lib/sales/contribution-respread";
 import { classifyCustomerChannel, isStoreCustomerForPeriod } from "@/lib/sales/customer-channel";
 import { isEpdaBonusDeductionActive } from "@/lib/sales/import-epda-bonus-deduction";
-import { areaProductKey } from "@/lib/sales/store-sales-city-split";
+import { areaProductKey, type SplitRegions } from "@/lib/sales/store-sales-city-split";
 
 /**
  * A closing detail row, narrowed to what this rule reads.
@@ -94,6 +94,7 @@ export function buildBulkAllocation(
   rows: readonly BulkAllocationRow[],
   period: string | null | undefined,
   line?: string | null,
+  regions?: SplitRegions,
 ): BulkAllocation {
   if (!isBulkAllocationActive(period)) return emptyContributionRespread();
   // A caller that names the line gets an early exit; one that does not is answered per row below,
@@ -101,7 +102,7 @@ export function buildBulkAllocation(
   if (line !== undefined && line !== null && !isBulkAllocationLine(line, period)) {
     return emptyContributionRespread();
   }
-  if (isEpdaContributionActive(period)) return buildEpdaContribution(rows, period, line);
+  if (isEpdaContributionActive(period)) return buildEpdaContribution(rows, period, line, regions);
 
   const base: BulkAllocationRow[] = [];
   const moved: BulkAllocationRow[] = [];
@@ -145,6 +146,13 @@ export function buildBulkAllocation(
  * (`isStoreCustomerForPeriod`, the rule the city split and the rep ranking's Stores column ask), so
  * a warehouse can never weigh here while being carved out as a store anywhere else.
  *
+ * 🔴 UPPER EGYPT 2 IS THE ONE EXCEPTION — ITS AREAS WEIGH BY PHARMACIES AND STORES (owner, 2026-11-04
+ * about 18:00 Cairo: "only upper egypt 2 gets its contribution on retail stores and pharmacies"). In
+ * an area the line's organogram files under Upper Egypt 2 for the month, a store's units weigh too,
+ * as each rep's closing credits them after the city rule; a hospital still never weighs. Every other
+ * region stays pharmacies only. The areas come from `regions`, the same organogram the city split
+ * reads, so a caller without it weighs Upper Egypt 2 by pharmacies alone.
+ *
  * The rows arrive already reduced by the 15% and 30% (import-epda-bonus-deduction.ts), and they are
  * spread in whole units, so each area's EPDA share is a whole number too.
  */
@@ -152,8 +160,10 @@ function buildEpdaContribution(
   rows: readonly BulkAllocationRow[],
   period: string | null | undefined,
   line?: string | null,
+  regions?: SplitRegions,
 ): BulkAllocation {
   const namedLine = String(line ?? "").trim().toUpperCase();
+  const storesWeighIn = retailWeightAreas(regions);
   const byProduct = new Map<string, { base: BulkAllocationRow[]; moved: BulkAllocationRow[] }>();
   for (const row of rows) {
     if (!isEpdaContributionCandidate(row, period)) continue;
@@ -162,7 +172,7 @@ function buildEpdaContribution(
     const productCode = String(row.productCode ?? "").trim().toUpperCase();
     const group = byProduct.get(productCode) ?? { base: [], moved: [] };
     if (isEpdaContributionDistributor(row.distributorCode)) group.moved.push(row);
-    else if (isPharmacyRow(row, period)) group.base.push(row);
+    else if (isWeightRow(row, period, storesWeighIn)) group.base.push(row);
     byProduct.set(productCode, group);
   }
   return combineContributionRespreads(
@@ -181,10 +191,9 @@ function buildEpdaContribution(
  * what moves is the same either way. September and earlier keep the invoiced rows they were
  * published with, and a month the city rule does not cover has no split rows to give.
  *
- * Since the same day's pharmacies-only ruling (`isPharmacyRow`) the city split cannot change a
- * weight — it moves stores only, and a store no longer weighs — so these rows give the same shares
- * as the invoiced ones. They are still the input, so the weights stay "as each rep's closing shows"
- * should the city rule ever reach a pharmacy.
+ * Since the same day's pharmacies-only ruling (`isWeightRow`) the city split changes a weight only
+ * in Upper Egypt 2, the one region whose stores still weigh — there a wholesaler's units weigh where
+ * the city rule credits them, exactly as each rep's closing shows.
  */
 export function bulkAllocationRows<T>(
   rows: readonly T[],
@@ -194,10 +203,34 @@ export function bulkAllocationRows<T>(
   return isEpdaContributionActive(period) && citySplitRows ? citySplitRows : rows;
 }
 
-/** A weight row for rule 2: a pharmacy by the one classifier, and not a store by the month's warehouse rule. */
-function isPharmacyRow(row: BulkAllocationRow, period: string | null | undefined): boolean {
-  if (classifyCustomerChannel(row.clientName, row.clientCode, row.distributorCode) !== "pharmacy") return false;
+/**
+ * A weight row for rule 2: a pharmacy by the one classifier and not a store by the month's warehouse
+ * rule — or, in an Upper Egypt 2 area only, a store as well. A hospital never weighs.
+ */
+function isWeightRow(
+  row: BulkAllocationRow,
+  period: string | null | undefined,
+  storesWeighIn: ReadonlySet<string>,
+): boolean {
+  const channel = classifyCustomerChannel(row.clientName, row.clientCode, row.distributorCode);
+  if (channel === "hospital") return false;
+  if (storesWeighIn.has(String(row.areaCode ?? "").trim().toUpperCase())) return true;
+  if (channel !== "pharmacy") return false;
   return !isStoreCustomerForPeriod(row.clientName, row.clientCode, row.distributorCode, period, row.officialLine);
+}
+
+/** The region whose stores weigh in rule 2, as the organogram codes it (owner, 2026-11-04). */
+export const EPDA_STORES_WEIGH_REGION = "UE-2";
+
+/** The areas the line's organogram files under Upper Egypt 2 this month; empty without an organogram. */
+function retailWeightAreas(regions: SplitRegions | undefined): ReadonlySet<string> {
+  const target = EPDA_STORES_WEIGH_REGION.replace(/[-_ ]/g, "");
+  const out = new Set<string>();
+  for (const [regionCode, areas] of regions?.areasByRegion ?? []) {
+    if (String(regionCode ?? "").trim().toUpperCase().replace(/[-_ ]/g, "") !== target) continue;
+    for (const area of areas) out.add(String(area ?? "").trim().toUpperCase());
+  }
+  return out;
 }
 
 /** A row rule 2 reads at all: counted, not direct, not confidential, one of its products on its lines. */
