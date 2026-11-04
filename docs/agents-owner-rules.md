@@ -3228,7 +3228,7 @@ He settled the rest in answers the same day: Ivyronc 30% (his other example, 100
 
 - From the October 2026 closing on: Ivyronc `IV001` loses 30%, Royafloxacin `RO001` and Saginko `SA001` lose 15%. Royanoxicam `RY001` is a different product.
 - The value follows the units at the row's own price, so sales, achievement and incentives all carry the deducted figure.
-- Nothing anywhere names the deduction: no note, label or caption on anything announced.
+- Nothing announced names the deduction: no note, label or caption. The upload screen alone shows both figures (his answer the same day: "show both actual and reduced"), in its "Actual and reduced" table, because the person uploading has to check the book against the file.
 - The rule below this one stands: the sheet's bonus column is still not counted. This is a flat percentage of the book's units, whatever that column holds.
 
 ### How it works

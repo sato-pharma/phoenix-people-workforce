@@ -1,5 +1,6 @@
 "use client";
 
+import type { EpdaDeductionLine } from "@/lib/sales/import-epda-bonus-deduction";
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, FileText, FileUp, Grid3x3, Info, Loader2, Lock, ShieldCheck, Sparkles, Store, Upload, UploadCloud, XCircle } from "lucide-react";
@@ -61,7 +62,7 @@ export type BulkSlotStatus = {
 };
 export type MonthlyUploadHandle = { commit: () => Promise<void> };
 type AiExplanation = { aiUsed: boolean; summary: string; suggestions: { expected: string; suggestedHeader: string | null; note?: string }[] };
-type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null; isRegionOnly?: boolean; files?: UploadFileSummary[] | null; batches?: { period: string | null; fileNames: string[] }[] | null };
+type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reconciliation; breakdowns?: Breakdowns; bonusDeduction?: EpdaDeductionLine[]; needsPeriod?: boolean; validation?: ValidationReport; error?: string; code?: string; missingGroups?: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string } | null; aiExplanation?: AiExplanation | null; isRegionOnly?: boolean; files?: UploadFileSummary[] | null; batches?: { period: string | null; fileNames: string[] }[] | null };
 // Several sheets of one distributor: what each file holds, and the batch each month lands in.
 type UploadFileSummary = { fileName: string; months: string[]; rows: number };
 type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string; batches?: { batchId: string; period: string; importedRows: number; fileNames: string[] }[] | null };
@@ -170,6 +171,56 @@ export function BreakdownTable({ title, headLabel, rows }: { title: string; head
           ))}
         </CrmCardsOnPhone>
       </div>
+    </div>
+  );
+}
+
+// EPDA's two Sato books, from October: the sheet's figures beside what the rows store. It stays on the
+// screen after Confirm & Upload, so it is the receipt as well.
+function BonusDeductionTable({ lines }: { lines: EpdaDeductionLine[] }) {
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-phx-line lg:col-span-2">
+      <div className={darkHead}>Actual and reduced</div>
+      <CrmTable columns={["24%", "19%", "19%", "19%", "19%"]}>
+        <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
+          <tr>
+            <th className="break-words px-3 py-1.5">Product</th>
+            <th className="break-words px-3 py-1.5 text-right">Actual units</th>
+            <th className="break-words px-3 py-1.5 text-right">Reduced units</th>
+            <th className="break-words px-3 py-1.5 text-right">Actual value</th>
+            <th className="break-words px-3 py-1.5 text-right">Reduced value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr className="border-t border-[#FFE8D6]" key={line.productCode}>
+              <td className="break-words px-3 py-1.5 align-top">
+                <span className="block font-semibold text-phx-ink">{line.productName}</span>
+                <span className="block tabular-nums text-phx-ink-2">{line.percent}% deducted</span>
+              </td>
+              <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{num(line.actualUnits)}</td>
+              <td className="break-words px-3 py-1.5 text-right align-top font-black tabular-nums text-phx-ink">{num(line.reducedUnits)}</td>
+              <td className="break-words px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{money(line.actualValue)}</td>
+              <td className="break-words px-3 py-1.5 text-right align-top font-black tabular-nums text-phx-ink">{money(line.reducedValue)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </CrmTable>
+      <CrmCardsOnPhone>
+        {lines.map((line) => (
+          <CrmCard key={`${line.productCode}-card`} title={line.productName}>
+            <CrmFacts
+              facts={[
+                { label: "Deducted", value: `${line.percent}%` },
+                { label: "Actual units", value: num(line.actualUnits) },
+                { label: "Reduced units", value: num(line.reducedUnits) },
+                { label: "Actual value", value: money(line.actualValue) },
+                { label: "Reduced value", value: money(line.reducedValue) },
+              ]}
+            />
+          </CrmCard>
+        ))}
+      </CrmCardsOnPhone>
     </div>
   );
 }
@@ -1189,6 +1240,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
           {/* Per product / region / brick / line breakdowns */}
           {breakdowns ? (
             <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+              {analysis?.bonusDeduction?.length ? <BonusDeductionTable lines={analysis.bonusDeduction} /> : null}
               <BreakdownTable headLabel="Product" rows={breakdowns.byProduct} title="By product" />
               <BreakdownTable headLabel="Region" rows={breakdowns.byRegion} title="By region" />
               {!analysis?.isRegionOnly && <BreakdownTable headLabel="Brick" rows={breakdowns.byBrick} title="By brick" />}
