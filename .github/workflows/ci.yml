@@ -523,6 +523,36 @@ jobs:
           path: output/playwright-report
           retention-days: 5
 
+      # Since 2026-11-04 this job no longer holds the production deploy (`release-gate` needs `checks`
+      # only, owner's choice "Tests only"), so a red build or login smoke test on main would otherwise be a
+      # red circle nobody is waiting on while the commit serves. This is the step that makes it reach him.
+      # Main pushes only; a pull request's red is read on the PR. It never fails the job any further.
+      - name: Tell the owner main's build or login test is red
+        if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent - TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. Main's build or login test is red and reached nobody."
+            exit 0
+          fi
+          TEXT=$(printf 'MAIN BUILD OR LOGIN TEST RED\nCommit %s\n\nThe build check or the sign-in test failed on main. Since 4 Nov 2026 this no longer holds the deploy, so if Railway built the commit it is probably serving now. Open the run to see which step failed.\n\n%s' "${SHA:0:9}" "$RUN_URL")
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). Main's red build reached nobody. Response: $(head -c 500 /tmp/tg-response.json 2>/dev/null)"
+          fi
+
   # static — everything that needs a checkout and an install but no build: the check:* contracts, the
   # dependency audit, ESLint and the type gate. These used to be split between `validate` and `checks`,
   # each behind work it did not depend on. One job now means one setup, and it runs BESIDE the build and
@@ -1008,11 +1038,19 @@ jobs:
   # until it does, and a red check means the row is never written. Nothing is skipped; the build merely no
   # longer waits for the checks to start. Account: docs/deployment.md, "The release gate".
   #
-  # `needs: [validate, checks]` IS THE REQUIRED PAIR — the same two names branch protection requires, and
-  # `checks` already holds `static` and `unit` and refuses unless every test ran exactly once. `mobile` is
-  # left out on purpose: it reports and never gated a merge, so it must not gate a deploy (a red Expo
-  # typecheck used to withhold production under Wait for CI, which was a side effect, not a decision).
-  # tests/release-gate.test.ts pins the pair, the event and the branch.
+  # `needs: [checks]` — LINT, TYPECHECK AND THE WHOLE SUITE, AND NOT THE BUILD (owner, 2026-11-04, asked
+  # "what should the production gate wait for?" and chose "Tests only"). `checks` holds `static` and `unit`
+  # and refuses unless every test ran exactly once. `validate` (the CI build, the standalone assembly and
+  # the login smoke test) still runs on every push to main and Telegrams the owner when it goes red — the
+  # `Tell the owner main's build or login test is red` step — but it no longer holds the deploy. Why: Railway
+  # builds the same commit itself in ~5 min (measured 281-602 s over 8 merges, 3-4 Nov 2026), while this
+  # job's build took 6-11 min (validate 369-673 s), so the gate waited 0-6.5 min, usually 3-4, for a second
+  # copy of a build Railway had already finished. A commit that does not build still never ships: Railway's
+  # own build fails and the old version keeps serving. What is given up is the login smoke test holding the
+  # deploy — a commit that builds but breaks sign-in now goes live and is reported, not withheld.
+  # Never put `validate` back in `needs` without his word. `mobile` is left out on purpose: it reports and
+  # never gated a merge, so it must not gate a deploy. tests/release-gate.test.ts pins this, the event and
+  # the branch.
   #
   # MAIN PUSH ONLY. A pull request has no production container to release, and a workflow_dispatch run on
   # main must not mint a row for a commit whose own push run did not.
@@ -1030,7 +1068,7 @@ jobs:
   # service-role key to write this one row. psql ships on GitHub's ubuntu image; the install line only runs if
   # an image ever drops it. The sha and run id are validated before use and passed as psql variables.
   release-gate:
-    needs: [validate, checks]
+    needs: [checks]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
