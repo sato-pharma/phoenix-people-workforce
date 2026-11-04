@@ -36,7 +36,7 @@
 
 import { closingAreaOf } from "./closing-row-area";
 import { countsInClosingHeadline } from "./closing-headline";
-import { MAIN_STORES_LABEL } from "./closing-main-stores";
+import { EPDA_SHARE_LABEL, MAIN_STORES_LABEL } from "./closing-main-stores";
 import { PERFORMANCE_REVIEW_FIRST_PERIOD } from "./closing-performance-review";
 import type { ClosingEngineFill, EngineValue } from "./closing-engine-fill";
 import type { ClosingPerformanceReview } from "./closing-performance-review";
@@ -450,7 +450,10 @@ function buildDetailGroups(rows: ClosingDetailRow[], areaBook: Map<string, AreaB
     // with a genuinely unnamed row in the same area, product and channel — and whichever of the
     // two the map reached first would name the other. Keyed on the LABEL here, which no real
     // customer can carry, so the two can never become one group. No other row's grouping moves.
-    const clientKey = row.clientName === MAIN_STORES_LABEL ? MAIN_STORES_LABEL : row.clientCode;
+    // An EPDA share row (rule 2) is keyed on its label for the same reason.
+    const clientKey = row.clientName === MAIN_STORES_LABEL || (row.clientName === EPDA_SHARE_LABEL && !row.clientCode)
+      ? row.clientName
+      : row.clientCode;
     const key = `${areaCode}\u0000${clientKey}\u0000${row.productCode}\u0000${channel}`;
     let group = groups.get(key);
     if (!group) {
@@ -503,6 +506,7 @@ function buildDetailGroups(rows: ClosingDetailRow[], areaBook: Map<string, AreaB
  * the sale belongs to the area that made it.
  */
 function buildCustomers(groups: DetailGroup[]): {
+  epdaShareValue: number;
   mainStoresValue: number;
   namedValue: number;
   rows: CustomerRow[];
@@ -513,6 +517,7 @@ function buildCustomers(groups: DetailGroup[]): {
   let unnamedCount = 0;
   let unnamedValue = 0;
   let mainStoresValue = 0;
+  let epdaShareValue = 0;
 
   for (const group of groups) {
     // 🔴 MAIN STORES IS NOT AN UNNAMED CUSTOMER, AND THIS BRANCH IS WHY IT NEEDS SAYING.
@@ -531,6 +536,12 @@ function buildCustomers(groups: DetailGroup[]): {
     // blank code here is never true. That is exactly how this branch shipped inert once.
     if (group.clientName === MAIN_STORES_LABEL) {
       mainStoresValue += group.salesValue;
+      continue;
+    }
+    // An area's share of the EPDA books (rule 2) reaches an area, not one outlet — out of the ranking
+    // for the same reason as Main Stores. Its code is the NO_CLIENT_CODE sentinel by now, hence the name.
+    if (group.clientName === EPDA_SHARE_LABEL && group.clientCode === NO_CLIENT_CODE) {
+      epdaShareValue += group.salesValue;
       continue;
     }
     if (group.clientCode === NO_CLIENT_CODE) {
@@ -554,6 +565,7 @@ function buildCustomers(groups: DetailGroup[]): {
   }
   const rows = [...customers.values()].sort((a, b) => b.salesValue - a.salesValue);
   return {
+    epdaShareValue,
     mainStoresValue,
     namedValue: rows.reduce((sum, row) => sum + row.salesValue, 0),
     rows,
@@ -962,9 +974,9 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   // are counted everywhere and ranked nowhere. It names no distributor and sizes nothing.
   const customerNotes = [
     `Share is against the ${formatInt(customers.namedValue)} EGP that reached a named customer, not against the whole line.`,
-    customers.mainStoresValue > 0
-      ? "Main Stores rows are counted in every total on this workbook and listed on Details. They are"
-        + " left out of this ranking because a warehouse share reaches an area, not one outlet."
+    customers.mainStoresValue > 0 || customers.epdaShareValue > 0
+      ? `${[customers.mainStoresValue > 0 ? "Main Stores" : null, customers.epdaShareValue > 0 ? "EPDA share" : null].filter(Boolean).join(" and ")} rows are counted in every total on this workbook and listed on Details. They are`
+        + " left out of this ranking because an area's share reaches an area, not one outlet."
       : customers.unnamedCount === 0
         ? "Every row in scope names its buyer, so nothing is left out of this ranking."
         : `${count(customers.unnamedCount, "row")} worth ${formatInt(customers.unnamedValue)} EGP ${agree(customers.unnamedCount, "carries", "carry")} no client code — the distributor reported the sale without naming the buyer.`,

@@ -17,7 +17,8 @@ import {
   type BulkAllocationRow,
 } from "../src/lib/sales/closing-bulk-allocation.ts";
 import { buildClosingEpdaSheet, CLOSING_EPDA_SHEET_NAME, closingEpdaSheetSpec } from "../src/lib/sales/closing-epda-sheet.ts";
-import { applyCreditedAreaView } from "../src/lib/sales/closing-main-stores.ts";
+import { applyCreditedAreaView, EPDA_SHARE_LABEL, isEpdaShareRow } from "../src/lib/sales/closing-main-stores.ts";
+import { classifyRowKind } from "../src/lib/sales/sos-pharmacy-actions.ts";
 import { buildOfficeAreaWeights } from "../src/lib/sales/office-allocation.ts";
 import {
   areaProductKey,
@@ -575,6 +576,19 @@ export function runClosingBulkAllocationTests() {
     assert.deepEqual(epdaBy(october, "qty"), [["D14", 40], ["D15", 120], ["D21", 240]], "each area's EPDA rows add to the matrix's share");
     assert.deepEqual(epdaBy(october, "salesValue"), [["D14", 1200], ["D15", 3600], ["D21", 7200]], "and the value follows the units");
     assert.ok(october.some((row) => row.areaCode === "AB1" && row.productCode === "LA001"), "Lacto keeps its invoiced area");
+    // 🔴 One unnamed row per area and book, in whole units — never a copy of a pharmacy's invoice in
+    // every receiving area, which named every EPDA pharmacy to every rep and, at fractional units,
+    // marked a real pharmacy as a wholesaler share in its own rep's action list.
+    const shares = october.filter((row) => String(row.distributorCode).startsWith("EP-") && row.productCode === "IV001");
+    assert.ok(shares.every((row) => isEpdaShareRow(row) && row.clientName === EPDA_SHARE_LABEL), "every EPDA row is an unnamed share");
+    assert.ok(shares.every((row) => Number.isInteger(row.qty) && row.effectiveUnits === row.qty), "in whole units");
+    assert.ok(!october.some((row) => row.clientName === "صيدلية الشفاء"), "no pharmacy's name reaches another area's rows");
+    assert.deepEqual(
+      shares.map((row) => `${row.areaCode}|${row.distributorCode}|${row.qty}`).sort(),
+      ["D14|EP-BK|30", "D14|EP-PHS|10", "D15|EP-BK|90", "D15|EP-PHS|30", "D21|EP-BK|180", "D21|EP-PHS|60"],
+      "one row per area and book, each book's units in its share",
+    );
+    assert.ok(shares.every((row) => classifyRowKind(row as never, new Set()) === "wholesalerShare"), "the action list reads a share, never a pharmacy");
     assert.equal(
       (october.find((row) => row.areaCode === "D15" && row.distributorCode === "EP-BK") as { areaName?: string } | undefined)?.areaName,
       "Area D15",

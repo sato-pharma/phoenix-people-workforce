@@ -203,8 +203,16 @@ export function applyCreditedAreaView<T extends ShareableRow & StoreSplitRow>(
   return creditEpdaSpread(out, out, { areaLabelOf: input.areaLabelOf, line, period });
 }
 
+/** The client name an EPDA share row carries — the book's area share, never one pharmacy's. */
+export const EPDA_SHARE_LABEL = "EPDA share" as const;
+
+/** True for a row `creditEpdaSpread` made: no client code, and the label for a name. */
+export function isEpdaShareRow(row: Pick<ShareableRow, "clientCode" | "clientName">): boolean {
+  return !String(row.clientCode ?? "").trim() && String(row.clientName ?? "").trim() === EPDA_SHARE_LABEL;
+}
+
 /**
- * 🔴 THE EPDA SPREAD, CREDITED ROW BY ROW — owner's EPDA rule 2, from the October 2026 closing.
+ * 🔴 THE EPDA SPREAD, IN A VIEWER'S ROWS — owner's EPDA rule 2, from the October 2026 closing.
  *
  * The matrix moves EPDA-BULK's and EPDA-Pharmacies' Ivyronc, Royafloxacin and Saginko onto the areas
  * that earned them (closing-bulk-allocation.ts), and the city split above leaves those rows alone, so
@@ -213,12 +221,19 @@ export function applyCreditedAreaView<T extends ShareableRow & StoreSplitRow>(
  * screen by his whole share of the EPDA book, and listed none of it when the invoiced area is outside
  * his scope.
  *
- * Each moved row becomes one share per receiving area, scaled by that area's part of the product's
- * spread (its IN leg over all the IN legs). Every row of a product moves by the same fractions, so the
- * shares of an area add back to exactly the units the matrix gave it, and value and units scale
- * together so each share still multiplies out at the row's own price. Units stay fractional for that
- * reason, as on a city-split share. The spread is computed from `allRows`, the whole month, exactly
- * as the closing computes it; the caller scopes afterwards.
+ * 🔴 ONE UNNAMED ROW PER AREA, PRODUCT AND BOOK — NEVER A COPY OF A PHARMACY'S INVOICE. The spread is
+ * a share of the whole book, so no one pharmacy stands behind an area's part of it. Copying each moved
+ * invoice into every receiving area would have printed every EPDA pharmacy's name, code and brick in
+ * every rep's Details tab and file, at fractional units — and a fractional row marks its customer as a
+ * wholesaler share, which drops a real pharmacy out of its own rep's action list
+ * (sos-pharmacy-actions.ts, `findSharedCustomerKeys`). So, as Main Stores does, each receiving area
+ * gets one row per product and book, carrying the book's distributor code and nothing of any invoice.
+ *
+ * Units are WHOLE: an area's units are its IN leg, already whole, shared between the two books by
+ * their units with the largest remainder, so each area's rows add back to exactly what the matrix gave
+ * it. Value is the book's value by the same area fraction, so each area's value is the matrix's too.
+ * The spread is computed from `allRows`, the whole month, exactly as the closing computes it; the
+ * caller scopes afterwards.
  */
 function creditEpdaSpread<T extends ShareableRow & StoreSplitRow>(
   rows: T[],
@@ -229,7 +244,7 @@ function creditEpdaSpread<T extends ShareableRow & StoreSplitRow>(
   const bulk = buildBulkAllocation(allRows as unknown as BulkAllocationRow[], input.period, input.line);
   const legsByProduct = new Map<string, { areaCode: string; inQty: number }[]>();
   for (const leg of bulk.movements) {
-    if (!(leg.inQty > 0)) continue;
+    if (leg.inQty === 0) continue;
     const product = String(leg.productCode ?? "").trim().toUpperCase();
     const legs = legsByProduct.get(product) ?? [];
     legs.push({ areaCode: String(leg.areaCode ?? "").trim().toUpperCase(), inQty: leg.inQty });
@@ -237,36 +252,88 @@ function creditEpdaSpread<T extends ShareableRow & StoreSplitRow>(
   }
   if (legsByProduct.size === 0) return rows;
 
+  // The rows the engine moved: the same gates, and an area to leave (a blank one is never moved).
+  type Book = { template: T; units: number; value: number };
+  const booksByProduct = new Map<string, Map<string, Book>>();
   const out: T[] = [];
   for (const row of rows) {
     const record = row as unknown as BulkAllocationRow;
     const product = String(row.productCode ?? "").trim().toUpperCase();
-    const legs = legsByProduct.get(product);
-    const moves = legs !== undefined
+    const moves = legsByProduct.has(product)
       && isBulkAllocatedRow(record, input.period)
       && record.includedInClosing
       && !record.isDirect
-      && record.isConfidential !== true;
+      && record.isConfidential !== true
+      && String(row.areaCode ?? "").trim() !== "";
     if (!moves) {
       out.push(row);
       continue;
     }
-    const total = legs.reduce((sum, leg) => sum + leg.inQty, 0);
+    const distributor = String(row.distributorCode ?? "").trim().toUpperCase();
+    const books = booksByProduct.get(product) ?? new Map<string, Book>();
+    const book = books.get(distributor) ?? { template: row, units: 0, value: 0 };
+    book.units += Number(row.qty) || 0;
+    book.value += Number(row.salesValue) || 0;
+    books.set(distributor, book);
+    booksByProduct.set(product, books);
+  }
+
+  for (const [product, books] of booksByProduct) {
+    const legs = legsByProduct.get(product) ?? [];
+    const legTotal = legs.reduce((sum, leg) => sum + leg.inQty, 0);
+    const bookUnits = [...books.values()].reduce((sum, book) => sum + book.units, 0);
+    if (legTotal === 0 || bookUnits === 0) continue;
+    const entries = [...books.entries()];
     for (const leg of legs) {
-      const fraction = leg.inQty / total;
+      const fraction = leg.inQty / legTotal;
+      // The area's whole units, shared between the books by their units, largest remainder first.
+      const raw = entries.map(([, book]) => (leg.inQty * book.units) / bookUnits);
+      const whole = raw.map((value) => Math.trunc(value));
+      let left = leg.inQty - whole.reduce((sum, value) => sum + value, 0);
+      const order = raw
+        .map((value, index) => ({ index, rest: Math.abs(value - Math.trunc(value)) }))
+        .sort((a, b) => b.rest - a.rest || a.index - b.index);
+      for (const { index } of order) {
+        if (left === 0) break;
+        const step = Math.sign(left);
+        whole[index] += step;
+        left -= step;
+      }
       const place = input.areaLabelOf(leg.areaCode);
-      const effective = Number(row.effectiveUnits);
-      out.push({
-        ...row,
-        areaCode: leg.areaCode,
-        sheetAreaCode: leg.areaCode,
-        qty: (Number(row.qty) || 0) * fraction,
-        salesValue: (Number(row.salesValue) || 0) * fraction,
-        ...(Number.isFinite(effective) ? { effectiveUnits: effective * fraction } : {}),
-        areaName: place?.areaName ?? leg.areaCode,
-        sheetAreaName: place?.areaName ?? leg.areaCode,
-        regionCode: place?.regionCode ?? row.regionCode ?? "",
-        regionName: place?.regionName ?? row.regionName ?? "",
+      entries.forEach(([distributorCode, book], index) => {
+        const units = whole[index];
+        const value = Number((book.value * fraction).toFixed(6));
+        if (units === 0 && Math.round(value) === 0) return;
+        out.push({
+          ...book.template,
+          areaCode: leg.areaCode,
+          sheetAreaCode: leg.areaCode,
+          areaName: place?.areaName ?? leg.areaCode,
+          sheetAreaName: place?.areaName ?? leg.areaCode,
+          regionCode: place?.regionCode ?? book.template.regionCode ?? "",
+          regionName: place?.regionName ?? book.template.regionName ?? "",
+          distributorCode,
+          clientCode: "",
+          clientName: EPDA_SHARE_LABEL,
+          clientAddress: "",
+          brickId: "",
+          brickName: "",
+          blockCode: "",
+          invoiceDate: null,
+          rowNumber: null,
+          discount: 0,
+          areaMismatch: false,
+          brickUnmapped: false,
+          factoryPrice: null,
+          qty: units,
+          bonusQty: 0,
+          effectiveUnits: units,
+          salesValue: value,
+          sheetValue: value,
+          isDirect: false,
+          // No client code BY DESIGN, so it is not a row that LOST one (the "no traceable outlet" banner).
+          missingClientCode: false,
+        });
       });
     }
   }
