@@ -23,6 +23,7 @@ import {
   type MedicalInsuranceRateCard,
 } from "./cost";
 import {
+  additionCategory,
   buildMedicalInsuranceActions,
   buildMedicalInsuranceMovements,
   buildMedicalInsurancePlan,
@@ -179,6 +180,13 @@ async function loadExceptions(policyId: string): Promise<ExceptionFacts[]> {
   }));
 }
 
+/** The category decided for each joiner not on the register yet, by HR id. */
+async function loadCategoryChoices(policyId: string): Promise<Map<string, MedicalInsuranceCategory>> {
+  const { data, error } = await getSupabaseAdmin().from("medical_insurance_category_choices").select("hr_id, category").eq("policy_id", policyId);
+  fail(error);
+  return new Map(((data ?? []) as Array<{ hr_id: string; category: MedicalInsuranceCategory }>).map((row) => [row.hr_id, row.category]));
+}
+
 /** "Active" is the record's own status: the sole Super Admin is on the policy and is hidden from the directory's active list. */
 function toEmployeeFacts(row: EmployeeDirectoryRow): EmployeeFacts {
   return {
@@ -236,14 +244,23 @@ export async function getMedicalInsuranceView(): Promise<MedicalInsuranceView | 
   const policy = await loadPolicy(asOf);
   if (!policy) return null;
 
-  const [memberRows, exceptions, employeeRows] = await Promise.all([loadMembers(policy.id), loadExceptions(policy.id), loadEmployeeRows()]);
+  const [memberRows, exceptions, employeeRows, categoryChoices] = await Promise.all([
+    loadMembers(policy.id),
+    loadExceptions(policy.id),
+    loadEmployeeRows(),
+    loadCategoryChoices(policy.id),
+  ]);
   const employees = employeeRows.map(toEmployeeFacts);
   const members = memberRows.map(toMemberFacts);
   const names = new Map(employees.map((employee) => [employee.hrId, employee.name]));
   const jobTitles = new Map(employees.map((employee) => [employee.hrId, employee.jobTitle]));
   const memberNames = new Map(memberRows.map((row) => [row.id, row.full_name]));
 
-  const { actions, exceptions: kept } = buildMedicalInsuranceActions({ asOf, employees, exceptions, members, policy: policyFacts(policy) });
+  const built = buildMedicalInsuranceActions({ asOf, employees, exceptions, members, policy: policyFacts(policy) });
+  const kept = built.exceptions;
+  const actions = built.actions.map((action) =>
+    action.kind === "add" && action.hrId ? { ...action, decidedCategory: categoryChoices.get(action.hrId) ?? null } : action,
+  );
   const documents = await loadDocuments(policy.id, ["communication_tool", "form"], names);
 
   const memberView: MedicalInsuranceMemberRow[] = memberRows.map((row) => ({
@@ -621,6 +638,38 @@ export async function revokeMedicalInsuranceException(access: AccessContext, exc
 export type InvoiceFile = { bytes: Buffer; contentType: string; fileName: string };
 
 /** The policy's own period when the invoice's dates are one, otherwise the invoice's dates as printed. */
+/**
+ * Decides the category a joiner goes on the policy with, before they are on the register. A new decision
+ * replaces the last one, and the audit log keeps every one.
+ */
+export async function decideMedicalInsuranceCategory(access: AccessContext, input: { hrId?: unknown; category?: unknown }) {
+  const policy = await requirePolicy(todayInCairo());
+  const hrId = cleanText(input.hrId);
+  if (!hrId) throw new MedicalInsuranceInputError("Choose the employee.");
+  const category = cleanCategory(input.category);
+  const view = await getMedicalInsuranceView();
+  const action = view?.actions.find((candidate) => candidate.kind === "add" && candidate.hrId === hrId);
+  if (!action) throw new MedicalInsuranceInputError("This person is no longer on the list to add. Refresh the page.");
+
+  fail(
+    (
+      await getSupabaseAdmin()
+        .from("medical_insurance_category_choices")
+        .upsert(
+          { category, decided_at: new Date().toISOString(), decided_by_hr_id: hrIdForStorage(access.hrId), hr_id: hrId, policy_id: policy.id },
+          { onConflict: "policy_id,hr_id" },
+        )
+    ).error,
+  );
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? null,
+    entityId: hrId,
+    entityType: "medical_insurance_category_choice",
+    summary: `Medical insurance category ${category} decided for ${action.name}.`,
+  });
+}
+
 async function comparisonFor(policy: PolicyRecord, parsed: ParsedInvoice): Promise<InvoiceComparison> {
   const plan = await planFor(policy, { end: parsed.periodEnd, start: parsed.periodStart });
   return compareInvoiceToPlan(parsed, plan, { expectedPolicyNumber: policy.policyNumber });
@@ -916,7 +965,7 @@ export async function prepareMetLifeEdi(body: Record<string, unknown>): Promise<
   const employees = new Map((await loadEmployeeRows()).map((employee) => [employee.hrId, employee]));
   const rows = actions.map((action) => {
     const picked = chosenCategories[action.key];
-    const category = picked === "A" || picked === "B" || picked === "C" ? picked : (action.category ?? action.suggestedCategory);
+    const category = additionCategory(action, picked);
     if (!category) throw new MedicalInsuranceInputError(`Choose a category for ${action.name}.`);
     const employee = action.hrId ? employees.get(action.hrId) : undefined;
     return {

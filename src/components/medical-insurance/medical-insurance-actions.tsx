@@ -9,7 +9,7 @@ import { phxFieldClassName, phxFieldGridTwoClassName, phxLabelClassName, phxSele
 import { rowDetailToggleProps, TableRowDetail } from "@/components/ui/table-row-detail";
 import { formatLeftDay } from "@/lib/employees/left-flag";
 import { MEDICAL_INSURANCE_CATEGORIES, type MedicalInsuranceCategory } from "@/lib/medical-insurance/cost";
-import type { MedicalInsuranceAction, MedicalInsuranceActionKind } from "@/lib/medical-insurance/eligibility";
+import { additionCategory, type MedicalInsuranceAction, type MedicalInsuranceActionKind } from "@/lib/medical-insurance/eligibility";
 import type { MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +42,6 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   const [filter, setFilter] = React.useState<MedicalInsuranceActionKind | "all">("all");
   const [openKey, setOpenKey] = React.useState<string | null>(null);
   const [ticked, setTicked] = React.useState<ReadonlySet<string>>(new Set());
-  const [categories, setCategories] = React.useState<Record<string, MedicalInsuranceCategory>>({});
   const [busy, setBusy] = React.useState<"additions" | "deletions" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const visible = view.actions.filter((action) => filter === "all" || action.kind === filter);
@@ -50,7 +49,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   // Only people still on today's list count as ticked; someone who dropped off since the page loaded does not.
   const tickedAdds = view.actions.filter((action) => action.kind === "add" && ticked.has(action.key));
   const tickedRemoves = view.actions.filter((action) => action.kind === "remove" && ticked.has(action.key));
-  const addsWithoutCategory = tickedAdds.filter((action) => !(categories[action.key] ?? action.category ?? action.suggestedCategory));
+  const addsWithoutCategory = tickedAdds.filter((action) => !additionCategory(action));
   const addCount = view.actions.filter((action) => action.kind === "add").length;
   const removeCount = view.actions.filter((action) => action.kind === "remove").length;
 
@@ -83,11 +82,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
     try {
       await downloadPosted(
         EDI_URL,
-        {
-          categories: Object.fromEntries(chosen.filter((action) => categories[action.key]).map((action) => [action.key, categories[action.key]])),
-          keys: chosen.map((action) => action.key),
-          kind,
-        },
+        { keys: chosen.map((action) => action.key), kind },
         `MetLife-EDI-${kind}.xlsx`,
       );
     } catch (caught) {
@@ -126,30 +121,10 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   }
 
   function renderCategory(action: MedicalInsuranceAction) {
-    // A ticked addition carries its category onto the form, so it is chosen right here.
-    if (canExport && action.kind === "add" && ticked.has(action.key)) {
-      const value = categories[action.key] ?? action.category ?? action.suggestedCategory ?? "";
-      return (
-        <label className="mt-2 block max-w-[12rem]">
-          <span className={cn(phxLabelClassName, !value && "text-phx-warn")}>{value ? "Category on the form" : "Choose the category"}</span>
-          <select
-            aria-label={`Category for ${action.name}`}
-            className={phxSelectClassName}
-            onChange={(event) => setCategories((current) => ({ ...current, [action.key]: event.target.value as MedicalInsuranceCategory }))}
-            value={value}
-          >
-            {value ? null : <option value="">Choose</option>}
-            {MEDICAL_INSURANCE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
-          </select>
-        </label>
-      );
-    }
     if (action.category) return <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">Category {action.category}</p>;
-    return (
-      <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">
-        {action.suggestedCategory ? `Category ${action.suggestedCategory}, as the same job holds` : "Category not decided"}
-      </p>
-    );
+    // A joiner's category is decided here, before they are on the register, and the additions form reads it.
+    if (canEdit && action.kind === "add" && action.hrId) return <CategoryDecision action={action} />;
+    return <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">{categoryWords(action)}</p>;
   }
 
   function renderOpenButton(action: MedicalInsuranceAction) {
@@ -288,6 +263,37 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   );
 }
 
+function categoryWords(action: MedicalInsuranceAction): string {
+  if (action.decidedCategory) return `Category ${action.decidedCategory}, decided`;
+  if (action.suggestedCategory) return `Category ${action.suggestedCategory}, as the same job holds`;
+  return "Category not decided";
+}
+
+/** Saves the category the moment it is chosen, so it is still there the next time anyone exports. */
+function CategoryDecision({ action }: { action: MedicalInsuranceAction }) {
+  const { busy, error, save } = useSave();
+  const value = action.decidedCategory ?? action.suggestedCategory ?? "";
+  const label = action.decidedCategory ? "Category, decided" : action.suggestedCategory ? "Category, as the same job holds" : "Decide the category";
+  return (
+    <div className="mt-2 max-w-[14rem]">
+      <label className="block">
+        <span className={cn(phxLabelClassName, !value && "text-phx-warn")}>{label}</span>
+        <select
+          aria-label={`Category for ${action.name}`}
+          className={phxSelectClassName}
+          disabled={busy}
+          onChange={(event) => void save(() => sendJson("/api/medical-insurance/categories", "POST", { category: event.target.value, hrId: action.hrId }))}
+          value={value}
+        >
+          {value ? null : <option value="">Choose</option>}
+          {MEDICAL_INSURANCE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+        </select>
+      </label>
+      <SaveError error={error} />
+    </div>
+  );
+}
+
 function EdiPanel(props: {
   blocked?: string | null;
   busy: boolean;
@@ -321,7 +327,7 @@ function EdiPanel(props: {
 
 function ActionForm({ action, onDone }: { action: MedicalInsuranceAction; onDone: () => void }) {
   const { busy, error, save } = useSave();
-  const [category, setCategory] = React.useState<MedicalInsuranceCategory | "">(action.suggestedCategory ?? "");
+  const [category, setCategory] = React.useState<MedicalInsuranceCategory | "">(action.decidedCategory ?? action.suggestedCategory ?? "");
   const [certificate, setCertificate] = React.useState("");
   const [day, setDay] = React.useState(action.effectiveOn);
   const [reason, setReason] = React.useState(action.kind === "add" ? "" : action.reason);
