@@ -615,7 +615,7 @@ function checkOneCustomer(): void {
       `365 days exactly is allowed for one customer of a ${kind}`,
     );
     const tooLong = resolveVisitReportPeriod({ cairoToday: today, customer: true, from: "2025-11-04", kind, to: today });
-    assert.equal(tooLong.ok ? null : tooLong.error, "Choose at most 365 days for one doctor or account.", `and day 366 is refused for a ${kind}, in words`);
+    assert.equal(tooLong.ok ? null : tooLong.error, "Choose at most 365 days for one customer.", `and day 366 is refused for a ${kind}, in words`);
     assert.equal(resolveVisitReportPeriod({ cairoToday: today, customer: false, from: "2025-11-05", kind, to: today }).ok, false, `without a customer a ${kind} keeps its own cap`);
   }
   // A manager's report is about the manager: naming a customer never lifts his 31 days.

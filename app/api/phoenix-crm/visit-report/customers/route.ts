@@ -24,6 +24,6 @@ export async function GET(request: Request) {
     const customers = await loadVisitReportCustomers(viewer, { id: search.get("id"), kind: search.get("kind") });
     return NextResponse.json({ customers, success: true });
   } catch (error) {
-    return phoenixCrmFailure(error, "Could not list the doctors and accounts.");
+    return phoenixCrmFailure(error, "Could not list the customers.");
   }
 }

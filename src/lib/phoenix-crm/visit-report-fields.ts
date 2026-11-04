@@ -352,7 +352,7 @@ export const VISIT_REPORT_STARTER_SETS: ReadonlyArray<VisitReportStarterSet> = [
   {
     // One doctor's or account's story over months (owner, 2026-11-04): what was detailed, what they objected
     // to, the next step promised and what was written — so whoever holds the seat next knows where it stands.
-    blurb: "One doctor's or account's visits in order: products, objections, next step and comments",
+    blurb: "One customer's visits in order: products, objections, next step and comments",
     id: "customerHistory",
     keys: [
       "visitDate", "repName", "managerOnVisit", "productManagerOnVisit",
@@ -438,7 +438,7 @@ export function resolveVisitReportPeriod(input: {
   const oneCustomer = input.customer === true && input.kind !== "manager";
   const cap = oneCustomer ? VISIT_REPORT_MAX_DAYS_CUSTOMER : input.kind === "rep" ? VISIT_REPORT_MAX_DAYS_REP : VISIT_REPORT_MAX_DAYS_DISTRICT;
   if (days > cap) {
-    const forWhom = oneCustomer ? "one doctor or account" : input.kind === "rep" ? "one rep" : input.kind === "manager" ? "a manager" : "a district";
+    const forWhom = oneCustomer ? "one customer" : input.kind === "rep" ? "one rep" : input.kind === "manager" ? "a manager" : "a district";
     return { ok: false, error: `Choose at most ${cap} days for ${forWhom}.` };
   }
   return { ok: true, days, from, to: last };

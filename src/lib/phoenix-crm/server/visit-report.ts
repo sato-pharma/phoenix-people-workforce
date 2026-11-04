@@ -43,6 +43,7 @@
 
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
+import { isUuid } from "@/lib/http/uuid";
 import { placeNoteReachesManager } from "@/lib/phoenix-crm/place-note-rules";
 import { isPlanDaySent } from "@/lib/phoenix-crm/plan-rules";
 import { canReadVisitReport, isLocationBlind, readsLocationDetail, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -259,7 +260,7 @@ const CUSTOMER_STATUS_WORDS: Record<string, string> = { outside: "outside the li
 
 function rejectCustomerKind(kind: unknown): "rep" | "district" {
   if (kind === "rep" || kind === "district") return kind;
-  throw validationError("Choose a rep or a district to report on one doctor or account.");
+  throw validationError("Choose a rep or a district to report on one customer.");
 }
 
 /**
@@ -312,16 +313,14 @@ async function resolveReportCustomer(
   customerId: string,
   includeTest: boolean,
 ): Promise<VisitReportCustomerChoice & { seatId: string }> {
-  const missing = "This doctor or account is not on this territory. Reload the page.";
+  const missing = "This customer is not on this territory. Reload the page.";
   // Not an id at all is the same 404 — and never reaches PostgREST, which would answer it with a 22P02.
-  if (!CUSTOMER_ID.test(customerId)) throw notFoundError(missing);
+  if (!isUuid(customerId)) throw notFoundError(missing);
   const [row] = await selectByIds<Row>("phoenix_crm_customers", "id, seat_id, name, list_type, is_test", "id", [customerId]);
   const readable = new Set(seats.map((seat) => seat.seatId));
   if (!row || !readable.has(String(row.seat_id)) || (!includeTest && row.is_test === true)) throw notFoundError(missing);
   return { id: String(row.id), listType: String(row.list_type ?? ""), name: String(row.name ?? "").trim() || "Unnamed customer", seatId: String(row.seat_id) };
 }
-
-const CUSTOMER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The columns the day order reads off a visit — the other visits of a customer's days, read for the sequence alone. */
 const SEQUENCE_VISIT_COLUMNS = "id, seat_id, customer_id, visit_date, captured_at, lat, lon, rep_hr_id, manager_hr_id";
@@ -695,6 +694,8 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
           "visit_id",
           visitIds,
           byIds,
+          // Keyed by the visit: the table has no id column of its own.
+          "visit_id",
         )
       : needsUnplanned
       ? readSeatRange(
@@ -832,6 +833,7 @@ export async function loadVisitReport(viewer: PhoenixCrmViewer, input: LoadVisit
       "visit_id",
       sequenceSource.map((visit) => String(visit.id)),
       byIds,
+      "visit_id",
     );
   }
   const provenanceByVisit = new Map(sequenceProvenance.map((row) => [String(row.visit_id), row]));

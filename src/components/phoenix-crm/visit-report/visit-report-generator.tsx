@@ -324,7 +324,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
       { from: shiftIsoDay(scope.cairoToday, -6), label: "Last 7 days", to: scope.cairoToday },
       { from: `${scope.cairoToday.slice(0, 7)}-01`, label: "This month", to: scope.cairoToday },
       { from: lastMonth.from, label: "Last month", to: lastMonth.to },
-      // One doctor's or account's story runs months, so the year is one press away once one is chosen.
+      // One customer's story runs months, so the year is one press away once one is chosen.
       ...(chosenCustomer
         ? [
             { from: shiftIsoDay(scope.cairoToday, -89), label: "Last 3 months", to: scope.cairoToday },
@@ -440,11 +440,11 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
                   customers.error
                     ? customers.error
                     : customers.data === null
-                      ? "Reading the doctors and accounts."
-                      : `${countText(customers.data.length)} on the list, waiting for validation or met outside it. Choose one to read that doctor's or account's visits alone, by every rep who held the territory, over up to 12 months.`
+                      ? "Reading the customers."
+                      : `${countText(customers.data.length)} on the list, waiting for validation or met outside it. Choose one to read that customer's visits alone, by every rep who held the territory, over up to 12 months.`
                 }
                 htmlFor="visit-report-customer"
-                label="Doctor or account"
+                label="Customer"
               >
                 <CrmSelect
                   disabled={customers.data === null}
@@ -452,7 +452,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
                   onChange={(event) => setCustomer(event.target.value)}
                   value={customer}
                 >
-                  <option value="">Every doctor and account</option>
+                  <option value="">Every customer</option>
                   {(customers.data ?? []).map((entry) => (
                     <option key={entry.id} value={entry.id}>
                       {entry.label}
@@ -460,7 +460,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
                   ))}
                   {/* A link may name a customer the list no longer offers (dropped since): keep it chosen, by name unknown. */}
                   {customer && customers.data && !customers.data.some((entry) => entry.id === customer) ? (
-                    <option value={customer}>The doctor or account in the link</option>
+                    <option value={customer}>The customer in the link</option>
                   ) : null}
                 </CrmSelect>
               </CrmField>
@@ -481,7 +481,7 @@ export function VisitReportGenerator({ initial, scope }: { initial: VisitReportI
             ))}
           </div>
           <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
-            One rep up to 92 days; a manager or a district up to 31 days; one doctor or account up to 12 months. A manager&apos;s report holds every visit a rep logged
+            One rep up to 92 days; a manager or a district up to 31 days; one customer up to 12 months. A manager&apos;s report holds every visit a rep logged
             with that manager and, under the manager&apos;s own name, the visits made alone — those count in no rep&apos;s figure. Days after today are
             cut off.
           </p>

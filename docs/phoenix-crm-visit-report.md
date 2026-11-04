@@ -123,7 +123,7 @@ A team asked whether the system can follow the visits to one doctor over a perio
 the territory after a rep leaves, can see where things stand with that doctor. The owner asked for it on the Visit
 report: "filter by rep or area then filter by dr or polyclinic and get the mentioned report".
 
-- **The picker.** Once a rep or a district is chosen, a **Doctor or account** list appears under it
+- **The picker.** Once a rep or a district is chosen, a **Customer** list appears under it (the CRM says AM and PM, never doctor or account, on its screens)
   (`loadVisitReportCustomers`, GET `/api/phoenix-crm/visit-report/customers`). It lists that territory's customers
   that are on the list, waiting for validation or met outside it. Campaign-visit holders and dropped customers are
   left out, but a link that names a dropped customer still opens. Across a district each name also says whose
