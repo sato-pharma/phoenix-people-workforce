@@ -275,6 +275,16 @@ overrides:
   # RE-BUMPED to 7.30.1 for GHSA-xjj6-f33q-929c (high, reached via openai > undici): the audit step
   # `pnpm audit --audit-level=high --prod` failed `static` on every PR until the pin moved.
   "undici": 7.30.1
+  # Added 2026-11-04 for GHSA-3g3m-2fjr-6pw4 (medium, Dependabot #19): an aborted async walk keeps
+  # reading directories in the background after it rejects. Advisory covers `>=9.0.0 <=14.0.1`, so the
+  # whole 13.x line is affected and the fix exists only in the 14 line. Both parents declare
+  # `^13.0.6` even at their latest releases (@sentry/bundler-plugins 11.10.0, test-exclude 8.0.0), so
+  # no parent bump can clear it. Scoped to the 13 line so glob@7.2.3 (outside the advisory) is untouched.
+  # 14 is a drop-in, checked against the published type declarations: the only removal is the `debug`
+  # option, and everything else is additive (`normalize`, readonly arrays). BUILD- AND TEST-TIME ONLY —
+  # Sentry's source-map upload plugin and c8's coverage file walker; neither globs untrusted input.
+  # Remove once both parents declare glob ^14.
+  "glob@13": ^14.0.3
 
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
