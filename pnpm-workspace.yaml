@@ -285,6 +285,15 @@ overrides:
   # Sentry's source-map upload plugin and c8's coverage file walker; neither globs untrusted input.
   # Remove once both parents declare glob ^14.
   "glob@13": ^14.0.3
+  # Added 2026-11-04 for GHSA-g3hv-75wg-m249 (medium, Dependabot #22): DoS via globparts
+  # amplification, `>=7.0.0 <11.0.1`, published the same afternoon the glob 14 floor above landed.
+  # The fix exists only in the 11 line. Two parents still declare ^10: test-exclude 8.0.0 and
+  # @typescript-eslint/typescript-estree 8.72.x. 11 drops the `makeRe` and `AST` exports and the
+  # `debug`/`maxExtglobRecursion` options, so the parents were checked before pinning: test-exclude
+  # calls only `minimatch()`, and typescript-estree's published dist never imports minimatch at all.
+  # Scoped to the 10 line; 3.1.5 (eslint) and 5.1.9 sit outside the advisory and are untouched.
+  # DEV-ONLY: both parents are lint and coverage tooling. Remove once both declare minimatch ^11.
+  "minimatch@10": ^11.0.4
 
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
