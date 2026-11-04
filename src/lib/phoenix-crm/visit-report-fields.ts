@@ -310,7 +310,7 @@ export const VISIT_REPORT_LEAD_KEYS: ReadonlyArray<string> = ["visitDate", "repN
 export type VisitReportStarterSet = { id: string; label: string; blurb: string; keys: ReadonlyArray<string> };
 
 /**
- * Three ready-made choices a reader starts from instead of ticking a hundred boxes (owner, 2026-10-16).
+ * Four ready-made choices a reader starts from instead of ticking a hundred boxes (owner, 2026-10-16).
  * Each is cut to the reader's own sight by `visitReportStarterFields`, so a set may name a field a
  * district manager is never offered and it is simply left out.
  */
@@ -349,6 +349,19 @@ export const VISIT_REPORT_STARTER_SETS: ReadonlyArray<VisitReportStarterSet> = [
     ],
     label: "Off-plan approvals",
   },
+  {
+    // One doctor's or account's story over months (owner, 2026-11-04): what was detailed, what they objected
+    // to, the next step promised and what was written — so whoever holds the seat next knows where it stands.
+    blurb: "One doctor's or account's visits in order: products, objections, next step and comments",
+    id: "customerHistory",
+    keys: [
+      "visitDate", "repName", "managerOnVisit", "productManagerOnVisit",
+      "customerName", "listType", "speciality", "grade", "placeLabel",
+      "productsDetailed", "samplesGiven", "objection", "objectionNote", "nextStep", "nextStepDate",
+      "comment", "detailComment", "daysSinceCustomerVisit",
+    ],
+    label: "Customer history",
+  },
 ];
 
 /** A ready-made set as THIS reader may have it: the catalogue's order, nothing above the reader's sight. */
@@ -380,6 +393,12 @@ export function cleanVisitReportViewName(value: unknown): string | null {
  */
 export const VISIT_REPORT_MAX_DAYS_REP = 92;
 export const VISIT_REPORT_MAX_DAYS_DISTRICT = 31;
+/**
+ * One doctor or account, on a rep's territory or across a district, may be read over a year (owner, 2026-11-04:
+ * "filter by rep or area then filter by dr or polyclinic"). One customer is a few visits a month, so a year of
+ * them is fewer rows than a month of one rep — and the story the next rep needs is months long, not weeks.
+ */
+export const VISIT_REPORT_MAX_DAYS_CUSTOMER = 365;
 
 /**
  * Who a report is about: one rep's territory, a district, or a MANAGER — every visit he was on with a rep, as the
@@ -404,6 +423,8 @@ export function resolveVisitReportPeriod(input: {
   to: unknown;
   cairoToday: string;
   kind: VisitReportTargetKind;
+  /** One doctor or account was chosen on a rep or a district — the period may then run a year. */
+  customer?: boolean;
 }): VisitReportPeriodResult {
   const from = typeof input.from === "string" ? input.from.trim() : "";
   const to = typeof input.to === "string" ? input.to.trim() : "";
@@ -414,9 +435,10 @@ export function resolveVisitReportPeriod(input: {
   const last = to > input.cairoToday ? input.cairoToday : to;
   if (from > last) return { ok: false, error: "Choose days up to today." };
   const days = dayNumber(last) - dayNumber(from) + 1;
-  const cap = input.kind === "rep" ? VISIT_REPORT_MAX_DAYS_REP : VISIT_REPORT_MAX_DAYS_DISTRICT;
+  const oneCustomer = input.customer === true && input.kind !== "manager";
+  const cap = oneCustomer ? VISIT_REPORT_MAX_DAYS_CUSTOMER : input.kind === "rep" ? VISIT_REPORT_MAX_DAYS_REP : VISIT_REPORT_MAX_DAYS_DISTRICT;
   if (days > cap) {
-    const forWhom = input.kind === "rep" ? "one rep" : input.kind === "manager" ? "a manager" : "a district";
+    const forWhom = oneCustomer ? "one doctor or account" : input.kind === "rep" ? "one rep" : input.kind === "manager" ? "a manager" : "a district";
     return { ok: false, error: `Choose at most ${cap} days for ${forWhom}.` };
   }
   return { ok: true, days, from, to: last };
@@ -486,8 +508,11 @@ export type VisitReportDashboard = { tiles: VisitReportDashboardTile[]; panels: 
 
 export type VisitReportTarget = { kind: VisitReportTargetKind; id: string };
 
+/** The one doctor or account a rep's or a district's report was narrowed to (owner, 2026-11-04). */
+export type VisitReportCustomerChoice = { id: string; name: string; listType: string };
+
 export type VisitReportView = {
-  target: { kind: VisitReportTargetKind; id: string; name: string; reps: string[] };
+  target: { kind: VisitReportTargetKind; id: string; name: string; reps: string[]; customer?: VisitReportCustomerChoice | null };
   period: { from: string; to: string; days: number };
   selected: string[];
   total: number;
@@ -501,6 +526,12 @@ export type VisitReportView = {
 
 export type VisitReportScopeRep = { id: string; label: string; repName: string; lineName: string | null; districtName: string | null };
 export type VisitReportScopeDistrict = { id: string; label: string; lineName: string | null; repCount: number };
+/**
+ * A doctor, account or pharmacy the "Doctor or account" picker offers once a rep or a district is chosen (owner,
+ * 2026-11-04). `id` is the customer; `label` names the list, the speciality and, across a district, the territory.
+ */
+export type VisitReportScopeCustomer = { id: string; label: string; name: string; listType: string };
+
 /** A manager the picker offers: `id` is the person, since a product manager holds no seat and a manager may hold two. */
 export type VisitReportScopeManager = { id: string; label: string; name: string; title: string };
 
