@@ -169,7 +169,7 @@
     "html-to-image": "^1.11.13",
     "imapflow": "^2.1.2",
     "jszip": "^3.10.1",
-    "lucide-react": "^1.24.0",
+    "lucide-react": "^1.62.0",
     "mailparser": "^3.9.26",
     "mammoth": "^1.12.3",
     "next": "16.4.3",
