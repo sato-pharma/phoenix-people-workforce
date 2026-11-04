@@ -2317,7 +2317,9 @@ const hrNavigationSectionSeeds = [
       // papers / OPEN HR FORMS FULL MODULE TO AYA"); she holds employee_documents through hiring_desk.
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
-      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      // Business Cards opens for the HR Operations Specialist too since 2026-11-04 (owner: the Office
+      // Coordinator selects employees and prints cards); canPrintBusinessCards admits her seat.
+      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations", "HR Administration"], excludedRoles: ["Super Admin"] },
       // The Interview Calendar, for HR Operations — the owner made her its admin on 2026-09-21 ("full
       // access and control to it as admin"), so isInterviewCalendarOwner admits her seat. The
       // Recruitment copy is gated on the recruitment grant she does not hold, and she must never be
@@ -2411,8 +2413,8 @@ const hrNavigationSectionSeeds = [
       // sidebar-label-width stopped charging it the reason for the short name went away. The full
       // name measures 153px against this rail's 157px budget, so it fits and the drift is closed.
       { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager CV Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Resourcing"] },
-      // Not the HR Operations Specialist's copies: hers are the People rows above, she is shown no
-      // "Recruitment" heading, and Business Cards was not opened to her (canPrintBusinessCards).
+      // Not the HR Operations Specialist's copies: hers are the People rows above, and she is shown
+      // no "Recruitment" heading (Business Cards included, opened to her 2026-11-04).
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], excludedRoles: ["HR Administration"] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], excludedRoles: ["HR Administration"] },
       { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], excludedRoles: ["HR Administration"] },

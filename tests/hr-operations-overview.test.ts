@@ -179,9 +179,12 @@ function testHerSidebarHoldsTheCalendarsAndTheModules() {
   assert.equal(doors.length, 5, "the five calendar doors");
   for (const door of doors) assert.ok(rail.includes(door), `${door} is a door she can walk through`);
 
-  for (const href of ["/hr/spotlight", "/hr/admin/early-birds", "/hr/business-cards", "/hr/workspace"]) {
+  for (const href of ["/hr/spotlight", "/hr/admin/early-birds", "/hr/workspace"]) {
     assert.ok(!rail.includes(href), `${href} is not on her sidebar`);
   }
+  // Opened to her 2026-11-04 (owner: the Office Coordinator selects employees and prints cards).
+  assert.equal(rail.filter((href) => href === "/hr/business-cards").length, 1, "Business Cards is one row on her sidebar");
+  assert.equal(isPageFencedForRole(SEAT as never, "/hr/business-cards"), false, "and it opens for her: a row must never bounce");
 }
 
 // The owner's "Open it for her" (2026-11-03). The row alone would land her on her own calendar, so the
