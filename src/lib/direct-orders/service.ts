@@ -6338,7 +6338,17 @@ export type DirectOrderHistoryVisibility = {
 async function resolveHistoryVisibility(access: AccessContext): Promise<DirectOrderHistoryVisibility> {
   const lineName = await resolveDirectOrderRequesterLineName(access);
   const products = await listSourceOfSalesProducts();
-  const publishedKeys = readsUnpublishedSalesTools(access) ? null : await loadSalesReleaseKeys();
+  // A failed read withholds every month from the floor up and says so: never a reason the approval
+  // screen fails to open, and never a reason to show a month that may not be published.
+  const publishedKeys = readsUnpublishedSalesTools(access)
+    ? null
+    : await loadSalesReleaseKeys().catch((error: unknown) => {
+        logError("Direct order retail months could not be checked", {
+          labels: { event: "direct_order_retail_months_failed" },
+          error,
+        });
+        return new Set<string>();
+      });
   const lineByCode = new Map<string, string>();
   for (const product of products) {
     const code = String((product as { productCode?: string }).productCode ?? "").trim();
@@ -6386,10 +6396,11 @@ async function loadPharmacyRetailHistory(
   hiddenConfidentialCount: number;
   loadFailed: boolean;
   matchedPairs: number;
+  withheldMonths: number;
 }> {
   const pairs = (pharmacy?.distributorCodes ?? []).filter((pair) => pair.distributorCode && pair.customerCode);
   if (pairs.length === 0) {
-    return { rows: [], unmatchable: true, hiddenConfidentialCount: 0, loadFailed: false, matchedPairs: 0 };
+    return { rows: [], unmatchable: true, hiddenConfidentialCount: 0, loadFailed: false, matchedPairs: 0, withheldMonths: 0 };
   }
 
   try {
@@ -6423,6 +6434,7 @@ async function loadPharmacyRetailHistory(
 
     let hiddenConfidentialCount = 0;
     const hiddenProducts = new Set<string>();
+    const withheldMonths = new Set<string>();
     const byKey = new Map<string, DirectOrderRetailHistoryRow>();
     for (const raw of rowsRaw) {
       const batch = raw.source_of_sales_import_batches as { distributor_code?: string; period?: string } | null;
@@ -6431,9 +6443,12 @@ async function loadPharmacyRetailHistory(
       if (!allowed.has(`${distributorCode.toLowerCase()}|${clientCode}`)) continue;
       const month = String(batch?.period ?? "");
       if (!month) continue;
-      if (!visibility.allowsRetailMonth(month)) continue;
-
       const productCode = String(raw.product_code ?? "");
+      if (!visibility.allowsRetailMonth(month)) {
+        if (visibility.allowsProduct(productCode)) withheldMonths.add(month);
+        continue;
+      }
+
       // Confidentiality + line scoping, server-side. This loader reads the raw distributor invoice
       // feed, so before this filter existed every approver of any line saw every product this
       // pharmacy ever bought — including the restricted codes and the Head Office line.
@@ -6469,7 +6484,14 @@ async function loadPharmacyRetailHistory(
         a.productName.localeCompare(b.productName) ||
         a.distributorName.localeCompare(b.distributorName),
     );
-    return { rows, unmatchable: false, hiddenConfidentialCount, loadFailed: false, matchedPairs: pairs.length };
+    return {
+      rows,
+      unmatchable: false,
+      hiddenConfidentialCount,
+      loadFailed: false,
+      matchedPairs: pairs.length,
+      withheldMonths: withheldMonths.size,
+    };
   } catch (error) {
     // Context only — never a reason the approval screen fails to open. `loadFailed` rides with the
     // empty result so a failed read can never be rendered as "this pharmacy has not bought".
@@ -6477,7 +6499,7 @@ async function loadPharmacyRetailHistory(
       labels: { event: "direct_order_retail_history_failed", pharmacyId: pharmacy?.id ?? "" },
       error,
     });
-    return { rows: [], unmatchable: false, hiddenConfidentialCount: 0, loadFailed: true, matchedPairs: pairs.length };
+    return { rows: [], unmatchable: false, hiddenConfidentialCount: 0, loadFailed: true, matchedPairs: pairs.length, withheldMonths: 0 };
   }
 }
 
@@ -6729,6 +6751,7 @@ export async function getDirectOrderApprovalDetail(
     directLoadFailed: pharmacyHistory.loadFailed,
     /** How many distinct products this viewer is not allowed to see (owner rule: say so, show nothing). */
     hiddenConfidentialCount: retail.hiddenConfidentialCount + pharmacyHistory.hiddenConfidentialCount,
+    retailWithheldMonths: retail.withheldMonths,
     /** How many (distributor, code) pairs the retail match ran against — a partial view must not read as complete. */
     retailMatchedPairs: retail.matchedPairs,
     // Spec D2: the reason an empty retail table is empty. Computed here, server-side, so the

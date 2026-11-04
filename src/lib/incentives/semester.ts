@@ -160,7 +160,7 @@ export function describeIncompleteWindow(window: IncentiveWindow | null): string
   const parts: string[] = [];
   if (window.missing.length > 0) {
     parts.push(
-      `${window.missing.map(monthName).join(", ")} ${window.missing.length === 1 ? "has" : "have"} not been uploaded yet`,
+      `${window.missing.map(monthName).join(", ")} ${window.missing.length === 1 ? "has" : "have"} no published sales yet`,
     );
   }
   if (window.remaining.length > 0) {

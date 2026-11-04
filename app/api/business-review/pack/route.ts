@@ -52,6 +52,7 @@ import {
   getReviewCompany,
   getReviewDataset,
   loadBusinessReview,
+  NoPublishedReviewMonthError,
   loadReviewConcentration,
   REVIEW_LINE_CODES,
 } from "@/lib/business-review/service";
@@ -335,6 +336,9 @@ export async function GET(request: Request) {
       status: 200,
     });
   } catch (error) {
+    if (error instanceof NoPublishedReviewMonthError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     logError("business-review.pack failed", { error });
     return NextResponse.json({ error: "Failed to build the pack" }, { status: 500 });
   }

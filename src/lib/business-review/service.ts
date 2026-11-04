@@ -114,6 +114,17 @@ const bundleReadsInFlight = new Map<string, Promise<string | null>>();
 
 // ───────────────────────────────── the entry point ─────────────────────────────────
 
+/**
+ * No month is published on every line, so a capped viewer has nothing to read. Thrown rather than left
+ * to the window resolver, whose fallback for an empty list is July, published or not.
+ */
+export class NoPublishedReviewMonthError extends Error {
+  constructor() {
+    super("No month has been published on all three lines yet.");
+    this.name = "NoPublishedReviewMonthError";
+  }
+}
+
 export type BusinessReviewResult = {
   review: BusinessReview;
   /** What the resolver did with the requested range, if anything — the page shows this. */
@@ -149,12 +160,15 @@ export async function loadBusinessReview(input?: {
   // READ TOGETHER (2026-10-01, "slow to transfer between page and page"): the month list and the
   // freshness stamp are two independent reads — the stamp does not depend on the window — and
   // neither can throw (each answers [] / null on failure), so one round trip's wait instead of two.
+  // The publications read CAN throw, for a capped viewer only: without it nothing says which months
+  // may be shown, so that reaches the error boundary rather than a guess.
   const [reviewPeriods, stamp, publishedKeys] = await Promise.all([
     availableReviewPeriods(),
     loadAchievementCacheStamp(),
     input?.publishedOnly ? loadSalesReleaseKeys() : null,
   ]);
   const available = publishedKeys ? releasedPeriodsUpToFirstHole(reviewPeriods, publishedKeys) : reviewPeriods;
+  if (publishedKeys && available.length === 0) throw new NoPublishedReviewMonthError();
   const resolution = resolveReviewWindow(input?.from ?? null, input?.to ?? null, available);
   const { window, adjustment } = resolution;
 

@@ -324,17 +324,28 @@ export function runUnpublishedSalesNeverShownTests() {
   pin("src/lib/crm/brick-coverage.ts", "isSalesPeriodReleased(month, resolveTargetLineCode(row.official_line), publishedKeys)", "the board opens on the running month and takes any month in its URL");
   pin("app/(admin)/admin/brick-coverage/page.tsx", "includeUnpublishedSales: readsUnpublishedSalesTools(access)", "only the tools' readers may ask for them");
   pin("src/lib/pharmacy-search/profile.ts", "isSalesPeriodReleasedCompanyWide(period, publishedKeys)", "a pharmacy's monthly history reads the raw roll-up");
-  pin("src/lib/direct-orders/service.ts", "if (!visibility.allowsRetailMonth(month)) continue;", "the retail feed beside an order is raw sales; the order itself is a work record");
+  pin("src/lib/direct-orders/service.ts", "if (!visibility.allowsRetailMonth(month)) {", "the retail feed beside an order is raw sales; the order itself is a work record");
+  pin("src/lib/direct-orders/service.ts", "withheldMonths.add(month)", "a withheld month must be counted, or an empty table says the pharmacy did not buy");
+  pin("src/components/approvals-hub/direct-order-request-detail.tsx", "retailHistory.length === 0 && retailWithheldMonths > 0 ? null", "the no-history sentence is false while a month is withheld");
 
   // Business Review: live for his three, published for everyone else, through both portal doors.
   pin("src/lib/business-review/service.ts", "releasedPeriodsUpToFirstHole(reviewPeriods, publishedKeys)", "the window must be capped, because the bundle is built from the window");
   pin("app/employee-portals/business-review/page.tsx", "publishedOnly: !readsLiveBusinessReview(access)", "the portal page must stop managers at the last published month");
   pin("app/api/business-review/pack/route.ts", "publishedOnly: !readsLiveBusinessReview(access)", "and so must the pack they download");
+  pin("src/lib/business-review/service.ts", "if (publishedKeys && available.length === 0) throw new NoPublishedReviewMonthError();", "with nothing released, the window resolver falls back to July, published or not");
+  pin("app/employee-portals/business-review/page.tsx", "error instanceof NoPublishedReviewMonthError", "the page answers that with an empty state");
+  pin("app/api/business-review/pack/route.ts", "error instanceof NoPublishedReviewMonthError", "and the pack with a refusal");
 
   // Refused outright, including by typed URL.
   before("app/api/sales/monthly-import/batches/route.ts", "readsUnpublishedSalesTools(access)", "listSourceOfSalesUploadBatches()", "the upload list prints totals, and sales:read reaches every role");
   before("app/api/sales/truth-check/route.ts", "readsUnpublishedSalesTools(access)", "loadSalesTruthReport(", "the truth check reads any month, and sales:read reaches every role");
   before("app/api/sales/monthly-closing/premium-export/route.ts", "isSalesPeriodReleased(", "fillClosingEngine(", "a workbook must be refused before it is filled");
+  before("app/api/sales/monthly-closing/premium-export/pdf/route.ts", "isSalesPeriodReleased(", "await renderRepCardPdf(", "the PDF beside the workbook must refuse too");
+  assert.equal(
+    source("src/lib/sales/monthly-closing-publication.ts").split("invalidateAchievementStampedCaches(").length - 1,
+    2,
+    "publishing and withdrawing must both reach the stamped caches, which cannot see a publication",
+  );
   before("app/api/sales/monthly-closing/consolidated-export/route.ts", "isSalesPeriodReleased(", "buildConsolidatedClosingWorkbook({", "every month in the consolidated workbook must be published");
   before("app/api/sales/monthly-closing/consolidated-premium-export/route.ts", "isSalesPeriodReleased(", "buildConsolidatedPremiumClosing({", "and in its premium twin");
   before("app/api/sales/sos-dashboard/email-report/route.ts", "isSalesPeriodReleasedCompanyWide(", "buildAndEmailSosBiReport({ period })", "the by-hand send reads as the system, so nothing further down asks");
