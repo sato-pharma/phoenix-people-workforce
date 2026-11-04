@@ -330,6 +330,8 @@ const nextConfig: NextConfig = {
       // Same reasoning as the signature: the owner's card artwork is read by the server, never served.
       "./assets/business-cards/*.pdf",
       "./assets/business-cards/*.ttf",
+      // The insurer's blank EDI workbook (src/lib/medical-insurance/workbooks.ts), filled server-side.
+      "./assets/medical-insurance/*.xlsx",
       "./node_modules/.pnpm/tesseract.js@*/node_modules/tesseract.js/src/worker-script/**",
       "./node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**",
       "./node_modules/@napi-rs/*/**",

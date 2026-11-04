@@ -13,7 +13,7 @@ import type { MedicalInsuranceAction, MedicalInsuranceActionKind } from "@/lib/m
 import type { MedicalInsuranceView } from "@/lib/medical-insurance/view";
 import { cn } from "@/lib/utils";
 
-import { cellClassName, fileLinkClassName, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
+import { cellClassName, downloadPosted, headerClassName, SaveError, sendJson, textLinkClassName, useSave } from "./medical-insurance-parts";
 
 type Props = { canCreate: boolean; canEdit: boolean; canExport: boolean; view: MedicalInsuranceView };
 
@@ -25,6 +25,8 @@ const FILTERS: Array<{ id: MedicalInsuranceActionKind | "all"; label: string }> 
   { id: "remove", label: "To remove" },
   { id: "review", label: "To check" },
 ];
+const EDI_URL = "/api/medical-insurance/movement-file";
+const toolButtonClassName = "border border-phx-line bg-white px-3 py-2 text-phx-xs font-bold text-phx-ink hover:border-phx-accent disabled:opacity-50";
 
 function timingWords(action: MedicalInsuranceAction): string {
   const day = formatLeftDay(action.effectiveOn);
@@ -32,10 +34,81 @@ function timingWords(action: MedicalInsuranceAction): string {
   return action.kind === "add" ? `Should have started ${day}` : day;
 }
 
+function canTick(action: MedicalInsuranceAction): boolean {
+  return action.kind === "add" || action.kind === "remove";
+}
+
 export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view }: Props) {
   const [filter, setFilter] = React.useState<MedicalInsuranceActionKind | "all">("all");
   const [openKey, setOpenKey] = React.useState<string | null>(null);
+  const [ticked, setTicked] = React.useState<ReadonlySet<string>>(new Set());
+  const [categories, setCategories] = React.useState<Record<string, MedicalInsuranceCategory>>({});
+  const [busy, setBusy] = React.useState<"additions" | "deletions" | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
   const visible = view.actions.filter((action) => filter === "all" || action.kind === filter);
+
+  // Only people still on today's list count as ticked; someone who dropped off since the page loaded does not.
+  const tickedAdds = view.actions.filter((action) => action.kind === "add" && ticked.has(action.key));
+  const tickedRemoves = view.actions.filter((action) => action.kind === "remove" && ticked.has(action.key));
+  const addsWithoutCategory = tickedAdds.filter((action) => !(categories[action.key] ?? action.category ?? action.suggestedCategory));
+  const addCount = view.actions.filter((action) => action.kind === "add").length;
+  const removeCount = view.actions.filter((action) => action.kind === "remove").length;
+
+  function toggle(key: string) {
+    setTicked((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function keysOf(kind: "add" | "remove"): string[] {
+    return view.actions.filter((action) => action.kind === kind).map((action) => action.key);
+  }
+
+  function tickAll(kind: "add" | "remove") {
+    setTicked((current) => new Set([...current, ...keysOf(kind)]));
+  }
+
+  function clearKind(kind: "add" | "remove") {
+    const keys = new Set(keysOf(kind));
+    setTicked((current) => new Set([...current].filter((key) => !keys.has(key))));
+  }
+
+  async function exportFile(kind: "additions" | "deletions") {
+    const chosen = kind === "additions" ? tickedAdds : tickedRemoves;
+    setBusy(kind);
+    setError(null);
+    try {
+      await downloadPosted(
+        EDI_URL,
+        {
+          categories: Object.fromEntries(chosen.filter((action) => categories[action.key]).map((action) => [action.key, categories[action.key]])),
+          keys: chosen.map((action) => action.key),
+          kind,
+        },
+        `MetLife-EDI-${kind}.xlsx`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The file could not be built. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function renderTick(action: MedicalInsuranceAction) {
+    if (!canExport || !canTick(action)) return null;
+    return (
+      <input
+        aria-label={`Tick ${action.name} for the ${action.kind === "add" ? "additions" : "deletions"} file`}
+        checked={ticked.has(action.key)}
+        className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-phx-accent"
+        onChange={() => toggle(action.key)}
+        type="checkbox"
+      />
+    );
+  }
 
   function renderPerson(action: MedicalInsuranceAction) {
     return (
@@ -53,8 +126,30 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   }
 
   function renderCategory(action: MedicalInsuranceAction) {
-    if (action.category) return `Category ${action.category}`;
-    return action.suggestedCategory ? `Category ${action.suggestedCategory}, as the same job holds` : "Category not decided";
+    // A ticked addition carries its category onto the form, so it is chosen right here.
+    if (canExport && action.kind === "add" && ticked.has(action.key)) {
+      const value = categories[action.key] ?? action.category ?? action.suggestedCategory ?? "";
+      return (
+        <label className="mt-2 block max-w-[12rem]">
+          <span className={cn(phxLabelClassName, !value && "text-phx-warn")}>{value ? "Category on the form" : "Choose the category"}</span>
+          <select
+            aria-label={`Category for ${action.name}`}
+            className={phxSelectClassName}
+            onChange={(event) => setCategories((current) => ({ ...current, [action.key]: event.target.value as MedicalInsuranceCategory }))}
+            value={value}
+          >
+            {value ? null : <option value="">Choose</option>}
+            {MEDICAL_INSURANCE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
+      );
+    }
+    if (action.category) return <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">Category {action.category}</p>;
+    return (
+      <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">
+        {action.suggestedCategory ? `Category ${action.suggestedCategory}, as the same job holds` : "Category not decided"}
+      </p>
+    );
   }
 
   function renderOpenButton(action: MedicalInsuranceAction) {
@@ -70,15 +165,7 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
   return (
     <div className="space-y-5">
       <AdminTableShell
-        action={
-          canExport ? (
-            <a className={cn(fileLinkClassName, "gap-2")} download href="/api/medical-insurance/movement-file">
-              <Download className="h-4 w-4" />
-              Additions and deletions form
-            </a>
-          ) : undefined
-        }
-        description="Where the rule and the register disagree. The form is filled from this list and goes to the insurer by your hand. Saving a change here records it on the register."
+        description="Where the rule and the register disagree. Tick who goes on the insurer's EDI file and export it: deletions and additions are separate files, each in the insurer's own workbook. The file goes to the insurer by your hand. Saving a change here records it on the register."
         title="Who should be in, and who should be out"
       >
         <div className="flex flex-wrap gap-2 border-b border-phx-line p-4">
@@ -95,6 +182,39 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
           ))}
         </div>
 
+        {canExport && (addCount > 0 || removeCount > 0) ? (
+          <div className="grid gap-3 border-b border-phx-line p-4 md:grid-cols-2">
+            <EdiPanel
+              busy={busy === "deletions"}
+              count={tickedRemoves.length}
+              disabled={busy !== null}
+              listCount={removeCount}
+              note="An employee's spouse and children come off with them, as the insurer's form says, so they are not listed."
+              onClear={() => clearKind("remove")}
+              onExport={() => void exportFile("deletions")}
+              onTickAll={() => tickAll("remove")}
+              title="Deletions"
+            />
+            <EdiPanel
+              blocked={addsWithoutCategory.length > 0 ? `Choose a category for ${addsWithoutCategory.map((action) => action.name).join(", ")}.` : null}
+              busy={busy === "additions"}
+              count={tickedAdds.length}
+              disabled={busy !== null}
+              listCount={addCount}
+              note="ID number, birth date, hiring date, mobile and email come from each employee's record."
+              onClear={() => clearKind("add")}
+              onExport={() => void exportFile("additions")}
+              onTickAll={() => tickAll("add")}
+              title="Additions"
+            />
+            {error ? (
+              <div className="md:col-span-2">
+                <SaveError error={error} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {visible.length === 0 ? (
           <p className="p-4 text-sm font-semibold text-phx-ink-soft">
             {view.actions.length === 0 ? "The register and the rule agree. Nobody needs adding or removing." : "Nobody in this group."}
@@ -104,13 +224,15 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
             <div className="hidden md:block">
               <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
                 <colgroup>
-                  <col className="w-[30%]" />
-                  <col className="w-[34%]" />
-                  <col className="w-[20%]" />
+                  {canExport ? <col className="w-[6%]" /> : null}
+                  <col className={canExport ? "w-[28%]" : "w-[30%]"} />
+                  <col className={canExport ? "w-[32%]" : "w-[34%]"} />
+                  <col className={canExport ? "w-[18%]" : "w-[20%]"} />
                   <col className="w-[16%]" />
                 </colgroup>
                 <thead>
                   <tr>
+                    {canExport ? <th className={headerClassName}><span className="sr-only">Tick</span></th> : null}
                     <th className={headerClassName}>Person</th>
                     <th className={headerClassName}>What and why</th>
                     <th className={headerClassName}>From</th>
@@ -121,17 +243,18 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
                   {visible.map((action) => (
                     <React.Fragment key={action.key}>
                       <tr {...rowDetailToggleProps(`medical-insurance-${action.key}`, openKey === action.key)}>
+                        {canExport ? <td className={cellClassName}>{renderTick(action)}</td> : null}
                         <td className={cellClassName}>{renderPerson(action)}</td>
                         <td className={cellClassName}>
                           <p className={cn("break-words text-phx-xs font-black", KIND_TONE[action.kind])}>{KIND_WORDS[action.kind]}</p>
                           <p className="mt-0.5 break-words text-phx-xs font-semibold text-phx-ink-soft">{action.reason}</p>
-                          <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">{renderCategory(action)}</p>
+                          {renderCategory(action)}
                         </td>
                         <td className={cellClassName}><span className="break-words text-phx-xs font-bold text-phx-ink">{timingWords(action)}</span></td>
                         <td className={cellClassName}>{renderOpenButton(action)}</td>
                       </tr>
                       {openKey === action.key ? (
-                        <TableRowDetail colSpan={4} id={`medical-insurance-${action.key}`}>
+                        <TableRowDetail colSpan={canExport ? 5 : 4} id={`medical-insurance-${action.key}`}>
                           <ActionForm action={action} key={action.key} onDone={() => setOpenKey(null)} />
                         </TableRowDetail>
                       ) : null}
@@ -144,10 +267,13 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
             <div className="space-y-3 p-4 md:hidden">
               {visible.map((action) => (
                 <div className="space-y-2 border border-phx-line bg-white p-4" key={action.key}>
-                  {renderPerson(action)}
+                  <div className="flex items-start gap-3">
+                    {renderTick(action)}
+                    <div className="min-w-0 flex-1">{renderPerson(action)}</div>
+                  </div>
                   <p className={cn("break-words text-phx-xs font-black", KIND_TONE[action.kind])}>{KIND_WORDS[action.kind]}: {timingWords(action)}</p>
                   <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{action.reason}</p>
-                  <p className="break-words text-phx-xs font-semibold text-phx-ink-faint">{renderCategory(action)}</p>
+                  {renderCategory(action)}
                   {renderOpenButton(action)}
                   {openKey === action.key ? <ActionForm action={action} onDone={() => setOpenKey(null)} /> : null}
                 </div>
@@ -158,6 +284,37 @@ export function MedicalInsuranceActionsTab({ canCreate, canEdit, canExport, view
       </AdminTableShell>
 
       <ExceptionsPanel canEdit={canEdit} view={view} />
+    </div>
+  );
+}
+
+function EdiPanel(props: {
+  blocked?: string | null;
+  busy: boolean;
+  count: number;
+  disabled: boolean;
+  listCount: number;
+  note: string;
+  onClear: () => void;
+  onExport: () => void;
+  onTickAll: () => void;
+  title: string;
+}) {
+  return (
+    <div className="space-y-2 border border-phx-line bg-white p-3">
+      <p className="text-sm font-black text-phx-ink">
+        {props.title}: {props.count} of {props.listCount} ticked
+      </p>
+      <p className="break-words text-phx-xs font-semibold text-phx-ink-soft">{props.note}</p>
+      <div className="flex flex-wrap gap-2">
+        <button className={toolButtonClassName} disabled={props.listCount === 0} onClick={props.onTickAll} type="button">Tick all</button>
+        <button className={toolButtonClassName} disabled={props.count === 0} onClick={props.onClear} type="button">Clear</button>
+        <Button className="h-9 gap-2" disabled={props.disabled || props.count === 0 || Boolean(props.blocked)} onClick={props.onExport}>
+          <Download className="h-4 w-4" />
+          {props.busy ? "Building the file" : `Export ${props.title.toLowerCase()} (${props.count})`}
+        </Button>
+      </div>
+      {props.blocked ? <p className="break-words text-phx-xs font-bold text-phx-warn">{props.blocked}</p> : null}
     </div>
   );
 }

@@ -1,21 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // The module's three workbooks.
 //
-// The invoice and the register wear the house identity. The movement file does NOT: it is the insurer's own
-// form, sent to the insurer, and their system reads it by column. Its layout is theirs, so the columns
-// below are in their order and with their headings, blank ones included.
+// The invoice and the register wear the house identity. The EDI form does NOT: it is the insurer's own
+// workbook, sent to the insurer, and their system reads it by column. It is filled into a blank copy of
+// their file, so its layout stays theirs.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import ExcelJS from "exceljs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
-import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import ExcelJS from "exceljs";
+import JSZip from "jszip";
+
 import { buildHouseCoverSheet, writeHouseTable, type CellValue, type TableColumn } from "@/lib/export/house-table-workbook";
 import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { spreadsheetSafeText } from "@/lib/export/spreadsheet-safe";
 
 import { COMPARISON_STATUS_WORDS, type InvoiceComparison } from "./compare";
 import { MEDICAL_INSURANCE_PRODUCT_LABELS, MEDICAL_INSURANCE_PRODUCTS } from "./cost";
-import type { MedicalInsuranceAction } from "./eligibility";
 import { billedByProduct, type ParsedInvoice } from "./invoice-parser";
 import { MEMBER_TYPE_WORDS, type MedicalInsuranceMemberRow, type MedicalInsurancePolicyView } from "./view";
 
@@ -257,6 +259,43 @@ export async function buildMedicalInsuranceRegisterWorkbook(input: {
   return finish(workbook);
 }
 
+// ── The insurer's EDI form ─────────────────────────────────────────────────────────────────────
+//
+// Filled into a blank copy of the insurer's own workbook (assets/medical-insurance), so every sheet,
+// heading, merge, width and colour is theirs and none of it is redrawn here. The copy was made from the
+// file Sato sent the insurer with every person taken out; it holds no name, ID, phone or email.
+
+export const METLIFE_EDI_TEMPLATE_PATH = join("assets", "medical-insurance", "metlife-edi-template.xlsx");
+
+export type MetLifeEdiKind = "additions" | "deletions";
+
+export type MetLifeEdiAddition = {
+  /** Phoenix's number for the employee. The column is "Cert No. / Emp No.", and a joiner has no certificate yet. */
+  hrId: string | null;
+  fullName: string;
+  nationalId: string | null;
+  hireDate: string | null;
+  category: string;
+  birthDate: string | null;
+  gender: string | null;
+  coverageStartsOn: string;
+  mobileNumber: string | null;
+  email: string | null;
+};
+
+export type MetLifeEdiDeletion = {
+  memberType: "employee" | "spouse" | "child";
+  certificateNumber: string | null;
+  name: string;
+  coverageEndsOn: string;
+};
+
+// Where their rows start, and where the Deletions sheet's own notes begin below the rows.
+const ADDITIONS_FIRST_ROW = 11;
+const DELETIONS_FIRST_ROW = 8;
+const DELETIONS_NOTES_ROW = 18;
+const TYPE_LETTER = { child: "C", employee: "M", spouse: "S" } as const;
+
 function splitName(name: string): [string, string, string] {
   const parts = name.trim().split(/\s+/);
   return [parts[0] ?? "", parts[1] ?? "", parts.slice(2).join(" ")];
@@ -275,106 +314,140 @@ function sexLetter(gender: string | null | undefined): string {
   return "";
 }
 
-function writeFormHeading(sheet: ExcelJS.Worksheet, title: string, policy: MedicalInsurancePolicyView) {
-  sheet.getCell(1, 3).value = title;
-  sheet.getCell(1, 3).font = { bold: true, size: 14 };
-  sheet.getCell(3, 1).value = "COMPANY NAME :";
-  sheet.getCell(3, 3).value = "Sato Pharma";
-  sheet.getCell(4, 1).value = "POLICY NO. :";
-  sheet.getCell(4, 3).value = policy.policyNumber;
+/** Their certificate column holds numbers as numbers and a family line as "80-1". */
+function certificateCell(value: string | null): string | number | null {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
 }
 
 /**
- * The insurer's additions and deletions form, filled from today's list. It goes to the insurer by a
- * person's hand: nothing here sends it, and the register does not change until someone records the change.
- * Marital status and salary stay blank: Phoenix holds no marital status, and the sum insured is flat.
+ * Day, month, year and sex as the insurer's own sheet works them out: formulas on the national ID in
+ * column F, carrying the answer as well so a reader that does not calculate still sees it. Without a
+ * usable ID they are plain values from the employee record.
  */
-export async function buildMedicalInsuranceMovementWorkbook(input: {
-  actions: readonly MedicalInsuranceAction[];
-  employees: readonly EmployeeDirectoryRow[];
-  generatedAtIso: string;
-  members: readonly MedicalInsuranceMemberRow[];
-  policy: MedicalInsurancePolicyView;
-}): Promise<{ buffer: ArrayBuffer; additions: number; deletions: number }> {
-  const workbook = newWorkbook(input.generatedAtIso);
-  const employees = new Map(input.employees.map((employee) => [employee.hrId, employee]));
-
-  const additions = workbook.addWorksheet("Additions");
-  writeFormHeading(additions, "A D D I T I O N S  L I S T", input.policy);
-  const addHeaders = [
-    "Dep. Type (M/S/C)", "Cert No. / Emp No.", "First Name", "Second Name", "Third Name", "ID number", "Hiring Date", "", "Categories",
-    "DOB Day", "DOB Month", "DOB Year", "Sex (M/F)", "Marital Status (M/S)", "Basic Salary (Monthly)", "Curr.",
-    "Effective Day", "Effective Month", "Effective Year", "Type of card (PDF/ E-Card)", "Nationality", "Mobile number", "E-mail",
+function birthCells(row: number, nationalId: string | null, birthDate: string | null, gender: string | null): ExcelJS.CellValue[] {
+  const id = String(nationalId ?? "").trim();
+  const [day, month, year] = dayParts(birthDate);
+  if (!/^[23]\d{13}$/.test(id)) return [day, month, year, sexLetter(gender) || null];
+  const fromId = {
+    day: Number(id.slice(5, 7)),
+    month: Number(id.slice(3, 5)),
+    sex: Number(id[12]) % 2 === 1 ? "M" : "F",
+    year: (id[0] === "2" ? 1900 : 2000) + Number(id.slice(1, 3)),
+  };
+  return [
+    { formula: `IFERROR(VALUE(MID(F${row},6,2)),"")`, result: fromId.day },
+    { formula: `IFERROR(VALUE(MID(F${row},4,2)),"")`, result: fromId.month },
+    { formula: `IFERROR(IF(LEFT(F${row},1)="2",1900,2000)+VALUE(MID(F${row},2,2)),"")`, result: fromId.year },
+    { formula: `IF(F${row}="","",IFERROR(IF(MOD(VALUE(MID(F${row},13,1)),2)=1,"M","F"),""))`, result: fromId.sex },
   ];
-  addHeaders.forEach((header, index) => {
-    const cell = additions.getCell(8, index + 1);
-    cell.value = header;
-    cell.font = { bold: true };
-    cell.alignment = { vertical: "middle", wrapText: true };
-    additions.getColumn(index + 1).width = header.length > 12 ? 18 : 12;
-  });
+}
 
-  const adds = input.actions.filter((action) => action.kind === "add");
-  adds.forEach((action, index) => {
-    const employee = action.hrId ? employees.get(action.hrId) : undefined;
-    const [first, second, third] = splitName(employee?.fullName ?? action.name);
-    const birth = dayParts(employee?.birthDate);
-    const effective = dayParts(action.effectiveOn);
-    const values: Array<string | number | null> = [
-      "M",
-      action.hrId,
-      text(first),
-      text(second),
-      text(third),
-      text(employee?.nationalId),
-      day(employee?.hireDate),
-      null,
-      action.category ?? action.suggestedCategory,
-      ...birth,
-      sexLetter(employee?.gender),
-      null,
-      null,
-      "EGP",
-      ...effective,
-      "E-Card",
-      null,
-      text(employee?.mobileNumber),
-      text(employee?.workEmail),
-    ];
-    values.forEach((value, column) => {
-      if (value !== null && value !== "") additions.getCell(9 + index, column + 1).value = value;
+/** Gives a new row the look of the template's first data row, for a list longer than the template's. */
+function styleLike(sheet: ExcelJS.Worksheet, row: number, model: number, lastColumn: number) {
+  for (let column = 1; column <= lastColumn; column++) {
+    sheet.getCell(row, column).style = { ...sheet.getCell(model, column).style };
+  }
+  sheet.getRow(row).height = sheet.getRow(model).height;
+}
+
+/**
+ * ExcelJS writes its own Normal font (Calibri 11) into the first font slot, the one a blank cell reads, so
+ * every blank cell of the insurer's sheets would change font. This puts the insurer's Arial 10 back in that
+ * slot and moves Calibri to the end for any cell format that really asked for it, as the insurer's file has it.
+ */
+async function restoreInsurersNormalFont(file: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(file);
+  const stylesFile = zip.file("xl/styles.xml");
+  if (!stylesFile) return file;
+  const styles = await stylesFile.async("string");
+  const fonts = /(<fonts count=")(\d+)("[^>]*>)(<font>[\s\S]*?<\/font>)/.exec(styles);
+  const formats = /<cellXfs[^>]*>[\s\S]*?<\/cellXfs>/.exec(styles);
+  if (!fonts || !formats) return file;
+  const movedId = Number(fonts[2]);
+  // The first cell format is the default every blank cell wears: it keeps slot 0, now Arial.
+  const defaultFormatAt = formats[0].indexOf("<xf ");
+  const cellFormats = formats[0].replace(/<xf [^>]*?fontId="0"/g, (xf, at: number) =>
+    at === defaultFormatAt ? xf : xf.replace('fontId="0"', `fontId="${movedId}"`),
+  );
+  const patched = styles
+    .replace(formats[0], cellFormats)
+    .replace(fonts[0], `${fonts[1]}${movedId + 1}${fonts[3]}<font><sz val="10"/><name val="Arial"/><family val="2"/></font>`)
+    .replace("</fonts>", `${fonts[4]}</fonts>`);
+  zip.file("xl/styles.xml", patched);
+  return zip.generateAsync({ compression: "DEFLATE", type: "arraybuffer" });
+}
+
+async function loadTemplate(): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load((await readFile(join(process.cwd(), METLIFE_EDI_TEMPLATE_PATH))) as unknown as ArrayBuffer);
+  return workbook;
+}
+
+/**
+ * The insurer's EDI workbook with the chosen people on it: additions on the Additions sheet, deletions on
+ * the Deletions sheet, every other sheet left as the insurer gave it. It goes to the insurer by a person's
+ * hand: nothing here sends it, and the register does not change until someone records the change.
+ * Marital status, salary and currency stay blank, as they were on the file Sato first sent.
+ */
+export async function buildMetLifeEdiWorkbook(
+  input: { kind: "additions"; rows: readonly MetLifeEdiAddition[] } | { kind: "deletions"; rows: readonly MetLifeEdiDeletion[] },
+): Promise<ArrayBuffer> {
+  const workbook = await loadTemplate();
+
+  if (input.kind === "additions") {
+    const sheet = workbook.getWorksheet("Additions");
+    if (!sheet) throw new Error("The insurer's template has no Additions sheet.");
+    const lastStyled = sheet.rowCount;
+    input.rows.forEach((person, index) => {
+      const row = ADDITIONS_FIRST_ROW + index;
+      if (row > lastStyled) styleLike(sheet, row, ADDITIONS_FIRST_ROW, 23);
+      const [first, second, third] = splitName(person.fullName);
+      const values: ExcelJS.CellValue[] = [
+        "M",
+        text(person.hrId),
+        text(first),
+        text(second),
+        text(third),
+        text(person.nationalId),
+        person.hireDate ? person.hireDate.slice(0, 10) : null,
+        null,
+        person.category,
+        ...birthCells(row, person.nationalId, person.birthDate, person.gender),
+        null,
+        null,
+        null,
+        ...dayParts(person.coverageStartsOn),
+        "E-card",
+        "Egyptian",
+        text(person.mobileNumber),
+        text(person.email),
+      ];
+      values.forEach((value, column) => {
+        if (value !== null && value !== "") sheet.getCell(row, column + 1).value = value;
+      });
     });
-  });
-
-  const deletions = workbook.addWorksheet("Deletions");
-  writeFormHeading(deletions, "D E L E T I O N S  L I S T", input.policy);
-  ["Dep. Type (M/S/C)", "Cert No. / Emp No.", "Insured Name", "Day", "Month", "Year"].forEach((header, index) => {
-    const cell = deletions.getCell(6, index + 1);
-    cell.value = header;
-    cell.font = { bold: true };
-    deletions.getColumn(index + 1).width = index === 2 ? 36 : 14;
-  });
-
-  // A leaver's spouse and children go with them, each on a line of their own as the form asks. Family
-  // already listed in their own right is not listed twice.
-  const typeLetter = { child: "C", employee: "M", spouse: "S" } as const;
-  const listed = new Set(input.actions.map((action) => action.memberId));
-  const lines = input.actions
-    .filter((action) => action.kind === "remove")
-    .flatMap((action) => [
-      { certificate: action.certificateNumber, day: action.effectiveOn, name: action.name, type: typeLetter[action.memberType] },
-      ...input.members
-        .filter((member) => member.principalMemberId === action.memberId && member.open && !listed.has(member.id))
-        .map((member) => ({ certificate: member.certificateNumber, day: action.effectiveOn, name: member.name, type: typeLetter[member.memberType] })),
-    ]);
-  lines.forEach((line, index) => {
-    const values: Array<string | number | null> = [line.type, line.certificate, text(line.name), ...dayParts(line.day)];
-    values.forEach((value, column) => {
-      if (value !== null && value !== "") deletions.getCell(7 + index, column + 1).value = value;
+  } else {
+    const sheet = workbook.getWorksheet("Deletions");
+    if (!sheet) throw new Error("The insurer's template has no Deletions sheet.");
+    // The template has room for ten lines above its notes. A longer list pushes the notes down.
+    const room = DELETIONS_NOTES_ROW - DELETIONS_FIRST_ROW;
+    const extra = input.rows.length - room;
+    if (extra > 0) {
+      sheet.spliceRows(DELETIONS_NOTES_ROW, 0, ...Array.from({ length: extra }, () => []));
+      for (let index = 0; index < extra; index++) styleLike(sheet, DELETIONS_NOTES_ROW + index, DELETIONS_FIRST_ROW, 6);
+    }
+    input.rows.forEach((line, index) => {
+      const row = DELETIONS_FIRST_ROW + index;
+      const values: ExcelJS.CellValue[] = [TYPE_LETTER[line.memberType], certificateCell(line.certificateNumber), text(line.name), ...dayParts(line.coverageEndsOn)];
+      values.forEach((value, column) => {
+        if (value !== null && value !== "") sheet.getCell(row, column + 1).value = value;
+      });
     });
-  });
+  }
 
-  return { additions: adds.length, buffer: await finish(workbook), deletions: lines.length };
+  return restoreInsurersNormalFont(await finish(workbook));
 }
 
 export function medicalInsuranceFileDay(generatedAtIso: string): string {

@@ -40,6 +40,7 @@ import {
   uploadMedicalInsuranceFile,
 } from "./file-storage";
 import { InvoiceUnreadableError, parseMedicalInsuranceInvoice, type ParsedInvoice } from "./invoice-parser";
+import type { MetLifeEdiAddition, MetLifeEdiDeletion } from "./workbooks";
 import type {
   MedicalInsuranceDocumentKind,
   MedicalInsuranceDocumentRow,
@@ -863,18 +864,73 @@ export async function removeMedicalInsuranceDocument(access: AccessContext, docu
   });
 }
 
-// ── What the exports read ───────────────────────────────────────────────────────────────────
+// ── The insurer's EDI form, for the people ticked on the page ───────────────────────────────
 
-export type MedicalInsuranceMovementInput = {
-  asOf: string;
-  policy: MedicalInsurancePolicyView;
-  actions: MedicalInsuranceAction[];
-  employees: EmployeeDirectoryRow[];
-  members: MedicalInsuranceMemberRow[];
-};
+export type MetLifeEdiRequest =
+  | { kind: "additions"; rows: MetLifeEdiAddition[] }
+  | { kind: "deletions"; rows: MetLifeEdiDeletion[] };
 
-export async function getMedicalInsuranceMovementInput(): Promise<MedicalInsuranceMovementInput | null> {
+const EDI_MOST_ROWS = 500;
+
+/**
+ * Turns the people ticked on the page into the insurer's EDI lines. Each one must still be on today's
+ * list, as an addition or a deletion as asked, so a stale page cannot put somebody on the form that the
+ * rule no longer names. A deletion lists the employee alone: the insurer's own form says their spouse and
+ * children go with them.
+ */
+export async function prepareMetLifeEdi(body: Record<string, unknown>): Promise<{ policyId: string; request: MetLifeEdiRequest }> {
+  const kind = body.kind;
+  if (kind !== "additions" && kind !== "deletions") throw new MedicalInsuranceInputError("Choose additions or deletions.");
+  const keys = Array.isArray(body.keys) ? [...new Set(body.keys.filter((key): key is string => typeof key === "string" && key.length > 0))] : [];
+  if (keys.length === 0) throw new MedicalInsuranceInputError(kind === "additions" ? "Tick at least one person to add." : "Tick at least one person to delete.");
+  if (keys.length > EDI_MOST_ROWS) throw new MedicalInsuranceInputError(`One file holds at most ${EDI_MOST_ROWS} people.`);
+  const chosenCategories = body.categories && typeof body.categories === "object" ? (body.categories as Record<string, unknown>) : {};
+
   const view = await getMedicalInsuranceView();
-  if (!view) return null;
-  return { actions: view.actions, asOf: view.asOf, employees: await loadEmployeeRows(), members: view.members, policy: view.policy };
+  if (!view) throw new MedicalInsuranceInputError("No medical insurance policy has been set up yet.");
+  const wanted = kind === "additions" ? "add" : "remove";
+  const byKey = new Map(view.actions.filter((action) => action.kind === wanted).map((action) => [action.key, action]));
+  const chosen = keys.map((key) => byKey.get(key));
+  if (chosen.some((action) => !action)) {
+    throw new MedicalInsuranceInputError(
+      `Someone you ticked is no longer on the list to ${kind === "additions" ? "add" : "remove"}. Refresh the page and tick again.`,
+    );
+  }
+  const actions = chosen as MedicalInsuranceAction[];
+
+  if (kind === "deletions") {
+    return {
+      policyId: view.policy.id,
+      request: {
+        kind,
+        rows: actions.map((action) => ({
+          certificateNumber: action.certificateNumber,
+          coverageEndsOn: action.effectiveOn,
+          memberType: action.memberType,
+          name: action.name,
+        })),
+      },
+    };
+  }
+
+  const employees = new Map((await loadEmployeeRows()).map((employee) => [employee.hrId, employee]));
+  const rows = actions.map((action) => {
+    const picked = chosenCategories[action.key];
+    const category = picked === "A" || picked === "B" || picked === "C" ? picked : (action.category ?? action.suggestedCategory);
+    if (!category) throw new MedicalInsuranceInputError(`Choose a category for ${action.name}.`);
+    const employee = action.hrId ? employees.get(action.hrId) : undefined;
+    return {
+      birthDate: employee?.birthDate ?? null,
+      category,
+      coverageStartsOn: action.effectiveOn,
+      email: employee?.workEmail ?? null,
+      fullName: employee?.fullName ?? action.name,
+      gender: employee?.gender ?? null,
+      hireDate: employee?.hireDate ?? null,
+      hrId: action.hrId,
+      mobileNumber: employee?.mobileNumber ?? null,
+      nationalId: employee?.nationalId ?? null,
+    };
+  });
+  return { policyId: view.policy.id, request: { kind, rows } };
 }

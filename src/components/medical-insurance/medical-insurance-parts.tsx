@@ -29,6 +29,20 @@ export async function sendJson(url: string, method: "DELETE" | "PATCH" | "POST",
   );
 }
 
+/** Posts a JSON body and saves the file that comes back under the name the server gave it. */
+export async function downloadPosted(url: string, body: unknown, fallbackName: string) {
+  const response = await fetch(url, { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" });
+  await readAnswer(response);
+  const named = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1];
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await response.blob());
+  link.download = named ?? fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 export async function sendForm(url: string, form: FormData) {
   await readAnswer(await fetch(url, { body: form, method: "POST" }));
 }
