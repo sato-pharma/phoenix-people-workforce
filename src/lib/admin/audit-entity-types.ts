@@ -185,6 +185,7 @@ const AUDIT_ENTITY_TYPE_PRESENT: Record<AuditEntityType, true> = {
   vacation_request: true,
   vacation_retention_purge: true,
   vacation_weekly_off_policy: true,
+  medical_insurance_category_choice: true,
   medical_insurance_document: true,
   medical_insurance_exception: true,
   medical_insurance_export: true,

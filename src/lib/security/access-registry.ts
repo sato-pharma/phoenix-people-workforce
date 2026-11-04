@@ -707,6 +707,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["PATCH"], pattern: "/api/medical-insurance/members/:id", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/exceptions", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["DELETE"], pattern: "/api/medical-insurance/exceptions/:id", permission: { resource: "medical_insurance", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/categories", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/documents", permission: { resource: "medical_insurance", action: "update" } }),
   sessionApi({ methods: readOnly, pattern: "/api/medical-insurance/documents/:id", permission: { resource: "medical_insurance", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["DELETE"], pattern: "/api/medical-insurance/documents/:id", permission: { resource: "medical_insurance", action: "update" } }),

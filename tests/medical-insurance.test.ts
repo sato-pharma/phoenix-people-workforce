@@ -17,6 +17,7 @@ import {
   type MedicalInsuranceRateCard,
 } from "../src/lib/medical-insurance/cost.ts";
 import {
+  additionCategory,
   buildMedicalInsuranceActions,
   buildMedicalInsurancePlan,
   employeeCoverWindow,
@@ -163,6 +164,13 @@ function testTheListNamesWhoToAddAndWhoToRemove() {
 
   const fine = actionsFor([employee()], [member()]);
   assert.equal(fine.length, 0, "a working employee on the register is nothing to do");
+
+  const [add] = missing;
+  assert.equal(add.decidedCategory, null, "nobody has decided a joiner's category until someone does");
+  assert.equal(additionCategory({ ...add, suggestedCategory: null }), null, "with nothing decided or suggested, the form waits for a decision");
+  assert.equal(additionCategory({ ...add, decidedCategory: "A", suggestedCategory: "C" }), "A", "a decided category beats the suggestion");
+  assert.equal(additionCategory({ ...add, category: "B", decidedCategory: "A" }), "B", "the register's category beats a decision made before they were on it");
+  assert.equal(additionCategory({ ...add, decidedCategory: "A" }, "C"), "C", "a category picked for this file beats them all");
 }
 
 function testAnExceptionBeatsTheRuleEitherWay() {
