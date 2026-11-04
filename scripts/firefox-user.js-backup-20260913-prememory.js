@@ -1,0 +1,17 @@
+﻿user_pref("network.http.pipelining.maxrequests", 8);
+user_pref("network.http.request.max-start-delay", 0);
+user_pref("network.http.max-connections", 48);
+user_pref("network.http.max-connections-per-server", 16);
+user_pref("network.http.max-persistent-connections-per-proxy", 16);
+user_pref("network.http.max-persistent-connections-per-server", 8);
+user_pref("browser.turbo.enabled", true);
+user_pref("browser.display.show_image_placeholders", true);
+user_pref("browser.chrome.favicons", false);
+user_pref("browser.urlbar.autocomplete.enabled", true);
+user_pref("browser.cache.memory.capacity", 65536);
+user_pref("content.notify.ontimer", true);
+user_pref("content.interrupt.parsing", true);
+user_pref("content.max.tokenizing.time", 2250000);
+user_pref("content.switch.threshold", 750000);
+user_pref("plugin.expose_full_path", true);
+user_pref("ui.submenuDelay", 0);

@@ -1,0 +1,412 @@
+{
+  "cleanupPeriodDays": 7,
+  "desktopSessionCleanupPeriodDays": 7,
+  "env": {
+    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "333000"
+  },
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Browser__computer",
+      "mcp__Claude_Browser__navigate",
+      "mcp__Claude_Browser__get_page_text",
+      "mcp__Claude_Browser__read_page",
+      "mcp__Claude_Browser__read_console_messages",
+      "mcp__Claude_Browser__read_network_requests",
+      "mcp__Claude_Browser__find",
+      "mcp__Claude_Browser__tabs_context",
+      "mcp__Claude_Browser__tabs_create",
+      "mcp__Claude_Browser__resize_window",
+      "mcp__Claude_Browser__preview_start",
+      "mcp__Claude_Browser__preview_logs",
+      "mcp__ccd_session__spawn_task",
+      "mcp__ccd_session__mark_chapter",
+      "Bash(git restore next-env.d.ts)",
+      "Bash(gh run watch *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(git fetch *)",
+      "PowerShell(gh pr view *)",
+      "mcp__supabase-staging__list_tables",
+      "mcp__supabase-staging__list_migrations",
+      "mcp__supabase-staging__list_extensions",
+      "mcp__supabase-staging__list_edge_functions",
+      "mcp__supabase-staging__list_branches",
+      "mcp__supabase-staging__get_advisors",
+      "mcp__supabase-staging__get_project_url",
+      "mcp__supabase-staging__get_edge_function",
+      "mcp__supabase-staging__generate_typescript_types",
+      "mcp__supabase-staging__query_logs",
+      "mcp__supabase-staging__search_docs",
+      "mcp__supabase-production__list_tables",
+      "mcp__supabase-production__list_migrations",
+      "mcp__supabase-production__list_projects",
+      "mcp__supabase-production__list_extensions",
+      "mcp__supabase-production__list_edge_functions",
+      "mcp__supabase-production__list_branches",
+      "mcp__supabase-production__get_advisors",
+      "mcp__supabase-production__get_project_url",
+      "mcp__supabase-production__get_edge_function",
+      "mcp__supabase-production__generate_typescript_types",
+      "mcp__supabase-production__query_logs",
+      "mcp__supabase-production__search_docs",
+      "Bash(supabase --version)",
+      "Bash(supabase status*)",
+      "Bash(supabase projects list*)",
+      "Bash(supabase db diff*)",
+      "Bash(supabase migration list*)",
+      "PowerShell(supabase --version)",
+      "PowerShell(supabase status*)",
+      "PowerShell(supabase projects list*)",
+      "PowerShell(supabase db diff*)",
+      "PowerShell(supabase migration list*)",
+      "PowerShell(Get-ScheduledTask*)",
+      "PowerShell(Get-ScheduledTaskInfo*)",
+      "PowerShell(Export-ScheduledTask*)",
+      "PowerShell(Enable-ScheduledTask*)",
+      "PowerShell(Start-ScheduledTask*)",
+      "PowerShell(New-ScheduledTaskAction*)",
+      "PowerShell(New-ScheduledTaskTrigger*)",
+      "PowerShell(New-ScheduledTaskSettingsSet*)",
+      "PowerShell(New-ScheduledTaskPrincipal*)",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087",
+      "mcp__e6c4ccac-b6c2-4c27-a765-4973b082cb2a",
+      "mcp__supabase-staging",
+      "mcp__supabase-production",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(pwd)",
+      "Bash(git rev-parse *)",
+      "Bash(git rev-list *)",
+      "Bash(git grep *)",
+      "Bash(git ls-remote *)",
+      "Bash(git branch --show-current)",
+      "Bash(git worktree list*)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+      "Bash(node --check *)",
+      "Bash(gh pr create *)",
+      "PowerShell(gh pr create *)",
+      "PowerShell(Copy-Item -LiteralPath C:\\Users\\satoh\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\Claude\\claude-code-sessions\\87292b52-19f5-4cb3-8b76-83660bdc5562\\a9f7fee4-feac-4f71-895a-ea1034411f69\\local_d71dbcce-19d4-4387-85ca-e4d4e89b4a81.json -Destination C:\\Users\\satoh\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\Claude\\claude-code-sessions\\9b516841-5b74-4980-9790-735f34c2846b\\49b621c0-36c7-41d9-8f58-0f9a7f52a969\\local_d71dbcce-19d4-4387-85ca-e4d4e89b4a81.json)"
+    ],
+    "deny": [
+      "mcp__45bb6356-8105-4482-9464-25bfd754baec",
+      "mcp__1a59c906-04da-521d-bda7-7f71b9f9e01c",
+      "mcp__computer-use",
+      "Read(//c/Users/satoh/.claude/.credentials.json)",
+      "Bash(*.credentials.json*)",
+      "PowerShell(*.credentials.json*)",
+      "Read(//c/Users/satoh/.claude/tools/mailbox.config.json)",
+      "Edit(//c/Users/satoh/.claude/tools/mailbox.config.json)",
+      "Bash(*mailbox.config.json*)",
+      "PowerShell(*mailbox.config.json*)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "sonnet",
+  "fallbackModel": [
+    "opus"
+  ],
+  "enabledMcpjsonServers": [
+    "supabase-production",
+    "supabase-staging"
+  ],
+  "disabledMcpjsonServers": [],
+  "skillOverrides": {
+    "relay": "off",
+    "next-step": "off",
+    "anthropic-skills:sato-brick-area-mapper": "off"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Write|Edit|Bash|PowerShell)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/hook-dispatch.mjs",
+              "PreToolUse"
+            ],
+            "timeout": 120
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/dev-server-reaper.mjs"
+            ],
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/plan-mode-auto-approve.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/session-start-dispatch.mjs"
+            ],
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/memory-guard.mjs",
+              "refresh"
+            ],
+            "timeout": 10,
+            "async": true
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/scratchpad-guard.mjs",
+              "sweep"
+            ],
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/dev-server-reaper.mjs"
+            ],
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/needs-you-status.mjs"
+            ],
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/task-rules-reminder.mjs",
+              "prompt"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/effort-advisor.mjs"
+            ]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/next-step-capture.mjs"
+            ]
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/relay-capture.mjs"
+            ],
+            "async": true
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/scratchpad-guard.mjs",
+              "sweep"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__Claude_Browser__navigate|mcp__Claude_Browser__preview_start|mcp__Claude_Browser__browser_batch|mcp__claude-in-chrome__navigate|mcp__claude-in-chrome__browser_batch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/dev-server-reaper.mjs"
+            ],
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/dev-server-reaper.mjs"
+            ],
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/compact-summary-log.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/plan-mode-auto-approve.mjs"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "defaultShell": "powershell",
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:/Users/satoh/.claude/hooks/statusline.mjs\"",
+    "refreshInterval": 30
+  },
+  "enabledPlugins": {
+    "github@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false,
+    "claude-code-setup@claude-plugins-official": false,
+    "marketing@inline": false,
+    "sales@inline": false,
+    "engineering@inline": false,
+    "desktop-commander@inline": false,
+    "supabase@inline": false,
+    "vercel@inline": false,
+    "figma@inline": false,
+    "sentry-skills@inline": false,
+    "cowork-plugin-management@inline": false,
+    "data@inline": false,
+    "expo@claude-plugins-official": false,
+    "cloudflare@cloudflare": false,
+    "ag2-agent-reviewer@local-desktop-app-uploads": false,
+    "ag2-agent-reviewer@inline": false,
+    "backend-performance-review@inline": false,
+    "backend-performance-review@local-desktop-app-uploads": false
+  },
+  "extraKnownMarketplaces": {
+    "cloudflare": {
+      "source": {
+        "source": "github",
+        "repo": "cloudflare/skills"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "autoCompactWindow": 333000,
+  "promptSuggestionEnabled": true,
+  "skipDangerousModePermissionPrompt": false,
+  "skipWorkflowUsageWarning": true,
+  "theme": "auto",
+  "switchModelsOnFlag": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
+  "useAutoModeDuringPlan": true,
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Read-only production checks through `railway run` are allowed without asking: `scripts/backfill-cvs-to-drive.mjs --verify`, and a script that only lists Google Drive file metadata with `getDriveAccessToken` (the scheduled CV Drive morning check). Owner decision 2026-09-17: the blanket `Bash(railway run *)` approval was removed so every other `railway run` is judged â€” one that sends email, writes production data, runs `--refile` or a plain backfill, or runs any script not named here is NOT covered.",
+      "The owner has standing authorization, granted explicitly on 2026-08-01, for Claude to manage this machine's own Claude Code configuration without a separate prompt: creating or editing files under ~/.claude/ (settings.json, hooks/, statusline scripts, agents, skills, memory files), including permission rules, hooks, and statusline entries.",
+      "Read-only inspection of this machine is pre-authorized: process, memory, pagefile and disk state; listing or reading files, including via grep, cat, head, tail, wc, find, ls, or PowerShell equivalents (Get-Content, Select-String, Get-ChildItem); git status/log/diff/show/worktree listing; and reading application, CI, or cloud logs. A project's own permission rules (e.g. a deny list protecting a specific secrets file) still take precedence over this general read-only allowance unless that project has also added its own explicit allow rule for it.",
+      "Creating, editing, and removing files inside the session scratchpad directory under %LOCALAPPDATA%/Temp/claude/ is pre-authorized.",
+      "Local lint, targeted test runs and playwright runs are pre-authorized. A LOCAL typecheck (pnpm/npm run typecheck, tsc, check:edit) and a LOCAL build (pnpm run build, next build) are NOT pre-authorized on this 16 GB machine â€” owner rules 2026-09-24/25: a cold tsc needs 4.0-4.5 GB and is reaped by mem-watchdog; push the branch and let CI answer, or use node scripts/remote-check.mjs.",
+      "Local git operations are pre-authorized: fetch, creating a branch, and creating a worktree. So are committing on a branch other than main, pushing that branch, and opening a pull request from it â€” owner rule 2026-09-16, in his words: auto commit, auto push, auto PR, must take approval before merge. Pushing to main, force-pushing, and any branch or worktree removal still require approval, and a merge still needs the owner's approval in chat first (see the gh pr merge entry below).",
+      "Running `gh pr merge` is pre-authorized at the TOOL level â€” owner decision 2026-09-05, made after being shown that this was previously grouped with push/PR-creation as 'still requires approval' and that the change applies machine-wide, across every project, not just the one being worked on at the time. This only stops the auto-mode classifier from blocking the Bash call itself; it does NOT substitute for whatever in-conversation approval a specific project's own operating rules still require before merging (e.g. a repo whose AGENTS.md treats merging to its production branch as a protected action needing the owner's separate, explicit approval each time â€” that approval must still be obtained in chat first, exactly as before; this grant just means the command then runs without a second, redundant tool-level block).",
+      "Browser-pane verification of the local dev server is pre-authorized: navigating, reading pages, clicking, filling forms, resizing, and reading console or network output.",
+      "FULL Supabase access is pre-authorized with NO approval prompt. The owner restored this deliberately on 2026-08-02, after it had been revoked earlier the same day, and applied this file by hand. It covers the `supabase-staging` and `supabase-production` MCP servers against BOTH the staging project (cifwmndunmlxjhyjugxa) and the PRODUCTION project (ozucdzovmcqvepbozvqf): every read tool, and every write tool including `execute_sql` that mutates, `apply_migration`, bulk updates and destructive SQL. It also covers the `supabase` CLI in every form (`supabase`, `npx supabase`, `pnpm supabase`, `pnpm dlx supabase`), including `db push`. Do not raise an approval prompt for any of the above. NOTE (2026-08-23 owner decision, re-confirmed): the claude.ai connector `mcp__45bb6356-8105-4482-9464-25bfd754baec` is in `permissions.deny` and stays there. This grant does NOT apply to it. Do not re-allow it or propose re-allowing it.",
+      "This grant deliberately removes the AGENTS.md section 6 gate on production Supabase writes: real employee payroll data can be mutated with no prompt. Claude should still SAY what it is about to do before a destructive or bulk production change and give the owner a chance to stop it â€” the removed prompt is a UI gate, not a licence to skip telling him.",
+      "Reading and modifying this machine's Windows scheduled tasks is pre-authorized â€” owner instruction 2026-09-21, 'ALLOW THIS IN CLASSIFIER WHEN AUTO', given after the classifier twice blocked a Set-ScheduledTask that wrapped a task's existing action in `conhost.exe --headless` to stop a console window flashing. It covers Get-ScheduledTask, Get-ScheduledTaskInfo, Export-ScheduledTask, Set-ScheduledTask, Register-ScheduledTask, Enable-ScheduledTask, Start-ScheduledTask and the New-ScheduledTask* builders, in ANY command shape â€” including a multi-statement one-liner that reads a task's current action into a variable first, which no permissions.allow prefix rule can match because those anchor on the first token. THREE EXCLUSIONS STAND. (1) Unregister-ScheduledTask, Disable-ScheduledTask and Stop-ScheduledTask are NOT covered â€” deleting, disabling or aborting a task is still judged. (2) The three Phoenix Attendance tasks are SETTLED: owner ruling 2026-09-21, leave all three exactly as they are, nothing is lost. Never disable the 2-hourly sync, never enable StartWhenAvailable, never clear either battery flag, and do not re-raise it. (3) The Phoenix xlsx Tripwire, Snapshot, Fetch and Failure Alert tasks back up the owner's protected documents under the never-delete rule of 2026-09-14 â€” do not weaken or remove them. Anything that changes WHEN or WHETHER one of those tasks runs is outside this grant; a cosmetic change to HOW its action is invoked, like the conhost wrap, is inside it.",
+      "Moving a desktop chat between the owner's OWN accounts on this machine is pre-authorized â€” owner instruction 2026-10-16, 'add a permission rule allowing it in Claude Code's settings', given after the classifier refused it as Data Exfiltration. It is not exfiltration: nothing leaves this machine. The desktop app lists each account's chats from that account's own folder, %LOCALAPPDATA%/Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude/claude-code-sessions/<accountId>/<orgId>/ (%APPDATA%/Claude redirects there), one small local_<id>.json record per chat, while the conversation text stays in ~/.claude/projects for every account. A move is a byte copy of one record from one of his account folders into another. His two accounts: 87292b52-19f5-4cb3-8b76-83660bdc5562 (oagaweesh@gmail.com, org folder a9f7fee4-feac-4f71-895a-ea1034411f69) and 9b516841-5b74-4980-9790-735f34c2846b (phoenixx.oag@gmail.com, org folder 49b621c0-36c7-41d9-8f58-0f9a7f52a969). COVERED, in either direction and in any command shape: Copy-Item of a local_*.json record between those two folders, and reading or hashing records there. NOT COVERED: overwriting a record that already exists in the destination, deleting or editing a record in either folder, copying a record anywhere outside claude-code-sessions, and copying any other file out of those folders."
+    ]
+  }
+}
