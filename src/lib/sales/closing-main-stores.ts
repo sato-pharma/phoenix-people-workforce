@@ -199,7 +199,8 @@ export function applyCreditedAreaView<T extends ShareableRow & StoreSplitRow>(
       regionName: place?.regionName ?? clean.regionName ?? "",
     });
   }
-  return creditEpdaSpread(out, rows, { areaLabelOf: input.areaLabelOf, line, period });
+  // The weights are the rows after the city split (`out`), exactly as the closing's (rule 2).
+  return creditEpdaSpread(out, out, { areaLabelOf: input.areaLabelOf, line, period });
 }
 
 /**

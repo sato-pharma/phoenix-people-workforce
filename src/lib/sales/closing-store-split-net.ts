@@ -41,7 +41,12 @@ import {
   isBulkAllocationLine,
   isEpdaContributionActive,
 } from "@/lib/sales/bulk-allocation-channel";
-import { buildBulkAllocation, epdaUnitsLanded, mergeBulkAllocationIntoSplit } from "@/lib/sales/closing-bulk-allocation";
+import {
+  buildBulkAllocation,
+  bulkAllocationRows,
+  epdaUnitsLanded,
+  mergeBulkAllocationIntoSplit,
+} from "@/lib/sales/closing-bulk-allocation";
 import { buildOfficeRespread, mergeOfficeRespreadIntoSplit } from "@/lib/sales/closing-office-respread";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { isOfficeRespreadPair } from "@/lib/sales/office-distributor";
@@ -145,15 +150,15 @@ const loadClosingStoreSplitUncached = async (
   // rulings from September on, the six words alone before that. Passed explicitly here because this
   // loader is the ONE place both the screen and the export read, so neither can use a different
   // rule from the other, and neither can restate a month the owner froze.
-  const { exemptStoreValueByBrick, movements } = cityApplies
-    ? splitStoreSalesAcrossCityAreas(details.rows, period, regions)
-    : { exemptStoreValueByBrick: new Map<string, number>(), movements: [] as StoreSplitAreaMovement[] };
+  const cityPass = cityApplies ? splitStoreSalesAcrossCityAreas(details.rows, period, regions) : null;
+  const { exemptStoreValueByBrick, movements } = cityPass
+    ?? { exemptStoreValueByBrick: new Map<string, number>(), movements: [] as StoreSplitAreaMovement[] };
   // THE EPDA-BULK ALLOCATION RIDES THE SAME NET (owner, 2026-10-09, from the September closing).
   // Folded in here, in the one loader both the screen and the export read, for the same reason the
   // city split is: two surfaces deriving one redistribution separately is the defect this module was
   // written to end. The two nets are added — both are zero-sum per product, so their sum is — and
   // the bulk rows are already refused by `isSplitEligible`, so nothing moves twice.
-  const bulk = buildBulkAllocation(details.rows, period, line);
+  const bulk = buildBulkAllocation(bulkAllocationRows(details.rows, cityPass?.rows, period), period, line);
   const withBulk = mergeBulkAllocationIntoSplit(
     { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) },
     bulk,

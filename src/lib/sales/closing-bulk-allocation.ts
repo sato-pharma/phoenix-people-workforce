@@ -164,6 +164,23 @@ function buildEpdaContribution(
   );
 }
 
+/**
+ * The rows the bulk allocation is handed. 🔴 FROM OCTOBER 2026 (rule 2) THE WEIGHTS ARE EACH REP'S
+ * RETAIL AS HIS CLOSING SHOWS IT, AFTER THE CITY RULE (owner, 2026-11-04, asked which retail: "As
+ * each rep's closing shows"), so the city split's output rows go in: a wholesaler's sales already
+ * shared across its city's areas weigh where the closing credits them, not where the invoice was
+ * booked. The EPDA rows themselves pass through the city split untouched (`isBulkAllocatedRow`), so
+ * what moves is the same either way. September and earlier keep the invoiced rows they were
+ * published with, and a month the city rule does not cover has no split rows to give.
+ */
+export function bulkAllocationRows<T>(
+  rows: readonly T[],
+  citySplitRows: readonly T[] | null | undefined,
+  period: string | null | undefined,
+): readonly T[] {
+  return isEpdaContributionActive(period) && citySplitRows ? citySplitRows : rows;
+}
+
 /** A row rule 2 reads at all: counted, not direct, not confidential, one of its products on its lines. */
 function isEpdaContributionCandidate(row: BulkAllocationRow, period: string | null | undefined): boolean {
   if (row.isDirect) return false;

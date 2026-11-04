@@ -29,7 +29,7 @@ import {
   isBulkAllocationActive,
   isBulkAllocationLine,
 } from "@/lib/sales/bulk-allocation-channel";
-import { buildBulkAllocation } from "@/lib/sales/closing-bulk-allocation";
+import { buildBulkAllocation, bulkAllocationRows } from "@/lib/sales/closing-bulk-allocation";
 import { buildOfficeRespread } from "@/lib/sales/closing-office-respread";
 import { loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { isOfficeRespreadActive, isOfficeRespreadPair } from "@/lib/sales/office-distributor";
@@ -70,7 +70,7 @@ export type StoreSplitNetPayloadRow = {
 export type AttributionSplitRow = StoreSplitRow & { effectiveUnits: number };
 
 /** As much of one city-split pass as the payload below reads. */
-type CitySplitPass = { movements: readonly StoreSplitAreaMovement[]; splitRowCount: number };
+type CitySplitPass = { movements: readonly StoreSplitAreaMovement[]; splitRowCount: number; rows?: readonly unknown[] };
 
 /** Rounding floor. Below this a cell is noise from float arithmetic, not a movement. */
 const EPSILON = 1e-9;
@@ -164,7 +164,12 @@ export function buildStoreSplitNetPayload(
   // calls it rather than re-deriving a share: `buildBulkAllocation` reconciles each measure onto
   // exactly the total that left, so every cell it adds still sums to zero per product and
   // phx_write_monthly_store_split_net's own re-check holds.
-  const bulk = buildBulkAllocation(rows, period, officialLine);
+  // From October the weights are the rows AFTER the city split, exactly as the closing's (rule 2).
+  const bulk = buildBulkAllocation(
+    bulkAllocationRows(rows, cityApplies ? (qtyPass.rows as typeof rows | undefined) : null, period),
+    period,
+    officialLine,
+  );
   accumulate(byCell, officialLine, bulk.movements, "net_qty");
   accumulate(byCell, officialLine, bulk.effectiveMovements, "net_effective_units");
 

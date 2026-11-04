@@ -11,6 +11,7 @@ import {
 } from "../src/lib/sales/bulk-allocation-channel.ts";
 import {
   buildBulkAllocation,
+  bulkAllocationRows,
   epdaUnitsLanded,
   mergeBulkAllocationIntoSplit,
   type BulkAllocationRow,
@@ -584,5 +585,25 @@ export function runClosingBulkAllocationTests() {
       september.some((row) => row.areaCode === "D21" && row.distributorCode === "EP-PHS" && row.qty === 100),
       "September never spread the pharmacy book, and its rows stay as invoiced",
     );
+  }
+
+  // 13. THE WEIGHTS ARE EACH REP'S RETAIL AS HIS CLOSING SHOWS IT, AFTER THE CITY RULE (owner,
+  //     2026-11-04: "As each rep's closing shows"). A wholesaler in a multi-area city weighs on every
+  //     area the city rule shares it to, never only the area its invoice was booked on.
+  {
+    const rows = [
+      baseRow({ areaCode: "D12", clientCode: "W-9", clientName: "مخزن الحجاز فارما", effectiveUnits: 120, productCode: "IV001", qty: 120, salesValue: 37_800 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 100, productCode: "IV001", qty: 100, salesValue: 3_000 }),
+    ];
+    const city = splitStoreSalesAcrossCityAreas(rows, "2026-10");
+    const cityAreas = [...new Set(city.rows.filter((row) => row.distributorCode === "PS").map((row) => row.areaCode))].sort();
+    assert.ok(cityAreas.length > 1, "fixture check: the wholesaler is shared across its city");
+    const landedAreas = (allocation: ReturnType<typeof buildBulkAllocation>) =>
+      allocation.movements.filter((leg) => leg.inQty > 0).map((leg) => leg.areaCode).sort();
+    const october = buildBulkAllocation(bulkAllocationRows(rows, city.rows, "2026-10"), "2026-10", "Pedia");
+    assert.deepEqual(landedAreas(october), cityAreas, "the EPDA book lands where the closing credits the retail");
+    assert.equal(october.movements.reduce((sum, leg) => sum + leg.inQty, 0), 100, "and all of it lands");
+    assert.deepEqual(bulkAllocationRows(rows, city.rows, "2026-09"), rows, "September keeps the invoiced rows it was published with");
+    assert.deepEqual(bulkAllocationRows(rows, null, "2026-10"), rows, "a month with no city split has only the invoiced rows");
   }
 }

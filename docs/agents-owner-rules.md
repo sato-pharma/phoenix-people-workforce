@@ -3246,7 +3246,7 @@ His answers the same day, as multiple choice: the products are **the three Sato 
 ### The rule
 
 - From the October 2026 closing on, EPDA-BULK (`EP-BK`) and EPDA-Pharmacies (`EP-PHS`) rows of Ivyronc `IV001` (Pedia), Royafloxacin `RO001` and Saginko `SA001` (Anti Infective) leave their invoiced areas.
-- Each product comes back by each area's share of that product's RETAIL units: every other distributor's included, non-confidential rows, the main EPDA book (`EP`) included, never a direct order. Direct is then added on top, as always.
+- Each product comes back by each area's share of that product's RETAIL units: every other distributor's included, non-confidential rows, the main EPDA book (`EP`) included, never a direct order, and counted as each rep's closing shows it: after the city rule has shared each wholesaler across its city's areas (his answer the same afternoon, asked which retail: "As each rep's closing shows"; `bulkAllocationRows`, pinned by case 13). Direct is then added on top, as always.
 - Whole units per area. The rows are already reduced by rule 1 (above), so the spread moves reduced units and never deducts twice.
 - A product no retail distributor sold that month keeps its invoiced areas.
 - September keeps the rule it was published with (EPDA-BULK Ivyronc only, by Pedia value).
