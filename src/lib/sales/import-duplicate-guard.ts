@@ -68,6 +68,12 @@ export type DuplicateUploadCandidate = {
    * Absent, the stored figure is compared as it always was.
    */
   totalValueAt?: (period: string | null) => number;
+  /**
+   * What this file's quantity WOULD have been, stored under another month. EPDA's bonus deduction
+   * starts at 2026-10, so a September file loaded again as October stores fewer units than the same
+   * file did in September. Absent, the stored quantity is compared as it always was.
+   */
+  totalQtyAt?: (period: string | null) => number;
 };
 
 /** One row of the file being saved, as totalValueAtPeriod re-prices it. */
@@ -158,8 +164,9 @@ export function pickDuplicateUploadClash(
     if (Number(row.total_rows) !== candidate.totalRows) return false;
     // On the stored batch's own price basis — see DuplicateUploadCandidate.totalValueAt.
     const candidateValue = candidate.totalValueAt ? candidate.totalValueAt(rowPeriod) : candidate.totalValue;
+    const candidateQty = candidate.totalQtyAt ? candidate.totalQtyAt(rowPeriod) : candidate.totalQty;
     return (
-      Math.abs(Number(row.total_qty) - candidate.totalQty) < QTY_TOLERANCE &&
+      Math.abs(Number(row.total_qty) - candidateQty) < QTY_TOLERANCE &&
       Math.abs(Number(row.total_value) - candidateValue) < VALUE_TOLERANCE
     );
   });
