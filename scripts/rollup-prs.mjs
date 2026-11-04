@@ -54,9 +54,10 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { gh, git } from './lib/rollup-exec.mjs';
-import { GITHUB_OWNER, REPO, readProtectionContexts } from './required-check-names.mjs';
+import { declaredRequiredChecks, GITHUB_OWNER, REPO, readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMemberHeads, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { staleRollupMembers } from './rollup-member-guard.mjs';
@@ -304,7 +305,17 @@ if (fixturePath) {
   else protectionNote = 'fixture mode with no PHX_ROLLUP_REQUIRED — judging on every check';
 } else {
   const live = readProtectionContexts();
-  if (live.skipped) protectionNote = `${live.skipped} — judging on EVERY failed check, not just the required ones`;
+  // 🔴 On the free plan (2026-11-04) protection answers 403 on every read, which left this confirming
+  // nothing green at all. AGENTS.md §2's declaration is the ONE other statement of the required names
+  // — the bullet `tests/required-check-names.test.ts` holds against ci.yml — so it answers instead,
+  // and the note says it did. Still never a list typed into this file.
+  const declared = live.skipped
+    ? declaredRequiredChecks(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'AGENTS.md'), 'utf8'))
+    : null;
+  if (live.skipped && Array.isArray(declared?.names) && declared.names.length > 0) {
+    requiredContexts = new Set(declared.names);
+    protectionNote = `${live.skipped} — judging on AGENTS.md §2's declared required checks (${declared.names.join(', ')})`;
+  } else if (live.skipped) protectionNote = `${live.skipped} — judging on EVERY failed check, not just the required ones`;
   // An EMPTY contexts array is a SUCCESSFUL read that names nothing, which is what a rule moved to a
   // ruleset looks like (the classic array is deprecated). Kept as an empty Set it would make every entry
   // fail `required.has(name)` and every PR read green at once, on a 200. It is an unreadable gate in
@@ -553,7 +564,7 @@ if (asJson) {
   console.log(`[rollup] ${open.length} open PR(s); "small" is <= ${maxFiles} changed files`);
   // Say WHICH checks the red verdicts were judged against, so a reader never has to assume the list.
   console.log(requiredContexts
-    ? `[rollup] branch protection requires ${requiredContexts.size}: ${[...requiredContexts].join(', ')} — a red check outside that list does not disqualify anything`
+    ? `[rollup] ${protectionNote ? `required checks, from AGENTS.md because ${protectionNote.split(' — ')[0]}` : 'branch protection requires'} ${requiredContexts.size}: ${[...requiredContexts].join(', ')} — a red check outside that list does not disqualify anything`
     : `[rollup] could not read the required list (${protectionNote})`);
   console.log('');
   const label = { rollable: 'ROLL UP  ', carried: 'CARRIED  ', 'own-merge': 'own merge', separate: 'SEPARATE ', superseded: 'SUPERSEDED', skip: 'skip     ', red: 'RED CHECK' };

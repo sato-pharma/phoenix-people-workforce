@@ -63,6 +63,11 @@
 //       `tasks/<id>.output` on 9, 10 and 15 Oct 2026 and left 12.5 GB, 5.4 GB and 2.4 GB on C:.
 //       `PYTHON_BASIC_REPL=1` in the command is accepted (176 bytes, then it exits);
 //       PHX_PYTHON_REPL_OK=1 stands the clause down.
+//   C21 a `gh pr merge` of a PR whose checks are red, still running or not reported on its head
+//       commit — any repository. GitHub stopped refusing that on 2026-11-04 (personal account, free
+//       plan: protection answers 403 on a private repo). Names from live protection, else AGENTS.md
+//       §2's declaration; fails CLOSED. PHX_RED_MERGE_OK=1 stands it down, on the owner's words only.
+//       `~/.claude/hooks/merge-checks-guard.mjs` carries it to sessions in every other folder.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -91,7 +96,7 @@ import {
   SECRET_SCAN_TIMEOUT_MS,
   withKnownSubstitutions,
 } from './lib/secret-scan.mjs';
-import { REPO as PHOENIX_REPO } from '../../scripts/required-check-names.mjs';
+import { declaredRequiredChecks, REPO as PHOENIX_REPO } from '../../scripts/required-check-names.mjs';
 
 function deny(reason) {
   process.stdout.write(
@@ -2097,6 +2102,126 @@ try {
   };
 
   const mergeText = withoutHeredocBodies(cmd);
+
+  // C21 — a merge of a PR whose checks are RED, STILL RUNNING or NOT REPORTED on its head commit is
+  // refused (2026-11-04, the owner's "make all the CI safe and fast in all repos, all sessions").
+  //
+  // 🔴 GITHUB NO LONGER REFUSES THAT MERGE FOR US. The repository moved to a personal account on the
+  // free plan, where a private repository's `branches/main/protection` answers 403 — the required
+  // checks are not enforced at merge, so `gh pr merge` goes through on a red PR. The release gate
+  // still holds production on a red `main`, but it holds every LATER merge behind it too, and says
+  // nothing (docs/deployment.md, "The release gate"). Nothing else here refused it: C10 asks about
+  // size and C13 about roll-ups, and both stand down on PHX_MERGE_OK.
+  //
+  // It runs BEFORE them, and its own stand-down is a different word on purpose: PHX_MERGE_OK says
+  // "this small PR may ship alone", which is not "this red PR may ship". `PHX_RED_MERGE_OK=1` is for
+  // the owner's own words only — a red merge is his decision, never a session's.
+  //
+  // The names come from live protection when it answers, else AGENTS.md §2's declaration — never a
+  // third copy (scripts/merge-checks-verdict.mjs). Another repository with no readable protection is
+  // held to "nothing failing, nothing running"; one with no CI at all goes through.
+  //
+  // 🔴 IT FAILS CLOSED, UNLIKE C10 AND C13. Those save CI minutes, so a blind spot costs less than a
+  // blocked merge. This one is the only thing between a red PR and `main`, so a check it cannot read
+  // is a merge it cannot vouch for — and `gh pr merge` needs the same network the reads do.
+  const RED_MERGE_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_RED_MERGE_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (
+    GH_PR_MERGE.test(mergeText) &&
+    !MERGE_HELP.test(mergeText) &&
+    !RED_MERGE_STAND_DOWN.test(cmd) &&
+    process.env.PHX_RED_MERGE_OK !== '1'
+  ) {
+    const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
+    const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1] ?? null;
+    const namedRepo = mergeRepoFlag(commandSegments(after)[0] ?? '');
+    const cwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
+    // No `--jq` carrying spaces or quotes: on Windows `shell: true` hands gh its arguments unescaped
+    // (see C10's `readMergeState`). Every argument is fixed text or a value checked below.
+    const gh = (args) =>
+      String(
+        execFileSync('gh', args, {
+          cwd,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 20000,
+          shell: process.platform === 'win32',
+        }),
+      ).trim();
+    const SAFE_REPO = /^[\w.-]+\/[\w.-]+$/;
+    const standDown = String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+      ? '$env:PHX_RED_MERGE_OK=1; <the same command>'
+      : 'PHX_RED_MERGE_OK=1 <the same command>';
+    const target = prNumber ? `PR #${prNumber}` : 'this branch’s PR';
+
+    let repo = null;
+    let verdict = null;
+    let unreadable = '';
+    try {
+      repo = namedRepo ?? gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).toLowerCase();
+      const isPhoenix = repo === PHOENIX_REPO.toLowerCase();
+      const repoArg = isPhoenix ? PHOENIX_REPO : repo;
+      if (!SAFE_REPO.test(repoArg)) throw new Error(`a repository name this guard will not pass to gh: ${repoArg}`);
+      const pr = JSON.parse(
+        gh(['pr', 'view', ...(prNumber ? [prNumber] : []), '--json', 'headRefOid,baseRefName', '--repo', repoArg]) || '{}',
+      );
+      const sha = String(pr.headRefOid ?? '');
+      const base = String(pr.baseRefName ?? '');
+      if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error('no head commit came back for the PR');
+
+      let required = null;
+      if (/^[\w./-]+$/.test(base)) {
+        try {
+          const contexts = JSON.parse(
+            gh(['api', `repos/${repoArg}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
+          );
+          if (Array.isArray(contexts) && contexts.length > 0) required = contexts.map(String);
+        } catch {
+          // 403 on the free plan, 404 when unprotected — the declaration below answers instead.
+        }
+      }
+      if (!required && isPhoenix) {
+        const declared = declaredRequiredChecks(readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8'));
+        if (Array.isArray(declared.names) && declared.names.length > 0) required = declared.names;
+      }
+
+      const runs = JSON.parse(gh(['api', `repos/${repoArg}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']) || '[]');
+      const statuses = JSON.parse(gh(['api', `repos/${repoArg}/commits/${sha}/status`, '--jq', '.statuses']) || '[]');
+      const { mergeChecksVerdict } = await import(
+        new URL('../../scripts/merge-checks-verdict.mjs', import.meta.url).href
+      );
+      verdict = mergeChecksVerdict({ required, runs, statuses });
+    } catch (e) {
+      if (e?.[Symbol.for('phx.hook-exit')]) throw e;
+      unreadable = String(e?.message ?? e).split('\n')[0].slice(0, 200);
+    }
+
+    if (!verdict) {
+      deny(
+        `C21 — could not read the checks on ${target}${repo ? ` in ${repo}` : ''}, so this merge is refused ` +
+          `rather than waved through (${unreadable || 'no answer from gh'}).\n\n` +
+          'GitHub does not enforce the required checks on this plan, so this read is the only thing ' +
+          'between a red PR and main. Run the same merge again in a moment; if it keeps failing, read ' +
+          `the checks yourself with \`gh pr checks ${prNumber ?? ''}\`.\n\n` +
+          `Only if the owner said in his own words to merge it anyway: ${standDown}`,
+      );
+    }
+    if (!verdict.ok) {
+      const { describeVerdict } = await import(new URL('../../scripts/merge-checks-verdict.mjs', import.meta.url).href);
+      deny(
+        `C21 — ${target}${repo ? ` in ${repo}` : ''} is not green on its head commit: ${describeVerdict(verdict)}. ` +
+          `Judged on ${verdict.judged}.\n\n` +
+          '🔴 GITHUB WOULD LET THIS MERGE THROUGH — this plan does not enforce the required checks, so ' +
+          'a red merge lands on main, the release gate then holds production, and every merge after it ' +
+          'is held too, without a word.\n\n' +
+          'Still running: run the merge once the PR is green (start `node scripts/remote-check.mjs all` ' +
+          'in the BACKGROUND and act on its notification — never poll). Red: fix it on the branch and ' +
+          'push; the merge goes through once it passes.\n\n' +
+          `Only if the owner said in his own words to merge it red: ${standDown}`,
+      );
+    }
+  }
+
   if (
     GH_PR_MERGE.test(mergeText) &&
     !MERGE_HELP.test(mergeText) &&
@@ -2281,9 +2406,20 @@ try {
             const repo =
               repoArgs.length > 0 ? PHOENIX_REPO : gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
             if (!repo) return null;
-            const contexts = JSON.parse(
-              gh(['api', `repos/${repo}/branches/main/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
-            );
+            let contexts = [];
+            try {
+              contexts = JSON.parse(
+                gh(['api', `repos/${repo}/branches/main/protection/required_status_checks`, '--jq', '.contexts']) || '[]',
+              );
+            } catch {
+              contexts = [];
+            }
+            // 🔴 Protection answers 403 on the free plan (2026-11-04), which left this returning null
+            // on every PR and the green pass-through dead. AGENTS.md §2's declaration answers instead
+            // — the same fallback C21 uses (scripts/merge-checks-verdict.mjs).
+            if (!Array.isArray(contexts) || contexts.length === 0) {
+              contexts = declaredRequiredChecks(readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8')).names ?? [];
+            }
             if (!Array.isArray(contexts) || contexts.length === 0) return null;
             const sha = gh(['pr', 'view', prNumber, '--json', 'headRefOid', '--jq', '.headRefOid', ...repoArgs]);
             if (!sha) return null;

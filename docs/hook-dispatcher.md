@@ -315,6 +315,41 @@ still has the design in mind. Each refusal writes the remedy out: the `form-toke
   11 measured negatives, both template directions, Edit/MultiEdit arrival, the removal edit, both
   scopes, every entry of `EXEMPT`, the dispatch wiring and the one-detector pin.
 
+## bash-guard C21 — a merge waits for green checks, in every repository
+
+Added 2026-11-04 on the owner's "make all the CI safe and fast in all repos, all sessions".
+
+**Why.** The repositories moved to a personal account on the free plan, where a private repository's
+`branches/<base>/protection` answers **403**. GitHub therefore does not enforce the required checks
+at merge: `gh pr merge` goes through on a red PR. Measured that day against the live API — PR 18 red
+on `checks` and PR 20 with `validate` still running were each one command from `main`. The release
+gate still holds production on a red `main`, but it then holds every later merge too, silently. And
+the readers that asked protection for the required names went blind: C10's green pass-through
+returned null on every PR, and `rollup-prs.mjs` confirmed nothing green.
+
+**What it does.** On `gh pr merge [<n>] [--repo …]` it reads the PR's head commit, its check-runs
+and its commit statuses, and refuses while a required check is red (a skipped required check counts as
+red — `checks` skips when `validate` fails), still running, or not reported yet. The newest re-run
+of a name wins. The verdict is `scripts/merge-checks-verdict.mjs`.
+
+- **Names.** Live protection when it answers; for this repository, else AGENTS.md §2's declaration
+  (`validate`, `checks`) — the bullet `tests/required-check-names.test.ts` holds against ci.yml, so
+  a red non-required `mobile` never holds a merge. Another repository with no readable protection is
+  held to "nothing failing, nothing running"; one with no CI at all merges.
+- **Fails closed**, unlike C10 and C13 (which only save CI minutes): a check it cannot read is a merge
+  it cannot vouch for, and `gh pr merge` needs the same network.
+- **Stand-down:** `PHX_RED_MERGE_OK=1 <cmd>` (`$env:PHX_RED_MERGE_OK=1; <cmd>`), on the owner's own
+  words only. C10's `PHX_MERGE_OK` means "this small PR may ship alone" and does not pass a red merge.
+- **Every folder.** `~/.claude/hooks/merge-checks-guard.mjs`, wired in `~/.claude/hooks/dispatch.json`,
+  carries the same clause to sessions outside this repository, and stands aside when the session's
+  project wires a bash-guard whose header carries the C21 line (matched by that line, never the bare
+  number — C20 below was already on `main`). Its cases: `node merge-checks-guard.mjs selftest`.
+- **The same fallback** now feeds C10's `requiredChecksGreen` and `rollup-prs.mjs`, which print where
+  the names came from.
+
+Pinned by `tests/merge-checks-guard.test.ts` — the verdict, the real hook driven through a `gh` shim,
+and the declaration.
+
 ## bash-guard C20 — a `.claude` push carries the cloud-mirror refresh
 
 The owner asked for it mechanically on 2026-10-23 ("make it mechanical"), the same morning he said
