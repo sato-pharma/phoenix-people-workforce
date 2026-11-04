@@ -93,7 +93,11 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
   // top-ten ever exported put a vacant territory in 8th place with nobody to congratulate.
   const [excludeVacant, setExcludeVacant] = useState(true);
   const [peopleQuery, setPeopleQuery] = useState("");
-  const [rankBy, setRankBy] = useState<SpotlightRankBy>("achievement");
+  const [rankByPicked, setRankBy] = useState<SpotlightRankBy>("achievement");
+  // Ticked by default. Unticked prints no EGP figure anywhere on the sheet and ranks by achievement,
+  // because a sales figure beside a target gives the percentage away and the other way round.
+  const [showValue, setShowValue] = useState(true);
+  const rankBy: SpotlightRankBy = showValue ? rankByPicked : "achievement";
   const [direction, setDirection] = useState<SpotlightRankDirection>("top");
   const [limitText, setLimitText] = useState("10");
   const [layout, setLayout] = useState<SpotlightLayout>("both");
@@ -115,18 +119,21 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
   // The SAME value disables the buttons and prints the reason, so the two can never disagree —
   // which is the whole defect this replaces: disabled with nothing said.
   const blocked = blockedReason(windowKind, Boolean(windowKey), lines.length > 0);
+  // The preview follows the sheet that was BUILT, not the box as it is ticked now.
+  const previewShowsValue = result?.selection.showValue !== false;
 
   const selection = useMemo(() => ({
     window: { kind: windowKind, key: windowKey },
     subject,
     filters: { lines, regions, areas, hrIds, excludeVacant },
     rankBy,
+    ...(showValue ? {} : { showValue: false }),
     direction,
     limit: limitText.trim() === "" ? null : Number(limitText),
     layout,
     headline: headline.trim() || null,
     subheadline: subheadline.trim() || null,
-  }), [windowKind, windowKey, subject, lines, regions, areas, hrIds, excludeVacant, rankBy, direction, limitText, layout, headline, subheadline]);
+  }), [windowKind, windowKey, subject, lines, regions, areas, hrIds, excludeVacant, rankBy, showValue, direction, limitText, layout, headline, subheadline]);
 
   const toggle = (list: string[], set: (next: string[]) => void, value: string) => {
     set(list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]);
@@ -262,10 +269,26 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
           <h2 className="mb-3 text-[13px] font-bold text-slate-900">Ranking</h2>
           <div className="grid gap-3">
             <div>
+              <label className="flex items-start gap-2 text-[13px] text-slate-800">
+                <input
+                  checked={showValue}
+                  className="mt-1"
+                  onChange={(event) => setShowValue(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="font-semibold">Show the sales value</span>
+                  <span className="block text-[12px] text-slate-500">
+                    Untick to rank by achievement and print no EGP figure, sales or target, on the sheet.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div>
               <label className={LABEL} htmlFor="sl-rank">Rank by</label>
               <select className={FIELD} id="sl-rank" onChange={(event) => setRankBy(event.target.value as SpotlightRankBy)} value={rankBy}>
                 <option value="achievement">Achievement against target</option>
-                <option value="value">Sales value</option>
+                <option disabled={!showValue} value="value">Sales value</option>
               </select>
             </div>
             <div>
@@ -429,7 +452,7 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
           <h2 className="text-[18px] font-bold text-slate-900">{result.headline}</h2>
           <p className="mt-1 text-[12px] uppercase tracking-[0.12em] text-slate-500">{result.subheadline}</p>
           <p className="mt-2 text-[13px] text-slate-600">
-            {money(result.shortlistActualValue)} EGP across {result.rows.length} of {result.totalSubjects}.
+            {previewShowsValue ? `${money(result.shortlistActualValue)} EGP across ` : "Showing "}{result.rows.length} of {result.totalSubjects}.
             {result.untargetedSubjects > 0
               ? ` ${result.untargetedSubjects} carried no target in this window and cannot be ranked by achievement.`
               : ""}
@@ -440,12 +463,12 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
             <table className="w-full table-fixed border-collapse">
               <colgroup>
                 <col style={{ width: "3rem" }} /><col /><col style={{ width: "12rem" }} />
-                <col style={{ width: "8rem" }} /><col style={{ width: "8rem" }} />
+                {previewShowsValue ? <col style={{ width: "8rem" }} /> : null}<col style={{ width: "8rem" }} />
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-300 text-left text-[11px] uppercase tracking-[0.14em] text-slate-500">
                   <th className="py-2"></th><th className="py-2">Name</th><th className="py-2">Territory</th>
-                  <th className="py-2 text-right">Sales</th><th className="py-2 text-right">Achievement</th>
+                  {previewShowsValue ? <th className="py-2 text-right">Sales</th> : null}<th className="py-2 text-right">Achievement</th>
                 </tr>
               </thead>
               <tbody>
@@ -462,7 +485,9 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
                         <span className="break-words">{row.territory}</span>
                         {row.lineName ? <span className="block text-[11px] uppercase text-sky-700">{row.lineName}</span> : null}
                       </td>
-                      <td className="py-2 text-right text-[13px] font-semibold text-slate-900">{(row.actualValue / 1_000_000).toFixed(2)}M</td>
+                      {previewShowsValue ? (
+                        <td className="py-2 text-right text-[13px] font-semibold text-slate-900">{(row.actualValue / 1_000_000).toFixed(2)}M</td>
+                      ) : null}
                       <td className={`py-2 text-right text-[13px] font-bold ${row.achievement === null ? "text-slate-400" : beat ? "text-emerald-700" : "text-red-700"}`}>
                         {row.achievement === null ? "—" : `${beat ? "▲" : "▼"} ${row.achievement.toFixed(1)}%`}
                       </td>
@@ -486,7 +511,9 @@ export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props)
                     {row.territory}{row.lineName ? ` · ${row.lineName}` : ""}
                   </p>
                   <p className="mt-2 flex flex-wrap items-baseline gap-x-4 text-[13px]">
-                    <span className="font-semibold text-slate-900">{(row.actualValue / 1_000_000).toFixed(2)}M EGP</span>
+                    {previewShowsValue ? (
+                      <span className="font-semibold text-slate-900">{(row.actualValue / 1_000_000).toFixed(2)}M EGP</span>
+                    ) : null}
                     <span className={`font-bold ${row.achievement === null ? "text-slate-400" : beat ? "text-emerald-700" : "text-red-700"}`}>
                       {row.achievement === null ? "no target" : `${beat ? "▲" : "▼"} ${row.achievement.toFixed(1)}%`}
                     </span>

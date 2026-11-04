@@ -37,7 +37,7 @@ export class SpotlightWindowError extends Error {
 /** Hard ceiling on how many subjects one sheet may carry. */
 export const SPOTLIGHT_MAX_LIMIT = 60;
 
-function normaliseSelection(selection: SpotlightSelection): SpotlightSelection {
+export function normaliseSelection(selection: SpotlightSelection): SpotlightSelection {
   const lines = selection.filters.lines?.filter(Boolean) ?? [];
   return {
     ...selection,
@@ -49,6 +49,8 @@ function normaliseSelection(selection: SpotlightSelection): SpotlightSelection {
       // value ranking and distort every achievement denominator it touched.
       lines: lines.length > 0 ? lines : [...TRACKED_LINES],
     },
+    // No sales value means no ranking by it: the order must be one the sheet can show.
+    ...(selection.showValue === false ? { showValue: false, rankBy: "achievement" as const } : {}),
     limit: selection.limit === null
       ? null
       : Math.max(1, Math.min(SPOTLIGHT_MAX_LIMIT, Math.floor(selection.limit))),

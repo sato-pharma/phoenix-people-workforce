@@ -575,7 +575,16 @@ function rowPaddingMm(rows: SpotlightRow[], areaMm: number): number {
   return Math.min(MAX_PAD_MM, Math.max(MIN_PAD_MM, (areaMm - content) / (rows.length * 2)));
 }
 
-function leaderboardRows(rows: SpotlightRow[], offset: number): string {
+/**
+ * Whether this sheet prints sales and target money. The picker's "Show sales value" switch (owner,
+ * 2026-11-04) turns it off for a sheet ranked by achievement alone; absent means shown, so every
+ * sheet built before the switch existed, and the rep's own sheet, print exactly as they did.
+ */
+function valueShown(result: SpotlightResult): boolean {
+  return result.selection.showValue !== false;
+}
+
+function leaderboardRows(rows: SpotlightRow[], offset: number, showValue: boolean): string {
   return rows.map((row, index) => {
     const rank = offset + index + 1;
     const beat = row.achievement !== null && row.achievement >= 100;
@@ -587,7 +596,7 @@ function leaderboardRows(rows: SpotlightRow[], offset: number): string {
       <td class="lb-rank">${String(rank).padStart(2, "0")}</td>
       <td class="lb-name">${escapeHtml(row.title)}${row.isVacant ? '<span class="lb-vacant">vacant seat</span>' : ""}</td>
       <td class="lb-where">${escapeHtml(row.territory)}${row.lineName ? `<span class="lb-line">${escapeHtml(row.lineName)}</span>` : ""}</td>
-      <td class="lb-value">${millions(row.actualValue)}<span class="lb-unit">M</span></td>
+      ${showValue ? `<td class="lb-value">${millions(row.actualValue)}<span class="lb-unit">M</span></td>` : ""}
       <td class="lb-ach ${tone}"><span class="lb-arrow">${arrow}</span>${pct(row.achievement)}${row.achievement === null ? "" : '<span class="lb-pc">%</span>'}</td>
     </tr>`;
   }).join("");
@@ -596,6 +605,11 @@ function leaderboardRows(rows: SpotlightRow[], offset: number): string {
 const LB_COLS = `<colgroup><col style="width:12mm"><col><col style="width:43mm"><col style="width:22mm"><col style="width:25mm"></colgroup>`;
 const LB_HEAD = `<thead><tr>
   <th></th><th>Name</th><th>Territory</th><th class="r">Sales</th><th class="r">Achievement</th>
+</tr></thead>`;
+// The same table with the Sales column gone: its width goes to the territory, so a long one wraps less.
+const LB_COLS_NO_VALUE = `<colgroup><col style="width:12mm"><col><col style="width:65mm"><col style="width:25mm"></colgroup>`;
+const LB_HEAD_NO_VALUE = `<thead><tr>
+  <th></th><th>Name</th><th>Territory</th><th class="r">Achievement</th>
 </tr></thead>`;
 
 /** The three figures on a tint, closed top and bottom — the reference's band, doing the same job. */
@@ -622,6 +636,7 @@ function leaderboardPage(
   const pad = rowPaddingMm(rows, first ? ROW_AREA_FIRST : ROW_AREA_LATER);
   const totals = result.shortlistAchievement;
   const months = monthsLabel(result.periods);
+  const showValue = valueShown(result);
 
   const head = first
     ? `${opener(`Spotlight · ${result.windowLabel}`)}
@@ -629,10 +644,15 @@ function leaderboardPage(
     <div class="ruleunder"></div>
     <p class="lede">${escapeHtml(result.subheadline)}${months ? `, over ${escapeHtml(months)}` : ""}.</p>
     ${statBand([
-      {
-        value: `${egp(result.shortlistActualValue)}<small> EGP</small>`,
-        label: "Delivered by everyone on this sheet",
-      },
+      showValue
+        ? {
+            value: `${egp(result.shortlistActualValue)}<small> EGP</small>`,
+            label: "Delivered by everyone on this sheet",
+          }
+        : {
+            value: `${result.periods.length}<small> month${result.periods.length === 1 ? "" : "s"}</small>`,
+            label: "Measured, against each subject's own target",
+          },
       {
         value: `${pct(totals)}<small>%</small>`,
         label: "Their joint achievement, summed and not averaged",
@@ -651,13 +671,15 @@ function leaderboardPage(
   const body = `${head}
     <section class="lb" style="--pad:${pad.toFixed(2)}mm">
       <table>
-        ${LB_COLS}
-        ${LB_HEAD}
-        <tbody>${leaderboardRows(rows, offset)}</tbody>
+        ${showValue ? LB_COLS : LB_COLS_NO_VALUE}
+        ${showValue ? LB_HEAD : LB_HEAD_NO_VALUE}
+        <tbody>${leaderboardRows(rows, offset, showValue)}</tbody>
       </table>
       ${last
         ? `<p class="lb-note">
-        Sales in millions of EGP over ${escapeHtml(result.windowLabel)}. Achievement is measured against each
+        ${showValue
+          ? `Sales in millions of EGP over ${escapeHtml(result.windowLabel)}. Achievement`
+          : `Achievement over ${escapeHtml(result.windowLabel)}`} is measured against each
         subject's own target, summed across the window and never averaged.
         ${result.untargetedSubjects > 0
           ? `${result.untargetedSubjects} carried no target in this window and cannot be ranked by achievement.`
@@ -685,16 +707,27 @@ function heroSentence(result: SpotlightResult, row: SpotlightRow, rank: number):
     : `spotlighted out of ${result.totalSubjects}`;
   const role = row.roleLabel.toLowerCase();
   const line = row.lineName ? ` on the ${escapeHtml(row.lineName)} line` : "";
-  return `${ranked} ${escapeHtml(role)}s${line} by sales value in ${escapeHtml(row.territory)}`
+  return `${ranked} ${escapeHtml(role)}s${line} by ${valueShown(result) ? "sales value" : "achievement"} in ${escapeHtml(row.territory)}`
     + `${months ? `, over ${escapeHtml(months)}` : ""}.`;
 }
 
 function heroPage(result: SpotlightResult, row: SpotlightRow, rank: number, page: number, total: number): string {
   const variance = row.varianceValue;
   const shownPct = pct(row.achievement);
-  const caption = variance === null
+  const showValue = valueShown(result);
+  // The over-or-under caption is money, so a sheet that hides the sales value hides it too.
+  const caption = variance === null || !showValue
     ? ""
     : `${egp(Math.abs(variance))} EGP ${variance >= 0 ? "over" : "under"} target`;
+
+  const monthsCell = {
+    value: `${row.targetedMonths}<small> of ${result.periods.length}</small>`,
+    label: "Months in this window that carried a target",
+  };
+  const rankCell = {
+    value: `${rank}<small> of ${result.totalSubjects}</small>`,
+    label: `Rank by ${result.selection.rankBy === "achievement" ? "achievement" : "sales value"} across the company`,
+  };
 
   // THE FIGURE PANEL TAKES THE SLACK. A single `margin-top: auto` used to shove the figure downward
   // and leave every millimetre of leftover page in ONE place, under the stats, where it reads as the
@@ -719,29 +752,26 @@ function heroPage(result: SpotlightResult, row: SpotlightRow, rank: number, page
       </div>
     </section>
 
-    ${statBand([
-      // 🔴 THE FIGURE HERE IS THE ACHIEVEMENT'S OWN NUMERATOR, not every pound delivered. A sheet
-      // that prints a number beside a target is read by dividing the two, and a reader who does that
-      // has to land on the percentage above. Where the window holds an untargeted month the two
-      // differ, so the all-months total moves to its own cell and says what it is.
-      {
-        value: `${egp(row.targetValue !== null ? row.gradedValue : row.actualValue)}<small> EGP</small>`,
-        label: targetedAgainstLabel(row),
-      },
-      untargetedMonthsInWindow(result, row) > 0 && row.targetValue !== null
-        ? {
-            value: `${egp(row.actualValue)}<small> EGP</small>`,
-            label: `Delivered in total, including ${monthCount(untargetedMonthsInWindow(result, row))} with no target`,
-          }
-        : {
-            value: `${row.targetedMonths}<small> of ${result.periods.length}</small>`,
-            label: "Months in this window that carried a target",
+    ${statBand(showValue
+      ? [
+          // 🔴 THE FIGURE HERE IS THE ACHIEVEMENT'S OWN NUMERATOR, not every pound delivered. A sheet
+          // that prints a number beside a target is read by dividing the two, and a reader who does that
+          // has to land on the percentage above. Where the window holds an untargeted month the two
+          // differ, so the all-months total moves to its own cell and says what it is.
+          {
+            value: `${egp(row.targetValue !== null ? row.gradedValue : row.actualValue)}<small> EGP</small>`,
+            label: targetedAgainstLabel(row),
           },
-      {
-        value: `${rank}<small> of ${result.totalSubjects}</small>`,
-        label: `Rank by ${result.selection.rankBy === "achievement" ? "achievement" : "sales value"} across the company`,
-      },
-    ])}`;
+          untargetedMonthsInWindow(result, row) > 0 && row.targetValue !== null
+            ? {
+                value: `${egp(row.actualValue)}<small> EGP</small>`,
+                label: `Delivered in total, including ${monthCount(untargetedMonthsInWindow(result, row))} with no target`,
+              }
+            : monthsCell,
+          rankCell,
+        ]
+      // No sales value: the months that carried a target and the rank, which print no money.
+      : [monthsCell, rankCell])}`;
   return pageShell(result, body, page, total);
 }
 

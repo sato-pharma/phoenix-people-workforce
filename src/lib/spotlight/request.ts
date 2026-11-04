@@ -104,6 +104,8 @@ export function parseSelection(body: unknown): SpotlightSelection {
     direction: oneOf(input.direction, DIRECTIONS, "direction", "top"),
     limit,
     layout: oneOf(input.layout, LAYOUTS, "layout", "both"),
+    // Only an explicit `false` hides the money; anything else, including absent, shows it.
+    ...(input.showValue === false ? { showValue: false } : {}),
     headline: text(input.headline, "headline"),
     subheadline: text(input.subheadline, "subheadline"),
   };

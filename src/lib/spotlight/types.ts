@@ -115,6 +115,12 @@ export type SpotlightSelection = {
   /** How many make the sheet. `null` means every subject that survives the filters. */
   limit: number | null;
   layout: SpotlightLayout;
+  /**
+   * Whether the sheet prints money. Absent means shown. `false` is the sheet that ranks by achievement
+   * and prints no EGP figure at all, sales or target, because a target printed beside a percentage
+   * gives the sales away (owner, 2026-11-04).
+   */
+  showValue?: boolean;
   /** Overrides the generated headline when set and non-empty. */
   headline?: string | null;
   /** Overrides the generated sub-line when set and non-empty. */
