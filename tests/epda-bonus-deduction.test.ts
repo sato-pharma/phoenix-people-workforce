@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { buildBulkAllocation, type BulkAllocationRow } from "../src/lib/sales/closing-bulk-allocation.ts";
 import { pickDuplicateUploadClash } from "../src/lib/sales/import-duplicate-guard.ts";
 import {
+  summarizeEpdaBonusDeduction,
   applyEpdaBonusDeduction,
   epdaBonusDeductionPercent,
 } from "../src/lib/sales/import-epda-bonus-deduction.ts";
@@ -184,7 +185,42 @@ export function runEpdaBonusDeductionTests() {
     assert.equal(pickDuplicateUploadClash([{ ...stored("2026-09"), total_qty: 4999 }], candidate("2026-10")), null, "a different file passes");
   }
 
-  // 8. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
+  // 8. THE UPLOAD SCREEN SHOWS BOTH (owner, 2026-11-04: "show both actual and reduced"), from the same
+  //    function the store runs, so the reduced figure on the screen is the figure the rows hold.
+  {
+    const named = (over: Partial<Row> & { qty: number; productName: string }) => ({ ...row(over), productName: over.productName });
+    const rows = [
+      named({ qty: 60, productName: "Ivyronc" }),
+      named({ qty: 40, productName: "Ivyronc" }),
+      named({ qty: 100, productCode: "SA001", productName: "Saginko", value: 17052 }),
+      named({ qty: 100, productCode: "LA001", productName: "Lacto 1" }),
+    ];
+    const lines = summarizeEpdaBonusDeduction(rows, (r) => r.invoiceDate);
+    assert.deepEqual(
+      lines.map((l) => [l.productName, l.percent, l.actualUnits, l.reducedUnits]),
+      [["Ivyronc", 30, 100, 70], ["Saginko", 15, 100, 85]],
+      "the deducted products only, each with both figures",
+    );
+    assert.equal(lines[1].actualValue, 17052);
+    assert.equal(Math.round(lines[1].reducedValue * 100) / 100, 14494.2);
+    const stored = applyEpdaBonusDeduction(rows, (r) => r.invoiceDate);
+    assert.equal(lines[0].reducedUnits, stored[0].qty + stored[1].qty, "the screen's figure is the stored one");
+    assert.deepEqual(summarizeEpdaBonusDeduction(rows, () => "2026-09"), [], "September shows nothing");
+    assert.deepEqual(
+      summarizeEpdaBonusDeduction(rows, (r) => r.invoiceDate, ["SA001"]).map((l) => l.productName),
+      ["Ivyronc"],
+      "a viewer's excluded product stays out",
+    );
+
+    const analyze = readFileSync("app/api/sales/sales-upload/analyze/route.ts", "utf8");
+    assert.match(analyze, /bonusDeduction: result\.bonusDeduction/, "the route carries it");
+    const upload = readFileSync("src/lib/sales/sales-upload.ts", "utf8");
+    assert.equal(upload.split("summarizeEpdaBonusDeduction(").length - 1, 2, "one file and several files both build it");
+    const screen = readFileSync("src/components/sales/sales-upload-workspace.tsx", "utf8");
+    assert.match(screen, /<BonusDeductionTable lines=\{analysis\.bonusDeduction\} \/>/, "and the screen draws it");
+  }
+
+  // 9. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
   //    here without a database, and a route that skipped it would announce the undeducted figure.
   {
     const normalized = readFileSync("src/lib/sales/normalizer/service.ts", "utf8");

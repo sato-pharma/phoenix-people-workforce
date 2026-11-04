@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       const named = result.fileName ? `"${result.fileName}": ` : "";
       return NextResponse.json({ success: false, code: "header_validation_error", distributorName: result.distributorName, fileName: result.fileName ?? null, missingGroups: result.missingGroups, fingerprintWarning: result.fingerprintWarning ?? null, aiExplanation: result.aiExplanation ?? null, error: `${named}Sheet is missing required columns: ${result.missingGroups.map((g) => g.label).join(", ")}.` }, { status: 422 });
     }
-    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, needsPeriod: result.needsPeriod, validation: result.validation, isRegionOnly: result.isRegionOnly ?? false, files: result.files ?? null, batches: result.batches ?? null });
+    return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, bonusDeduction: result.bonusDeduction, needsPeriod: result.needsPeriod, validation: result.validation, isRegionOnly: result.isRegionOnly ?? false, files: result.files ?? null, batches: result.batches ?? null });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     // A refusal of the selection itself (too many files, the same sheet twice, files of different

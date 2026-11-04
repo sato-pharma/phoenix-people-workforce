@@ -127,3 +127,50 @@ export function applyEpdaBonusDeduction<R extends DeductibleRow>(
   }
   return deducted;
 }
+
+/** One product on the upload screen: what the sheet says beside what the rows will store. */
+export type EpdaDeductionLine = {
+  actualUnits: number;
+  actualValue: number;
+  percent: number;
+  productCode: string;
+  productName: string;
+  reducedUnits: number;
+  reducedValue: number;
+};
+
+/**
+ * The actual and reduced figures per product, for the person uploading (owner, 2026-11-04: "show both
+ * actual and reduced"). It runs the deduction the store runs, so the screen cannot promise a figure
+ * the rows will not hold. Only the upload screen reads this; nothing announced ever does. Empty when
+ * the rule does not reach the file. A viewer's excluded products stay out, as in the other tables.
+ */
+export function summarizeEpdaBonusDeduction<R extends DeductibleRow & { productName: string }>(
+  rows: R[],
+  periodOf: (row: R) => string | null | undefined,
+  excludeProductCodes: readonly string[] = [],
+): EpdaDeductionLine[] {
+  const excluded = new Set(excludeProductCodes.map(normalizedCode));
+  const reduced = applyEpdaBonusDeduction(rows, periodOf);
+  const lines = new Map<string, EpdaDeductionLine>();
+  rows.forEach((row, index) => {
+    const after = reduced[index];
+    if (after === row || excluded.has(normalizedCode(row.productCode))) return;
+    const productCode = normalizedCode(row.productCode);
+    const line = lines.get(productCode) ?? {
+      actualUnits: 0,
+      actualValue: 0,
+      percent: EPDA_BONUS_DEDUCTION_PERCENT[productCode],
+      productCode,
+      productName: row.productName,
+      reducedUnits: 0,
+      reducedValue: 0,
+    };
+    line.actualUnits += row.qty;
+    line.actualValue += row.value;
+    line.reducedUnits += after.qty;
+    line.reducedValue += after.value;
+    lines.set(productCode, line);
+  });
+  return [...lines.values()].sort((a, b) => a.productName.localeCompare(b.productName));
+}
