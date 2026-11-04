@@ -699,6 +699,23 @@ export const accessRegistry = [
   // many employees, their hire dates and the paperwork each of them is missing is an EXPORT, and
   // the registry says so — the route writes its audit row with the filters that decided who is in
   // it. Rate-limited in the handler, and gated again on an HR authority role, as the page is.
+  // Medical insurance (owner, 2026-11-04): members for the HR seats, every amount Super Admin only.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/members/export", permission: { resource: "medical_insurance", action: "export" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/movement-file", permission: { resource: "medical_insurance", action: "export" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/members", permission: { resource: "medical_insurance", action: "create" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["PATCH"], pattern: "/api/medical-insurance/members/:id", permission: { resource: "medical_insurance", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/exceptions", permission: { resource: "medical_insurance", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["DELETE"], pattern: "/api/medical-insurance/exceptions/:id", permission: { resource: "medical_insurance", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/documents", permission: { resource: "medical_insurance", action: "update" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/medical-insurance/documents/:id", permission: { resource: "medical_insurance", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["DELETE"], pattern: "/api/medical-insurance/documents/:id", permission: { resource: "medical_insurance", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/invoices/documents", permission: { resource: "medical_insurance_invoices", action: "update" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/medical-insurance/invoices/documents/:id", permission: { resource: "medical_insurance_invoices", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["DELETE"], pattern: "/api/medical-insurance/invoices/documents/:id", permission: { resource: "medical_insurance_invoices", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/invoices", permission: { resource: "medical_insurance_invoices", action: "create" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/medical-insurance/invoices/:id/compare", permission: { resource: "medical_insurance_invoices", action: "update" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/medical-insurance/invoices/:id/export", permission: { resource: "medical_insurance_invoices", action: "export" } }),
+  sessionApi({ methods: readOnly, pattern: "/api/medical-insurance/invoices/:id/file", permission: { resource: "medical_insurance_invoices", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/hiring-documents/export", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PATCH", "POST", "DELETE"], pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),

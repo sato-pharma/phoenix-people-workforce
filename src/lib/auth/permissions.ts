@@ -304,7 +304,9 @@ export type PermissionResource =
   // and a recorded run are append-only facts about a date. 🔴 `Manager` and `Employee` hold NOTHING
   // here even though the module's main user is a Manager: see productionPlanningLevel in
   // src/lib/production-planning/access.ts for why the gate is named people, not a role.
-  | "production_planning";
+  | "production_planning"
+  | "medical_insurance"
+  | "medical_insurance_invoices";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -424,6 +426,8 @@ export const permissionResources: PermissionResource[] = [
   // Production Planner. Omitting this would offer the whole raw-material plan — and the prices and
   // costs on it — to every role in the company. Mechanism at the head of this array.
   "production_planning",
+  "medical_insurance",
+  "medical_insurance_invoices",
   // HR Reminders. Omitting this would offer the HR team's private notes — and the Super Admin's
   // view of every one of them — to every role in the company. Mechanism at the head of this array.
   "hr_reminders",
@@ -1064,6 +1068,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // Production Planner. No `delete`: a stock report and a recorded run are append-only facts
     // about a date, and a mistyped run is EXCLUDED from learning rather than removed.
     production_planning: ["read", "create", "update", "export"],
+    // Medical insurance (owner, 2026-11-04). Members and who is in or out are shared with the HR seats
+    // (hr-functions.ts, medical_insurance_members). Invoices and every amount are this seat's alone. No
+    // `delete` on either: a member's cover is ended and an invoice is a fact about a date.
+    medical_insurance: ["read", "create", "update", "export"],
+    medical_insurance_invoices: ["read", "create", "update", "export"],
     admin: allActions,
     attendance: allActions,
     // Reads the native-visit pilot. `update` (the owner, 2026-09-14): he enters a visit FOR a chosen

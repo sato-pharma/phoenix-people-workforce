@@ -2159,6 +2159,19 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // stays service_role only and crm_person_by_hr_key_reconcile() returned 0, read back the same evening.
   // Re-applying it is a no-op (`create or replace`, `drop trigger if exists`, a rebuild).
   "20261103213631_crm_doors_name_people_by_their_display_name.sql",
+
+  // Applied 2026-11-04 about 15:20 Cairo through scripts/apply-sql-file.mjs on staging and production
+  // (production with PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), the standing route:
+  // supabase-staging's apply_migration answered {"status":"declined"} twice and a read straight after showed
+  // nothing had landed. That route writes NO ledger row. The file creates tables and no function, so the
+  // digest is of the catalog's own structure, read in one query on BOTH ozucdzovmcqvepbozvqf and
+  // cifwmndunmlxjhyjugxa and equal on both: 6 public medical_insurance_* tables, md5 of every column as
+  // name:type:notnull a78312877ad467637398239bad731b99, of every constraint definition
+  // d128355e28639c11c9b0c13510376b06, of every index definition 725fe382b60445355394fc31b982c728; RLS on all
+  // six, 0 grants to anon, authenticated or PUBLIC, 1 policy row 6489200000, bucket medical-insurance private
+  // at 26214400 bytes, storage policy medical_insurance_service_role present. Re-applying it is a no-op
+  // (`if not exists`, `on conflict do nothing`, the bucket upsert, `drop policy if exists`).
+  "20261104092817_medical_insurance.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

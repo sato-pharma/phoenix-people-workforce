@@ -448,6 +448,14 @@ export type AuditEntityType =
   | "production_material"
   | "production_material_price"
   | "production_plan"
+  // Medical insurance (owner, 2026-11-04). The member, exception, invoice and document rows are REQUIRED:
+  // who is on a policy decides who is covered and what is billed. The export row is best-effort, as every
+  // export's is, and names what left the building.
+  | "medical_insurance_document"
+  | "medical_insurance_exception"
+  | "medical_insurance_export"
+  | "medical_insurance_invoice"
+  | "medical_insurance_member"
   | "production_planning_access_grant"
   | "production_planning_settings"
   | "production_run"

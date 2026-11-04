@@ -106,6 +106,7 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   hiring_paperwork: FileSignature,
   hiring_desk: FileSignature,
   hr_calendars: CalendarDays,
+  medical_insurance_members: HeartPulse,
   workforce_context: Network,
   recognition: Award,
   team_reminders: StickyNote,
