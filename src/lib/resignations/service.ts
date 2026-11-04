@@ -2358,6 +2358,17 @@ export async function runResignationWorkflow(
       throw new Error("Unsupported resignation workflow action.");
   }
 
+  // Cancel and reject used to stamp only this row, so a resignation filed from the Employees page
+  // (which ends the person on the spot) stayed in force after it was called off: the person was
+  // still resigned, off payroll, out of their seat, with the replacement vacancy open and the login
+  // off. The restore puts all of that back in one transaction, before the row says "cancelled", so
+  // a refusal (seat or vacancy already given to someone else) leaves the resignation as it was.
+  // A resignation that never ended anyone answers restored:false and changes nothing.
+  let restoredEmployee = false;
+  if (action === "cancel" || action === "reject") {
+    restoredEmployee = await restoreEmployeeAfterCancelledResignation(supabase, row.id, actorHrId);
+  }
+
   const { data: updated, error: updateError } = await supabase
     .from("employee_resignations")
     .update(updates)
@@ -2440,8 +2451,38 @@ export async function runResignationWorkflow(
       action === "reject" || action === "cancel" ? "danger" : action === "approve" || action === "complete" ? "success" : "warning",
     );
   });
+  if (restoredEmployee) {
+    invalidateEmployeeDirectoryCache();
+    invalidateExecutiveDashboardCache("resignation cancelled and employee restored", [
+      "resignations",
+      "employees",
+      "vacancies",
+      "payroll",
+    ]);
+  }
   invalidateExecutiveDashboardCache("resignation workflow updated", ["resignations", "employees", "vacancies"]);
   return record;
+}
+
+/**
+ * Undo what a resignation did to the employee: status, payroll, seat, replacement vacancy, login
+ * and CRM id (phx_restore_employee_after_cancelled_resignation). True when someone was restored.
+ */
+export async function restoreEmployeeAfterCancelledResignation(
+  supabase: SupabaseClient,
+  resignationId: string,
+  actorHrId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("phx_restore_employee_after_cancelled_resignation", {
+    p_actor: actorHrId,
+    p_resignation_id: resignationId,
+  });
+  if (error) {
+    // The SQL guards speak plainly ("restore: the seat AI-0009 left has since been given to …");
+    // drop only the prefix so the screen shows the reason itself.
+    throw new Error(String(error.message ?? "The resignation could not be cancelled.").replace(/^restore:\s*/i, ""));
+  }
+  return Boolean((data as { restored?: boolean } | null)?.restored);
 }
 
 export async function runResignationSlaDaily(): Promise<{ processed: number; errors: number }> {
