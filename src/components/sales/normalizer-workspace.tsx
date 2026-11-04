@@ -23,6 +23,7 @@ import {
 import { packCustomersByPharmacy } from "@/lib/sales/normalizer/customer-request-packing";
 import { mappingLeft, needsMappingTabLabel, stillNeedMappingSentence } from "@/lib/sales/normalizer/mapping-left";
 import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
+import { salesDistributorCode } from "@/lib/sales/normalizer/distributor-templates";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import type { PreviewIgnoredRow } from "@/lib/sales/recognize";
 import { MAX_UPLOAD_FILES } from "@/lib/sales/sales-upload-files";
@@ -309,9 +310,12 @@ function partTabLabel(part: Preview, parts: readonly Preview[]): string {
 export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
   // The template is offered FIRST in the picker (the owner asked for it beside the distributors), but
   // the default selection stays a real distributor — the per-distributor path is still the daily one.
-  const [distributorCode, setDistributorCode] = useState(
+  const [pickedSource, setPickedSource] = useState(
     distributors.find((d) => !isPhoenixTemplateCode(d.code))?.code ?? distributors[0]?.code ?? "",
   );
+  // EPDA Bulk 2 is offered beside EPDA-BULK, but everything posted and learned files under the real
+  // distributor, so a template's code can never reach a batch or the mapping dictionary.
+  const distributorCode = salesDistributorCode(pickedSource);
   // One raw sheet, or several of the same distributor chosen together (up to MAX_UPLOAD_FILES): sheets
   // of the same month are analyzed, mapped and imported as ONE part, so the month is one batch.
   const [files, setFiles] = useState<File[]>([]);
@@ -919,7 +923,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
-              <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); resetParts(); }} value={distributorCode}>
+              <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setPickedSource(e.target.value); resetParts(); }} value={pickedSource}>
                 {distributors.map((d) => <option key={d.code} value={d.code}>{isPhoenixTemplateCode(d.code) ? d.name : `${d.name} / ${d.code}`}</option>)}
               </SearchableSelect>
             </label>

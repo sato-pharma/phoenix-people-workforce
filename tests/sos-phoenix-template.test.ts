@@ -17,6 +17,7 @@ import { buildPhoenixTemplateWorkbook } from "../src/lib/sales/normalizer/phoeni
 import { normalizeRows } from "../src/lib/sales/normalizer/engine.ts";
 import { distinctUnknowns } from "../src/lib/sales/normalizer/mapping.ts";
 import { mappingLeft, mappingLeftPhrase, needsMappingTabLabel, stillNeedMappingSentence } from "../src/lib/sales/normalizer/mapping-left.ts";
+import { SECOND_TEMPLATES } from "../src/lib/sales/normalizer/distributor-templates.ts";
 import { listNormalizerDistributors, listNormalizerSourceOptions } from "../src/lib/sales/normalizer/service.ts";
 import { PREVIEW_UNKNOWN_LIMIT, recognitionErrorMessage, summarizePreview } from "../src/lib/sales/recognize.ts";
 import type { Crosswalks, NormalizeException, NormalizeResult } from "../src/lib/sales/normalizer/types.ts";
@@ -120,7 +121,8 @@ function thePickerOffersItBesideTheDistributors() {
   const options = listNormalizerSourceOptions();
   assert.equal(options[0].code, PHOENIX_TEMPLATE_CODE, "the template is offered first in the Source Normalizer picker");
   assert.ok(options.length > 1, "the distributors are still offered");
-  assert.deepEqual(options.slice(1), listNormalizerDistributors());
+  // EPDA Bulk 2 and EPDA Pharmacies 2 stand beside their distributors, which are all still offered.
+  assert.deepEqual(options.slice(1).filter((o) => !SECOND_TEMPLATES.some((t) => t.code === o.code)), listNormalizerDistributors());
 
   // The Sales Upload page feeds listNormalizerDistributors() into profiledDistributorCodes. A
   // sentinel there would advertise a distributor that does not exist.
