@@ -130,6 +130,7 @@ export const TASK_ICONS: Record<HrFunctionKey, LucideIcon> = {
   hiring_desk: FileSignature,
   hr_communication: Mail,
   hr_calendars: CalendarDays,
+  medical_insurance_members: HeartPulse,
   hr_governance: ShieldCheck,
   payroll_inputs: FileSpreadsheet,
   people_master: IdCard,
