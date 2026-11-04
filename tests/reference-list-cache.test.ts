@@ -59,6 +59,7 @@ const ADOPTERS: ReadonlyArray<{ file: string; what: string }> = [
   { file: "src/lib/customer-360/service.ts", what: "areas, lines and employees, for the page's name maps" },
   { file: "src/lib/early-birds/winner-identity.ts", what: "areas, for the Hall of Fame winner's current area when the row stored none" },
   { file: "src/lib/employees/vacancy-display.ts", what: "areas, for the numeric id behind an organogram seat's area code on Line Vacancies" },
+  { file: "src/lib/employees/seat-transfer.ts", what: "lines, for the line name on another line's vacant seat in Transfer Seat" },
   { file: "src/lib/hiring-pack/field-fill-rate.ts", what: "departments, for the fill-rate report" },
   { file: "src/lib/hiring-pack/service.ts", what: "lines, for the facts editor's picker" },
   { file: "src/lib/outstation/area-rep-options.ts", what: "employees, for the rep names on the wizard" },

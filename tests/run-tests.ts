@@ -1930,6 +1930,7 @@ import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-vis
 import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.test.ts";
 import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
+import { runResignationCancelRestoreTests } from "./resignation-cancel-restore.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
@@ -6981,6 +6982,11 @@ await runTest(
 );
 
 await runTest(
+  "resignation cancel restores the employee (status, pay, seat, vacancy, login, CRM id) before the row is stamped",
+  runResignationCancelRestoreTests,
+);
+
+await runTest(
   "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero, the share belonging to excluded areas is named, and the export uses the SCREEN's split rather than deriving a second one)",
   runMonthlyClosingExportStoreSplitFilteredTests,
 );
@@ -11627,7 +11633,7 @@ await runTest(
   runSharedReadCacheTests,
 );
 await runTest(
-  "the four reference lists - employees, lines, areas and departments - are read once a minute per process and not by everyone: the employee superset names identity and placement but no compensation column at all, every list is keyset-paged on its own primary key with no cap, exactly the fourteen display readers and the two write paths import the module while payroll, automated payroll, deductions, daily deductions, attendance, notifications, approvals, marketing requests, sales, direct orders, auth and the employee importer keep their own fresh reads, each table has its own namespace so forgetting one list leaves the other three served, and the employee directory and the employee importer drop the copy where they already invalidate everything else",
+  "the four reference lists - employees, lines, areas and departments - are read once a minute per process and not by everyone: the employee superset names identity and placement but no compensation column at all, every list is keyset-paged on its own primary key with no cap, exactly the fifteen display readers and the two write paths import the module while payroll, automated payroll, deductions, daily deductions, attendance, notifications, approvals, marketing requests, sales, direct orders, auth and the employee importer keep their own fresh reads, each table has its own namespace so forgetting one list leaves the other three served, and the employee directory and the employee importer drop the copy where they already invalidate everything else",
   runReferenceListCacheTests,
 );
 await runTest(

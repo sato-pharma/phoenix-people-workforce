@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { loadReferenceLines, type ReferenceLine } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -25,6 +26,8 @@ export type SeatTransferSeatOption = {
   areaName: string | null;
   regionName: string | null;
   label: string;
+  /** Set on another line's seats, where choosing one moves the person to that line. */
+  lineName?: string | null;
 };
 
 export type SeatTransferOptions = {
@@ -37,6 +40,8 @@ export type SeatTransferOptions = {
   };
   currentSeats: SeatTransferSeatOption[];
   vacantSeats: SeatTransferSeatOption[];
+  /** Vacant seats on every OTHER line — choosing one is a line move. */
+  otherLineVacantSeats: SeatTransferSeatOption[];
 };
 
 export type SeatTransferInput = {
@@ -44,6 +49,13 @@ export type SeatTransferInput = {
   effectiveDate?: string | null;
   fromSeatId?: string | null;
   reason?: string | null;
+  /**
+   * The chosen seat is on another line. Routes to phx_move_employee_to_line, which also moves the
+   * employee's line, fills the seat's vacancy and opens one for the seat left. Both functions check
+   * the lines themselves (the transfer refuses another line, the line move refuses the same line),
+   * so a wrong flag is refused, never applied.
+   */
+  moveLine?: boolean;
 };
 
 export type SeatTransferResult = {
@@ -54,6 +66,12 @@ export type SeatTransferResult = {
   effectiveDate: string;
   occupancyId: number;
   employeesSync: Record<string, unknown>;
+  lineMove?: {
+    fromLine: string | null;
+    toLine: string;
+    vacanciesFilled: string[];
+    vacancyOpened: string | null;
+  };
 };
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -94,6 +112,7 @@ export async function listSeatTransferOptions(
   employeeHrId: string,
   access: AccessContext,
   client: SupabaseClient = getSupabaseAdmin(),
+  loadLines: () => Promise<Array<Pick<ReferenceLine, "code" | "name">>> = loadReferenceLines,
 ): Promise<SeatTransferOptions> {
   assertSeatTransferActor(access);
 
@@ -127,6 +146,30 @@ export async function listSeatTransferOptions(
 
   let currentSeats: SeatTransferSeatOption[] = [];
   let vacantSeats: SeatTransferSeatOption[] = [];
+  let otherLineVacantSeats: SeatTransferSeatOption[] = [];
+
+  if (lineCode) {
+    const [{ data: otherTree, error: otherTreeError }, lineRows] = await Promise.all([
+      client
+        .from("au_v_org_tree")
+        .select(
+          "seat_id, seat_tier, line_code, area_name, region_name, seat_display_label, occupant_hr_id, is_vacant, is_other_pseudo_dm",
+        )
+        .neq("line_code", lineCode)
+        .eq("is_vacant", true),
+      loadLines(),
+    ]);
+    if (otherTreeError) throw new Error(`Seat lookup failed: ${otherTreeError.message}`);
+    const lineNameByCode = new Map(lineRows.map((line) => [line.code, line.name]));
+    otherLineVacantSeats = ((otherTree ?? []) as TreeRow[])
+      .filter((row) => row.is_vacant && !row.is_other_pseudo_dm)
+      .map((row) => ({ ...toSeatOption(row), lineName: lineNameByCode.get(row.line_code) ?? row.line_code }))
+      .sort((left, right) =>
+        (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
+        left.seatTier.localeCompare(right.seatTier) ||
+        left.label.localeCompare(right.label),
+      );
+  }
 
   if (lineCode) {
     const { data: treeData, error: treeError } = await client
@@ -160,6 +203,7 @@ export async function listSeatTransferOptions(
     },
     currentSeats,
     vacantSeats,
+    otherLineVacantSeats,
   };
 }
 
@@ -181,14 +225,25 @@ export async function transferEmployeeSeat(
     throw new Error("Effective date must be YYYY-MM-DD.");
   }
 
-  const { data, error } = await client.rpc("phx_transfer_au_seat", {
-    p_actor: actor,
-    p_effective_date: effectiveDate,
-    p_employee_hr_id: hrId,
-    p_from_seat_id: input.fromSeatId?.trim() || null,
-    p_reason: input.reason?.trim() || null,
-    p_to_seat_id: toSeatId,
-  });
+  // A line move: the same seat transfer plus the employee's line, the destination seat's open
+  // vacancy filled and one opened for the seat left — in one transaction. Salary, HR ID, CRM id and
+  // history stay; the person is never resigned and re-hired.
+  const { data, error } = input.moveLine
+    ? await client.rpc("phx_move_employee_to_line", {
+        p_actor: actor,
+        p_effective_date: effectiveDate,
+        p_employee_hr_id: hrId,
+        p_reason: input.reason?.trim() || null,
+        p_to_seat_id: toSeatId,
+      })
+    : await client.rpc("phx_transfer_au_seat", {
+        p_actor: actor,
+        p_effective_date: effectiveDate,
+        p_employee_hr_id: hrId,
+        p_from_seat_id: input.fromSeatId?.trim() || null,
+        p_reason: input.reason?.trim() || null,
+        p_to_seat_id: toSeatId,
+      });
   if (error) throw new Error(error.message);
 
   // The RPC just moved a seat in au_v_org_tree — bust the cached org tree (shared "sos-reference"
