@@ -1839,6 +1839,7 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runUnpublishedSalesNeverShownTests } from "./unpublished-sales-never-shown.test.ts";
 import { runVsTargetPageAreaMergePeriodTests } from "./vs-target-page-area-merge-period.test.ts";
 import { runVsTargetPageLoadSpeedTests } from "./vs-target-page-load-speed.test.ts";
 import { runTargetsPageAreaMergePeriodTests } from "./targets-page-area-merge-period.test.ts";
@@ -6550,6 +6551,7 @@ await runTest("outstation departure-photo resend (the one action that deliberate
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest("unpublished sales are never shown (the portal Targets page keeps the target and withholds the sale per line, Sales vs Target's panel quotes no sales figure, and the Direct/Indirect split, the Targets drill-down and its trend, and the brick panel all gate on the row's own line and month)", runUnpublishedSalesNeverShownTests);
 await runTest("Sales vs Target and the portal Targets manager branch name a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez'), and the product roll-up falls back to 'Unnamed product' rather than a raw code", runVsTargetPageAreaMergePeriodTests);
 await runTest("Sales vs Target loads faster without changing a figure: the Direct/Indirect split is cut to the five fields it reads, cached on the achievement token and price tag, and started on the publication keys before the range lands (a wrong landing-month guess reads the right month); the employee-name map is a one-minute single-flight memo with a copy per caller", runVsTargetPageLoadSpeedTests);
 await runTest("the admin sales Targets authoring page names a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez')", runTargetsPageAreaMergePeriodTests);

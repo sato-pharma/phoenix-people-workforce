@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { readsLiveBusinessReview } from "@/lib/sales/unpublished-sales-access";
 import { concentrationForAreas, type ReviewSalesDetail } from "@/lib/business-review/concentration";
 import { figureWindowLabel, figureWindowPeriods, hasFigures } from "@/lib/business-review/coverage";
 import type { FieldLinkFacts } from "@/lib/business-review/field-link";
@@ -51,6 +52,7 @@ import {
   getReviewCompany,
   getReviewDataset,
   loadBusinessReview,
+  NoPublishedReviewMonthError,
   loadReviewConcentration,
   REVIEW_LINE_CODES,
 } from "@/lib/business-review/service";
@@ -101,6 +103,7 @@ export async function GET(request: Request) {
     const { review, resolution } = await loadBusinessReview({
       from: params.get("from"),
       to: params.get("to"),
+      publishedOnly: !readsLiveBusinessReview(access),
     });
     const coverage = review.coverage;
 
@@ -333,6 +336,9 @@ export async function GET(request: Request) {
       status: 200,
     });
   } catch (error) {
+    if (error instanceof NoPublishedReviewMonthError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     logError("business-review.pack failed", { error });
     return NextResponse.json({ error: "Failed to build the pack" }, { status: 500 });
   }

@@ -8,6 +8,12 @@ import { getSalesPeopleLabels, linkSalesRecords, summarizeSalesLinkage } from "@
 import { isDisposableSalesBatchRow, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
 import { formatUnits } from "@/lib/sales/format";
 import { isSalesOthersBucket } from "@/lib/sales/others";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import {
+  isSalesPeriodReleased,
+  loadSalesReleaseKeys,
+  readsUnpublishedSalesTools,
+} from "@/lib/sales/unpublished-sales-access";
 import { roundCurrency } from "@/lib/payroll/money";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -892,6 +898,16 @@ export async function getSalesDashboard(
   }
 
   let records: ScopedRecord[] = await filterSalesRecordsForAccess(canonicalRecords, accessContext);
+
+  // Sales of an unpublished month appear nowhere (owner, 2026-11-04): only the Super Admin and the SFE
+  // Manager read them here. Before any aggregation, so the KPIs, the filter lists, the platform tile
+  // and the overview built from this dashboard all inherit it. A missing accessContext fails closed.
+  if (!readsUnpublishedSalesTools(accessContext)) {
+    const publishedKeys = await loadSalesReleaseKeys();
+    records = records.filter((record) =>
+      isSalesPeriodReleased(record.period, resolveTargetLineCode(record.line), publishedKeys),
+    );
+  }
 
   // Confidential products (LA003 / LA004 — "Lacto Basic 1 & 2") are visible only to CEO /
   // Super Admin. The rows are keyed by product NAME here, so strip by name — before any

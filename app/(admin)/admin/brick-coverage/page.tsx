@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 
 import { BrickCoverageBoard } from "@/components/crm/brick-coverage-board";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { readsUnpublishedSalesTools } from "@/lib/sales/unpublished-sales-access";
 import {
   coverageSelectionIsActive,
   pruneCoverageSelection,
@@ -65,6 +66,7 @@ export default async function BrickCoveragePage({ searchParams }: PageProps) {
     territory = pruneCoverageSelection(tree, territory);
 
     board = await getBrickCoverage({
+      includeUnpublishedSales: readsUnpublishedSalesTools(access),
       month,
       scope,
       // Mapped into THIS board's key convention — bare canonical hr id, no `hr:` prefix. The doctor
@@ -86,5 +88,16 @@ export default async function BrickCoveragePage({ searchParams }: PageProps) {
     );
   }
 
-  return <BrickCoverageBoard board={board} monthBasePath="/admin/brick-coverage" scope={territory} tree={tree} />;
+  return (
+    <>
+      {board.salesWithheld ? (
+        <div className="mb-4 border border-amber-200 bg-amber-50 px-5 py-3">
+          <p className="text-xs font-semibold text-amber-900">
+            Sales for {board.monthLabel} appear here once the month&apos;s closing is published. Visits are shown as usual.
+          </p>
+        </div>
+      ) : null}
+      <BrickCoverageBoard board={board} monthBasePath="/admin/brick-coverage" scope={territory} tree={tree} />
+    </>
+  );
 }

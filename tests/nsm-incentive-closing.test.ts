@@ -170,7 +170,7 @@ export function runNsmIncentiveClosingTests() {
   const gap = resolveIncentiveWindow({ periods: ["2026-08", "2026-09"], todayPeriod: "2026-10" });
   assert.equal(
     describeIncompleteWindow(gap),
-    "Provisional — July has not been uploaded yet, and Semester 2 2026 has 3 months still to come.",
+    "Provisional — July has no published sales yet, and Semester 2 2026 has 3 months still to come.",
     "a missing month and months to come read as two clauses, not 'is July has'",
   );
 }

@@ -152,17 +152,8 @@ export type VsTargetDashboardData = {
    */
   salesLoaded: boolean;
   /**
-   * Value already booked into a not-yet-published month, from the raw (unpublished) rows.
-   * Often Direct Orders — Finance books those the day they are approved, weeks before that
-   * month's Monthly Closing is published — but can be any real sales sitting in an
-   * unpublished period. Reported inside the "not published yet" panel so the money is
-   * visibly parked rather than silently missing — and so nobody reads the panel as "August
-   * has nothing at all".
-   */
-  pendingDirectValue: number;
-  /**
-   * Target already loaded for a not-yet-published month, from the same raw (unpublished) rows as
-   * `pendingDirectValue`. The "not published yet" panel quotes it, so a month whose target is set
+   * Target already loaded for a not-yet-published month, from the raw (unpublished) rows. The
+   * "not published yet" panel quotes it, so a month whose target is set
    * reads as "measured the moment the closing is published". `totals.targetValue` cannot stand in:
    * `totals` is built from published rows only, so it is always 0 while that panel shows. A target,
    * never a sale — no sales figure crosses the publication gate for it.
@@ -299,7 +290,6 @@ export async function buildVsTargetDashboard(
       areaUnattributedValue: 0,
       unplacedValue: 0,
       salesLoaded: false,
-      pendingDirectValue: 0,
       pendingTargetValue: 0,
       isEmptyScope: true,
     };
@@ -344,7 +334,7 @@ export async function buildVsTargetDashboard(
   // or it has not. A viewer with an empty territory in a published month is `isEmptyScope`,
   // which says so — computed from the RAW bound-scoped rows, never from `rows`, so an
   // unpublished period reads as "not published" and not as "you have no territory".
-  const { rows, salesLoaded, pendingDirectValue, pendingTargetValue } = splitPeriodAtPublication(
+  const { rows, salesLoaded, pendingTargetValue } = splitPeriodAtPublication(
     rawRowsForPeriod,
     publishedKeys,
   );
@@ -416,7 +406,7 @@ export async function buildVsTargetDashboard(
     leaders,
     trend: buildTrend(scopedAll, trendPeriods),
     trendIsMeaningful: loadedPeriodCount > 1,
-    channels: buildChannelSplit(channelCells, bound),
+    channels: buildChannelSplit(publishedChannelCells(channelCells, period, publishedKeys), bound),
     uncovered: allUncovered.filter((entry) => entry.expectsTarget),
     byDesignUntargetedValue: allUncovered
       .filter((entry) => !entry.expectsTarget)
@@ -428,7 +418,6 @@ export async function buildVsTargetDashboard(
       .filter((row) => row.areaCode == null && row.regionCode == null)
       .reduce((sum, row) => sum + row.actualValue, 0),
     salesLoaded,
-    pendingDirectValue,
     pendingTargetValue,
     isEmptyScope: rawRowsForPeriod.length === 0,
   };
@@ -469,6 +458,22 @@ export type ChannelSplitCell = {
   channel: "direct" | "indirect";
   salesValue: number;
 };
+
+/**
+ * One month's cells, keeping only the lines whose closing for that month is published.
+ *
+ * Per line, because `salesLoaded` is true as soon as ANY line in the viewer's scope is published: in a
+ * month where one line has published and two have not, a company viewer's Direct/Indirect panel would
+ * otherwise add the two unpublished lines' sales to the published one's. A cell with no line is never
+ * published, the same answer isRowPublished gives.
+ */
+export function publishedChannelCells(
+  cells: readonly ChannelSplitCell[],
+  period: string,
+  publishedKeys: ReadonlySet<string>,
+): ChannelSplitCell[] {
+  return cells.filter((cell) => isRowPublished({ lineCode: cell.lineCode, period }, publishedKeys));
+}
 
 /** The full attribution rows -> the cells the channel split reads. Pure. */
 export function channelSplitCellsOf(rows: readonly MonthlyAttributionRow[]): ChannelSplitCell[] {

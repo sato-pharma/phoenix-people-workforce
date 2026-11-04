@@ -741,9 +741,6 @@ export function VsTargetDashboard({
         >
           This is not a zero. Sales for this month are not final until reconciled and published, so there is
           nothing to measure against target yet.
-          {data.pendingDirectValue !== 0
-            ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the closing is published.`
-            : ""}
           {/* pendingTargetValue, never totals.targetValue: totals hold PUBLISHED rows only, so in this
               panel their target is always 0 and the sentence could never render. */}
           {data.pendingTargetValue !== 0

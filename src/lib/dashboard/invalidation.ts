@@ -336,6 +336,17 @@ export function invalidateCompanyVacationReportCache(reason: string) {
  * on the master-data routes busts these tags with "max" afterwards, which would undo it.
  * Best-effort, as below.
  */
+export function invalidateAchievementStampedCaches(reason: string) {
+  try {
+    revalidateTag(SALES_ACHIEVEMENT_STAMPED_CACHE_TAG, { expire: 0 });
+  } catch (error) {
+    console.warn("Achievement-stamped cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
 export function invalidatePriceDependentSalesCaches(reason: string) {
   // Weekly Stock joins them (2 Nov 2026): its values are units at the factory price, and its payload is remembered.
   for (const tag of [CLOSING_STORE_SPLIT_CACHE_TAG, SALES_ACHIEVEMENT_STAMPED_CACHE_TAG, WEEKLY_STOCK_CACHE_TAG]) {

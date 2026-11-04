@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { loadSalesTruthReport } from "@/lib/sales/sales-truth-report";
+import { readsUnpublishedSalesTools } from "@/lib/sales/unpublished-sales-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,11 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     // Same gate as the sibling closing tools. This exposes per-area company sales for every line.
     await assertPermission(access, "sales", "read");
+    // It reads any month with data, published or not, and `sales:read` reaches every role. The page is
+    // already held back; this is the same tool by typed URL (owner, 2026-11-04).
+    if (!readsUnpublishedSalesTools(access)) {
+      return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
+    }
 
     const period = new URL(request.url).searchParams.get("period");
     const report = await loadSalesTruthReport(period && /^\d{4}-\d{2}$/.test(period) ? period : null);

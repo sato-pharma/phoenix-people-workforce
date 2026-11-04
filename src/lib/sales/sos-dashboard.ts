@@ -26,6 +26,12 @@ import {
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
+  isSalesPeriodReleasedForLines,
+  loadSalesReleaseKeys,
+  readsUnpublishedSalesTools,
+  salesScopeLineCodes,
+} from "@/lib/sales/unpublished-sales-access";
+import {
   DIRECT_CHANNEL_CODE,
   DIRECT_CHANNEL_LABEL,
   canonicalDistributorKey,
@@ -672,7 +678,7 @@ export async function getSosDashboard(
   // from rows, filter options and the trend for every other role (incl. company-scope SFE).
   const canSeeHeadOffice = canViewHeadOfficeLine(accessContext.role);
 
-  const [availablePeriods, references, salesScope, coverage, operationalRegions] = await Promise.all([
+  const [loadedPeriods, references, salesScope, coverage, operationalRegions, publishedKeys] = await Promise.all([
     listMonthlyClosingPeriods(),
     loadSalesReferenceData({ includeCustomerBricks: false }),
     resolveSalesAccessScope(accessContext),
@@ -685,7 +691,18 @@ export async function getSosDashboard(
     // Fails soft to an unavailable resolver: the dashboard then groups geographically exactly as it
     // did before, which is wrong-but-unchanged rather than blank. See loadOperationalRegionResolver.
     loadOperationalRegionResolver(),
+    readsUnpublishedSalesTools(accessContext) ? null : loadSalesReleaseKeys(),
   ]);
+
+  // SALES OF AN UNPUBLISHED MONTH APPEAR NOWHERE (owner, 2026-11-04). The picker, the default month,
+  // the trend, the month-on-month and the year-on-year are all drawn from this one list, so a month
+  // left off it cannot be asked for, even by a typed URL. It covers the admin page, the portal's
+  // Source of Sales and both export routes.
+  const availablePeriods = publishedKeys
+    ? loadedPeriods.filter((period) =>
+        isSalesPeriodReleasedForLines(period, salesScopeLineCodes(salesScope), publishedKeys),
+      )
+    : loadedPeriods;
 
   // Per-viewer LINE/REGION lockdown. The SoS RPCs return the WHOLE company; without this any
   // role holding `sales:read` (e.g. Product/Group Product Manager) could fetch every line/region
