@@ -13,6 +13,7 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 import { explainHeaderMismatch, type HeaderMismatchExplanation } from "@/lib/sales/normalizer/ai-explain";
 import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { commitOfficeAllocation, previewOfficeAllocation } from "@/lib/sales/office-upload";
+import { summarizeEpdaBonusDeduction, type EpdaDeductionLine } from "@/lib/sales/import-epda-bonus-deduction";
 import { buildPreviewBreakdowns, type PreviewBreakdowns } from "@/lib/sales/normalizer/breakdowns";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { describeRefusedRow, isRefusedRow, listRowLines, summarizeRefusedRows } from "@/lib/sales/normalizer/row-messages";
@@ -318,7 +319,7 @@ export function withRefusedRowsFinding(report: ValidationReport, exceptions: rea
 }
 
 export type AnalyzeResult =
-  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport; isRegionOnly?: boolean; files?: UploadFileSummary[]; batches?: UploadBatchSummary[] }
+  | { status: "ok"; preview: NormalizePreview; reconciliation: ReconciliationReceipt; breakdowns: PreviewBreakdowns; bonusDeduction?: EpdaDeductionLine[]; period: string | null; needsPeriod: boolean; engineVersion: string; validation: ValidationReport; isRegionOnly?: boolean; files?: UploadFileSummary[]; batches?: UploadBatchSummary[] }
   // fileName: which of several chosen files it is about (absent for one file).
   | { status: "header_error"; distributorName: string; missingGroups: { label: string; expected: string[] }[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; aiExplanation?: HeaderMismatchExplanation; fileName?: string }
   | { status: "coded_sheet"; distributorName: string; fileName?: string };
@@ -462,6 +463,8 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   // Validate the rows AS THEY WILL BE PERSISTED (consolidated when a period was picked) so analyze
   // matches the commit gate exactly — including duplicates that only appear after consolidation.
   const crossCheck = await buildDistributorCrossCheck(distributorCode, rec.distributorName, file);
+  const persisted = applyPeriodConsolidation(rec.result, decision, rec.prices);
+  const bonusDeduction = summarizeEpdaBonusDeduction(persisted.coded, (r) => r.invoiceDate, excludeProductCodes);
   // ...and fold in the period gate, because commit REFUSES a missing or multi-month period before it
   // validates anything. Without this, those two cases were validated with resolvedPeriod = null —
   // which also disables the period-dependent checks — and could report "Validation passed" for a file
@@ -470,13 +473,13 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   // A picked month that re-dates rows is named from the rows as the sheet dated them.
   const validation = withPeriodGateFinding(
     withRefusedRowsFinding(
-      await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision, rec.prices), resolvedPeriod, crossCheck),
+      await runStrictValidation(distributorCode, rec, persisted, resolvedPeriod, crossCheck),
       rec.result.exceptions,
     ),
     decision,
     rec.result.coded,
   );
-  return { status: "ok", preview, reconciliation, breakdowns, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
+  return { status: "ok", preview, reconciliation, breakdowns, bonusDeduction, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
 }
 
 export type CommitResult =
@@ -746,9 +749,11 @@ export async function analyzeMonthlyUploadFiles(distributorCode: string, files: 
   const breakdowns = buildPreviewBreakdowns(merged.result.coded, excludeProductCodes, merged.result.ignoredRows);
   const { crossCheck, fileName: crossCheckFile } = await crossCheckUploadFiles(distributorCode, merged.distributorName, files);
   const reports: { period: string | null; report: ValidationReport }[] = [];
+  const persistedRows: CodedRow[] = [];
   for (const group of prepared.groups) {
-    const { period, report } = await validateUploadGroup(distributorCode, prepared, group, crossCheck);
+    const { period, stamped, report } = await validateUploadGroup(distributorCode, prepared, group, crossCheck);
     reports.push({ period, report });
+    persistedRows.push(...stamped.coded);
   }
   const validation = labelReportRows(nameCrossCheckFile(combineMonthReports(reports), crossCheckFile), fileNames);
   const only = prepared.groups.length === 1 ? prepared.groups[0] : null;
@@ -757,6 +762,7 @@ export async function analyzeMonthlyUploadFiles(distributorCode: string, files: 
     preview,
     reconciliation,
     breakdowns,
+    bonusDeduction: summarizeEpdaBonusDeduction(persistedRows, (r) => r.invoiceDate, excludeProductCodes),
     period: only && only.decision.kind === "ok" ? only.decision.period : null,
     needsPeriod: only !== null && only.decision.kind === "missing",
     engineVersion: RECOGNITION_ENGINE_VERSION,
