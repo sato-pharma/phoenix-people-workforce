@@ -1574,7 +1574,7 @@ try {
             'progress. It was 58% of that day\'s failed runs, and the real cause was the repository losing ' +
             'its Pro entitlement - nothing a retry could reach.\n' +
             'Do this instead:\n' +
-            '  gh api repos/gawishtheit/phoenix-people-workforce/branches/main --jq .protected   # false = the gate is off, entitlement lapsed\n' +
+            '  gh api repos/Omar-3-xx/phoenix-people-workforce/branches/main --jq .protected   # false = the gate is off, entitlement lapsed\n' +
             '  gh run list --workflow=ci.yml --branch <branch> --limit 5 --json databaseId,event,status,conclusion\n' +
             '  gh run rerun <id>   # the pull_request-sourced run: it keeps the event, so its checks reach the rollup\n' +
             'Then WAIT - dispatch lags 20-30 minutes during an Actions outage and events are not dropped. ' +

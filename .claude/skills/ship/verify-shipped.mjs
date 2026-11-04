@@ -41,7 +41,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO = 'gawishtheit/phoenix-people-workforce';
+const REPO = 'Omar-3-xx/phoenix-people-workforce';
 const HEALTHZ = 'https://phoenix-hr.satopharma.com/api/healthz';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 

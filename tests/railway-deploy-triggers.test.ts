@@ -30,7 +30,7 @@ const WORKER = "b955f4dc-a597-4972-953b-410e3c91bc81";
 const HEADWIND = "3ff181a3-3408-4118-ab13-6e63d24fbe4a";
 const CRON = "179e6a73-d891-4fbc-a89e-ac53ef461821";
 const HEADWIND_DB = "f6cf6ddb-2141-4a95-a1cd-3801fbc24d0e";
-const REPO = "gawishtheit/phoenix-people-workforce";
+const REPO = "Omar-3-xx/phoenix-people-workforce";
 
 /** The Phoenix project as Railway reported it at 21:10 Cairo on 2026-10-23, minus the staging trigger. */
 function livePreFix(): Live {
@@ -75,7 +75,7 @@ export function runRailwayDeployTriggersTests() {
   // environment that lost its trigger. Nine days of merges did not reach staging and nothing was red.
   const gaps = findTriggerGaps(livePreFix());
   assert.equal(gaps.length, 1, `the pre-fix shape must yield exactly one finding, got: ${gaps.join(" | ")}`);
-  assert.match(gaps[0], /^staging\/phoenix-people-workforce: deploys from gawishtheit\/phoenix-people-workforce but has NO deployment trigger/);
+  assert.match(gaps[0], /^staging\/phoenix-people-workforce: deploys from Omar-3-xx\/phoenix-people-workforce but has NO deployment trigger/);
   assert.match(gaps[0], /nothing turns red/, "the finding must say the failure is silent, or it reads as cosmetic");
 
   // And the fixed shape is clean — otherwise the check is noise and gets ignored.
@@ -93,10 +93,10 @@ export function runRailwayDeployTriggersTests() {
 
   // A trigger on the right service but the WRONG repository: it fires for someone else's pushes.
   const wrongRepo = liveFixed();
-  wrongRepo.triggers[3].repository = "gawishtheit/some-other-repo";
+  wrongRepo.triggers[3].repository = "Omar-3-xx/some-other-repo";
   assert.match(
     findTriggerGaps(wrongRepo).join("\n"),
-    /staging\/phoenix-people-workforce: its deployment trigger watches gawishtheit\/some-other-repo/,
+    /staging\/phoenix-people-workforce: its deployment trigger watches Omar-3-xx\/some-other-repo/,
   );
 
   // A trigger with no branch can never fire, which looks identical to a working one in a listing.
@@ -123,12 +123,12 @@ export function runRailwayDeployTriggersTests() {
   for (const trigger of staleTriggers.triggers.slice(0, 3)) trigger.repository = OLD_REPO;
   const stale = findTriggerGaps(staleTriggers).filter((line: string) => line.includes("does not own"));
   assert.equal(stale.length, 3, `🔴 a trigger left on the old owner passed the check: ${findTriggerGaps(staleTriggers).join(" | ")}`);
-  assert.match(stale.join("\n"), /production\/phoenix-people-workforce: its deployment trigger watches .+, which gawishtheit does not own/);
+  assert.match(stale.join("\n"), /production\/phoenix-people-workforce: its deployment trigger watches .+, which Omar-3-xx does not own/);
   const staleSource = liveFixed();
   for (const instance of staleSource.instances) if (instance.repo) instance.repo = OLD_REPO;
   for (const trigger of staleSource.triggers) trigger.repository = OLD_REPO;
   assert.equal(
-    findTriggerGaps(staleSource).filter((line: string) => /deploys from .+, which gawishtheit does not own/.test(line)).length,
+    findTriggerGaps(staleSource).filter((line: string) => /deploys from .+, which Omar-3-xx does not own/.test(line)).length,
     4,
     "🔴 sources and triggers both on the old owner agree with each other, so only the owner check can see it",
   );

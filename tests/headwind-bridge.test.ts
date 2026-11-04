@@ -2210,7 +2210,7 @@ function runServerImageTests() {
   // the server is up — so a redeploy serving 6.40 alone would 404 every enrolment in between.
   assert.match(
     entrypoint,
-    /provision_official_apk "hmdm-phoenix-6\.39\.apk" \\\n\s+"https:\/\/github\.com\/gawishtheit\/hmdm-android\/releases\/download\/launcher-6\.39-r1\/hmdm-phoenix-6\.39\.apk" "\$PHX_LAUNCHER_PREVIOUS_SIZE" 0/,
+    /provision_official_apk "hmdm-phoenix-6\.39\.apk" \\\n\s+"https:\/\/github\.com\/Omar-3-xx\/hmdm-android\/releases\/download\/launcher-6\.39-r1\/hmdm-phoenix-6\.39\.apk" "\$PHX_LAUNCHER_PREVIOUS_SIZE" 0/,
     "the previous launcher is re-provisioned from its own pinned release beside 6.40",
   );
   assert.match(entrypoint, /^PHX_LAUNCHER_PREVIOUS_SIZE=6286121\b/m, "pinned to the 6.39 asset's exact size");
