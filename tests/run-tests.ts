@@ -4,6 +4,7 @@ import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.t
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runClosingFrozenSplitNetTests } from "./closing-frozen-split-net.test.ts";
 import { runClosingBulkAllocationTests } from "./closing-bulk-allocation.test.ts";
+import { runEpdaBonusDeductionTests } from "./epda-bonus-deduction.test.ts";
 import { runClosingOfficeRespreadTests } from "./closing-office-respread.test.ts";
 import { runClosingStoreSplitGeographyStampTests } from "./closing-store-split-geography-stamp.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
@@ -3116,6 +3117,7 @@ await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("closing frozen split net (a published month's Closing tab reads the FROZEN net, valued at the period price, = the keycard)", runClosingFrozenSplitNetTests);
+await runTest("EPDA bonus deduction (from the 2026-10 closing, whole units per area)", runEpdaBonusDeductionTests);
 await runTest(
   "EPDA-BULK contribution allocation (from the 2026-09 closing the bulk sector's Pedia units spread by the other distributors' value share, the shares equal the LOCKED Office rule's, the total cannot move, and the city rule no longer moves the same rows)",
   runClosingBulkAllocationTests,

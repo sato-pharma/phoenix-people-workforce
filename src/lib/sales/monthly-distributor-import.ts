@@ -21,6 +21,7 @@ import {
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { assertNotADuplicateUpload, repriceableUploadRow, totalValueAtPeriod } from "@/lib/sales/import-duplicate-guard";
+import { applyEpdaBonusDeduction } from "@/lib/sales/import-epda-bonus-deduction";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import {
   addClosingSales,
@@ -3372,7 +3373,22 @@ export async function persistDistributorSalesUpload(
   parsed: DistributorSalesValidationResult & { parsedRows: ParsedDistributorRow[] },
   uploadedBy: string,
 ) {
-  const { parsedRows, ...result } = parsed;
+  const { parsedRows: sheetRows, ...result } = parsed;
+  // 🔴 EPDA's bonus deduction, on this route too: the Normalizer's one-click import lands here
+  // (import-epda-bonus-deduction.ts). A blocked batch never counts, so it stays as the sheet said.
+  const parsedRows =
+    result.status === "validated" ? applyEpdaBonusDeduction(sheetRows, (row) => row.invoicePeriod ?? result.period) : sheetRows;
+  // The batch stores what its rows hold. `result` stays the sheet's: it is the receipt, whose every
+  // breakdown is the sheet's, and the per-line summaries inserted below are rebuilt from the stored
+  // rows by the tail's phx_refresh_sos_import_summaries.
+  const storedTotals =
+    parsedRows === sheetRows
+      ? result.totals
+      : {
+          ...result.totals,
+          totalQty: Number(parsedRows.reduce((sum, row) => sum + (Number.isFinite(row.qty) ? row.qty : 0), 0).toFixed(6)),
+          totalValue: Number(parsedRows.reduce((sum, row) => sum + (Number.isFinite(row.value) ? row.value : 0), 0).toFixed(6)),
+        };
 
   // Locked period: reject before writing anything (covers normal, normalizer-buffer, and Office paths).
   await assertPeriodNotLocked(result.period);
@@ -3384,24 +3400,29 @@ export async function persistDistributorSalesUpload(
     // Each stored batch is compared on ITS month's price basis, so a file re-dated across a reprice
     // (September's file loaded again as October) still reads as the same file — see totalValueAtPeriod.
     // Office rows arrive here too, valued at the master price in every month, so they keep their value.
+    // EPDA's deduction is re-run for each stored batch's month, so a file re-dated across its start
+    // still reads as the same file.
     const prices = await loadProductPeriodPrices();
-    const repriceable = parsedRows.map((row) =>
-      repriceableUploadRow({
-        distributorCode: row.distributorCode,
-        isDirect: row.isDirect,
-        period: row.invoicePeriod,
-        productCode: row.productCode,
-        value: row.value,
-      }),
-    );
+    const rowsStoredAt = (period: string | null) => applyEpdaBonusDeduction(sheetRows, () => period);
+    const repriceableAt = (period: string | null) =>
+      rowsStoredAt(period).map((row) =>
+        repriceableUploadRow({
+          distributorCode: row.distributorCode,
+          isDirect: row.isDirect,
+          period: row.invoicePeriod,
+          productCode: row.productCode,
+          value: row.value,
+        }),
+      );
     await assertNotADuplicateUpload({
       distributorCode: result.distributor.code,
       fileName: result.fileName,
       period: result.period,
       totalRows: result.rowCount,
-      totalQty: result.totals.totalQty,
-      totalValue: result.totals.totalValue,
-      totalValueAt: (period) => totalValueAtPeriod(repriceable, prices, period),
+      totalQty: storedTotals.totalQty,
+      totalValue: storedTotals.totalValue,
+      totalValueAt: (period) => totalValueAtPeriod(repriceableAt(period), prices, period),
+      totalQtyAt: (period) => rowsStoredAt(period).reduce((sum, row) => sum + (Number.isFinite(row.qty) ? row.qty : 0), 0),
     });
   }
 
@@ -3426,9 +3447,9 @@ export async function persistDistributorSalesUpload(
       importable_rows: result.importableRows,
       failed_rows: result.failedRows,
       warning_rows: result.warningRows,
-      total_qty: result.totals.totalQty,
+      total_qty: storedTotals.totalQty,
       total_bonus_qty: result.totals.totalBonusQty,
-      total_value: result.totals.totalValue,
+      total_value: storedTotals.totalValue,
       blocking_reasons: result.blockingReasons,
       uploaded_by: uploadedBy,
     })

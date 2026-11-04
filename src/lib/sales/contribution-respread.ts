@@ -129,6 +129,36 @@ export function spreadByShares(
 }
 
 /**
+ * `spreadByShares` in whole units, for a total that must stay a whole number in every area.
+ *
+ * Largest remainder, with the area code settling a tie so every read lands the same. The sign is
+ * taken off first, so a net return spreads the same way as a net sale.
+ */
+export function spreadWholeUnitsByShares(
+  total: number,
+  areaShare: ReadonlyMap<string, number>,
+): Map<string, number> {
+  const slices = new Map<string, number>();
+  const whole = Math.abs(Math.round(Number.isFinite(total) ? total : 0));
+  if (whole === 0 || areaShare.size === 0) return slices;
+  const sign = Math.sign(total);
+  const shares = [...areaShare].map(([areaCode, share]) => {
+    const ideal = whole * share;
+    const units = Math.floor(ideal);
+    return { areaCode, remainder: ideal - units, units };
+  });
+  let left = whole - shares.reduce((sum, share) => sum + share.units, 0);
+  shares.sort((a, b) => b.remainder - a.remainder || a.areaCode.localeCompare(b.areaCode));
+  for (const share of shares) {
+    if (left <= 0) break;
+    share.units += 1;
+    left -= 1;
+  }
+  for (const { areaCode, units } of shares) if (units !== 0) slices.set(areaCode, sign * units);
+  return slices;
+}
+
+/**
  * Each area's share of these rows' sales value — the weights both rules spread on.
  *
  * VALUE, not units — the owner's rule, and the locked Office rule it copies. Units cannot be added
@@ -192,6 +222,8 @@ export function buildContributionRespread(input: {
   moved: readonly RespreadRow[];
   base: readonly RespreadRow[];
   line: string;
+  /** Spread whole units, with the value following them. The Office channel never asks for this. */
+  wholeUnits?: boolean;
 }): ContributionRespread {
   const { moved, base } = input;
   if (moved.length === 0) return emptyContributionRespread();
@@ -251,9 +283,17 @@ export function buildContributionRespread(input: {
   // IN: the same product totals, spread by the weights. Each measure is reconciled on its own, so
   // units, effective units and value each land on exactly the total that left.
   for (const [productCode, totals] of byProduct) {
-    const qtySlices = spreadByShares(totals.qty, areaShare);
-    const effectiveSlices = spreadByShares(totals.effective, areaShare);
-    const valueSlices = spreadByShares(totals.value, areaShare);
+    const qtySlices = input.wholeUnits ? spreadWholeUnitsByShares(totals.qty, areaShare) : spreadByShares(totals.qty, areaShare);
+    const effectiveSlices = input.wholeUnits
+      ? spreadWholeUnitsByShares(totals.effective, areaShare)
+      : spreadByShares(totals.effective, areaShare);
+    // A whole-unit area's value is its units at the book's price, not a fraction of the money. Units
+    // that net to nothing have no slices to follow, so that value keeps the plain shares.
+    const valueShare: ReadonlyMap<string, number> =
+      input.wholeUnits && qtySlices.size > 0
+        ? new Map([...qtySlices].map(([areaCode, qty]): [string, number] => [areaCode, qty / totals.qty]))
+        : areaShare;
+    const valueSlices = spreadByShares(totals.value, valueShare);
     for (const areaCode of areaShare.keys()) {
       const qty = qtySlices.get(areaCode) ?? 0;
       const effective = effectiveSlices.get(areaCode) ?? 0;

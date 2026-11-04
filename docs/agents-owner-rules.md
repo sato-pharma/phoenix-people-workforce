@@ -3218,6 +3218,25 @@ Every Pedia target since February sits on Fayoum alone: September is 988 units a
 
 ⚠ **The September split between the two is HIS to give.** The two obvious bases disagree almost exactly in reverse — the last separately-set targets (January and February) put Fayoum at 69%, while sales since February put it at 32% — and the sales series is untrustworthy here because one rep has covered both areas throughout, swinging hard and twice going negative on returns. Do not derive it.
 
+## The EPDA bonus deduction — owner rule, 2026-11-04
+
+His words: *"we will deduct the bonus quantity from each sato items example ivyronc deduct 30% roya and saginkgo deduct 15% if ivyronc sales is 6000 so we consider only 4200 bottle . sure this calculation not for announcment. only we announce the figures after deduction no need to say anything other.only in epda starting oct closing"*, and *"never to put a decimal in units units are always a true number"*.
+
+He settled the rest in answers the same day: Ivyronc 30% (his other example, 100 to 85, was not the rule), only these three products, EPDA-BULK (`EP-BK`) and EPDA-Pharmacies (`EP-PHS`) only, whole numbers made on each area's total.
+
+### The rule
+
+- From the October 2026 closing on: Ivyronc `IV001` loses 30%, Royafloxacin `RO001` and Saginko `SA001` lose 15%. Royanoxicam `RY001` is a different product.
+- The value follows the units at the row's own price, so sales, achievement and incentives all carry the deducted figure.
+- Nothing anywhere names the deduction: no note, label or caption on anything announced.
+- The rule below this one stands: the sheet's bonus column is still not counted. This is a flat percentage of the book's units, whatever that column holds.
+
+### How it works
+
+`src/lib/sales/import-epda-bonus-deduction.ts` runs when the rows are stored, on both routes into `source_of_sales_import_rows`. A read-time net like the bulk allocation's was rejected: about thirty-five database functions read those rows directly, and any one a net missed would announce the undeducted figure. `raw_row` keeps the sheet's units and a re-upload starts again from the sheet, so changing a percentage means re-uploading that month's two books.
+
+Each area × product total rounds once and its rows take whole shares by largest remainder, so a one-unit pharmacy line can store 0 or 1. EPDA-BULK's Ivyronc is one group across the whole book, because the closing ignores its invoiced area and spreads it by contribution; from October that spread lands whole units too (`wholeUnits` in `contribution-respread.ts`).
+
 ## No distributor's bonus is counted from September — owner rule, 2026-09-18
 
 His words, profanity left out: *"logged and published months, we can't touch them. So if you already calculated bonus in August … don't touch it. Starting from September, never a bonus in any … distributor is counted."* It restates what he said on 2026-09-07, the ruling that also took the discount factor out: *"we neglect the bonus and the value in any distributor sheet, we take the units and multiply by factory"* (quoted in `src/lib/sales/monthly-closing-details.ts`).
