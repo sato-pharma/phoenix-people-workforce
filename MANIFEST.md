@@ -9,11 +9,12 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
 | `hooks/dev-server-reaper.mjs` | 44955 | `8c3d38d30cd80ad6` |
-| `hooks/dispatch.json` | 2153 | `37a75babb4154ced` |
+| `hooks/dispatch.json` | 3039 | `c4af358124679cf5` |
 | `hooks/effort-advisor.mjs` | 5509 | `1c6149ac5f7b6e07` |
 | `hooks/hook-dispatch-worker.mjs` | 1362 | `6524ba3dcd6cb8c6` |
 | `hooks/hook-dispatch.mjs` | 18788 | `1f67b0f35764e7a5` |
 | `hooks/memory-guard.mjs` | 25589 | `17623bfedd6aa98f` |
+| `hooks/merge-checks-guard.mjs` | 19649 | `9f3ac0eb1692a8fd` |
 | `hooks/needs-you-refresh.mjs` | 5091 | `0b998d5b05d63dc4` |
 | `hooks/needs-you-status.mjs` | 6955 | `e5a4ca9b178fccf0` |
 | `hooks/next-step-capture.mjs` | 74222 | `7a3bc29b84b84d70` |

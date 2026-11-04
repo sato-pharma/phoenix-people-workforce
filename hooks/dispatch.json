@@ -1,19 +1,49 @@
 {
-  "_doc": "The USER-level PreToolUse hooks, run in ONE node process by hook-dispatch.mjs beside this file (a byte-identical copy of phoenix-workforce/.claude/hooks/hook-dispatch.mjs; edit there, then copy). Same matchers, commands and timeouts they had in ~/.claude/settings.json until 2026-10-08. Add a blocking PreToolUse hook HERE, never in settings.json; an async hook (dev-server-reaper) stays in settings.json, because it never blocks and the dispatcher waits for every hook. PHX_HOOK_DISPATCH_PROCESSES=1 runs each as its own process again. Account: phoenix-workforce docs/hook-dispatcher.md. python-repl-guard.mjs (added 2026-10-15) carries phoenix-workforce bash-guard clause C19 — a bare python REPL floods a background task's output file at ~2.2 GB an hour — so it also answers OUTSIDE that repo; it stands aside when the session's own project wires a bash-guard holding C19. Its cases: node python-repl-guard.mjs selftest.",
+  "_doc": "The USER-level PreToolUse hooks, run in ONE node process by hook-dispatch.mjs beside this file (a byte-identical copy of phoenix-workforce/.claude/hooks/hook-dispatch.mjs; edit there, then copy). Same matchers, commands and timeouts they had in ~/.claude/settings.json until 2026-10-08. Add a blocking PreToolUse hook HERE, never in settings.json; an async hook (dev-server-reaper) stays in settings.json, because it never blocks and the dispatcher waits for every hook. PHX_HOOK_DISPATCH_PROCESSES=1 runs each as its own process again. Account: phoenix-workforce docs/hook-dispatcher.md. python-repl-guard.mjs (added 2026-10-15) carries phoenix-workforce bash-guard clause C19 — a bare python REPL floods a background task's output file at ~2.2 GB an hour — so it also answers OUTSIDE that repo; it stands aside when the session's own project wires a bash-guard holding C19. Its cases: node python-repl-guard.mjs selftest. merge-checks-guard.mjs (added 2026-11-04) carries phoenix-workforce bash-guard clause C21 — a `gh pr merge` whose checks are red, running or unreported is refused in ANY repository, because the free plan's 403 on branch protection means GitHub no longer refuses it; it stands aside when the session's own project wires a bash-guard holding C21. Its cases: node merge-checks-guard.mjs selftest.",
   "_matcher_doc": "settings.json calls this dispatcher ONLY for ^(Write|Edit|Bash|PowerShell)$ — the tools the hooks below cover. A new hook here for any other tool (NotebookEdit, an mcp__ tool) must ALSO widen that settings.json matcher, as a REGEX: Claude Code reads plain names and pipes as an EXACT list, so `...|mcp__` matches no real MCP tool (found 2026-10-08). The weekly-review-readonly guard was unwired 2026-10-08 at the owner's word because its routine (claude-config-weekly-review) is retired to scheduled-tasks/_attic; the .mjs stays, since claude-scripts-backup.mjs runs its --selftest.",
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Bash|PowerShell",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["C:/Users/satoh/.claude/hooks/scratchpad-guard.mjs", "pre"], "timeout": 90 },
-          { "type": "command", "command": "node", "args": ["C:/Users/satoh/.claude/hooks/python-repl-guard.mjs"], "timeout": 10 }
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/scratchpad-guard.mjs",
+              "pre"
+            ],
+            "timeout": 90
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/python-repl-guard.mjs"
+            ],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/merge-checks-guard.mjs"
+            ],
+            "timeout": 90
+          }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "node", "args": ["C:/Users/satoh/.claude/hooks/risky-allow-guard.mjs"], "timeout": 10 }
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/risky-allow-guard.mjs"
+            ],
+            "timeout": 10
+          }
         ]
       }
     ]
