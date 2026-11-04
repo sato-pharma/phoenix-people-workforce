@@ -1,6 +1,7 @@
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { isSalesPeriodReleasedCompanyWide, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { facetsFrom, loadSpotlightOrg } from "@/lib/spotlight/org";
 import { selectableWindows } from "@/lib/spotlight/period";
 
@@ -20,15 +21,16 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "spotlight", "read");
 
-    const index = await loadSpotlightOrg();
+    const [index, publishedKeys] = await Promise.all([loadSpotlightOrg(), loadSalesReleaseKeys()]);
+    const isPublished = (period: string) => isSalesPeriodReleasedCompanyWide(period, publishedKeys);
 
     return Response.json(
       {
         windows: {
-          month: selectableWindows("month", undefined, 18),
-          quarter: selectableWindows("quarter", undefined, 8),
-          semester: selectableWindows("semester", undefined, 4),
-          year: selectableWindows("year", undefined, 4),
+          month: selectableWindows("month", undefined, 18, isPublished),
+          quarter: selectableWindows("quarter", undefined, 8, isPublished),
+          semester: selectableWindows("semester", undefined, 4, isPublished),
+          year: selectableWindows("year", undefined, 4, isPublished),
         },
         facets: facetsFrom(index),
       },

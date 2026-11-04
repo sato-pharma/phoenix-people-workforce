@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { readsLiveBusinessReview } from "@/lib/sales/unpublished-sales-access";
 import { concentrationForAreas, type ReviewSalesDetail } from "@/lib/business-review/concentration";
 import { figureWindowLabel, figureWindowPeriods, hasFigures } from "@/lib/business-review/coverage";
 import type { FieldLinkFacts } from "@/lib/business-review/field-link";
@@ -101,6 +102,7 @@ export async function GET(request: Request) {
     const { review, resolution } = await loadBusinessReview({
       from: params.get("from"),
       to: params.get("to"),
+      publishedOnly: !readsLiveBusinessReview(access),
     });
     const coverage = review.coverage;
 

@@ -54,6 +54,7 @@ import {
   needsClosingDetail,
 } from "@/lib/business-review/pack/metrics";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { readsLiveBusinessReview } from "@/lib/sales/unpublished-sales-access";
 import {
   bandFor,
   getReviewCompany,
@@ -112,6 +113,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   const reviewWindow = {
     from: firstSearchParam(params?.from) ?? null,
     to: firstSearchParam(params?.to) ?? null,
+    publishedOnly: !readsLiveBusinessReview(access),
   };
   // STARTED TOGETHER (2026-10-01, "slow to transfer between page and page"): the review bundle is
   // the same for every viewer of a window — it depends on `from`/`to` alone, never on the scope — so

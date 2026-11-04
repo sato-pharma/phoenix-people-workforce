@@ -51,6 +51,7 @@ import {
 } from "@/lib/sales/closing-brick-sales";
 import { withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { lineName } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { SALES_HISTORY_FLOOR, isValidVsTargetPeriod, loadUploadedPeriodsInRange } from "@/lib/sales/vs-target";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -399,11 +400,19 @@ export async function getEmployee360BrickCoverage(
 
   // The closing months need only the landed months and the hire month — not the placement — so the
   // closing reads start as soon as those two are in.
-  const [uploadedPeriods, hireMonths] = await Promise.all([uploadedPeriodsLoad, hireMonthsLoad]);
+  const [uploadedPeriods, hireMonths, publishedKeys] = await Promise.all([
+    uploadedPeriodsLoad,
+    hireMonthsLoad,
+    loadSalesReleaseKeys(),
+  ]);
   const key = canonicalHrIdKey(hrId);
+  // Only months this line has published (owner, 2026-11-04). The fallback to "the latest landed month"
+  // reads this same list, so it cannot reach past the last published month either.
   const { months, fallback } = resolveBrickSalesMonths({
     window,
-    uploadedPeriods,
+    uploadedPeriods: new Set(
+      [...uploadedPeriods].filter((period) => isSalesPeriodReleased(period, territory.lineCode, publishedKeys)),
+    ),
     hireMonth: key ? (hireMonths.get(key) ?? null) : null,
   });
 

@@ -5,6 +5,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { facetsFrom, loadSpotlightOrg } from "@/lib/spotlight/org";
+import { isSalesPeriodReleasedCompanyWide, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { selectableWindows } from "@/lib/spotlight/period";
 
 export const dynamic = "force-dynamic";
@@ -36,17 +37,18 @@ export default async function SpotlightPage() {
   }
   const canExport = await canAccess(access, "spotlight", "export");
 
-  const index = await loadSpotlightOrg();
+  const [index, publishedKeys] = await Promise.all([loadSpotlightOrg(), loadSalesReleaseKeys()]);
+  const isPublished = (period: string) => isSalesPeriodReleasedCompanyWide(period, publishedKeys);
 
   return (
     <SpotlightWorkspace
       canExport={canExport}
       facets={facetsFrom(index)}
       windows={{
-        month: selectableWindows("month", undefined, 18),
-        quarter: selectableWindows("quarter", undefined, 8),
-        semester: selectableWindows("semester", undefined, 4),
-        year: selectableWindows("year", undefined, 4),
+        month: selectableWindows("month", undefined, 18, isPublished),
+        quarter: selectableWindows("quarter", undefined, 8, isPublished),
+        semester: selectableWindows("semester", undefined, 4, isPublished),
+        year: selectableWindows("year", undefined, 4, isPublished),
       }}
     />
   );

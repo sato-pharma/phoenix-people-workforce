@@ -35,6 +35,7 @@ import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { isDegraded, serveWithoutCaching, servedWithoutCachingValue } from "@/lib/cache/serve-uncached";
 import { SALES_ACHIEVEMENT_STAMPED_CACHE_TAG } from "@/lib/dashboard/invalidation";
+import { loadSalesReleaseKeys, releasedPeriodsUpToFirstHole } from "@/lib/sales/unpublished-sales-access";
 import { loadAchievementCacheStamp, shareTokenKeyedRead } from "@/lib/sales/vs-target";
 
 import {
@@ -133,15 +134,27 @@ export type BusinessReviewResult = {
  * Call this once per render and pass the result down. Calling it per line would run the
  * attribution pass three times over the same months, and every round trip crosses to
  * eu-central-1.
+ *
+ * `publishedOnly` caps the window at the last month published on every line, for everyone but the
+ * Super Admin, the CEO and the SFE Manager (owner, 2026-11-04: "Admins keep the live view"). The
+ * bundle is company-wide and cached by window, so capping the WINDOW is what keeps an unpublished
+ * sale out of it; a capped window is simply another window. All three lines, because the same bundle
+ * serves all three: a line manager waits for the last line to publish, which fails closed.
  */
 export async function loadBusinessReview(input?: {
   from?: string | null;
   to?: string | null;
+  publishedOnly?: boolean;
 }): Promise<BusinessReviewResult> {
   // READ TOGETHER (2026-10-01, "slow to transfer between page and page"): the month list and the
   // freshness stamp are two independent reads — the stamp does not depend on the window — and
   // neither can throw (each answers [] / null on failure), so one round trip's wait instead of two.
-  const [available, stamp] = await Promise.all([availableReviewPeriods(), loadAchievementCacheStamp()]);
+  const [reviewPeriods, stamp, publishedKeys] = await Promise.all([
+    availableReviewPeriods(),
+    loadAchievementCacheStamp(),
+    input?.publishedOnly ? loadSalesReleaseKeys() : null,
+  ]);
+  const available = publishedKeys ? releasedPeriodsUpToFirstHole(reviewPeriods, publishedKeys) : reviewPeriods;
   const resolution = resolveReviewWindow(input?.from ?? null, input?.to ?? null, available);
   const { window, adjustment } = resolution;
 

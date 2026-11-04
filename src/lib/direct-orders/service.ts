@@ -42,6 +42,11 @@ import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { customerGeographyKey, resolveCustomerGeography } from "@/lib/sales/customer-geography";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import {
+  isSalesPeriodReleasedCompanyWide,
+  loadSalesReleaseKeys,
+  readsUnpublishedSalesTools,
+} from "@/lib/sales/unpublished-sales-access";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import {
   ilikeAnyFilter,
@@ -6320,6 +6325,12 @@ async function loadPharmacyOrderHistory(
  */
 export type DirectOrderHistoryVisibility = {
   allowsProduct: (productCode: string) => boolean;
+  /**
+   * Whether the DISTRIBUTORS' retail sales of this month may be shown. The orders themselves are a
+   * work record and stay; the retail feed is raw sales, so it waits for the closing (owner,
+   * 2026-11-04). Every line, because one pharmacy's rows span lines.
+   */
+  allowsRetailMonth: (month: string) => boolean;
   /** Null when the viewer sees every line. */
   lineName: string | null;
 };
@@ -6327,6 +6338,7 @@ export type DirectOrderHistoryVisibility = {
 async function resolveHistoryVisibility(access: AccessContext): Promise<DirectOrderHistoryVisibility> {
   const lineName = await resolveDirectOrderRequesterLineName(access);
   const products = await listSourceOfSalesProducts();
+  const publishedKeys = readsUnpublishedSalesTools(access) ? null : await loadSalesReleaseKeys();
   const lineByCode = new Map<string, string>();
   for (const product of products) {
     const code = String((product as { productCode?: string }).productCode ?? "").trim();
@@ -6337,6 +6349,7 @@ async function resolveHistoryVisibility(access: AccessContext): Promise<DirectOr
 
   return {
     lineName,
+    allowsRetailMonth: (month: string) => !publishedKeys || isSalesPeriodReleasedCompanyWide(month, publishedKeys),
     // The rule itself is pure and lives in hold-decision.ts so a test can EXECUTE it. Keeping it
     // inline here meant a source-text assertion was the only possible guard, and prove-it-fails
     // showed that guard survived the logic being disabled outright.
@@ -6418,6 +6431,7 @@ async function loadPharmacyRetailHistory(
       if (!allowed.has(`${distributorCode.toLowerCase()}|${clientCode}`)) continue;
       const month = String(batch?.period ?? "");
       if (!month) continue;
+      if (!visibility.allowsRetailMonth(month)) continue;
 
       const productCode = String(raw.product_code ?? "");
       // Confidentiality + line scoping, server-side. This loader reads the raw distributor invoice

@@ -10,6 +10,7 @@
 // 2026-09-05 is that the closing's arithmetic is the arithmetic.
 
 import { loadMonthlyAchievement } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleasedCompanyWide, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 
 import { buildHeadline, buildSubheadline } from "./headline";
@@ -73,7 +74,10 @@ export async function loadSpotlight(
 ): Promise<SpotlightResult> {
   const selection = normaliseSelection(input);
 
-  const gate = gateWindow(selection.window, options.today);
+  const publishedKeys = await loadSalesReleaseKeys();
+  const gate = gateWindow(selection.window, options.today, (period) =>
+    isSalesPeriodReleasedCompanyWide(period, publishedKeys),
+  );
   if (!gate.allowed) throw new SpotlightWindowError(gate.reason);
 
   const org = await (options.loadOrg ?? loadSpotlightOrg)();

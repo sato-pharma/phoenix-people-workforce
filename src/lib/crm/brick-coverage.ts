@@ -48,6 +48,9 @@ import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { queryCheckins } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { isSalesPeriodReleased, isSalesPeriodReleasedCompanyWide } from "@/lib/sales/unpublished-sales-access";
+import { loadPublishedPeriodKeys } from "@/lib/sales/vs-target";
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 
 const MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -106,6 +109,8 @@ export type BrickCoverageUnmeasured = {
 export type BrickCoverageBoard = {
   blindSpots: BrickCoverageBlindSpot[];
   isCurrentMonth: boolean;
+  /** A line's sales are held back until its closing is published, so a blank brick is not "no sales". */
+  salesWithheld?: boolean;
   month: string;
   monthLabel: string;
   repRows: BrickCoverageRepRow[];
@@ -243,7 +248,7 @@ type SalesCell = { areaCode: string; brickId: string; lineFolded: string; units:
  * `sales_ops_rollup_by_brick` looks like the natural source for this and is EMPTY in production —
  * do not switch to it without checking it has rows.
  */
-async function loadMonthSales(month: string): Promise<SalesCell[]> {
+async function loadMonthSales(month: string, publishedKeys: ReadonlySet<string> | null): Promise<SalesCell[]> {
   const supabase = getSupabaseAdmin();
   const rows = await fetchAllRows<{
     area_code: string | null;
@@ -272,6 +277,8 @@ async function loadMonthSales(month: string): Promise<SalesCell[]> {
     // "Head Office" is the Office bucket, not a field line — no rep carries it, so including it
     // would inflate every denominator with units nobody is expected to visit.
     if (!lineFolded || lineFolded === "headoffice") continue;
+    // Per line: each line publishes on its own day, and a brick's cell is one line's.
+    if (publishedKeys && !isSalesPeriodReleased(month, resolveTargetLineCode(row.official_line), publishedKeys)) continue;
     const units = Number(row.effective_units ?? 0);
     if (!Number.isFinite(units) || units === 0) continue;
     const key = `${row.brick_id}|${row.area_code}|${lineFolded}`;
@@ -481,10 +488,16 @@ export function computeBrickCoverage(input: {
  * NO access" rule.
  */
 export async function getBrickCoverage({
+  includeUnpublishedSales = false,
   month,
   scope,
   territoryRepKeys,
 }: {
+  /**
+   * True only for the Super Admin and the SFE Manager (owner, 2026-11-04). The board opens on the
+   * running month and takes any month in its URL, and its sales are the raw fact table.
+   */
+  includeUnpublishedSales?: boolean;
   month: string;
   scope: DoctorCoverageScope;
   /**
@@ -514,9 +527,13 @@ export async function getBrickCoverage({
   const allowed = agentHrIds ? new Set(agentHrIds.map((id) => canonicalHrIdKey(id) ?? "").filter(Boolean)) : null;
   const territory = territoryRepKeys ? new Set(territoryRepKeys) : null;
 
+  // The floor's check inside loadPublishedPeriodKeys answers an empty set for an older month, which
+  // isSalesPeriodReleased reads as history, so January to June keep their sales.
+  const publishedKeys = includeUnpublishedSales ? null : await loadPublishedPeriodKeys(month, month);
+
   const [territories, sales, visited, centroids] = await Promise.all([
     loadRepTerritoriesCached(),
-    loadMonthSales(month),
+    loadMonthSales(month, publishedKeys),
     loadVisitedBricks(month, agentHrIds),
     loadBrickCentroids(),
   ]);
@@ -529,15 +546,18 @@ export async function getBrickCoverage({
     });
   }
 
-  return computeBrickCoverage({
-    brickNames,
-    checkinsByRep: visited.checkinsByRep,
-    month,
-    sales,
-    scopeLabel: scope.label,
-    territories: territories.filter(
-      (row) => (!allowed || allowed.has(row.repKey)) && (!territory || territory.has(row.repKey)),
-    ),
-    visitedByRep: visited.byRep,
-  });
+  return {
+    ...computeBrickCoverage({
+      brickNames,
+      checkinsByRep: visited.checkinsByRep,
+      month,
+      sales,
+      scopeLabel: scope.label,
+      territories: territories.filter(
+        (row) => (!allowed || allowed.has(row.repKey)) && (!territory || territory.has(row.repKey)),
+      ),
+      visitedByRep: visited.byRep,
+    }),
+    salesWithheld: publishedKeys !== null && !isSalesPeriodReleasedCompanyWide(month, publishedKeys),
+  };
 }

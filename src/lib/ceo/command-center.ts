@@ -26,8 +26,8 @@ import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
-import { latestPublishedClosingPeriod } from "@/lib/sales/monthly-closing-publication";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
+import { loadSalesReleaseKeys, newestCompanyPublishedPeriod } from "@/lib/sales/unpublished-sales-access";
 import {
   getSfeImsContribution,
   getSfeTargetPerformance,
@@ -351,22 +351,27 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   // heuristic that would need a threshold and would rot.
   //
   // Fired before the await below so it overlaps the platform and admin-signal fetches already in
-  // flight; it is one indexed row, so it costs the page nothing. Null (nothing ever published, or
-  // the lookup errored) falls through to today's exact behaviour, so this can only ever widen what
-  // the card shows. `loadSourceOfSalesDashboard` itself ignores a period with no validated batch,
-  // so a published month whose imports were since removed also degrades to newest-loaded.
-  const closingPeriodPromise = latestPublishedClosingPeriod();
+  // flight.
+  //
+  // PUBLISHED ON EVERY LINE, AND IT FAILS CLOSED (owner, 2026-11-04). This card adds the three lines
+  // together, so a month one line has published would carry the other two's unpublished sales. A null
+  // (nothing fully published, or the lookup errored) used to fall through to the newest month loaded;
+  // it now reads as unavailable. `loadSourceOfSalesDashboard` itself ignores a period with no
+  // validated batch and answers its newest one instead, which is why the result is checked below.
+  const closingPeriodPromise = loadSalesReleaseKeys()
+    .then(newestCompanyPublishedPeriod)
+    .catch(() => null);
   const closingPeriod = await closingPeriodPromise;
 
   const [sosR, platformR, adminSignalsR, pendingPlansR] =
     await Promise.allSettled([
-      loadSourceOfSalesDashboard(closingPeriod, { role: access.role }),
+      closingPeriod ? loadSourceOfSalesDashboard(closingPeriod, { role: access.role }) : Promise.resolve(null),
       platformPromise,
       adminSignalsPromise,
       getCeoPendingPlansCount(),
     ]);
 
-  const sos = sosR.status === "fulfilled" ? sosR.value : null;
+  const sos = sosR.status === "fulfilled" && sosR.value?.period === closingPeriod ? sosR.value : null;
   if (!sos) dataUnavailable.push("Source of Sales (monthly)");
   const platformMetrics = platformR.status === "fulfilled" ? platformR.value : null;
   if (!platformMetrics) dataUnavailable.push("Platform company metrics");
@@ -388,16 +393,12 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
 
   // The period actually rendered is whatever loadSourceOfSalesDashboard settled on, which is the
   // requested closing month only when that month really holds validated data — so read the basis
-  // off the RESULT, never off what we asked for. Anything newer than the shown month and already
-  // carrying data is a month in progress.
+  // off the RESULT, never off what we asked for. Nothing newer is named: a month that has landed and
+  // is not published is not on this card in any form (owner, 2026-11-04).
   const shownPeriod = sos?.period ?? null;
   const sosPeriodBasis: "published-closing" | "latest-upload" =
     closingPeriod !== null && shownPeriod === closingPeriod ? "published-closing" : "latest-upload";
-  const sosNewerPeriods = shownPeriod
-    ? [...(sos?.availablePeriods ?? [])]
-        .filter((candidate) => candidate > shownPeriod)
-        .sort((left, right) => right.localeCompare(left))
-    : [];
+  const sosNewerPeriods: string[] = [];
 
   const sosOut = sos
     ? {

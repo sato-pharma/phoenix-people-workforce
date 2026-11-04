@@ -117,6 +117,12 @@ export type WindowGate =
 export function gateWindow(
   window: SpotlightWindow,
   today: { year: number; month: number } = cairoToday(),
+  /**
+   * Whether a month's closing is published. A finished month is not yet a published one: from the
+   * first of November to the day October publishes, October passes every test above (owner,
+   * 2026-11-04). Passed in rather than read, so this file stays pure and client-safe.
+   */
+  isPublished?: (period: PeriodKey) => boolean,
 ): WindowGate {
   if (!isValidWindow(window)) {
     return { allowed: false, reason: "That is not a month, quarter or half I can read." };
@@ -149,6 +155,13 @@ export function gateWindow(
     };
   }
 
+  if (isPublished && !periods.every(isPublished)) {
+    return {
+      allowed: false,
+      reason: `${label} holds a month whose closing is not published yet. A spotlight is a published number.`,
+    };
+  }
+
   return { allowed: true, periods, label };
 }
 
@@ -157,6 +170,7 @@ export function selectableWindows(
   kind: SpotlightWindowKind,
   today: { year: number; month: number } = cairoToday(),
   count = 18,
+  isPublished?: (period: PeriodKey) => boolean,
 ): SpotlightWindow[] {
   const out: SpotlightWindow[] = [];
   const step = kind === "month" ? 1 : kind === "quarter" ? 3 : kind === "semester" ? 6 : 12;
@@ -178,7 +192,7 @@ export function selectableWindows(
     else window = { kind, key: String(year) };
 
     if (out.some((existing) => existing.key === window.key)) continue;
-    if (gateWindow(window, today).allowed) out.push(window);
+    if (gateWindow(window, today, isPublished).allowed) out.push(window);
   }
   return out;
 }
