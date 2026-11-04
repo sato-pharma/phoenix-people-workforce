@@ -40,7 +40,15 @@ It refuses, and changes nothing, when:
 - a newer exit exists;
 - the employee's last working day is not this resignation's;
 - the seat has gone to someone else;
-- the replacement vacancy has been filled.
+- the replacement vacancy has been filled;
+- the same national ID is still employed under another HR ID. The person has been re-hired, and
+  giving the old record back would pay them twice (migration
+  `20261104184517_restore_refuses_a_rehired_person.sql`).
+
+That last refusal came from Omaima's own case. While this change was being built, HR re-hired
+her the same evening through a new offer, as PD-0039 on the Pedia line, starting 7 November at a
+new salary. The owner decided to keep PD-0039 and give it her original hire date of 17 August.
+AI-0009 stays resigned, and her resignation is not cancelled.
 
 A resignation that never ended anyone, for example one filed on the Resignations screen and not yet
 completed, is left alone.

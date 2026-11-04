@@ -240,7 +240,10 @@ export async function runSeatTransferServiceTests() {
       return builder;
     },
   } as unknown as SupabaseClient;
-  const crossLine = await listSeatTransferOptions("AI-0009", superAdmin, fullClient);
+  const crossLine = await listSeatTransferOptions("AI-0009", superAdmin, fullClient, async () => [
+    { code: "AIF", name: "Anti Infective" },
+    { code: "PED", name: "Pedia" },
+  ]);
   assert.deepEqual(
     crossLine.otherLineVacantSeats.map((seat) => [seat.seatId, seat.lineName]),
     [["SEAT-PED-REP-GZ2", "Pedia"]],

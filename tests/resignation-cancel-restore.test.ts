@@ -87,6 +87,26 @@ export async function runResignationCancelRestoreTests() {
   ] as const) {
     assert.ok(sql.replace(/\r\n/g, "\n").includes(guard), `migration keeps: ${why} (${guard.trim()})`);
   }
+  // A person already re-hired under a new HR ID (same national ID) is never given the old record
+  // back too: that pays one person twice (Omaima Wael, AI-0009 re-hired as PD-0039).
+  const guard = readFileSync("supabase/migrations/20261104184517_restore_refuses_a_rehired_person.sql", "utf8").replace(
+    /\r\n/g,
+    "\n",
+  );
+  assert.ok(
+    guard.includes("btrim(e.national_id) = btrim(v_emp.national_id)") &&
+      guard.includes("would put the same person on payroll twice"),
+    "the latest restore refuses when the same national ID is still employed under another HR ID",
+  );
+  assert.ok(
+    guard.indexOf("would put the same person on payroll twice") < guard.indexOf("perform set_config('request.phx_allow_terminal_employee_reactivation', 'on', true)"),
+    "the re-hire refusal runs before anything is reactivated",
+  );
+  assert.ok(
+    guard.includes("revoke execute on function public.phx_restore_employee_after_cancelled_resignation(uuid, text) from public, anon, authenticated;"),
+    "the re-created restore stays closed to browser roles",
+  );
+
   assert.ok(
     !/area_name\s*=\s*v_area\.name/.test(sql),
     "phx_transfer_au_seat no longer writes the dropped employees.area_name (every move onto an area seat failed 42703)",

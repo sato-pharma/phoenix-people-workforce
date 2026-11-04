@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { loadReferenceLines, type ReferenceLine } from "@/lib/reference/reference-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -111,6 +112,7 @@ export async function listSeatTransferOptions(
   employeeHrId: string,
   access: AccessContext,
   client: SupabaseClient = getSupabaseAdmin(),
+  loadLines: () => Promise<Array<Pick<ReferenceLine, "code" | "name">>> = loadReferenceLines,
 ): Promise<SeatTransferOptions> {
   assertSeatTransferActor(access);
 
@@ -147,7 +149,7 @@ export async function listSeatTransferOptions(
   let otherLineVacantSeats: SeatTransferSeatOption[] = [];
 
   if (lineCode) {
-    const [{ data: otherTree, error: otherTreeError }, { data: lineRows, error: linesError }] = await Promise.all([
+    const [{ data: otherTree, error: otherTreeError }, lineRows] = await Promise.all([
       client
         .from("au_v_org_tree")
         .select(
@@ -155,13 +157,10 @@ export async function listSeatTransferOptions(
         )
         .neq("line_code", lineCode)
         .eq("is_vacant", true),
-      client.from("lines").select("code, name"),
+      loadLines(),
     ]);
     if (otherTreeError) throw new Error(`Seat lookup failed: ${otherTreeError.message}`);
-    if (linesError) throw new Error(`Line lookup failed: ${linesError.message}`);
-    const lineNameByCode = new Map(
-      ((lineRows ?? []) as Array<{ code: string | null; name: string | null }>).map((line) => [line.code, line.name]),
-    );
+    const lineNameByCode = new Map(lineRows.map((line) => [line.code, line.name]));
     otherLineVacantSeats = ((otherTree ?? []) as TreeRow[])
       .filter((row) => row.is_vacant && !row.is_other_pseudo_dm)
       .map((row) => ({ ...toSeatOption(row), lineName: lineNameByCode.get(row.line_code) ?? row.line_code }))
@@ -250,10 +249,7 @@ export async function transferEmployeeSeat(
   // The RPC just moved a seat in au_v_org_tree — bust the cached org tree (shared "sos-reference"
   // tag) so the CRM sync panel and every other org-scoped read see it immediately, not after the
   // cache's 300s TTL. This was the one write path with no invalidation call at all.
-  invalidateExecutiveDashboardCache(
-    input.moveLine ? "employee line move" : "employee seat transfer",
-    ["employees", "vacancies"],
-  );
+  invalidateExecutiveDashboardCache("employee seat transfer", ["employees", "vacancies"]);
 
   return data as SeatTransferResult;
 }
