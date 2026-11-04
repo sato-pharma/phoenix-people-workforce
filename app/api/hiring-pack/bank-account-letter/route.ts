@@ -66,7 +66,9 @@ export async function GET(request: Request) {
     }
 
     const company = await loadCompanyDetails();
+    const today = cairoDate();
     const docx = await buildBankAccountLetterDocx({
+      date: today,
       companyNameAr: company.legalNameAr,
       companyNameEn: company.legalNameEn,
       headOfficeAr: company.headOfficeAr,
@@ -85,7 +87,7 @@ export async function GET(request: Request) {
     return new Response(Buffer.from(docx), {
       headers: {
         "Cache-Control": "no-store, max-age=0",
-        "Content-Disposition": `attachment; filename="${bankLetterFileName(cairoDate())}"`,
+        "Content-Disposition": `attachment; filename="${bankLetterFileName(today)}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       },
     });

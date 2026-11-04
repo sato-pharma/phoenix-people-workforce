@@ -6,6 +6,7 @@ import JSZip from "jszip";
 
 import {
   BANK_LETTER_HEADINGS,
+  bankLetterDateLine,
   bankLetterFileName,
   bankLetterGaps,
   bankLetterJobTitle,
@@ -28,7 +29,8 @@ import { BANK_LETTER_COLUMN_WIDTHS, buildBankAccountLetterDocx } from "../src/li
 //   4. A LONG LIST PRINTS ACROSS PAGES CLEANLY: the heading row repeats (`tblHeader`) and no row
 //      splits across a page (`cantSplit`).
 //   5. NO SEAL — hiring documents carry none — and the only pictures are the logo and the band.
-//   6. THE ROUTE AUDITS BEFORE IT HANDS OVER THE FILE, and refuses a paper-scoped or salary-blind seat.
+//   6. THE LETTER IS DATED THE DAY IT IS EXPORTED, in Cairo (owner, 2026-11-04: "dated with today date").
+//   7. THE ROUTE AUDITS BEFORE IT HANDS OVER THE FILE, and refuses a paper-scoped or salary-blind seat.
 // Every person below is invented.
 
 function person(overrides: Partial<BankLetterEmployee>): BankLetterEmployee {
@@ -98,6 +100,7 @@ export async function runHiringPackBankAccountLetterTests() {
   // ── 1, 4, 5. the Word file itself ─────────────────────────────────────────────────────────────
   const docx = await buildBankAccountLetterDocx({
     companyNameAr: "ساتو فارما",
+    date: "2026-11-04",
     companyNameEn: "Sato Pharma",
     headOfficeAr: "القاهرة",
     images: { bandPng: PNG_STUB, logoPng: PNG_STUB },
@@ -121,6 +124,10 @@ export async function runHiringPackBankAccountLetterTests() {
   for (const tr of trs) assert.match(tr, /<w:cantSplit\/>/, "no row splits across a page");
   assert.ok(document.includes("شخص &amp; ثاني"), "text is XML-escaped");
   assert.ok(document.includes("18000"), "the base salary is in the file");
+  assert.equal(bankLetterDateLine("2026-11-04"), "التاريخ: 04/11/2026");
+  assert.throws(() => bankLetterDateLine("4 Nov 2026"), "a date that is not YYYY-MM-DD is refused, never printed");
+  const dateAt = document.indexOf("التاريخ: 04/11/2026");
+  assert.ok(dateAt > 0 && dateAt < document.indexOf("السادة"), "the date line is in the letter, above the address to the bank");
 
   const files = Object.keys(zip.files).filter((name) => !zip.files[name].dir);
   const media = files.filter((name) => name.startsWith("word/media/")).sort();
@@ -137,4 +144,5 @@ export async function runHiringPackBankAccountLetterTests() {
   const file = route.indexOf("new Response(");
   assert.ok(audit > 0 && file > audit, "the audit row is written BEFORE the file is returned");
   assert.match(route, /entityType: "bank_account_letter_export"/);
+  assert.match(route, /date: today/, "the letter is dated with the Cairo day the file is exported");
 }

@@ -122,3 +122,14 @@ export function sortForBankLetter<T extends BankLetterEmployee>(employees: reado
 export function bankLetterFileName(cairoDate: string): string {
   return `sato-pharma-bank-accounts-${cairoDate}.docx`;
 }
+
+/**
+ * The date line at the top of the letter: "التاريخ: 04/11/2026". The letter is dated the day it is
+ * exported (owner, 2026-11-04: "dated with today date"), read in Cairo by the route and passed in as
+ * `YYYY-MM-DD`, so this stays pure. Day first, Latin digits — the way the original letter wrote its numbers.
+ */
+export function bankLetterDateLine(cairoDay: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cairoDay);
+  if (!match) throw new Error(`The letter date must be YYYY-MM-DD, got "${cairoDay}".`);
+  return `التاريخ: ${match[3]}/${match[2]}/${match[1]}`;
+}
