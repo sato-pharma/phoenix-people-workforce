@@ -364,6 +364,7 @@ export function GroupedComboBox({
 
   const only = selected.length === 1 ? selected[0] : null;
   const onlySuffix = only && selectedSuffix ? selectedSuffix(only) : null;
+  const showPickedNames = !open && selected.length > 0;
   const matchCount = rows.reduce((sum, row) => sum + (row.kind === "item" ? 1 : 0), 0);
 
   return (
@@ -381,7 +382,7 @@ export function GroupedComboBox({
           it, so nothing here doubles up. */}
       <div
         className={cn(
-          "flex h-8 w-full items-center gap-1.5 overflow-hidden border bg-white px-2 transition",
+          "flex min-h-8 w-full items-center gap-1.5 overflow-hidden border bg-white px-2 transition",
           open ? "border-orange-400 ring-2 ring-orange-100" : "border-slate-300 hover:border-slate-400",
           disabled ? "opacity-50" : "cursor-text",
         )}
@@ -402,13 +403,25 @@ export function GroupedComboBox({
         ) : (
           leadingIcon
         )}
+        {/* The picked names while the field is closed, as text that WRAPS. An input is one line, so at
+            375px "Hager Abdelmaged and Mohamed Eleiwa" was cut off mid-name with no way to read the
+            rest; the field grows a line instead (min-h-8, not h-8). The input stays mounted, see-
+            through and still holding the names for a screen reader, so a press anywhere opens it. */}
+        {showPickedNames ? (
+          <span aria-hidden className="min-w-0 flex-1 whitespace-normal break-words py-1.5 text-xs leading-snug text-slate-900">
+            {joinNames(selected.map((item) => item.name))}
+          </span>
+        ) : null}
         <input
           aria-autocomplete="list"
           aria-controls={panelId}
           aria-expanded={open}
           aria-label={ariaLabel}
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none placeholder:text-slate-400"
+          className={cn(
+            "min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none placeholder:text-slate-400",
+            showPickedNames && "pointer-events-none absolute h-px w-px opacity-0",
+          )}
           disabled={disabled}
           onChange={(event) => {
             setQuery(event.target.value);

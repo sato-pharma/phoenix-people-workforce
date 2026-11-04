@@ -331,6 +331,16 @@ export async function runBusinessCardsTests() {
     [],
     "the business-card picker draws no rounded corners — its portaled panel sits outside the square-corner sweep",
   );
+  // The picked names wrap onto a second line rather than being cut off: at 375px a one-line input
+  // showed "Hager Abdelmaged and Mohan" and nothing more. The field grows (min-h-8, never a fixed
+  // h-8), and the names are text that wraps, never the input's own single-line value.
+  assert.doesNotMatch(combobox, /"flex h-8 w-full/, "the picker field is never a fixed one-line height");
+  assert.match(combobox, /"flex min-h-8 w-full/, "the picker field grows a line when the picked names need it");
+  assert.match(
+    combobox,
+    /showPickedNames \? \(\s*<span[^>]*whitespace-normal break-words[^>]*>\s*\{joinNames\(/,
+    "a closed picker shows the picked names as wrapping text",
+  );
 
   // ── Every file is an audited export ─────────────────────────────────────────────────────────────
   const route = readFileSync(join(process.cwd(), "app", "api", "business-cards", "route.ts"), "utf8");
