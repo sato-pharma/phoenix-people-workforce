@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { applyCardEdits } from "@/lib/business-cards/card-content";
+import { applyCardEdits, withDoctorTitle } from "@/lib/business-cards/card-content";
 import type { BusinessCardFields, EditableCardField } from "@/lib/business-cards/card-content";
 import {
   assertBusinessCardsPrintable,
@@ -20,7 +20,8 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// POST { mode, cards: [{ hrId, edits? }] } → the print-ready file.
+// POST { mode, cards: [{ hrId, edits?, doctor? }] } → the print-ready file. `doctor: true` prints
+// "Dr." before the name (the per-card toggle on the screen).
 //
 //   mode "combined"  one PDF, every card in it (front, back, front, back…) — one file to the printer.
 //   mode "separate"  one PDF per person; several people come back as a ZIP of those PDFs.
@@ -30,7 +31,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_CARDS = 500;
 
-type CardRequest = { edits?: Partial<Record<EditableCardField, unknown>>; hrId?: unknown };
+type CardRequest = { doctor?: unknown; edits?: Partial<Record<EditableCardField, unknown>>; hrId?: unknown };
 
 function cairoDate(): string {
   return new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone: "Africa/Cairo", year: "numeric" }).format(new Date());
@@ -89,14 +90,15 @@ export async function POST(request: Request) {
     if (requested.length === 0) return fail(400, "no_cards", "Choose at least one employee.");
     if (requested.length > MAX_CARDS) return fail(400, "too_many_cards", `Print at most ${MAX_CARDS} cards at a time.`);
 
-    const employees = new Map((await listBusinessCardEmployees()).map((employee) => [employee.hrId, employee]));
+    const employees = new Map((await listBusinessCardEmployees()).employees.map((employee) => [employee.hrId, employee]));
     const cards: Array<{ fields: BusinessCardFields; name: string }> = [];
     for (const entry of requested) {
       const employee = typeof entry?.hrId === "string" ? employees.get(entry.hrId) : undefined;
       if (!employee) {
         return fail(404, "employee_not_active", "One of the chosen people is no longer on the active staff list. Refresh the page and choose again.");
       }
-      const fields = applyCardEdits(employee.fields, entry.edits);
+      const edited = applyCardEdits(employee.fields, entry.edits);
+      const fields = entry.doctor === true ? { ...edited, name: withDoctorTitle(edited.name) } : edited;
       if (!fields.name) return fail(400, "name_missing", `${employee.name}'s card has no name on it.`);
       cards.push({ fields, name: employee.name });
     }
@@ -111,11 +113,12 @@ export async function POST(request: Request) {
     // Every file hands over names, work emails and mobiles, up to 500 people at a time, so who took
     // which cards is recorded BEFORE the file is returned. No row, no file.
     const edited = requested.filter((entry) => entry.edits && Object.keys(entry.edits).length > 0).length;
+    const doctors = requested.filter((entry) => entry.doctor === true).length;
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? access.hrId,
       entityId: randomUUID(),
       entityType: "business_cards_export",
-      newValues: { cards: cards.length, editedOnScreen: edited, hrIds: requested.map((entry) => entry.hrId), mode },
+      newValues: { cards: cards.length, doctorTitle: doctors, editedOnScreen: edited, hrIds: requested.map((entry) => entry.hrId), mode },
       summary: `Business cards exported (${cards.length} ${cards.length === 1 ? "card" : "cards"}, ${mode === "combined" ? "one PDF" : "separate PDFs"}, ${edited} edited on screen) by ${access.hrId ?? "unknown"}.`,
     });
 

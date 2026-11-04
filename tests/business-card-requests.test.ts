@@ -231,7 +231,7 @@ export function runBusinessCardRequestsTests() {
   // nothing at all rather than something wrong. Both halves are pinned — the write goes through
   // `hrIdForStorage`, and the viewer's own list matches EVERY spelling so a row written before the
   // fix is still his.
-  assert.match(service, /import \{ hrIdForStorage, hrIdLookupKeys \} from "@\/lib\/hr-id"/, "the service uses the hr-id storage helpers");
+  assert.match(service, /import \{[^}]*\bhrIdForStorage, hrIdLookupKeys \} from "@\/lib\/hr-id"/, "the service uses the hr-id storage helpers");
   assert.match(service, /hr_id: storedHrId,/, "the insert persists the stored (uppercase) form of the id");
   assert.match(service, /const storedHrId = hrIdForStorage\(access\.hrId\);/, "the stored form comes from hrIdForStorage, not the access key");
   assert.doesNotMatch(service, /hr_id: hrId,/, "the lowercase comparison key is never written to the table");
