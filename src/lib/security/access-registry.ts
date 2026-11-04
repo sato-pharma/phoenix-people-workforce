@@ -757,7 +757,7 @@ export const accessRegistry = [
   // nothing and returns a file, so the resource is read. The handler also requires an HR seat.
   // Gated by canPrintBusinessCards (src/lib/business-cards/access.ts), hence domain-helper: HR Advisory
   // and HR Operations print on employee_documents:read as declared, the Talent Acquisition seat on
-  // business_card_requests:update (2026-10-08).
+  // business_card_requests:update (2026-10-08), and the HR Operations Specialist (Office Coordinator) on employee_documents:read through hiring_desk (2026-11-04).
   // The signed-in employee's OWN card, rendered as the print-ready PDF (front and back). Scoped to
   // the caller — there is no hrId in the request — so employee_profile:read is the whole gate. Listed
   // before the HR export below so the exact /mine path never falls to the employee_documents gate.

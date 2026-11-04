@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { getNavigationSections } from "../src/config/system-navigation.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 import { isSalaryBlindRole } from "../src/lib/auth/hr-functions.ts";
 import { canPrintBusinessCards } from "../src/lib/business-cards/access.ts";
 import {
   assertAttendanceMonthlySummaryPermission,
   assertAttendanceSetupPermission,
+  buildPermissionLookup,
   canAccess,
   canAccessAttendanceMonthlySummary,
   canAccessAttendanceSetup,
@@ -72,7 +75,8 @@ import { stripComments } from "./support/comment-strip.ts";
  *      neither ("lock contract terms for aya, she only prints them"), and the checklist itself and
  *      the removal of a scan stay with the seats that held them. She stays salary-blind everywhere
  *      else (tests/salary-blind-seat.test.ts) and stays outside hrAuthorityRoles, so recruitment,
- *      offers, candidates and Business Cards stay shut.
+ *      offers and candidates stay shut. Business Cards opened to her on 2026-11-04 (owner: "make
+ *      sure the business cards module is showing at the office coordinator account").
  *
  * The predicates are CALLED for her and for the seats around her, never read; the source pins at
  * the end only prove each route still goes through the helper the calls exercise.
@@ -162,7 +166,9 @@ async function testSheHoldsTheHiringPapersGrantAndNothingBesideIt() {
   for (const resource of ["recruitment", "candidates", "offers", "cv_lookup", "account_activation"] as const) {
     assert.equal(await canAccess(seat, resource, "read"), false, `${resource} stays shut: he did not name it`);
   }
-  assert.equal(await canPrintBusinessCards(seat), false, "Business Cards stays shut: he did not name it");
+  // Opened to her 2026-11-04 ("make sure the business cards module is showing at the office
+  // coordinator account to be able to select employees and print cards"). Same key as HR Forms.
+  assert.equal(await canPrintBusinessCards(seat), true, "the Office Coordinator selects employees and prints business cards");
 
   // The control: a seat outside both lists is still refused, and HR Operations keeps what she had.
   assert.equal(isHiringPaperworkRole("Employee" as PhoenixRole), false, "an employee is not admitted");
@@ -343,6 +349,28 @@ function testSheSeesTheSalaryOnHrFormsAndCannotChangeIt() {
   assert.equal(isSalaryBlindRole(SEAT), true, "still the salary-blind seat everywhere else");
 }
 
+function testBusinessCardsIsOnHerRail() {
+  const railFor = (role: PhoenixRole) =>
+    getSections(getNavigationSections("hr"), "hr", buildPermissionLookup(permissionMatrix, role), role);
+  const rows = (role: PhoenixRole) => railFor(role).flatMap((section) => section.items.map((item) => ({ href: item.href, section: section.label })));
+
+  // Called, not read: the row must reach her rail exactly once, under People and never under Recruitment.
+  const hers = rows(SEAT).filter((row) => row.href === "/hr/business-cards");
+  assert.equal(hers.length, 1, "Business Cards is on the Office Coordinator's rail, once");
+  assert.notEqual(hers[0].section, "Recruitment", "and not under a heading for a function she does not hold");
+  assert.equal(
+    railFor(SEAT).some((section) => section.label === "Recruitment"),
+    false,
+    "she is still shown no Recruitment heading",
+  );
+  // The control: HR Operations keeps its row, and a seat that cannot print is offered none.
+  assert.equal(rows(HR_OPERATIONS).filter((row) => row.href === "/hr/business-cards").length, 1, "HR Operations still has its row");
+  assert.equal(rows("Employee" as PhoenixRole).some((row) => row.href === "/hr/business-cards"), false, "an employee is offered none");
+
+  assert.ok(code("app/api/business-cards/route.ts").includes("canPrintBusinessCards(access)"), "the print route asks the same predicate");
+  assert.ok(code("app/(admin)/business-cards/page.tsx").includes("canPrintBusinessCards(access)"), "and so does the page");
+}
+
 function testEveryDoorGoesThroughTheHelpers() {
   const render = code("src/lib/hiring-pack/render-paper.ts");
   assert.ok(render.includes("isPaperOpenToRole(access.role, requested)"), "renderHiringPaper still refuses a paper a listed seat does not print");
@@ -425,5 +453,6 @@ export async function runHrOperationsSpecialistAccessTests() {
   await testSheHoldsTheHiringPapersGrantAndNothingBesideIt();
   await testHrFormsIsTheFullModuleForHer();
   testSheSeesTheSalaryOnHrFormsAndCannotChangeIt();
+  testBusinessCardsIsOnHerRail();
   testEveryDoorGoesThroughTheHelpers();
 }
