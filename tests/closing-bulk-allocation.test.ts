@@ -601,23 +601,31 @@ export function runClosingBulkAllocationTests() {
     );
   }
 
-  // 13. THE WEIGHTS ARE EACH REP'S RETAIL AS HIS CLOSING SHOWS IT, AFTER THE CITY RULE (owner,
-  //     2026-11-04: "As each rep's closing shows"). A wholesaler in a multi-area city weighs on every
-  //     area the city rule shares it to, never only the area its invoice was booked on.
+  // 13. 🔴 PHARMACIES ONLY (owner, 2026-11-04: "of the retail exclude stores and put the contribution
+  //     on pharmacies only", both books, hospitals left out). A store and a hospital never weigh, however
+  //     large, wherever the city rule credits them; only the pharmacies' units of the product do.
   {
     const rows = [
-      baseRow({ areaCode: "D12", clientCode: "W-9", clientName: "مخزن الحجاز فارما", effectiveUnits: 120, productCode: "IV001", qty: 120, salesValue: 37_800 }),
+      baseRow({ areaCode: "D12", clientCode: "P-1", clientName: "صيدلية الشفاء", effectiveUnits: 30, productCode: "IV001", qty: 30, salesValue: 9_450 }),
+      baseRow({ areaCode: "D13", clientCode: "P-2", clientName: "صيدلية الأمل", effectiveUnits: 10, productCode: "IV001", qty: 10, salesValue: 3_150 }),
+      // A wholesaler far larger than both pharmacies, in a multi-area city: no weight at all.
+      baseRow({ areaCode: "D12", clientCode: "W-9", clientName: "مخزن الحجاز فارما", effectiveUnits: 900, productCode: "IV001", qty: 900, salesValue: 283_500 }),
+      // A hospital buying in a third area: no weight either, so that area takes nothing.
+      baseRow({ areaCode: "D14", clientCode: "H-1", clientName: "مستشفى الجامعة", effectiveUnits: 500, productCode: "IV001", qty: 500, salesValue: 157_500 }),
       bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 100, productCode: "IV001", qty: 100, salesValue: 3_000 }),
     ];
     const city = splitStoreSalesAcrossCityAreas(rows, "2026-10");
-    const cityAreas = [...new Set(city.rows.filter((row) => row.distributorCode === "PS").map((row) => row.areaCode))].sort();
-    assert.ok(cityAreas.length > 1, "fixture check: the wholesaler is shared across its city");
-    const landedAreas = (allocation: ReturnType<typeof buildBulkAllocation>) =>
-      allocation.movements.filter((leg) => leg.inQty > 0).map((leg) => leg.areaCode).sort();
+    assert.ok(new Set(city.rows.filter((row) => row.clientCode === "W-9").map((row) => row.areaCode)).size > 1, "fixture check: the wholesaler is shared across its city");
     const october = buildBulkAllocation(bulkAllocationRows(rows, city.rows, "2026-10"), "2026-10", "Pedia");
-    assert.deepEqual(landedAreas(october), cityAreas, "the EPDA book lands where the closing credits the retail");
-    assert.equal(october.movements.reduce((sum, leg) => sum + leg.inQty, 0), 100, "and all of it lands");
+    const landed = october.movements.filter((leg) => leg.inQty > 0).map((leg) => [leg.areaCode, leg.inQty]).sort();
+    assert.deepEqual(landed, [["D12", 75], ["D13", 25]], "100 EPDA units land 30:10, the pharmacies' units, and never on the store or hospital areas");
+    assert.equal(
+      buildBulkAllocation(bulkAllocationRows(rows, null, "2026-10"), "2026-10", "Pedia").movements.filter((leg) => leg.inQty > 0).length,
+      2,
+      "the invoiced rows give the same two areas: the city rule moves only stores, which no longer weigh",
+    );
+    const storesOnly = rows.filter((row) => !String(row.clientCode).startsWith("P-"));
+    assert.equal(buildBulkAllocation(storesOnly, "2026-10", "Pedia").movedQty, 0, "no pharmacy bought it, so nothing moves");
     assert.deepEqual(bulkAllocationRows(rows, city.rows, "2026-09"), rows, "September keeps the invoiced rows it was published with");
-    assert.deepEqual(bulkAllocationRows(rows, null, "2026-10"), rows, "a month with no city split has only the invoiced rows");
   }
 }
