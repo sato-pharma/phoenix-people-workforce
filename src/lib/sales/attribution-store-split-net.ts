@@ -169,6 +169,7 @@ export function buildStoreSplitNetPayload(
     bulkAllocationRows(rows, cityApplies ? (qtyPass.rows as typeof rows | undefined) : null, period),
     period,
     officialLine,
+    regions,
   );
   accumulate(byCell, officialLine, bulk.movements, "net_qty");
   accumulate(byCell, officialLine, bulk.effectiveMovements, "net_effective_units");

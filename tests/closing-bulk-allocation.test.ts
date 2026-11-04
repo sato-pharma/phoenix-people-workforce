@@ -24,6 +24,7 @@ import {
   areaProductKey,
   isSplitEligible,
   splitStoreSalesAcrossCityAreas,
+  type SplitRegions,
 } from "../src/lib/sales/store-sales-city-split.ts";
 
 /**
@@ -627,5 +628,38 @@ export function runClosingBulkAllocationTests() {
     const storesOnly = rows.filter((row) => !String(row.clientCode).startsWith("P-"));
     assert.equal(buildBulkAllocation(storesOnly, "2026-10", "Pedia").movedQty, 0, "no pharmacy bought it, so nothing moves");
     assert.deepEqual(bulkAllocationRows(rows, city.rows, "2026-09"), rows, "September keeps the invoiced rows it was published with");
+  }
+
+  // 14. 🔴 UPPER EGYPT 2 WEIGHS BY PHARMACIES AND STORES (owner, 2026-11-04 ~18:00: "only upper egypt 2
+  //     gets its contribution on retail stores and pharmacies"). In an area the organogram files under
+  //     UE-2 a store's units weigh too; a hospital there still does not, and a store anywhere else does not.
+  {
+    const regions: SplitRegions = {
+      areasByRegion: new Map([["D1", new Set(["D12"])], ["UE-2", new Set(["UE5", "UE6"])]]),
+      others: new Set(),
+    };
+    const rows = [
+      baseRow({ areaCode: "D12", clientCode: "P-1", clientName: "صيدلية الشفاء", effectiveUnits: 30, productCode: "IV001", qty: 30, salesValue: 9_450 }),
+      // A wholesaler outside Upper Egypt 2: no weight, however large.
+      baseRow({ areaCode: "D12", clientCode: "W-9", clientName: "مخزن الحجاز فارما", effectiveUnits: 900, productCode: "IV001", qty: 900, salesValue: 283_500 }),
+      baseRow({ areaCode: "UE5", clientCode: "P-2", clientName: "صيدلية الأمل", effectiveUnits: 10, productCode: "IV001", qty: 10, salesValue: 3_150 }),
+      // A wholesaler inside Upper Egypt 2: it weighs.
+      baseRow({ areaCode: "UE5", clientCode: "W-5", clientName: "مخزن احمد رفعت", effectiveUnits: 30, productCode: "IV001", qty: 30, salesValue: 9_450 }),
+      // A hospital inside Upper Egypt 2: still no weight.
+      baseRow({ areaCode: "UE6", clientCode: "H-1", clientName: "مستشفى سوهاج الجامعي", effectiveUnits: 500, productCode: "IV001", qty: 500, salesValue: 157_500 }),
+      bulkRow({ areaCode: "AB1", distributorCode: "EP-BK", effectiveUnits: 100, productCode: "IV001", qty: 100, salesValue: 3_000 }),
+    ];
+    const landedOf = (allocation: ReturnType<typeof buildBulkAllocation>) =>
+      allocation.movements.filter((leg) => leg.inQty > 0).map((leg) => [leg.areaCode, leg.inQty]).sort();
+    assert.deepEqual(
+      landedOf(buildBulkAllocation(rows, "2026-10", "Pedia", regions)),
+      [["D12", 43], ["UE5", 57]],
+      "100 EPDA units land 30:40: D12's pharmacy against Upper Egypt 2's pharmacy AND store, never the hospital or the D12 store",
+    );
+    assert.deepEqual(
+      landedOf(buildBulkAllocation(rows, "2026-10", "Pedia")),
+      [["D12", 75], ["UE5", 25]],
+      "without the organogram no area is known to be Upper Egypt 2, so every area weighs by pharmacies alone",
+    );
   }
 }

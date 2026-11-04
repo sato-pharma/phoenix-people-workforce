@@ -200,7 +200,7 @@ export function applyCreditedAreaView<T extends ShareableRow & StoreSplitRow>(
     });
   }
   // The weights are the rows after the city split (`out`), exactly as the closing's (rule 2).
-  return creditEpdaSpread(out, out, { areaLabelOf: input.areaLabelOf, line, period });
+  return creditEpdaSpread(out, out, { areaLabelOf: input.areaLabelOf, line, period, regions: input.regions });
 }
 
 /** The client name an EPDA share row carries — the book's area share, never one pharmacy's. */
@@ -238,10 +238,10 @@ export function isEpdaShareRow(row: Pick<ShareableRow, "clientCode" | "clientNam
 function creditEpdaSpread<T extends ShareableRow & StoreSplitRow>(
   rows: T[],
   allRows: readonly T[],
-  input: { areaLabelOf: (areaCode: string) => AreaLabel | null; line: string; period: string },
+  input: { areaLabelOf: (areaCode: string) => AreaLabel | null; line: string; period: string; regions?: SplitRegions },
 ): T[] {
   if (!isEpdaContributionActive(input.period)) return rows;
-  const bulk = buildBulkAllocation(allRows as unknown as BulkAllocationRow[], input.period, input.line);
+  const bulk = buildBulkAllocation(allRows as unknown as BulkAllocationRow[], input.period, input.line, input.regions);
   const legsByProduct = new Map<string, { areaCode: string; inQty: number }[]>();
   for (const leg of bulk.movements) {
     if (leg.inQty === 0) continue;
