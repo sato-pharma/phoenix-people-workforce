@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { buildBulkAllocation, type BulkAllocationRow } from "../src/lib/sales/closing-bulk-allocation.ts";
+import { pickDuplicateUploadClash } from "../src/lib/sales/import-duplicate-guard.ts";
 import {
   applyEpdaBonusDeduction,
   epdaBonusDeductionPercent,
@@ -150,21 +151,56 @@ export function runEpdaBonusDeductionTests() {
     assert.ok(inOf("2026-09").some((leg) => !Number.isInteger(leg.inQty)), "September keeps what it published");
   }
 
-  // 7. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
+  // 7. THE SAME FILE ACROSS THE START MONTH IS STILL THE SAME FILE. September stored it in full and
+  //    October would store it deducted, so comparing the two totals as they stand would let it through.
+  {
+    const sheet = [row({ qty: 1000 }), row({ qty: 4000, productCode: "LA001", value: 4000 })];
+    const qtyAt = (period: string | null) => units(applyEpdaBonusDeduction(sheet, () => period));
+    const valueAt = (period: string | null) =>
+      applyEpdaBonusDeduction(sheet, () => period).reduce((sum, r) => sum + r.value, 0);
+    const stored = (period: string) => ({
+      id: period,
+      period,
+      file_name: "book.xlsx",
+      status: "validated",
+      total_rows: 2,
+      total_qty: qtyAt(period),
+      total_value: valueAt(period),
+    });
+    const candidate = (period: string) => ({
+      fileName: "book.xlsx",
+      period,
+      totalRows: 2,
+      totalQty: qtyAt(period),
+      totalValue: valueAt(period),
+      totalQtyAt: qtyAt,
+      totalValueAt: valueAt,
+    });
+    assert.equal(qtyAt("2026-09"), 5000);
+    assert.equal(qtyAt("2026-10"), 4700);
+    assert.equal(pickDuplicateUploadClash([stored("2026-09")], candidate("2026-10"))?.period, "2026-09", "September re-dated to October");
+    assert.equal(pickDuplicateUploadClash([stored("2026-10")], candidate("2026-09"))?.period, "2026-10", "October re-dated to September");
+    assert.equal(pickDuplicateUploadClash([stored("2026-10")], candidate("2026-11"))?.period, "2026-10", "two months both deducted");
+    assert.equal(pickDuplicateUploadClash([{ ...stored("2026-09"), total_qty: 4999 }], candidate("2026-10")), null, "a different file passes");
+  }
+
+  // 8. BOTH ROUTES INTO source_of_sales_import_rows TAKE IT, BEFORE ANY TOTAL IS TAKEN. Neither can run
   //    here without a database, and a route that skipped it would announce the undeducted figure.
   {
     const normalized = readFileSync("src/lib/sales/normalizer/service.ts", "utf8");
     const applied = normalized.indexOf("const rows = applyEpdaBonusDeduction(");
     assert.ok(applied > 0, "persistNormalizedBatch deducts");
     assert.ok(applied < normalized.indexOf("const totalQty = rows.reduce", applied), "before its totals");
+    assert.match(normalized, /totalQtyAt: \(atPeriod\) =>/, "and its duplicate check crosses the start month");
 
     const older = readFileSync("src/lib/sales/monthly-distributor-import.ts", "utf8");
     const route = older.slice(older.indexOf("export async function persistDistributorSalesUpload"));
     assert.ok(route.indexOf("applyEpdaBonusDeduction(sheetRows") > 0, "persistDistributorSalesUpload deducts");
     assert.ok(
-      route.indexOf("applyEpdaBonusDeduction(sheetRows") < route.indexOf("total_qty: result.totals.totalQty"),
+      route.indexOf("applyEpdaBonusDeduction(sheetRows") < route.indexOf("total_qty: storedTotals.totalQty"),
       "before the batch's totals",
     );
+    assert.match(route, /totalQtyAt: \(period\) =>/, "and its duplicate check crosses the start month");
     assert.ok(route.indexOf("insertSourceOfSalesRows(supabase, batchId, parsedRows)") > 0, "and stores the deducted rows");
   }
 }

@@ -514,7 +514,8 @@ export async function persistNormalizedBatch(input: {
   // only rows in the chosen period are imported (one batch = one month, like the importer)
   // 🔴 EPDA's bonus deduction comes off here, before any total is taken, so the batch, its summaries and
   // every report read the same whole units (import-epda-bonus-deduction.ts). `raw_row` keeps the sheet's.
-  const rows = applyEpdaBonusDeduction(coded.filter((r) => r.invoiceDate === period), (r) => r.invoiceDate);
+  const sheetRows = coded.filter((r) => r.invoiceDate === period);
+  const rows = applyEpdaBonusDeduction(sheetRows, (r) => r.invoiceDate);
   const totalQty = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0);
   const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);
   const totalValue = rows.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0);
@@ -523,15 +524,19 @@ export async function persistNormalizedBatch(input: {
   // exactly the figures the insert below stores (see import-duplicate-guard.ts). Each stored batch is
   // compared on its own month's price basis, so a file re-dated across a reprice still matches.
   const prices = await loadProductPeriodPrices();
-  const repriceable = rows.map((r) =>
-    repriceableUploadRow({
-      distributorCode: input.distributorCode,
-      isDirect: r.isDirect,
-      period: r.invoiceDate,
-      productCode: r.productCode,
-      value: r.value,
-    }),
-  );
+  // Each stored batch is compared as the file would have been stored in ITS month: on that month's
+  // price, and with EPDA's deduction only if that month carries it.
+  const rowsStoredAt = (atPeriod: string | null) => applyEpdaBonusDeduction(sheetRows, () => atPeriod);
+  const repriceableAt = (atPeriod: string | null) =>
+    rowsStoredAt(atPeriod).map((r) =>
+      repriceableUploadRow({
+        distributorCode: input.distributorCode,
+        isDirect: r.isDirect,
+        period: r.invoiceDate,
+        productCode: r.productCode,
+        value: r.value,
+      }),
+    );
   await assertNotADuplicateUpload({
     distributorCode: input.distributorCode,
     fileName: input.fileName,
@@ -539,7 +544,8 @@ export async function persistNormalizedBatch(input: {
     totalRows: rows.length,
     totalQty: Number(totalQty.toFixed(6)),
     totalValue: Number(totalValue.toFixed(6)),
-    totalValueAt: (atPeriod) => totalValueAtPeriod(repriceable, prices, atPeriod),
+    totalValueAt: (atPeriod) => totalValueAtPeriod(repriceableAt(atPeriod), prices, atPeriod),
+    totalQtyAt: (atPeriod) => rowsStoredAt(atPeriod).reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0),
   });
 
   const batchInsert = await supabase
