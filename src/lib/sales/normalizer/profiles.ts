@@ -464,3 +464,38 @@ const BY_CODE = new Map(RAW_DISTRIBUTOR_PROFILES.map((p) => [p.distributorCode.t
 export function rawProfileForDistributor(distributorCode: string): DistributorProfile | null {
   return BY_CODE.get(String(distributorCode ?? "").trim().toUpperCase()) ?? null;
 }
+
+// EPDA Bulk 2 and EPDA Pharmacies 2: the layout EPDA's books arrived in from October 2026, read as
+// EPDA-BULK and EPDA-Pharmacies (owner, 2026-11-04). Kept out of RAW_DISTRIBUTOR_PROFILES on purpose,
+// because that list is keyed by distributor code and a second row for a code would replace the old
+// template instead of standing beside it.
+//   • The columns are those of the separate source `EP` ("epda"), so nothing in the headers can tell
+//     the three books apart. The stamped code is what keeps these sales out of `EP`.
+//   • SalesOrReturnBonus is a bonus COUNT beside the paid units, so it is never in bonusColumns: a
+//     non-zero cell there would drop the row's paid units with it. It stays neglected, as El Qema's is.
+//   • Returns are in these files as negative quantities. Value stays units x factory price.
+const EPDA_SECOND_LAYOUT: Omit<DistributorProfile, "distributorCode" | "distributorName"> = {
+  productCodeColumns: ["ProductSerial"],
+  productNameColumns: ["ProductName"],
+  productColumns: ["ProductSerial", "ProductName"],
+  qtyColumns: ["SalesOrReturnQty"],
+  valueColumns: ["LineValue"],
+  valueSource: "recompute",
+  dateColumns: ["Transdate"],
+  dateFormat: "day-first",
+  customerCodeColumns: ["AccountSerial"],
+  customerNameColumns: ["AccountName"],
+  customerAddressColumns: ["Address"],
+  territoryColumns: ["TerritoryName"],
+  fingerprintColumns: ["ProductSerial", "SalesOrReturnQty", "AccountSerial"],
+};
+
+export const SECOND_LAYOUT_PROFILES: DistributorProfile[] = [
+  { ...EPDA_SECOND_LAYOUT, distributorCode: "EP-BK", distributorName: "EPDA-BULK" },
+  { ...EPDA_SECOND_LAYOUT, distributorCode: "EP-PHS", distributorName: "EPDA-Pharmacies" },
+];
+
+export function secondLayoutProfile(distributorCode: string): DistributorProfile | null {
+  const key = String(distributorCode ?? "").trim().toUpperCase();
+  return SECOND_LAYOUT_PROFILES.find((p) => p.distributorCode.toUpperCase() === key) ?? null;
+}

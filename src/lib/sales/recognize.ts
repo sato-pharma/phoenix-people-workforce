@@ -4,7 +4,7 @@ import { stripRestrictedRows } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
-import { headerRowTexts, normalizeRows, pickBestSheet, sheetCarriesDate, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
+import { headerRowTexts, normalizeRows, pickBestSheet, profileForWorkbook, sheetCarriesDate, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
 import {
   PHOENIX_TEMPLATE_BASE_PROFILE,
@@ -206,6 +206,9 @@ export async function recognizeWorkbookParts(distributorCode: string, file: File
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  // The sheet's own columns choose between a distributor's templates. Either way the rows are stamped
+  // with that one distributor, because both profiles carry its code.
+  profile = profileForWorkbook(workbook, profile);
   // Pick the sheet that actually carries this distributor's data (cover/summary tabs are skipped), and
   // use that SAME sheet for coded-sheet detection, header validation, and normalization so analyze and
   // import never read different tabs.

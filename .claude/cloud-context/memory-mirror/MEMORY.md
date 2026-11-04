@@ -29,7 +29,9 @@
 
 
 ## Inbox — new notes land here
+- [The move to GitHub Enterprise, Phoenix-HR-CRM](github-enterprise-move-phoenix-hr-crm.md) - started 4 Nov on his word; the organization does not exist yet; draft `codex/enterprise-move` merges only after the transfer.
 - [The code backup restores through `railway run`](the-code-backup-restores-through-railway-run-not-rclone-remote.md) - first restore passed 3 Nov; how to start a run by hand, and why the README's rclone route and `.env.local`'s Drive login fail here.
+- [EPDA's October 2026 books: new layout, every customer renumbered](epda-october-2026-new-layout-and-new-customer-codes.md) - the importer refuses the headers, 0 of 620 codes are on the map, bonus is now a quantity column; a vendor change, not a mapping regression.
 
 
 

@@ -1,6 +1,7 @@
 import { detectDistributor, normalizeHeader, type DetectionProfile, type DetectionResult } from "@/lib/sales/normalizer/detect-distributor";
 import { listEditableProfiles } from "@/lib/sales/normalizer/distributor-profile-store";
 import { HEADER_SCAN_ROWS } from "@/lib/sales/normalizer/header-normalize";
+import { SECOND_LAYOUT_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 
 // Shared distributor auto-detection — the single place that turns an uploaded workbook's header row
@@ -89,10 +90,23 @@ export function buildDetectionProfiles(profiles: Awaited<ReturnType<typeof listE
   }));
 }
 
+// The second templates, as detection candidates. EPDA Bulk 2 and EPDA Pharmacies 2 wear the columns of
+// the separate source `EP`, so without these the detector names "epda" with high confidence and tells
+// the person to switch to it, which would file EPDA-BULK's sales under the wrong source. With them the
+// three tie and detection says it cannot tell, which is the truth: the person's pick decides.
+export function secondLayoutDetectionProfiles(): DetectionProfile[] {
+  return SECOND_LAYOUT_PROFILES.map((p) => ({
+    distributorCode: p.distributorCode,
+    distributorName: p.distributorName,
+    requiredGroups: [[...(p.productCodeColumns ?? []), ...(p.productNameColumns ?? [])], p.qtyColumns, p.customerCodeColumns ?? []],
+    optionalGroups: [p.customerNameColumns ?? [], p.customerAddressColumns ?? [], p.valueColumns ?? [], p.dateColumns ?? []],
+  }));
+}
+
 const EMPTY_DETECTION: DetectionResult = { ambiguous: false, best: null, confidence: "none", matches: [] };
 
 export async function detectDistributorFromBuffer(buffer: ArrayBuffer): Promise<DetectionResult> {
-  const detectionProfiles = buildDetectionProfiles(await listEditableProfiles());
+  const detectionProfiles = [...buildDetectionProfiles(await listEditableProfiles()), ...secondLayoutDetectionProfiles()];
   const knownHeaders = collectKnownHeaderAliases(detectionProfiles);
   const headers = await extractHeaders(buffer, knownHeaders);
   if (headers.length === 0) return EMPTY_DETECTION;
