@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 
+import { windowKeyInForce, windowsForLines, type SpotlightWindows } from "@/lib/spotlight/line-windows";
 import { blockedReason } from "@/lib/spotlight/period";
 import type { SpotlightFacets } from "@/lib/spotlight/org";
 import type {
@@ -72,16 +73,17 @@ const money = (value: number) =>
 type Props = {
   canExport: boolean;
   facets: SpotlightFacets;
-  windows: Record<SpotlightWindowKind, SpotlightWindow[]>;
+  /** The windows on offer for each set of lines, keyed by `lineSetKey`. A month is offered once the ticked lines have published it. */
+  windowsByLines: Record<string, SpotlightWindows>;
 };
 
 const FIELD = cn(phxSelectClassName, "w-full px-3 py-2 text-[13px]");
 const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500";
 const CARD = "rounded-none border border-slate-200 bg-white p-4";
 
-export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
+export function SpotlightWorkspace({ canExport, facets, windowsByLines }: Props) {
   const [windowKind, setWindowKind] = useState<SpotlightWindowKind>("month");
-  const [windowKey, setWindowKey] = useState<string>(windows.month[0]?.key ?? "");
+  const [pickedKey, setPickedKey] = useState<string>("");
   const [subject, setSubject] = useState<SpotlightSubjectKind>("rep");
   const [lines, setLines] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
@@ -102,10 +104,17 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
   const [busy, setBusy] = useState<"preview" | "export" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const availableWindows = windows[windowKind] ?? [];
+  // What is on offer follows the lines ticked: each line publishes on its own day, so ticking only
+  // the line that has published October offers October. Ticking another line can take it away again,
+  // so the period actually in force is the one picked while it is still offered, else the newest.
+  const availableWindows = useMemo(
+    () => windowsForLines(windowsByLines, lines)[windowKind] ?? [],
+    [windowsByLines, lines, windowKind],
+  );
+  const windowKey = useMemo(() => windowKeyInForce(availableWindows, pickedKey), [availableWindows, pickedKey]);
   // The SAME value disables the buttons and prints the reason, so the two can never disagree —
   // which is the whole defect this replaces: disabled with nothing said.
-  const blocked = blockedReason(windowKind, Boolean(windowKey));
+  const blocked = blockedReason(windowKind, Boolean(windowKey), lines.length > 0);
 
   const selection = useMemo(() => ({
     window: { kind: windowKind, key: windowKey },
@@ -217,7 +226,7 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
                 onChange={(event) => {
                   const next = event.target.value as SpotlightWindowKind;
                   setWindowKind(next);
-                  setWindowKey(windows[next]?.[0]?.key ?? "");
+                  setPickedKey("");
                 }}
                 value={windowKind}
               >
@@ -228,7 +237,7 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
             </div>
             <div>
               <label className={LABEL} htmlFor="sl-window">Period</label>
-              <select className={FIELD} id="sl-window" onChange={(event) => setWindowKey(event.target.value)} value={windowKey}>
+              <select className={FIELD} id="sl-window" onChange={(event) => setPickedKey(event.target.value)} value={windowKey}>
                 {availableWindows.map((window) => (
                   <option key={window.key} value={window.key}>{windowText(window)}</option>
                 ))}
@@ -328,7 +337,9 @@ export function SpotlightWorkspace({ canExport, facets, windows }: Props) {
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <section className={CARD}>
           <h2 className="mb-3 text-[13px] font-bold text-slate-900">Lines</h2>
-          <p className="mb-2 text-[12px] text-slate-500">Leave all unticked for the three tracked lines.</p>
+          <p className="mb-2 text-[12px] text-slate-500">
+            Leave all unticked for the three tracked lines. A month is offered once every ticked line has published it.
+          </p>
           <div className="grid gap-2">
             {facets.lines.map((line) => (
               <label className="flex items-center gap-2 text-[13px] text-slate-800" key={line.code}>

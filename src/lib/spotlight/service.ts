@@ -10,10 +10,11 @@
 // 2026-09-05 is that the closing's arithmetic is the arithmetic.
 
 import { loadMonthlyAchievement } from "@/lib/sales/monthly-targets";
-import { isSalesPeriodReleasedCompanyWide, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
+import { isSalesPeriodReleasedForLines, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 
 import { buildHeadline, buildSubheadline } from "./headline";
+import { spotlightLines } from "./line-windows";
 import { loadSpotlightOrg, type SpotlightOrgIndex } from "./org";
 import { gateWindow } from "./period";
 import {
@@ -75,8 +76,11 @@ export async function loadSpotlight(
   const selection = normaliseSelection(input);
 
   const publishedKeys = await loadSalesReleaseKeys();
+  // The lines the sheet reads, never the whole company: rows are filtered to them before anything is
+  // added up, so a month is released when THOSE lines have published it (owner, 2026-11-04).
+  const readLines = spotlightLines(selection.filters.lines);
   const gate = gateWindow(selection.window, options.today, (period) =>
-    isSalesPeriodReleasedCompanyWide(period, publishedKeys),
+    isSalesPeriodReleasedForLines(period, readLines, publishedKeys),
   );
   if (!gate.allowed) throw new SpotlightWindowError(gate.reason);
 

@@ -209,12 +209,21 @@ export function selectableWindows(
  * Pure and here rather than in the component, so the wording is testable and so the rule that
  * decides it lives beside the gate that causes it.
  */
-export function blockedReason(kind: SpotlightWindowKind, hasSelectableWindow: boolean): string | null {
+export function blockedReason(
+  kind: SpotlightWindowKind,
+  hasSelectableWindow: boolean,
+  /** Whether lines are ticked. A ticked line that has not published a month is a different reason from a month that has not finished. */
+  linesChosen = false,
+): string | null {
   if (hasSelectableWindow) return null;
   if (kind === "year") {
     return "No calendar year has finished within the sales data, which starts in January 2026."
       + " The first will be 2026, from 1 January 2027. Choose Month, Quarter or Half year.";
   }
   const noun = kind === "semester" ? "half year" : kind;
-  return `No ${noun} has finished yet, so there is nothing to spotlight. Choose a different period type.`;
+  if (linesChosen) {
+    return `No ${noun} is published yet on every line ticked, so there is nothing to spotlight.`
+      + " Choose a different period type, or untick a line that has not published.";
+  }
+  return `No ${noun} has finished and been published yet, so there is nothing to spotlight. Choose a different period type.`;
 }

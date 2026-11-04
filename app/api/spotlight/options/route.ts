@@ -1,9 +1,9 @@
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { isSalesPeriodReleasedCompanyWide, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
+import { isSalesPeriodReleasedForLines, loadSalesReleaseKeys } from "@/lib/sales/unpublished-sales-access";
+import { windowsByLineSet } from "@/lib/spotlight/line-windows";
 import { facetsFrom, loadSpotlightOrg } from "@/lib/spotlight/org";
-import { selectableWindows } from "@/lib/spotlight/period";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,16 +22,14 @@ export async function GET(request: Request) {
     await assertPermission(access, "spotlight", "read");
 
     const [index, publishedKeys] = await Promise.all([loadSpotlightOrg(), loadSalesReleaseKeys()]);
-    const isPublished = (period: string) => isSalesPeriodReleasedCompanyWide(period, publishedKeys);
+    // Keyed by the set of lines ticked (`lineSetKey`); the default sheet reads all three.
+    const windowsByLines = windowsByLineSet((period, lines) =>
+      isSalesPeriodReleasedForLines(period, lines, publishedKeys),
+    );
 
     return Response.json(
       {
-        windows: {
-          month: selectableWindows("month", undefined, 18, isPublished),
-          quarter: selectableWindows("quarter", undefined, 8, isPublished),
-          semester: selectableWindows("semester", undefined, 4, isPublished),
-          year: selectableWindows("year", undefined, 4, isPublished),
-        },
+        windowsByLines,
         facets: facetsFrom(index),
       },
       { headers: { "Cache-Control": "no-store" } },
