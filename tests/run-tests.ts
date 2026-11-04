@@ -1930,6 +1930,7 @@ import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-vis
 import { runOrganogramNsmChartFixesTests } from "./organogram-nsm-chart-fixes.test.ts";
 import { runOrganogramJoinersAwaitingStartTests } from "./organogram-joiners-awaiting-start.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
+import { runResignationCancelRestoreTests } from "./resignation-cancel-restore.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
@@ -6978,6 +6979,11 @@ await runTest(
 await runTest(
   "seat transfer service (Super Admin gate, trimmed RPC args, SQL guard messages surface)",
   runSeatTransferServiceTests,
+);
+
+await runTest(
+  "resignation cancel restores the employee (status, pay, seat, vacancy, login, CRM id) before the row is stamped",
+  runResignationCancelRestoreTests,
 );
 
 await runTest(

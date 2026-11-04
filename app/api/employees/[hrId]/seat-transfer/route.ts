@@ -28,6 +28,7 @@ function apiError(error: unknown) {
   }
   if (
     lowered.startsWith("transfer:") ||
+    lowered.startsWith("line move:") ||
     lowered.includes("required") ||
     lowered.includes("must be")
   ) {

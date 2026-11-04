@@ -2283,6 +2283,8 @@ export function EmployeeManagement({
     setError(null);
     setNotice(null);
     setTransferError(null);
+    const otherLineSeat =
+      transferOptions?.otherLineVacantSeats.find((seat) => seat.seatId === transferForm.toSeatId) ?? null;
 
     try {
       const response = await fetch(`/api/employees/${encodeURIComponent(transferEmployee.hrId)}/seat-transfer`, {
@@ -2294,6 +2296,7 @@ export function EmployeeManagement({
             effectiveDate: transferForm.effectiveDate || null,
             fromSeatId: transferForm.fromSeatId || null,
             reason: transferForm.reason || null,
+            moveLine: Boolean(otherLineSeat),
           },
         }),
       });
@@ -2305,12 +2308,15 @@ export function EmployeeManagement({
       }
 
       const targetLabel =
-        transferOptions?.vacantSeats.find((seat) => seat.seatId === transferForm.toSeatId)?.label ??
+        (otherLineSeat ?? transferOptions?.vacantSeats.find((seat) => seat.seatId === transferForm.toSeatId))?.label ??
         transferForm.toSeatId;
+      const lineMove = payload.data?.lineMove as { toLine?: string; vacancyOpened?: string | null } | undefined;
       setNotice(
-        payload.data?.mode === "seated"
-          ? `${transferEmployee.displayName} is now seated on ${targetLabel}.`
-          : `${transferEmployee.displayName} moved to ${targetLabel}. Area, region and manager follow the new seat.`,
+        lineMove
+          ? `${transferEmployee.displayName} moved to the ${lineMove.toLine ?? otherLineSeat?.lineName ?? "new"} line on ${targetLabel}. Area, region and manager follow the new seat${lineMove.vacancyOpened ? `, and vacancy ${lineMove.vacancyOpened} is open for the seat they left` : ""}.`
+          : payload.data?.mode === "seated"
+            ? `${transferEmployee.displayName} is now seated on ${targetLabel}.`
+            : `${transferEmployee.displayName} moved to ${targetLabel}. Area, region and manager follow the new seat.`,
       );
       closeSeatTransfer();
       await loadEmployees();
@@ -4692,25 +4698,50 @@ export function EmployeeManagement({
                 </p>
               </div>
 
-              {!isLoadingTransferOptions && transferOptions && transferOptions.vacantSeats.length === 0 ? (
+              {!isLoadingTransferOptions &&
+              transferOptions &&
+              transferOptions.vacantSeats.length === 0 &&
+              transferOptions.otherLineVacantSeats.length === 0 ? (
                 <div className="md:col-span-2">
                   <AdminCallout tone="warning">
-                    No vacant seats exist on this line right now, so there is nowhere to move this employee.
+                    No vacant seats exist right now, so there is nowhere to move this employee.
                   </AdminCallout>
                 </div>
               ) : null}
 
               <SelectField
-                disabled={isLoadingTransferOptions || !transferOptions || transferOptions.vacantSeats.length === 0}
+                disabled={
+                  isLoadingTransferOptions ||
+                  !transferOptions ||
+                  transferOptions.vacantSeats.length + transferOptions.otherLineVacantSeats.length === 0
+                }
                 label="destination_seat"
                 onChange={(value) => setTransferForm((current) => ({ ...current, toSeatId: value }))}
-                options={(transferOptions?.vacantSeats ?? []).map((seat) => ({
-                  label: `${seat.label}${seat.areaName ? ` · ${seat.areaName}` : ""}${seat.regionName ? ` · ${seat.regionName}` : ""}`,
-                  value: seat.seatId,
-                }))}
+                options={[...(transferOptions?.vacantSeats ?? []), ...(transferOptions?.otherLineVacantSeats ?? [])].map(
+                  (seat) => ({
+                    label: `${seat.lineName ? `${seat.lineName} line · ` : ""}${seat.label}${seat.areaName ? ` · ${seat.areaName}` : ""}${seat.regionName ? ` · ${seat.regionName}` : ""}`,
+                    value: seat.seatId,
+                  }),
+                )}
                 placeholder={isLoadingTransferOptions ? "Loading vacant seats…" : "Choose the vacant seat"}
                 value={transferForm.toSeatId}
               />
+              {(() => {
+                const otherLineSeat = transferOptions?.otherLineVacantSeats.find(
+                  (seat) => seat.seatId === transferForm.toSeatId,
+                );
+                return otherLineSeat ? (
+                  <div className="md:col-span-2">
+                    <AdminCallout tone="warning">
+                      This moves {transferEmployee.displayName} from the{" "}
+                      {emptyText(transferOptions?.employee.lineName ?? transferEmployee.lineName)} line to the{" "}
+                      {otherLineSeat.lineName} line. Line, area, region and manager follow the new seat, the seat&apos;s
+                      open vacancy is filled, and a vacancy opens for the seat they leave. Salary, HR ID and history
+                      stay the same — this is not a resignation.
+                    </AdminCallout>
+                  </div>
+                ) : null;
+              })()}
               <TextField
                 label="effective_date"
                 onChange={(value) => setTransferForm((current) => ({ ...current, effectiveDate: value }))}

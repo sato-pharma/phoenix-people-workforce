@@ -1,0 +1,68 @@
+# Cancelling a resignation, and moving someone to another line
+
+Owner decision, 4 November 2026, Cairo: "Full cancel + line move".
+
+## What happened
+
+Omaima Wael, a medical rep in Dokki - Mohandseen - Bolak, was entered as resigned from the Anti
+Infective line. She was not leaving: she was moving to the Pedia line in the same area. The
+resignation, filed from the Employees page, ended her on the spot:
+
+- her status was set to resigned;
+- payroll and the organogram were switched off;
+- her login was turned off;
+- her CRM id was cleared;
+- her seat was vacated;
+- a replacement vacancy was opened.
+
+Cancelling a resignation on the Resignations screen only stamped the resignation row, so none of
+that came back. The seat transfer also refused any seat on another line. The only route left was a
+resignation followed by a re-hire, which breaks her history, her salary record and her HR ID.
+
+## What changed
+
+**Cancel or Reject on the Resignations screen gives the job back.** Before the row is marked
+cancelled, `runResignationWorkflow` calls
+`public.phx_restore_employee_after_cancelled_resignation(resignation id, actor)`. In one
+transaction it:
+
+- sets the employee to active, on payroll and on the organogram, and clears the exit fields;
+- turns the login and the access profile back on;
+- deletes the resignation's vacant placeholder on the seat and reopens the person's own span, so
+  the seat history reads as if they never left;
+- cancels the replacement vacancy;
+- restores the CRM id from `employee_resignations.crm_id_before`, which the resignation now stores
+  at the moment it clears it.
+
+It refuses, and changes nothing, when:
+
+- the resignation is completed;
+- a newer exit exists;
+- the employee's last working day is not this resignation's;
+- the seat has gone to someone else;
+- the replacement vacancy has been filled.
+
+A resignation that never ended anyone, for example one filed on the Resignations screen and not yet
+completed, is left alone.
+
+**A seat on another line in Transfer Seat is a line move.** The dialog lists every line's vacant
+seats, each named by its line, and shows a warning when the chosen seat is on another line.
+Choosing one calls `public.phx_move_employee_to_line`, which:
+
+- sets the employee's line;
+- moves the seat through `phx_transfer_au_seat`, so area, region and manager follow the seat;
+- fills the destination seat's open vacancy;
+- opens one vacancy for the seat left.
+
+Salary, HR ID and history stay the same.
+
+The same migration (`20261104174918_resignation_cancel_restores_and_line_move.sql`) took
+`area_name` out of `phx_transfer_au_seat`. That column was dropped from `employees`, so every
+transfer onto a seat that has an area failed with error 42703.
+
+## Who decides
+
+Putting a person back on pay is a money decision, so it is the Cancel click on the Resignations
+screen, made by the HR Manager, and never a chat approval.
+
+Pinned by `tests/resignation-cancel-restore.test.ts` and `tests/seat-transfer-service.test.ts`.
