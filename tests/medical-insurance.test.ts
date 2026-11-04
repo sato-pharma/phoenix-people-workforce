@@ -358,6 +358,7 @@ async function testTheEdiFileIsTheInsurersOwnWorkbook() {
   const styles = (await (await JSZip.loadAsync(additionsFile)).file("xl/styles.xml")?.async("string")) ?? "";
   const fonts = [...(/<fonts[^>]*>([\s\S]*?)<\/fonts>/.exec(styles)?.[1] ?? "").matchAll(/<font\b[^>]*?(?:\/>|>([\s\S]*?)<\/font>)/g)].map((match) => match[1] ?? "");
   const normalFont = Number(/<cellXfs[^>]*>\s*<xf [^>]*?fontId="(\d+)"/.exec(styles)?.[1]);
+  assert.equal(normalFont, 0, "a blank cell reads the first font slot, as the insurer's file has it");
   assert.match(fonts[normalFont] ?? "", /<sz val="10"\/><name val="Arial"\/>/, "a blank cell keeps the insurer's Arial 10, not the library's Calibri");
   assert.deepEqual(additions.worksheets.map((sheet) => sheet.name), sheetNames, "every sheet of theirs travels with the file");
   const sheet = additions.getWorksheet("Additions");

@@ -353,24 +353,29 @@ function styleLike(sheet: ExcelJS.Worksheet, row: number, model: number, lastCol
 }
 
 /**
- * ExcelJS writes its own Normal style (Calibri 11) over the workbook's, so every blank cell of the insurer's
- * sheets would change font. This adds the insurer's Normal font, Arial 10, and points the Normal style and
- * the default cell format at it. Cells with a font of their own keep it.
+ * ExcelJS writes its own Normal font (Calibri 11) into the first font slot, the one a blank cell reads, so
+ * every blank cell of the insurer's sheets would change font. This puts the insurer's Arial 10 back in that
+ * slot and moves Calibri to the end for any cell format that really asked for it, as the insurer's file has it.
  */
 async function restoreInsurersNormalFont(file: ArrayBuffer): Promise<ArrayBuffer> {
   const zip = await JSZip.loadAsync(file);
   const stylesFile = zip.file("xl/styles.xml");
   if (!stylesFile) return file;
-  let styles = await stylesFile.async("string");
-  const fonts = /<fonts count="(\d+)">/.exec(styles);
-  if (!fonts) return file;
-  const arialId = Number(fonts[1]);
-  styles = styles
-    .replace(fonts[0], `<fonts count="${arialId + 1}">`)
-    .replace("</fonts>", '<font><sz val="10"/><name val="Arial"/><family val="2"/></font></fonts>')
-    .replace(/(<cellStyleXfs[^>]*>\s*<xf [^>]*?)fontId="0"/, `$1fontId="${arialId}"`)
-    .replace(/(<cellXfs[^>]*>\s*<xf [^>]*?)fontId="0"/, `$1fontId="${arialId}"`);
-  zip.file("xl/styles.xml", styles);
+  const styles = await stylesFile.async("string");
+  const fonts = /(<fonts count=")(\d+)("[^>]*>)(<font>[\s\S]*?<\/font>)/.exec(styles);
+  const formats = /<cellXfs[^>]*>[\s\S]*?<\/cellXfs>/.exec(styles);
+  if (!fonts || !formats) return file;
+  const movedId = Number(fonts[2]);
+  // The first cell format is the default every blank cell wears: it keeps slot 0, now Arial.
+  const defaultFormatAt = formats[0].indexOf("<xf ");
+  const cellFormats = formats[0].replace(/<xf [^>]*?fontId="0"/g, (xf, at: number) =>
+    at === defaultFormatAt ? xf : xf.replace('fontId="0"', `fontId="${movedId}"`),
+  );
+  const patched = styles
+    .replace(formats[0], cellFormats)
+    .replace(fonts[0], `${fonts[1]}${movedId + 1}${fonts[3]}<font><sz val="10"/><name val="Arial"/><family val="2"/></font>`)
+    .replace("</fonts>", `${fonts[4]}</fonts>`);
+  zip.file("xl/styles.xml", patched);
   return zip.generateAsync({ compression: "DEFLATE", type: "arraybuffer" });
 }
 
