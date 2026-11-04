@@ -2,7 +2,12 @@ import JSZip from "jszip";
 
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 
-import { BANK_LETTER_BANK_NAME_AR, BANK_LETTER_HEADINGS, type BankLetterRow } from "./bank-account-letter.ts";
+import {
+  BANK_LETTER_BANK_NAME_AR,
+  BANK_LETTER_HEADINGS,
+  bankLetterDateLine,
+  type BankLetterRow,
+} from "./bank-account-letter.ts";
 
 // The bank account-opening letter as a Word file, written as OOXML by hand — the repo carries jszip
 // and no Word library. The look is the one he approved on 2026-10-28 when the typed letter was put
@@ -11,7 +16,7 @@ import { BANK_LETTER_BANK_NAME_AR, BANK_LETTER_HEADINGS, type BankLetterRow } fr
 //   A4, 15 mm sides, 36 mm top, 22 mm bottom, Tahoma throughout.
 //   Header: the logo left (34 mm), "شركة ساتو فارما" over "Sato Pharma" right, the house band under.
 //   Footer: a hairline, the head-office line, "صفحة N من M".
-//   Body: the address to the bank, the greeting, the request, the table, "التوقيع" and a dotted line.
+//   Body: the date (today in Cairo, passed in as `date`), the address to the bank, the greeting, the request, the table, "التوقيع" and a dotted line.
 //   Table: right to left, fixed layout, deep bold headings over a blue rule, the 6% zebra, no grid,
 //   the heading row repeats on every page and a row never splits across pages.
 //
@@ -44,6 +49,8 @@ export type BankLetterImages = {
 };
 
 export type BankLetterDocxInput = {
+  /** The day the letter is dated, `YYYY-MM-DD` in Cairo — the day it is exported. */
+  date: string;
   rows: readonly BankLetterRow[];
   companyNameAr: string;
   companyNameEn: string;
@@ -116,8 +123,9 @@ function table(rows: readonly BankLetterRow[]): string {
   return `<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:type="dxa" w:w="${TABLE_WIDTH}"/><w:tblBorders><w:top ${NO_BORDER}/><w:left ${NO_BORDER}/><w:bottom w:val="single" w:color="${HAIR}" w:sz="4"/><w:right ${NO_BORDER}/><w:insideH ${NO_BORDER}/><w:insideV ${NO_BORDER}/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${tableRow(BANK_LETTER_HEADINGS, { heading: true, zebra: false })}${body}</w:tbl>`;
 }
 
-function documentXml(rows: readonly BankLetterRow[]): string {
+function documentXml(rows: readonly BankLetterRow[], date: string): string {
   const body = [
+    paragraph(run(bankLetterDateLine(date), { color: INK, size: 22 }), { after: 200 }),
     paragraph(run(`السادة / ${BANK_LETTER_BANK_NAME_AR}`, { bold: true, color: DEEP, size: 24 }), { after: 120 }),
     paragraph(run("تحية طيبة وبعد،", { color: INK, size: 22 }), { after: 160 }),
     paragraph(
@@ -188,7 +196,7 @@ export async function buildBankAccountLetterDocx(input: BankLetterDocxInput): Pr
   zip.file("_rels/.rels", ROOT_RELS_XML);
   zip.file("docProps/core.xml", coreXml(input.companyNameEn));
   zip.file("docProps/app.xml", APP_XML);
-  zip.file("word/document.xml", documentXml(input.rows));
+  zip.file("word/document.xml", documentXml(input.rows, input.date));
   zip.file("word/_rels/document.xml.rels", DOCUMENT_RELS_XML);
   zip.file("word/styles.xml", STYLES_XML);
   zip.file("word/settings.xml", SETTINGS_XML);
