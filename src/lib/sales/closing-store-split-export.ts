@@ -134,6 +134,7 @@ function deriveSplit(
     bulkAllocationRows(monthRows.rows, cityPass.rows, monthRows.period),
     monthRows.period,
     monthRows.line,
+    regions,
   );
   const merged = mergeOfficeRespreadIntoSplit(
     mergeBulkAllocationIntoSplit(
