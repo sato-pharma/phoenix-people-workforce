@@ -64,7 +64,9 @@ IS_WSL=false
 if [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || uname -r | grep -qi microsoft; then IS_WSL=true; fi
 
 # One runner on the 8 GB laptop (WSL is capped at 5 GB, and the production build alone peaks near 7 GB
-# with swap); two on the 24 GB VM.
+# with swap); two on the 24 GB VM. RUNNER_COUNT=2 on the laptop runs a pull request's jobs two at a time
+# (owner, 2026-11-06: "the fastest way"); RUNNER_FIRST=2 then adds runner 2 without touching runner 1,
+# so a job runner 1 is running is not cut off.
 if $IS_WSL; then RUNNER_COUNT="${RUNNER_COUNT:-1}"; else RUNNER_COUNT="${RUNNER_COUNT:-2}"; fi
 RUNNER_LABELS="self-hosted,linux,${RUNNER_ARCH_NAME},phoenix-ci"
 RUNNER_BASE="${RUNNER_BASE:-$HOME/actions-runner}"
@@ -101,6 +103,8 @@ OWNER_REPO="${REPO_URL#https://github.com/}"
 [ "$(id -u)" -ne 0 ] || die "do not run as root — the runner refuses to configure as root. Use your normal Linux user."
 command -v sudo >/dev/null || die "sudo is required"
 [[ "$RUNNER_COUNT" =~ ^[1-8]$ ]] || die "RUNNER_COUNT must be 1-8"
+RUNNER_FIRST="${RUNNER_FIRST:-1}"
+[[ "$RUNNER_FIRST" =~ ^[1-8]$ ]] && [ "$RUNNER_FIRST" -le "$RUNNER_COUNT" ] || die "RUNNER_FIRST must be 1-RUNNER_COUNT"
 . /etc/os-release
 [ "${VERSION_ID:-}" = "24.04" ] || echo "WARNING: written for Ubuntu 24.04; this is ${PRETTY_NAME:-unknown}"
 
@@ -259,7 +263,7 @@ step "Downloading actions/runner ${RUNNER_VERSION} (linux-${RUNNER_ARCH_NAME})"
 curl -fsSL -o "${DL_DIR}/${TARBALL}" "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${TARBALL}"
 echo "${RUNNER_SHA256}  ${DL_DIR}/${TARBALL}" | sha256sum -c - >/dev/null || die "runner tarball checksum mismatch"
 
-for i in $(seq 1 "$RUNNER_COUNT"); do
+for i in $(seq "$RUNNER_FIRST" "$RUNNER_COUNT"); do
   dir="${RUNNER_BASE}-${i}"
   name="phoenix-ci-$(hostname -s)-${i}"
   step "Runner ${i}/${RUNNER_COUNT}: ${name} in ${dir}"
