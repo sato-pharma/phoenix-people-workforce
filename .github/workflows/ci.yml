@@ -179,14 +179,19 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
-  # WHERE THEY RUN, AND WHAT CAPS HOW MANY RUN AT ONCE. GitHub's own `ubuntu-latest`, a literal, on
-  # purpose. It used to be a computed expression that could send a pull request to a self-hosted box (the
-  # Hetzner box, `CI_SELF_HOSTED` / `CI_RUNNER_LABEL`); the owner retired that box on 2026-10-19 as the
-  # source of the slowness and ruled it is never used again, so there is no switch left to flip. `main`
-  # was always hosted, because its CI is the production deploy gate (AGENTS.md §2).
+  # WHERE THEY RUN, AND WHAT CAPS HOW MANY RUN AT ONCE (2026-11-05). Every job reads
+  # `${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`. The free plan's 2,000 Actions minutes for November were
+  # spent by the 5th and the spending limit is $0, so GitHub refuses to START hosted jobs — and the release
+  # gate holds every production deploy until `checks` passes here. Self-hosted minutes are not billed, so
+  # CI moves to a free Oracle Cloud ARM64 machine: repository variable CI_RUNNER_LABEL = `phoenix-ci` sends
+  # every job there, `main` included; unset, every job is GitHub-hosted exactly as before. 🔴 A label that
+  # matches no ONLINE runner QUEUES, it does not fall back — if the machine is down, delete the variable.
+  # The 2026-10-19 rule "GitHub-hosted only" is superseded by this, the owner's decision of 2026-11-05.
+  # Runbook: docs/ci-self-hosted-runner.md. Pinned by tests/ci-runner-switch.test.ts.
   #
-  # Capacity is GitHub's: the account's plan caps how many jobs run at once (GitHub Pro 40; more is a
-  # request to GitHub Support), and a job past the cap QUEUES — it does not fail. A superseded pull
+  # Capacity: on GitHub's runners the plan caps how many jobs run at once and a job past the cap QUEUES —
+  # it does not fail. On the self-hosted machine it is the number of runner services registered on it
+  # (scripts/setup-self-hosted-runner.sh registers two). A superseded pull
   # request run is cancelled by the `concurrency` block above, which hands its slots to the newest push.
   #
   # THE JOBS ARE SHORT ON PURPOSE: GitHub bills and caps by job, so the unit suite is two jobs (not
@@ -201,7 +206,7 @@ jobs:
   # audits or the unit suite: those are `static` and `unit` since 2026-10-19, so `main`'s slowest job is
   # the build alone and not the build behind forty seconds of checks.
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -429,14 +434,18 @@ jobs:
       # from 2026-10-19 — every run since early October carries GitHub's notice saying so — and the
       # old key could not tell the two images apart. A cache whose key omits what makes it valid
       # reports a hit and poisons the step it was meant to save.
+      #
+      # It carries the CPU ARCHITECTURE too (2026-11-05): the self-hosted ARM64 runner and GitHub's x64
+      # runners share one cache, and an x64 Chromium restored onto ARM64 counts as installed, so
+      # `playwright install` skips it and the browser then cannot launch.
       - name: Cache Playwright browsers
         if: github.event_name != 'pull_request'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ env.ImageOS }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-${{ env.ImageOS }}-
+          key: playwright-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ env.ImageOS }}-${{ runner.arch }}-
 
       - name: Install Playwright browsers
         if: github.event_name != 'pull_request'
@@ -559,7 +568,7 @@ jobs:
   # the suite instead of in front of them. Nothing here is conditional on the diff: every step runs on
   # every event, which is the 2026-10-06 rule (see the header).
   static:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
     # READ-ONLY additions for the tree-reuse SHADOW (owner, 2026-10-14; shadow mode 2026-10-26):
     # `actions: read` lets the push run read a PR run's jobs and step names, `pull-requests: read` lets
@@ -869,7 +878,7 @@ jobs:
   # `test` is a RETIRED check name (tests/required-check-names.test.ts) and must never come back as a job.
   # The unit suite runs on EVERY event, in this job and nowhere else (tests/ci-suite-placement.test.ts).
   unit:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # 12, not 20 (31 Oct 2026): a part takes ~3.3 min, and a test that hangs is stopped and named by the
     # sharded runner's own hang watch within ~3 min (docs/testing.md, "The hang watch"). This is only the
     # backstop behind it, so a hang the watch cannot see costs 12 minutes of a pull request, not 20.
@@ -990,7 +999,7 @@ jobs:
   checks:
     needs: [static, unit]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -1070,7 +1079,7 @@ jobs:
   release-gate:
     needs: [checks]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -1166,7 +1175,7 @@ jobs:
   # EAS, not through this repo's deploy — so the cost is a fix-forward, not an outage.
   mobile:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -1225,7 +1234,7 @@ jobs:
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a
@@ -1262,8 +1271,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-
+          key: playwright-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.arch }}-
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium

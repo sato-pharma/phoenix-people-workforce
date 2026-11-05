@@ -79,7 +79,7 @@ jobs:
     # lives in the step. The environment is named "<Railway project> / production"; the staging app is
     # stopped, and a name that merely CONTAINS `production` is the only shape that has ever been seen.
     if: ${{ github.event_name == 'workflow_dispatch' || ((github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error') && contains(github.event.deployment.environment, 'production')) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 14
     steps:
       - name: Read what failed and where production stands

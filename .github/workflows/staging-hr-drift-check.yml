@@ -68,7 +68,7 @@ concurrency:
 jobs:
   drift:
     name: staging HR drift
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # This job had NO `timeout-minutes`, so its ceiling was GitHub's default of six hours — a
     # hung read would have held a runner all night and then cancelled, withholding that `main`
     # commit's production deploy. Measured duration is ~20s.

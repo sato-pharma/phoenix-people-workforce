@@ -6295,7 +6295,7 @@ await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, m
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
 await runTest(
-  "every CI job runs on a GitHub-hosted runner (owner, 2026-10-19): each runs-on in every workflow is the literal ubuntu-latest, nothing reads the retired CI_SELF_HOSTED or CI_RUNNER_LABEL variables, and no step branches on runner.environment == 'self-hosted', so deleting the Hetzner box cannot leave a job queued for ever",
+  "every CI job reads one runner switch (owner, 2026-11-05): each runs-on is exactly ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }} except the Docker image jobs named in HOSTED_ONLY, which keep the literal ubuntu-latest with a hosted-only reason; CI_RUNNER_LABEL is read nowhere else, CI_SELF_HOSTED nowhere, and no step branches on runner.environment == 'self-hosted'",
   runCiRunnerSwitchTests,
 );
 await runTest(

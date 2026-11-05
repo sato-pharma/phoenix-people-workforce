@@ -1,22 +1,30 @@
-// EVERY CI JOB RUNS ON A GITHUB-HOSTED RUNNER, AND NO SELF-HOSTED SWITCH EXISTS TO FLIP.
+// EVERY CI JOB READS ONE SWITCH — `${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}` — AND ONLY THE JOBS
+// THAT NEED GITHUB'S OWN x64 MACHINES WITH DOCKER KEEP THE LITERAL.
 //
-// WHY THIS EXISTS. From 2026-09-28 to 2026-10-19 six `runs-on` lines (four in ci.yml, two in
-// security-scan.yml) were one computed expression that could put a same-repo pull request on a
-// self-hosted runner, gated by two repository variables (`CI_SELF_HOSTED`, `CI_RUNNER_LABEL`). The
-// owner retired the Hetzner box that served it on 2026-10-19 — "retire the hetzner box and do not use
-// it again, it is the source of slowness" and "make all ci actions to be on github" — and a job whose
-// label matches no online runner does not fall back to hosted: it QUEUES for ever with nothing red.
-// So the switch is gone rather than defaulted off, and this file pins that it stays gone:
+// WHY THIS EXISTS. From 2026-10-19 every `runs-on` was the literal `ubuntu-latest`: the owner retired the
+// self-hosted Hetzner box that day ("make all ci actions to be on github"). On 2026-11-05 he reversed that:
+// the repository is on GitHub's FREE plan, November's 2,000 included Actions minutes were spent by the 5th,
+// the spending limit is $0 and there is no money to raise it, so GitHub refuses to START every hosted job —
+// and the release gate holds every production deploy until `checks` passes. Self-hosted minutes are not
+// billed, so CI moves to a free Oracle Cloud ARM64 machine (scripts/setup-self-hosted-runner.sh). The
+// switch is ONE repository variable: `CI_RUNNER_LABEL` = `phoenix-ci` sends every switchable job there;
+// unset, the expression falls back to `ubuntu-latest` and nothing changes. This file pins that shape:
 //
-//   1. Every `runs-on` in every workflow is the literal `ubuntu-latest`. Not an expression, not a
-//      variable, not a label — a literal can never resolve to a machine that is not there.
-//   2. Nothing reads `CI_SELF_HOSTED` or `CI_RUNNER_LABEL`, so deleting the two repository variables
-//      cannot change a run and re-creating them cannot move one.
-//   3. `runner.environment == 'self-hosted'` is not used to key anything either — it only ever
-//      distinguished the box, and a branch on it is dead code that reads like a live safeguard.
+//   1. Every `runs-on` is EXACTLY the switch expression — not a variant, not a bare label, not a
+//      different variable — so one variable moves all of CI and deleting it moves all of CI back.
+//   2. The jobs in HOSTED_ONLY, and only those, keep the literal `ubuntu-latest` with a
+//      `# hosted-only: <reason>` comment. Each builds, pulls or pushes the amd64 production or tablet-server
+//      image with Docker: on an ARM64 machine with no Docker that image cannot be built or pulled the way
+//      Railway and Fly.io run it. A HOSTED_ONLY entry with no matching job fails too, so the list cannot rot.
+//   3. `CI_RUNNER_LABEL` is read nowhere but inside that expression, and the retired `CI_SELF_HOSTED`
+//      nowhere at all — so the variable means one thing everywhere.
+//   4. `runner.environment == 'self-hosted'` keys nothing: a step that behaves differently on the machine
+//      is a second switch nobody reads. Make the step itself work on both (as `Install gitleaks` does
+//      with RUNNER_ARCH) instead.
 //
-// 🔴 TO PUT CI ON SOMETHING ELSE AGAIN, CHANGE THIS FILE ON PURPOSE, in the same PR, and say who asked.
-// Account of the retired design and why it was retired: docs/ci-self-hosted-runner.md.
+// 🔴 A LABEL THAT MATCHES NO ONLINE RUNNER DOES NOT FALL BACK — THE JOB QUEUES, WITH NOTHING RED. If the
+// machine is down, DELETE the variable; the next run is GitHub-hosted again.
+// Account and runbook: docs/ci-self-hosted-runner.md.
 
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
@@ -24,6 +32,20 @@ import path from "node:path";
 
 const WORKFLOW_DIR = ".github/workflows";
 const HOSTED = "ubuntu-latest";
+export const RUNNER_SWITCH = "${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}";
+
+/** Workflows left exactly as they were on 2026-11-05, every job on the literal hosted label. */
+const HOSTED_WORKFLOWS = new Set(["mobile-build.yml", "mobile-ota.yml"]);
+
+/** file → job ids that must stay on GitHub's x64 runners, with the reason (2026-11-05). */
+export const HOSTED_ONLY: Record<string, Record<string, string>> = {
+  "fallback-image.yml": { image: "builds the amd64 production image with Docker" },
+  "emergency-host.yml": {
+    gate: "reads the image registry with Docker",
+    standby: "pulls and pushes the amd64 image with Docker",
+  },
+  "headwind-image.yml": { build: "builds the amd64 tablet-server image with Docker" },
+};
 
 function workflowFiles(): string[] {
   return readdirSync(WORKFLOW_DIR).filter((n) => n.endsWith(".yml") || n.endsWith(".yaml"));
@@ -39,37 +61,91 @@ function live(file: string): { line: number; text: string }[] {
 
 export function runCiRunnerSwitchTests() {
   let runsOnLines = 0;
-  for (const file of workflowFiles()) {
+  let switched = 0;
+  const hostedSeen = new Set<string>();
+  const files = workflowFiles();
+
+  for (const file of files) {
+    let inJobs = false;
+    let job: string | null = null;
     for (const { line, text } of live(file)) {
-      // 1 — every runs-on is the literal hosted label.
-      const runsOn = /^\s*runs-on:\s*(.*?)\s*(?:#.*)?$/.exec(text);
+      if (/^jobs:\s*$/.test(text)) inJobs = true;
+      else if (inJobs) {
+        const id = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(text);
+        if (id) job = id[1];
+      }
+
+      const runsOn = /^\s*runs-on:\s*(.*?)\s*(?:#\s*(.*))?$/.exec(text);
       if (runsOn) {
         runsOnLines += 1;
-        assert.equal(
-          runsOn[1],
-          HOSTED,
-          `${file}:${line} reads \`runs-on: ${runsOn[1]}\`, not the literal \`${HOSTED}\`. CI is GitHub-hosted only ` +
-            `(owner, 2026-10-19). A computed expression or a self-hosted label can resolve to a machine ` +
-            `that is not there, and a job with no matching online runner QUEUES for ever with nothing red.`,
-        );
+        const value = runsOn[1];
+        const comment = runsOn[2] ?? "";
+        const hostedReason = job ? HOSTED_ONLY[file]?.[job] : undefined;
+        if (HOSTED_WORKFLOWS.has(file)) {
+          // 2 — whole workflows left untouched keep the literal.
+          assert.equal(value, HOSTED, `${file}:${line} must keep the literal \`runs-on: ${HOSTED}\`; this workflow is not switched.`);
+        } else if (hostedReason) {
+          // 2 — a hosted-only job keeps the literal AND says why, on the line itself.
+          hostedSeen.add(`${file}#${job}`);
+          assert.equal(
+            value,
+            HOSTED,
+            `${file}:${line} (job \`${job}\`) must stay on the literal \`${HOSTED}\`: it ${hostedReason}, which the ARM64 ` +
+              `self-hosted machine cannot do the way Railway and Fly.io run it.`,
+          );
+          assert.match(
+            comment,
+            /^hosted-only: \S/,
+            `${file}:${line} (job \`${job}\`) keeps the literal \`${HOSTED}\` but carries no \`# hosted-only: <reason>\` ` +
+              `comment, so the next reader cannot tell it was left on GitHub's runners on purpose.`,
+          );
+        } else {
+          // 1 — every other job reads exactly the one switch.
+          switched += 1;
+          assert.equal(
+            value,
+            RUNNER_SWITCH,
+            `${file}:${line} (job \`${job}\`) reads \`runs-on: ${value}\`, not \`${RUNNER_SWITCH}\`. Every job reads that ONE ` +
+              `switch (owner, 2026-11-05: the free plan's Actions minutes ran out, so CI runs on a free self-hosted machine ` +
+              `while CI_RUNNER_LABEL is set). A job that must stay on GitHub's runners goes in HOSTED_ONLY in ` +
+              `tests/ci-runner-switch.test.ts with its reason, and wears \`# hosted-only: <reason>\` on the line.`,
+          );
+        }
+        continue;
       }
-      // 2 — nothing reads the retired variables.
+
+      // 3 — the variable is read nowhere but on a runs-on line, and the retired one nowhere.
       assert.ok(
         !/\b(CI_SELF_HOSTED|CI_RUNNER_LABEL|vars\.CI_RUNNER\b)/.test(text),
-        `${file}:${line} reads a retired runner-switch variable: ${text.trim()}. The switch was deleted with the ` +
-          `Hetzner box on 2026-10-19; a workflow must not branch on it.`,
+        `${file}:${line} reads a runner-switch variable outside \`runs-on\`: ${text.trim()}. CI_RUNNER_LABEL means one thing ` +
+          `— which machine runs the job — and CI_SELF_HOSTED was retired with the Hetzner box on 2026-10-19.`,
       );
-      // 3 — and the runtime property that only ever meant "this is the box".
+      // 4 — and the runtime property is never a second switch.
       assert.ok(
         !/runner\.environment\s*==\s*'self-hosted'/.test(text),
-        `${file}:${line} branches on \`runner.environment == 'self-hosted'\`: ${text.trim()}. No self-hosted runner ` +
-          `exists any more, so that branch is dead code that reads like a live safeguard.`,
+        `${file}:${line} branches on \`runner.environment == 'self-hosted'\`: ${text.trim()}. Make the step work on both ` +
+          `machines instead (key on RUNNER_ARCH, as \`Install gitleaks\` in security-scan.yml does).`,
       );
     }
   }
 
+  // Every HOSTED_ONLY entry names a job that exists, so the list cannot quietly outlive its jobs.
+  for (const [file, jobs] of Object.entries(HOSTED_ONLY)) {
+    assert.ok(files.includes(file), `HOSTED_ONLY names ${file}, which is not a workflow any more. Remove it.`);
+    for (const job of Object.keys(jobs)) {
+      assert.ok(
+        hostedSeen.has(`${file}#${job}`),
+        `HOSTED_ONLY names job \`${job}\` in ${file}, but no such job carries a runs-on line. Remove the entry.`,
+      );
+    }
+  }
+  for (const file of HOSTED_WORKFLOWS) {
+    assert.ok(files.includes(file), `HOSTED_WORKFLOWS names ${file}, which is not a workflow any more. Remove it.`);
+  }
+
   // The scan above must have looked at something, or an empty directory would pass it.
   assert.ok(runsOnLines >= 20, `expected at least 20 \`runs-on\` lines across the workflows, found ${runsOnLines}`);
+  assert.ok(switched >= 20, `expected at least 20 jobs on the runner switch, found ${switched}`);
 
   assertCiJobLedger();
 }

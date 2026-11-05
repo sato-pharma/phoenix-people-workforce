@@ -1,8 +1,77 @@
-# CI on a self-hosted runner — RETIRED 2026-10-19, kept as history
+# CI on a self-hosted runner — BACK ON 2026-11-05 (a free Oracle Cloud ARM64 machine)
+
+## 2026-11-05 — CI moves to a free self-hosted machine, behind one repository variable
+
+🔴 **Read this first. It is the current state. Everything below it — the 2026-10-27 cost section and the
+2026-10-19 retirement of the Hetzner box — is now history.**
+
+**What was decided, and why.** The owner decided this on the evening of 5 Nov 2026 (Cairo).
+- The repository is on GitHub's **free plan**. November's 2,000 included Actions minutes were used up by 5 Nov (2,018 used).
+- The spending limit is **$0**, and there is no money to raise it.
+- So GitHub refuses to **start** every hosted job: *"The job was not started because recent account payments have failed or your spending limit needs to be increased."*
+- Because the release gate waits for `ci.yml`'s `checks` on the `main` commit, **every production deploy is held** too.
+- Minutes on a **self-hosted** runner are not billed. So CI runs on an Oracle Cloud **"Always Free"** Ampere A1 VM: ARM64, Ubuntu 24.04, 4 OCPU, 24 GB. It costs nothing.
+- This reverses the 2026-10-19 decision ("make all ci actions to be on github"). GitHub-hosted minutes are no longer affordable, and that is the only reason.
+
+**The switch is ONE repository variable, `CI_RUNNER_LABEL`.**
+- Every switchable job reads `runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`.
+- **Set to `phoenix-ci`:** every one of those jobs runs on the VM, `main` included.
+- **Unset (deleted):** the expression falls back to `ubuntu-latest`, and CI is exactly what it was before.
+- The variable is set by hand, only after the runners show **Idle** (step 4 below). Nothing sets it automatically.
+- 🔴 **A label that matches no ONLINE runner does not fall back. The job QUEUES, with nothing red, for up to a day.** If the VM is down or stopped, **delete the variable**. The next run is GitHub-hosted again (and, while the minutes are spent, refused again).
+
+**What stays on GitHub's own runners, and why.** These keep the literal `ubuntu-latest` with a `# hosted-only:` comment on the line. `HOSTED_ONLY` in `tests/ci-runner-switch.test.ts` lists them.
+
+| Workflow | Job | Why it cannot move |
+| --- | --- | --- |
+| `fallback-image.yml` | `image` | Builds the amd64 production image with Docker. On ARM64 it would build an image Railway and Fly.io cannot run. |
+| `emergency-host.yml` | `gate` | Reads the image registry with Docker. |
+| `emergency-host.yml` | `standby` | Pulls and pushes the amd64 image with Docker. |
+| `headwind-image.yml` | `build` | Builds the amd64 tablet-server image with Docker, which Railway builds as amd64. |
+
+Because none of the switched jobs uses Docker, `services:` or `container:`, the VM gets no Docker.
+
+**What was made to work on both machines.**
+- **gitleaks** (`security-scan.yml`, `Install gitleaks`) picks the `linux_x64` or `linux_arm64` asset from `RUNNER_ARCH`. Each asset has its own pinned checksum, taken from the release's own checksums file.
+- **The Playwright browser caches** (`ci.yml` `validate` and `full-e2e`, `synthetic-journeys.yml`) carry `runner.arch` in the key. Without it, an x64 Chromium restored onto ARM64 counts as installed and then cannot launch.
+- **The pnpm store key** already carried `RUNNER_ARCH`.
+- **Native packages** (Next's SWC, sharp, `@napi-rs/canvas`, lightningcss, Tailwind's oxide, the Supabase CLI) all have `linux-arm64` builds in `pnpm-lock.yaml`.
+- **Semgrep** 1.171.0 publishes a `manylinux_2_34_aarch64` wheel.
+
+**Registering the runner — on the VM, once.**
+1. **Create the VM.** Oracle Cloud, shape `VM.Standard.A1.Flex`, 4 OCPU / 24 GB, image Ubuntu 24.04 (aarch64). Give the boot volume 100 GB or more; the free allowance is 200 GB.
+2. **Get a registration token.** Repository → Settings → Actions → Runners → New self-hosted runner. It is valid about an hour.
+3. **On the VM, as the normal `ubuntu` user:**
+   ```bash
+   git clone --depth 1 https://github.com/Omar-3-xx/phoenix-people-workforce.git /tmp/phx-setup   # or copy the one script over
+   bash /tmp/phx-setup/scripts/setup-self-hosted-runner.sh https://github.com/Omar-3-xx/phoenix-people-workforce
+   ```
+   - It asks for the token without showing it. It never prints it and never writes it to disk.
+   - It installs gh, Node 24 with corepack (pnpm comes from `packageManager`), git, build-essential, the PostgreSQL client, Playwright's Chromium system libraries and an 8 GB swap file.
+   - It then registers **two** runner services, `phoenix-ci-<host>-1` and `-2`, labelled `self-hosted,linux,arm64,phoenix-ci`. `RUNNER_COUNT=1` registers one.
+   - Each runner is a systemd service and survives a reboot. Re-running the script is safe.
+4. **Check** that both runners read **Idle** on the Runners page. Then switch:
+   ```bash
+   gh variable set CI_RUNNER_LABEL --repo Omar-3-xx/phoenix-people-workforce --body phoenix-ci
+   ```
+5. **Roll back** at any time: `gh variable delete CI_RUNNER_LABEL --repo Omar-3-xx/phoenix-people-workforce`.
+
+**Safety.**
+- The repository is **private**, so only accounts with access can make a workflow run on the VM.
+- 🔴 **If it is ever made public, remove the runners first.** On a public repository a fork pull request could run code on the machine.
+- The VM holds no secrets of its own. A job's secrets reach it only for the length of that job, exactly as on a hosted runner.
+
+**Pinned by `tests/ci-runner-switch.test.ts`.** The test fails in any of these cases:
+- a job reads anything but the exact switch expression;
+- a `HOSTED_ONLY` job loses its literal or its `# hosted-only:` reason;
+- a `HOSTED_ONLY` entry no longer names a real job;
+- `CI_RUNNER_LABEL` is read anywhere but on a `runs-on` line;
+- the retired `CI_SELF_HOSTED` is read anywhere;
+- a step branches on `runner.environment == 'self-hosted'`.
 
 ## What CI costs now, and the guards that hold it (2026-10-27)
 
-🔴 **Read this first. It is the current state; the box sections further down are history.**
+**History since 2026-11-05 — the section above is the current state.** Until then this was the state, and the box sections further down were already history.
 
 **Why the bill doubled and CI felt slow.** These are minutes measured from every job, 10–27 Oct; the dollars
 come only from GitHub's own billing amounts (the rule below, "The invoice is the only authority").
