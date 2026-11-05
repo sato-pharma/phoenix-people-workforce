@@ -2303,18 +2303,50 @@ export async function queryOwnVisitsOfDepartedAgents<T = CrmVisitRow>(options: {
   dateTo: string;
   columns: string;
   hrIds: readonly string[];
+  /** Fold iReports360 re-saves, as {@link queryVisits} does for a present agent. */
+  collapseDoubleVisits?: boolean;
 }): Promise<T[]> {
   if (options.hrIds.length === 0) return [];
   const judged = departedAgentsAmong((await getEffectiveExclusion()).departed, options.hrIds);
   if (judged.length === 0) return [];
   const rows = await queryVisits<T & { agent_hr_id?: string | null; visit_date?: string | null }>({
     agentHrIds: judged.map((agent) => agent.hrId),
+    collapseDoubleVisits: options.collapseDoubleVisits,
     columns: withOwnRowColumns(options.columns),
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     includeResignedAgents: true,
   });
   return selectOwnVisitsThroughLastWorkingDate(rows, judged);
+}
+
+/**
+ * The check-in twin of {@link queryOwnVisitsOfDepartedAgents}: a departed person's OWN check-ins,
+ * through their last working day. Built for a re-hired person's earlier record
+ * (src/lib/employees/continuous-service.ts), whose history every agent-centric read otherwise hides.
+ */
+export async function queryOwnCheckinsOfDepartedAgents<T = CrmCheckinRow>(options: {
+  dateFrom: string;
+  dateTo: string;
+  columns: string;
+  hrIds: readonly string[];
+}): Promise<T[]> {
+  if (options.hrIds.length === 0) return [];
+  const judged = departedAgentsAmong((await getEffectiveExclusion()).departed, options.hrIds);
+  if (judged.length === 0) return [];
+  const columns = options.columns.split(",").map((part) => part.trim()).filter(Boolean);
+  for (const column of ["agent_hr_id", "check_date"]) if (!columns.includes(column)) columns.push(column);
+  const rows = await queryCheckins<T & { agent_hr_id?: string | null; check_date?: string | null }>({
+    agentHrIds: judged.map((agent) => agent.hrId),
+    columns: columns.join(", "),
+    dateFrom: options.dateFrom,
+    dateTo: options.dateTo,
+    includeResignedAgents: true,
+  });
+  return selectOwnVisitsThroughLastWorkingDate(
+    rows.map((row) => ({ row, agent_hr_id: row.agent_hr_id ?? null, visit_date: row.check_date ?? null })),
+    judged,
+  ).map((entry) => entry.row);
 }
 
 /** The two columns {@link selectOwnVisitsThroughLastWorkingDate} reads, whatever the caller asked for. */

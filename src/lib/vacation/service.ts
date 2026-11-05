@@ -7414,14 +7414,23 @@ export async function getEmployeeAnnualLeaveBalanceDays(employeeHrId: string | n
   const employee = findEmployeeByHrId(directory, employeeHrId);
   if (!employee) return null;
 
+  // A re-hired person's leave under an earlier record is spent from the same balance
+  // (continuous-service.ts), so it is read too and counted as theirs.
+  const ownAndEarlier = ownAndEarlierRecordHrIds(employee.hrId);
   const visibleHrIds = buildVisibleHrIdSet([employee]);
+  for (const earlier of ownAndEarlier.slice(1)) {
+    const canonical = canonicalHrId(earlier);
+    if (canonical) visibleHrIds.add(canonical);
+    visibleHrIds.add(earlier.toUpperCase());
+  }
   const scopedRows = (await fetchVacationReportRowsFromDatabase({
     access: systemAccessContext,
     filters: {},
     visibleEmployeeHrIds: visibleHrIds,
   }))
     .map((row) => mapVacationRow(row))
-    .filter((row) => hrIdsMatch(row.employeeHrId, employee.hrId));
+    .filter((row) => ownAndEarlier.some((hrId) => hrIdsMatch(row.employeeHrId, hrId)))
+    .map((row) => (hrIdsMatch(row.employeeHrId, employee.hrId) ? row : { ...row, employeeHrId: employee.hrId }));
 
   // Unknown beats overstated: a balance that forgot days already spent would say more is left than
   // there is, so a failed read answers null (the callers already treat that as "not shown"). EVERY
