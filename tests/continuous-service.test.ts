@@ -88,4 +88,60 @@ export function runContinuousServiceTests() {
   assert.match(payroll, /payrollScope === "SELF"[\s\S]{0,400}ownAndEarlierRecordHrIds\(currentHrId\)/, "she may open a payslip paid under her earlier record");
   const vacation = readFileSync("src/lib/vacation/service.ts", "utf8");
   assert.match(vacation, /if \(accessOwnsVacationHrId\(access, request\.employeeHrId\)\) return true;/, "her earlier record's leave is her own");
+  assert.match(
+    vacation,
+    /async function getEmployeeAnnualLeaveBalanceDays[\s\S]{0,700}ownAndEarlierRecordHrIds\(employee\.hrId\)[\s\S]{0,700}ownAndEarlier\.some/,
+    "the overview's leave left spends the leave she took under her earlier record",
+  );
+
+  // ---- Her Employee 360 and overview read her earlier record's field work (owner, 2026-11-05) ------
+  const e360 = readFileSync("src/lib/employee-360/service.ts", "utf8");
+  assert.match(
+    e360,
+    /async function fetchVisitRows[\s\S]{0,400}earlierRecordHrIds\(hrId\)[\s\S]{0,400}queryOwnVisitsOfDepartedAgents/,
+    "HEADLINE: Employee 360's visits include the ones she logged as AI-0009 — the CRM door hides a departed record",
+  );
+  assert.match(
+    e360,
+    /async function fetchCheckinRows[\s\S]{0,700}earlierRecordHrIds\(hrId\)[\s\S]{0,400}queryOwnCheckinsOfDepartedAgents/,
+    "Employee 360's check-ins include her earlier record's",
+  );
+  const reads = readFileSync("src/lib/crm/reads.ts", "utf8");
+  assert.match(
+    reads,
+    /export async function queryOwnCheckinsOfDepartedAgents[\s\S]{0,1200}includeResignedAgents: true[\s\S]{0,400}selectOwnVisitsThroughLastWorkingDate/,
+    "a departed record's check-ins stop at its last working day, like its visits",
+  );
+  const deep = readFileSync("src/lib/employee-360/deep-service.ts", "utf8");
+  assert.match(
+    deep,
+    /async function getEmployeeCoaching[\s\S]{0,900}\.in\("medical_rep_hr_id", ownAndEarlierRecordHrIds\(hrId\)\.flatMap\(hrIdLookupKeys\)\)/,
+    "her coaching reports under her earlier record are hers",
+  );
+  const salesStart = deep.indexOf("export async function getEmployeeSales(");
+  const salesRead = deep.slice(salesStart, deep.indexOf("export function teamSalesUnreadable"));
+  assert.ok(salesStart >= 0 && salesRead.length > 0, "getEmployeeSales is where this test expects it");
+  assert.ok(
+    !/ownAndEarlierRecordHrIds|earlierRecordHrIds\(/.test(salesRead),
+    "HEADLINE (owner, 2026-11-05): her earlier record's SALES never show — they are another line's products",
+  );
+  const home = readFileSync("src/lib/employee-portal/home-snapshot.ts", "utf8");
+  const homeSalesStart = home.indexOf("async function loadMrCanonicalSales(");
+  assert.ok(homeSalesStart >= 0, "loadMrCanonicalSales is where this test expects it");
+  assert.ok(
+    !/earlierRecordHrIds|ownAndEarlierRecordHrIds/.test(home.slice(homeSalesStart, homeSalesStart + 6000)),
+    "the overview's sales tile stays on her current record only",
+  );
+  assert.match(home, /withEarlierRecordDoubleVisits\(hrId,/, "the overview's double-visit pulse includes her earlier record's");
+  for (const page of [
+    "app/employee-portals/employee-360/page.tsx",
+    "app/employee-portals/employee-360/[hrId]/page.tsx",
+    "app/(admin)/employee-360/[hrId]/page.tsx",
+  ]) {
+    assert.match(
+      readFileSync(page, "utf8"),
+      /hireDate: continuousServiceStartDate\(target\.hrId, target\.hireDate\) \?\? target\.hireDate/,
+      `${page}: Employee 360 counts her tenure from 17 Aug`,
+    );
+  }
 }

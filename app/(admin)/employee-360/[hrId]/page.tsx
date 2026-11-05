@@ -25,6 +25,7 @@ import { bridgeEmployeeLineToOfficial } from "@/lib/sales/access-scope";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { isSkillsSurveyMember, isSkillsSurveySubject } from "@/lib/coaching/skills-survey/access";
 import { getSkillsSurveyHistoryForMember } from "@/lib/coaching/skills-survey/service";
+import { continuousServiceStartDate } from "@/lib/employees/continuous-service";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,8 @@ export default async function Employee360DetailPage({
     regionName: target.regionName,
     managerName: target.managerName,
     employmentStatus: target.employmentStatus,
-    hireDate: target.hireDate,
+    // A re-hired person's tenure counts from their first record's first day (continuous-service.ts).
+    hireDate: continuousServiceStartDate(target.hrId, target.hireDate) ?? target.hireDate,
     // Tenure stops on the day they left, never keeps counting on a closed record.
     leftOn: isActiveLifecycleStatus(target.employmentStatus) ? null : employeeExitDay(target),
   };
