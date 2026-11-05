@@ -27,6 +27,8 @@ This file is loaded because this session opened a file of this module (or the mo
 
 - 🔒 **WHO ELSE IS OFF SHOWS AND NEVER DECIDES, AND NEVER NAMES THE LEAVE TYPE** (owner, 2026-11-03). `src/lib/vacation/who-else-is-off.ts`: teammates under the same CURRENT manager with filed leave overlapping a request still waiting, on the approval page and the email-link decision page, hidden from the requester. Name, dates, half day and approved or waiting only: a sick day is private, and the select does not read `vacation_type`. A failed read or a person with no manager is SAID, never "nobody". Pinned by `tests/approver-context.test.ts`.
 
+- 🔴 **A RE-HIRED PERSON'S LEAVE COUNTS FROM THEIR FIRST RECORD'S HIRE DATE, THROUGH `continuous-service.ts`, NEVER BY MOVING `employees.hire_date`** (owner, 2026-11-05, Omayma Wael El Habashy: AI-0009 → PD-0039, from 17 Aug 2026). Payroll puts a person in a month by `hire_date`, and 17 Aug on PD-0039 put her in the open October run twice. The link also gives her portal the earlier record's payslips and vacations; payroll never imports it. Pinned by `tests/continuous-service.test.ts`.
+
 ### Production hooks (moved from AGENTS.md §2.3)
 
 

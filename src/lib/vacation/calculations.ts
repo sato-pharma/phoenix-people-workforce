@@ -1,4 +1,5 @@
 import { addDaysToDateOnly, addYearsToDateOnly, parseDateOnly, toDateOnlyString } from "../date-only.ts";
+import { continuousServiceStartDate } from "../employees/continuous-service.ts";
 import { countHrWorkingDays, isHrWorkingDayPart } from "@/lib/hr-calendar/calendar-logic";
 import type { HrWeeklyOffPolicy } from "@/lib/hr-calendar/types";
 import type {
@@ -88,8 +89,14 @@ export function compareDateOnly(left: string, right: string) {
  * employee accruing, which is why the Deductions leave-balance button can still spend what has been
  * earned (calculateVacationPayment's `allowFirstSixMonths`).
  */
-export function isWithinFirstSixMonths(input: { hireDate: string | null | undefined; referenceDate: string }): boolean {
-  const hireDate = toDateOnlyString(input.hireDate);
+export function isWithinFirstSixMonths(input: {
+  employeeHrId?: string | null;
+  hireDate: string | null | undefined;
+  referenceDate: string;
+}): boolean {
+  // Counted from the person's unbroken service when an earlier record of theirs is linked
+  // (src/lib/employees/continuous-service.ts) — the leave clock never restarts on a re-hire.
+  const hireDate = toDateOnlyString(continuousServiceStartDate(input.employeeHrId, input.hireDate));
   if (!hireDate) return false;
   const sixMonthAnniversary = addMonthsToDateOnly(hireDate, 6);
   return Boolean(sixMonthAnniversary) && compareDateOnly(input.referenceDate, sixMonthAnniversary as string) < 0;
@@ -219,7 +226,8 @@ export function getVacationBalancePeriod(input: {
   hireDate: string | null | undefined;
   referenceDate: string;
 }) {
-  const hireDate = toDateOnlyString(input.hireDate);
+  // The person's unbroken service, when an earlier record of theirs is linked (continuous-service.ts).
+  const hireDate = toDateOnlyString(continuousServiceStartDate(input.employeeHrId, input.hireDate));
   const referenceDate = toDateOnlyString(input.referenceDate);
   if (!hireDate || !referenceDate) return null;
 
@@ -384,7 +392,8 @@ export function calculateVacationPayment(input: {
   startDate: string;
   vacationType?: VacationType;
 }): VacationBalanceSnapshot {
-  const hireDate = toDateOnlyString(input.hireDate);
+  // The person's unbroken service, when an earlier record of theirs is linked (continuous-service.ts).
+  const hireDate = toDateOnlyString(continuousServiceStartDate(input.employeeHrId, input.hireDate));
   const durationDays = roundDays(input.durationDays);
   const vacationType = input.vacationType ?? "annual";
   if (vacationType === "compensatory") {

@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { earlierRecordHrIds, ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { isDisposablePayrollBatchRow } from "@/lib/fixture-hygiene";
@@ -547,7 +548,13 @@ async function resolvePayrollAccessFilter(
   );
 
   if (payrollScope === "SELF") {
-    return { all: false, allowedHrIds: new Set([currentHrId]) };
+    // Their own record, and an earlier record of theirs before a re-hire (continuous-service.ts),
+    // so the portal can open the payslips paid under it.
+    const ownAndEarlier = ownAndEarlierRecordHrIds(currentHrId);
+    return {
+      all: false,
+      allowedHrIds: ownAndEarlier.length > 1 ? normalizePayrollAllowedIds(ownAndEarlier) : new Set([currentHrId]),
+    };
   }
 
   const canonicalViewerId = normalizeHrIdForAccess(currentHrId) ?? "";
@@ -1047,10 +1054,18 @@ export async function getSalaryBatchExport(
   batch: SalaryBatch;
   records: SalaryRecord[];
 } | null> {
-  const supabase = await rowSecurityClientFor("payroll.getSalaryBatchExport");
+  const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);
+  // A payslip paid under an earlier record of the viewer's (continuous-service.ts) belongs to a
+  // resigned HR id, which the salary_records row policy hides from the viewer's session. The rows are
+  // still narrowed to the viewer's own ids twice below — in the query and again in memory — so the
+  // service client reads exactly what the access filter allows and nothing more.
+  const readsEarlierRecord = !payrollAccessFilter.all
+    && earlierRecordHrIds(resolveEmployeeIdentityId(accessContext)).length > 0;
+  const supabase = readsEarlierRecord
+    ? getSupabaseAdmin()
+    : await rowSecurityClientFor("payroll.getSalaryBatchExport");
   const normalizedRequestedId = batchId.trim();
   let targetBatchId = normalizedRequestedId;
-  const payrollAccessFilter = await resolvePayrollAccessFilter(accessContext);
 
   if (!isUuid(normalizedRequestedId)) {
     const numericRecordId = Number.parseInt(normalizedRequestedId, 10);

@@ -25,6 +25,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { personNameLookup } from "@/lib/employees/person-name-lookup";
+import { ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 // NOTE there is deliberately no `getAwaitingMyActionItems` import here any more.
 //
@@ -1381,12 +1382,18 @@ export async function getPortalHomeSnapshot(
           .limit(1)
           .maybeSingle();
         if (batchError || !batch) return null;
-        const { data: record } = await supabase
+        // The newest payslip may have been paid under an earlier record of the person's, before a
+        // re-hire (continuous-service.ts); everyone else reads exactly the one id as before.
+        const ownHrId = canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase();
+        const ownAndEarlier = ownAndEarlierRecordHrIds(ownHrId);
+        const recordsInBatch = supabase
           .from("salary_records")
           .select("net_salary")
-          .eq("batch_id", batch.id)
-          .eq("hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-          .maybeSingle();
+          .eq("batch_id", batch.id);
+        const { data: record } = await (ownAndEarlier.length > 1
+          ? recordsInBatch.in("hr_id", ownAndEarlier).limit(1)
+          : recordsInBatch.eq("hr_id", ownHrId)
+        ).maybeSingle();
         if (!record?.net_salary) return null;
         return {
           month: `${batch.year}-${String(batch.month).padStart(2, "0")}`,
