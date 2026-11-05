@@ -322,6 +322,8 @@ const ROUTE_GATES: RouteGate[] = [
   get("manager-plans/customers/bricks"),
   // The marks on each doctor of the rep or area he plans with (owner, 2026-10-23).
   get("manager-plans/customers/insight"),
+  // "Show visit times" on each customer he plans with (owner, 2026-11-05) — the marks' own gate in the service.
+  get("manager-plans/customers/visit-times"),
   { route: "manager-plans/customers/match", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   { route: "manager-plans/customers/locate", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   post("manager-plans/customers/removal", "read"),
@@ -1066,6 +1068,8 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20261103091500_phoenix_crm_visit_comment_readings.sql",
   // The visit retry (owner, 3 Nov 2026): one column, one log table and a switch. It creates and replaces no function.
   "supabase/migrations/20261103120000_phoenix_crm_visit_resend.sql",
+  // "Show visit times" on a manager's plan board (owner, 5 Nov 2026): one NEW read-only function; nothing replaced.
+  "supabase/migrations/20261105210430_phoenix_crm_customer_last_visits.sql",
 ];
 
 /**

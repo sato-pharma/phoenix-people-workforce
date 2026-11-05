@@ -213,7 +213,7 @@ export function runPhoenixCrmCallPrepTests(): void {
     assert.equal(server.split('.from("phoenix_crm_visits")').length - 1, 1, "the screen reads the visits table once");
     assert.match(
       server,
-      /\.select\("id, customer_id, visit_date, captured_at, products, next_step, next_step_on, objection"\)/,
+      /\.select\("id, customer_id, visit_date, captured_at, products, next_step, next_step_on, objection, imported_from_ireports360_at"\)/,
       "with both reads' columns",
     );
     assert.match(

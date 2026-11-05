@@ -60,7 +60,7 @@ export async function loadPlannerInsights(
         () =>
           getSupabaseAdmin()
             .from("phoenix_crm_visits")
-            .select("id, customer_id, visit_date, captured_at, next_step, next_step_on")
+            .select("id, customer_id, visit_date, captured_at, next_step, next_step_on, imported_from_ireports360_at")
             .eq("seat_id", seatId)
             .eq("is_test", isTest)
             .gte("visit_date", addDaysIso(today, -LAST_SEEN_WINDOW_DAYS)),
@@ -95,6 +95,7 @@ export async function loadPlannerInsights(
         capturedAt: String(row.captured_at ?? ""),
         nextStep: textOrNull(row.next_step),
         nextStepOn: textOrNull(row.next_step_on),
+        imported: row.imported_from_ireports360_at !== null && row.imported_from_ireports360_at !== undefined,
       })),
       history,
     });

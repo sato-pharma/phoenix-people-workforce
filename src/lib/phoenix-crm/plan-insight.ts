@@ -92,13 +92,18 @@ export function plannerInsightOf(input: {
   savedDays: boolean;
   /** His newest Phoenix visit, of any kind. */
   phoenixLastOn: string | null;
+  /** That visit's capture time — null for an iReports360 copy, which has no clock. */
+  phoenixLastAt?: string | null;
   /** iReports360's history on the contact behind him; null for a customer the rep added himself. */
   reference: InsightHistory | null;
   /** The date his latest visit's next step is due (`pickLastNextStep`). */
   followUpOn: string | null;
 }): PlannerInsight {
+  const lastSeenOn = laterDay(input.phoenixLastOn, input.reference?.lastVisitedOn ?? null);
   return {
-    lastSeenOn: laterDay(input.phoenixLastOn, input.reference?.lastVisitedOn ?? null),
+    lastSeenOn,
+    // The time belongs to the visit "last seen" names: his Phoenix visit, when it is the latest.
+    lastVisitAt: lastSeenOn !== null && lastSeenOn === input.phoenixLastOn ? (input.phoenixLastAt ?? null) : null,
     usualWeekdays: input.savedDays ? null : usualWeekdaysOf(input.reference?.days ?? []),
     followUpOn: isIsoDay(input.followUpOn) ? input.followUpOn : null,
   };
@@ -113,13 +118,19 @@ export type InsightCustomer = { customerId: string; savedDays: boolean; referenc
  */
 export function buildPlannerInsights(input: {
   customers: ReadonlyArray<InsightCustomer>;
-  visits: ReadonlyArray<LastNextStepRow>;
+  /** `imported`: an iReports360 copy, which has a day and no clock. */
+  visits: ReadonlyArray<LastNextStepRow & { imported?: boolean }>;
   history: ReadonlyMap<number, InsightHistory>;
 }): Map<string, PlannerInsight> {
-  const lastVisit = new Map<string, string>();
+  // The newest visit per customer: the day first, then its capture time.
+  const lastVisit = new Map<string, { day: string; at: string | null }>();
   for (const visit of input.visits) {
     if (!visit.customerId || !isIsoDay(visit.visitDate)) continue;
-    lastVisit.set(visit.customerId, laterDay(lastVisit.get(visit.customerId), visit.visitDate) ?? visit.visitDate);
+    const at = visit.imported || !visit.capturedAt ? null : visit.capturedAt;
+    const held = lastVisit.get(visit.customerId);
+    if (!held || visit.visitDate > held.day || (visit.visitDate === held.day && (at ?? "") > (held.at ?? ""))) {
+      lastVisit.set(visit.customerId, { day: visit.visitDate, at });
+    }
   }
   const nextSteps = pickLastNextStep(input.visits);
   const insights = new Map<string, PlannerInsight>();
@@ -129,7 +140,8 @@ export function buildPlannerInsights(input: {
       customer.customerId,
       plannerInsightOf({
         savedDays: customer.savedDays,
-        phoenixLastOn: lastVisit.get(customer.customerId) ?? null,
+        phoenixLastOn: lastVisit.get(customer.customerId)?.day ?? null,
+        phoenixLastAt: lastVisit.get(customer.customerId)?.at ?? null,
         reference,
         followUpOn: nextSteps.get(customer.customerId)?.dueOn ?? null,
       }),

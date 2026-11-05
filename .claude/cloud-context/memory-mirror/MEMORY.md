@@ -29,8 +29,7 @@
 
 
 ## Inbox — new notes land here
-- [The sidebar is per account, and the app seeds its list at startup](the-sidebar-is-per-account-and-seeded-at-app-startup.md) - sessions are files under `claude-code-sessions/<accountUuid>/<orgUuid>/`; copies are invisible until HE reopens the app, while `unarchive_session` works live.
-- [The roll-up cannot build while branch protection is unreadable](the-roll-up-cannot-build-while-branch-protection-is-unreadable.md) - Omar-3-xx answers 403 on protection, so rollup-prs.mjs confirms nothing green and red may merge; carry a small PR on the wide PR's branch and read the checks by hand.
+- 🔒 [Product and medical knowledge belong to the PRODUCT MANAGER, never the Training Manager](product-and-medical-knowledge-belong-to-the-product-manager.md) - golden rule, said many times; the trainer owns selling skills only.
 
 
 

@@ -109,6 +109,15 @@ export function cairoStamp(iso: string | null | undefined): string {
   return day ? `${dayLabel(day)}, ${cairoClock(iso)}` : "—";
 }
 
+/**
+ * "Tue 3 Nov, 11:31 AM" — a visit's own day (the visit day, which runs to 02:00 Cairo) and its Cairo time; the
+ * year only when it is not this one. A visit with no clock of its own (an iReports360 copy) shows the day alone.
+ */
+export function visitMomentText(moment: { date: string; at: string | null }, today: string): string {
+  const day = moment.date.slice(0, 4) === today.slice(0, 4) ? dayLabel(moment.date) : dayLabelWithYear(moment.date);
+  return moment.at ? `${day}, ${cairoClock(moment.at)}` : `${day} · no time recorded`;
+}
+
 const COUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 export function countText(value: number | null | undefined): string {

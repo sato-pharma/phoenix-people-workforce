@@ -1209,14 +1209,15 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   // The routes: every writer reaches them with read — the writer rule decides, never the create grant.
   const routeFiles = filesUnder("app/api/phoenix-crm/manager-plans").filter((file) => file.endsWith("/route.ts"));
   // The seventeenth: the marks on each doctor he plans with, a GET (owner, 2026-10-23). The eighteenth: the week's conversation, a GET and a POST (owner, 2026-11-01).
-  assert.equal(routeFiles.length, 18, "the eighteen manager-plan routes");
+  // The nineteenth: "Show visit times" on each customer he plans with, a GET (owner, 2026-11-05).
+  assert.equal(routeFiles.length, 19, "the nineteen manager-plan routes");
   for (const file of routeFiles) {
     const text = source(file);
     assert.match(text, /assertPermission\(access, "phoenix_crm", "read"\)/, `${file} asks read`);
     assert.equal(/assertPermission\(access, "phoenix_crm", "(create|approve|update)"\)/.test(text), false, `${file} never asks a grant only a district manager holds`);
   }
   const registry = source("src/lib/security/access-registry.ts").split("\n").filter((line) => line.includes('pattern: "/api/phoenix-crm/manager-plans'));
-  assert.equal(registry.length, 24, "twenty-four declarations across the eighteen routes");
+  assert.equal(registry.length, 25, "twenty-five declarations across the nineteen routes");
   for (const line of registry) assert.ok(line.includes('permission: { resource: "phoenix_crm", action: "read" }'), `declared on read: ${line.trim().slice(0, 120)}`);
 
   // 🔴 `read` at the door makes the SERVICE the gate: a Medical Rep holds `read` too. So each of the ten
