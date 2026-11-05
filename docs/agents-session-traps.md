@@ -1291,7 +1291,7 @@ What a green PR has not run today is the same for docs and code, and it first ru
 `main`, the branch that deploys to production:
 
 - the login smoke test, the canvas check and the standalone assembly, on every PR
-- the build, unless a route or build config file changed (`scripts/ci-build-risk.mjs` decides)
+- the build — a pull request never builds, whatever it touches (owner, 2026-11-05: "Yes, skip the PR build")
 
 So the check that matters after any merge is still the run on `main`'s NEW head. **A short `validate`
 says nothing about tests any more**, because it holds none on any PR: on pull request 50 of

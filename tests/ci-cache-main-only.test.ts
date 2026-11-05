@@ -189,8 +189,12 @@ export function runCiCacheMainOnlyTests() {
     assert.ok(setupAt < locateAt && locateAt < restoreAt && restoreAt < installAt, `\`${name}\`: setup-node, locate, restore, then install`);
     const locate = j.steps[locateAt];
     const restore = j.steps[restoreAt];
-    assert.equal(stepField(locate, "if"), null, `\`${name}\`: the locate step runs unconditionally`);
-    assert.equal(stepField(restore, "if"), null, `\`${name}\`: the restore step runs on every event`);
+    // `validate` alone runs nothing on a pull request since 2026-11-05 (a PR never builds, owner: "Yes, skip
+    // the PR build"), so its locate and restore are gated off a PR with the rest of the job — pinned by
+    // tests/ci-pr-skips-build-and-smoke.test.ts. Everywhere else they run on every event.
+    const expectedIf = name === "validate" ? "github.event_name != 'pull_request'" : null;
+    assert.equal(stepField(locate, "if"), expectedIf, `\`${name}\`: the locate step runs ${expectedIf ? "on main and a dispatch" : "unconditionally"}`);
+    assert.equal(stepField(restore, "if"), expectedIf, `\`${name}\`: the restore step runs ${expectedIf ? "wherever the job installs" : "on every event"}`);
     assert.match(uses(restore), /^actions\/cache\/restore@/, `\`${name}\`: the store is restored with actions/cache/restore`);
     assert.equal(stepField(restore, "key"), STORE_KEY, `\`${name}\`: the store key is the located prefix plus the lockfile hash`);
     assert.equal(stepField(restore, "path"), STORE_PATH, `\`${name}\`: the store path comes from the locate step`);

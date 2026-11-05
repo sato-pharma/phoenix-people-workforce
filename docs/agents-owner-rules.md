@@ -529,9 +529,8 @@ design's 40px.
    `lint PASS`, `typecheck PASS`, the whole unit suite green, and then
    `Ecmascript file had an error … org-fields.tsx:2:1` — so two of the three cheap gates said the
    change was fine. **Only the build catches it, which is why such a sweep must BUILD before it
-   merges** — a PR builds by itself only when it touches a route or build-config file
-   (`scripts/ci-build-risk.mjs`, narrowed 2026-10-08), and a component-only sweep like this one does
-   NOT, so run `remote-check all` on it before asking for the merge.
+   merges** — a pull request never builds by itself (owner, 2026-11-05: "Yes, skip the PR build"), so
+   run `remote-check all` on it before asking for the merge.
 6. 🔴 **A chromeless control must not be GIVEN the token.** 24 controls paint no box by design —
    `border-0`/`bg-transparent` inside a wrapper that carries the border and the `focus-within`
    ring. The sweep's keep-list held `bg-transparent` but still *prepended* the token, which paints

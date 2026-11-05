@@ -71,16 +71,18 @@ export function runCiRunnerSwitchTests() {
     for (const { line, text } of live(file)) {
       if (/^jobs:\s*$/.test(text)) inJobs = true;
       else if (inJobs) {
-        const id = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(text);
+        const id: RegExpExecArray | null = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(text);
         if (id) job = id[1];
       }
 
-      const runsOn = /^\s*runs-on:\s*(.*?)\s*(?:#\s*(.*))?$/.exec(text);
+      const runsOn: RegExpExecArray | null = /^\s*runs-on:\s*(.*?)\s*(?:#\s*(.*))?$/.exec(text);
       if (runsOn) {
         runsOnLines += 1;
-        const value = runsOn[1];
-        const comment = runsOn[2] ?? "";
-        const hostedReason = job ? HOSTED_ONLY[file]?.[job] : undefined;
+        const value: string = runsOn[1];
+        const comment: string = runsOn[2] ?? "";
+        // Every const in this loop is annotated: `job` is reassigned inside it, and an unannotated
+        // initializer that reads `job` is circular to the type checker (TS7022 on PR 40's first laptop run).
+        const hostedReason: string | undefined = job ? HOSTED_ONLY[file]?.[job] : undefined;
         if (HOSTED_WORKFLOWS.has(file)) {
           // 2 — whole workflows left untouched keep the literal.
           assert.equal(value, HOSTED, `${file}:${line} must keep the literal \`runs-on: ${HOSTED}\`; this workflow is not switched.`);
@@ -188,7 +190,7 @@ export function assertSetupScripts() {
     ["x86_64", "x64"],
     ["aarch64", "arm64"],
   ]) {
-    const m = new RegExp(`^\\s*${cpu}\\)\\s+RUNNER_ARCH_NAME=${arch};\\s+RUNNER_SHA256="([0-9a-f]{64})"\\s*;;`, "m").exec(sh);
+    const m: RegExpExecArray | null = new RegExp(`^\\s*${cpu}\\)\\s+RUNNER_ARCH_NAME=${arch};\\s+RUNNER_SHA256="([0-9a-f]{64})"\\s*;;`, "m").exec(sh);
     assert.ok(
       m,
       `${SETUP_SCRIPT} must map \`${cpu})\` to RUNNER_ARCH_NAME=${arch} with its own pinned 64-hex RUNNER_SHA256 — the laptop is ` +

@@ -80,10 +80,10 @@ export function runCiGateParityTests() {
  *
  * SO THE INVARIANT IS NOW SIMPLE AND UNFALSIFIABLE BY A PATH LIST: no step in `ci.yml` is SKIPPED
  * because of what the diff touched. The only conditional work left is gated on the EVENT, which no
- * file can change. ONE narrow exception, added 2026-10-08 and pinned below: `validate`'s `Build risk`
- * step may read the diff, but only to ADD the Build to a pull request (which otherwise never
- * builds) — its one consumer is `github.event_name != 'pull_request' || <output> == 'true'`, so a
- * wrong list can only return a PR to today's no-build, never skip anything `main` runs.
+ * file can change. From 2026-10-08 to 2026-11-05 one narrow exception stood: `validate`'s `Build risk`
+ * step read the diff, but only to ADD the Build to a pull request. It is gone — since 2026-11-05 a
+ * pull request never builds (owner: "Yes, skip the PR build") — so no required job reads the diff at
+ * all, and `steps.buildrisk` must feed nothing.
  * The build and the login smoke keep their own test
  * (tests/ci-pr-skips-build-and-smoke.test.ts) and the suite keeps its own
  * (tests/ci-suite-placement.test.ts).
@@ -118,22 +118,17 @@ export function runCiDocsOnlyClassifierTests() {
   // typecheck when `mobile/` changed, it is not a required check, and it fails towards doing MORE
   // work, so a mistake there costs a minute rather than a gate.
   const jobs = live.split(/\n {2}(?=[A-Za-z0-9_-]+:\n)/);
-  // The one permitted reader in a required job: `validate`'s `Build risk` step, which can only ADD
-  // the Build to a pull request. Strip exactly that step before looking, then pin its only consumer.
-  const BUILD_RISK_STEP =
-    /\n {6}- name: Build risk\n {8}id: buildrisk\n {8}if: github\.event_name == 'pull_request'\n {8}run: \|\n(?: {10}.*\n)+/;
   const offenders = jobs
-    .map((job) => (/^ *validate:/.test(job) ? job.replace(BUILD_RISK_STEP, "\n") : job))
     .filter((job) => /git diff --name-only/.test(job))
     .map((job) => /^ *([A-Za-z0-9_-]+):/.exec(job)?.[1] ?? "?")
     .filter((name) => name !== "mobile");
   const consumers = live.split("\n").filter((line) => /steps\.buildrisk\./.test(line));
   assert.deepEqual(
     consumers.map((line) => line.trim()),
-    ["if: github.event_name != 'pull_request' || steps.buildrisk.outputs.build == 'true'"],
-    "`steps.buildrisk` may feed exactly ONE condition — the Build's — and only as an OR beside the " +
-      "event, so it can add the build to a PR and never take a step away from `main` or a PR. Any " +
-      "other consumer turns the build-risk list into a skip list, the 2026-10-02 incident.",
+    [],
+    "`steps.buildrisk` feeds a condition again. Since 2026-11-05 a pull request never builds (owner: " +
+      "\"Yes, skip the PR build\"), so nothing reads the diff to decide a step — a consumer is a skip list " +
+      "waiting to be wrong, the 2026-10-02 incident.",
   );
   assert.deepEqual(
     offenders,

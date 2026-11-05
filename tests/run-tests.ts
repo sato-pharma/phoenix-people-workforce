@@ -10453,12 +10453,12 @@ await runTest(
 );
 
 await runTest(
-  "ci.yml builds and runs the Playwright login smoke on main, a dispatch and a schedule but NOT on a pull request — all nine heavy steps gated on the detect step's heavy output, which excludes pull_request and is still emitted, and push:main still triggers the workflow at all (measured 2026-09-29: the Build was 200s of validate's 295s, ~555 billable minutes a day across 185 PR runs, and every PR finishes ~3.5 min earlier)",
+  "ci.yml builds and runs the Playwright login smoke on main and a dispatch but NEVER on a pull request (owner, 2026-11-05: \"Yes, skip the PR build\" — Railway builds every merge and keeps the old version serving if it fails): on a PR validate is one step that prints why and every other step, checkout and install included, is gated on the event; the Build reads the event alone and nothing reads the build-risk classifier; push:main still triggers the workflow at all (measured 2026-09-29: the Build was 200s of validate's 295s)",
   runCiPrSkipsBuildAndSmokeTests,
 );
 
 await runTest(
-  "a pull request also BUILDS when it touches a route or build config (2026-10-08, narrowed the same day at the owner's word): scripts/ci-build-risk.mjs answers build=true for an app/ route or segment file, an app/ stylesheet, next.config, proxy/middleware/instrumentation, the dependency manifests, tsconfig, postcss/tailwind, the Dockerfile and ci.yml, and build=false for a src/** library or component change, docs, tests, scripts, migrations, public/ and .env.example; an empty or unreadable diff, an escaping path or a classifier crash all build; a real git rename that moves a route out of app/ builds; the Build's if: is `not a PR || build risk` so main always builds; the canvas, standalone and smoke steps stay main-only; and STAGE_JOBS_PR.build stays null",
+  "the build-risk classifier, kept but no longer called by ci.yml (since 2026-11-05 a pull request never builds — the Build step reads the event alone and no Build risk step exists): scripts/ci-build-risk.mjs answers build=true for an app/ route or segment file, an app/ stylesheet, next.config, proxy/middleware/instrumentation, the dependency manifests, tsconfig, postcss/tailwind, the Dockerfile and ci.yml, and build=false for a src/** library or component change, docs, tests, scripts, migrations, public/ and .env.example; an empty or unreadable diff, an escaping path or a classifier crash all build; a real git rename that moves a route out of app/ builds; the Build's if: is the event alone, `github.event_name != 'pull_request'`, so main always builds and a PR never does; the canvas, standalone and smoke steps stay main-only; and STAGE_JOBS_PR.build stays null",
   runCiBuildRiskTests,
 );
 

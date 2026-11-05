@@ -41,6 +41,38 @@ Because none of the switched jobs uses Docker, `services:` or `container:`, our 
 - **Semgrep** 1.171.0 publishes a `manylinux_2_34_aarch64` wheel.
 - **The setup script** picks `actions-runner-linux-x64` or `actions-runner-linux-arm64` from the CPU. Each has its own pinned SHA-256 from GitHub's release notes. The Node fallback tarball is checked against nodejs.org's `SHASUMS256.txt`.
 
+**🔴 A pull request does not build — the owner's decision, 5 Nov 2026, 23:55 Cairo.** Asked whether to skip
+the full app build on pull requests once CI was on the laptop, he chose: *"Yes, skip the PR build"*.
+- **Why.** The first run on the laptop (run 42103516936, PR 40) showed the cost of one machine. The jobs run
+  **one after another**, not side by side. Install took about **6 minutes** (the first time), lint **3 min 52 s**,
+  then the typecheck — and on a PR the build would have queued behind all of it.
+- **What it does now.** On a pull request `validate` is one step, *Pull requests do not build*, which prints
+  *"Pull requests do not build: Railway builds every merge, and a build that fails there keeps the old version
+  serving (owner, 2026-11-05)"*. Every other step in the job, checkout and install included, is skipped. The job
+  still runs and concludes **success**, because `validate` is a required check name and a job skipped whole
+  reports nothing.
+- **What did not change.** On `main` and a dispatch `validate` builds and runs the login smoke test, exactly
+  as before. `checks` (lint, the type checks, the whole suite) runs on every pull request.
+- **Why it is safe.** Railway builds every merge. A build that fails there does not deploy, so the old version
+  keeps serving. The `Build risk` step (2026-10-08, which built a PR that touched a route or build config) is
+  removed. `scripts/ci-build-risk.mjs` stays, with its own tests, but nothing calls it.
+- **Pinned by** `tests/ci-pr-skips-build-and-smoke.test.ts`, `tests/ci-build-risk.test.ts` §7 and
+  `tests/ci-gate-parity.test.ts`.
+
+**Lint keeps its own cache on the machine.** On the laptop `actions/checkout` cleans the workspace
+(`git clean -ffdx`), which deletes `.eslintcache`. The shared GitHub cache also holds GitHub-hosted file paths,
+which match none of the laptop's. So every lint ran cold — the 3 min 52 s above.
+- `static` now also keeps the cache **outside the workspace**, in
+  `$HOME/.cache/phoenix-ci/eslint/<first 12 hex of the sha256 of the workspace path>/.eslintcache`. There is one
+  folder per workspace path, because the file is keyed by absolute path.
+- *Bring back the ESLint cache kept on this machine* copies it in before lint. When it is there, the shared cache is
+  neither restored nor saved, so the laptop's paths never reach a GitHub-hosted run.
+- *Keep the ESLint cache on this machine for the next run* copies it back after every lint, on every event, and
+  never fails the job.
+- On a GitHub-hosted runner the home folder is new every run, so the copy is never there and nothing changes.
+  ESLint checks every entry itself (its version, the Node runtime, the config and each file's content), so a
+  stale copy can only make lint slower, never wrong.
+
 ### Route A — the spare laptop (WSL2), the current target
 
 **What the laptop needs, always.**
