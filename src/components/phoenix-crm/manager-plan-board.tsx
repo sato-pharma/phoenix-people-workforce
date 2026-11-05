@@ -47,6 +47,7 @@ import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/co
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ManagerCustomerForm } from "@/components/phoenix-crm/manager-customer-form";
 import { CustomerCard, CustomerGroupBar, CustomerMarks, groupLook, useCustomerInsight } from "@/components/phoenix-crm/manager-customer-marks";
+import { CustomerVisitTimesLines, useCustomerVisitTimes, useShowVisitTimes, VisitTimesToggle } from "@/components/phoenix-crm/visit-times";
 import { ManagerSingleVisitDayAsk } from "@/components/phoenix-crm/manager-single-visit-day-ask";
 import { CrmStepFooter, CrmStepForm, CrmStepNext, type CrmStep } from "@/components/phoenix-crm/step-form";
 import {
@@ -1234,6 +1235,9 @@ function WithRepPart({
   // The marks on each of the rep's customers (owner, 2026-10-23): grade, the rep's visits this month against
   // it, his own visits, a live marketing request — and the groups they share. Read for the chosen rep only.
   const insight = useCustomerInsight({ seats: draft.repSeatId ? [draft.repSeatId] : [], date: day.date, test });
+  // "Show visit times" (owner, 2026-11-05): read only while the switch is on.
+  const [showTimes] = useShowVisitTimes();
+  const visitTimes = useCustomerVisitTimes({ seats: draft.repSeatId ? [draft.repSeatId] : [], date: day.date, test, on: showTimes });
   const [group, setGroup] = useState<string | null>(null);
   if (view.reps.length === 0) {
     return <CrmEmpty message={choosesADistrict(view) ? "No rep sits in this district right now." : "No rep sits in your team right now."} title="No reps" />;
@@ -1366,6 +1370,9 @@ function WithRepPart({
             <p className="text-xs font-semibold leading-5 text-amber-800">The rep has nothing planned this half any more. Untick the customers below, or choose another rep.</p>
           ) : null}
           {chosen ? <CustomerGroupBar active={group} customers={groupable} insight={insight.data} onActive={setGroup} /> : null}
+          <div>
+            <VisitTimesToggle />
+          </div>
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             {ordered.map((customer, index) => {
               const details = [customer.grade ? `Grade ${customer.grade}` : null, customer.speciality, customer.brickName ?? customer.zone].filter(Boolean).join(" · ");
@@ -1390,6 +1397,7 @@ function WithRepPart({
                     </span>
                     <span className="block break-words text-xs font-semibold text-slate-500">{details}</span>
                     <CustomerMarks insight={marks[customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customerId)} />
+                    {showTimes ? <CustomerVisitTimesLines customerKey={customerId} error={visitTimes.error} today={day.date} view={visitTimes.data} /> : null}
                   </CrmCheck>
                 </CustomerCard>
               );
@@ -1871,6 +1879,9 @@ function SingleVisitPart({
   // his own list's customers with his own visits.
   const areaSeats = area.data && area.data.area?.seatId === draft.areaSeatId ? [...new Set(area.data.repList.map((customer) => customer.seatId))] : [];
   const insight = useCustomerInsight({ seats: areaSeats, own: true, date, test });
+  // "Show visit times" (owner, 2026-11-05): read only while the switch is on.
+  const [showTimes] = useShowVisitTimes();
+  const visitTimes = useCustomerVisitTimes({ seats: areaSeats, own: true, date, test, on: showTimes });
   const [group, setGroup] = useState<string | null>(null);
   if (view.areas.length === 0) {
     return <CrmEmpty message={choosesADistrict(view) ? "No area of this district is on file yet." : "No area of your district is on file yet."} title="No areas" />;
@@ -2018,6 +2029,9 @@ function SingleVisitPart({
             <>
               <CrmSearchField id={`${idPrefix}-area-search`} label="Find a customer" onChange={setQuery} placeholder="Type a name" value={query} />
               {allRep.length > 0 ? <CustomerGroupBar active={group} customers={groupable} insight={insight.data} onActive={setGroup} /> : null}
+              <div>
+                <VisitTimesToggle />
+              </div>
               {ownList.length > 0 ? (
                 <div className="grid min-w-0 gap-2">
                   <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">Manager&apos;s own list</p>
@@ -2032,6 +2046,9 @@ function SingleVisitPart({
                             {[`Grade ${customer.grade}`, customer.potentialGrade, customer.speciality].filter(Boolean).join(" · ")}
                           </span>
                           <CustomerMarks insight={marks[ownInsightKey(customer.id)]} monthName={insight.data?.monthName ?? ""} suggested={false} />
+                          {showTimes ? (
+                            <CustomerVisitTimesLines customerKey={ownInsightKey(customer.id)} error={visitTimes.error} ownList today={date} view={visitTimes.data} />
+                          ) : null}
                         </CrmCheck>
                       </CustomerCard>
                     ))}
@@ -2071,6 +2088,7 @@ function SingleVisitPart({
                               .join(" · ")}
                           </span>
                           <CustomerMarks insight={marks[customer.customerId]} monthName={insight.data?.monthName ?? ""} suggested={suggested.has(customer.customerId)} />
+                          {showTimes ? <CustomerVisitTimesLines customerKey={customer.customerId} error={visitTimes.error} today={date} view={visitTimes.data} /> : null}
                         </CrmCheck>
                       </CustomerCard>
                     );

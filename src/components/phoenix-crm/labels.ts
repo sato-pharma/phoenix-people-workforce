@@ -3,7 +3,7 @@
  * tab says the same thing the same way.
  */
 
-import { dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
+import { dayLabel, dayLabelWithYear, plural, visitMomentText } from "@/components/phoenix-crm/format";
 import type { PillTone } from "@/components/phoenix-crm/ui";
 import { foldedWordsMatch } from "@/lib/phoenix-crm/name-fold";
 import { followUpInWeek, usualDaysOf } from "@/lib/phoenix-crm/plan-insight";
@@ -148,12 +148,17 @@ export type PlannerRowInsight = { lastSeen: string | null; usual: string | null;
  */
 export function plannerRowInsight(
   customer: Pick<PlannerCustomer, "insight" | "pending" | "places" | "visitsThisMonth">,
-  context: { target: number | null; today: string; weekStart: string },
+  context: { target: number | null; today: string; weekStart: string; withTime?: boolean },
 ): PlannerRowInsight {
   const insight = customer.insight ?? null;
   const usual = usualDaysOf(customer);
   const followUp = followUpInWeek(customer, context.weekStart);
-  const seen = insight ? lastSeenText(insight.lastSeenOn, context.today) : null;
+  // "Show visit times" on (owner, 2026-11-05): the last visit's day AND its time.
+  const seen = !insight
+    ? null
+    : context.withTime && insight.lastSeenOn
+      ? `Last seen ${visitMomentText({ date: insight.lastSeenOn, at: insight.lastVisitAt ?? null }, context.today)}`
+      : lastSeenText(insight.lastSeenOn, context.today);
   return {
     lastSeen: seen !== null && !customer.pending ? `${seen} · ${monthVisitsText(customer.visitsThisMonth, context.target)}` : seen,
     usual: usual ? usualDaysText(usual) : null,

@@ -482,7 +482,7 @@ export function runPhoenixCrmPlanInsightTests(): void {
       loader.indexOf('.from("phoenix_crm_visits")') >= 0 && loader.indexOf('.from("phoenix_crm_visits")') < loader.indexOf("await customersRead"),
       "the Phoenix visits are asked for BEFORE the customer list is awaited — they name no customer minted a moment ago",
     );
-    assert.match(loader, /\.select\("id, customer_id, visit_date, captured_at, next_step, next_step_on"\)/, "one read serves last seen and the follow-up");
+    assert.match(loader, /\.select\("id, customer_id, visit_date, captured_at, next_step, next_step_on, imported_from_ireports360_at"\)/, "one read serves last seen, its time and the follow-up");
     assert.match(loader, /\.gte\("visit_date", addDaysIso\(today, -LAST_SEEN_WINDOW_DAYS\)\)/, "within its window");
     assert.match(loader, /\.eq\("is_test", isTest\)/, "and never across the test world's line");
     assert.match(loader, /visitsRead\.catch\(\(\) => undefined\);/, "a read started early is handled the moment it starts");
@@ -535,7 +535,7 @@ export function runPhoenixCrmPlanInsightTests(): void {
     const panel = read("src/components/phoenix-crm/plan-day-panel.tsx");
     assert.match(
       panel,
-      /const insight = plannerRowInsight\(customer, \{ target: gradeTarget\(\{ gradeTargets \}, customer\.listType, customer\.grade\), today, weekStart \}\);/,
+      /const insight = plannerRowInsight\(customer, \{ target: gradeTarget\(\{ gradeTargets \}, customer\.listType, customer\.grade\), today, weekStart, withTime: showTimes \}\);/,
       "each row reads its words from the one helper, against the grade's own number",
     );
     assert.match(panel, /const weekStart = fieldWeekStart\(day\.date\);/, "the week a follow-up must fall in is the day's own field week");

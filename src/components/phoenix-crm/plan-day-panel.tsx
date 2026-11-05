@@ -57,6 +57,7 @@ import { Check } from "lucide-react";
 
 import { countText, dayLabel, dayLabelLong } from "@/components/phoenix-crm/format";
 import { neighbourTint, type BrickTint, type NeighbourTint } from "@/components/phoenix-crm/brick-tints";
+import { useShowVisitTimes, VisitTimesToggle } from "@/components/phoenix-crm/visit-times";
 import { customerMetaText, matchesWords, PENDING_PILL, plannerRowInsight } from "@/components/phoenix-crm/labels";
 import type { CopyReport } from "@/components/phoenix-crm/plan-copy-menu";
 import { PlanFilterBar } from "@/components/phoenix-crm/plan-filter-bar";
@@ -262,6 +263,8 @@ export function PlanDayPanel({
   const [moreOpen, setMoreOpen] = useState(false);
   // The customers a brick's box could not place for want of room, named under that brick.
   const [brickNote, setBrickNote] = useState<{ key: string; text: string } | null>(null);
+  // "Show visit times" (owner, 2026-11-05): on, each row's "Last seen" carries the visit's time as well.
+  const [showTimes] = useShowVisitTimes();
   const weekday = weekdayOfIsoDay(day.date);
   const weekdayName = PHOENIX_CRM_WEEKDAY_NAMES[weekday];
   const dayName = dayLabel(day.date);
@@ -385,7 +388,7 @@ export function PlanDayPanel({
     const address = fit.place ? fit.place.address : reference?.address ?? null;
     const area = fit.place ? null : reference?.area ?? null;
     const timings = fit.place ? weekTimingsText(fit.place.timings, day.ramadan) : "";
-    const insight = plannerRowInsight(customer, { target: gradeTarget({ gradeTargets }, customer.listType, customer.grade), today, weekStart });
+    const insight = plannerRowInsight(customer, { target: gradeTarget({ gradeTargets }, customer.listType, customer.grade), today, weekStart, withTime: showTimes });
     tickRows.push({
       customerId: customer.customerId,
       name: customer.name,
@@ -638,6 +641,9 @@ export function PlanDayPanel({
                 The period plan is last month&apos;s — your iReports360 plan if you had none in Phoenix. Nothing is sent until you press Send.
               </p>
               <div className="mt-3 min-w-0">{filterBar}</div>
+              <div className="mt-3">
+                <VisitTimesToggle />
+              </div>
             </>,
           )
         )}
@@ -688,6 +694,9 @@ export function PlanDayPanel({
 
       <CrmBlock className="border-t border-slate-100" title="Customers">
         {filterBar}
+        <div className="mt-3">
+          <VisitTimesToggle />
+        </div>
         <p className="mt-3 break-words text-sm font-semibold leading-6 text-slate-600">
           {morning
             ? `${countText(counts.AM)} of ${countText(caps.amDailyCap)} AM placed.`
