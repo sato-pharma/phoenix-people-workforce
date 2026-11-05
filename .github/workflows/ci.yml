@@ -222,7 +222,8 @@ jobs:
       # Pinned by tests/ci-pr-skips-build-and-smoke.test.ts.
       - name: Pull requests do not build
         if: github.event_name == 'pull_request'
-        run: echo "Pull requests do not build: Railway builds every merge, and a build that fails there keeps the old version serving (owner, 2026-11-05)."
+        run: |
+          echo "Pull requests do not build: Railway builds every merge, and a build that fails there keeps the old version serving (owner, 2026-11-05)."
 
       - name: Check out repository
         if: github.event_name != 'pull_request'
