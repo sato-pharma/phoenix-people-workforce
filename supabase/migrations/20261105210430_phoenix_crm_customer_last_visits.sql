@@ -116,4 +116,6 @@ $$;
 revoke execute on function public.phoenix_crm_customer_last_visits(text[], boolean, date, text) from public, anon, authenticated;
 grant execute on function public.phoenix_crm_customer_last_visits(text[], boolean, date, text) to service_role;
 
+notify pgrst, 'reload schema';
+
 commit;
