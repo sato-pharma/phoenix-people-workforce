@@ -69,7 +69,7 @@ concurrency:
 
 jobs:
   origin-certificate-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
     # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
     # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is

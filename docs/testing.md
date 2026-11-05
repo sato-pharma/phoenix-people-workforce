@@ -166,7 +166,7 @@ rather than gates.
 
 | Check | Workflow | What it runs |
 |---|---|---|
-| `validate` | ci.yml | The production **build** and the Playwright **login smoke test**. On a pull request the build runs only when `scripts/ci-build-risk.mjs` says the diff can change one; on every OTHER event it always runs. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). Since 2026-10-19 it no longer carries the structural checks or the suite: they moved to `static` and `unit` so they run beside the build, not in front of it. |
+| `validate` | ci.yml | The production **build** and the Playwright **login smoke test**, on `main` and a dispatch. 🔴 **A pull request never builds** (owner, 2026-11-05: "Yes, skip the PR build" — CI is one self-hosted machine and Railway builds every merge, keeping the old version serving if that build fails): on a PR the job is one step that says so and concludes success. 🔴 **It is NOT a job called `test` and must not become one** — that is a retired check name, and a job protection does not require reads exactly like one that gates (#3950). Since 2026-10-19 it no longer carries the structural checks or the suite: they moved to `static` and `unit` so they run beside the build, not in front of it. |
 | `static` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, ESLint, `next typegen`, the type gate and the tree-reuse dry run — in parallel with `validate` and `unit`. Not a required name: `checks` gates on it. |
 | `unit` | ci.yml | The **unit/integration suite**, as a matrix of two parallel jobs of two shards each (three until 2026-10-23), on every event. Each leg writes a coverage record. 🔴 **So a NEW pinned test belongs in this suite; which job runs it is ci.yml's business, not yours.** Not a required name: `checks` gates on it. |
 | `checks` | ci.yml | **The gate over `static` and `unit`** — green only when both are literally `success` AND the `unit-coverage-N` records (one per part) add up to every test the runner declares (`scripts/ci-unit-coverage.mjs`). It runs even when a job it needs failed, so a red leg is reported rather than hidden behind a skipped gate. 🔴 **`lint`, `typecheck` and `test` were separate jobs until 2026-09-27 (#4527)** and those three names **no longer exist as check names**, so a gate waiting for them waits forever. 🔴 **The typecheck is TypeScript 7 since 2026-10-06** — the `typescript-native` alias in package.json, which pnpm links `.bin/tsc` to. Nothing names the version, so `--checkers 1` is passed as the tell that the alias survives: TypeScript 5 refuses the flag. `docs/ci-self-hosted-runner.md`, "The typecheck moved to TypeScript 7". |
@@ -501,11 +501,11 @@ which block nothing but their own merge, never `main`.
 
 What replaces it:
 
-- **Commit, push, open the PR.** Its `validate` + `checks` are the verdict, and since 2026-10-08 a PR
-  that touches a ROUTE or a BUILD-CONFIG file also BUILDS (`scripts/ci-build-risk.mjs`) — about 1 PR
-  in 5. Narrowed the same day at the owner's word from "build unless build-inert" (52.5% of PRs): a break
-  that lives only in a `src/**` library or component file is caught by `main`'s build, or earlier by
-  `remote-check all`.
+- **Commit, push, open the PR.** Its `validate` + `checks` are the verdict. From 2026-10-08 a PR that
+  touched a ROUTE or a BUILD-CONFIG file also built (`scripts/ci-build-risk.mjs`); since 2026-11-05 **a
+  pull request never builds** (owner: "Yes, skip the PR build" — CI is one self-hosted machine, and
+  Railway builds every merge and keeps the old version serving if that build fails). A build break is
+  caught by `main`'s build, or earlier by `remote-check all`.
 - **`remote-check` when an earlier answer is worth it — once, with `run_in_background: true`,** acting
   on the completion notification (confirmed to arrive in the Desktop app the same day). Exit 0 PASS,
   1 FAIL, 2-9 NO VERDICT; only `remote-check: PASS|FAIL — <sha9>` naming the sha you pushed counts, and

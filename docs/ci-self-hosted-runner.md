@@ -1,8 +1,220 @@
-# CI on a self-hosted runner — RETIRED 2026-10-19, kept as history
+# CI on a self-hosted runner — BACK ON 2026-11-05 (the owner's spare laptop, or a free Oracle Cloud VM)
+
+## 2026-11-05 — CI moves to a free self-hosted machine, behind one repository variable
+
+🔴 **Read this first. It is the current state. Everything below it — the 2026-10-27 cost section and the
+2026-10-19 retirement of the Hetzner box — is now history.**
+
+**What was decided, and why.** The owner decided this on the evening of 5 Nov 2026 (Cairo).
+- The repository is on GitHub's **free plan**. November's 2,000 included Actions minutes were used up by 5 Nov (2,018 used).
+- The spending limit is **$0**, and there is no money to raise it.
+- So GitHub refuses to **start** every hosted job: *"The job was not started because recent account payments have failed or your spending limit needs to be increased."*
+- Because the release gate waits for `ci.yml`'s `checks` on the `main` commit, **every production deploy is held** too.
+- Minutes on a **self-hosted** runner are not billed, so CI runs on a machine of ours that costs nothing:
+  - **The current target: the owner's spare laptop.** An ASUS Vivobook Flip 14 TP470E: Intel 11th gen, x86_64, 8 GB RAM. Windows stays as it is. The runner lives in **WSL2 Ubuntu 24.04** on it.
+  - **The alternative:** an Oracle Cloud **"Always Free"** Ampere A1 VM: ARM64, Ubuntu 24.04, 4 OCPU, 24 GB.
+- This reverses the 2026-10-19 decision ("make all ci actions to be on github"). GitHub-hosted minutes are no longer affordable, and that is the only reason.
+
+**The switch is ONE repository variable, `CI_RUNNER_LABEL`.**
+- Every switchable job reads `runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`.
+- **Set to `phoenix-ci`:** every one of those jobs runs on our machine, `main` included.
+- **Unset (deleted):** the expression falls back to `ubuntu-latest`, and CI is exactly what it was before.
+- The variable is set by hand, only after the runner shows **Idle** on the Runners page. Nothing sets it automatically.
+- 🔴 **A label that matches no ONLINE runner does not fall back. The job QUEUES, with nothing red, for up to a day.** If the machine is off, asleep or signed out, either bring it back or **delete the variable**. The next run is then GitHub-hosted again (and, while the minutes are spent, refused again).
+
+**What stays on GitHub's own runners, and why.** These keep the literal `ubuntu-latest` with a `# hosted-only:` comment on the line. `HOSTED_ONLY` in `tests/ci-runner-switch.test.ts` lists them.
+
+| Workflow | Job | Why it cannot move |
+| --- | --- | --- |
+| `fallback-image.yml` | `image` | Builds the amd64 production image with Docker. Our machines have no Docker, and on ARM64 it would build an image Railway and Fly.io cannot run. |
+| `emergency-host.yml` | `gate` | Reads the image registry with Docker. |
+| `emergency-host.yml` | `standby` | Pulls and pushes the amd64 image with Docker. |
+| `headwind-image.yml` | `build` | Builds the amd64 tablet-server image with Docker, which Railway builds as amd64. |
+
+Because none of the switched jobs uses Docker, `services:` or `container:`, our machines get no Docker.
+
+**What was made to work on both CPU types (x86_64 and ARM64).**
+- **gitleaks** (`security-scan.yml`, `Install gitleaks`) picks the `linux_x64` or `linux_arm64` asset from `RUNNER_ARCH`. Each asset has its own pinned checksum, taken from the release's own checksums file.
+- **The Playwright browser caches** (`ci.yml` `validate` and `full-e2e`, `synthetic-journeys.yml`) carry `runner.arch` in the key. Without it, an x64 Chromium restored onto ARM64 counts as installed and then cannot launch.
+- **The pnpm store key** already carried `RUNNER_ARCH`.
+- **Native packages** (Next's SWC, sharp, `@napi-rs/canvas`, lightningcss, Tailwind's oxide, the Supabase CLI) all have `linux-arm64` builds in `pnpm-lock.yaml`.
+- **Semgrep** 1.171.0 publishes a `manylinux_2_34_aarch64` wheel.
+- **The setup script** picks `actions-runner-linux-x64` or `actions-runner-linux-arm64` from the CPU. Each has its own pinned SHA-256 from GitHub's release notes. The Node fallback tarball is checked against nodejs.org's `SHASUMS256.txt`.
+
+**🔴 A pull request does not build — the owner's decision, 5 Nov 2026, 23:55 Cairo.** Asked whether to skip
+the full app build on pull requests once CI was on the laptop, he chose: *"Yes, skip the PR build"*.
+- **Why.** The first run on the laptop (run 42103516936, PR 40) showed the cost of one machine. The jobs run
+  **one after another**, not side by side. Install took about **6 minutes** (the first time), lint **3 min 52 s**,
+  then the typecheck — and on a PR the build would have queued behind all of it.
+- **What it does now.** On a pull request `validate` is one step, *Pull requests do not build*, which prints
+  *"Pull requests do not build: Railway builds every merge, and a build that fails there keeps the old version
+  serving (owner, 2026-11-05)"*. Every other step in the job, checkout and install included, is skipped. The job
+  still runs and concludes **success**, because `validate` is a required check name and a job skipped whole
+  reports nothing.
+- **What did not change.** On `main` and a dispatch `validate` builds and runs the login smoke test, exactly
+  as before. `checks` (lint, the type checks, the whole suite) runs on every pull request.
+- **Why it is safe.** Railway builds every merge. A build that fails there does not deploy, so the old version
+  keeps serving. The `Build risk` step (2026-10-08, which built a PR that touched a route or build config) is
+  removed. `scripts/ci-build-risk.mjs` stays, with its own tests, but nothing calls it.
+- **Pinned by** `tests/ci-pr-skips-build-and-smoke.test.ts`, `tests/ci-build-risk.test.ts` §7 and
+  `tests/ci-gate-parity.test.ts`.
+
+**Lint keeps its own cache on the machine.** On the laptop `actions/checkout` cleans the workspace
+(`git clean -ffdx`), which deletes `.eslintcache`. The shared GitHub cache also holds GitHub-hosted file paths,
+which match none of the laptop's. So every lint ran cold — the 3 min 52 s above.
+- `static` now also keeps the cache **outside the workspace**, in
+  `$HOME/.cache/phoenix-ci/eslint/<first 12 hex of the sha256 of the workspace path>/.eslintcache`. There is one
+  folder per workspace path, because the file is keyed by absolute path.
+- *Bring back the ESLint cache kept on this machine* copies it in before lint. When it is there, the shared cache is
+  neither restored nor saved, so the laptop's paths never reach a GitHub-hosted run.
+- *Keep the ESLint cache on this machine for the next run* copies it back after every lint, on every event, and
+  never fails the job.
+- On a GitHub-hosted runner the home folder is new every run, so the copy is never there and nothing changes.
+  ESLint checks every entry itself (its version, the Node runtime, the config and each file's content), so a
+  stale copy can only make lint slower, never wrong.
+
+### Route A — the spare laptop (WSL2), the current target
+
+**What the laptop needs, always.**
+- **It stays plugged in.** The Windows step stops it sleeping or hibernating on the charger. On battery, Windows' own settings still apply.
+- **The lid stays open, or closing it does nothing.** The Windows step sets "lid close: do nothing" for when it is plugged in.
+- **After a Windows restart, someone must sign in once.** The runner starts from the Startup folder at sign-in, not at boot.
+- **One runner.** WSL is capped at 5 GB of the 8 GB, with 8 GB of swap, so Windows keeps 3 GB. A pull request's five jobs run one after another. That is slower than GitHub's runners, but it bills nothing.
+- **Two runners (owner, 2026-11-06: "the fastest way").** `RUNNER_COUNT=2 RUNNER_FIRST=2` in front of the Step 1 `bash` adds runner 2 without touching runner 1, so two jobs run at once: about 12–15 minutes a pull request instead of about 25. Two heavy jobs together can run out of the 5 GB; that fails the job, never the laptop — re-run it.
+- **Re-running Step 1 is safe, and fixes a missing passwordless `sudo`.** Before 2026-11-06 a password cached from Step 1's own `apt-get` let the script skip that grant, and jobs failed on "sudo: a password is required". The script now clears the cache (`sudo -k`) first.
+- **Nothing else on the laptop is touched.** The Windows step writes only `%UserProfile%\.wslconfig` and a launcher in your own Startup folder, and changes the power plan. No other drive is read or written. Your photos on D: and the other drives are never touched.
+
+**Before the two blocks.** In PowerShell, run `wsl --install -d Ubuntu-24.04`. Restart Windows if it asks. Open "Ubuntu 24.04" and create your Linux user and password.
+
+**Step 1 — paste this ONE block into the Ubuntu window.**
+
+```bash
+rm -rf /tmp/phx-setup && sudo apt-get update && sudo apt-get install -y gh git && gh auth login --hostname github.com --git-protocol https --web && gh repo clone Omar-3-xx/phoenix-people-workforce /tmp/phx-setup -- --depth 1 --branch codex/free-ci-runner && bash /tmp/phx-setup/scripts/setup-self-hosted-runner.sh https://github.com/Omar-3-xx/phoenix-people-workforce
+```
+
+- **It asks for your Linux password**, for `sudo`.
+- **`gh` shows an 8-character code.** Open https://github.com/login/device in Windows, sign in as the repository owner, and type the code.
+- **If `gh` asks a yes/no question**, press Enter for the default.
+- **The token is handled for you.** The script then asks GitHub for the runner registration token through `gh` itself, so nothing secret is pasted, shown or saved.
+- **Passwordless `sudo`.** It gives your Linux user passwordless `sudo`, because a CI job cannot type a password. This applies inside this Ubuntu only; Windows is not affected.
+- **Everything else it installs.**
+  - Node 24, git, the PostgreSQL client and Playwright's Chromium libraries.
+  - **one** runner service, `phoenix-ci-<laptop>-1`, labelled `self-hosted,linux,x64,phoenix-ci`.
+  - It adds no swap file inside Ubuntu: under WSL the swap is the `swap=` line of `.wslconfig`.
+- **If systemd is off** (Ubuntu 24.04 has it on by default), the script switches it on in `/etc/wsl.conf` and stops. Run `wsl --shutdown` in PowerShell, open Ubuntu again, and paste the same block again.
+- **The Windows drives are switched off inside Ubuntu.** The script stops WSL mounting them inside this Ubuntu, so a CI job cannot see C:, D: or anything on them. This takes effect when Step 2 restarts WSL.
+- `--branch codex/free-ci-runner` is needed only until PR #40 merges. Afterwards, drop those two words.
+- `rm -rf /tmp/phx-setup` at the front clears an earlier attempt, so the block can be pasted again.
+
+**Step 2 — paste this ONE block into a normal Windows PowerShell window (not "Run as administrator").** It downloads nothing. It is exactly `scripts/setup-spare-laptop-windows.ps1`:
+
+```powershell
+# Phoenix CI on the spare laptop - the Windows half (2026-11-05). Paste into a NORMAL PowerShell window (not admin).
+# Caps WSL at 5 GB + 8 GB swap, keeps the laptop awake on the charger, starts WSL hidden at every sign-in, restarts WSL.
+# It writes only inside your user profile (.wslconfig and the Startup folder); no other drive is touched.
+& {
+  $Distro = 'Ubuntu-24.04'
+  $names = @((wsl.exe -l -q) | ForEach-Object { ($_ -replace "`0", '').Trim() } | Where-Object { $_ })
+  if ($names -notcontains $Distro) { Write-Host "STOPPED: no WSL distro named $Distro (found: $($names -join ', ')). Nothing was changed." -ForegroundColor Red; return }
+  # 1. %UserProfile%\.wslconfig - set four keys under [wsl2], keep every other line as it is.
+  $cfg = Join-Path $env:USERPROFILE '.wslconfig'
+  $want = [ordered]@{ memory = '5GB'; processors = "$([Environment]::ProcessorCount)"; swap = '8GB'; vmIdleTimeout = '-1' }
+  $old = @(); if (Test-Path -LiteralPath $cfg) { $old = @(Get-Content -LiteralPath $cfg) }
+  $out = New-Object System.Collections.Generic.List[string]
+  $done = @{}; $section = ''; $hasWsl2 = $false
+  $flush = { foreach ($k in $want.Keys) { if (-not $done[$k]) { $out.Add("$k=$($want[$k])"); $done[$k] = $true } } }
+  foreach ($line in $old) {
+    if ($line -match '^\s*\[(.+?)\]\s*$') {
+      if ($section -eq 'wsl2') { & $flush }
+      $section = $Matches[1].Trim().ToLower(); if ($section -eq 'wsl2') { $hasWsl2 = $true }
+      $out.Add($line); continue
+    }
+    if ($section -eq 'wsl2' -and $line -match '^\s*([A-Za-z]+)\s*=') {
+      $key = @($want.Keys | Where-Object { $_ -ieq $Matches[1] })
+      if ($key.Count -eq 1) { if (-not $done[$key[0]]) { $out.Add("$($key[0])=$($want[$key[0]])"); $done[$key[0]] = $true }; continue }
+    }
+    $out.Add($line)
+  }
+  if ($section -eq 'wsl2') { & $flush }
+  if (-not $hasWsl2) { $out.Add('[wsl2]'); & $flush }
+  [IO.File]::WriteAllText($cfg, (($out -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding $false))
+  Write-Host "1. $cfg written: memory=5GB, processors=$([Environment]::ProcessorCount), swap=8GB, vmIdleTimeout=-1"
+  # 2. Power, on the charger only: never sleep, never hibernate, closing the lid does nothing.
+  $power = @(
+    @('/change', 'standby-timeout-ac', '0'),
+    @('/change', 'hibernate-timeout-ac', '0'),
+    @('/setacvalueindex', 'SCHEME_CURRENT', 'SUB_BUTTONS', 'LIDACTION', '0'),
+    @('/setactive', 'SCHEME_CURRENT')
+  )
+  foreach ($a in $power) {
+    & powercfg.exe @a | Out-Null
+    if ($LASTEXITCODE -eq 0) { Write-Host "2. powercfg $($a -join ' ') - done" }
+    else { Write-Host "2. powercfg $($a -join ' ') was REFUSED - set it by hand: Settings > System > Power (plugged in: sleep Never; lid close: Do nothing)" -ForegroundColor Yellow }
+  }
+  # 3. A hidden launcher in YOUR Startup folder: at every sign-in it starts WSL with no window and keeps it running.
+  $vbs = Join-Path ([Environment]::GetFolderPath('Startup')) 'phoenix-ci-wsl.vbs'
+  $q = [char]34
+  $run = "wsl.exe -d $Distro --exec /bin/sh -c $q$q" + 'sleep infinity' + "$q$q"
+  [IO.File]::WriteAllText($vbs, "CreateObject(${q}WScript.Shell${q}).Run $q$run$q, 0, False`r`n", [Text.Encoding]::ASCII)
+  Write-Host "3. $vbs written"
+  # 4. Restart WSL so the 5 GB cap applies, then start it hidden, as a sign-in would.
+  wsl.exe --shutdown
+  Start-Process -FilePath wscript.exe -ArgumentList "$q$vbs$q"
+  Start-Sleep -Seconds 20
+  Write-Host '4. WSL restarted. The runner service inside it:'
+  wsl.exe -d $Distro --exec systemctl list-units --type=service --no-legend --no-pager 'actions.runner.*'
+}
+```
+
+What it does, in order:
+1. **`.wslconfig`.** It writes `[wsl2] memory=5GB processors=<all logical CPUs> swap=8GB vmIdleTimeout=-1` into `%UserProfile%\.wslconfig`. Every other line already in that file is kept.
+2. **Power, on the charger only** (`powercfg`): never sleep, never hibernate, and closing the lid does nothing.
+3. **The Startup launcher.** It writes `phoenix-ci-wsl.vbs` into your own Startup folder (`shell:startup`). At every sign-in it runs `wsl.exe -d Ubuntu-24.04 --exec /bin/sh -c "sleep infinity"` with no window. That keeps WSL, and with it the runner service, up.
+4. **The restart.** It runs `wsl --shutdown` (this closes the Ubuntu window) so the 5 GB cap applies. It then starts the launcher and prints the runner service's state, which should read `active running`.
+
+**Does anything need admin? No, normally.**
+- `.wslconfig` and the Startup folder are your own files.
+- `powercfg /change` and `/setacvalueindex` on the active power plan work for a standard user unless a company policy locks the power plan. If one is refused, the block prints which one in yellow. Set it instead in Settings → System → Power & battery (plugged in: sleep **Never**) and in Control Panel → Power Options → "Choose what closing the lid does" (plugged in: **Do nothing**).
+- Only `wsl --install` itself, done before these blocks, needed admin.
+
+**Step 3 — switch CI onto the laptop.** When the runner reads **Idle** at https://github.com/Omar-3-xx/phoenix-people-workforce/settings/actions/runners:
+
+```bash
+gh variable set CI_RUNNER_LABEL --repo Omar-3-xx/phoenix-people-workforce --body phoenix-ci
+```
+
+Roll back at any time with `gh variable delete CI_RUNNER_LABEL --repo Omar-3-xx/phoenix-people-workforce`.
+
+**Known limit of the laptop.** The production build's compile step peaked near 6.9 GB on GitHub's runners. Under a 5 GB cap it leans on swap, so a `main` push's `validate` can run longer than on GitHub. If `validate` starts hitting its `timeout-minutes: 20` on `main`, that is the cause. Raising the timeout is a `ci.yml` change.
+
+### Route B — an Oracle Cloud "Always Free" VM (the alternative)
+
+1. **Create the VM.** Oracle Cloud, shape `VM.Standard.A1.Flex`, 4 OCPU / 24 GB, image Ubuntu 24.04 (aarch64). Give the boot volume 100 GB or more; the free allowance is 200 GB.
+2. **On the VM, as the normal `ubuntu` user,** paste the same Step 1 block as the laptop.
+   - The script detects ARM64 and registers **two** runners, labelled `self-hosted,linux,arm64,phoenix-ci`. `RUNNER_COUNT=1` in front of `bash` registers one.
+   - It adds an 8 GB `/swapfile`.
+   - Oracle's `ubuntu` user already has passwordless `sudo`.
+3. **No Windows step.** Switch CI with the same `gh variable set` line once the runners read Idle.
+
+**Safety.**
+- The repository is **private**, so only accounts with access can make a workflow run on our machine.
+- 🔴 **If it is ever made public, remove the runners first.** On a public repository a fork pull request could run code on the machine.
+- The machine holds no secrets of its own. A job's secrets reach it only for the length of that job, exactly as on a hosted runner.
+- On the laptop, a job runs inside WSL as your Linux user. The script switches off WSL's mounting of the Windows drives inside this Ubuntu (`[automount] enabled=false` in `/etc/wsl.conf`) and the appending of Windows' PATH, from the next WSL restart. So no CI job can reach C:, D: or the photos on them.
+
+**Pinned by `tests/ci-runner-switch.test.ts`.** The test fails in any of these cases:
+- a job reads anything but the exact switch expression;
+- a `HOSTED_ONLY` job loses its literal or its `# hosted-only:` reason;
+- a `HOSTED_ONLY` entry no longer names a real job;
+- `CI_RUNNER_LABEL` is read anywhere but on a `runs-on` line;
+- the retired `CI_SELF_HOSTED` is read anywhere;
+- a step branches on `runner.environment == 'self-hosted'`;
+- the setup script loses either CPU type or its pinned SHA-256, or any line could print the token;
+- the Windows block in this document stops matching `scripts/setup-spare-laptop-windows.ps1`.
 
 ## What CI costs now, and the guards that hold it (2026-10-27)
 
-🔴 **Read this first. It is the current state; the box sections further down are history.**
+**History since 2026-11-05 — the section above is the current state.** Until then this was the state, and the box sections further down were already history.
 
 **Why the bill doubled and CI felt slow.** These are minutes measured from every job, 10–27 Oct; the dollars
 come only from GitHub's own billing amounts (the rule below, "The invoice is the only authority").

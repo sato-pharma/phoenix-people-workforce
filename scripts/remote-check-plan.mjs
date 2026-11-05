@@ -137,8 +137,8 @@ export const STAGES = ["lint", "typecheck", "test", "build"];
  * 🔴 AND THE SAME MAP SERVES EVERY EVENT. Before 2026-10-19 the unit suite lived in `validate` on a pull
  * request and in `checks` on everything else, so two maps were needed and picking the wrong one turned a
  * green PR into NO VERDICT. It is in `unit` on every event now. `build` is the one stage an event can
- * leave unrun — a pull request builds only when scripts/ci-build-risk.mjs says its diff can change a
- * build — and a skipped Build step is NO VERDICT by `gradeConclusion`, never a pass.
+ * leave unrun — a pull request never builds (owner, 2026-11-05: "Yes, skip the PR build") — and a
+ * skipped Build step is NO VERDICT by `gradeConclusion`, never a pass.
  */
 export const STAGE_JOBS = {
   lint: [{ job: "static", step: "Lint" }],

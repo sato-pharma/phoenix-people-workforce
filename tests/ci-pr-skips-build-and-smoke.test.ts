@@ -21,6 +21,15 @@
 //
 // And do NOT reach for a `.next` cache instead: tried 2026-08-29, measured from both directions,
 // 37KB cache, 148s warm against 143s cold. ci.yml records that evidence at the deleted cache step.
+//
+// 🔴 2026-11-05 — A PULL REQUEST NEVER BUILDS, WHATEVER IT TOUCHES. That middle setting went live on
+// 2026-10-08 as `Build risk` (a PR touching a route or build config built). On 2026-11-05 CI moved onto
+// one self-hosted laptop where every job waits for the one before it (the free plan's minutes ran out),
+// and the owner chose "Yes, skip the PR build": Railway builds every merge, and a build that fails there
+// keeps the old version serving. So on a pull request `validate` is ONE step that says so, and every
+// other step in it is gated off — checkout and install included, since nothing after them runs. The job
+// itself still runs and concludes `success`: `validate` is a required check name, and a job that is
+// skipped whole reports nothing and blocks the PR. `main` and a dispatch still build, unchanged.
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -45,8 +54,53 @@ const HEAVY_STEPS = [
   "Upload Playwright report on failure",
 ];
 
+/** The validate job's steps: each one's name and its `if:` (null when it has none). */
+function validateSteps(yml: string): { name: string; cond: string | null; body: string }[] {
+  const start = yml.indexOf("\n  validate:\n");
+  assert.ok(start >= 0, `${WORKFLOW} has no \`validate\` job`);
+  const rest = yml.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+  const job = next < 0 ? rest : rest.slice(0, next + 1);
+  const out: { name: string; cond: string | null; body: string }[] = [];
+  for (const chunk of job.split(/\n(?= {6}- name: )/).slice(1)) {
+    const name: string = /^ {6}- name: (.*)$/m.exec(chunk)?.[1]?.trim() ?? "";
+    const cond: string | null = /^ {8}if: (.*)$/m.exec(chunk)?.[1]?.trim() ?? null;
+    out.push({ name, cond, body: chunk });
+  }
+  return out;
+}
+
+const PR_ANNOUNCEMENT = "Pull requests do not build";
+const OWNER_SENTENCE =
+  "Pull requests do not build: Railway builds every merge, and a build that fails there keeps the old version serving (owner, 2026-11-05)";
+
 export function runCiPrSkipsBuildAndSmokeTests(): void {
   const yml = readFileSync(WORKFLOW, "utf8");
+
+  // 0. On a pull request `validate` is one step, which says why, and nothing else runs (2026-11-05).
+  const steps = validateSteps(yml);
+  assert.ok(steps.length >= HEAVY_STEPS.length, `${WORKFLOW}: read only ${steps.length} steps in \`validate\``);
+  const announce = steps[0];
+  assert.equal(announce.name, PR_ANNOUNCEMENT,
+    `\`validate\`'s first step must be "${PR_ANNOUNCEMENT}", so a pull request's log says why it did not build.`);
+  assert.equal(announce.cond, "github.event_name == 'pull_request'",
+    `"${PR_ANNOUNCEMENT}" must run on a pull request and nowhere else.`);
+  assert.ok(announce.body.includes(OWNER_SENTENCE),
+    `"${PR_ANNOUNCEMENT}" must print the owner's reason word for word: ${OWNER_SENTENCE}`);
+  for (const step of steps.slice(1)) {
+    assert.ok(
+      step.cond !== null && /github\.event_name (!= 'pull_request'|== 'push')/.test(step.cond),
+      `\`validate\` / "${step.name}" runs on a PULL REQUEST (if: ${step.cond ?? "none"}). Since 2026-11-05 a pull ` +
+        `request never builds (owner: "Yes, skip the PR build") — CI is one self-hosted machine where every job ` +
+        `waits for the one before it, and Railway builds every merge, keeping the old version serving if that ` +
+        `build fails. Gate the step with \`github.event_name != 'pull_request'\`.`,
+    );
+  }
+  const build = steps.find((st) => st.name === "Build");
+  assert.equal(build?.cond, "github.event_name != 'pull_request'",
+    "the Build's condition must be the event alone: no step output may add it back to a pull request.");
+  assert.doesNotMatch(yml, /steps\.buildrisk\.|id: buildrisk|ci-build-risk\.mjs/,
+    `${WORKFLOW} reads the PR's diff to decide whether to build again. Retired 2026-11-05: a PR never builds.`);
 
   // 1. Every heavy step is gated on `heavy`, and none of them is still on `docs_only` alone.
   for (const name of HEAVY_STEPS) {
@@ -101,14 +155,19 @@ export function runCiPrSkipsBuildAndSmokeTests(): void {
     ship,
     /docs_only|ran no tests|skips node setup|tests first run after the merge|first time the tests ran/,
     `${SHIP_SKILL} describes the docs-only fast path again, but ci.yml runs the whole suite on every ` +
-      "pull request. What a PR does skip is the login smoke test and, unless a route or build config " +
-      "changed, the build.",
+      "pull request. What a PR does skip is the build and the login smoke test.",
   );
   assert.match(
     ship,
-    /node scripts\/ci-build-risk\.mjs/,
-    `${SHIP_SKILL} no longer names scripts/ci-build-risk.mjs, the one thing that answers whether this ` +
-      "PR built, so a session has to guess what its green checks covered.",
+    /a pull request never builds/i,
+    `${SHIP_SKILL} no longer says a pull request never builds (owner, 2026-11-05), so a session reads a ` +
+      "PR's green as proof the app builds — only main's own run proves that.",
+  );
+  assert.doesNotMatch(
+    ship,
+    /ci-build-risk/,
+    `${SHIP_SKILL} sends sessions to scripts/ci-build-risk.mjs again, but nothing reads it: since ` +
+      "2026-11-05 a pull request never builds, whatever it touches.",
   );
   assert.doesNotMatch(
     ship,

@@ -68,7 +68,7 @@ jobs:
   test-alert:
     name: test alert
     if: ${{ inputs.test_alert }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Check out repository
@@ -89,7 +89,7 @@ jobs:
     # A test-alert dispatch runs only the job above. cron-job.org's dispatch sends no inputs, so
     # test_alert takes its default, false, and every real run lands here.
     if: ${{ !inputs.test_alert }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
 
     # 🔴 45, NOT 20, AND THE ARITHMETIC IS THE WHOLE REASON. A JOB timeout ignores step-level
     # `continue-on-error` entirely: the runner cancels the job, the suite concludes `cancelled`, and
@@ -185,8 +185,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ env.ImageOS }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-${{ env.ImageOS }}-
+          key: playwright-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ env.ImageOS }}-${{ runner.arch }}-
 
       - name: Install Chromium
         run: pnpm exec playwright install chromium

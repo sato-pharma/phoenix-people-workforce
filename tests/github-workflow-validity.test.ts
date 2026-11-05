@@ -355,6 +355,50 @@ export function runGithubWorkflowValidityTests() {
     `expected to parse more than a dozen jobs across the workflows, found ${jobsSeen} — the job parser has stopped matching, so the duplicate-id, needs: and runs-on rules are checking nothing`,
   );
 
+  for (const file of files) {
+    assert.deepEqual(
+      plainScalarColons(readFileSync(path.join(WORKFLOW_DIR, file), "utf8")),
+      [],
+      `${file} has a one-line value that YAML cannot parse: an unquoted value holding ": " (or ending in ":") is read as a second key. GitHub then refuses the whole file and files an instant failed run with no jobs — PR 40's "Pull requests do not build" step did exactly this on 2026-11-05. Write the value as a block (\`run: |\` and the command on the next line) or quote it.`,
+    );
+  }
+  assert.deepEqual(
+    plainScalarColons('      - name: Says why\n        run: echo "Pull requests do not build: Railway builds"\n'),
+    ["2: run: echo \"Pull requests do not build: Railway builds\""],
+    "the plain-scalar colon rule must catch the 2026-11-05 line it was written for",
+  );
+  assert.deepEqual(
+    plainScalarColons('        run: |\n          echo "a: b"\n        if: ${{ !cancelled() }}\n        name: Plain # note: fine\n'),
+    [],
+    "a block value, an expression and a trailing comment are not plain-scalar colons",
+  );
+
   assertScheduledDetectorsCannotBeCancelled(files);
   assertScheduledRunsPerDayCeiling(files);
+}
+
+/**
+ * Lines whose unquoted one-line value holds ": " or ends in ":" — YAML reads that as a nested mapping
+ * and rejects the document ("bad indentation of a mapping entry"). Block scalars (`|`, `>`) are skipped
+ * whole, and a trailing ` # comment` is ignored.
+ */
+export function plainScalarColons(source: string): string[] {
+  const out: string[] = [];
+  let blockIndent = -1;
+  source.split("\n").forEach((line, index) => {
+    const indent = line.search(/\S/);
+    if (blockIndent >= 0) {
+      if (line.trim() === "" || indent > blockIndent) return;
+      blockIndent = -1;
+    }
+    if (/^\s*#/.test(line)) return;
+    if (/:\s*[|>][-+0-9]*\s*(#.*)?$/.test(line)) {
+      blockIndent = indent;
+      return;
+    }
+    const value: string | undefined = /^\s*(?:- )?[A-Za-z0-9_.-]+: (?!["'|>[{&*!#])(.*)$/.exec(line)?.[1];
+    if (value === undefined) return;
+    if (/: |:$/.test(value.replace(/\s+#.*$/, ""))) out.push(`${index + 1}: ${line.trim()}`);
+  });
+  return out;
 }
