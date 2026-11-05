@@ -136,6 +136,10 @@ fi
 # The workflows call sudo themselves (extra build swap, Playwright's install-deps, the psql fallback);
 # under a service there is no one to type a password, so this user needs passwordless sudo. Oracle's
 # `ubuntu` user already has it; a WSL user does not, so it is granted here, once, after one password.
+# 🔴 `sudo -k` first (2026-11-06): a password typed a minute earlier (the apt-get in Step 1, the wsl.conf edit
+# above) is cached, so `sudo -n true` passed, the grant was skipped, and the spare laptop's jobs then failed
+# on "sudo: a password is required".
+sudo -k
 if ! sudo -n true 2>/dev/null; then
   step "Granting $(whoami) passwordless sudo (the runner cannot type a password) — enter your Linux password once"
   sudo -v || die "sudo refused"

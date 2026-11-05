@@ -80,6 +80,8 @@ which match none of the laptop's. So every lint ran cold — the 3 min 52 s abov
 - **The lid stays open, or closing it does nothing.** The Windows step sets "lid close: do nothing" for when it is plugged in.
 - **After a Windows restart, someone must sign in once.** The runner starts from the Startup folder at sign-in, not at boot.
 - **One runner.** WSL is capped at 5 GB of the 8 GB, with 8 GB of swap, so Windows keeps 3 GB. A pull request's five jobs run one after another. That is slower than GitHub's runners, but it bills nothing.
+- **Two runners (owner, 2026-11-06: "the fastest way").** `RUNNER_COUNT=2 RUNNER_FIRST=2` in front of the Step 1 `bash` adds runner 2 without touching runner 1, so two jobs run at once: about 12–15 minutes a pull request instead of about 25. Two heavy jobs together can run out of the 5 GB; that fails the job, never the laptop — re-run it.
+- **Re-running Step 1 is safe, and fixes a missing passwordless `sudo`.** Before 2026-11-06 a password cached from Step 1's own `apt-get` let the script skip that grant, and jobs failed on "sudo: a password is required". The script now clears the cache (`sudo -k`) first.
 - **Nothing else on the laptop is touched.** The Windows step writes only `%UserProfile%\.wslconfig` and a launcher in your own Startup folder, and changes the power plan. No other drive is read or written. Your photos on D: and the other drives are never touched.
 
 **Before the two blocks.** In PowerShell, run `wsl --install -d Ubuntu-24.04`. Restart Windows if it asks. Open "Ubuntu 24.04" and create your Linux user and password.
