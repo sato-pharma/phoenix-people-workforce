@@ -1,6 +1,6 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
-import { queryVisitsLimited } from "@/lib/crm/reads";
+import { isCrmDoubleVisitRow, queryOwnVisitsOfDepartedAgents, queryVisitsLimited } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getKpisBoard, kpiMonthOptions } from "@/lib/crm/kpis-board";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -25,7 +25,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { personNameLookup } from "@/lib/employees/person-name-lookup";
-import { ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
+import { earlierRecordHrIds, ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 // NOTE there is deliberately no `getAwaitingMyActionItems` import here any more.
 //
@@ -1088,6 +1088,39 @@ export function timedCard<T>(name: string, read: Promise<T>): Promise<T> {
   return read;
 }
 
+/**
+ * The double visits a re-hired rep received under an earlier record (continuous-service.ts), added
+ * to the pulse newest first. That record has LEFT, so the CRM door hides it from the agent read;
+ * queryOwnVisitsOfDepartedAgents returns its own rows through its last working day. Everyone else
+ * gets their own rows back untouched. Sales are NOT read through this link (owner, 2026-11-05).
+ */
+async function withEarlierRecordDoubleVisits(
+  hrId: string,
+  dateFrom: string,
+  dateTo: string,
+  own: PromiseLike<Array<{ visit_date: string }>>,
+): Promise<Array<{ visit_date: string }>> {
+  const earlier = earlierRecordHrIds(hrId);
+  const ownRows = await own;
+  if (earlier.length === 0) return ownRows;
+  const earlierRows = await queryOwnVisitsOfDepartedAgents<{
+    visit_date: string;
+    visit_type: number | null;
+    double_crm_id: number | null;
+    double_hr_id: string | null;
+    source: string | null;
+  }>({
+    collapseDoubleVisits: true,
+    columns: "visit_date,visit_type,double_crm_id,double_hr_id,source",
+    dateFrom,
+    dateTo,
+    hrIds: earlier,
+  });
+  return [...ownRows, ...earlierRows.filter(isCrmDoubleVisitRow)].sort((left, right) =>
+    String(right.visit_date).localeCompare(String(left.visit_date)),
+  );
+}
+
 const wrapPromise = <T,>(thenable: PromiseLike<T>): Promise<T> =>
   new Promise((resolve, reject) => thenable.then(resolve, reject));
 
@@ -1319,7 +1352,7 @@ export async function getPortalHomeSnapshot(
   const dvPromise =
     isMr && hrId
       ? wrapPromise(
-          queryVisitsLimited<{ visit_date: string }>({
+          withEarlierRecordDoubleVisits(hrId, `${currentYear - 1}-01-01`, today, queryVisitsLimited<{ visit_date: string }>({
             // The CRM read door matches hr ids case-insensitively — pass the raw id, no UPPER guess.
             agentHrIds: [hrId],
             doubleOnly: true,
@@ -1331,7 +1364,7 @@ export async function getPortalHomeSnapshot(
             // Collapse burst-duplicate re-saves so the "DVs this month / last 90 days" pulse matches
             // the collapsed numbers on the Double Visit Analytics page for the same rep.
             collapseDoubleVisits: true,
-          }),
+          })),
         )
       : Promise.resolve(null);
 

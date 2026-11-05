@@ -326,12 +326,22 @@ export function runCrmNewHireKeyingTests() {
     // Employee 360's visit read must carry the native marker, or isCrmDoubleVisitRow keeps the vendor
     // rule and a new hire's confirmed double visits never count as "doubles received".
     const employee360 = readFileSync("src/lib/employee-360/service.ts", "utf8");
-    const fetchVisits = employee360.slice(employee360.indexOf("export async function fetchVisitRows"));
     // The list became several concatenated literals when the Phoenix field set was appended on
     // 2026-10-07, so `columns: "...source..."` as ONE literal no longer matches. What matters is that
-    // `source` is a select ITEM somewhere in this read, which is what the comma-bounded form pins.
+    // `source` is a select ITEM of this read, which is what the comma-bounded form pins. Since
+    // 2026-11-05 the list is one constant, shared by the person's own record and an earlier one of
+    // theirs (continuous-service.ts), and the own-record read must select it.
+    const visitColumnsStart = employee360.indexOf("const EMPLOYEE_360_VISIT_COLUMNS =");
+    assert.ok(visitColumnsStart >= 0, "Employee 360's visit columns are the one EMPLOYEE_360_VISIT_COLUMNS constant");
+    const visitColumns = employee360.slice(visitColumnsStart, employee360.indexOf(";\n", visitColumnsStart));
+    const ownVisitRead = employee360.slice(employee360.indexOf("async function fetchOwnRecordVisitRows"));
     assert.match(
-      fetchVisits.slice(0, fetchVisits.indexOf("\n}")),
+      ownVisitRead.slice(0, ownVisitRead.indexOf("\n}")),
+      /columns: EMPLOYEE_360_VISIT_COLUMNS,/,
+      "F1b: Employee 360's own visit read selects the shared column list",
+    );
+    assert.match(
+      visitColumns,
       /,source,/,
       "F1b: Employee 360 selects `source`, so a native double visit with an hr-id-only partner counts",
     );

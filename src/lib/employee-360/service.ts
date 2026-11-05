@@ -25,7 +25,14 @@ import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
 import { PHOENIX_VISIT_DETAIL_COLUMNS, type PhoenixVisitDetailRow } from "@/lib/crm/phoenix-visit-detail";
-import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
+import {
+  isCrmDoubleVisitRow,
+  queryCheckins,
+  queryOwnCheckinsOfDepartedAgents,
+  queryOwnVisitsOfDepartedAgents,
+  queryVisits,
+} from "@/lib/crm/reads";
+import { earlierRecordHrIds } from "@/lib/employees/continuous-service";
 import { addVisitToSplit, emptyVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
@@ -342,7 +349,31 @@ export function defaultWindow(): Employee360Window {
   return { from: `${year}-01-01`, to, label: `${year} year-to-date` };
 }
 
+const EMPLOYEE_360_VISIT_COLUMNS =
+  "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name," +
+  "double_crm_id,double_hr_id,double_name,double2_hr_id,double2_name,companion_hr_ids,comment,source,speciality," +
+  PHOENIX_VISIT_DETAIL_COLUMNS.replaceAll(" ", "");
+
+/**
+ * The person's visits, and those they logged under an earlier record before a re-hire
+ * (continuous-service.ts) — that record has LEFT, so the CRM door hides it from every agent-centric
+ * read; queryOwnVisitsOfDepartedAgents gives back its own rows through its last working day.
+ */
 export async function fetchVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
+  const earlier = earlierRecordHrIds(hrId);
+  const own = await fetchOwnRecordVisitRows(hrId, window);
+  if (earlier.length === 0) return own;
+  const earlierRows = await queryOwnVisitsOfDepartedAgents<VisitRow>({
+    collapseDoubleVisits: true,
+    columns: EMPLOYEE_360_VISIT_COLUMNS,
+    dateFrom: window.from,
+    dateTo: window.to,
+    hrIds: earlier,
+  });
+  return [...earlierRows, ...own];
+}
+
+async function fetchOwnRecordVisitRows(hrId: string, window: Employee360Window): Promise<VisitRow[]> {
   return queryVisits<VisitRow>({
     // The CRM read door matches hr ids case-insensitively — pass the raw id.
     agentHrIds: [hrId],
@@ -355,10 +386,7 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     // THE PHOENIX FIELD SET. Selected unconditionally and shown only at the tier the reader earns
     // (phoenix-visit-detail.ts): a select is a string, so a list that varied by role would read
     // `undefined` and print a blank, which is indistinguishable from a visit that recorded nothing.
-    columns:
-      "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name," +
-      "double_crm_id,double_hr_id,double_name,double2_hr_id,double2_name,companion_hr_ids,comment,source,speciality," +
-      PHOENIX_VISIT_DETAIL_COLUMNS.replaceAll(" ", ""),
+    columns: EMPLOYEE_360_VISIT_COLUMNS,
     // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
     // the activity mix is unchanged.
@@ -367,12 +395,22 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
 }
 
 export async function fetchCheckinRows(hrId: string, window: Employee360Window): Promise<CheckinRow[]> {
-  return queryCheckins<CheckinRow>({
+  const own = await queryCheckins<CheckinRow>({
     agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
     columns: "check_date,lat,lon",
   });
+  // An earlier record of the person's, before a re-hire (continuous-service.ts) — see fetchVisitRows.
+  const earlier = earlierRecordHrIds(hrId);
+  if (earlier.length === 0) return own;
+  const earlierRows = await queryOwnCheckinsOfDepartedAgents<CheckinRow>({
+    columns: "check_date,lat,lon",
+    dateFrom: window.from,
+    dateTo: window.to,
+    hrIds: earlier,
+  });
+  return [...earlierRows, ...own];
 }
 
 // check_date is a zone-less Cairo wall-clock stored verbatim as +00, so its clock reading is

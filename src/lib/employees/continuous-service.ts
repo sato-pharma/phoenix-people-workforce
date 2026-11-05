@@ -18,7 +18,12 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
  * What reads it: the employee portal's payslip list and payslip view (`fetchPortalPayslips`, the SELF
  * branch of `resolvePayrollAccessFilter`), her own vacation history, the vacation balance
  * (`getVacationBalancePeriod`, `calculateVacationPayment`, `isWithinFirstSixMonths`) and the portal's
- * "Hire date".
+ * "Hire date"; Employee 360's visits, check-ins, coaching and tenure; the overview's double-visit pulse
+ * and leave left.
+ *
+ * 🔴 SALES NEVER READ IT (owner, 2026-11-05: "don't show the sales history because it is related to
+ * another line and another products") — Employee 360's sales and the overview's achievement tile stay
+ * on the current record alone.
  *
  * A new entry is one line here, in a reviewed PR — never inferred from a matching name or national ID.
  */

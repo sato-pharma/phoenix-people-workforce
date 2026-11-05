@@ -27,6 +27,7 @@ import { loadManagerVisitDetails } from "@/lib/phoenix-crm/server/manager-visit-
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
 import {
   phoenixDetailViewer,
   phoenixRowSight,
@@ -175,6 +176,8 @@ export async function getEmployeeSales(subjectHrId: string, teamHrIds: string[],
   // One window load for the whole company, then narrowed in memory (see sales-canonical.ts):
   // published closing months only, each month credited to whoever held the seat then, and a
   // manager's team taken from the seats he held — vacant rep seats included — not from his reps.
+  // NOT a re-hired person's earlier record (continuous-service.ts): those sales are another line's
+  // products, and the owner ruled them out of the new record's history (2026-11-05).
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
   const team = buildEmployee360TeamSales(await loadEmployee360SalesWindow(), subjectHrId, keys, viewerRole);
   if (team.teamUnreadable) {
@@ -489,7 +492,8 @@ async function getEmployeeCoaching(
         supabase
           .from("coaching_reports")
           .select("id,coaching_date,final_score_percent,performance_zone,actual_score,max_score,coach_hr_id,area_of_development,strength_points")
-          .in("medical_rep_hr_id", hrIdLookupKeys(hrId))
+          // Her coaching under an earlier record before a re-hire is hers too (continuous-service.ts).
+          .in("medical_rep_hr_id", ownAndEarlierRecordHrIds(hrId).flatMap(hrIdLookupKeys))
           .in("status", [...completedReportStatuses])
           .gte("coaching_date", window.from),
       "id",
