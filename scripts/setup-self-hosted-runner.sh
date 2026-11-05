@@ -148,7 +148,9 @@ step "Installing base packages"
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update -qq
 sudo apt-get install -y -qq curl git ca-certificates gnupg jq unzip zip xz-utils build-essential \
-  python3 python3-venv postgresql-client dnsutils
+  python3 python3-venv postgresql-client postgresql dnsutils
+# postgresql: phoenix-mcp.yml's fixture runs its own initdb; the cluster the package starts is not used.
+sudo systemctl disable --now postgresql >/dev/null 2>&1 || true
 
 # gh: GitHub's hosted runners ship it and many workflows call `gh api`. Ubuntu 24.04's own `gh`
 # (universe) is fine if it is already installed; otherwise it comes from GitHub's apt repository.
