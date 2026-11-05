@@ -31,6 +31,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { continuousServiceStartDate, ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
 import { createSystemNotification, createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { afterResponse } from "@/lib/http/after-response";
@@ -573,6 +574,15 @@ function accessMatchesHrId(access: AccessContext, hrId: string | null | undefine
   return accessIdentityCandidates(access).some((candidate) => candidate === target);
 }
 
+/** The viewer's own request, or one filed under an earlier record of theirs (continuous-service.ts). */
+function accessOwnsVacationHrId(access: AccessContext, hrId: string | null | undefined) {
+  if (accessMatchesHrId(access, hrId)) return true;
+  const target = normalizeHrIdForAccess(hrId);
+  if (!target) return false;
+  return accessIdentityCandidates(access).some((candidate) =>
+    ownAndEarlierRecordHrIds(candidate).slice(1).some((earlier) => normalizeHrIdForAccess(earlier) === target));
+}
+
 function employeeLineMatches(left: EmployeeDirectoryRow, right: EmployeeDirectoryRow) {
   if (left.lineId !== null && right.lineId !== null) return left.lineId === right.lineId;
   const leftLine = normalizeLineName(left.lineName);
@@ -786,7 +796,8 @@ function approvedPaidDaysFromRows(input: {
   if (!periodStart || !periodEnd) return 0;
 
   return input.rows.reduce((sum, row) => {
-    if (!hrIdsMatch(row.employeeHrId, input.employeeHrId)) return sum;
+    // The person's own rows and those of an earlier record of theirs (continuous-service.ts).
+    if (!ownAndEarlierRecordHrIds(input.employeeHrId).some((hrId) => hrIdsMatch(row.employeeHrId, hrId))) return sum;
     if (row.status !== "approved") return sum;
     if (row.startDate < periodStart || row.startDate >= periodEnd) return sum;
 
@@ -912,8 +923,11 @@ export function buildEmployeeEligibilityRows(input: {
       const annualBalanceDays = annualBalance.unpaidReason === "first_six_months"
         ? roundDays(Math.max(0, annualBalance.entitlementDays - annualBalance.usedPaidDays))
         : annualBalance.balanceBeforeDays;
-      const sixMonthAnniversary = addMonthsToDateOnly(employee.hireDate, 6);
-      const daysSinceHire = daysBetweenDateOnly(employee.hireDate);
+      // Counted from the person's unbroken service when an earlier record of theirs is linked
+      // (src/lib/employees/continuous-service.ts), the same date the balance above counts from.
+      const serviceStartDate = continuousServiceStartDate(employee.hrId, employee.hireDate);
+      const sixMonthAnniversary = addMonthsToDateOnly(serviceStartDate, 6);
+      const daysSinceHire = daysBetweenDateOnly(serviceStartDate);
       const eligibilityDate = parseDateOnly(sixMonthAnniversary);
       const daysUntilEligibility = sixMonthAnniversary && eligibilityDate && input.today < sixMonthAnniversary
         ? daysBetweenDateOnly(input.today, eligibilityDate)
@@ -954,7 +968,7 @@ export function buildEmployeeEligibilityRows(input: {
         employmentStatus: employee.employmentStatus,
         fullName: employee.fullName,
         displayName: employee.displayName,
-        hireDate: employee.hireDate,
+        hireDate: serviceStartDate,
         hrId: employee.hrId,
         lineName: employee.lineName,
         managerHrId: employee.managerHrId,
@@ -1493,8 +1507,8 @@ function canSeeVacation(access: AccessContext, request: VacationRequestRecord, v
   const employeeHrId = canonicalHrId(request.employeeHrId);
   if (employeeHrId && visibleEmployeeHrIds?.has(employeeHrId)) return true;
 
-  // Own request is always visible.
-  if (accessMatchesHrId(access, request.employeeHrId)) return true;
+  // Own request is always visible — an earlier record's too.
+  if (accessOwnsVacationHrId(access, request.employeeHrId)) return true;
 
   // Management-chain fallback (stored manager / manager-of-manager on the request)
   // is allowed ONLY for management scopes (TEAM / HIERARCHY). LINE and SELF scopes
@@ -2883,10 +2897,14 @@ async function pendingPaidDaysInPeriod(input: {
 }) {
   if (!input.periodStart || !input.periodEnd) return 0;
 
-  let query = getSupabaseAdmin()
+  // The person's own rows and an earlier record's (continuous-service.ts); a plain eq otherwise.
+  const ownAndEarlier = ownAndEarlierRecordHrIds(input.employeeHrId.toUpperCase());
+  const requestsForPerson = getSupabaseAdmin()
     .from(vacationRequestsTable)
-    .select("id,duration_days,paid_duration_days,payment_status")
-    .eq("employee_hr_id", input.employeeHrId.toUpperCase())
+    .select("id,duration_days,paid_duration_days,payment_status");
+  let query = (ownAndEarlier.length > 1
+    ? requestsForPerson.in("employee_hr_id", ownAndEarlier)
+    : requestsForPerson.eq("employee_hr_id", input.employeeHrId.toUpperCase()))
     .in("status", IN_FLIGHT_VACATION_STATUSES as unknown as string[])
     .gte("start_date", input.periodStart)
     .lt("start_date", input.periodEnd);
@@ -2936,10 +2954,15 @@ export async function approvedPaidDaysInPeriod(input: {
   if (!input.periodStart || !input.periodEnd) return 0;
 
   const reader: VacationBalanceReadClient = client ?? getSupabaseAdmin();
-  let query = reader
+  // The person's own rows and an earlier record's (continuous-service.ts). A plain eq for everyone
+  // without one, so their read is unchanged.
+  const ownAndEarlier = ownAndEarlierRecordHrIds(input.employeeHrId.toUpperCase());
+  const requestsForPerson = reader
     .from(vacationRequestsTable)
-    .select("id,duration_days,paid_duration_days,payment_status")
-    .eq("employee_hr_id", input.employeeHrId.toUpperCase())
+    .select("id,duration_days,paid_duration_days,payment_status");
+  let query = (ownAndEarlier.length > 1
+    ? requestsForPerson.in("employee_hr_id", ownAndEarlier)
+    : requestsForPerson.eq("employee_hr_id", input.employeeHrId.toUpperCase()))
     .eq("status", "approved")
     .gte("start_date", input.periodStart)
     .lt("start_date", input.periodEnd);
@@ -7158,6 +7181,15 @@ async function loadVacationReportData(access: AccessContext, clean: VacationRepo
   const activeEmployees = await getEmployeeDirectoryRows();
   const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
   const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
+  // The viewer's OWN earlier record (continuous-service.ts): the same person's history under the HR
+  // id they held before a re-hire. Only their own — nobody else's visibility moves.
+  for (const candidate of accessIdentityCandidates(access)) {
+    for (const earlierHrId of ownAndEarlierRecordHrIds(candidate).slice(1)) {
+      const canonical = canonicalHrId(earlierHrId);
+      if (canonical) visibleEmployeeHrIds.add(canonical);
+      visibleEmployeeHrIds.add(earlierHrId.trim().toUpperCase());
+    }
+  }
   // 🔴 A SECOND, WIDER READ — used ONLY to find the leavers a charge has been taken from (owner,
   // 2026-10-09). `visibleEmployeeHrIds` is deliberately NOT widened with it: that set decides which
   // REQUESTS the viewer may see, and widening it would change request visibility, which nobody asked

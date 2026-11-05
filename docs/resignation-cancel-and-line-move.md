@@ -50,6 +50,12 @@ her the same evening through a new offer, as PD-0039 on the Pedia line, starting
 new salary. The owner decided to keep PD-0039 and give it her original hire date of 17 August.
 AI-0009 stays resigned, and her resignation is not cancelled.
 
+That date lives in `src/lib/employees/continuous-service.ts`, not in `employees.hire_date`
+(2026-11-05). Payroll puts a person in a month by `hire_date`, so 17 August on PD-0039 put her in
+the open October run as a full employee beside AI-0009 — paid twice. `hire_date` stays 7 November,
+and the link gives her portal the August and September payslips, the AI-0009 vacation history, a
+"Hire date" of 17 August, and leave counted from 17 August.
+
 A resignation that never ended anyone, for example one filed on the Resignations screen and not yet
 completed, is left alone.
 
