@@ -1080,6 +1080,7 @@
   "prod-mcp-token-owns-staging-supabase": "database",
   "prod-min-instances-dropped-to-zero-2026-07-16": "history",
   "prod-verify-region-europe-west3": "history",
+  "product-and-medical-knowledge-belong-to-the-product-manager": "coaching",
   "production-backup-schemas-are-all-kept": "org",
   "production-postgrest-row-cap-is-not-1000": "database",
   "production-supabase-has-no-pitr-only-daily-backups": "database",
