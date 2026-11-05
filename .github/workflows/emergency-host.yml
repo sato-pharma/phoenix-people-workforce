@@ -59,7 +59,7 @@ env:
 jobs:
   status:
     if: ${{ inputs.action == 'status' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 5
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -74,7 +74,7 @@ jobs:
 
   setup:
     if: ${{ inputs.action == 'setup' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -131,7 +131,7 @@ jobs:
 
   gate:
     if: ${{ inputs.action == 'rehearse' || inputs.action == 'go-live' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # hosted-only: reads the image registry with Docker
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.pick.outputs.sha }}
@@ -195,7 +195,7 @@ jobs:
   standby:
     needs: [gate, image]
     if: ${{ always() && needs.gate.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # hosted-only: pulls and pushes the amd64 image with Docker
     timeout-minutes: 40
     env:
       SHA: ${{ needs.gate.outputs.sha }}
@@ -278,7 +278,7 @@ jobs:
 
   back-to-railway:
     if: ${{ inputs.action == 'back-to-railway' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

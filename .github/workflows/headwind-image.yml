@@ -36,7 +36,7 @@ concurrency:
 jobs:
   build:
     name: headwind-image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # hosted-only: builds the amd64 tablet-server image with Docker
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

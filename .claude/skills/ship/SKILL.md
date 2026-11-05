@@ -141,10 +141,6 @@ re-run does not resurrect. An open HIGH alert is that failure with the clock alr
 
 ## 3 · Docs-only or not, the green checks skipped the same things
 
-```bash
-gh pr diff <n> --name-only | node scripts/ci-build-risk.mjs
-```
-
 **A docs-only PR gets no fast path.** Its `static` and `unit` jobs run in full, the whole suite
 included, so a red one is real: many tests read `docs/` and `.claude/`. `ci.yml` used to skip them for
 a diff of docs, and that let a PR of seven markdown files go green and then fail on `main`, withholding
@@ -153,9 +149,11 @@ three production deploys. It was removed on 2026-10-06, and its account is in `c
 What a green PR has not run is the same for docs and code, and it first runs after the merge (phase 8):
 
 - **The login smoke test, the canvas check and the standalone assembly** are `main`-only, for every PR.
-- **The build** runs on a PR only when a changed path is a route or a build config file. The command
-  above prints that answer, `build=true` or `build=false`, with its reason. It lists a renamed file's
-  new path only, while CI's own step reads both, so a rename can build when this says it will not.
+- **The build: a pull request never builds**, whatever it touches (owner, 2026-11-05: "Yes, skip the PR
+  build"). CI runs on one self-hosted machine where every job waits for the one before it; Railway
+  builds every merge, and a build that fails there keeps the old version serving. On a PR `validate` is
+  one step that says so and concludes success — its green proves nothing about the build. Only
+  `main`'s own run (phase 8) and the live `/api/healthz` revision do.
 
 Say in the report what did not run, instead of implying it passed.
 

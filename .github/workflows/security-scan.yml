@@ -117,15 +117,15 @@ env:
   SEMGREP_VERSION: "1.171.0"
 
 jobs:
-  # Every `runs-on` in this repository is the literal `ubuntu-latest` (2026-10-19, owner: "make all ci
-  # actions to be on github"). It used to be a computed expression that could send a pull request to the
-  # self-hosted Hetzner box; the box is retired and tests/ci-runner-switch.test.ts now pins the literal in
-  # every workflow file, so a computed or self-hosted label cannot quietly come back.
+  # Every switchable `runs-on` reads `${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}` (2026-11-05): the free
+  # plan's Actions minutes ran out, so CI moves to a free self-hosted ARM64 machine while the repository
+  # variable CI_RUNNER_LABEL is `phoenix-ci`, and stays on GitHub's runners while it is unset. Pinned by
+  # tests/ci-runner-switch.test.ts; account in docs/ci-self-hosted-runner.md.
   #
   # NOTE: `secret-scan` is not a required check — it was demoted from branch protection on 2026-09-29 and
   # taken off `pull_request` in the same change; gitleaks runs in `bash-guard.mjs` C12 before a push.
   secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
     # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
     # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is
@@ -149,8 +149,15 @@ jobs:
       - name: Install gitleaks
         run: |
           set -euo pipefail
-          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          # The asset follows the runner's CPU (2026-11-05): GitHub's runners are x64, the self-hosted
+          # runner is ARM64. Both checksums come from the release's own gitleaks_<v>_checksums.txt.
+          case "${RUNNER_ARCH}" in
+            X64)   asset=linux_x64;   sum=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb ;;
+            ARM64) asset=linux_arm64; sum=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080 ;;
+            *) echo "::error::no pinned gitleaks build for runner architecture ${RUNNER_ARCH}"; exit 1 ;;
+          esac
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_${asset}.tar.gz"
+          echo "${sum}  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks
           chmod +x gitleaks
 
@@ -485,7 +492,7 @@ jobs:
   sast-scan:
     # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # 🔴 EVERY `continue-on-error` STEP BELOW CARRIES ITS OWN `timeout-minutes`, AND THIS CEILING
     # SITS ABOVE THEIR SUM (2026-10-13). A JOB that hits its ceiling concludes `cancelled`, which
     # withholds that `main` commit's production deploy exactly as a failure does — and a timeout is

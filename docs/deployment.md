@@ -735,11 +735,12 @@ four separate reasons that stacked. Read each from its own source, never from on
   0.74-1.35 at 04:00-07:00. Whether the late start follows the new request is unproven: read the start
   times with `gh run list --workflow security-scan.yml` after a few days, and if they still fall after
   08:00 UTC, dispatch it from cron-job.org at a chosen quiet minute instead.
-- **A build that fails only when a Sentry token is present reaches production green.** PR builds carry
+- **A build that fails only when a Sentry token is present reaches production green.** PR builds carried
   no token, so on 16 Oct 13:12-13:57 two merges never deployed (`withSentryConfig is not a function`:
   the plugin lives at `@sentry/nextjs/config`, not the package root) and the fix took about 23 minutes.
   `tests/sentry-production-only.test.ts` now loads `next.config.ts` through Next's own loader with a
-  dummy token, so a plugin that cannot load fails the PR instead.
+  dummy token, so a plugin that cannot load fails the PR instead — the one place a PR still meets it, since
+  a pull request never builds at all (owner, 2026-11-05: "Yes, skip the PR build").
 
 ## The release gate — Railway builds while CI runs
 

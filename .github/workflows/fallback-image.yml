@@ -80,7 +80,7 @@ concurrency:
 
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.pick.outputs.sha }}
@@ -132,7 +132,7 @@ jobs:
   image:
     needs: gate
     if: ${{ github.event_name == 'pull_request' || inputs.deploy != 'restore' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # hosted-only: builds the amd64 production image with Docker
     # A cold build of this app is ~8-12 minutes (install, `next build`, the runtime layers); the cap is generous because
     # nothing here may be cancelled half-pushed.
     timeout-minutes: 45
@@ -327,7 +327,7 @@ jobs:
   rehearsal:
     needs: [gate, image]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'rehearsal' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 35
     env:
       SHA: ${{ needs.gate.outputs.sha }}
@@ -361,7 +361,7 @@ jobs:
   production:
     needs: [gate, image]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'production' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 60
     env:
       SHA: ${{ needs.gate.outputs.sha }}
@@ -407,7 +407,7 @@ jobs:
   restore:
     needs: gate
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == 'restore' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}

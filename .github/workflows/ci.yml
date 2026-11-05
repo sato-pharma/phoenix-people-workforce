@@ -39,12 +39,14 @@ name: CI
 # 🔴 GITHUB-HOSTED ONLY, AND NOTHING WAITS FOR ANYTHING IT DOES NOT NEED (owner, 2026-10-19: "retire
 # the hetzner box and do not use it ever again, it is the source of slowness", and "make all ci
 # actions to be on github … checks on one or ten or even 100 at the same time … as fast as you can
-# safely without skipping any check"). Every job below runs on `ubuntu-latest`, written as a literal:
-# no label, variable or kill switch can send one to a machine of ours, and
-# tests/ci-runner-switch.test.ts fails a workflow that tries. The graph, four jobs side by side:
+# safely without skipping any check"). Reversed 2026-11-05 when the free plan's minutes ran out: every
+# job reads the ONE switch `${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`, so the repository variable
+# sends all of CI to the self-hosted machine and deleting it sends all of CI back
+# (tests/ci-runner-switch.test.ts, docs/ci-self-hosted-runner.md). One machine runs one job at a time, so
+# "side by side" holds only on GitHub's runners. The graph, four jobs:
 #
-#   validate  the production Build and the Playwright login smoke against it (a PR builds only when
-#             scripts/ci-build-risk.mjs says its diff can change a build)
+#   validate  the production Build and the Playwright login smoke against it — on main and a dispatch
+#             only; on a pull request it is one step that says why (owner, 2026-11-05)
 #   static    the check:* contracts, the dependency audit, ESLint, the type gate, the tree-reuse dry run
 #   unit      the unit suite as 2 parallel jobs of 2 shards, every test in exactly one shard
 #   checks    the gate for static + unit: green only when both are literally `success` AND the parts'
@@ -61,12 +63,12 @@ name: CI
 # build and the Playwright smoke, which are gated on the EVENT (`github.event_name`), never on what
 # the diff touched to SKIP anything.
 #
-# The one diff-driven step since 2026-10-08 runs the other way: `Build risk` in `validate` can only
-# ADD the Build to a pull request (which otherwise never builds), never remove a step. `main` builds
-# every commit whatever it says. Narrowed the same day (owner): a PR builds only when it touches a
-# route or build-config file, ~19% of PRs; it still answers `build=true` on any error or unreadable
-# diff, and a rename is read as both of its paths. Script: scripts/ci-build-risk.mjs; pinned by
-# tests/ci-build-risk.test.ts and tests/ci-gate-parity.test.ts.
+# From 2026-10-08 to 2026-11-05 one diff-driven step, `Build risk`, could ADD the Build to a pull
+# request that touched a route or build-config file. It is gone: on 2026-11-05 CI moved onto one
+# self-hosted laptop where jobs run one after another, and the owner chose "Yes, skip the PR build" —
+# Railway builds every merge, and a build that fails there keeps the old version serving. So no step
+# reads the diff at all (tests/ci-gate-parity.test.ts) and a PR never builds
+# (tests/ci-pr-skips-build-and-smoke.test.ts, tests/ci-build-risk.test.ts).
 #
 # It existed in two forms and both failed the same way. First as `paths-ignore` here plus a
 # ci-docs-fallback.yml stub, which double-reported `validate`/`lint`/`typecheck` on any PR touching
@@ -179,14 +181,19 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
-  # WHERE THEY RUN, AND WHAT CAPS HOW MANY RUN AT ONCE. GitHub's own `ubuntu-latest`, a literal, on
-  # purpose. It used to be a computed expression that could send a pull request to a self-hosted box (the
-  # Hetzner box, `CI_SELF_HOSTED` / `CI_RUNNER_LABEL`); the owner retired that box on 2026-10-19 as the
-  # source of the slowness and ruled it is never used again, so there is no switch left to flip. `main`
-  # was always hosted, because its CI is the production deploy gate (AGENTS.md §2).
+  # WHERE THEY RUN, AND WHAT CAPS HOW MANY RUN AT ONCE (2026-11-05). Every job reads
+  # `${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}`. The free plan's 2,000 Actions minutes for November were
+  # spent by the 5th and the spending limit is $0, so GitHub refuses to START hosted jobs — and the release
+  # gate holds every production deploy until `checks` passes here. Self-hosted minutes are not billed, so
+  # CI moves to a free Oracle Cloud ARM64 machine: repository variable CI_RUNNER_LABEL = `phoenix-ci` sends
+  # every job there, `main` included; unset, every job is GitHub-hosted exactly as before. 🔴 A label that
+  # matches no ONLINE runner QUEUES, it does not fall back — if the machine is down, delete the variable.
+  # The 2026-10-19 rule "GitHub-hosted only" is superseded by this, the owner's decision of 2026-11-05.
+  # Runbook: docs/ci-self-hosted-runner.md. Pinned by tests/ci-runner-switch.test.ts.
   #
-  # Capacity is GitHub's: the account's plan caps how many jobs run at once (GitHub Pro 40; more is a
-  # request to GitHub Support), and a job past the cap QUEUES — it does not fail. A superseded pull
+  # Capacity: on GitHub's runners the plan caps how many jobs run at once and a job past the cap QUEUES —
+  # it does not fail. On the self-hosted machine it is the number of runner services registered on it
+  # (scripts/setup-self-hosted-runner.sh registers two). A superseded pull
   # request run is cancelled by the `concurrency` block above, which hands its slots to the newest push.
   #
   # THE JOBS ARE SHORT ON PURPOSE: GitHub bills and caps by job, so the unit suite is two jobs (not
@@ -196,16 +203,30 @@ jobs:
   #
   # THE JOB ALWAYS RUNS AND ALWAYS REPORTS, and is never `if`-ed out: a skipped job reports no status, and
   # a required check with no status blocks a PR forever — the exact breakage ci-docs-fallback.yml was
-  # invented to paper over. The only conditional steps are the ones gated on the EVENT (and, on a pull
-  # request, `Build risk`, which can only ADD the Build). It no longer carries the check:* contracts, the
+  # invented to paper over. The only conditional steps are the ones gated on the EVENT: on a pull request
+  # the job is one step that says why it does not build (owner, 2026-11-05). It no longer carries the check:* contracts, the
   # audits or the unit suite: those are `static` and `unit` since 2026-10-19, so `main`'s slowest job is
   # the build alone and not the build behind forty seconds of checks.
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
+      # 🔴 A PULL REQUEST DOES NOT BUILD (owner, 2026-11-05: "Yes, skip the PR build"). CI runs on one
+      # self-hosted laptop where every job waits for the one before it, and the build is the slowest of
+      # them. Railway builds every merge, and a build that fails there keeps the old version serving, so
+      # nothing ships broken; `main` and a dispatch still build and run the login smoke, unchanged.
+      # The job still RUNS on a PR and concludes `success`, because `validate` is a required check
+      # name and a skipped job reports nothing. Every other step below is gated off a pull request,
+      # checkout and install included: nothing after them runs on a PR, so they would be pure cost.
+      # Pinned by tests/ci-pr-skips-build-and-smoke.test.ts.
+      - name: Pull requests do not build
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Pull requests do not build: Railway builds every merge, and a build that fails there keeps the old version serving (owner, 2026-11-05)."
+
       - name: Check out repository
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # depth 2, not 1 — and 🔴 NOT for the reason this comment gave until 2026-10-06, which
@@ -229,9 +250,11 @@ jobs:
       # in package.json's `packageManager` field even with its cache off, and the pnpm shim only exists
       # once corepack is enabled. corepack then reads the exact pnpm version from that field.
       - name: Enable Corepack (pnpm)
+        if: github.event_name != 'pull_request'
         run: corepack enable
 
       - name: Set up Node.js
+        if: github.event_name != 'pull_request'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
@@ -249,6 +272,7 @@ jobs:
       # step cannot read keys the cache to this run alone (a miss), never to a guess.
       # Pinned by tests/ci-cache-main-only.test.ts.
       - name: Locate the pnpm store
+        if: github.event_name != 'pull_request'
         id: pnpm-store
         run: |
           store="$(pnpm store path 2>/dev/null | tail -n 1 || true)"
@@ -266,6 +290,7 @@ jobs:
           fi
 
       - name: Restore the pnpm store
+        if: github.event_name != 'pull_request'
         id: pnpm-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -273,6 +298,7 @@ jobs:
           key: ${{ steps.pnpm-store.outputs.prefix }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies
+        if: github.event_name != 'pull_request'
         run: pnpm install --frozen-lockfile
 
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
@@ -354,21 +380,10 @@ jobs:
       # setting is to keep the build on PRs that touch `app/`, `src/` or `next.config.ts` and
       # skip it elsewhere — not a return to building on every PR.
       #
-      # 🔴 THAT MIDDLE SETTING IS NOW LIVE (2026-10-08, the performance-recovery PR), DEFINED BY
-      # EXCLUSION SO IT CAN ONLY ERR TOWARDS BUILDING. A PR builds unless EVERY changed path is one
-      # a Next build never reads (docs, markdown, tests, .claude, other workflows, mobile,
-      # migrations, xlsx, scripts nothing imports). Deleted and renamed paths count (--no-renames
-      # lists both halves), and an unreadable diff or any classifier error answers build=true.
-      # Only the Build is added: the canvas check, the standalone assembly and the login smoke stay
-      # `main`-only. `main` itself is unchanged — the left half of the Build's `if:` is the event,
-      # which cannot be empty, so a mis-emitted output never gates the main build off.
-      - name: Build risk
-        id: buildrisk
-        if: github.event_name == 'pull_request'
-        run: |
-          files="$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null)" || files=""
-          printf '%s\n' "$files" | node scripts/ci-build-risk.mjs >> "$GITHUB_OUTPUT" || echo "build=true" >> "$GITHUB_OUTPUT"
-
+      # That middle setting (`Build risk`, from 2026-10-08) is RETIRED: since 2026-11-05 a pull
+      # request never builds, whatever it touches (owner: "Yes, skip the PR build"). Railway builds
+      # every merge and keeps the old version serving if that build fails. `main` and a dispatch
+      # build every commit, as before — the Build's `if:` reads only the event.
       # Do NOT re-add a `.next` cache to soften this: tried 2026-08-29, measured from both
       # directions, 37KB cache and 148s warm against 143s cold. The note on the deleted cache
       # step above records the evidence.
@@ -387,7 +402,7 @@ jobs:
       # Railway's Dockerfile keeps the one-process `pnpm run build` — its builder is not this runner,
       # and the standalone assembly and login smoke below prove the split output serves.
       - name: Build
-        if: github.event_name != 'pull_request' || steps.buildrisk.outputs.build == 'true'
+        if: github.event_name != 'pull_request'
         run: |
           sudo fallocate -l 6G /mnt/phx-build-swap && sudo chmod 600 /mnt/phx-build-swap \
             && sudo mkswap /mnt/phx-build-swap >/dev/null && sudo swapon /mnt/phx-build-swap \
@@ -429,14 +444,18 @@ jobs:
       # from 2026-10-19 — every run since early October carries GitHub's notice saying so — and the
       # old key could not tell the two images apart. A cache whose key omits what makes it valid
       # reports a hit and poisons the step it was meant to save.
+      #
+      # It carries the CPU ARCHITECTURE too (2026-11-05): the self-hosted ARM64 runner and GitHub's x64
+      # runners share one cache, and an x64 Chromium restored onto ARM64 counts as installed, so
+      # `playwright install` skips it and the browser then cannot launch.
       - name: Cache Playwright browsers
         if: github.event_name != 'pull_request'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ env.ImageOS }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-${{ env.ImageOS }}-
+          key: playwright-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ env.ImageOS }}-${{ runner.arch }}-
 
       - name: Install Playwright browsers
         if: github.event_name != 'pull_request'
@@ -559,7 +578,7 @@ jobs:
   # the suite instead of in front of them. Nothing here is conditional on the diff: every step runs on
   # every event, which is the 2026-10-06 rule (see the header).
   static:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
     # READ-ONLY additions for the tree-reuse SHADOW (owner, 2026-10-14; shadow mode 2026-10-26):
     # `actions: read` lets the push run read a PR run's jobs and step names, `pull-requests: read` lets
@@ -780,8 +799,33 @@ jobs:
       # The exact Node runtime sits in BOTH the key and the restore prefix (2026-10-23), so a run only
       # ever restores a cache written under its own runtime — see `Read the exact Node runtime` above.
       # Restored everywhere, saved by a push to main only (owner, 2026-10-26) — `Save ESLint cache` below.
+      #
+      # 🔴 A MACHINE THAT KEEPS ITS DISK KEEPS ITS OWN ESLINT CACHE (2026-11-05). On the self-hosted laptop
+      # `actions/checkout` cleans the workspace (`git clean -ffdx`), which deletes .eslintcache, and the
+      # shared cache above holds GitHub-hosted paths that match none of the laptop's — so every run linted
+      # cold: 3 min 52 s on run 42103516936. So the cache is also kept OUTSIDE the workspace, in
+      # `$HOME/.cache/phoenix-ci/eslint/<first 12 hex of sha256 of the workspace path>/`: one folder per
+      # absolute workspace, because the file's entries are keyed by absolute path. When that copy exists it
+      # is used and the shared cache is neither restored nor saved, so the laptop's paths never reach a
+      # GitHub-hosted run. Nothing branches on which machine this is: on a GitHub-hosted runner the home
+      # folder is new every run, the copy is never there, and the steps behave exactly as before. ESLint
+      # itself checks every entry (its version, the Node runtime, the config and each file's content), so a
+      # stale copy can only make lint slower, never wrong.
+      - name: Bring back the ESLint cache kept on this machine
+        id: eslint-local
+        run: |
+          dir="${HOME}/.cache/phoenix-ci/eslint/$(printf '%s' "${GITHUB_WORKSPACE}" | sha256sum | cut -c1-12)"
+          if [ -f "${dir}/.eslintcache" ] && cp "${dir}/.eslintcache" .eslintcache; then
+            echo "Restored the ESLint cache kept on this machine from ${dir}"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No ESLint cache kept on this machine; the shared cache is restored instead"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Restore ESLint cache
         id: eslint-cache
+        if: steps.eslint-local.outputs.found != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
@@ -792,11 +836,24 @@ jobs:
         run: pnpm run lint
 
       - name: Save ESLint cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.eslint-cache.outputs.cache-hit != 'true' && !startsWith(steps.node-runtime.outputs.version, 'unverified-')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.eslint-local.outputs.found != 'true' && steps.eslint-cache.outputs.cache-hit != 'true' && !startsWith(steps.node-runtime.outputs.version, 'unverified-')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
           key: ${{ steps.eslint-cache.outputs.cache-primary-key }}
+
+      # Kept for this machine's next run, on every event — a pull request's lint is as warm as main's. Never
+      # fails the job: a copy that cannot be written only means the next lint runs cold.
+      - name: Keep the ESLint cache on this machine for the next run
+        if: ${{ !cancelled() }}
+        run: |
+          [ -f .eslintcache ] || exit 0
+          dir="${HOME}/.cache/phoenix-ci/eslint/$(printf '%s' "${GITHUB_WORKSPACE}" | sha256sum | cut -c1-12)"
+          if mkdir -p "${dir}" && cp .eslintcache "${dir}/.eslintcache.tmp" && mv -f "${dir}/.eslintcache.tmp" "${dir}/.eslintcache"; then
+            echo "Kept the ESLint cache in ${dir}"
+          else
+            echo "::warning::could not keep the ESLint cache on this machine; the next lint runs cold"
+          fi
 
       # TYPECHECK — folded in from the former standalone `typecheck` job (2026-09-27). It shared a
       # byte-identical preamble with `lint` and `test` (checkout, detect, corepack, setup-node,
@@ -869,7 +926,7 @@ jobs:
   # `test` is a RETIRED check name (tests/required-check-names.test.ts) and must never come back as a job.
   # The unit suite runs on EVERY event, in this job and nowhere else (tests/ci-suite-placement.test.ts).
   unit:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # 12, not 20 (31 Oct 2026): a part takes ~3.3 min, and a test that hangs is stopped and named by the
     # sharded runner's own hang watch within ~3 min (docs/testing.md, "The hang watch"). This is only the
     # backstop behind it, so a hang the watch cannot see costs 12 minutes of a pull request, not 20.
@@ -990,7 +1047,7 @@ jobs:
   checks:
     needs: [static, unit]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -1070,7 +1127,7 @@ jobs:
   release-gate:
     needs: [checks]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -1166,7 +1223,7 @@ jobs:
   # EAS, not through this repo's deploy — so the cost is a fix-forward, not an outage.
   mobile:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -1225,7 +1282,7 @@ jobs:
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a
@@ -1262,8 +1319,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: playwright-
+          key: playwright-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.arch }}-
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install chromium

@@ -5,8 +5,14 @@
 // narrowed the same day at the owner's word ("narrow the PR build to routes and config") from a
 // build-unless-inert rule that built 52.5% of PRs. These tests pin what must build, what is now
 // deliberately skipped (a src/** library or component change — main's build catches it), the
-// fail-safe answers (empty, unreadable, odd, error → build), rename/delete handling, the one ci.yml
-// consumer, and that `main` and the required checks are untouched.
+// fail-safe answers (empty, unreadable, odd, error → build), rename/delete handling, and that `main`
+// and the required checks are untouched.
+//
+// 🔴 2026-11-05: CI.YML NO LONGER CALLS THE CLASSIFIER — A PULL REQUEST NEVER BUILDS. CI moved onto one
+// self-hosted laptop where every job waits for the one before it, and the owner chose "Yes, skip the PR
+// build": Railway builds every merge, and a build that fails there keeps the old version serving. §7
+// below now pins that the step is GONE and the Build reads the event alone. The script and its own
+// tests (§1-§6) stay, so the narrowing can be restored in one step if CI ever runs in parallel again.
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
@@ -128,20 +134,16 @@ export function runCiBuildRiskTests(): void {
     rmSync(repo, { recursive: true, force: true });
   }
 
-  // 7 — ci.yml: the step, its one consumer, and everything that must NOT move.
+  // 7 — ci.yml: no step reads the PR's diff, the Build reads the event alone, and nothing else moved.
   const yml = readFileSync(WORKFLOW, "utf8").replace(/\r\n/g, "\n");
-  const risk = step(yml, "Build risk");
-  assert.match(risk, /id: buildrisk/);
-  assert.match(risk, /if: github\.event_name == 'pull_request'/, "the classifier runs on pull requests only");
-  assert.match(risk, /git diff --name-only --no-renames HEAD\^1 HEAD/, "the diff must be read with --no-renames, against the merge commit's first parent");
-  assert.match(risk, /\|\| files=""/, "an unreadable diff must not fail the step — it must fall through to the classifier's build=true");
-  assert.match(risk, /node scripts\/ci-build-risk\.mjs >> "\$GITHUB_OUTPUT" \|\| echo "build=true" >> "\$GITHUB_OUTPUT"/, "a crashed classifier must still answer build=true");
-  assert.ok(yml.indexOf("      - name: Build risk\n") < yml.indexOf("      - name: Build\n"), "Build risk must run before Build");
-
+  assert.equal(yml.indexOf("      - name: Build risk\n"), -1,
+    "ci.yml has a `Build risk` step again. Since 2026-11-05 a pull request never builds (owner: \"Yes, skip the PR build\").");
+  assert.doesNotMatch(yml, /steps\.buildrisk\.|node scripts\/ci-build-risk\.mjs/,
+    "ci.yml feeds the build-risk classifier again, but a pull request never builds since 2026-11-05");
   assert.match(
     step(yml, "Build"),
-    /\n {8}if: github\.event_name != 'pull_request' \|\| steps\.buildrisk\.outputs\.build == 'true'\n/,
-    "the Build's condition must stay `<not a PR> || <build risk>` — `main` always builds, a PR builds on risk",
+    /\n {8}if: github\.event_name != 'pull_request'\n/,
+    "the Build's condition must be exactly `github.event_name != 'pull_request'` — `main` and a dispatch always build, a PR never does",
   );
   // 🔴 THE BUILD STAYS TWO PROCESSES (23 Oct 2026). One `next build` ran the 7.9 GB runner out of
   // memory at "Collecting page data" (exit 137, the kernel's kill, read only as "The operation was
@@ -164,7 +166,7 @@ export function runCiBuildRiskTests(): void {
   ]) {
     const block = step(yml, name);
     assert.match(block, /if: github\.event_name != 'pull_request'/, `"${name}" must stay main-only`);
-    assert.doesNotMatch(block, /buildrisk/, `"${name}" must not follow the build-risk output — only the Build is added to a PR`);
+    assert.doesNotMatch(block, /buildrisk/, `"${name}" must not follow a build-risk output`);
   }
   assert.match(yml, /\n {2}validate:\n/, "the required `validate` job is gone or renamed");
   assert.match(yml, /\n {2}checks:\n/, "the required `checks` job is gone or renamed");

@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   autoarm:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       # 🔴 SHA-PINNED, AND OFF NODE 20. This was the last workflow in the repository still on the tag
