@@ -6295,7 +6295,7 @@ await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, m
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
 await runTest(
-  "every CI job reads one runner switch (owner, 2026-11-05): each runs-on is exactly ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }} except the Docker image jobs named in HOSTED_ONLY, which keep the literal ubuntu-latest with a hosted-only reason; CI_RUNNER_LABEL is read nowhere else, CI_SELF_HOSTED nowhere, and no step branches on runner.environment == 'self-hosted'",
+  "every CI job reads one runner switch (owner, 2026-11-05): each runs-on is exactly ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }} except the Docker image jobs named in HOSTED_ONLY, which keep the literal ubuntu-latest with a hosted-only reason; CI_RUNNER_LABEL is read nowhere else, CI_SELF_HOSTED nowhere, no step branches on runner.environment == 'self-hosted', and the runner setup script pins an x64 and an arm64 checksum and can never print its token",
   runCiRunnerSwitchTests,
 );
 await runTest(

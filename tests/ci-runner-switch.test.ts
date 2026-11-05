@@ -147,7 +147,109 @@ export function runCiRunnerSwitchTests() {
   assert.ok(runsOnLines >= 20, `expected at least 20 \`runs-on\` lines across the workflows, found ${runsOnLines}`);
   assert.ok(switched >= 20, `expected at least 20 jobs on the runner switch, found ${switched}`);
 
+  assertSetupScripts();
   assertCiJobLedger();
+}
+
+// ── THE SETUP SCRIPTS: both CPU types, a pinned checksum each, and a token nothing can print ─────
+//
+// 🔴 WHY (2026-11-05). The runner goes on whichever free machine is to hand — the owner's spare laptop
+// (WSL2, x86_64) or an Oracle Cloud VM (aarch64) — so the setup script must pick the right runner tarball
+// for either, and verify it against GitHub's own published SHA-256, never a download it merely trusts. It
+// also handles the registration token, which registers a machine that then runs our CI with our secrets:
+// a token that reaches a terminal, a log or a scrollback is a token someone can reuse within the hour.
+// So every line that touches it is pinned to a known-safe shape. The Windows half is pasted from the
+// runbook by hand, so the runbook's block must stay byte-for-byte the script in the repository.
+const SETUP_SCRIPT = "scripts/setup-self-hosted-runner.sh";
+const WINDOWS_SCRIPT = "scripts/setup-spare-laptop-windows.ps1";
+const RUNNER_DOC = "docs/ci-self-hosted-runner.md";
+
+/** The only shapes a line naming RUNNER_TOKEN may take: assigned, tested, read hidden, handed to config.sh, unset. */
+const SAFE_TOKEN_LINES: RegExp[] = [
+  /^RUNNER_TOKEN="\$\{2:-\$\{RUNNER_TOKEN:-\}\}"$/,
+  /^\s*if \[ -[nz] "\$RUNNER_TOKEN" \]; then$/,
+  /^\s*RUNNER_TOKEN="\$\(gh api -X POST "repos\/\$\{OWNER_REPO\}\/actions\/runners\/registration-token" --jq \.token 2>\/dev\/null \|\| true\)"$/,
+  /^\s*read -rsp "[^"$]*" RUNNER_TOKEN$/,
+  /^\s*\[ -n "\$RUNNER_TOKEN" \] \|\| die "[^"$]*"$/,
+  /^\s*--token "\$RUNNER_TOKEN" \\$/,
+  /^\s*unset RUNNER_TOKEN$/,
+];
+
+export function assertSetupScripts() {
+  const sh = readFileSync(SETUP_SCRIPT, "utf8").replace(/\r\n/g, "\n");
+  const code = sh
+    .split("\n")
+    .map((text, i) => ({ line: i + 1, text }))
+    .filter(({ text }) => !/^\s*#/.test(text));
+
+  // Both CPU types, each with its own pinned SHA-256.
+  const shas: string[] = [];
+  for (const [cpu, arch] of [
+    ["x86_64", "x64"],
+    ["aarch64", "arm64"],
+  ]) {
+    const m = new RegExp(`^\\s*${cpu}\\)\\s+RUNNER_ARCH_NAME=${arch};\\s+RUNNER_SHA256="([0-9a-f]{64})"\\s*;;`, "m").exec(sh);
+    assert.ok(
+      m,
+      `${SETUP_SCRIPT} must map \`${cpu})\` to RUNNER_ARCH_NAME=${arch} with its own pinned 64-hex RUNNER_SHA256 — the laptop is ` +
+        `x86_64 and the Oracle VM aarch64, and each runner tarball is checked against GitHub's published checksum.`,
+    );
+    shas.push(m[1]);
+  }
+  assert.notEqual(shas[0], shas[1], `${SETUP_SCRIPT}: the x64 and arm64 runner checksums are the same value — one of them is wrong.`);
+  assert.match(
+    sh,
+    /^TARBALL="actions-runner-linux-\$\{RUNNER_ARCH_NAME\}-\$\{RUNNER_VERSION\}\.tar\.gz"$/m,
+    `${SETUP_SCRIPT} must download the runner tarball named for the detected CPU`,
+  );
+  assert.match(
+    sh,
+    /^echo "\$\{RUNNER_SHA256\}  \$\{DL_DIR\}\/\$\{TARBALL\}" \| sha256sum -c - >\/dev\/null \|\| die /m,
+    `${SETUP_SCRIPT} must verify the runner tarball with sha256sum against the pinned RUNNER_SHA256, and stop on a mismatch`,
+  );
+  assert.match(sh, /node-\$\{NODE_VERSION\}-linux-\$\{NODE_ARCH\}\.tar\.xz/, `${SETUP_SCRIPT}: the Node fallback tarball must follow the CPU`);
+  assert.match(sh, /SHASUMS256\.txt/, `${SETUP_SCRIPT}: the Node fallback tarball must be checked against nodejs.org's SHASUMS256.txt`);
+
+  // The token: never traced, never printed, never written.
+  for (const { line, text } of code) {
+    assert.doesNotMatch(
+      text,
+      /^\s*set\s+(-[a-z]*x|-o\s+xtrace)\b/,
+      `${SETUP_SCRIPT}:${line} turns on shell tracing (${text.trim()}), which prints every command — the registration token with it.`,
+    );
+    if (!text.includes("RUNNER_TOKEN")) continue;
+    assert.doesNotMatch(
+      text,
+      /\b(echo|printf|tee|cat|logger)\b|(^|[^2])>/, // `2>/dev/null` (errors away) is the one redirect allowed
+      `${SETUP_SCRIPT}:${line} could print or write the registration token: ${text.trim()}`,
+    );
+    assert.ok(
+      SAFE_TOKEN_LINES.some((re) => re.test(text)),
+      `${SETUP_SCRIPT}:${line} uses RUNNER_TOKEN in a shape tests/ci-runner-switch.test.ts has not checked: ${text.trim()}. ` +
+        `If it is safe (the token can reach no terminal, log or file), add its exact shape to SAFE_TOKEN_LINES.`,
+    );
+  }
+  assert.ok(code.some(({ text }) => /^\s*read -rsp /.test(text)), `${SETUP_SCRIPT}: the token prompt must read with -s (hidden)`);
+
+  // The Windows half: ASCII (Windows PowerShell 5.1 reads a BOM-less file as ANSI), no drive letter but
+  // the user profile's own folders, and the runbook's paste block is this very file.
+  const ps1 = readFileSync(WINDOWS_SCRIPT, "utf8").replace(/\r\n/g, "\n");
+  assert.ok(/^[\x00-\x7F]*$/.test(ps1), `${WINDOWS_SCRIPT} must be plain ASCII — Windows PowerShell 5.1 mis-reads other characters.`);
+  for (const [i, text] of ps1.split("\n").entries()) {
+    if (/^\s*#/.test(text)) continue;
+    assert.doesNotMatch(
+      text,
+      /\b[A-Za-z]:[\\/]/,
+      `${WINDOWS_SCRIPT}:${i + 1} names a drive path (${text.trim()}). It may write only inside the user profile — ` +
+        `the owner's photos live on the laptop's other drives.`,
+    );
+  }
+  const doc = readFileSync(RUNNER_DOC, "utf8").replace(/\r\n/g, "\n");
+  assert.ok(
+    doc.includes("```powershell\n" + ps1.replace(/\n$/, "") + "\n```"),
+    `${RUNNER_DOC}'s PowerShell paste block no longer matches ${WINDOWS_SCRIPT}. The owner pastes the block, so copy the ` +
+      `script into it verbatim.`,
+  );
 }
 
 // ── THE JOB LEDGER: what one ci.yml run costs, per event ─────────────────────────────────────────
