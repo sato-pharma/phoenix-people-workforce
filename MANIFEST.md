@@ -60,7 +60,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/hw-0007-watch.mjs` | 3288 | `ee103abbcc26ab72` |
 | `scripts/hw-0008-watch.mjs` | 3327 | `e57cc2ccf5358d79` |
 | `scripts/hw-rep-tablet-location-watch.mjs` | 4557 | `9e4ba6a595ad8897` |
-| `scripts/import-account-sessions.mjs` | 16951 | `7154de9c34713510` |
+| `scripts/import-account-sessions.mjs` | 18732 | `35af339a45b20e95` |
 | `scripts/mem-watchdog.ps1` | 170018 | `55293b4b160afecd` |
 | `scripts/memory-fold-run.mjs` | 7031 | `66984146a7f0247f` |
 | `scripts/mesh-failover/mesh-dns-reconciler.mjs` | 5059 | `79d06719ab7a706c` |

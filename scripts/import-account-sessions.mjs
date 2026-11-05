@@ -9,6 +9,12 @@
 //   node "$env:USERPROFILE\.claude\scripts\import-account-sessions.mjs"           # dry run
 //   node "$env:USERPROFILE\.claude\scripts\import-account-sessions.mjs" --apply   # do it
 //   node "$env:USERPROFILE\.claude\scripts\import-account-sessions.mjs" --undo --apply   # take the last import back out
+//   node "$env:USERPROFILE\.claude\scripts\import-account-sessions.mjs" --into phoenixx.oag --account oagaweesh --apply
+//
+// --into <email, name or uuid> names the account to import INTO. Without it the target is the
+// account in ~/.claude.json, which is the CLI's last login, and the desktop app can be signed
+// into the OTHER account at the same time (2026-11-06: the app was phoenixx.oag, the CLI said
+// oagaweesh, so a plain run looked the wrong way round and reported "0 to import").
 //
 // The scheduled task "Claude Account Session Import - Hourly" runs it with --apply --quiet,
 // which prints nothing on a run that brings nothing in and appends every import to
@@ -85,13 +91,14 @@ const INCLUDE_ARCHIVED = has("--include-archived");
 const AS_JSON = has("--json");
 const QUIET = has("--quiet");
 const ONLY = val("--account");
+const INTO = val("--into");
 const SINCE = val("--since");
 const LIMIT = val("--limit") ? Number(val("--limit")) : null;
 
 for (const a of argv) {
   if (a.startsWith("--") &&
     !["--apply", "--undo", "--include-dead", "--include-archived", "--json", "--quiet",
-      "--account", "--since", "--limit", "--help", "-h"].includes(a)) {
+      "--account", "--into", "--since", "--limit", "--help", "-h"].includes(a)) {
     console.error(`unknown flag ${a} — refusing rather than guessing.`);
     process.exit(2);
   }
@@ -109,13 +116,42 @@ const cairo = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { timeZone: "Af
 
 // ---------------------------------------------------------------- who am I now
 const cfg = readJSON(CLI_CONFIG, {});
-const CURRENT = cfg?.oauthAccount?.accountUuid || null;
-const CURRENT_ORG = cfg?.oauthAccount?.organizationUuid || null;
+let CURRENT = cfg?.oauthAccount?.accountUuid || null;
+let CURRENT_ORG = cfg?.oauthAccount?.organizationUuid || null;
+const registry = readJSON(ACCOUNTS_FILE, { accounts: {} })?.accounts || {};
+if (INTO) {
+  const want = INTO.toLowerCase();
+  const hits = Object.entries(registry).filter(([id, a]) =>
+    [id, a.email || "", a.name || ""].some((v) => v && v.toLowerCase() === want) ||
+    (a.email || "").toLowerCase().startsWith(want + "@") || id.startsWith(want));
+  if (hits.length !== 1) {
+    console.error(`--into ${INTO} matches ${hits.length} accounts in ${ACCOUNTS_FILE}; need exactly one. Nothing done.`);
+    process.exit(2);
+  }
+  CURRENT = hits[0][0];
+  // An account can carry a stray org folder (phoenixx.oag has a one-record one from August);
+  // the live one is the folder holding the most session records.
+  const orgs = new Map();
+  for (const c of storeCandidates()) {
+    let names; try { names = fs.readdirSync(path.join(c, CURRENT)); } catch { continue; }
+    for (const o of names) {
+      try {
+        const n = fs.readdirSync(path.join(c, CURRENT, o)).filter((f) => f.startsWith("local_")).length;
+        orgs.set(o, Math.max(orgs.get(o) || 0, n));
+      } catch { /* not a folder */ }
+    }
+  }
+  const best = [...orgs].sort((a, b) => b[1] - a[1])[0];
+  if (!best || !best[1]) {
+    console.error(`--into ${INTO}: no session folder for ${CURRENT}. Nothing done.`);
+    process.exit(2);
+  }
+  CURRENT_ORG = best[0];
+}
 if (!CURRENT || !CURRENT_ORG) {
   console.error("Cannot tell which account is signed in (~/.claude.json has no oauthAccount). Nothing done.");
   process.exit(2);
 }
-const registry = readJSON(ACCOUNTS_FILE, { accounts: {} })?.accounts || {};
 const nameOf = (id) => {
   const a = registry[id];
   if (!a) return `an account last used from this machine (${id.slice(0, 8)})`;
