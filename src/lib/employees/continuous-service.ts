@@ -1,3 +1,5 @@
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
 /**
  * One person, two HR records: the EARLIER record's history belongs to the person's current account.
  *
@@ -34,8 +36,9 @@ const CONTINUOUS_SERVICE_LINKS: readonly ContinuousServiceLink[] = [
   { hrId: "PD-0039", earlierHrIds: ["AI-0009"], serviceStartDate: "2026-08-17", decidedOn: "2026-11-05" },
 ];
 
+/** The canonical key with its punctuation dropped: the portal's access ids carry no hyphen ("pd0039"). */
 function compactHrId(value: string | null | undefined): string {
-  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return (canonicalHrIdKey(value) ?? "").replace(/[^a-z0-9]+/g, "");
 }
 
 function linkFor(hrId: string | null | undefined): ContinuousServiceLink | null {
