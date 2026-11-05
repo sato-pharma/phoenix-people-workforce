@@ -2137,6 +2137,7 @@ import { runPhoenixCrmPlanEditRequestTests } from "./phoenix-crm-plan-edit-reque
 import { runPhoenixCrmApprovalNoticeTests } from "./phoenix-crm-approval-notices.test.ts";
 import { runPhoenixCrmDoubleVisitPlanTests } from "./phoenix-crm-double-visit-plan.test.ts";
 import { runPhoenixCrmManagerCustomerMarksTests } from "./phoenix-crm-manager-customer-marks.test.ts";
+import { runPhoenixCrmVisitTimesTests } from "./phoenix-crm-visit-times.test.ts";
 import { runPhoenixCrmManagerPlanTests } from "./phoenix-crm-manager-plan.test.ts";
 import { runPhoenixCrmManagerPlanSourceTests } from "./phoenix-crm-manager-plan-source.test.ts";
 import { runPhoenixCrmTrainingManagerPlanTests } from "./phoenix-crm-training-manager-plan.test.ts";
@@ -8237,6 +8238,11 @@ await runTest(
 await runTest(
   "Phoenix CRM manager plan board marks every customer (owner, 2026-10-23): the grade as the card edge, the rep's countable visits this month as pips against the grade's number (over drawn apart, never a bonus), his own visits with the rep and alone, a live marketing request that opens it — matched by the stored link or a unique name on the requester's own list — the groups a few of the shown customers share, and Go first on at most three behind their number or carrying a request; his own territories only, and the rep never sees any of it",
   runPhoenixCrmManagerCustomerMarksTests,
+);
+
+await runTest(
+  "Phoenix CRM Show visit times (owner, 2026-11-05): with the switch on, a manager's plan board shows each customer's saved days and hours, the rep's last visit with its time and whether he was on it, and his own last visit; the rep's own day adds the time to Last seen; an iReports360 copy never shows a clock; off reads and draws nothing new",
+  runPhoenixCrmVisitTimesTests,
 );
 
 await runTest(

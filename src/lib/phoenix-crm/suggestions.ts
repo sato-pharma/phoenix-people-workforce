@@ -78,6 +78,11 @@ export type PlannerInsight = {
   /** The latest of his iReports360 history and his own Phoenix visits. Null when neither holds one. */
   lastSeenOn: string | null;
   /**
+   * The real time of that last visit, when it was his own Phoenix visit — never an iReports360 copy, which has
+   * no clock. Shown only while "Show visit times" is on (owner, 2026-11-05). Absent or null: the day alone.
+   */
+  lastVisitAt?: string | null;
+  /**
    * The weekdays his iReports360 visits usually fell on (0 = Sunday … 6 = Saturday, Saturday first),
    * read only while he has no saved days and hours. Null once he has them, or when nothing is known.
    */
