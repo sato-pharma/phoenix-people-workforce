@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth/permissions";
 import { devSafePromiseAll } from "@/lib/utils/dev-safe-promise-all";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { continuousServiceStartDate, ownAndEarlierRecordHrIds } from "@/lib/employees/continuous-service";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { pushIdentityOf } from "@/lib/notifications/push-identity";
@@ -1127,7 +1128,7 @@ const resolvePortalCurrentUser = cache(async (access: AccessContext): Promise<Po
   return currentUser;
 });
 
-async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]> {
+async function fetchPortalPayslipsForOneRecord(hrId: string): Promise<PortalPayrollRecord[]> {
   const supabase = getSupabaseAdmin();
   const normalizedHrId = normalizeHrId(hrId) ?? "";
   const canonicalHrId = normalizeHrIdForAccess(normalizedHrId);
@@ -1209,6 +1210,18 @@ async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]>
     logPortalFailure("payroll query exception", { error, hr_id: normalizedHrId });
     return [];
   }
+}
+
+/**
+ * The employee's own payslips, and those paid under an earlier record of theirs before a re-hire
+ * (src/lib/employees/continuous-service.ts) — each row keeps the HR id it was paid under. Newest first.
+ */
+async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]> {
+  const hrIds = ownAndEarlierRecordHrIds(hrId);
+  if (hrIds.length <= 1) return fetchPortalPayslipsForOneRecord(hrId);
+  const lists = await Promise.all(hrIds.map((value) => fetchPortalPayslipsForOneRecord(value)));
+  const period = (record: PortalPayrollRecord) => (record.year ?? 0) * 100 + (record.month ?? 0);
+  return lists.flat().sort((left, right) => period(right) - period(left));
 }
 
 function resolvePortalBatchLabel(row: {
@@ -2307,7 +2320,9 @@ export const getEmployeePortalShellData = cache(async (access: AccessContext): P
       contractSignedDate: employmentJourney.contractSignedDate,
       daysUntilRenewal: employmentJourney.daysUntilRenewal,
       employmentStatus: employee.employmentStatus ?? "active",
-      hireDate: employee.hireDate,
+      // The first day of the person's unbroken service — an earlier record's, after a re-hire
+      // (continuous-service.ts). Payroll keeps reading employees.hire_date, never this.
+      hireDate: continuousServiceStartDate(employee.hrId, employee.hireDate),
       payrollEligibility: employee.netSalary || employee.grossSalary ? "Eligible" : "Pending",
       probationStatus,
       serviceDurationText: serviceDurationText(employmentJourney.serviceDurationDays),

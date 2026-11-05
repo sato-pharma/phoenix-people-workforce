@@ -1228,6 +1228,7 @@ import { runEmployeePortalPremiumDepthTests } from "./employee-portal-premium-de
 import { runNotificationAutoArchiveTests } from "./notification-auto-archive.test.ts";
 import { runVacationApprovalFlowTests } from "./vacation-approval-flow.test.ts";
 import { runVacationCalculationTests } from "./vacation-calculations.test.ts";
+import { runContinuousServiceTests } from "./continuous-service.test.ts";
 import { runVacationModuleTests } from "./vacation-module.test.ts";
 import { runVacationCairoTodayTests } from "./vacation-cairo-today.test.ts";
 import { runVacationPaidApprovalAtomicTests } from "./vacation-paid-approval-atomic.test.ts";
@@ -5617,6 +5618,7 @@ await runTest(
 await runTest("notification auto-archive (bell)", runNotificationAutoArchiveTests);
 await runTest("vacation approval flow", runVacationApprovalFlowTests);
 await runTest("vacation calculations", runVacationCalculationTests);
+await runTest("continuous service (a re-hired person's earlier record: payslips, leave and service start follow her, payroll does not)", runContinuousServiceTests);
 await runTest("vacation module", runVacationModuleTests);
 await runTest("vacation Cairo-today (balance-reference dates + Fri/Sat SLA weekday math)", runVacationCairoTodayTests);
 await runTest("vacation paid approval atomic", runVacationPaidApprovalAtomicTests);

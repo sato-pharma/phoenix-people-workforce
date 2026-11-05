@@ -162,7 +162,7 @@ async function readBalanceInputs(employeeHrId: string, periodStart: string, peri
 async function readLeaveBalance(input: { employeeHrId: string; hireDate: string | null; workDate: string; days: number }): Promise<BalanceRead> {
   const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: input.workDate });
   const seen = period ? await readBalanceInputs(input.employeeHrId, period.periodStart, period.periodEnd) : null;
-  const withinFirstSixMonths = isWithinFirstSixMonths({ hireDate: input.hireDate, referenceDate: input.workDate });
+  const withinFirstSixMonths = isWithinFirstSixMonths({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: input.workDate });
   const unreadable = (refusal: string): BalanceRead => ({
     coverableDays: 0,
     availableDays: null,
