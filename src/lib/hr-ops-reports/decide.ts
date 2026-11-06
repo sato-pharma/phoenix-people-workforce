@@ -14,7 +14,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage } from "@/lib/hr-id";
-import { assertNotTestAccount } from "@/lib/auth/test-persona";
+import { assertTestAccountWriteIsDryRun } from "@/lib/auth/test-dry-run";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -43,7 +43,7 @@ export type DecideResult = {
 const UNIQUE_VIOLATION = "23505";
 
 export async function decideLines(access: AccessContext, reportId: string, body: unknown): Promise<DecideResult> {
-  assertNotTestAccount(access);
+  await assertTestAccountWriteIsDryRun(access);
   const raw = (body ?? {}) as { decisions?: unknown };
   const list = Array.isArray(raw.decisions) ? raw.decisions : [body];
   if (list.length === 0) throw new HrOpsReportsError("Nothing to decide.");

@@ -5,6 +5,12 @@ import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
 import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
 import { phoenixDevPreviewCookieName } from "@/lib/auth/dev-preview";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session-token";
+import {
+  TEST_DRY_RUN_HEADER,
+  TEST_DRY_RUN_RESPONSE_HEADER,
+  noteTestDryRunSeen,
+  proxyMarksTestDryRun,
+} from "@/lib/auth/test-dry-run-rules";
 import { CANDIDATE_LINK_PARAM, PORTAL_CANDIDATES_PATH } from "@/lib/recruitment/candidate-page-link";
 import { resolvePortalCandidatesRedirectPath } from "@/lib/recruitment/portal-candidates-redirect";
 import {
@@ -494,6 +500,14 @@ function forwardRequest(request: NextRequest, pathname: string, search: string, 
     headers.set(CSP_NONCE_HEADER, pageCsp.nonce);
     headers.set("content-security-policy", pageCsp.policy);
   }
+  // THE TEST-ACCOUNT DRY RUN (src/lib/auth/test-dry-run-rules.ts): ours alone, so whatever arrived is
+  // dropped, and a test account's write outside Phoenix CRM is marked to run fully and save nothing.
+  headers.delete(TEST_DRY_RUN_HEADER);
+  const testDryRun = proxyMarksTestDryRun(request.method, pathname, request.headers.get("cookie"));
+  if (testDryRun) {
+    headers.set(TEST_DRY_RUN_HEADER, "1");
+    noteTestDryRunSeen();
+  }
 
   const intervention = isSecurityProxyPath(pathname) ? securityProxy(request) : null;
   if (intervention) return intervention;
@@ -508,10 +522,24 @@ function forwardRequest(request: NextRequest, pathname: string, search: string, 
     const url = request.nextUrl.clone();
     url.pathname = hrNamespaceRemainder(pathname);
     headers.set(SHELL_HEADER, "hr");
-    return NextResponse.rewrite(url, { request: { headers } });
+    return markTestDryRun(forwardRewrite(url, headers), testDryRun);
   }
 
+  return markTestDryRun(forwardPassThrough(headers), testDryRun);
+}
+
+function forwardRewrite(url: Parameters<typeof NextResponse.rewrite>[0], headers: Headers) {
+  return NextResponse.rewrite(url, { request: { headers } });
+}
+
+function forwardPassThrough(headers: Headers) {
   return NextResponse.next({ request: { headers } });
+}
+
+/** The page reads this and says the save ran every check and saved nothing (TestDryRunNotice). */
+function markTestDryRun<T extends NextResponse>(response: T, testDryRun: boolean): T {
+  if (testDryRun) response.headers.set(TEST_DRY_RUN_RESPONSE_HEADER, "1");
+  return response;
 }
 
 export const config = {

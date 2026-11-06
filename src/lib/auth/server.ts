@@ -7,6 +7,7 @@ import {
   type PhoenixRole,
   type TestPersonaLink,
 } from "@/lib/auth/permissions";
+import { grantTestDryRun } from "@/lib/auth/test-dry-run";
 import { assertNotTestAccount, assertTestAccountMayRun, canBeMirrored } from "@/lib/auth/test-persona";
 import { applySeatView, assertNotSeatView, assertSeatViewMayRun } from "@/lib/auth/seat-view";
 import { phoenixSeatViewCookieName } from "@/lib/auth/seat-view-constants";
@@ -766,7 +767,11 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // anywhere but Phoenix CRM would be written as her. Refused here, fail-closed; the routes' own
   // try/catch turns it into a 403 with the sentence (src/lib/auth/test-persona.ts) — which was FALSE
   // in 552 route files until 2026-10-02, see isForbiddenError below.
-  assertTestAccountMayRun(access, request);
+  // Since 2026-11-06 (owner: "Runs fully, saves nothing") a test account's other writes are not refused
+  // but run as a DRY RUN: proxy.ts marked the request and the fetch fence answers every write it makes
+  // (src/lib/auth/test-dry-run.ts). Only a marked request with the fence proven live is let through —
+  // anything else is still refused here, exactly as before.
+  if (!(access.testPersona && grantTestDryRun(request.headers))) assertTestAccountMayRun(access, request);
   // THE SEAT VIEW WRITE GUARD — the same choke point for the Super Admin's read-only View as Seat:
   // every write is refused except leaving the view, and so are reads that would leave a row behind.
   assertSeatViewMayRun(access, request);
@@ -830,7 +835,10 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   const access = await resolveAccessContextFromPageInner();
   // A server action arrives as a POST to a PAGE, which the API guard above never sees. Next marks
   // it with the `next-action` header; a test account never runs one.
-  if (access.testPersona && (await headers()).get("next-action")) assertNotTestAccount(access);
+  // Since 2026-11-06 it runs as a dry run when proxy.ts marked it and the fence is live (see above).
+  if (access.testPersona && (await headers()).get("next-action") && !grantTestDryRun(await headers())) {
+    assertNotTestAccount(access);
+  }
   // A seat view refuses a server action AND a form posted before the page's script loaded — the same
   // two signals that keep a write off the session copy (pageRequestMayUseRecentCopy).
   if (access.seatView && !pageRequestMayUseRecentCopy(await headers())) assertNotSeatView(access);

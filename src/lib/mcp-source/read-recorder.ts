@@ -93,7 +93,7 @@ export function installReadRecorder(): void {
   if (holder[installed]) return;
   const original = globalThis.fetch;
   holder[installed] = true;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const wrapper = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const recorder = scope.getStore();
     const described = recorder ? describeRestUrl(urlOf(input)) : null;
     if (!recorder || !described) return original(input, init);
@@ -119,6 +119,10 @@ export function installReadRecorder(): void {
       throw error;
     }
   }) as typeof fetch;
+  // Names the fetch it wraps, so the test-account fence can still prove it is in the chain
+  // (testDryRunFenceIsLive, src/lib/auth/test-dry-run.ts) — otherwise its saves would be refused.
+  (wrapper as unknown as Record<string, unknown>).__phoenixWrappedFetch = original;
+  globalThis.fetch = wrapper;
 }
 
 export type RecordedRun<T> =

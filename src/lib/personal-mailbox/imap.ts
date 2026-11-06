@@ -8,6 +8,7 @@
 import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
 
+import { isTestDryRunRequest } from "@/lib/auth/test-dry-run";
 import { logError } from "@/lib/observability/log";
 import {
   embedInlineImages,
@@ -321,6 +322,8 @@ export async function ensureCopyInSent(
   raw: Buffer,
   messageId: string,
 ): Promise<"already_filed" | "appended"> {
+  // IMAP is not fetch either: a test account's dry run files nothing (src/lib/auth/test-dry-run.ts).
+  if (await isTestDryRunRequest()) return "already_filed";
   return withClient(credential, async (client) => {
     const path = await folderPath(client, "sent");
     if (await sentHasMessage(client, path, messageId)) return "already_filed";
