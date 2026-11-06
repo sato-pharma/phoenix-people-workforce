@@ -150,10 +150,14 @@ function acquireLock() {
  * `only` limits the walk to these folders (each must sit inside a source root) — the pre-delete
  * hook passes the one scratchpad a command touches, because a full walk is ~70k entries and ~8s.
  */
-export function sweep({ only = null, skipChrome = false } = {}) {
+export function sweep({ only = null, skipChrome = false, quiet = false } = {}) {
   fs.mkdirSync(ARCHIVE, { recursive: true });
-  if (!acquireLock()) { say('another sweep is running — skipped'); return null; }
+  // quiet: the delete guard calls this inside a PreToolUse hook, whose stdout must be its decision alone.
+  if (!acquireLock()) { if (!quiet) say('another sweep is running — skipped'); return null; }
   const counts = { seen: 0, copied: 0, versions: 0, unchanged: 0, failed: 0 };
+  // The index is ~12 MB: writing it back costs ~100 ms and the pre-delete hook paid it on every call,
+  // even when nothing was recorded (measured 2026-11-06). Only a sweep that changed it writes it.
+  let changed = false;
   try {
     let index = {};
     try { index = JSON.parse(fs.readFileSync(INDEX, 'utf8')); } catch {}
@@ -178,6 +182,7 @@ export function sweep({ only = null, skipChrome = false } = {}) {
             // Same bytes already archived (e.g. only the timestamp moved): record it, copy nothing.
             if (fs.statSync(dest).size === st.size && sha1(dest) === sha1(src)) {
               index[key] = { size: st.size, mtimeMs: st.mtimeMs, dest: prev?.dest ?? dest };
+              changed = true;
               counts.unchanged++;
               continue;
             }
@@ -186,6 +191,7 @@ export function sweep({ only = null, skipChrome = false } = {}) {
           }
           copyNoClobber(src, dest, st);
           index[key] = { size: st.size, mtimeMs: st.mtimeMs, dest };
+          changed = true;
           counts.copied++;
         } catch (e) {
           counts.failed++;
@@ -193,9 +199,11 @@ export function sweep({ only = null, skipChrome = false } = {}) {
         }
       }
     }
-    const tmp = `${INDEX}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(index));
-    fs.renameSync(tmp, INDEX);
+    if (changed) {
+      const tmp = `${INDEX}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(index));
+      fs.renameSync(tmp, INDEX);
+    }
     if (counts.copied || counts.failed) logLine(`sweep: ${JSON.stringify(counts)}`);
     return counts;
   } finally {

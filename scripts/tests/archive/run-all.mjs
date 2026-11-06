@@ -22,11 +22,17 @@
 //   test-sweep-reuse    the guard's sweep-then-verify speed-up (2026-11-06): an unchanged sweep
 //                      does not rewrite the index, a copy is still written down, verify on the
 //                      reused state still finds a LOST document, and a skipped sweep is never reused
+//   test-busy-lock      while ANOTHER sweep holds the lock the guard still copies new and edited
+//                      documents before a wipe (without the index), denies one it cannot copy, and
+//                      keeps its stdout the decision alone — a stray line there dropped the deny
+//   test-scratch-paths  the scratchpad half (2026-11-06): Git Bash /c/ and /tmp/ paths get the one-folder
+//                      sweep, unreadable forms keep the full one, a /c/ repository is archived, and
+//                      the scratchpad index is written only when it changed
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
-const SUITES = ["test-lock.mjs", "test-lock-window.mjs", "test-verify.mjs", "test-scan.mjs", "test-sibling-lock.mjs", "test-guard-verify.mjs", "test-ownpath-repair.mjs", "test-prune-pointers.mjs", "test-history-guard.mjs", "test-sweep-reuse.mjs"];
+const SUITES = ["test-lock.mjs", "test-lock-window.mjs", "test-verify.mjs", "test-scan.mjs", "test-sibling-lock.mjs", "test-guard-verify.mjs", "test-ownpath-repair.mjs", "test-prune-pointers.mjs", "test-history-guard.mjs", "test-sweep-reuse.mjs", "test-busy-lock.mjs", "test-scratch-paths.mjs"];
 
 let failed = 0, skipped = 0;
 for (const s of SUITES) {

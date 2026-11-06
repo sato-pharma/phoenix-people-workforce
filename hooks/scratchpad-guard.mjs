@@ -270,19 +270,28 @@ if (mode === 'pre') {
     // Scoped, because a full walk is ~8s and this runs before the command.
     const cwd = String(input.cwd ?? '');
     const SCRATCH = /[A-Za-z]:[\\/]+Users[\\/]+[^\\/]+[\\/]+AppData[\\/]+Local[\\/]+Temp[\\/]+claude[\\/]+[^\\/\s"'`]+[\\/]+[^\\/\s"'`]+/gi;
-    const dirs = [...`${cmd}\n${cwd}`.matchAll(SCRATCH)].map((m) => m[0]);
+    // Git Bash spells the same folders /c/Users/... and /tmp/... (cygpath: /tmp IS %TEMP%). Unread, those
+    // fell to the FULL walk of every scratchpad below — 214 times in three days to 2026-11-06. Read here as the
+    // C:/... form they are, so they get the same one-folder sweep. $TMPDIR is left alone: it is not
+    // %TEMP% in every session, and a wrong guess would sweep the wrong folder instead of every folder.
+    const TEMP_DIR = String(process.env.TEMP ?? '').replace(/\\/g, '/');
+    const asWindows = input.tool_name === 'PowerShell' ? cmd : cmd
+      .replace(/(^|[\s"'`=(;|&])\/tmp(?=\/)/g, (m, lead) => (TEMP_DIR ? lead + TEMP_DIR : m))
+      .replace(/(^|[\s"'`=(;|&])\/([A-Za-z])(?=\/)/g, '$1$2:');
+    const dirs = [...`${asWindows}\n${cwd}`.matchAll(SCRATCH)].map((m) => m[0]);
     const touchesScratch = dirs.length || /scratchpad|temp[\\/]+claude|scratch-workspaces/i.test(cmd);
     if (touchesScratch) {
       const { sweep } = await import(`file:///${ARCHIVER}`);
       // Chrome-profile icons (~70k entries) are walked only when the command targets a chrome-* folder;
       // the Stop and hourly sweeps always cover them.
       const skipChrome = !/chrome-/i.test(cmd);
-      sweep(dirs.length ? { only: [...new Set(dirs)], skipChrome } : { skipChrome });
+      sweep(dirs.length ? { only: [...new Set(dirs)], skipChrome, quiet: true } : { skipChrome, quiet: true });
     }
 
     // Same for a git repository: archive the repository (or worktree) the command or its folder touches.
-    const { repoFor, sweepRepos, verify } = await import(`file:///${REPO_ARCHIVER}`);
-    const places = [cwd, ...[...cmd.matchAll(/"([A-Za-z]:[\\/][^"]*)"|'([A-Za-z]:[\\/][^']*)'|([A-Za-z]:[\\/][^\s"'`;|&)]*)/g)].map((m) => m[1] ?? m[2] ?? m[3])];
+    const { repoFor, sweepRepos, verify, archiveUnlocked } = await import(`file:///${REPO_ARCHIVER}`);
+    // asWindows, so a repository named as /c/... is archived too, as its C:/... spelling always was.
+    const places = [cwd, ...[...asWindows.matchAll(/"([A-Za-z]:[\\/][^"]*)"|'([A-Za-z]:[\\/][^']*)'|([A-Za-z]:[\\/][^\s"'`;|&)]*)/g)].map((m) => m[1] ?? m[2] ?? m[3])];
     const task = cmd.match(/new-session\.mjs[^\n]*--remove\s+["']?([\w.-]+)/i)?.[1];
     const repos = new Map();
     for (const p of places.filter(Boolean)) {
@@ -291,7 +300,28 @@ if (mode === 'pre') {
       // new-session.mjs --remove <task> deletes the sibling worktree _wt-<task>.
       if (r && task) { const wt = repoFor(path.join(path.dirname(r.main), `_wt-${task}`)); if (wt) repos.set(wt.dir.toLowerCase(), wt); }
     }
-    if (repos.size) sweepRepos({ only: [...repos.values()] });
+    // Another sweep holding the lock used to mean nothing was archived before the delete (2026-11-06,
+    // ~100 times in two days). Now the new and changed documents are copied anyway, without the index.
+    let unlocked = null;
+    if (repos.size && sweepRepos({ only: [...repos.values()], quiet: true }) === null) unlocked = archiveUnlocked({ only: [...repos.values()] });
+    if (wipes && unlocked?.failed.length) {
+      const names = unlocked.failed.slice(0, 8).map((f) => path.basename(f.src));
+      logLine(`WIPE DENIED in ${input.cwd ?? '?'}: ${unlocked.failed.length} document(s) could not be copied while another sweep ran ` +
+        `[${names.join(', ')}] :: ${cmd.slice(0, 200)}`);
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            `This command destroys working-tree files, and ${unlocked.failed.length} protected document(s) in that repository ` +
+            'could not be copied into F:/Claude Scratchpad Archive first (another archive sweep was running, so the guard copied ' +
+            `them itself, and these copies failed): ${names.join(', ')}` +
+            (unlocked.failed.length > names.length ? `, and ${unlocked.failed.length - names.length} more` : '') +
+            `. First error: ${unlocked.failed[0].error}. Run the same command again in a minute, once the sweep has finished.`,
+        },
+      }));
+      process.exit(0);
+    }
 
     // ── AND THEN: IS EVERY DOCUMENT IN THAT TREE ACTUALLY HELD? ────────────────────────────────
     //

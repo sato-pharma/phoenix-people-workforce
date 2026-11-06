@@ -34,7 +34,9 @@ const old = Date.now() - 16 * 60 * 1000;
 fs.utimesSync(LOCK, new Date(old), new Date(old));
 check("stale lock: taken over and the sweep runs", sweep({ only: [] }) !== null);
 check("stale lock: released in the finally block", !fs.existsSync(LOCK));
-const logAfter = fs.existsSync(LOG) ? fs.readFileSync(LOG, "utf8").slice(logBefore) : "";
+// logBefore is a BYTE size, so the new part is cut as bytes: the log holds non-ASCII text (dashes, Arabic
+// file names), and cutting the decoded string at a byte count skipped the new line (fixed 2026-11-06).
+const logAfter = fs.existsSync(LOG) ? fs.readFileSync(LOG).subarray(logBefore).toString("utf8") : "";
 check("stale lock: the takeover is logged", /took over a stale lock \(9[0-9][0-9]s old\)/.test(logAfter),
   logAfter.trim().split("\n").pop() ?? "");
 

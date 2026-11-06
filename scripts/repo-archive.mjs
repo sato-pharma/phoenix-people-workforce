@@ -332,10 +332,13 @@ function recoverDeleted(r, ix, counts) {
  * `only`: repo objects (from repoFor) — the pre-delete hook passes just the repository a command touches.
  * `history`: also recover files deleted in git history (one pass per main repository).
  */
-export function sweepRepos({ only = null, history = false, refresh = false } = {}) {
+export function sweepRepos({ only = null, history = false, refresh = false, quiet = false } = {}) {
   lastSweep = null; // a skipped or failed sweep leaves nothing for verify to reuse
   fs.mkdirSync(ARCHIVE, { recursive: true });
-  if (!acquireLock()) { say('another repository sweep is running — skipped'); return null; }
+  // 🔴 quiet: the delete guard calls this inside a PreToolUse hook, whose stdout IS its decision. This line
+  // printed there made the answer unparseable, so a deny issued after a skipped sweep was thrown away
+  // (found 2026-11-06; the transcripts carried this line as hook output ~100 times in two days).
+  if (!acquireLock()) { if (!quiet) say('another repository sweep is running — skipped'); return null; }
   resetArchiveCache(); // a sweep must not answer "held nowhere" from a map built before it started
   const counts = { repos: 0, seen: 0, copied: 0, versions: 0, unchanged: 0, alreadyHeld: 0, repointed: 0, deletions: 0, recovered: 0, unreadable: 0, failed: 0 };
   try {
@@ -355,6 +358,68 @@ export function sweepRepos({ only = null, history = false, refresh = false } = {
   } finally {
     try { fs.rmSync(LOCK, { force: true }); } catch {}
   }
+}
+
+/**
+ * The delete guard's fallback when sweepRepos is SKIPPED because another sweep holds the lock.
+ *
+ * 🔴 THE GAP THIS CLOSES (owner, 2026-11-06: "ok fix the gap"). A skipped sweep used to mean the
+ * guard archived nothing before the delete, and verify cannot see the hole: a document added since
+ * the last sweep has no index entry, so it reads "unswept", not LOST; a document edited since then
+ * still finds its OLD version and reads "held". Either one could go with the worktree uncopied. The
+ * logs showed ~100 skipped guard sweeps in two days — a session ending starts the full sweep.
+ *
+ * So every document in these trees that is new or changed since the index last saw it is copied
+ * into the archive HERE, without the lock, because the lock guards only the index and this never
+ * writes it. The copy lands at its own `_by-source` path (or a .v<stamp> beside it), where the next
+ * locked sweep finds the same bytes and records them. Nothing is deleted or overwritten: a copy
+ * racing the running sweep onto the same path loses COPYFILE_EXCL and is compared, never clobbered.
+ *
+ * Returns { seen, unchanged, held, copied, failed: [{ src, error }] }. The guard denies a wipe when
+ * `failed` is not empty — a document it could not copy is a document the wipe could take.
+ */
+export function archiveUnlocked({ only }) {
+  const ix = loadIndex(); // read only
+  const out = { seen: 0, unchanged: 0, held: 0, copied: 0, failed: [] };
+  for (const r of only) {
+    const files = [];
+    walkRepo(r.dir, files);
+    const shas = ix.shas[r.label] ?? {};
+    for (const src of files) {
+      out.seen++;
+      try {
+        const st = fs.statSync(src);
+        const prev = ix.files[src.toLowerCase()];
+        if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) { out.unchanged++; continue; }
+        const buf = fs.readFileSync(src);
+        const sha = hash(buf);
+        const recorded = shas[sha];
+        if (recorded && fs.existsSync(recorded)) { out.held++; continue; }
+        const same =(p) => { try { return fs.statSync(p).size === buf.length && hash(fs.readFileSync(p)) === sha; } catch { return false; } };
+        let dest = path.join(ARCHIVE, '_by-source', extOf(src), '_repos', r.label, path.relative(r.dir, src));
+        let done = false;
+        for (let attempt = 0; attempt < 3 && !done; attempt++) {
+          if (fs.existsSync(dest)) {
+            if (same(dest)) { out.held++; done = true; break; }
+            dest = versioned(dest, st.mtimeMs);
+          }
+          try {
+            copyNoClobber(src, dest, st);
+            out.copied++;
+            done = true;
+          } catch (e) {
+            if (e.code !== 'EEXIST') throw e; // anything else is a real failure, reported below
+          }
+        }
+        if (!done) throw new Error('lost the race for a free archive path three times');
+      } catch (e) {
+        out.failed.push({ src, error: e.message });
+        logLine(`unlocked copy FAILED ${src}: ${e.message}`);
+      }
+    }
+  }
+  if (out.copied || out.failed.length) logLine(`unlocked (another sweep held the lock): ${JSON.stringify({ ...out, failed: out.failed.length })}`);
+  return out;
 }
 
 /**
