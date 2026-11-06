@@ -91,16 +91,26 @@ export async function runDailyDeductionsRangeAndClipTests(): Promise<void> {
     );
   }
 
-  // ── The default range: 21st of the previous month → today ────────────────
+  // ── The default range: the OPEN Head Office cycle, 22nd → today ──────────
   {
     assert.deepEqual(
+      resolveDefaultRange("2026-11-07"),
+      { from: "2026-10-22", to: "2026-11-07" },
+      "REGRESSION: the default opens on the 22nd — the 21st belongs to the cycle that already closed",
+    );
+    assert.deepEqual(
+      resolveDefaultRange("2026-11-21"),
+      { from: "2026-10-22", to: "2026-11-21" },
+      "the 21st is still inside the cycle that opened on the 22nd of last month",
+    );
+    assert.deepEqual(
       resolveDefaultRange("2026-09-22"),
-      { from: "2026-08-21", to: "2026-09-22" },
-      "the default window opens on the pay cutoff — the 21st of the previous month",
+      { from: "2026-09-22", to: "2026-09-22" },
+      "from the 22nd a new cycle is open, so the window starts this month, never a month back",
     );
     assert.deepEqual(
       resolveDefaultRange("2026-01-05"),
-      { from: "2025-12-21", to: "2026-01-05" },
+      { from: "2025-12-22", to: "2026-01-05" },
       "the default window rolls the year back across January",
     );
   }
@@ -250,5 +260,43 @@ export async function runDailyDeductionsRangeAndClipTests(): Promise<void> {
       "no tally row carries an empty compact HR id",
     );
     assert.deepEqual(agg.amountUnknownEmployees, ["Mona"], "the amount-unknown employee is named for the operator");
+    const mona = agg.lines.find((line) => line.employeeName === "Mona");
+    assert.equal(mona?.amountUnknown, true, "the unpriced row is marked, so it can be held back from release");
+    assert.equal(
+      agg.lines.find((line) => line.employeeName === "Sara")?.amountUnknown,
+      false,
+      "a priced row is not marked",
+    );
+  }
+
+  // ── A CRM row cut by the range is priced on WEIGHTED days (audit, 2026-11-07) ──
+  // Base 15,000 in a 31-day October is 483.87 a day. Mon 19 + Thu 22 Oct is 1.5 days = 725.81. The
+  // default range opens inside it, so keeping one date and sharing the money by COUNT charged the
+  // Thursday 362.91 (a full half of the money) where it is worth 241.94, and the Monday 362.91 where
+  // it is worth 483.87 — and told the employee "1 day" for a half day.
+  {
+    const crm = draft({
+      category: "crm",
+      sourceSystem: "crm_visits_mirror",
+      monthKey: "2026-10",
+      month: 10,
+      dates: ["2026-10-19", "2026-10-22"],
+      rawValue: 2,
+      estimatedAmount: 725.81,
+    });
+    const thursday = clipDraftToRange(crm, "2026-10-21", "2026-10-31")!;
+    assert.deepEqual(thursday.dates, ["2026-10-22"]);
+    assert.equal(thursday.amount, 241.94, "REGRESSION: a kept Thursday is charged as the half day it weighs");
+    assert.equal(thursday.daysCount, 0.5, "and counted as half a day, the figure the employee is emailed");
+
+    const monday = clipDraftToRange(crm, "2026-10-01", "2026-10-20")!;
+    assert.equal(monday.amount, 483.87, "a kept full day is charged as a full day");
+    assert.equal(monday.daysCount, 1);
+
+    const whole = clipDraftToRange(crm, "2026-10-01", "2026-10-31")!;
+    assert.equal(whole.amount, 725.81, "an uncut CRM row is the connector's own figure to the piaster");
+
+    const fingerprint = clipDraftToRange({ ...crm, category: "fingerprint", sourceSystem: "fingerprint" }, "2026-10-21", "2026-10-31")!;
+    assert.equal(fingerprint.daysCount, 1, "every other category keeps the plain kept fraction");
   }
 }

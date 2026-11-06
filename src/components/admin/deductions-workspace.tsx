@@ -1,13 +1,14 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, Download, PlayCircle, RotateCcw, UserMinus, UserPlus, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, Download, PlayCircle, RotateCcw, Search, UserMinus, UserPlus, XCircle } from "lucide-react";
 
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
   daysForTickedDates,
   resolveAppliedDeductionDates,
   scaleDeductionAmountToDays,
+  scaleDeductionAmountToKeptDates,
 } from "@/lib/deductions/calculations.ts";
 import {
   isLeaveBalanceCategory,
@@ -21,9 +22,16 @@ import {
   type DeductionCycle,
 } from "@/lib/deductions/cycle.ts";
 import { findSameDayOverlaps, type SameDayOverlap } from "@/lib/deductions/day-overlap.ts";
-import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { formatStableEnGb, stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import {
+  adminChipDepthClassName,
+  adminPanelDepthClassName,
+  adminPanelHeaderClassName,
+} from "@/components/admin/admin-design-tokens";
+import { DeductionsConfirmDialog } from "@/components/admin/deductions-confirm-dialog";
 import {
   phxButtonApproveDenseClassName,
+  phxButtonDangerDenseClassName,
   phxFieldClassName,
   phxLabelClassName,
   phxRequiredMarkClassName,
@@ -240,11 +248,26 @@ function appliedDaysOf(row: CandidateApiRow): number {
 function appliedAmountOf(row: CandidateApiRow): number | null {
   if (row.decision?.appliedAmount != null) return row.decision.appliedAmount;
   if (row.unit !== "days") return row.estimatedAmount;
-  return scaleDeductionAmountToDays({
-    estimatedAmount: row.estimatedAmount,
-    rawValue: row.rawValue,
-    appliedDays: appliedDaysOf(row),
-  });
+  return amountForDays(row, appliedDaysOf(row), row.decision?.appliedDates ?? null);
+}
+
+/**
+ * What a quantity costs on this row — the same rule the server applies on save. A quantity that
+ * follows the ticks is priced on what the ticked days WEIGH (a CRM Thursday is half a day); a
+ * quantity the reviewer typed over the ticks scales by the count.
+ */
+function amountForDays(row: CandidateApiRow, days: number, tickedDates: readonly string[] | null): number | null {
+  if (tickedDates != null && days === tickedDays(row, tickedDates.length)) {
+    return scaleDeductionAmountToKeptDates({
+      appliedDays: days,
+      category: row.category,
+      detectedDates: row.dates ?? [],
+      estimatedAmount: row.estimatedAmount,
+      keptDates: tickedDates,
+      rawValue: row.rawValue,
+    });
+  }
+  return scaleDeductionAmountToDays({ estimatedAmount: row.estimatedAmount, rawValue: row.rawValue, appliedDays: days });
 }
 
 /**
@@ -291,14 +314,14 @@ function DeductionDaysEditor({
   const spansMonths = rowSpansMonths(row);
   const parsedQuantity = Number(quantity);
   const quantityValid = quantity.trim() !== "" && Number.isFinite(parsedQuantity) && parsedQuantity >= 0;
-  const overDetected = quantityValid && row.unit === "days" && parsedQuantity > row.rawValue;
+  // A day count is capped at what was detected; an amount at what was entered (the server refuses both).
+  const enteredAmount = Math.max(row.rawValue || 0, row.estimatedAmount ?? 0);
+  const overDetected =
+    quantityValid &&
+    (row.unit === "days" ? parsedQuantity > row.rawValue : enteredAmount > 0 && parsedQuantity > enteredAmount);
   const previewAmount =
     quantityValid && !overDetected
-      ? scaleDeductionAmountToDays({
-          estimatedAmount: row.estimatedAmount,
-          rawValue: row.rawValue,
-          appliedDays: parsedQuantity,
-        })
+      ? amountForDays(row, parsedQuantity, selected)
       : null;
 
   function toggleDay(date: string) {
@@ -328,7 +351,11 @@ function DeductionDaysEditor({
       return;
     }
     if (overDetected) {
-      setError(`Only ${row.rawValue} day(s) were detected — you cannot deduct more than that.`);
+      setError(
+        row.unit === "days"
+          ? `Only ${row.rawValue} day(s) were detected — you cannot deduct more than that.`
+          : `The entry is for ${money(enteredAmount)} EGP — you cannot deduct more than that here. Change the entry itself.`,
+      );
       return;
     }
     setSaving(true);
@@ -550,7 +577,9 @@ function DeductionDaysEditor({
 
       {overDetected ? (
         <p className="text-phx-xs font-bold text-red-700">
-          Only {row.rawValue} day(s) were detected for this employee — you cannot deduct more than that.
+          {row.unit === "days"
+            ? `Only ${row.rawValue} day(s) were detected for this employee — you cannot deduct more than that.`
+            : `The entry is for ${money(enteredAmount)} EGP — you cannot deduct more than that here.`}
         </p>
       ) : null}
 
@@ -660,6 +689,18 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
+/**
+ * Each decision reads as what it does: Approve is the approve green (it charges the employee),
+ * Disputed the danger red, the other two neutral. Four identical black buttons made "Approve for
+ * Payroll" and "Do Not Take Action" — the two opposite answers — look the same at a glance.
+ */
+function decisionButtonTone(status: (typeof DECISION_STATUSES)[number]): string {
+  if (status === "Approved for Payroll") return phxButtonApproveDenseClassName;
+  if (status === "Disputed") return phxButtonDangerDenseClassName;
+  if (status === "Needs Follow-up") return "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100";
+  return "border-slate-300 bg-white text-slate-700 hover:border-slate-500";
+}
+
 function CandidateDecideRow({
   row,
   canDecide,
@@ -731,7 +772,10 @@ function CandidateDecideRow({
           <div className="flex flex-wrap gap-1.5">
             {DECISION_STATUSES.map((status) => (
               <button
-                className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+                className={cn(
+                  "border px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] transition disabled:opacity-50",
+                  decisionButtonTone(status),
+                )}
                 disabled={submitting}
                 key={status}
                 onClick={() => decide(status)}
@@ -1625,8 +1669,57 @@ function AddManualDeduction({
   );
 }
 
+type TabTotals = Record<"approved" | "pending" | "notTaken" | "open", { count: number; amount: number }>;
+
+/** One tab's rows added up by decision. An amount the engine could not compute adds nothing. */
+function summarizeTabRows(rows: readonly CandidateApiRow[]): TabTotals {
+  const totals: TabTotals = {
+    approved: { count: 0, amount: 0 },
+    pending: { count: 0, amount: 0 },
+    notTaken: { count: 0, amount: 0 },
+    open: { count: 0, amount: 0 },
+  };
+  for (const row of rows) {
+    const status = row.decision?.decisionStatus ?? "Pending";
+    const bucket =
+      status === "Approved for Payroll"
+        ? totals.approved
+        : status === "Do Not Take Action"
+          ? totals.notTaken
+          : status === "Pending"
+            ? totals.pending
+            : totals.open;
+    bucket.count += 1;
+    bucket.amount += appliedAmountOf(row) ?? 0;
+  }
+  for (const bucket of Object.values(totals)) bucket.amount = Math.round(bucket.amount * 100) / 100;
+  return totals;
+}
+
+function TabTotalCell({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "approve" | "warn" | "plain" | "danger";
+  value: { count: number; amount: number };
+}) {
+  const ink =
+    tone === "approve" ? "text-emerald-700" : tone === "warn" ? "text-amber-700" : tone === "danger" ? "text-rose-700" : "text-slate-600";
+  return (
+    <div className="bg-white px-4 py-2.5">
+      <p className={cn("text-phx-2xs font-black uppercase tracking-[0.1em]", ink)}>{label}</p>
+      <p className="mt-0.5 text-base font-black tabular-nums text-slate-900">{money(value.amount)} EGP</p>
+      <p className="text-xs font-semibold text-slate-500">
+        {value.count} candidate{value.count === 1 ? "" : "s"}
+      </p>
+    </div>
+  );
+}
+
 function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCategory; monthKey: string; canDecide: boolean }) {
-  const [rows, setRows] = useState<CandidateApiRow[]>([]);
+  const [allRows, setAllRows] = useState<CandidateApiRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // One open editor at a time. A month can carry hundreds of candidates, each
@@ -1639,8 +1732,36 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   // Ticked candidate ids for the bulk decision. Ids that are no longer decidable (a refetch, a
   // push) simply drop out of `selectedRows` below, so a stale tick can never be decided.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
-  // Rows that charge the same employee on the same day as another row on this tab.
-  const overlaps = useMemo(() => findSameDayOverlaps(rows), [rows]);
+  // Rows that charge the same employee on the same day as another row on this tab — measured over
+  // EVERY row, never only the filtered ones, or a filter would hide the clash it should explain.
+  const overlaps = useMemo(() => findSameDayOverlaps(allRows), [allRows]);
+  // Narrowing what is SHOWN. A filter never changes what publish commits; a ticked row the filter
+  // hides drops out of the selection below, so it can never be decided unseen.
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Pending" | (typeof DECISION_STATUSES)[number]>("all");
+  const [sortBy, setSortBy] = useState<"name" | "amount" | "days">("name");
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const filtered = allRows.filter((row) => {
+      if (statusFilter !== "all" && (row.decision?.decisionStatus ?? "Pending") !== statusFilter) return false;
+      if (needle && !employeeLabel(row).toLowerCase().includes(needle)) return false;
+      return true;
+    });
+    const sorted = [...filtered];
+    if (sortBy === "amount") sorted.sort((a, b) => (appliedAmountOf(b) ?? 0) - (appliedAmountOf(a) ?? 0));
+    else if (sortBy === "days") sorted.sort((a, b) => appliedDaysOf(b) - appliedDaysOf(a));
+    else sorted.sort((a, b) => employeeLabel(a).localeCompare(employeeLabel(b)));
+    return sorted;
+  }, [allRows, search, sortBy, statusFilter]);
+  const tabTotals = useMemo(() => summarizeTabRows(allRows), [allRows]);
+  const statusCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of allRows) {
+      const status = row.decision?.decisionStatus ?? "Pending";
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+    return counts;
+  }, [allRows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1649,7 +1770,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
     setError(null);
     fetchJson<{ candidates: CandidateApiRow[] }>(`/api/admin/deductions/candidates?monthKey=${monthKey}&category=${category}`)
       .then((payload) => {
-        if (!cancelled) setRows(payload.candidates);
+        if (!cancelled) setAllRows(payload.candidates);
       })
       .catch((loadError) => {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Unable to load candidates.");
@@ -1663,13 +1784,13 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   }, [category, monthKey, reloadToken]);
 
   function handleDecided(candidateId: string, decision: CandidateApiRow["decision"]) {
-    setRows((current) => current.map((row) => (row.id === candidateId ? { ...row, decision } : row)));
+    setAllRows((current) => current.map((row) => (row.id === candidateId ? { ...row, decision } : row)));
   }
 
   // Push and withdraw flip one candidate's active-line id in place, so the row
   // moves between "Push" and "Pushed ✓ · Withdraw" without a full refetch.
   function handlePushChange(candidateId: string, pushedLineId: string | null) {
-    setRows((current) => current.map((row) => (row.id === candidateId ? { ...row, pushedLineId } : row)));
+    setAllRows((current) => current.map((row) => (row.id === candidateId ? { ...row, pushedLineId } : row)));
   }
 
   const config = DEDUCTIONS_CATEGORY_CONFIG[category];
@@ -1706,10 +1827,14 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   }
 
   return (
-    <div className="border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-900 px-5 py-3">
+    <div className={cn("border border-slate-200 bg-white", adminPanelDepthClassName)}>
+      <div className={cn("flex flex-wrap items-center justify-between gap-2 px-5 py-3", adminPanelHeaderClassName)}>
         <h2 className="text-xs font-black uppercase tracking-[0.14em] text-white">
-          {loading ? "Loading…" : `${rows.length} ${config.label} candidate${rows.length === 1 ? "" : "s"}`}
+          {loading
+            ? "Loading…"
+            : rows.length === allRows.length
+              ? `${allRows.length} ${config.label} candidate${allRows.length === 1 ? "" : "s"}`
+              : `${rows.length} of ${allRows.length} ${config.label} candidates shown`}
         </h2>
         <div className="flex items-center gap-2">
           {!config.requiresApproval ? (
@@ -1741,6 +1866,68 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           {error}
+        </div>
+      ) : null}
+
+      {/* What this tab adds up to, by decision — the same split the Overview draws, so a reviewer
+          never has to add a column by eye to know what Approve has committed. */}
+      {!loading && !error && allRows.length > 0 ? (
+        <div className="grid grid-cols-2 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-4">
+          <TabTotalCell label="Approved for payroll" tone="approve" value={tabTotals.approved} />
+          <TabTotalCell label="Awaiting a decision" tone="warn" value={tabTotals.pending} />
+          <TabTotalCell label="Not taken" tone="plain" value={tabTotals.notTaken} />
+          <TabTotalCell label="Follow-up or disputed" tone="danger" value={tabTotals.open} />
+        </div>
+      ) : null}
+
+      {!loading && allRows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+          <label className="relative block min-w-0 flex-1 sm:max-w-xs">
+            <span className="sr-only">Find an employee</span>
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              className={cn(phxFieldClassName, "pl-8")}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Find an employee"
+              type="search"
+              value={search}
+            />
+          </label>
+          <select
+            aria-label="Decision"
+            className={cn(phxSelectClassName, "w-auto")}
+            onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+            value={statusFilter}
+          >
+            <option value="all">Every decision ({allRows.length})</option>
+            {(["Pending", ...DECISION_STATUSES] as const).map((status) => (
+              <option key={status} value={status}>
+                {status} ({statusCounts.get(status) ?? 0})
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Sort"
+            className={cn(phxSelectClassName, "w-auto")}
+            onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+            value={sortBy}
+          >
+            <option value="name">Sort by name</option>
+            <option value="amount">Largest amount first</option>
+            <option value="days">Most days first</option>
+          </select>
+          {search || statusFilter !== "all" ? (
+            <button
+              className="whitespace-nowrap px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 hover:text-slate-800"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+              }}
+              type="button"
+            >
+              Clear filters
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -1790,7 +1977,13 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
 
       {!loading && rows.length === 0 ? (
         <div className="p-10 text-center">
-          <p className="text-sm font-bold text-slate-500">No {config.label.toLowerCase()} candidates for {monthLabel(monthKey)}.</p>
+          <p className="text-sm font-bold text-slate-500">
+            {allRows.length > 0
+              ? "No candidate matches these filters."
+              : error
+                ? "The candidates could not be read — this is not an empty month."
+                : `No ${config.label.toLowerCase()} candidates for ${monthLabel(monthKey)}.`}
+          </p>
         </div>
       ) : (
         <>
@@ -2076,22 +2269,54 @@ type PublicationApiRow = {
   id: string;
   status: "published" | "superseded";
   publishedBy: string;
+  /** Resolved by the publish route. A raw HR id never reaches the screen. */
+  publishedByName?: string | null;
   publishedAt: string;
   candidateCount: number;
   employeeCount: number;
 };
 
-function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide: boolean }) {
+/** An instant in Cairo, from digits that ship with the code — never the browser's own locale. */
+function cairoInstant(iso: string): string {
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return iso;
+  return formatStableEnGb(value, {
+    timeZone: "Africa/Cairo",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function PublicationPanel({
+  monthKey,
+  canDecide,
+  summary,
+}: {
+  monthKey: string;
+  canDecide: boolean;
+  summary: CompanySummary;
+}) {
   const [publications, setPublications] = useState<PublicationApiRow[] | null>(null);
   const [loading, setLoading] = useState(true);
+  // A failed read is NOT "not yet published": saying so invited a republish of a month that was
+  // already out, which supersedes the snapshot the employees are reading.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   function reload() {
     setLoading(true);
+    setLoadError(null);
     fetchJson<{ publications: PublicationApiRow[] }>(`/api/admin/deductions/publish?monthKey=${monthKey}`)
       .then((payload) => setPublications(payload.publications))
-      .catch(() => setPublications([]))
+      .catch((error) => {
+        setPublications(null);
+        setLoadError(error instanceof Error ? error.message : "The publish status could not be read.");
+      })
       .finally(() => setLoading(false));
   }
 
@@ -2119,22 +2344,38 @@ function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide
       setMessage({ tone: "error", text: error instanceof Error ? error.message : "Publish failed." });
     } finally {
       setPublishing(false);
+      setConfirming(false);
     }
   }
 
   const active = publications?.find((publication) => publication.status === "published") ?? null;
 
   return (
-    <div className="border border-slate-200 bg-white p-4 shadow-sm sm:col-span-2 lg:col-span-4">
+    <div className={cn("border border-slate-200 bg-white p-4 sm:col-span-2 lg:col-span-4", adminPanelDepthClassName)}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">Publish status — {monthLabel(monthKey)}</p>
           {loading ? (
             <p className="mt-1 text-sm font-semibold text-slate-500">Loading…</p>
+          ) : loadError ? (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-rose-700">
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span className="break-words">The publish status could not be read, so this screen cannot say whether {monthLabel(monthKey)} is out. {loadError}</span>
+              <button
+                className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 hover:border-slate-500"
+                onClick={reload}
+                type="button"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Try again
+              </button>
+            </p>
           ) : active ? (
-            <p className="mt-1 text-sm font-semibold text-emerald-700">
-              Published by {active.publishedBy} · {active.candidateCount} candidate(s) · {active.employeeCount} employee(s) ·{" "}
-              {new Date(active.publishedAt).toLocaleString()}
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm font-semibold text-emerald-700">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Published {cairoInstant(active.publishedAt)} (Cairo)
+              {active.publishedByName ? ` by ${active.publishedByName}` : ""} · {active.candidateCount} candidate(s) ·{" "}
+              {active.employeeCount} employee(s)
             </p>
           ) : (
             <p className="mt-1 text-sm font-semibold text-slate-500">Not yet published for this month.</p>
@@ -2142,15 +2383,34 @@ function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide
         </div>
         {canDecide ? (
           <button
-            className="whitespace-nowrap rounded-sm bg-slate-900 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
-            disabled={publishing}
-            onClick={publish}
+            className="whitespace-nowrap border border-slate-900 bg-slate-900 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            disabled={publishing || loading || Boolean(loadError)}
+            onClick={() => setConfirming(true)}
             type="button"
           >
             {publishing ? "Publishing…" : active ? "Republish (supersedes current)" : "Publish this month"}
           </button>
         ) : null}
       </div>
+      <DeductionsConfirmDialog
+        busy={publishing}
+        confirmLabel={active ? "Republish" : "Publish"}
+        facts={[
+          { label: "Month", value: monthLabel(monthKey) },
+          { label: "Will publish", value: `${money(summary.willPublishTotal)} EGP` },
+          { label: "Still pending — not published", value: `${money(summary.pendingTotal)} EGP` },
+          { label: "Replaces", value: active ? `The snapshot of ${cairoInstant(active.publishedAt)}` : "Nothing — first publish" },
+        ]}
+        onCancel={() => setConfirming(false)}
+        onConfirm={publish}
+        open={confirming}
+        title={active ? `Republish ${monthLabel(monthKey)}?` : `Publish ${monthLabel(monthKey)}?`}
+      >
+        <p>
+          Only deductions approved for payroll are published. Anything still pending stays out until it is decided.
+          {active ? " The current snapshot is kept in the history and marked superseded." : ""}
+        </p>
+      </DeductionsConfirmDialog>
       {message ? (
         <p className={["mt-2 text-xs font-semibold", message.tone === "success" ? "text-emerald-700" : "text-red-700"].join(" ")}>
           {message.text}
@@ -2163,7 +2423,15 @@ function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide
   );
 }
 
-function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boolean }) {
+function OverviewTab({
+  monthKey,
+  canDecide,
+  onOpenCategory,
+}: {
+  monthKey: string;
+  canDecide: boolean;
+  onOpenCategory: (category: DeductionsCategory) => void;
+}) {
   const [summary, setSummary] = useState<CompanySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2194,18 +2462,18 @@ function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boo
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <PublicationPanel canDecide={canDecide} monthKey={monthKey} />
+      <PublicationPanel canDecide={canDecide} monthKey={monthKey} summary={summary} />
 
       {/* Two totals, never one. "Will publish" uses the exact predicate
           publishMonth uses; "Pending" is everything detected but not yet
           approved, which will NOT be deducted. Showing a single combined figure
           is how HR ended up reading ~3x what publish would actually commit. */}
-      <div className="border border-slate-900 bg-slate-900 p-4 shadow-sm sm:col-span-2">
+      <div className={cn("border border-slate-900 p-4 sm:col-span-2", adminPanelHeaderClassName, adminPanelDepthClassName)}>
         <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-400">Will publish</p>
         <p className="mt-1 text-3xl font-black text-white">{money(summary.willPublishTotal)} EGP</p>
         <p className="mt-0.5 text-xs font-semibold text-slate-400">This is what pressing Publish commits.</p>
       </div>
-      <div className="border border-amber-300 bg-amber-50 p-4 shadow-sm sm:col-span-2">
+      <div className={cn("border border-amber-300 bg-amber-50 p-4 sm:col-span-2", adminPanelDepthClassName)}>
         <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-amber-700">Pending — will NOT publish</p>
         <p className="mt-1 text-3xl font-black text-amber-900">{money(summary.pendingTotal)} EGP</p>
         <p className="mt-0.5 text-xs font-semibold text-amber-700">
@@ -2218,8 +2486,19 @@ function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boo
         const willPublish = summary.willPublish[category];
         const pending = summary.pending[category];
         return (
-          <div className="border border-slate-200 bg-white p-4 shadow-sm" key={category}>
-            <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{config.label}</p>
+          <button
+            className={cn(
+              "group border border-slate-200 bg-white p-4 text-left transition hover:border-orange-400",
+              adminPanelDepthClassName,
+            )}
+            key={category}
+            onClick={() => onOpenCategory(category)}
+            type="button"
+          >
+            <p className="flex items-center justify-between gap-2 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
+              <span className="break-words">{config.label}</span>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 transition group-hover:text-orange-500" />
+            </p>
             <p className="mt-1 text-2xl font-black text-slate-900">{money(willPublish?.totalAmount ?? 0)}</p>
             <p className="mt-0.5 text-xs font-semibold text-slate-500">
               {willPublish?.candidateCount ?? 0} candidate(s) · {willPublish?.employeeCount ?? 0} employee(s)
@@ -2229,7 +2508,7 @@ function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boo
                 + {pending.candidateCount} pending ({money(pending.totalAmount)} EGP) — not publishing
               </p>
             ) : null}
-          </div>
+          </button>
         );
       })}
     </div>
@@ -2270,7 +2549,7 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
   }, [monthKey, query]);
 
   return (
-    <div className="border border-slate-200 bg-white p-5 shadow-sm">
+    <div className={cn("border border-slate-200 bg-white p-5", adminPanelDepthClassName)}>
       <label className="flex max-w-sm items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
         Employee HR_ID
         <input
@@ -2634,7 +2913,7 @@ function MasterExportBar({ monthKey }: { monthKey: string }) {
   const filtered = Boolean(line || region);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 border border-slate-200 bg-white px-4 py-3", adminPanelDepthClassName)}>
       <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-500">Master export</span>
 
       <label className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
@@ -2841,6 +3120,29 @@ export function DeductionsWorkspace({
     }
   }
 
+  // The pending count on each category tab, so the month's open work is visible without opening
+  // seven tabs. Read from the same company summary the Overview shows; a failed read shows no badge
+  // rather than a zero.
+  const [tabPending, setTabPending] = useState<Partial<Record<DeductionsCategory, number>> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson<{ summary: CompanySummary }>(`/api/admin/deductions/summary/company?monthKey=${monthKey}`)
+      .then((payload) => {
+        if (cancelled) return;
+        const counts: Partial<Record<DeductionsCategory, number>> = {};
+        for (const category of visibleDeductionsCategories) {
+          counts[category] = payload.summary.pending[category]?.candidateCount ?? 0;
+        }
+        setTabPending(counts);
+      })
+      .catch(() => {
+        if (!cancelled) setTabPending(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthKey, dataVersion]);
+
   const tabs: Array<{ key: "overview" | "by_employee" | "disputes" | DeductionsCategory; label: string }> = [
     { key: "overview", label: "Overview" },
     { key: "by_employee", label: "By Employee" },
@@ -2850,7 +3152,7 @@ export function DeductionsWorkspace({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className={cn("flex flex-wrap items-center gap-3 border border-slate-200 bg-white px-4 py-3", adminPanelDepthClassName)}>
         <label className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-500">
           Month
           <input
@@ -2983,11 +3285,21 @@ export function DeductionsWorkspace({
             type="button"
           >
             {tab.label}
+            {tab.key !== "overview" && tab.key !== "by_employee" && tab.key !== "disputes" && (tabPending?.[tab.key] ?? 0) > 0 ? (
+              <span
+                aria-label={`${tabPending?.[tab.key]} awaiting a decision`}
+                className={cn("ml-1.5 inline-block bg-amber-100 px-1.5 py-px text-phx-2xs tabular-nums text-amber-800", adminChipDepthClassName)}
+              >
+                {tabPending?.[tab.key]}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
 
-      {activeTab === "overview" ? <OverviewTab key={panelKey} canDecide={canDecide} monthKey={monthKey} /> : null}
+      {activeTab === "overview" ? (
+        <OverviewTab key={panelKey} canDecide={canDecide} monthKey={monthKey} onOpenCategory={setActiveTab} />
+      ) : null}
       {activeTab === "by_employee" ? <ByEmployeeTab key={panelKey} monthKey={monthKey} /> : null}
       {activeTab === "disputes" ? <DisputesTab canReply={canDecide} highlightCandidateId={highlightCandidateId} /> : null}
       {activeTab !== "overview" && activeTab !== "by_employee" && activeTab !== "disputes" ? (

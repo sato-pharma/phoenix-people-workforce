@@ -30,6 +30,7 @@
  */
 
 import { cairoDateOnly } from "@/lib/outstation/departure-evidence.ts";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const OUTSTATION_EXPENSE_REQUESTS_TABLE = "outstation_expense_requests";
@@ -195,37 +196,36 @@ export async function loadOutstationTripDays(input: { end: string; start: string
     return date.toISOString().slice(0, 10);
   };
 
+  // Paged: PostgREST stops a response at 1,000 rows, and a dropped trip is a travelling day charged.
   const supabase = getSupabaseAdmin();
-  const [requests, expenses] = await Promise.all([
-    supabase
-      .from(OUTSTATION_EXPENSE_REQUESTS_TABLE)
-      .select("employee_hr_id,status,trip_start_date,trip_end_date,to_label,to_city")
-      // A multi-day trip can START before the window and still cover days inside it.
-      .gte("trip_end_date", `${widen(start, -31)}T00:00:00Z`)
-      .lte("trip_start_date", `${widen(end, 1)}T23:59:59Z`),
-    supabase
-      .from(OUTSTATION_EXPENSES_TABLE)
-      .select("hr_id,status,hr_status,expense_date,to_date,to_location")
-      .gte("expense_date", widen(start, -31))
-      .lte("expense_date", widen(end, 1)),
-  ]);
-
-  for (const [label, result] of [
-    ["expense requests", requests],
-    ["expense rows", expenses],
-  ] as const) {
-    if (result.error) {
+  const read = async <T>(label: string, buildQuery: () => unknown): Promise<T[]> => {
+    try {
+      return await fetchAllRows<T>(buildQuery, "id");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
       throw new Error(
-        `Failed to read outstation ${label} for trip work evidence: ${result.error.message}. `
+        `Failed to read outstation ${label} for trip work evidence: ${message}. `
           + "Without them a day someone spent travelling on company business would be charged a deduction.",
       );
     }
-  }
+  };
+  const [requests, expenses] = await Promise.all([
+    read<RequestRow>("expense requests", () =>
+      supabase
+        .from(OUTSTATION_EXPENSE_REQUESTS_TABLE)
+        .select("id,employee_hr_id,status,trip_start_date,trip_end_date,to_label,to_city")
+        // A multi-day trip can START before the window and still cover days inside it.
+        .gte("trip_end_date", `${widen(start, -31)}T00:00:00Z`)
+        .lte("trip_start_date", `${widen(end, 1)}T23:59:59Z`),
+    ),
+    read<ExpenseRow>("expense rows", () =>
+      supabase
+        .from(OUTSTATION_EXPENSES_TABLE)
+        .select("id,hr_id,status,hr_status,expense_date,to_date,to_location")
+        .gte("expense_date", widen(start, -31))
+        .lte("expense_date", widen(end, 1)),
+    ),
+  ]);
 
-  return foldOutstationTripDays({
-    end,
-    expenses: (expenses.data ?? []) as ExpenseRow[],
-    requests: (requests.data ?? []) as RequestRow[],
-    start,
-  });
+  return foldOutstationTripDays({ end, expenses, requests, start });
 }

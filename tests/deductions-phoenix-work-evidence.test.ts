@@ -415,7 +415,31 @@ function everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter(): void {
   assert.match(evidence, /addSeen\(seen, canonicalHrIdForDisplay\(day\.hrId\), day\.date, describeManagerOwnVisitDay\(day\)\)/, "and names the day by what it was");
 }
 
+/**
+ * EVERY EVIDENCE READ IS PAGED (audit, 2026-11-07). PostgREST stops a response at 1,000 rows and
+ * production logged 8,146 non-test Phoenix CRM visits in October 2026, so the unpaged read kept the
+ * first 1,000 and most provably worked days never reached the suppression — each one a day that
+ * could be charged. All three tables go through `fetchAllRows` on a stable `id` order, and none is
+ * read bare inside the loader.
+ */
+function everyEvidenceReadIsPaged(): void {
+  const source = stripComments(readFileSync("src/lib/crm/phoenix-work-evidence.ts", "utf8")).replace(/\r\n/g, "\n");
+  const start = source.indexOf("export async function loadPhoenixWorkEvidenceDays(");
+  assert.ok(start >= 0, "the loader exists");
+  const body = source.slice(start, source.indexOf("\n}\n", start));
+  assert.match(body, /fetchAllRows<T>\(buildQuery, "id"\)/, "the loader pages through fetchAllRows on the id column");
+  for (const table of ["PHOENIX_CRM_VISITS_TABLE", "PHOENIX_CRM_DAY_ACTIVITIES_TABLE", "PHOENIX_CRM_DAY_STARTS_TABLE"]) {
+    assert.match(
+      body,
+      new RegExp(String.raw`read<\w+>\("[^"]+", \(\) =>\s*supabase\s*\.from\(${table}\)`),
+      `REGRESSION: ${table} must be read through the pager — an unpaged read keeps the first 1,000 rows and charges the worked days it drops`,
+    );
+  }
+  assert.doesNotMatch(body, /\.data \?\? \[\]/, "no read in the loader takes a single unpaged response's data");
+}
+
 export function runDeductionsPhoenixWorkEvidenceTests(): void {
+  everyEvidenceReadIsPaged();
   aManagersOwnSingleVisitsSuppressHisDay();
   everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter();
   evidenceFoldCreditsEveryoneOnTheVisit();

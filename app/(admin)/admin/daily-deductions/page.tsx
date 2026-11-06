@@ -22,8 +22,8 @@ export default async function AdminDailyDeductionsPage() {
     redirect("/employee-portals");
   }
 
-  // The default window is the open pay cycle: the 21st of the previous month
-  // through today (Cairo). The picker can widen or narrow it.
+  // The default window is the open Head Office pay cycle: from its 22nd through
+  // today (Cairo). The picker can widen or narrow it.
   const today = cairoTodayIso();
   const { from, to } = resolveDefaultRange(today);
 
@@ -32,7 +32,7 @@ export default async function AdminDailyDeductionsPage() {
       <PremiumHero
         kicker="Deductions"
         title="Daily Deductions"
-        subtitle="Count deductions day by day over any date range, then release them one at a time, per employee, or together — for the payroll sheet you finalize before month-end. Reuses the Fingerprint, CRM and Vacation detection of the month-final module, counting only days that have fully elapsed. Releasing here feeds no salary run; it is a reviewed reporting snapshot."
+        subtitle="Count deductions day by day over any date range, then release them one at a time, per employee, or together — for the payroll sheet you finalize before month-end. Reuses the Fingerprint, CRM, Vacation, No-records and Weekly-plan detection of the month-final module, counting only days that have fully elapsed. Each released employee is emailed the amount, the reason and the days. Releasing here feeds no salary run; payroll takes its figures from the Deductions screen."
       />
       <DailyDeductionsWorkspace canPublish={access.role === "Super Admin"} defaultFrom={from} defaultTo={to} />
     </div>

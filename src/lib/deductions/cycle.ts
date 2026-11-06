@@ -19,7 +19,7 @@
 // days from the previous calendar month. That is the one shape `validateCandidateDraft` lets
 // outside the month, and only inside the office window, marked on the draft's evidence.
 
-import { scaleDeductionAmountToDays } from "./calculations.ts";
+import { scaleDeductionAmountToKeptDates } from "./calculations.ts";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import type { DeductionsCandidateDraft } from "./types.ts";
 
@@ -248,10 +248,14 @@ export function clipDraftToCycleWindow(
   let calculationStatus = draft.calculationStatus;
   if (!allKept) {
     const fraction = kept.length / new Set(dates).size;
-    const scaled = scaleDeductionAmountToDays({
-      estimatedAmount,
-      rawValue,
+    // A CRM row is priced on what its kept days WEIGH (a Thursday is half), not on their count.
+    const scaled = scaleDeductionAmountToKeptDates({
       appliedDays: rawValue * fraction,
+      category: draft.category,
+      detectedDates: dates,
+      estimatedAmount,
+      keptDates: kept,
+      rawValue,
     });
     rawValue = round2(rawValue * fraction);
     if (estimatedAmount != null && scaled == null) calculationStatus = "requires_review";

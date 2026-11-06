@@ -9,6 +9,7 @@
 // (Cairo). Today and any future day are clamped away — never counted, whatever the
 // operator picks as `to`.
 
+import { OFFICE_CYCLE_CLOSE_DAY } from "@/lib/deductions/cycle.ts";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import type { DailyDeductionRange, ResolvedDailyRange } from "./types.ts";
 
@@ -51,18 +52,22 @@ export function cairoTodayIso(): string {
 }
 
 /**
- * The mode-1 (office) pay cutoff default: from the 21st of the PREVIOUS month to today.
+ * The pre-filled window: the OPEN Head Office pay cycle, from its first day through today.
  *
- * The owner's cutoff is "21 to 22 next month" — the pay cycle opens on the 21st. So the
- * running tally defaults to the open cycle: the 21st of last month through today. The
- * operator can widen or narrow it; this is only the pre-filled window.
+ * The Head Office cycle runs from the 22nd of one month to the 21st of the next (owner rule
+ * 2026-10-26, `OFFICE_CYCLE_CLOSE_DAY` in deductions/cycle.ts). This default used to open on the
+ * 21st, so every tally re-counted the last day of a cycle that had already closed — and, from the
+ * 22nd on, still reached a whole month back into the cycle before. Up to the 21st the open cycle
+ * began on the 22nd of last month; from the 22nd it began on the 22nd of this one. The operator can
+ * still widen or narrow it.
  */
 export function resolveDefaultRange(todayIso: string): DailyDeductionRange {
   const today = new Date(`${assertIsoDate(todayIso, "todayIso")}T00:00:00Z`);
   const year = today.getUTCFullYear();
-  const month = today.getUTCMonth(); // 0-based; this is "previous month" already for day-of-month math
-  const prev = new Date(Date.UTC(year, month - 1, 21));
-  return { from: prev.toISOString().slice(0, 10), to: todayIso };
+  const month = today.getUTCMonth(); // 0-based
+  const opensThisMonth = today.getUTCDate() > OFFICE_CYCLE_CLOSE_DAY;
+  const start = new Date(Date.UTC(year, opensThisMonth ? month : month - 1, OFFICE_CYCLE_CLOSE_DAY + 1));
+  return { from: start.toISOString().slice(0, 10), to: todayIso };
 }
 
 /**

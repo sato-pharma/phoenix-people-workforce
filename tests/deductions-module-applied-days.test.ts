@@ -269,6 +269,38 @@ export async function runDeductionsModuleAppliedDaysTests(): Promise<void> {
     );
   }
 
+  // ── A CRM row's ticked days are priced on what they WEIGH (audit, 2026-11-07) ──
+  // Mon 19 + Thu 22 Oct at 483.87 a day is 725.81. The editor always sends the quantity beside the
+  // ticks, so unticking the Monday sends appliedValue 1 with one date — that still FOLLOWS the ticks
+  // and must price the Thursday at its half day, never at half the money.
+  {
+    const crm = {
+      unit: "days" as const,
+      rawValue: 2,
+      estimatedAmount: 725.81,
+      dates: ["2026-10-19", "2026-10-22"],
+      category: "crm",
+    };
+    const thursday = resolveDecisionCharge({ candidate: crm, appliedDates: ["2026-10-22"], appliedValue: 1 });
+    assert.equal(thursday.appliedValue, 1, "the tick count is kept as the day value, as payroll reads it");
+    assert.equal(thursday.appliedAmount, 241.94, "REGRESSION: an unticked CRM row keeps the Thursday at its half-day price");
+    const monday = resolveDecisionCharge({ candidate: crm, appliedDates: ["2026-10-19"] });
+    assert.equal(monday.appliedAmount, 483.87, "a kept full day is priced as a full day");
+    const typed = resolveDecisionCharge({ candidate: crm, appliedDates: ["2026-10-19", "2026-10-22"], appliedValue: 1 });
+    assert.equal(typed.appliedAmount, 362.91, "a quantity the reviewer TYPED over the ticks scales by the count");
+  }
+
+  // ── An amount is capped at what was entered, like days at what was detected ──
+  {
+    const loan = { unit: "amount" as const, rawValue: 5000, estimatedAmount: 5000, dates: [] as string[] };
+    assert.throws(
+      () => resolveDecisionCharge({ candidate: loan, appliedValue: 50000 }),
+      /cannot deduct 50000 EGP — the entry is for 5000 EGP/,
+      "REGRESSION: a 5,000 EGP loan typed as 50000 must never reach payroll",
+    );
+    assert.equal(resolveDecisionCharge({ candidate: loan, appliedValue: 1234.567 }).appliedAmount, 1234.57, "held to piasters");
+  }
+
   // ── An amount-unit candidate has no days to tick ──────────────────────────
   {
     const loan = resolveDecisionCharge({

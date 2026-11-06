@@ -101,6 +101,10 @@ export type DailyDeductionTallyLine = {
   dates: string[];
   sourceSystem: string;
   reason: string | null;
+  /** True when part of this row has no computable amount (usually no base salary on file). The
+   * `amount` then reads 0 only because nothing could be priced — such a row is never released, so an
+   * employee is never emailed "EGP 0.00" or a figure that is silently too low. */
+  amountUnknown?: boolean;
 };
 
 /** The result of running ONE connector over a range and clipping it. */

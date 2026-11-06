@@ -10,23 +10,23 @@ const DATE_ISO_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function normalizeMonthKey(input: string): string {
   if (typeof input !== "string") {
-    throw new Error("monthKey must be a string");
+    throw new Error("Validation: monthKey must be a string");
   }
   const trimmed = input.trim();
   if (!trimmed) {
-    throw new Error("monthKey must not be blank");
+    throw new Error("Validation: monthKey must not be blank");
   }
   const match = MONTH_KEY_PATTERN.exec(trimmed);
   if (!match) {
-    throw new Error(`monthKey "${input}" is not in YYYY-MM or YYYY/MM form`);
+    throw new Error(`Validation: monthKey "${input}" is not in YYYY-MM or YYYY/MM form`);
   }
   const year = Number.parseInt(match[1], 10);
   const month = Number.parseInt(match[2], 10);
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    throw new Error(`monthKey "${input}" has out-of-range year`);
+    throw new Error(`Validation: monthKey "${input}" has out-of-range year`);
   }
   if (!Number.isInteger(month) || month < 1 || month > 12) {
-    throw new Error(`monthKey "${input}" has out-of-range month`);
+    throw new Error(`Validation: monthKey "${input}" has out-of-range month`);
   }
   return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}`;
 }

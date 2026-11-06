@@ -523,8 +523,10 @@ export const accessRegistry = [
   // them were reading as though downloading every employee's amounts, approving a deduction and
   // publishing a month were all read-gated. Nothing was mis-enforced, because this registry is a
   // declarative inventory that no request path imports, but an auditor reading it was told the
-  // mutation routes were open to any reader. `assertRegistryMatchesHandlers` in
-  // tests/access-registry-coverage.test.ts now fails if a declared action and its handler disagree.
+  // mutation routes were open to any reader. No test compares a declared action with its handler
+  // (an `assertRegistryMatchesHandlers` was cited here but never existed, audit 2026-11-07), so keep
+  // each entry equal to the `assertPermission` its route makes; tests/access-registry-coverage.test.ts
+  // checks only that a CSRF-required route calls assertSameOriginMutation and that exports are audited.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/candidates", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/filters", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/export", permission: { resource: "deductions", action: "export" }, guard: "domain-helper" }),
@@ -550,6 +552,21 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/settlement", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/publish", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/publish", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // The routes that fell through to the `/api/admin/**` blanket (audit, 2026-11-07) and were recorded
+  // as plain admin reads with no CSRF and no audit. Each entry names the action its handler asserts;
+  // every one also runs its own actor check (Super Admin for every write).
+  // The employee picker behind "Add a deduction" — it carries a day rate worked out from base salary.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/employees", permission: { resource: "deductions", action: "create" }, guard: "domain-helper" }),
+  // Send one employee's approved deductions to payroll now, or take them back.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/admin/deductions/push", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  // Daily Deductions — the day-by-day running tally and its per-line release.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/daily-deductions/active", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/compute", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/daily-deductions/publish", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/publish", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/release", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/supersede", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/daily-deductions/withdraw", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/deductions/comments", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // One picture from a dispute reply. The employee it belongs to or an admin reader of the Deductions module
   // — readDisputeAttachmentForViewer decides before any byte is read. Not audited: it is an image behind the

@@ -46,6 +46,13 @@ export function normalizeDailyLine(raw: unknown, index: number): DailyDeductions
     throw new Error(`Validation: line ${index + 1} has no resolvable employee HR id.`);
   }
 
+  // A row the tally could not price is never released — the employee would be emailed "EGP 0.00".
+  if (line.amountUnknown === true) {
+    throw new Error(
+      `Validation: line ${index + 1} (${typeof line.employeeName === "string" && line.employeeName.trim() ? line.employeeName.trim() : "an employee with no name on file"}) has no computable amount — usually no base salary on file. Put the salary on file and compute again before releasing it.`,
+    );
+  }
+
   const unit = line.unit === "amount" ? "amount" : "days";
   const dates = Array.isArray(line.dates) ? line.dates.filter((d): d is string => typeof d === "string") : [];
   const employeeName = typeof line.employeeName === "string" && line.employeeName.trim() ? line.employeeName.trim() : null;

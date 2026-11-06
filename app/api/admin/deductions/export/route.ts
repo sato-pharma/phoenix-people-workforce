@@ -9,6 +9,8 @@ import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 import { buildDeductionsCategoryWorkbook } from "@/lib/deductions/exports/category-workbook.ts";
 import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
+import { writeAuditLog } from "@/lib/admin/audit";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,19 +40,31 @@ export async function GET(request: Request) {
     }
     const category = categoryParam as DeductionsCategory;
 
-    const candidates = await listCandidatesForMonth({ monthKey, category });
+    const [candidates, names] = await Promise.all([
+      listCandidatesForMonth({ monthKey, category }),
+      namesByHrId([access.hrId]),
+    ]);
     const workbook = buildDeductionsCategoryWorkbook({
       meta: {
         category,
         monthKey,
         generatedAtIso: new Date().toISOString(),
-        generatedByName: access.hrId ?? access.loginId ?? "system",
+        // A person is named, never coded, on the sheet.
+        generatedByName: names.get(access.hrId ?? "") ?? access.hrId ?? access.loginId ?? "system",
         generatedByHrId: access.hrId ?? "",
       },
       candidates,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
+    // Every employee's amounts leaving the system as a file is recorded (access-registry: audit required).
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityType: "deduction_export",
+      entityId: null,
+      newValues: { category, monthKey, rows: candidates.length },
+      summary: `Exported ${category} deductions for ${monthKey} (${candidates.length} rows)`,
+    });
     return new NextResponse(buffer as ArrayBuffer, {
       headers: {
         ...DOWNLOAD_NO_STORE_HEADERS,

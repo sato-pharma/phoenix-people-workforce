@@ -33,16 +33,25 @@ export type ManualDeductionEntryInput = {
   baseSalary?: number | null;
 };
 
-export function buildManualDeductionDraft(input: ManualDeductionEntryInput): DeductionsCandidateDraft {
-  if (!input.employeeHrId.trim()) {
-    throw new Error("employeeHrId is required for a manual deduction entry");
+export function buildManualDeductionDraft(rawInput: ManualDeductionEntryInput): DeductionsCandidateDraft {
+  if (!rawInput.employeeHrId.trim()) {
+    throw new Error("Validation: an employee is required for a manual deduction entry.");
   }
-  if (!Number.isFinite(input.value) || input.value <= 0) {
-    throw new Error("value must be a positive number for a manual deduction entry");
+  if (!Number.isFinite(rawInput.value) || rawInput.value <= 0) {
+    throw new Error("Validation: the value must be a positive number for a manual deduction entry.");
   }
-  if (!input.reason.trim()) {
-    throw new Error("reason is required for a manual deduction entry");
+  if (!rawInput.reason.trim()) {
+    throw new Error("Validation: a reason is required for a manual deduction entry.");
   }
+  // A days entry can never be more days than the month has — "365" typed for "3" was accepted and
+  // auto-approved for payroll. An amount is held to piasters, the unit payroll pays in.
+  const daysInMonth = new Date(Date.UTC(rawInput.year, rawInput.month, 0)).getUTCDate();
+  if (rawInput.unit === "days" && rawInput.value > daysInMonth) {
+    throw new Error(
+      `Validation: ${rawInput.value} days is more than the ${daysInMonth} days of that month. Enter the days actually deducted.`,
+    );
+  }
+  const input = { ...rawInput, value: Math.round(rawInput.value * 100) / 100 };
   const monthKey = `${input.year}-${String(input.month).padStart(2, "0")}`;
   // No natural per-day-in-range date to anchor a manual amount entry on — the
   // 1st of the target month is a stable, deterministic placeholder (kept out

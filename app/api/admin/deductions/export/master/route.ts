@@ -15,6 +15,8 @@ import {
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { buildDeductionsMasterWorkbook, type EmployeeOrgInfo } from "@/lib/deductions/exports/master-workbook.ts";
 import { DOWNLOAD_NO_STORE_HEADERS } from "@/lib/http/download-headers";
+import { writeAuditLog } from "@/lib/admin/audit";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,11 +42,12 @@ export async function GET(request: Request) {
     // screen's dropdowns and its "N of M" preview are built from.
     const filter = orgFilterFromSearchParams(url.searchParams);
 
-    const [allCandidates, directoryRows] = await Promise.all([
+    const [allCandidates, directoryRows, names] = await Promise.all([
       listCandidatesForMonth({ monthKey }),
       // Leavers included: a deduction can belong to someone who has since left,
       // and their line + manager still belong on the sheet rather than a blank.
       getEmployeeDirectoryRows({ includeInactive: true }),
+      namesByHrId([access.hrId]),
     ]);
 
     // compact HR id -> line + region + direct manager, keyed the same way
@@ -73,7 +76,8 @@ export async function GET(request: Request) {
       meta: {
         monthKey,
         generatedAtIso: new Date().toISOString(),
-        generatedByName: access.hrId ?? access.loginId ?? "system",
+        // A person is named, never coded, on the sheet.
+        generatedByName: names.get(access.hrId ?? "") ?? access.hrId ?? access.loginId ?? "system",
         generatedByHrId: access.hrId ?? "",
         filter,
       },
@@ -82,6 +86,14 @@ export async function GET(request: Request) {
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
+    // Every employee's amounts leaving the system as a file is recorded (access-registry: audit required).
+    await writeAuditLog({
+      actorLoginId: access.loginId ?? null,
+      entityType: "deduction_export",
+      entityId: null,
+      newValues: { monthKey, filter, rows: candidates.length },
+      summary: `Exported the master deductions workbook for ${monthKey} (${candidates.length} rows)`,
+    });
     return new NextResponse(buffer as ArrayBuffer, {
       headers: {
         ...DOWNLOAD_NO_STORE_HEADERS,

@@ -37,6 +37,7 @@
 // the DSM rule completely.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getMappedAgentHrIds, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -47,6 +48,7 @@ import { compactDeductionsHrId } from "../candidate-key.ts";
 import {
   collectClaimedLedgerDays,
   ledgerRowStillClaimsItsDaysBySource,
+  ledgerReadErrorText,
   type LedgerClaimRow,
 } from "../conflict.ts";
 import {
@@ -374,16 +376,26 @@ export async function collectDsmNoRecordCandidates(input: {
   // Keyed on SOURCE SYSTEM, never on category: `crm` is shared with `crm_visits_mirror`, whose rows
   // survive this run and so must keep claiming their days. A LOCKED own row keeps claiming too —
   // reconcile will not retract published money, so that row is still live afterwards.
-  const { data: existing, error: existingError } = await supabase
-    .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates, locked_at, source_system")
-    .in("month_key", ledgerClaimMonthKeys(monthKey))
-    .is("superseded_at", null);
-  if (existingError) throw new Error(`Failed to load already-deducted days: ${existingError.message}`);
+  // Paged: PostgREST stops a response at 1,000 rows, and a short ledger read would re-charge a day
+  // that is already charged. An error never ends the walk early — it throws (fail closed).
+  let existing: LedgerClaimRow[];
+  try {
+    existing = await fetchAllRows<LedgerClaimRow>(
+      () =>
+        supabase
+          .from("deductions_candidates")
+          .select("id, employee_hr_id_compact, dates, locked_at, source_system")
+          .in("month_key", ledgerClaimMonthKeys(monthKey))
+          .is("superseded_at", null),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(`Failed to load already-deducted days: ${ledgerReadErrorText(error)}`);
+  }
   // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating
   // it as claimed would drop a genuine no-record deduction that lands on the real 1st (conflict.ts) —
   // and this run's own replaceable rows, per the note above.
-  const claimed = collectClaimedLedgerDays((existing ?? []) as LedgerClaimRow[], (row) =>
+  const claimed = collectClaimedLedgerDays(existing, (row) =>
     ledgerRowStillClaimsItsDaysBySource(
       { sourceSystem: row.source_system ?? null, lockedAt: row.locked_at ?? null },
       DSM_NO_RECORD_SOURCE_SYSTEMS,
