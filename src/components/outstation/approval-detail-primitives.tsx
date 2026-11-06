@@ -27,6 +27,54 @@ export function PanelSection({ children, title }: { children: ReactNode; title: 
 }
 
 /**
+ * A PanelSection that folds, with its verdict written in the header (owner, 2026-11-06: the
+ * approval panel was one long wall of evidence with the decision at the very bottom).
+ *
+ * The header carries the answer — "3 days · 1 with no field work", "Needs a look", "2 photos · 1
+ * ticket" — so a folded section still says what is inside it, and the reviewer opens only the one
+ * he needs. Native `<details>`: keyboard and screen-reader behaviour come with it, and nothing is
+ * lost when it folds (the content stays mounted, so a loaded panel never re-fetches).
+ */
+export function CollapsibleSection({
+  children,
+  defaultOpen = true,
+  summary,
+  title,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  defaultOpen?: boolean;
+  /** The section's answer in a few words, shown beside the title whether open or folded. */
+  summary?: ReactNode;
+  title: string;
+  /** Colours the summary only: rose for something to look at, emerald for clean. */
+  tone?: "danger" | "neutral" | "success" | "warning";
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-rose-300"
+      : tone === "warning"
+        ? "text-amber-300"
+        : tone === "success"
+          ? "text-emerald-300"
+          : "text-slate-300";
+  return (
+    <details className="group border border-slate-200" open={defaultOpen}>
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 bg-slate-900 px-4 py-2.5 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="h-4 w-1 bg-orange-500" />
+        <span className="text-phx-xs font-black uppercase tracking-wide text-white">{title}</span>
+        {summary ? <span className={`min-w-0 break-words text-phx-xs font-bold ${toneClass}`}>{summary}</span> : null}
+        <span className="ml-auto text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+          <span className="group-open:hidden">Show</span>
+          <span className="hidden group-open:inline">Hide</span>
+        </span>
+      </summary>
+      <div className="p-4">{children}</div>
+    </details>
+  );
+}
+
+/**
  * One label/value cell of the fact grid under the dark header.
  *
  * The value WRAPS. It used to be `whitespace-nowrap`, and a timestamp like "Sep 23, 2026, 12:59 PM"
