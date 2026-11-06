@@ -1030,22 +1030,25 @@ function formatDmy(dateStr: string | null | undefined): string | null {
  * columns: normalized-HR-ID → { line name, hire date pre-formatted dd-Mon-yyyy }. */
 type AgentMeta = { line: string | null; hireDate: string | null };
 
-/** Build the normalized-HR-ID → {line, hireDate} map from the employee roster (small: ~160 rows, so
- * one unpaginated read is safe). Degrades to an empty map on any error (cells then show "—").
+/** Build the normalized-HR-ID → {line, hireDate} map from the employee roster (paged to its last row, never
+ * a fixed ceiling). Degrades to an empty map on any error (cells then show "—").
  * Employees/lines are core tables outside the CRM mirror. */
 async function loadAgentMetaByHrId(): Promise<Map<string, AgentMeta>> {
   const supabase = getSupabaseAdmin();
-  const [linesRes, empRes] = await Promise.all([
+  const [linesRes, empRows] = await Promise.all([
     supabase.from("lines").select("id, name"),
-    supabase.from("employees").select("hr_id, line_id, hire_date").limit(5000),
+    fetchAllRows<{ hr_id: string | null; line_id: number | null; hire_date: string | null }>(
+      () => supabase.from("employees").select("hr_id, line_id, hire_date"),
+      "hr_id",
+    ).catch(() => null),
   ]);
-  if (linesRes.error || empRes.error) return new Map();
+  if (linesRes.error || !empRows) return new Map();
   const lineNameById = new Map<number, string>();
   for (const l of (linesRes.data ?? []) as Array<{ id: number | null; name: string | null }>) {
     if (l.id != null && l.name) lineNameById.set(l.id, l.name);
   }
   const byHrId = new Map<string, AgentMeta>();
-  for (const e of (empRes.data ?? []) as Array<{ hr_id: string | null; line_id: number | null; hire_date: string | null }>) {
+  for (const e of empRows) {
     const key = canonicalHrIdKey(e.hr_id);
     if (!key) continue;
     byHrId.set(key, {
@@ -1453,18 +1456,21 @@ async function resolveAllowedHrIds(opts: {
     if (lineIds.length === 0) return empty; // unknown line → nobody matches
   }
 
-  /* eslint-disable @typescript-eslint/no-explicit-any -- conditional builder chain, same pattern as elsewhere. */
-  let query: any = supabase.from("employees").select("hr_id");
-  if (lineIds) query = query.in("line_id", lineIds);
-  if (opts.hireFrom) query = query.gte("hire_date", opts.hireFrom);
-  if (opts.hireTo) query = query.lte("hire_date", opts.hireTo);
-  const { data, error } = await query.limit(5000);
-  /* eslint-enable @typescript-eslint/no-explicit-any */
-  if (error || !data) return empty;
+  // Paged to the last employee (hr_id is unique), never a fixed ceiling; a failed page is the empty answer, as before.
+  const data = await fetchAllRows<{ hr_id: string | null }>(() => {
+    /* eslint-disable @typescript-eslint/no-explicit-any -- conditional builder chain, same pattern as elsewhere. */
+    let query: any = supabase.from("employees").select("hr_id");
+    if (lineIds) query = query.in("line_id", lineIds);
+    if (opts.hireFrom) query = query.gte("hire_date", opts.hireFrom);
+    if (opts.hireTo) query = query.lte("hire_date", opts.hireTo);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    return query;
+  }, "hr_id").catch(() => null);
+  if (!data) return empty;
 
   const hrIds: string[] = [];
   const keys = new Set<string>();
-  for (const e of data as Array<{ hr_id: string | null }>) {
+  for (const e of data) {
     if (!e.hr_id) continue;
     hrIds.push(e.hr_id);
     const k = canonicalHrIdKey(e.hr_id);

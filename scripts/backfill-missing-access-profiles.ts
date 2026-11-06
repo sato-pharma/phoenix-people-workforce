@@ -80,6 +80,7 @@ import {
   provisionSupabaseAuthIdentity,
 } from "@/lib/auth/supabase-identity";
 import { canonicalHrIdKey, resolveStoredHrId, type StoredHrIdDirectoryEntry } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -207,20 +208,30 @@ type PlannedAction =
 
 type SkippedAccount = { loginId: string; reason: string };
 
+// The three loads below are paged: a single read stops silently at 1,000 rows, and an account whose
+// profile or employee row went unread would be planned as "missing" and written a second time.
 async function loadAppAuthUsers(supabase: SupabaseClient): Promise<AppAuthUserRow[]> {
-  const { data, error } = await supabase
-    .from("app_auth_users")
-    .select("login_id,hr_id,role,is_active,auth_user_id,auth_email,name,email,line,manager_hr_id");
-  if (error) throw new Error(`app_auth_users load failed: ${error.message}`);
-  return (data ?? []) as AppAuthUserRow[];
+  return fetchAllRows<AppAuthUserRow>(
+    () =>
+      supabase
+        .from("app_auth_users")
+        .select("login_id,hr_id,role,is_active,auth_user_id,auth_email,name,email,line,manager_hr_id"),
+    "login_id",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`app_auth_users load failed: ${error.message ?? String(error)}`);
+  });
 }
 
 async function loadProfiles(supabase: SupabaseClient): Promise<ProfileRow[]> {
-  const { data, error } = await supabase
-    .from("user_access_profiles")
-    .select("auth_user_id,login_id,hr_id,phoenix_role,role,scope_type,is_active,line,manager_hr_id");
-  if (error) throw new Error(`user_access_profiles load failed: ${error.message}`);
-  return (data ?? []) as ProfileRow[];
+  return fetchAllRows<ProfileRow>(
+    () =>
+      supabase
+        .from("user_access_profiles")
+        .select("auth_user_id,login_id,hr_id,phoenix_role,role,scope_type,is_active,line,manager_hr_id"),
+    "auth_user_id",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`user_access_profiles load failed: ${error.message ?? String(error)}`);
+  });
 }
 
 /**
@@ -230,11 +241,15 @@ async function loadProfiles(supabase: SupabaseClient): Promise<ProfileRow[]> {
  * raw 23503 partway through a run.
  */
 async function loadEmployeeHrIdDirectory(supabase: SupabaseClient): Promise<Map<string, StoredHrIdDirectoryEntry>> {
-  const { data, error } = await supabase.from("employees").select("hr_id");
-  if (error) throw new Error(`employees load failed: ${error.message}`);
+  const data = await fetchAllRows<{ hr_id: string | null }>(
+    () => supabase.from("employees").select("hr_id"),
+    "hr_id",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`employees load failed: ${error.message ?? String(error)}`);
+  });
 
   const byHrId = new Map<string, StoredHrIdDirectoryEntry>();
-  for (const row of (data ?? []) as Array<{ hr_id: string | null }>) {
+  for (const row of data) {
     const key = canonicalHrIdKey(row.hr_id);
     if (key) byHrId.set(key, { hrId: row.hr_id });
   }

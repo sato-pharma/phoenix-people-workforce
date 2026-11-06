@@ -34,6 +34,7 @@ import { mergeRefusalText, planMerge, type MergeCandidate, type MergePlan } from
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { groupSameRepDuplicates } from "@/lib/phoenix-crm/server/duplicate-customers";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -100,13 +101,15 @@ async function countBy(table: string, ids: string[], extra?: (query: any) => any
 }
 
 async function loadSeats(): Promise<Map<string, OrgSeat>> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("au_v_org_tree")
-    .select("seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_name, seat_label");
-  if (error) throw new Error(`au_v_org_tree: ${error.message}`);
-  if ((data ?? []).length >= 1000) throw new Error("au_v_org_tree hit PostgREST's 1,000-row cap; paginate before trusting it");
+  const data = await fetchAllRows<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("au_v_org_tree")
+        .select("seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_name, seat_label"),
+    "seat_id",
+  );
   const seats = new Map<string, OrgSeat>();
-  for (const row of (data ?? []) as Row[]) {
+  for (const row of data) {
     const seatId = text(row.seat_id);
     if (!seatId) continue;
     seats.set(seatId, {

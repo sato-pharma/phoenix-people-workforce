@@ -9,6 +9,7 @@ import { defaultCvPositionKey, LEGACY_CV_POSITION_KEYS } from "@/lib/recruitment
 import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
 import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
 import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -161,34 +162,41 @@ async function main(): Promise<void> {
   // Newest extraction per candidate. Ordered newest-first and taken once per candidate, so a
   // candidate re-read since the legacy batch is judged on the read that actually counts — the
   // same "first row seen wins" rule the pool loaders use.
-  const { data: extractionRows, error: extractionError } = await supabase
-    .from("ats_candidate_cv_extractions")
-    .select("candidate_id, position_key, created_at, is_cv")
-    .order("created_at", { ascending: false });
-  if (extractionError) throw extractionError;
+  //
+  // All three reads here are paged: one read stops silently at 1,000 rows, and the rows it drops
+  // turn a candidate that WAS read into "never read" (a paid re-read) or hide a stored file.
+  const extractionRows = await fetchAllRows<{ candidate_id: unknown; position_key: unknown; created_at: unknown; is_cv: unknown }>(
+    () =>
+      supabase
+        .from("ats_candidate_cv_extractions")
+        .select("candidate_id, position_key, created_at, is_cv")
+        .order("created_at", { ascending: false }),
+    "id",
+  );
 
   const newest = new Map<string, { createdAt: string; isCv: unknown; positionKey: string }>();
-  for (const row of extractionRows ?? []) {
-    const candidateId = String((row as { candidate_id: unknown }).candidate_id ?? "");
+  for (const row of extractionRows) {
+    const candidateId = String(row.candidate_id ?? "");
     if (!candidateId || newest.has(candidateId)) continue;
     newest.set(candidateId, {
-      createdAt: String((row as { created_at: unknown }).created_at ?? ""),
-      isCv: (row as { is_cv: unknown }).is_cv,
-      positionKey: String((row as { position_key: unknown }).position_key ?? ""),
+      createdAt: String(row.created_at ?? ""),
+      isCv: row.is_cv,
+      positionKey: String(row.position_key ?? ""),
     });
   }
 
-  const { data: allCandidates, error: candidateError } = await supabase
-    .from("ats_candidates")
-    .select("id, full_name, current_job_title, created_at")
-    .order("created_at", { ascending: true });
-  if (candidateError) throw candidateError;
+  const allCandidates = await fetchAllRows<{ current_job_title: unknown; full_name: unknown; id: unknown }>(
+    () => supabase.from("ats_candidates").select("id, full_name, current_job_title, created_at").order("created_at", { ascending: true }),
+    "id",
+  );
 
   // A candidate with no stored file cannot be read at all — including one buys a guaranteed
   // failure and a line in the report that looks like a problem to fix.
-  const { data: fileRows, error: fileError } = await supabase.from("ats_files").select("candidate_id");
-  if (fileError) throw fileError;
-  const withAFile = new Set((fileRows ?? []).map((row) => String((row as { candidate_id: unknown }).candidate_id)));
+  const fileRows = await fetchAllRows<{ candidate_id: unknown }>(
+    () => supabase.from("ats_files").select("candidate_id"),
+    "id",
+  );
+  const withAFile = new Set(fileRows.map((row) => String(row.candidate_id)));
 
   let legacyCount = 0;
   let neverReadCount = 0;
@@ -197,7 +205,7 @@ async function main(): Promise<void> {
   let alreadyTitledCount = 0;
   let targets: TargetRow[] = [];
 
-  for (const row of (allCandidates ?? []) as Array<{ current_job_title: unknown; full_name: unknown; id: unknown }>) {
+  for (const row of allCandidates) {
     const id = String(row.id);
     const read = newest.get(id);
     const neverRead = !read;

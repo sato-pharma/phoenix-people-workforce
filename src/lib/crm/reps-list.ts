@@ -81,6 +81,7 @@ import {
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
 } from "@/lib/crm/tables";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -920,24 +921,36 @@ export async function loadPinsFor(contactIds: readonly number[]): Promise<Map<nu
   const ids = [...new Set(contactIds)];
   if (ids.length === 0) return pins;
   const supabase = getSupabaseAdmin();
-  const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, async (chunk) =>
-    supabase
-      .from(CRM_CHECKINS_UNIFIED_VIEW)
-      .select("contact_crm_id, lat, lon, check_date")
-      // iReports360 check-ins only, as loadCheckins above: never a Phoenix visit's position.
-      .eq("source", IREPORTS360_VISIT_SOURCE)
-      .in("contact_crm_id", chunk)
-      .not("lat", "is", null)
-      .not("lon", "is", null)
-      .order("check_date", { ascending: false })
-      .limit(PAGE_SIZE),
-  );
-  for (const { data, error } of answers) {
+  // Paged to the last check-in, newest first (the first pin a contact has is its newest) with the check-in id as
+  // the tie-break: one thousand rows of a chunk could be all older than another contact's only pin.
+  const answers = await mapWithConcurrency(inChunks(ids), CHUNK_CONCURRENCY, async (chunk) => {
+    try {
+      const rows = await fetchAllRows<{ contact_crm_id: number; lat: number; lon: number }>(
+        () =>
+          supabase
+            .from(CRM_CHECKINS_UNIFIED_VIEW)
+            .select("contact_crm_id, lat, lon, check_date")
+            // iReports360 check-ins only, as loadCheckins above: never a Phoenix visit's position.
+            .eq("source", IREPORTS360_VISIT_SOURCE)
+            .in("contact_crm_id", chunk)
+            .not("lat", "is", null)
+            .not("lon", "is", null)
+            .order("check_date", { ascending: false }),
+        "crm_checkin_id",
+      );
+      return { error: null as unknown, rows };
+    } catch (error) {
+      return { error: error as unknown, rows: [] as Array<{ contact_crm_id: number; lat: number; lon: number }> };
+    }
+  });
+  for (const { rows, error } of answers) {
     if (error) {
       if (isCrmSchemaMissingError(error)) return pins;
-      throw new Error(`Could not read check-ins for the shared-customer check: ${error.message}`);
+      throw new Error(
+        `Could not read check-ins for the shared-customer check: ${error instanceof Error ? error.message : (error as { message?: string }).message ?? "unreadable"}`,
+      );
     }
-    for (const row of (data ?? []) as Array<{ contact_crm_id: number; lat: number; lon: number }>) {
+    for (const row of rows) {
       if (!pins.has(row.contact_crm_id)) pins.set(row.contact_crm_id, { lat: row.lat, lon: row.lon });
     }
   }

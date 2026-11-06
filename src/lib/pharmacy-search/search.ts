@@ -19,7 +19,8 @@
 
 import { normalizeArabicPharmacyName, removeStopWords } from "@/lib/pharmacy-master/pharmacy-matching";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 import { getTerritoryReference, resolveTerritory, type TerritoryReference } from "./reference";
 import { visibleDistributorRows, visibleTerritoryReference } from "./source-visibility";
@@ -128,12 +129,10 @@ const CUSTOMER_MAP_COLUMNS = "distributor_code, customer_code, customer_name, ad
  * both cheaper and simpler, and it keeps the match rule in the same normalizer `collapseByPharmacy`
  * uses — which is what makes a registry hit and a directory hit for one pharmacy collapse at all.
  *
- * Measured on production 2026-09-08: 75 rows ever written, 53 of them active. The ceiling below is
- * ~40x that, so it is a guard against an unexpected import, not a paging limit; if the registry
- * ever approaches it, this branch moves into SQL alongside the picker's.
+ * Measured on production 2026-09-08: 75 rows ever written, 53 of them active. Both reads are paged
+ * to the end, so no fixed ceiling can cut the registry; if it ever grows large enough that reading
+ * it whole is slow, this branch moves into SQL alongside the picker's.
  */
-const REGISTRY_FETCH_LIMIT = 2000;
-
 const REGISTRY_COLUMNS = "id, phoenix_pharmacy_code, pharmacy_name, pharmacy_address, brick_id, area_code, region_code";
 
 type RegistryPharmacyRow = {
@@ -251,23 +250,29 @@ function registryHits(
 async function loadRegistryPharmacies(viewer: SourceMaskViewer): Promise<RegistryPharmacy[]> {
   const supabase = getSupabaseAdmin();
 
+  // Both read in full, paged: the match runs in memory over the whole registry, so a fixed ceiling
+  // would make a pharmacy past it unfindable with no sign that it was cut.
   const [pharmacies, codes] = await Promise.all([
-    supabase
-      .from("direct_order_pharmacies")
-      .select(REGISTRY_COLUMNS)
-      .eq("active", true)
-      .limit(REGISTRY_FETCH_LIMIT),
-    visibleDistributorRows(
-      supabase.from("direct_order_pharmacy_distributor_codes").select("pharmacy_id, distributor_code, customer_code"),
-      viewer,
-    ).limit(REGISTRY_FETCH_LIMIT),
+    fetchAllRows<RegistryPharmacyRow>(
+      () => supabase.from("direct_order_pharmacies").select(REGISTRY_COLUMNS).eq("active", true),
+      "id",
+    ).catch((error: unknown) => {
+      throw new Error(`Phoenix pharmacy registry search failed: ${toQueryError(error).message}`);
+    }),
+    fetchAllRows<RegistryCodeRow>(
+      () =>
+        visibleDistributorRows(
+          supabase.from("direct_order_pharmacy_distributor_codes").select("pharmacy_id, distributor_code, customer_code"),
+          viewer,
+        ),
+      "id",
+    ).catch((error: unknown) => {
+      throw new Error(`Phoenix pharmacy code lookup failed: ${toQueryError(error).message}`);
+    }),
   ]);
 
-  if (pharmacies.error) throw new Error(`Phoenix pharmacy registry search failed: ${pharmacies.error.message}`);
-  if (codes.error) throw new Error(`Phoenix pharmacy code lookup failed: ${codes.error.message}`);
-
   const codesByPharmacy = new Map<string, Array<{ customerCode: string; distributorCode: string }>>();
-  for (const row of (codes.data ?? []) as RegistryCodeRow[]) {
+  for (const row of codes) {
     const pharmacyId = row.pharmacy_id?.trim();
     const distributorCode = row.distributor_code?.trim();
     const customerCode = row.customer_code?.trim();
@@ -278,7 +283,7 @@ async function loadRegistryPharmacies(viewer: SourceMaskViewer): Promise<Registr
   }
 
   const result: RegistryPharmacy[] = [];
-  for (const row of (pharmacies.data ?? []) as RegistryPharmacyRow[]) {
+  for (const row of pharmacies) {
     const id = row.id?.trim();
     const name = row.pharmacy_name?.trim();
     const phoenixPharmacyCode = row.phoenix_pharmacy_code?.trim();

@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 
 // Every customer with no ACTIVE mapping — switched off in the customer map, or present in imported sales and
 // never mapped at all. The SoS Magic "Needs mapping" tab only lists what one analyzed FILE does not know, so
@@ -22,12 +22,9 @@ export type UnmappedCustomer = {
 
 export type UnmappedCustomersResult = {
   customers: UnmappedCustomer[];
-  /** True when the database returned exactly its row ceiling, so the list may be cut. */
+  /** Always false now: the list is read in full (rpcAll pages past a server row ceiling). Kept for the screen's warning. */
   possiblyTruncated: boolean;
 };
-
-// PostgREST's default row ceiling. A result that fills it exactly is reported as possibly cut, never as complete.
-export const UNMAPPED_ROW_CEILING = 1000;
 
 const text = (value: unknown) => (typeof value === "string" ? value : value == null ? "" : String(value));
 const orNull = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : null);
@@ -49,11 +46,15 @@ export function parseUnmappedCustomers(rows: unknown): UnmappedCustomersResult {
     lastPeriod: orNull(r.last_period),
     lines: text(r.lines),
   }));
-  return { customers, possiblyTruncated: list.length >= UNMAPPED_ROW_CEILING };
+  return { customers, possiblyTruncated: false };
 }
 
 export async function listUnmappedCustomers(): Promise<UnmappedCustomersResult> {
-  const { data, error } = await getSupabaseAdmin().rpc("sos_unmapped_customers");
-  if (error) throw new Error(`Could not list the unmapped customers: ${error.message}`);
-  return parseUnmappedCustomers(data);
+  try {
+    // rpcAll, not a bare .rpc(): a response cut at the server's row ceiling would drop customers with no error.
+    const rows = await rpcAll(getSupabaseAdmin(), "sos_unmapped_customers", {}, ["distributor_code", "customer_code"]);
+    return parseUnmappedCustomers(rows);
+  } catch (error) {
+    throw new Error(`Could not list the unmapped customers: ${toQueryError(error).message}`);
+  }
 }

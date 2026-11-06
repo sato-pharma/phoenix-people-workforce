@@ -6,6 +6,7 @@
 // reaches the database and is opened only in memory, only to build a live IMAP connection, and is
 // never returned to any caller or serialized into any MailboxMonitor. A DB row on its own is inert.
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { openSecret, sealSecret } from "@/lib/security/secret-box";
 import {
@@ -272,12 +273,20 @@ async function refuseAdd(input: {
 // ---------------------------------------------------------------------------
 
 export async function listMonitors(): Promise<MailboxMonitor[]> {
-  const { data, error } = await db()
-    .from(MONITORS_TABLE)
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
-  const rows = (data ?? []) as MonitorRow[];
+  // Every monitor, paged to the last row: the invite-inbox lookup walks this list, and a monitor
+  // past one response's worth would read as "not connected".
+  let rows: MonitorRow[];
+  try {
+    rows = await fetchAllRows<MonitorRow>(
+      () => db().from(MONITORS_TABLE).select("*").order("created_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    const message = (error as { message?: unknown } | null)?.message;
+    throw new MailboxMonitorError(typeof message === "string" ? message : "The mailbox monitors could not be read.", 500, {
+      diagnostic: true,
+    });
+  }
   const names = await resolveEmployeeNames(rows.map((r) => r.employee_hr_id ?? ""));
   return rows.map((row) => rowToMonitor(row, row.employee_hr_id ? names.get(row.employee_hr_id) ?? null : null));
 }

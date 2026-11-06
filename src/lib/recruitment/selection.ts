@@ -18,6 +18,7 @@ import {
 import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { Application, Candidate, InterviewType } from "@/lib/recruitment/types";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 // The candidates worth comparing at the selection step.
 const SELECTION_STAGES = ["manager_interview_completed", "final_selection", "backup_candidate"] as const;
@@ -46,14 +47,19 @@ export async function getRequisitionSelectionBoard(
   if (!requisition) throw new Error("Requisition not found.");
 
   const supabase = recruitmentDb();
-  const { data: appRows, error: appError } = await supabase
-    .from("ats_applications")
-    .select("*")
-    .eq("requisition_id", requisitionId)
-    .in("stage", SELECTION_STAGES as readonly string[])
-    .order("created_at", { ascending: true });
-  if (appError) throw appError;
-  const applications = ((appRows ?? []) as ApplicationDbRow[]).map(mapApplication);
+  // Every applicant on the requisition, paged to a short page by the unique `id`: one mass-hire
+  // requisition can carry hundreds, and an applicant a response cap dropped would never be reviewed.
+  const appRows = await fetchAllRows<ApplicationDbRow>(
+    () =>
+      supabase
+        .from("ats_applications")
+        .select("*")
+        .eq("requisition_id", requisitionId)
+        .in("stage", SELECTION_STAGES as readonly string[])
+        .order("created_at", { ascending: true }),
+    "id",
+  );
+  const applications = appRows.map(mapApplication);
   if (applications.length === 0) return [];
 
   const candidateIds = Array.from(new Set(applications.map((a) => a.candidateId)));

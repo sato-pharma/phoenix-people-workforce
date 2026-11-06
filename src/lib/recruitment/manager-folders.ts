@@ -20,6 +20,7 @@ import {
 import { getCandidate } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import type { ManagerFolderFiling, ManagerFolderFilings } from "@/lib/recruitment/manager-folder-shelf";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 /**
  * "That table is not there" — BOTH spellings of it.
@@ -83,20 +84,26 @@ export async function listManagerFolderFilings(managerHrId: string | null | unde
   const key = canonicalHrIdKey(managerHrId);
   if (!key) return {};
 
-  const { data, error } = await recruitmentDb()
-    .from("ats_candidate_manager_folders")
-    .select("candidate_id,kind,folder_key,filed_at,filed_by_hr_id")
-    .eq("manager_hr_id_norm", key)
-    .order("filed_at", { ascending: false })
-    .limit(5000);
-  if (error) {
+  // Paged to the end: a fixed row ceiling would send a filed CV back to his inbox without a sound.
+  let data: ManagerFolderRow[];
+  try {
+    data = await fetchAllRows<ManagerFolderRow>(
+      () =>
+        recruitmentDb()
+          .from("ats_candidate_manager_folders")
+          .select("candidate_id,kind,folder_key,filed_at,filed_by_hr_id")
+          .eq("manager_hr_id_norm", key)
+          .order("filed_at", { ascending: false }),
+      "candidate_id",
+    );
+  } catch (error) {
     // See isMissingTable: PostgREST says PGRST205, not 42P01.
     if (isMissingTable(error)) return {};
     throw error;
   }
 
   const filings: ManagerFolderFilings = {};
-  for (const row of (data ?? []) as ManagerFolderRow[]) {
+  for (const row of data) {
     const candidateId = String(row.candidate_id ?? "");
     const filing = mapFiling(row);
     if (candidateId && filing) filings[candidateId] = filing;

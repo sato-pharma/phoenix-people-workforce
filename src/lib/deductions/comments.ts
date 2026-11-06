@@ -7,6 +7,7 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import { assertDeductionsDecisionActor, isDeductionsDecisionActor } from "./permissions.ts";
@@ -81,21 +82,36 @@ export async function listDeductionsComments(input: {
  * Self-only authorship (assertEmployeeCanCommentOnCandidate) means every row here was
  * written by the employee it belongs to — this is the company-wide read of those, and the
  * route that calls it is gated on assertDeductionsReadActor, so it is never reached by a
- * self-only viewer. Capped rather than paginated: disputes are rare (a few a month), so one
- * bounded read is the whole history, and the cap only exists so an unbounded table can never
- * stream megabytes into the page.
+ * self-only viewer. With no `limit` this is the WHOLE history, read page by page (a single read is
+ * cut at 1,000 rows by the API, and the oldest comments would disappear without a word); a caller
+ * that passes a `limit` asks for just the newest that many.
  */
 export async function listRecentDeductionsComments(input?: {
   limit?: number;
 }): Promise<DeductionsComment[]> {
-  const limit = Math.min(Math.max(Math.trunc(input?.limit ?? 500), 1), 1000);
-  const { data, error } = await getSupabaseAdmin()
-    .from("deductions_comments")
-    .select("id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return attachCommentAttachments(await attachAuthorNames(((data ?? []) as CommentRow[]).map(mapCommentRow)));
+  const columns = "id, candidate_id, author_login_id, author_hr_id, author_role, body, created_at";
+  const requested = input?.limit;
+  let rows: CommentRow[];
+  if (requested === undefined || !Number.isFinite(requested)) {
+    rows = await fetchAllRows<CommentRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("deductions_comments")
+          .select(columns)
+          .order("created_at", { ascending: false }),
+      "id",
+    );
+  } else {
+    const limit = Math.max(Math.trunc(requested), 1);
+    const { data, error } = await getSupabaseAdmin()
+      .from("deductions_comments")
+      .select(columns)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    rows = (data ?? []) as CommentRow[];
+  }
+  return attachCommentAttachments(await attachAuthorNames(rows.map(mapCommentRow)));
 }
 
 /** Returns the candidate's employee_hr_id_compact, or throws if this candidateId
@@ -450,24 +466,27 @@ async function notifyDeductionsComment(input: {
  *
  * ONE read, no hydration. The inbox read (`listPublishedDeductionCommentThreads`) also loads every
  * publication line and resolves every author's name, which is right for a screen and far too much
- * for a number polled every 30 seconds. The same 1,000-row cap applies for the same reason it does
- * there: disputes run a few a month, so the cap is the whole history and exists only so the table
- * can never stream without bound.
+ * for a number polled every 30 seconds. It reads the whole history page by page: a single read is
+ * cut at 1,000 rows, and a thread whose newest line sat past that would be judged by an older one.
  *
  * Deliberately NOT gated in here. Every other badge domain in /api/approvals/badge-counts asserts
  * at its own door and settles at 0 for a role that cannot see it; this one's door is
  * assertDeductionsReadActor on the route.
  */
 export async function countOpenDeductionsDisputes(): Promise<number> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("deductions_comments")
-    .select("candidate_id, author_role, created_at")
-    .order("created_at", { ascending: false })
-    .limit(1000);
-  if (error) throw error;
+  // `id` descending too, so two lines written in the same instant still arrive newest first.
+  const data = await fetchAllRows<{ author_role?: string | null; candidate_id?: string | null }>(
+    () =>
+      getSupabaseAdmin()
+        .from("deductions_comments")
+        .select("candidate_id, author_role, created_at")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    "id",
+  );
 
   const newestByCandidate = new Map<string, string | null>();
-  for (const row of (data ?? []) as Array<{ author_role?: string | null; candidate_id?: string | null }>) {
+  for (const row of data) {
     const candidateId = String(row.candidate_id ?? "");
     // Rows arrive newest first, so the FIRST sighting of a candidate is its newest line.
     if (!candidateId || newestByCandidate.has(candidateId)) continue;

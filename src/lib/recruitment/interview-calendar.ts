@@ -119,6 +119,7 @@ import {
 import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
 import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
 import { findWhatsAppApplicationSessionId } from "@/lib/recruitment/whatsapp-applicants-loader";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { ilikeAnyFilter, ilikeContainsValue } from "@/lib/supabase/search-filter";
 import {
   createZoomMeeting,
@@ -636,13 +637,18 @@ async function loadSessionsById(ids: readonly string[]): Promise<Map<string, Ses
 async function loadComments(bookingIds: readonly string[]): Promise<CommentRow[]> {
   const rows: CommentRow[] = [];
   for (let index = 0; index < bookingIds.length; index += 50) {
-    const { data, error } = await recruitmentDb()
-      .from(COMMENTS)
-      .select("id,booking_id,author_hr_id,body,created_at")
-      .in("booking_id", bookingIds.slice(index, index + 50))
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    rows.push(...((data ?? []) as CommentRow[]));
+    const batch = bookingIds.slice(index, index + 50);
+    rows.push(
+      ...(await fetchAllRows<CommentRow>(
+        () =>
+          recruitmentDb()
+            .from(COMMENTS)
+            .select("id,booking_id,author_hr_id,body,created_at")
+            .in("booking_id", batch)
+            .order("created_at", { ascending: true }),
+        "id",
+      )),
+    );
   }
   return rows;
 }
@@ -652,13 +658,18 @@ type ScorecardRow = { booking_id: string; evaluator_hr_id: string; rating: numbe
 async function loadScorecards(bookingIds: readonly string[]): Promise<ScorecardRow[]> {
   const rows: ScorecardRow[] = [];
   for (let index = 0; index < bookingIds.length; index += 50) {
-    const { data, error } = await recruitmentDb()
-      .from(SCORECARDS)
-      .select("booking_id,evaluator_hr_id,rating,verdict,comment,updated_at")
-      .in("booking_id", bookingIds.slice(index, index + 50))
-      .order("updated_at", { ascending: true });
-    if (error) throw error;
-    rows.push(...((data ?? []) as ScorecardRow[]));
+    const batch = bookingIds.slice(index, index + 50);
+    rows.push(
+      ...(await fetchAllRows<ScorecardRow>(
+        () =>
+          recruitmentDb()
+            .from(SCORECARDS)
+            .select("booking_id,evaluator_hr_id,rating,verdict,comment,updated_at")
+            .in("booking_id", batch)
+            .order("updated_at", { ascending: true }),
+        "id",
+      )),
+    );
   }
   return rows;
 }
@@ -668,13 +679,18 @@ type ChangeRow = { id: string; booking_id: string; actor_hr_id: string | null; k
 async function loadBookingChanges(bookingIds: readonly string[]): Promise<ChangeRow[]> {
   const rows: ChangeRow[] = [];
   for (let index = 0; index < bookingIds.length; index += 50) {
-    const { data, error } = await recruitmentDb()
-      .from(CHANGES)
-      .select("id,booking_id,actor_hr_id,kind,summary,created_at")
-      .in("booking_id", bookingIds.slice(index, index + 50))
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    rows.push(...((data ?? []) as ChangeRow[]));
+    const batch = bookingIds.slice(index, index + 50);
+    rows.push(
+      ...(await fetchAllRows<ChangeRow>(
+        () =>
+          recruitmentDb()
+            .from(CHANGES)
+            .select("id,booking_id,actor_hr_id,kind,summary,created_at")
+            .in("booking_id", batch)
+            .order("created_at", { ascending: false }),
+        "id",
+      )),
+    );
   }
   return rows;
 }
@@ -1079,26 +1095,32 @@ async function hydrateSessions(rows: readonly SessionRow[], now: Date = new Date
 // ── Reading ─────────────────────────────────────────────────────────────────────────────────────
 
 async function bookingsBetween(from: Date, to: Date): Promise<BookingRow[]> {
-  const { data, error } = await recruitmentDb()
-    .from(BOOKINGS)
-    .select(BOOKING_COLUMNS)
-    .gte("starts_at", from.toISOString())
-    .lt("starts_at", to.toISOString())
-    .order("starts_at", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as BookingRow[];
+  // Every booking in the window, paged to a short page by the unique `id`: a booking a response cap
+  // dropped would be an interview that is on nobody's calendar.
+  return fetchAllRows<BookingRow>(
+    () =>
+      recruitmentDb()
+        .from(BOOKINGS)
+        .select(BOOKING_COLUMNS)
+        .gte("starts_at", from.toISOString())
+        .lt("starts_at", to.toISOString())
+        .order("starts_at", { ascending: true })
+        .order("created_at", { ascending: true }),
+    "id",
+  );
 }
 
 async function sessionsBetween(from: Date, to: Date): Promise<SessionRow[]> {
-  const { data, error } = await recruitmentDb()
-    .from(SESSIONS)
-    .select(SESSION_COLUMNS)
-    .gte("starts_at", from.toISOString())
-    .lt("starts_at", to.toISOString())
-    .order("starts_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as SessionRow[];
+  return fetchAllRows<SessionRow>(
+    () =>
+      recruitmentDb()
+        .from(SESSIONS)
+        .select(SESSION_COLUMNS)
+        .gte("starts_at", from.toISOString())
+        .lt("starts_at", to.toISOString())
+        .order("starts_at", { ascending: true }),
+    "id",
+  );
 }
 
 export type InterviewCalendarWeekData = { weekStart: string; bookings: InterviewBooking[]; sessions: InterviewSession[] };
@@ -1211,13 +1233,15 @@ async function loadSessionRow(sessionId: unknown): Promise<SessionRow> {
 }
 
 async function sessionBookingRows(sessionId: string): Promise<BookingRow[]> {
-  const { data, error } = await recruitmentDb()
-    .from(BOOKINGS)
-    .select(BOOKING_COLUMNS)
-    .eq("session_id", sessionId)
-    .order("starts_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as BookingRow[];
+  return fetchAllRows<BookingRow>(
+    () =>
+      recruitmentDb()
+        .from(BOOKINGS)
+        .select(BOOKING_COLUMNS)
+        .eq("session_id", sessionId)
+        .order("starts_at", { ascending: true }),
+    "id",
+  );
 }
 
 // The host link, asked of Zoom and kept in this server's memory for 10 minutes (the screen polls every
@@ -2946,12 +2970,21 @@ type OrgAreaRegions = { byLineArea: Map<string, string>; byArea: Map<string, str
 
 /** Every area the org tree knows, per line, with the region it sits in — and the region names themselves. */
 async function loadAreaRegions(): Promise<OrgAreaRegions> {
-  const { data, error } = await recruitmentDb().from("au_v_org_tree").select("line_name,region_name,area_name").not("region_name", "is", null);
-  if (error) throw error;
+  // Every seat, paged to a short page, so no area is missing its region. The view holds one row per
+  // OCCUPANT, so the order is occupant then `seat_id`: together they are unique, which paging needs.
+  const data = await fetchAllRows<{ line_name: string | null; region_name: string | null; area_name: string | null }>(
+    () =>
+      recruitmentDb()
+        .from("au_v_org_tree")
+        .select("line_name,region_name,area_name")
+        .not("region_name", "is", null)
+        .order("occupant_hr_id", { ascending: true }),
+    "seat_id",
+  );
   const byLineArea = new Map<string, string>();
   const byArea = new Map<string, string>();
   const regions = new Map<string, string>();
-  for (const row of (data ?? []) as Array<{ line_name: string | null; region_name: string | null; area_name: string | null }>) {
+  for (const row of data) {
     const region = row.region_name?.trim();
     if (!region) continue;
     regions.set(orgNameKey(region), region);

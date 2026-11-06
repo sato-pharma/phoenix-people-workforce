@@ -534,6 +534,7 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
         .eq("payout_year", period.year)
         .is("imported_payroll_batch_id", null)
         .order("expense_date", { ascending: true })
+        .order("id", { ascending: true })
         .range(from, from + EXPENSE_PAGE_SIZE - 1);
       if (error) {
         logError("Automated payroll: payout expenses load failed", {

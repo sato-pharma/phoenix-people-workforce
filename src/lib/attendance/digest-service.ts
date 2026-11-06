@@ -39,6 +39,7 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id.ts";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report.ts";
@@ -974,16 +975,17 @@ export async function listReviewWeeks(todayIso: string = cairoTodayIso()): Promi
 export async function loadReviewWeek(input: { cycleKey: string; weekIndex: number; todayIso?: string }): Promise<ReviewWeek | null> {
   const todayIso = input.todayIso ?? cairoTodayIso();
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("attendance_weekly_digests")
-    .select(DIGEST_COLUMNS)
-    .eq("cycle_key", input.cycleKey)
-    .eq("week_index", input.weekIndex)
-    .order("release_round", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(1000);
-  if (error) throw error;
-  const rows = (data ?? []) as Record<string, unknown>[];
+  // Paged: a week holds one digest per employee per release, and PostgREST stops at 1,000 rows without saying so.
+  const rows = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("attendance_weekly_digests")
+        .select(DIGEST_COLUMNS)
+        .eq("cycle_key", input.cycleKey)
+        .eq("week_index", input.weekIndex)
+        .order("release_round", { ascending: true }),
+    "id",
+  );
 
   if (!rows.length) {
     const timing = weekTiming(input.cycleKey, input.weekIndex, null, todayIso);
@@ -1708,17 +1710,20 @@ export type PendingDispute = {
 /** Every day waiting on a reviewer's decision, oldest first. */
 export async function listPendingDisputes(): Promise<PendingDispute[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("attendance_digest_lines")
-    .select(
-      "id,digest_id,work_date,deduction_days,deduction_value,chosen_method,reason,dispute_reason,evidence,attendance_weekly_digests!inner(employee_hr_id)",
-    )
-    .eq("action", "disputed")
-    .order("work_date", { ascending: true })
-    .limit(200);
-  if (error) throw error;
+  // Paged: a fixed cap here would hide the newest disputed days from the only person who can decide them.
+  const data = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("attendance_digest_lines")
+        .select(
+          "id,digest_id,work_date,deduction_days,deduction_value,chosen_method,reason,dispute_reason,evidence,attendance_weekly_digests!inner(employee_hr_id)",
+        )
+        .eq("action", "disputed")
+        .order("work_date", { ascending: true }),
+    "id",
+  );
   const directory = await loadDirectoryByKey();
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  return data.map((row) => {
     const nested = row.attendance_weekly_digests as { employee_hr_id?: string } | Array<{ employee_hr_id?: string }> | null;
     const employeeHrId = String((Array.isArray(nested) ? nested[0]?.employee_hr_id : nested?.employee_hr_id) ?? "");
     const person = directoryRowFor(directory, employeeHrId);
@@ -1894,17 +1899,20 @@ export type SweepResult = {
  */
 export async function settleOverdueAnswers(input: { todayIso: string; actor: string }): Promise<SweepResult> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("attendance_weekly_digests")
-    .select("id,employee_hr_id,week_start,released_at,answer_due_on,notified_at")
-    .eq("status", "open")
-    .eq("dry_run", false)
-    // Only employees who were actually told. See deadlineApplies.
-    .not("notified_at", "is", null)
-    .lt("answer_due_on", input.todayIso)
-    .limit(2000);
-  if (error) throw error;
-  const pastStoredDate = ((data ?? []) as Array<Record<string, unknown>>)
+  // Paged: a fixed cap would leave the weeks past it unsettled, run after run, without a word.
+  const data = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("attendance_weekly_digests")
+        .select("id,employee_hr_id,week_start,released_at,answer_due_on,notified_at")
+        .eq("status", "open")
+        .eq("dry_run", false)
+        // Only employees who were actually told. See deadlineApplies.
+        .not("notified_at", "is", null)
+        .lt("answer_due_on", input.todayIso),
+    "id",
+  );
+  const pastStoredDate = data
     .filter((row) =>
       deadlineApplies({ answerDueOn: textOrNull(row.answer_due_on), notifiedAt: textOrNull(row.notified_at), todayCairoIso: input.todayIso }),
     )

@@ -161,7 +161,8 @@ export default async function EmployeePortalEmployee360DetailPage({
   const teamHrIds: string[] = [target.hrId];
   const seenTeam = new Set<string>([target.hrId.trim().toLowerCase()]);
   const queue = [target.hrId.trim().toLowerCase()];
-  while (queue.length && teamHrIds.length < 1000) {
+  // Ends by itself: `seenTeam` admits each person once, so no fixed cap on the team is needed (one silently cut it).
+  while (queue.length) {
     const current = queue.shift() as string;
     for (const child of childrenByManager.get(current) ?? []) {
       const key = child.trim().toLowerCase();

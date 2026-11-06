@@ -34,7 +34,7 @@ import { chunkIds } from "@/lib/recruitment/db-batch";
 import { readAllFolderItemsOnce } from "@/lib/recruitment/cv-folder-tree-db";
 import { managerHoldsFolders } from "@/lib/recruitment/folder-holders";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
-import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { fetchAllRows, fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import { notACvCandidateIds, type ExtractionVerdictRow } from "@/lib/recruitment/pool-enrichment";
 import {
@@ -230,7 +230,11 @@ async function selectEveryCandidateRow(
   const rows: CandidateDbRow[] = [];
   for (let page = 0; page < CANDIDATE_PAGE_LIMIT; page += 1) {
     const from = page * CANDIDATE_PAGE_SIZE;
-    const { data, error } = await build(supabase.from("ats_candidates")).range(from, from + CANDIDATE_PAGE_SIZE - 1);
+    // `id` goes last as the unique tiebreak: the callers order by `created_at` (or not at all), and an
+    // offset walk over ties or no order can repeat one page's rows and skip another's with no error.
+    const { data, error } = await build(supabase.from("ats_candidates"))
+      .order("id", { ascending: true })
+      .range(from, from + CANDIDATE_PAGE_SIZE - 1);
     if (error) throw error;
     const batch = (data ?? []) as CandidateDbRow[];
     rows.push(...batch);
@@ -350,12 +354,21 @@ async function loadCvJobTitlesByCandidate(ids: string[]): Promise<CvJobTitles> {
   const seen = new Set<string>();
   // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
   const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
-    const { data, error } = await supabase
-      .from("ats_candidate_cv_extractions")
-      .select("candidate_id,created_at,extracted_fields")
-      .in("candidate_id", batch)
-      .order("created_at", { ascending: false });
-    return error || !data ? [] : (data as Array<{ candidate_id?: unknown; extracted_fields?: unknown }>);
+    // Each batch paged to a short page by the unique `id`, so a re-read CV's newest extraction can never
+    // be the row a response cap dropped. A failed batch still drops only its own enrichment.
+    try {
+      return await fetchAllRows<{ candidate_id?: unknown; extracted_fields?: unknown }>(
+        () =>
+          supabase
+            .from("ats_candidate_cv_extractions")
+            .select("candidate_id,created_at,extracted_fields")
+            .in("candidate_id", batch)
+            .order("created_at", { ascending: false }),
+        "id",
+      );
+    } catch {
+      return [];
+    }
   });
   for (const data of pages) {
     for (const row of data) {
@@ -418,19 +431,27 @@ async function loadUnconfirmedCvFactsByCandidate(ids: string[]): Promise<Map<str
   const seen = new Set<string>();
   // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
   const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
-    const { data, error } = await supabase
-      .from("ats_candidate_cv_extractions")
-      .select(
-        "candidate_id,created_at," +
-          "title:extracted_fields->currentJobTitle," +
-          "employer:extracted_fields->currentEmployer," +
-          "years:extracted_fields->yearsExperience," +
-          "governorate:extracted_fields->governorate," +
-          "pharma:extracted_fields->hasMedicalRepExperience",
-      )
-      .in("candidate_id", batch)
-      .order("created_at", { ascending: false });
-    return error || !data ? [] : (data as UnconfirmedCvFactRow[]);
+    // Paged like the job-title loader above, and failing the same way: a failed batch drops only its own cells.
+    try {
+      return await fetchAllRows<UnconfirmedCvFactRow>(
+        () =>
+          supabase
+            .from("ats_candidate_cv_extractions")
+            .select(
+              "candidate_id,created_at," +
+                "title:extracted_fields->currentJobTitle," +
+                "employer:extracted_fields->currentEmployer," +
+                "years:extracted_fields->yearsExperience," +
+                "governorate:extracted_fields->governorate," +
+                "pharma:extracted_fields->hasMedicalRepExperience",
+            )
+            .in("candidate_id", batch)
+            .order("created_at", { ascending: false }),
+        "id",
+      );
+    } catch {
+      return [];
+    }
   });
   for (const data of pages) {
     for (const row of data) {
@@ -582,12 +603,20 @@ async function loadRequisitionJobTitleByCandidate(ids: string[]): Promise<Map<st
   const supabase = recruitmentDb();
   // Fetched four batches at a time, folded in batch order (ENRICHMENT_BATCH_CONCURRENCY).
   const pages = await mapWithConcurrency(chunkIds(ids), ENRICHMENT_BATCH_CONCURRENCY, async (batch) => {
-    const { data, error } = await supabase
-      .from("ats_applications")
-      .select("candidate_id,created_at,ats_requisitions(job_title)")
-      .in("candidate_id", batch)
-      .order("created_at", { ascending: false });
-    return error || !data ? [] : (data as Array<{ candidate_id?: unknown; ats_requisitions?: unknown }>);
+    // Each batch paged to a short page by the unique `id`; a failed batch drops only its own enrichment.
+    try {
+      return await fetchAllRows<{ candidate_id?: unknown; ats_requisitions?: unknown }>(
+        () =>
+          supabase
+            .from("ats_applications")
+            .select("candidate_id,created_at,ats_requisitions(job_title)")
+            .in("candidate_id", batch)
+            .order("created_at", { ascending: false }),
+        "id",
+      );
+    } catch {
+      return [];
+    }
   });
   for (const data of pages) {
     for (const row of data) {
@@ -891,24 +920,30 @@ export async function listCandidatesSentToManager(managerHrId: string | null | u
   // where a manager is shown an empty page that means the opposite of what it says.
   const sends = await listSendsForManager(managerHrId, now);
 
-  let legacyQuery = supabase.from("ats_candidates").select("*").in("manager_notified_hr_id", keys);
+  const legacyBase = () => supabase.from("ats_candidates").select("*").in("manager_notified_hr_id", keys);
   // A stamp with no date is not provably inside the window, and `gte` drops a NULL — the same
   // fail-closed answer manager-hold-window.ts gives. Every real send also has a row in the table
   // above, so this costs a manager nothing he is entitled to. A folder holder has no window.
-  if (!(await managerHoldsFolders(managerHrId))) {
-    legacyQuery = legacyQuery.gte("manager_notified_at", managerHoldCutoffIso(now));
-  }
-  const legacy = await legacyQuery.order("manager_notified_at", { ascending: false });
-  if (legacy.error) {
+  const holdsFolders = await managerHoldsFolders(managerHrId);
+  let legacyRows: CandidateDbRow[] = [];
+  try {
+    // Every CV stamped for this manager, paged to a short page by the unique `id`: a folder holder has
+    // no window, so his list only grows, and a page read from the first response's worth would hide
+    // CVs from the person they were sent to.
+    legacyRows = await fetchAllRows<CandidateDbRow>(() => {
+      const scoped = holdsFolders ? legacyBase() : legacyBase().gte("manager_notified_at", managerHoldCutoffIso(now));
+      return scoped.order("manager_notified_at", { ascending: false });
+    }, "id");
+  } catch (error) {
     // 42703 = the column does not exist, which is the pre-migration state and NOT a fault of this
     // caller: 20260815180000_candidate_manager_push adds it. Everything else is a real failure and
     // is thrown, because a manager silently shown an empty list is precisely the invisibility this
     // module has been fixing all day.
-    if ((legacy.error as { code?: string }).code !== "42703") throw legacy.error;
+    if ((error as { code?: string }).code !== "42703") throw error;
   }
 
   const rowsById = new Map<string, CandidateDbRow>();
-  for (const row of (legacy.data ?? []) as CandidateDbRow[]) rowsById.set(String(row.id), row);
+  for (const row of legacyRows) rowsById.set(String(row.id), row);
 
   // Anything the fan-out knows about that the old column no longer points at — which is exactly the
   // set that used to be lost: every CV since re-sent to somebody else.
@@ -1670,6 +1705,9 @@ export async function loadRowFindings(): Promise<Map<string, ExtractedCandidateF
       // can hold several extractions — a re-read writes another row rather than replacing one.
       .order("created_at", { ascending: false })
       .order("candidate_id", { ascending: true })
+      // The unique row id last: a candidate's re-reads can share a `created_at`, and a tied order lets
+      // a row repeat or slip between two pages.
+      .order("id", { ascending: true })
       .range(from, from + FINDING_PAGE_SIZE - 1);
 
     if (error) {

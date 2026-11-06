@@ -219,6 +219,8 @@ async function main() {
       .from(SOURCE_TABLE)
       .select("comment")
       .not("comment", "is", null)
+      // A unique order, so the offset walk skips and repeats no visit between pages.
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`read failed at offset ${from}: ${error.message}`);
     if (!data?.length) break;

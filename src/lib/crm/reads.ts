@@ -9,6 +9,7 @@
  */
 
 import { isMissingRpcError } from "@/lib/supabase/errors";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
@@ -2466,10 +2467,6 @@ export type CrmAgentIdentityRow = {
   double_crm_id: string | null;
 };
 
-/** Cap for one identity lookup. Generous: a single rep's own history runs to a
- * few thousand rows, and the read is bounded to a handful of hr ids. */
-const IDENTITY_ROW_LIMIT = 2000;
-
 /**
  * The identity pairs the feed itself carries for these hr ids, newest first, read
  * from visits strictly BEFORE `beforeDate`. Callers interpret the pairs — this
@@ -2496,25 +2493,30 @@ const IDENTITY_ROW_LIMIT = 2000;
  */
 export async function getAgentCrmIdentityRows(
   hrIds: readonly string[],
-  options: { beforeDate?: string; limit?: number } = {},
+  options: { beforeDate?: string } = {},
 ): Promise<CrmAgentIdentityRow[]> {
   if (hrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const filterValues = expandHrIdFilterValues(hrIds);
-  const limit = options.limit ?? IDENTITY_ROW_LIMIT;
   const rows: CrmAgentIdentityRow[] = [];
   for (const column of ["agent_hr_id", "double_hr_id"] as const) {
-    let query = supabase
-      .from(CRM_VISITS_TABLE)
-      .select("agent_hr_id, agent_crm_id, double_hr_id, double_crm_id")
-      .in(column, filterValues);
-    if (options.beforeDate) query = query.lt("visit_date", options.beforeDate);
-    const { data, error } = await query.order("visit_date", { ascending: false }).limit(limit);
-    if (error) {
+    try {
+      // Paged to the last row, newest first with the id as the tie-break: a fixed ceiling here let one leaver's
+      // history crowd another's out of the newest rows, and a leaver with no pair is a deduction never raised.
+      rows.push(
+        ...(await fetchAllRows<CrmAgentIdentityRow>(() => {
+          let query = supabase
+            .from(CRM_VISITS_TABLE)
+            .select("agent_hr_id, agent_crm_id, double_hr_id, double_crm_id")
+            .in(column, filterValues);
+          if (options.beforeDate) query = query.lt("visit_date", options.beforeDate);
+          return query.order("visit_date", { ascending: false });
+        }, "id")),
+      );
+    } catch (error) {
       if (isCrmSchemaMissingError(error)) return [];
-      throw new Error(error.message);
+      throw toQueryError(error);
     }
-    rows.push(...((data ?? []) as unknown as CrmAgentIdentityRow[]));
   }
   return rows;
 }

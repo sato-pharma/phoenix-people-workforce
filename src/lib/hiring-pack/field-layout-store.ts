@@ -29,6 +29,7 @@ import {
   type DocumentTemplateVersion,
   type TemplateStatus,
 } from "@/lib/hiring-pack/template-registry";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   asPrintableDocument,
@@ -56,6 +57,20 @@ export function isFieldLayerMissing(error: unknown): boolean {
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))
   );
+}
+
+/**
+ * A PostgREST error is a plain object, and the shared pager throws it as it received it. Reads that
+ * used to `throw new Error(error.message)` keep doing exactly that, so a caller still catches an
+ * `Error` carrying the database's own words.
+ */
+function asError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  const message =
+    error && typeof error === "object" && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error);
+  return new Error(message);
 }
 
 export type FieldRecord = {
@@ -163,37 +178,42 @@ const COLUMNS =
 /**
  * The layout for one document at one template version.
  *
- * Ordered explicitly. An unbounded `.select()` stops at 1000 rows with no marker, and while a layout
- * that large would already be a mistake, an unordered read is worse than a capped one: two renders
- * of the same document could stack overlapping fields in different orders and print differently
- * with nothing changed. `created_at` is the order the operator added them in, which is also the
- * order they expect them to layer.
+ * Ordered explicitly, and read in full by the shared pager. A single `.select()` stops at PostgREST's
+ * 1000 rows with no marker, and a fixed `.limit()` stops sooner and just as silently, so the layout
+ * is walked page by page with `id` as the tiebreak. An unordered read is worse than a capped one:
+ * two renders of the same document could stack overlapping fields in different orders and print
+ * differently with nothing changed. `created_at` is the order the operator added them in, which is
+ * also the order they expect them to layer.
  */
 export async function loadDocumentFieldLayout(
   document: PrintableDocument,
   templateVersionId: string,
 ): Promise<DocumentFieldRow[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq("document", document)
-    .eq("template_version_id", templateVersionId)
-    .is("employee_hr_id", null)
-    .order("created_at", { ascending: true })
-    .limit(500);
-
-  if (error) {
+  // Rows are typed by the pager's generic, not by the client: with no generated Database type in
+  // this repo the client cannot know this table. Every row is then validated by
+  // `documentFieldFromRecord`, which returns null for anything it cannot draw — the type buys
+  // entry to the shape, it is not trusted as proof of it.
+  let records: FieldRecord[];
+  try {
+    records = await fetchAllRows<FieldRecord>(
+      () =>
+        supabase
+          .from(TABLE)
+          .select(COLUMNS)
+          .eq("document", document)
+          .eq("template_version_id", templateVersionId)
+          .is("employee_hr_id", null)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
+  } catch (error) {
     if (isFieldLayerMissing(error)) return [];
-    throw new Error(error.message);
+    throw asError(error);
   }
 
   const rows: DocumentFieldRow[] = [];
-  // Through `unknown` deliberately: with no generated Database type in this repo the client cannot
-  // know this table, so it infers GenericStringError and rejects a direct cast. Every row is then
-  // validated by `documentFieldFromRecord`, which returns null for anything it cannot draw — the
-  // cast buys entry to the shape, it is not trusted as proof of it.
-  for (const record of (data ?? []) as unknown as FieldRecord[]) {
+  for (const record of records) {
     const row = documentFieldFromRecord(record);
     if (row) rows.push(row);
   }
@@ -570,20 +590,20 @@ export async function countDocumentFieldsByVersion(
   if (versions.length === 0) return [];
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq("document", document)
-    .is("employee_hr_id", null)
-    .limit(2000);
-
-  if (error) {
+  let records: FieldRecord[];
+  try {
+    records = await fetchAllRows<FieldRecord>(
+      () =>
+        supabase.from(TABLE).select(COLUMNS).eq("document", document).is("employee_hr_id", null),
+      "id",
+    );
+  } catch (error) {
     if (isFieldLayerMissing(error)) return versions.map((entry) => versionCount(entry, 0));
-    throw new Error(error.message);
+    throw asError(error);
   }
 
   const counts = new Map<string, number>();
-  for (const record of (data ?? []) as unknown as FieldRecord[]) {
+  for (const record of records) {
     // Counted only if it can be drawn. Offering to carry a row the editor would drop on arrival
     // would promise seven boxes and deliver six, with nothing to say which one went missing.
     if (!documentFieldFromRecord(record)) continue;
@@ -695,19 +715,28 @@ export async function carryForwardDocumentFields(
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq("document", document)
-    .eq("template_version_id", fromTemplateVersionId)
-    .is("employee_hr_id", null)
-    .order("created_at", { ascending: true })
-    .limit(500);
-  if (error) throw new Error(error.message);
+  // Read in full: a copy that stops at a fixed row count files fewer boxes than the old version
+  // holds and says nothing about the rest.
+  let sourceRecords: FieldRecord[];
+  try {
+    sourceRecords = await fetchAllRows<FieldRecord>(
+      () =>
+        supabase
+          .from(TABLE)
+          .select(COLUMNS)
+          .eq("document", document)
+          .eq("template_version_id", fromTemplateVersionId)
+          .is("employee_hr_id", null)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
+  } catch (error) {
+    throw asError(error);
+  }
 
   const actor = actorHrId ? canonicalHrIdForDisplay(actorHrId) : null;
   const now = new Date().toISOString();
-  const payload = ((data ?? []) as unknown as FieldRecord[])
+  const payload = sourceRecords
     // Same validation as the count, for the same reason: a row that cannot be drawn is not carried.
     .filter((record) => documentFieldFromRecord(record) !== null)
     .map((record) => ({
@@ -825,20 +854,24 @@ export async function summariseDocumentFieldHistory(
   templateVersionId: string,
 ): Promise<Record<string, FieldHistorySummary>> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(HISTORY_TABLE)
-    .select("field_id, changed_at")
-    .eq("document", document)
-    .eq("template_version_id", templateVersionId)
-    .order("changed_at", { ascending: false })
-    .limit(2000);
-
-  if (error) {
+  let stamps: HistoryStampRow[];
+  try {
+    stamps = await fetchAllRows<HistoryStampRow>(
+      () =>
+        supabase
+          .from(HISTORY_TABLE)
+          .select("field_id, changed_at")
+          .eq("document", document)
+          .eq("template_version_id", templateVersionId)
+          .order("changed_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
     if (isFieldLayerMissing(error)) return {};
-    throw new Error(error.message);
+    throw asError(error);
   }
 
-  return summariseHistoryRows((data ?? []) as unknown as HistoryStampRow[]);
+  return summariseHistoryRows(stamps);
 }
 
 /** The two columns the summary is built from. */
@@ -878,20 +911,24 @@ export function summariseHistoryRows(
  */
 export async function loadFieldHistory(fieldId: string): Promise<FieldHistoryEntry[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(HISTORY_TABLE)
-    .select(HISTORY_COLUMNS)
-    .eq("field_id", fieldId)
-    .order("changed_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
+  let records: HistoryRecord[];
+  try {
+    records = await fetchAllRows<HistoryRecord>(
+      () =>
+        supabase
+          .from(HISTORY_TABLE)
+          .select(HISTORY_COLUMNS)
+          .eq("field_id", fieldId)
+          .order("changed_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
     if (isFieldLayerMissing(error)) return [];
-    throw new Error(error.message);
+    throw asError(error);
   }
 
   const entries: FieldHistoryEntry[] = [];
-  for (const record of (data ?? []) as unknown as HistoryRecord[]) {
+  for (const record of records) {
     const entry = fieldHistoryFromRecord(record);
     if (entry) entries.push(entry);
   }
@@ -962,24 +999,28 @@ export async function copyCustomTemplateFieldLayout(input: {
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(COLUMNS)
-    .eq("document", document)
-    .eq("template_version_id", fromTemplateVersionId)
-    .is("employee_hr_id", null)
-    .order("created_at", { ascending: true })
-    .limit(500);
-
   // A MISSING TABLE IS "NOTHING TO COPY", not a failed replacement. The version has already been
   // created and is already current at this point; throwing here would report the whole replacement
   // as failed when the only thing missing is a field layer that never existed.
-  if (error) {
+  let sourceRecords: FieldRecord[];
+  try {
+    sourceRecords = await fetchAllRows<FieldRecord>(
+      () =>
+        supabase
+          .from(TABLE)
+          .select(COLUMNS)
+          .eq("document", document)
+          .eq("template_version_id", fromTemplateVersionId)
+          .is("employee_hr_id", null)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
+  } catch (error) {
     if (isFieldLayerMissing(error)) return { copied: 0, droppedForMissingPage: 0 };
-    throw new Error(error.message);
+    throw asError(error);
   }
 
-  const rows = ((data ?? []) as unknown as FieldRecord[]).filter(
+  const rows = sourceRecords.filter(
     // Same validation as everywhere else: a row that cannot be drawn is not carried.
     (record) => documentFieldFromRecord(record) !== null,
   );

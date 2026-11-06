@@ -124,6 +124,7 @@ import {
   translatePlanUniqueViolation,
   type RevisionSibling,
 } from "@/lib/weekly-planning/plan-revisions";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isSecondApproverForManager,
@@ -2451,14 +2452,18 @@ export async function listPlanComments(
     throw new Error("Forbidden: you cannot view this plan's conversation.");
   }
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("employee_plan_comments")
-      .select(planCommentSelect)
-      .eq("plan_id", planId)
-      .order("created_at", { ascending: true })
-      .limit(500);
-    if (error) throw error;
-    const comments = await mapPlanComments((data ?? []) as PlanCommentRow[]);
+    const supabase = getSupabaseAdmin();
+    // Paged: a fixed cap would cut the newest replies off the end of a long conversation.
+    const data = await fetchAllRows<PlanCommentRow>(
+      () =>
+        supabase
+          .from("employee_plan_comments")
+          .select(planCommentSelect)
+          .eq("plan_id", planId)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
+    const comments = await mapPlanComments(data);
     return { canComment: true, comments, schemaReady: true };
   } catch (error) {
     if (isSchemaMissing(error)) return { canComment: true, comments: [], schemaReady: false };
@@ -3012,17 +3017,9 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
     : "/admin/weekly-plans";
 
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .select(
-        "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,attendees,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
-      )
-      .in("status", ["submitted", "manager_approved"])
-      .order("submitted_at", { ascending: true })
-      .limit(WORKSPACE_PLAN_LIMIT);
-    if (error) throw error;
-
-    const rows = (data ?? []) as Array<
+    const supabase = getSupabaseAdmin();
+    // Paged: a fixed cap would hide the newest plans awaiting a decision from the very inbox that exists to list them.
+    const rows = await fetchAllRows<
       Pick<
         PlanHeaderRow,
         | "id"
@@ -3039,7 +3036,17 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
         | "submitted_at"
         | "created_at"
       > & { employee_plan_items?: PlanItemRow[] }
-    >;
+    >(
+      () =>
+        supabase
+          .from("employee_plan_headers")
+          .select(
+            "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,attendees,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
+          )
+          .in("status", ["submitted", "manager_approved"])
+          .order("submitted_at", { ascending: true }),
+      "id",
+    );
 
     const directory = await getEmployeeDirectory();
     const directoryByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
@@ -3275,17 +3282,20 @@ async function loadWeeklySourcedItems(
       (headers ?? []) as Array<{ id: string; parent_plan_id: string | null; status: string }>,
     ).map((row) => row.id);
     if (planIds.length === 0) return { items: [], ready: true };
-    const { data: itemRows, error: itemsError } = await supabase
-      .from("employee_plan_items")
-      .select("activity_date,activity_type,activity_title,area,location_text,objective,notes,start_time,end_time")
-      .in("plan_id", planIds)
-      .gte("activity_date", start)
-      .lte("activity_date", end)
-      .order("activity_date", { ascending: true })
-      .order("sort_order", { ascending: true })
-      .limit(2000);
-    if (itemsError) throw itemsError;
-    const items = ((itemRows ?? []) as PlanItemRow[]).map((row) => ({
+    // Paged: a fixed cap would drop the last days of the period from the plan the employee is building.
+    const itemRows = await fetchAllRows<PlanItemRow>(
+      () =>
+        supabase
+          .from("employee_plan_items")
+          .select("activity_date,activity_type,activity_title,area,location_text,objective,notes,start_time,end_time")
+          .in("plan_id", planIds)
+          .gte("activity_date", start)
+          .lte("activity_date", end)
+          .order("activity_date", { ascending: true })
+          .order("sort_order", { ascending: true }),
+      "id",
+    );
+    const items = itemRows.map((row) => ({
       activityDate: row.activity_date,
       slot: planSlotFromTimes(row.start_time, row.end_time),
       activityType: row.activity_type,
@@ -3345,17 +3355,20 @@ async function loadMonthlySourcedItems(
       (headers ?? []) as Array<{ id: string; parent_plan_id: string | null; status: string }>,
     ).map((row) => row.id);
     if (planIds.length === 0) return { items: [], ready: true };
-    const { data: itemRows, error: itemsError } = await supabase
-      .from("employee_plan_items")
-      .select("activity_date,activity_type,activity_title,area,location_text,objective,notes,start_time,end_time")
-      .in("plan_id", planIds)
-      .gte("activity_date", start)
-      .lte("activity_date", end)
-      .order("activity_date", { ascending: true })
-      .order("sort_order", { ascending: true })
-      .limit(2000);
-    if (itemsError) throw itemsError;
-    const items = ((itemRows ?? []) as PlanItemRow[]).map((row) => ({
+    // Paged: a fixed cap would drop the last days of the period from the plan the employee is building.
+    const itemRows = await fetchAllRows<PlanItemRow>(
+      () =>
+        supabase
+          .from("employee_plan_items")
+          .select("activity_date,activity_type,activity_title,area,location_text,objective,notes,start_time,end_time")
+          .in("plan_id", planIds)
+          .gte("activity_date", start)
+          .lte("activity_date", end)
+          .order("activity_date", { ascending: true })
+          .order("sort_order", { ascending: true }),
+      "id",
+    );
+    const items = itemRows.map((row) => ({
       activityDate: row.activity_date,
       slot: planSlotFromTimes(row.start_time, row.end_time),
       activityType: row.activity_type,

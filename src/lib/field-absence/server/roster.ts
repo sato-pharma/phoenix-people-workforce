@@ -17,7 +17,8 @@
 import { tidyAllCapitalsName } from "@/lib/employees/display-name";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 import type { FieldAbsenceScopeSeat } from "../access";
 import {
@@ -64,12 +65,17 @@ const text = (value: unknown): string | null => {
 
 /** The whole seat tree. ~140 rows; an unbounded read stops at 1,000 with no error, so that is refused. */
 export async function loadFieldAbsenceSeats(): Promise<FieldAbsenceSeat[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("au_v_org_tree")
-    .select("seat_id, parent_seat_id, seat_tier, occupant_hr_id, line_code, line_name, area_name, region_name");
-  if (error) throw new Error(`Could not read the organogram seats: ${error.message}`);
-  const rows = (data ?? []) as SeatRow[];
-  if (rows.length >= 1000) throw new Error(`au_v_org_tree returned ${rows.length} rows, at PostgREST's cap.`);
+  // Paged to the last row, never half an organogram: a handover seat is two rows, so (seat, occupant) closes the order.
+  const rows = await fetchAllRows<SeatRow>(
+    () =>
+      getSupabaseAdmin()
+        .from("au_v_org_tree")
+        .select("seat_id, parent_seat_id, seat_tier, occupant_hr_id, line_code, line_name, area_name, region_name")
+        .order("seat_id", { ascending: true }),
+    "occupant_hr_id",
+  ).catch((error: unknown) => {
+    throw new Error(`Could not read the organogram seats: ${toQueryError(error).message}`);
+  });
   return rows.flatMap((row) => {
     const seatId = text(row.seat_id);
     const tier = text(row.seat_tier);
@@ -90,17 +96,22 @@ export async function loadFieldAbsenceSeats(): Promise<FieldAbsenceSeat[]> {
 }
 
 async function loadOccupancy(start: string, end: string): Promise<OccupancyRow[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("au_v_seat_occupancy_all")
-    .select("seat_id, occupant_hr_id, occupant_canonical_hr_id, effective_from, effective_to")
-    .eq("node_type", "person")
-    // Overlapping the window, half-open: a stretch ending ON the first day did not cover it.
-    .lte("effective_from", end)
-    .or(`effective_to.is.null,effective_to.gt.${start}`);
-  if (error) throw new Error(`Could not read the seat history: ${error.message}`);
-  const rows = (data ?? []) as OccupancyRow[];
-  if (rows.length >= 1000) throw new Error(`au_v_seat_occupancy_all returned ${rows.length} rows, at PostgREST's cap.`);
-  return rows;
+  // Paged to the last row. The view carries no id, so (seat, occupant, start of the stretch) closes the order.
+  return fetchAllRows<OccupancyRow>(
+    () =>
+      getSupabaseAdmin()
+        .from("au_v_seat_occupancy_all")
+        .select("seat_id, occupant_hr_id, occupant_canonical_hr_id, effective_from, effective_to")
+        .eq("node_type", "person")
+        // Overlapping the window, half-open: a stretch ending ON the first day did not cover it.
+        .lte("effective_from", end)
+        .or(`effective_to.is.null,effective_to.gt.${start}`)
+        .order("seat_id", { ascending: true })
+        .order("occupant_hr_id", { ascending: true }),
+    "effective_from",
+  ).catch((error: unknown) => {
+    throw new Error(`Could not read the seat history: ${toQueryError(error).message}`);
+  });
 }
 
 function occupantKey(row: OccupancyRow): string | null {

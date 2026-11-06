@@ -4,6 +4,7 @@
 // read and write goes through here, after the caller's access was decided in plans.ts / workspace.ts.
 // Owners are stored in the canonical display form of their HR id, and read back with the same form.
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PeriodKind, SavedPlanSummary } from "@/lib/sales/make-it-happen/engine";
 
@@ -73,20 +74,25 @@ export async function listPlansForOwners(
 ): Promise<StoredPlan[] | null> {
   const keys = [...new Set(ownerKeys.filter(Boolean))];
   if (keys.length === 0) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from(TABLE)
-    .select(COLUMNS)
-    .in("owner_hr_id", keys)
-    .eq("period_kind", periodKind)
-    .eq("period_key", periodKey)
-    .order("updated_at", { ascending: false })
-    .limit(500);
-  if (error) {
+  try {
+    // Paged: one read stops at a fixed row count with no error, and a team's plans must not be cut.
+    const rows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        getSupabaseAdmin()
+          .from(TABLE)
+          .select(COLUMNS)
+          .in("owner_hr_id", keys)
+          .eq("period_kind", periodKind)
+          .eq("period_key", periodKey)
+          .order("updated_at", { ascending: false }),
+      "id",
+    );
+    return rows.map(toPlan);
+  } catch (error) {
     // A missing table answers PGRST205, not 42P01.
-    if (error.code === "PGRST205") return null;
+    if ((error as { code?: string } | null)?.code === "PGRST205") return null;
     throw error;
   }
-  return ((data ?? []) as Record<string, unknown>[]).map(toPlan);
 }
 
 export type PlanValues = {

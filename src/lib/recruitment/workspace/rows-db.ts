@@ -79,8 +79,6 @@ export const WORKSPACE_PAGE_DEFAULT = 50;
 export const WORKSPACE_PAGE_MAX = 200;
 /** The export's default ceiling. A tab holds a few hundred people; this is every realistic export. */
 export const WORKSPACE_EXPORT_DEFAULT_MAX = 5000;
-/** How many people's stored answers feed the answer-filter lists. */
-const ANSWER_VALUES_MAX_IDS = 2000;
 
 /** Only the reply columns, the identity line and the flags. Never a CV-reading column. */
 const CANDIDATE_COLUMNS = [
@@ -619,7 +617,9 @@ export async function loadAnswerFilters(tab: WorkspaceTabKey, viewer?: Workspace
   if (!viewer?.canRead) return buildAnswerFilters(tab, context);
 
   const p = workspaceDbParams({ ...emptyWorkspaceFilters(), archived: "include", tab }, viewer);
-  const ids = await collectWorkspaceIds(p, ANSWER_VALUES_MAX_IDS);
+  // Every person in the tab, not a fixed count of them: the lists offer the values people stored, and a
+  // cut-off here would silently drop the OLDEST people's values from the options.
+  const ids = await collectWorkspaceIds(p, Number.POSITIVE_INFINITY);
   const keys = filterableAnswerKeys(context);
   const values = new Map<string, Set<string>>(keys.map((key) => [key, new Set<string>()]));
   const rows = await fetchRowsInBatches<Pick<CandidateRow, "declared_background" | "declared_experience" | "declared_expected_salary" | "screening_extra_answers">>(

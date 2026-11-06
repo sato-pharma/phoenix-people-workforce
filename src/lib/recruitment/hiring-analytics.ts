@@ -27,7 +27,9 @@
 //      an answer actually experiences. Neither alone is honest.
 
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
+import { chunkIds } from "@/lib/recruitment/db-batch";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
 import { listJobPostChannels } from "@/lib/recruitment/outreach/job-post-channels";
@@ -212,33 +214,15 @@ export function buildFunnel(steps: readonly { label: string; count: number }[]):
 // would be wrong in the same direction.
 //
 // Ordered by a column plus the id, so the order is TOTAL: without the tiebreak two rows written in
-// the same millisecond can appear on two consecutive pages, or on neither.
-const PAGE_SIZE = 500;
-const MAX_PAGES = 200;
-
+// the same millisecond can appear on two consecutive pages, or on neither. The shared pager walks to
+// the end on a short page, with no page ceiling that could drop the tail without a sound.
 async function readAllPages<T>(
   table: string,
   columns: string,
   orderColumn: string,
 ): Promise<T[]> {
   const supabase = getSupabaseAdmin();
-  const rows: T[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await supabase
-      .from(table)
-      .select(columns)
-      .order(orderColumn, { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    const batch = (data ?? []) as unknown as T[];
-    rows.push(...batch);
-    // A short page is the last page. Checking the length rather than asking for a count keeps this
-    // to one round trip per page.
-    if (batch.length < PAGE_SIZE) break;
-  }
-  return rows;
+  return fetchAllRows<T>(() => supabase.from(table).select(columns).order(orderColumn, { ascending: true }), "id");
 }
 
 export type HiringAnalytics = {
@@ -315,51 +299,60 @@ export async function loadHiringAnalytics(access: AccessContext): Promise<Hiring
   //
   // The hired rows are READ, not counted: source-of-hire needs each hire's candidate, its manual
   // tag and who it came from, and the count for the funnel's last step is just their length.
-  const [applications, interviews, governedOffers, letterOffers, hiredRows, channels] = await Promise.all([
+  const [applications, interviews, governedOffers, letterOffers, hiredAppRows, channels] = await Promise.all([
     supabase.from("ats_applications").select("id", { count: "exact", head: true }),
     supabase.from("ats_interviews").select("id", { count: "exact", head: true }),
     supabase.from("ats_offers").select("id", { count: "exact", head: true }),
     supabase.from("offers").select("id", { count: "exact", head: true }),
-    supabase
-      .from("ats_applications")
-      .select("id,candidate_id,converted_employee_hr_id,attributed_channel_code,last_stage_changed_at")
-      .eq("stage", "hired"),
+    // Every hire, paged to a short page by the unique `id`: a hire a response cap dropped would leave
+    // the source-of-hire report short with nothing to say so.
+    fetchAllRows<{
+      id: string;
+      candidate_id: string | null;
+      converted_employee_hr_id: string | null;
+      attributed_channel_code: string | null;
+      last_stage_changed_at: string | null;
+    }>(
+      () =>
+        supabase
+          .from("ats_applications")
+          .select("id,candidate_id,converted_employee_hr_id,attributed_channel_code,last_stage_changed_at")
+          .eq("stage", "hired"),
+      "id",
+    ),
     listJobPostChannels({ includeInactive: true }),
   ]);
-  if (hiredRows.error) throw hiredRows.error;
-
-  const hiredAppRows = (hiredRows.data ?? []) as Array<{
-    id: string;
-    candidate_id: string | null;
-    converted_employee_hr_id: string | null;
-    attributed_channel_code: string | null;
-    last_stage_changed_at: string | null;
-  }>;
 
   // The automatic advert for the hired candidates only — a targeted read, not the whole intake log.
   const hiredCandidateIds = Array.from(
     new Set(hiredAppRows.map((row) => (row.candidate_id ? String(row.candidate_id) : "")).filter(Boolean)),
   );
   const intakeCodeByCandidate = new Map<string, string>();
-  if (hiredCandidateIds.length > 0) {
-    const { data: intakeRows, error: intakeError } = await supabase
-      .from("ats_cv_intake_events")
-      .select("candidate_id,source_channel_code,created_at")
-      .in("candidate_id", hiredCandidateIds)
-      .not("source_channel_code", "is", null);
-    if (intakeError) throw intakeError;
-    for (const [candidateId, code] of earliestCodePerCandidate(
-      (intakeRows ?? []).map((row) => {
-        const r = row as Record<string, unknown>;
-        return {
-          candidateId: r.candidate_id == null ? null : String(r.candidate_id),
-          code: r.source_channel_code == null ? null : String(r.source_channel_code),
-          createdAt: r.created_at == null ? null : String(r.created_at),
-        };
-      }),
-    )) {
-      intakeCodeByCandidate.set(candidateId, code);
-    }
+  // Batches of a hundred ids (a longer `.in()` overflows the request URL and answers no rows, not an
+  // error), each paged to a short page. A candidate's events all sit in one batch, so the earliest
+  // code per candidate is exact.
+  const intakeRows: Record<string, unknown>[] = [];
+  for (const batch of chunkIds(hiredCandidateIds)) {
+    intakeRows.push(
+      ...(await fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("ats_cv_intake_events")
+            .select("candidate_id,source_channel_code,created_at")
+            .in("candidate_id", batch)
+            .not("source_channel_code", "is", null),
+        "id",
+      )),
+    );
+  }
+  for (const [candidateId, code] of earliestCodePerCandidate(
+    intakeRows.map((r) => ({
+      candidateId: r.candidate_id == null ? null : String(r.candidate_id),
+      code: r.source_channel_code == null ? null : String(r.source_channel_code),
+      createdAt: r.created_at == null ? null : String(r.created_at),
+    })),
+  )) {
+    intakeCodeByCandidate.set(candidateId, code);
   }
 
   const coarseSourceByCandidate = new Map(candidates.map((candidate) => [candidate.id, candidate.source]));

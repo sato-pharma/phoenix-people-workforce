@@ -9,6 +9,7 @@ import { unstable_cache } from "next/cache";
 
 import { REP_RANKS_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { EMPTY_QUALITY_FACTS } from "@/lib/rep-ranks/field-quality";
 import { rankForScore, rollingScore, RANK_ROLLING_MONTHS, starCount, type MilitaryRank, type RankTitle } from "@/lib/rep-ranks/ladder";
@@ -382,14 +383,18 @@ export async function loadRankProfile(hrId: string): Promise<RankProfile | null>
 }
 
 async function readRankProfile(key: string): Promise<RankProfile | null> {
-  const { data, error } = await db()
-    .from("rep_rank_standings")
-    .select(PORTAL_COLUMNS)
-    .eq("hr_id_key", key)
-    .order("window_from", { ascending: false })
-    .limit(1000);
-  if (error) throw error;
-  const records = (data ?? []) as unknown as StandingRecord[];
+  // One rep earns a row per day, week, month, quarter and semester, so the timeline grows past a thousand
+  // in time: paged to its last row. (window_kind, window_key) is unique for one rep and closes the order.
+  const records = await fetchAllRows<StandingRecord>(
+    () =>
+      db()
+        .from("rep_rank_standings")
+        .select(PORTAL_COLUMNS)
+        .eq("hr_id_key", key)
+        .order("window_from", { ascending: false })
+        .order("window_kind", { ascending: true }),
+    "window_key",
+  );
   if (records.length === 0) return null;
 
   const [rolling, titles] = await Promise.all([loadRollingScores(), loadTitles()]);

@@ -13,7 +13,8 @@
 import { unstable_cache } from "next/cache";
 
 import { buildOrgPlacementTree, type OrgPlacementTree, type OrgTreeNode } from "@/lib/crm/org-placement";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 const text = (value: unknown): string | null => {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -47,17 +48,17 @@ const text = (value: unknown): string | null => {
 const loadOrgTreeNodes = unstable_cache(
   async (): Promise<OrgTreeNode[]> => {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("au_v_org_tree")
-      .select("seat_id, path, seat_tier, occupant_hr_id, line_code, line_name, region_code, region_name");
-    if (error) throw new Error(error.message);
-
-    const rows = data ?? [];
-    if (rows.length >= 1000) {
-      throw new Error(
-        `au_v_org_tree returned ${rows.length} rows — at or past PostgREST's unbounded cap, so the tree may be truncated. Paginate this read before trusting it.`,
-      );
-    }
+    // Paged to the last row, never a truncated tree: a handover seat is two rows, so (seat, occupant) closes the order.
+    const rows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("au_v_org_tree")
+          .select("seat_id, path, seat_tier, occupant_hr_id, line_code, line_name, region_code, region_name")
+          .order("seat_id", { ascending: true }),
+      "occupant_hr_id",
+    ).catch((error: unknown) => {
+      throw toQueryError(error);
+    });
 
     const nodes: OrgTreeNode[] = rows.flatMap((row) => {
       const record = row as Record<string, unknown>;

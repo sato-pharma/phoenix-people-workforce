@@ -666,6 +666,9 @@ function MasterTab({
                 </div>
               ))}
             </div>
+            {result.blockedRows.length > 200 ? (
+              <p className="mt-3 text-xs text-phx-ink-soft">Showing the first 200 of {formatNumber(result.blockedRows.length)} blocked rows.</p>
+            ) : null}
           </div>
         </AdminTableShell>
       ) : null}

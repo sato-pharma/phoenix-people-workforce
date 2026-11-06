@@ -4,6 +4,7 @@ import { conflictError, notFoundError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { PrivateCalendarDataDispute } from "@/lib/private-calendar/disputes";
 import { listMessagesForDisputes, type PrivateCalendarDisputeMessage } from "@/lib/private-calendar/dispute-messages";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { listDisputeCenterAttachments } from "./attachment-store.ts";
@@ -185,14 +186,16 @@ export async function listCalendarCases(access: AccessContext): Promise<DisputeC
   const isReviewer = access.role === "Super Admin";
   if (!isReviewer && !viewerHrId) return [];
 
-  let query = getSupabaseAdmin()
-    .from("private_calendar_data_disputes")
-    .select(DISPUTE_COLUMNS)
-    .order("created_at", { ascending: false });
-  if (!isReviewer) query = query.eq("employee_hr_id", viewerHrId as string);
-  const { data, error } = await query;
-  if (error) throw error;
-  const disputes = ((data ?? []) as DisputeRow[]).map(mapRow);
+  // EVERY dispute, page by page: the inbox is uncapped on purpose, and a decided dispute cut off by a
+  // response ceiling would vanish from both sides.
+  const disputeRows = await fetchAllRows<DisputeRow>(() => {
+    const query = getSupabaseAdmin()
+      .from("private_calendar_data_disputes")
+      .select(DISPUTE_COLUMNS)
+      .order("created_at", { ascending: false });
+    return isReviewer ? query : query.eq("employee_hr_id", viewerHrId as string);
+  }, "id");
+  const disputes = disputeRows.map(mapRow);
   if (disputes.length === 0) return [];
 
   const ids = disputes.map((dispute) => dispute.id);
