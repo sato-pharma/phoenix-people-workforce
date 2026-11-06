@@ -12,6 +12,7 @@ import { resolveReplyToAddress } from "@/lib/email/receivable-address";
 import {
   resolveEmailProviders,
   sendPreparedEmailWithFailover,
+  type EmailDispatch,
   type PreparedEmail,
 } from "@/lib/email/email-providers";
 import {
@@ -26,7 +27,7 @@ import {
 } from "@/lib/email/recipient-assurance";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { ADMIN_STANDING_EMAIL, mirrorEmailToAdminTelegram } from "@/lib/email/admin-telegram-mirror";
+import { mirrorEmailToAdminTelegram } from "@/lib/email/admin-telegram-mirror";
 
 // Re-exported for back-compat: existing callers/tests import these from this module.
 export { parseRetryAfter, RetryableEmailError } from "@/lib/email/email-errors";
@@ -101,15 +102,13 @@ export type SendPhoenixEmailInput = {
    */
   origin?: NotificationOrigin | null;
   /**
-   * Withhold the standing admin BCC for this one send, because the body IS a live credential.
-   *
-   * Owner instruction, 2026-10-08, for the self-service reset code. It is set from the TEMPLATE
-   * KEY by sendTemplatedEmail (`isOneTimeCodeTemplateKey`) rather than passed by domain code, so
-   * a queued outbox row written before this existed is covered too — the key is re-resolved on
-   * every delivery attempt. Nothing else removes that BCC: leaving it unset keeps the standing
-   * copy exactly as it has always been.
+   * Hand the prepared email to THIS instead of the provider chain. Set by one sender only: a job
+   * offer, when the real `hr@` mailbox's app password is configured (`jobOfferSmtpDispatch()` in
+   * `job-offer-smtp.ts`, owner 2026-11-06). Everything before the hand-off — suppression, the
+   * Recipient Assurance Guard, the Confidence Gate — and the Telegram mirror after it are unchanged.
+   * A failure it throws is the send's failure: there is no fall back to the chain.
    */
-  suppressAdminStandingBcc?: boolean;
+  dispatch?: EmailDispatch;
   /**
    * Set ONLY by a send whose body is a live credential (a reset code, a set-your-password link):
    * that email is not mirrored to the admin's Telegram (owner, 23 Oct 2026, "Skip credential emails").
@@ -282,37 +281,11 @@ function removeNonDeliverable(emails: string[]): string[] {
 }
 
 /**
- * Attach the standing admin BCC, or withhold it for the one case that must not carry a copy.
- *
- * A FUNCTION, not three lines inline, so the rule can be executed by a test. The defect this
- * whole change repairs shipped green because every assertion around it read SOURCE TEXT: the send
- * path is too entangled with providers to call in a unit test, so the decision it makes is pulled
- * out here where it can be called directly.
- *
- * - `testingRedirectActive` - PHOENIX_EMAIL_FORCE_TESTING has rewritten the recipients; the
- *   standing copy has never applied in that mode and still does not.
- * - `suppress` - the body IS a live credential (owner, 2026-10-08). Set from the template key by
- *   sendTemplatedEmail, never by domain code.
- *
- * Everything else keeps the copy, which is the default when neither flag is set.
- */
-/**
  * The skip reason when the Recipient Assurance Guard cannot run. Worded so classifyOutboxSkip reads it
  * as TRANSIENT (it matches none of the terminal phrases), so a queued email is retried, never closed.
  */
 export const RECIPIENT_ASSURANCE_UNAVAILABLE_REASON =
   "Recipient check unavailable — the employee directory could not be read, so the email was held back and will be retried.";
-
-export function withStandingAdminBcc(options: {
-  bcc: string[] | undefined;
-  suppress?: boolean;
-  testingRedirectActive: boolean;
-}): string[] | undefined {
-  if (options.testingRedirectActive || options.suppress) return options.bcc;
-  return options.bcc
-    ? [...new Set([...options.bcc, ADMIN_STANDING_EMAIL])]
-    : [ADMIN_STANDING_EMAIL];
-}
 
 export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<SendPhoenixEmailResult> {
   if (!emailNotificationsEnabled()) {
@@ -322,8 +295,9 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   const from = input.from || process.env.NOTIFICATION_EMAIL_FROM || `${systemIdentity.appName} <${systemEmail.defaultFromEmail}>`;
 
   // Skip (don't retry) only when NO provider can send at all — with a backup configured, a
-  // missing primary key just fails over instead of dropping the mail.
-  if (!resolveEmailProviders().some((provider) => provider.isConfigured())) {
+  // missing primary key just fails over instead of dropping the mail. A caller's own `dispatch`
+  // does not need the chain, so its absence is no reason to skip.
+  if (!input.dispatch && !resolveEmailProviders().some((provider) => provider.isConfigured())) {
     return { reason: "No email provider is configured (set RESEND_API_KEY, or BREVO_API_KEY for the backup).", skipped: true };
   }
   if (!from) return { reason: "Email sender is missing.", skipped: true };
@@ -438,20 +412,11 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
     finalTo = [input.fanoutVisibleTo?.trim() || resolvedReplyTo];
   }
 
-  // Always BCC omar.anwar@satopharma.com on every automated system email (all modules, all
-  // types) - a standing copy of outbound HR/workflow mail, invisible to other recipients.
-  //
-  // ONE exception, and it is narrow: an email whose body IS a live credential takes no standing
-  // copy (owner, 2026-10-08 - "stop bcc-ing the reset code email to my mailbox"). A reset code is
-  // not a record of a workflow, it is the secret itself for the 15 minutes it lives, and a copy
-  // puts one person's account recovery in a second mailbox. The flag is decided from the template
-  // key in sendTemplatedEmail, never by domain code - see isOneTimeCodeTemplateKey. The Telegram
-  // mirror below is a SEPARATE channel and is deliberately left alone: he asked about the mailbox.
-  bcc = withStandingAdminBcc({
-    bcc,
-    suppress: input.suppressAdminStandingBcc,
-    testingRedirectActive: Boolean(testingRecipients),
-  });
+  // 🔴 NO STANDING ADMIN BCC (owner, 2026-11-06: "Stop the BCC copies"). Until then every automated
+  // email was blind-copied to the owner's mailbox — about 8,000 a month landing in his Yahoo-hosted
+  // inbox, which junked most of them and so taught Yahoo that satopharma.com mail is junk. The BCC
+  // is exactly what the caller asked for and nothing more. His copy of every email is the Telegram
+  // mirror below, which stays; a notice ADDRESSED to him (To or CC) is unaffected.
 
   const emailHeaders = input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined;
   const attachments = guardAttachments(input.attachments);
@@ -506,14 +471,17 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   // Dispatch through the provider-failover layer: Resend primary, plus an optional independent
   // backup (Brevo) used ONLY when Resend deterministically did not send (quota/auth). Ambiguous
   // errors never cross providers, so a send can never be duplicated. See email-providers.ts.
-  const delivered = await sendPreparedEmailWithFailover(prepared);
+  // A caller-supplied `dispatch` (a job offer through the real hr@ mailbox) replaces the chain
+  // outright — its failure is this send's failure, never a reason to try Resend instead.
+  const delivered = input.dispatch ? await input.dispatch(prepared) : await sendPreparedEmailWithFailover(prepared);
   await markNotificationSendDelivered(reviewId, delivered.id);
 
-  // Telegram twin of the always-BCC above: mirror this just-dispatched email to the standing
-  // admin's Telegram so he receives every automated email in both channels. Fire-and-forget and
-  // best-effort — never awaited into the email result and unable to throw (see the module). Same
-  // testing guard as the BCC: no mirror when redirecting to test inboxes. And no mirror for an email
-  // whose send is stamped as a credential (owner, 23 Oct 2026, "Skip credential emails").
+  // The standing admin's copy of every automated email: mirror this just-dispatched email to his
+  // Telegram. Since the standing BCC stopped (owner, 2026-11-06) this is the ONLY copy he gets of mail
+  // not addressed to him, so it stays on every path — the job offer's Turbify dispatch included.
+  // Fire-and-forget and best-effort — never awaited into the email result and unable to throw (see
+  // the module). No mirror when redirecting to test inboxes, and none for an email whose send is
+  // stamped as a credential (owner, 23 Oct 2026, "Skip credential emails").
   if (shouldMirrorEmailToAdminTelegram({ credentialEmail: input.credentialEmail, testingRedirectActive: Boolean(testingRecipients) })) {
     void mirrorEmailToAdminTelegram({
       cc: prepared.cc,

@@ -32,30 +32,41 @@ export async function verifySmtpLogin(credential: PersonalMailboxCredential): Pr
   }
 }
 
+type ComposerOptions = ConstructorParameters<typeof MailComposer>[0];
+
+/**
+ * Build a message's exact bytes and its Message-ID. Shared by the personal mailbox and the job offer
+ * (`src/lib/email/job-offer-smtp.ts`), which both send through Turbify and then file the same bytes
+ * in Sent. A Bcc is never written into the bytes (MailComposer's default), so a blind copy travels
+ * in the SMTP envelope only.
+ */
+export async function composeRawMessage(options: ComposerOptions): Promise<{ raw: Buffer; messageId: string }> {
+  const node = new MailComposer({ date: new Date(), ...options }).compile();
+  const raw = await new Promise<Buffer>((resolve, reject) => {
+    node.build((error, message) => (error ? reject(error) : resolve(message)));
+  });
+  return { messageId: node.messageId(), raw };
+}
+
 /** Build the exact bytes that will be sent, so the same bytes can be filed in Sent. */
 export async function composeMessage(
   input: PersonalMailboxSendInput,
   from: { name: string; address: string },
 ): Promise<{ raw: Buffer; messageId: string }> {
-  const node = new MailComposer({
+  return composeRawMessage({
     attachments: input.attachments.map((file) => ({
       content: file.content,
       contentType: file.contentType,
       filename: file.filename,
     })),
     cc: input.cc.length > 0 ? input.cc : undefined,
-    date: new Date(),
     from,
     inReplyTo: input.inReplyTo ?? undefined,
     references: input.references.length > 0 ? input.references : undefined,
     subject: input.subject,
     text: input.body,
     to: input.to,
-  }).compile();
-  const raw = await new Promise<Buffer>((resolve, reject) => {
-    node.build((error, message) => (error ? reject(error) : resolve(message)));
   });
-  return { messageId: node.messageId(), raw };
 }
 
 /** Hand the built message to Turbify's server. Resolves only once the server has accepted it. */

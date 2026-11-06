@@ -185,7 +185,8 @@ export function resolveSystemInboxes(): string[] {
     ...fromEnv(process.env.HR_NOTIFICATION_EMAILS),
     ...fromEnv(process.env.NOTIFICATION_REPLY_TO),
     ...fromEnv(process.env.PHOENIX_EMAIL_TEST_RECIPIENTS),
-    // The standing BCC copy applied to every automated email in send-phoenix-email.ts.
+    // The owner's own mailbox: the offers' Reply-To and the Sato composer's (it was also the
+    // standing BCC on every automated email until 2026-11-06).
     "omar.anwar@satopharma.com",
   ]);
 }

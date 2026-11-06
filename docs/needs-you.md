@@ -319,9 +319,9 @@ or raising the 8-second budget** — that buys a green digest with the board's h
 thing this module refuses to sell. Make a heavy source cheaper instead; that changes what it measures
 and is the owner's call. Pinned by `tests/needs-you-digest-runs-outside-the-fanout.test.ts`.
 
-**Daily is Telegram and in-app; weekly is email.** One email to him is already *three* deliveries —
-`send-phoenix-email.ts` always BCCs `ADMIN_STANDING_EMAIL` and mirrors a preview to his Telegram, with
-no opt-out. That is why email is weekly, and why the weekly never also requests the `telegram`
+**Daily is Telegram and in-app; weekly is email.** One email to him is already *two* deliveries —
+`send-phoenix-email.ts` mirrors a preview of every email to his Telegram, with no opt-out (it also
+BCC'd `ADMIN_STANDING_EMAIL` until the owner stopped the standing BCC on 2026-11-06). That is why email is weekly, and why the weekly never also requests the `telegram`
 channel.
 
 **The email reaches exactly one person, guarded twice.** The job resolves him by his own hr id and is

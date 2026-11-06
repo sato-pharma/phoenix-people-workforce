@@ -5,15 +5,16 @@ import { ADMIN_STANDING_EMAIL, buildAdminMirrorMessage } from "@/lib/email/admin
 import { shouldMirrorEmailToAdminTelegram } from "@/lib/email/transactional-types.ts";
 
 /**
- * Every automated email must fire a Telegram "twin" to the standing admin — the Telegram
- * counterpart of the always-BCC — and that mirror must never be able to break the email send.
+ * Every automated email must fire a Telegram "twin" to the standing admin — since 2026-11-06 his
+ * only copy (the always-BCC it once mirrored was stopped: "Stop the BCC copies") — and that mirror
+ * must never be able to break the email send.
  */
 export async function runAdminTelegramMirrorTests() {
-  // --- The standing admin is the SAME identity as the always-BCC --------------------
+  // --- The standing admin is the owner's own mailbox identity ---------------------
   assert.equal(
     ADMIN_STANDING_EMAIL,
     "omar.anwar@satopharma.com",
-    "the Telegram mirror targets the same standing admin as the always-BCC",
+    "the Telegram mirror targets the standing admin, the owner's own mailbox identity",
   );
 
   // --- Subject → title, recipient + body preview into the message -------------------

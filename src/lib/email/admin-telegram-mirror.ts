@@ -3,10 +3,11 @@ import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
- * The one standing admin who receives a copy of EVERY automated email the system sends: as a
- * BCC on the mail itself (the always-BCC block in send-phoenix-email.ts) and, in parallel, as a
- * Telegram message (mirrorEmailToAdminTelegram below). Declared once here so the two channels
- * can never drift to different people.
+ * The one standing admin who receives a copy of EVERY automated email the system sends, as a
+ * Telegram message (mirrorEmailToAdminTelegram below). Until 2026-11-06 he was also blind-copied on
+ * the mail itself; the owner stopped that ("Stop the BCC copies" — the copies taught Yahoo that
+ * satopharma.com mail is junk), so the Telegram mirror is now his only copy. The address is still
+ * the offers' Reply-To and the Sato composer's, so it is declared once here.
  */
 export const ADMIN_STANDING_EMAIL = "omar.anwar@satopharma.com";
 
@@ -108,8 +109,8 @@ export async function resolveAdminTelegramChatIds(): Promise<string[]> {
 }
 
 /**
- * Telegram twin of the always-BCC: after an email has been dispatched, send the standing admin a
- * Telegram copy so he receives every automated email in BOTH channels. Best-effort by design —
+ * The standing admin's copy of every automated email: after an email has been dispatched, send him
+ * a Telegram copy (the mail BCC that used to accompany it stopped on 2026-11-06). Best-effort by design —
  *
  *  • Fire-and-forget (never awaited into the email result) and it can NEVER throw: a Telegram
  *    outage, a missing bot token, or an unconnected admin must not affect the email that just

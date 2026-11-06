@@ -8,8 +8,9 @@
  * own verdict. The daily answers "what needs me today"; the weekly answers "what is the state of all
  * every source", which is the question a budgeted message structurally cannot answer.
  *
- * 🔴 ONE EMAIL TO HIM IS ALREADY THREE DELIVERIES. `send-phoenix-email.ts` always BCCs
- * `ADMIN_STANDING_EMAIL` and mirrors a preview to his Telegram, with no opt-out. That is the whole
+ * 🔴 ONE EMAIL TO HIM IS ALREADY TWO DELIVERIES. `send-phoenix-email.ts` mirrors a preview of
+ * every email to his Telegram, with no opt-out (the standing BCC that made it three stopped on
+ * 2026-11-06). That is the whole
  * reason this is WEEKLY while the Telegram digest is daily, and the reason this never requests the
  * `telegram` channel: it would arrive twice on the same wire.
  *

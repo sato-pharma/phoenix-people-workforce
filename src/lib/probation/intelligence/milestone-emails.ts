@@ -3,8 +3,8 @@
 // OWNER RULE (2026-10-20): these three emails go to ONE person — Omar Gawish (B-10), the owner —
 // and nobody else ("To you only"). From 2026-09-29 they went to the HR Generalist of the day with
 // him on BCC; she moved to her own seat (HR Operations Specialist) on 2026-10-20 and he took the
-// milestones himself. The only other copy is the standing admin BCC every automated email carries
-// (send-phoenix-email.ts), which is his own mailbox. This is NOT the 2026-07 stakeholder fan-out
+// milestones himself. There is no other copy: the standing admin BCC every automated email used to
+// carry stopped on 2026-11-06 (owner: "Stop the BCC copies"). This is NOT the 2026-07 stakeholder fan-out
 // (CEO + HR + DM + NSM + SFE, ~8 people per milestone) that the owner retired on 2026-08-02 in
 // #1624/#1626 — do not restore it, and do not "improve" this into a role-resolved recipient set.
 //
@@ -245,7 +245,7 @@ export async function processProbationMilestoneEmails(
             subjectHrId: c.employee_hr_id,
             recipientHrId: PROBATION_MILESTONE_TO_HR_ID,
             // In-app for the bell, email for the record. No Telegram or push: the owner asked for
-            // an email. No bcc and no cc — he is the To, and the standing admin BCC is his own.
+            // an email. No bcc and no cc — he is the To.
             channels: ["in_app", "email"],
             actionUrl: ctx.reportUrl,
             email: {
