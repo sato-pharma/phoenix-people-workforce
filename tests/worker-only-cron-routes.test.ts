@@ -19,9 +19,10 @@ const JOBS = DECLARED_JOBS as unknown as Record<string, Declaration>;
  *
  * The process-role split stopped the in-process schedulers on the page server, but nothing stopped a
  * cron-job.org job pointed at the website from running the heavy routes there. They now answer 503
- * `wrong_process` where PHOENIX_PROCESS_ROLE=web. And the five hand-made jobs behind them are declared
+ * `wrong_process` where PHOENIX_PROCESS_ROLE=web. And the hand-made jobs behind them are declared
  * in scripts/cronjob-sync.mjs as `adopted` — reported, never written, even under --apply (so the
- * auto-arm on merge writes nothing for them).
+ * auto-arm on merge writes nothing for them). The CRM contact lists job and its route went with the
+ * iReports360 vendor on 6 November 2026; nothing may declare it again.
  */
 export async function runWorkerOnlyCronRoutesTests() {
   const refused = workerOnlyRouteRefusal("cron/inbound-intake", "web");
@@ -36,7 +37,6 @@ export async function runWorkerOnlyCronRoutesTests() {
     ["app/api/notifications/process/route.ts", "export async function GET", "notifications/process"],
     ["app/api/cron/inbound-intake/route.ts", "export async function GET", "cron/inbound-intake"],
     ["app/api/cron/recruitment-email-intake/route.ts", "export async function GET", "cron/recruitment-email-intake"],
-    ["app/api/cron/crm-contact-lists/route.ts", "export async function GET", "cron/crm-contact-lists"],
   ];
   for (const [file, handler, job] of routes) {
     const source = readFileSync(file, "utf8");
@@ -57,11 +57,11 @@ export async function runWorkerOnlyCronRoutesTests() {
   assert.equal(WORKER, "https://phoenix-workforce-worker-production.up.railway.app", "the worker is Railway's again (23 Oct, owner)");
   const adopted: Record<string, { base: string; jobId: number; path: string }> = {
     "background-jobs": { base: PROD, jobId: 8200915, path: "/api/cron/background-jobs" },
-    "crm-contact-lists": { base: WORKER, jobId: 8344730, path: "/api/cron/crm-contact-lists" },
     "inbound-intake": { base: WORKER, jobId: 8200920, path: "/api/cron/inbound-intake" },
     "process-notifications": { base: WORKER, jobId: 8200914, path: "/api/notifications/process?limit=50" },
     "recruitment-email-intake": { base: WORKER, jobId: 8200919, path: "/api/cron/recruitment-email-intake" },
   };
+  assert.equal(JOBS["crm-contact-lists"], undefined, "the retired CRM contact lists job is not declared");
   for (const [key, want] of Object.entries(adopted)) {
     const spec = JOBS[key];
     assert.ok(spec, `${key} is declared`);

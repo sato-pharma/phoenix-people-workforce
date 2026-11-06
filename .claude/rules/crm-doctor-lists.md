@@ -4,7 +4,6 @@ paths:
   - "src/lib/crm/contact-lists.ts"
   - "src/lib/crm/contact-master.ts"
   - "src/lib/crm/phoenix-team-starts.ts"
-  - "app/api/cron/crm-contact-lists/**"
   - "app/**/{doctor-list,rep-doctor-lists,my-list}/**"
   - "tests/*{contact-master,contact-list,doctor-list}*"
   - "supabase/migrations/*contact_master*"

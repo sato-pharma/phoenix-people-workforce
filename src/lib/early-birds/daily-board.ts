@@ -67,7 +67,7 @@ export function buildEarlyBirdsDailyWinners(input: {
 
     const leader = board.earlyBirds[0];
     // `at` is a vendor timestamp whose UTC clock reading IS the Cairo wall clock (see the
-    // vendor-timestamp invariant in crm/sync.ts), so the hours/minutes can be read straight off it.
+    // vendor-timestamp invariant in crm/vendor-row-types.ts), so the hours/minutes can be read straight off it.
     const leaderMinutes = leader?.at
       ? new Date(leader.at).getUTCHours() * 60 + new Date(leader.at).getUTCMinutes()
       : null;

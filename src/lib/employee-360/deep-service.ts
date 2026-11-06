@@ -15,7 +15,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getRepContactList } from "@/lib/crm/contact-lists";
-import type { CrmListType } from "@/lib/crm/contacts-web-client";
+import type { CrmListType } from "@/lib/crm/list-types";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited, visitPartnerHrIds } from "@/lib/crm/reads";
 import { addBucketToSplit, emptyVisitCountSplit, visitCountBucket, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";

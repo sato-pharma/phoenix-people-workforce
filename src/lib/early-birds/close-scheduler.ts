@@ -1,20 +1,21 @@
-// The timer that closes Early Birds fortnights — beside the CRM live poller, not inside it.
+// The timer that closes Early Birds fortnights.
 //
-// The close used to run from the poller's tick (close.ts's header still explains why it is
-// in-process at all: the external scheduler caps a request at 30s). But the poller only starts when
-// iReports360 credentials are present, and the close never talks to the vendor — it reads the
-// mirror. So a missing or rotated vendor credential silently stopped every fortnight from closing.
+// The close used to run from the iReports360 live poller's tick (close.ts's header still explains why
+// it is in-process at all: the external scheduler caps a request at 30s). But the poller only started
+// when iReports360 credentials were present, and the close never talks to the vendor — it reads the
+// stored CRM record. So a missing or rotated vendor credential silently stopped every fortnight from
+// closing. It moved to this timer, and the poller was removed with the vendor on 6 November 2026.
 //
-// This timer keeps the poller's HOST guards (resolveInProcessHostRefusal — the Railway production
-// opt-in, a production build, the Railway production environment) and drops only the credential
-// check. The cadence is unchanged in effect: runDueEarlyBirdsClose throttles itself to one database
-// check every 15 minutes and caps closes per call, so asking it once a minute produces the same
-// closes the poller's 20-120s ticks did.
+// This timer keeps the in-process HOST guards (resolveInProcessHostRefusal — the Railway production
+// opt-in, a production build, the Railway production environment, not the page server) and needs no
+// vendor credential. runDueEarlyBirdsClose throttles itself to one database check every 15 minutes
+// and caps closes per call, so asking it once a minute produces the same closes the poller's
+// 20-120s ticks did.
 
-import { resolveInProcessHostRefusal, unrefTimer } from "@/lib/crm/live-poller";
 import { isEarlyBirdsCloseCheckDue, runDueEarlyBirdsClose } from "@/lib/early-birds/close";
 import { logError } from "@/lib/observability/log";
 import { trackJob } from "@/lib/observability/running-jobs";
+import { resolveInProcessHostRefusal, unrefTimer } from "@/lib/platform/in-process-host";
 
 /** How often the self-throttled close is asked. Far below its own 15-minute gate on purpose. */
 export const EARLY_BIRDS_CLOSE_SCHEDULER_TICK_MS = 60_000;

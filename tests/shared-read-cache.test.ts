@@ -235,9 +235,6 @@ export async function runSharedReadCacheTests() {
     const rpc = save.indexOf('callPhoenixCrm<Row>("phoenix_crm_save_visit"');
     const refresh = save.indexOf("refreshSharedCrmWindows(");
     assert.ok(rpc > 0 && refresh > rpc, "RED a saved Phoenix CRM visit must drop the minute-old copy, after the save");
-
-    const poller = code("src/lib/crm/live-poller.ts");
-    assert.match(poller, /rowsUpserted > 0 \|\| result\.checkinsUpserted > 0 \|\| result\.rowsDeleted > 0\) \{\s*refreshSharedCrmWindows\(/);
   }
 
   // ── (10) The KPIs board's three company reads share the copy, and nothing else inherits it ──

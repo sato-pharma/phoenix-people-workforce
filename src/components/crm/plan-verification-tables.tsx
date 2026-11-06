@@ -9,7 +9,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { VerifyButton } from "@/components/crm/plan-verify-button";
+import { PlanApproveButton } from "@/components/crm/plan-verify-button";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
@@ -33,8 +33,8 @@ import { cn } from "@/lib/utils";
 //
 // The period, the kind and the chosen plan all ride in the URL, so every change re-runs the
 // server-side scope gate rather than filtering a payload already in the browser. That is the
-// sibling's rule and the reason is stronger here: this board carries a button that writes into the
-// customer's CRM, so what a viewer may act on has to be a server decision every time.
+// sibling's rule and the reason is stronger here: this board carries a button that approves a plan
+// in Phoenix CRM, so what a viewer may act on has to be a server decision every time.
 
 const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const SELECT_CLASS = cn(phxSelectClassName, "h-9 w-full px-2");
@@ -155,7 +155,7 @@ const PLAN_COLS = [
 
 export function PlanListTable({
   basePath,
-  canVerify,
+  canApprove,
   kind,
   month,
   plans,
@@ -163,7 +163,7 @@ export function PlanListTable({
   year,
 }: {
   basePath: string;
-  canVerify: boolean;
+  canApprove: boolean;
   kind: PlanKind;
   month: number;
   plans: PlanSummary[];
@@ -253,7 +253,7 @@ export function PlanListTable({
               >
                 {selectedPlanId === plan.crmPlanId ? "Showing doctors" : "Show doctors"}
               </button>
-              <VerifyButton canVerify={canVerify} plan={plan} />
+              <PlanApproveButton canApprove={canApprove} plan={plan} />
             </div>
           </PortalRecordCard>
         )}
@@ -329,7 +329,7 @@ export function PlanListTable({
                         >
                           {showing ? "Showing doctors" : "Show doctors"}
                         </button>
-                        <VerifyButton canVerify={canVerify} plan={plan} />
+                        <PlanApproveButton canApprove={canApprove} plan={plan} />
                       </div>
                     </td>
                   </tr>

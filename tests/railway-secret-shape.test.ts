@@ -96,7 +96,7 @@ export function runRailwaySecretShapeTests() {
     ["SUPABASE_PROJECT_REF", "ozucdzovmcqvepbozvqf"],
     ["EMAIL_NOTIFICATIONS_ENABLED", "true"],
     ["NOTIFICATION_EMAIL_FROM", "Phoenix HR <no-reply@satopharma.com>"],
-    ["IREPORTS360_BASE_URL", "https://site10.ireports360.com"],
+    ["MARKETING_SHEET_REFRESH_WEBHOOK_URL", "https://script.google.com/macros/s/example-deployment/exec"],
     // A JWT legitimately contains dots — two of them, never three in a row — so the anon key
     // must not be caught by the redaction rule. Spelled out in words rather than as a realistic
     // base64 JWT for the same reason as the key fixture above: gitleaks flagged the first draft.

@@ -22,7 +22,7 @@
 
 import { getOrLoadShared } from "@/lib/cache/shared-read";
 import { type CallRateHolidays } from "@/lib/crm/call-rate";
-import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
+import { LIST_TYPES, type CrmListType } from "@/lib/crm/list-types";
 import { isAgentInScope } from "@/lib/crm/doctor-coverage-roles";
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { isMissingCrmRpcError, queryVisits } from "@/lib/crm/reads";

@@ -141,13 +141,12 @@ export function CrmFirstVisitBoard({
           </p>
         </div>
       ) : !crm || (!crm.synced && !crm.polled) ? (
-        // Only reachable while iReports360 is still the record: from the CRM cutover on,
-        // getNsmCrmCompliance marks the day checked, so a quiet morning reaches the red state below.
+        // Reached only when today's check could not be read: since iReports360 was retired (6 November
+        // 2026) getNsmCrmCompliance marks every day checked, so a quiet morning reaches the red state below.
         <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
           <Clock className="h-4 w-4 shrink-0 text-slate-400" />
           <p className="text-sm text-slate-500">
-            Awaiting today&apos;s first iReports360 sync — visits mirror roughly every 15&nbsp;minutes from 8:30&nbsp;AM to
-            noon, then again at 12:07&nbsp;PM and 7:07&nbsp;PM.
+            Today&apos;s visits could not be read yet. Reload the page in a minute.
           </p>
         </div>
       ) : !crm.synced ? (

@@ -7,7 +7,6 @@ import {
   phoenixCompanyJobTitles,
 } from "../src/lib/auth/permissions.ts";
 import { isAttendanceTrackingEligible } from "../src/lib/attendance/eligibility.ts";
-import { CONTACT_LIST_JOB_TITLES } from "../src/lib/crm/contacts-sync.ts";
 import {
   isFieldWorkforceComplianceEligibleTitle,
   logsOwnCrmVisitsTitle,
@@ -80,13 +79,6 @@ export function runSeniorMedicalRepresentativeTitleTests() {
     "Saturday is a working day for the field force, whatever grade sits on the seat",
   );
   assert.equal(isFieldWorkforceWeeklyOff({ dateIso: "2026-10-02", title: SENIOR }), true);
-
-  // --- 5. The CRM contact-list sweep hands this list straight to a PostgREST .in(), so the
-  // spelling has to match `employees.job_title` exactly, or her list stops being mirrored. ------
-  assert.ok(
-    (CONTACT_LIST_JOB_TITLES as readonly string[]).includes(SENIOR),
-    "a title missing here is a rep whose contact list silently stops being mirrored",
-  );
 
   // --- 6. The HR Business Partner's boundary. A plain rep's pay was visible to her, and a label
   // must not narrow that by accident. --------------------------------------------------------

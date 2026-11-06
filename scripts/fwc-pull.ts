@@ -43,7 +43,7 @@ if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(yea
 const label = `${year}-${String(month).padStart(2, "0")}`;
 // Africa/Cairo, not UTC. This is compared against CRM visit dates (ireports360-source.ts
 // `dateIso > todayIso`), and vendor timestamps are stored as Cairo wall-clock — see
-// crm/sync.ts. A UTC "today" runs a day behind for the ~3 hours after Cairo midnight, which
+// crm/vendor-row-types.ts. A UTC "today" runs a day behind for the ~3 hours after Cairo midnight, which
 // makes the current day read as "not happened yet" (blank) instead of "no visits" ("N").
 const todayIso = cairoTodayIso();
 

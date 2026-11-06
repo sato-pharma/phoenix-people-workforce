@@ -68,7 +68,7 @@ import {
   type PlanDayOff,
   type PlanRuleCustomer,
 } from "@/lib/phoenix-crm/plan-rules";
-import { personKey, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import type { OrgSeat } from "@/lib/phoenix-crm/scope";
 import { sharedPlanCapRefusal, type SharedPlaceNamed } from "@/lib/phoenix-crm/shared-place-rules";
 import {
   assertCanReturnPlan,
@@ -98,7 +98,6 @@ import {
 } from "@/lib/phoenix-crm/server/list";
 import type { SavedWeekBoard } from "@/lib/phoenix-crm/server/monthly-plans";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
-import { loadOldCrmReviewPlans, type OldCrmReviewPlan } from "@/lib/phoenix-crm/server/old-crm-plan-approval";
 import { loadLiftedVenues, loadSharedPlaceNames, loadVenueCaps } from "@/lib/phoenix-crm/server/shared-places";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import {
@@ -1108,12 +1107,6 @@ export type PlanReviewRow = {
   farApartDays: string[];
   canApprove: boolean;
   canReturn: boolean;
-  /**
-   * A rep with no Phoenix plan who filed this week in the OLD CRM (owner, 2026-10-17): the plan he filed there,
-   * and whether this viewer may approve it or take that approval back. Null when Phoenix holds his week, when
-   * he filed nothing in the old CRM, and in the test world.
-   */
-  oldCrm: OldCrmReviewPlan | null;
 };
 
 export type PlanReviewView = {
@@ -1188,17 +1181,13 @@ export async function loadPlanReviews(
   const planBySeat = new Map(weekPlans.map((row) => [String(row.seat_id), row]));
   const rowSeats = isTest ? weekPlans.map((row) => territoryById.get(String(row.seat_id)) as OrgSeat) : territories;
 
-  // A rep with no Phoenix plan this week may have filed it in the old CRM (owner, 2026-10-17).
-  const oldCrmCandidates = rowSeats.flatMap((seat) =>
-    !planBySeat.has(seat.seatId) && personKey(seat.occupantHrId) ? [{ seatId: seat.seatId, hrId: String(seat.occupantHrId) }] : [],
-  );
-  const [itemRows, names, oldCrmPlans] = await Promise.all([
+  // iReports360 was retired on 6 November 2026: an old-CRM week is no longer reviewed here.
+  const [itemRows, names] = await Promise.all([
     loadPlanItemRows(
       weekPlans.map((row) => String(row.id)),
       REVIEW_ITEM_COLUMNS,
     ),
     loadPeopleNames([...territoryPeople(viewer.org, rowSeats), ...planPeople(weekPlans)]),
-    loadOldCrmReviewPlans(viewer, oldCrmCandidates, weekStart, isTest),
   ]);
   const itemsByPlan = new Map<string, Row[]>();
   for (const row of itemRows) {
@@ -1250,7 +1239,6 @@ export async function loadPlanReviews(
       farApartDays,
       canApprove: plan?.status === "submitted" && canReviewTerritory(viewer, seat, isTest),
       canReturn: weekOpen && (plan?.status === "submitted" || plan?.status === "approved") && canReturnTerritoryPlan(viewer, seat, isTest),
-      oldCrm: plan ? null : (oldCrmPlans.get(seat.seatId) ?? null),
     };
   });
   rows.sort(

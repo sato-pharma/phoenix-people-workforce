@@ -106,7 +106,7 @@ _Prior-session fixes already merged to `main` and live: Cloud Scheduler dedupe (
 | `NOTIFICATION_DASHBOARD_URL` | Recommended | runtime | Public URL | Yes (canonical) | Yes | **FIXED** (was unset) |
 | `APP_URL` | Recommended | runtime | Public URL | Yes (canonical) | Yes | **FIXED** (was unset) |
 | `NEXT_PUBLIC_APP_URL` | Build | build | Public URL | Build-arg (GitHub secret) | n/a | Runtime empty; verify GitHub secret value (§6) |
-| Google Maps / Calendar keys, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `IREPORTS360_*`, `ATTENDANCE_AGENT_TOKEN` | Optional/gated | runtime | Secret/Public | Present | — | Optional; degrade gracefully |
+| Google Maps / Calendar keys, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `IREPORTS360_*` (iReports360 retired 6 November 2026; no longer read), `ATTENDANCE_AGENT_TOKEN` | Optional/gated | runtime | Secret/Public | Present | — | Optional; degrade gracefully |
 | `SENTRY_*`, `NEXT_PUBLIC_SENTRY_*` | No | — | — | **Removed** | — | Not read by shipping code; removed from env+CSP+workflow |
 | `PHOENIX_AGENT_SECRET`, `GEMINI_API_KEY` | No | — | — | Not used | — | Not referenced anywhere in code |
 | `VERCEL`, `VERCEL_ENV` | No | — | — | Unset (correct) | — | Vercel-only; guarded logic now inert (see §16 P3) |
@@ -130,8 +130,8 @@ _Prior-session fixes already merged to `main` and live: Cloud Scheduler dedupe (
 | --- | --- | --- | --- | --- | --- | --- |
 | Daily notifications | `/api/notifications/daily` `30 6 * * *` | `phoenix-notify-daily` `30 6 * * *` | UTC (matches pre-migration) | Bearer `CRON_SECRET` | success (`bridge`/`status`) | CONFIRMED |
 | Outbox process | `/api/notifications/process` `*/30 * * * *` | `phoenix-process-notifications` `*/30 * * * *` | UTC | Bearer | success | CONFIRMED |
-| iReports sync | `/api/cron/ireports360-visits-sync` `0 9,12,19 * * *` | `phoenix-ireports360-sync` `0 9,12,19 * * *` | UTC | Bearer (secret repaired) | enabled | CONFIRMED |
-| iReports reconcile | `/api/cron/ireports360-visits-reconcile` `0 4 * * 0` | `phoenix-reconcile-visits` `0 4 * * 0` | UTC | Bearer | enabled | CONFIRMED |
+| iReports sync | `/api/cron/ireports360-visits-sync` `0 9,12,19 * * *` | `phoenix-ireports360-sync` `0 9,12,19 * * *` | UTC | Bearer (secret repaired) | enabled | CONFIRMED — route and job retired with iReports360, 6 November 2026 |
+| iReports reconcile | `/api/cron/ireports360-visits-reconcile` `0 4 * * 0` | `phoenix-reconcile-visits` `0 4 * * 0` | UTC | Bearer | enabled | CONFIRMED — route and job retired with iReports360, 6 November 2026 |
 
 _Note: schedules kept in **UTC** to preserve exact pre-migration (Vercel) timing. `30 6` UTC ≈ 08:30–09:30 Africa/Cairo. Converting to Cairo would shift delivery times vs before — a business decision, not a parity fix. `birthdays`/`contract-renewals`/`holiday-confirmation` run inside the daily job (no separate scheduler needed)._
 

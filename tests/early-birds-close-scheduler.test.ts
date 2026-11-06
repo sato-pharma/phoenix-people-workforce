@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-import { isIReports360Configured } from "../src/lib/crm/config.ts";
-import { resolveInProcessHostRefusal, startLiveCrmPoller } from "../src/lib/crm/live-poller.ts";
+import { resolveInProcessHostRefusal } from "../src/lib/platform/in-process-host.ts";
 import { EARLY_BIRDS_DUE_CHECK_MIN_GAP_MS } from "../src/lib/early-birds/schedule.ts";
 
 const ENV_KEYS = [
@@ -10,47 +9,48 @@ const ENV_KEYS = [
   "PHOENIX_LIVE_CRM_POLL",
   "NODE_ENV",
   "RAILWAY_ENVIRONMENT_NAME",
-  "IREPORTS360_BASE_URL",
-  "IREPORTS360_USERNAME",
-  "IREPORTS360_PASSWORD",
 ] as const;
 
 /**
- * THE EARLY BIRDS CLOSE MUST NOT DIE WITH THE CRM VENDOR CREDENTIALS.
+ * THE EARLY BIRDS CLOSE MUST NOT DIE WITH THE CRM VENDOR.
  *
- * The fortnight close ran inside the CRM live poller's tick. The poller only starts when iReports360
- * credentials are present, yet the close never calls the vendor — it reads the mirror. So a missing
- * or rotated vendor credential silently stopped every fortnight from closing. It now runs on its own
- * timer with the poller's HOST guards and without the credential check.
+ * The fortnight close once ran inside the iReports360 live poller's tick, so a missing or rotated
+ * vendor credential silently stopped every fortnight from closing — yet the close never calls the
+ * vendor, it reads the stored CRM record. It moved to its own timer with the HOST guards only, and
+ * when the vendor was retired (6 November 2026) the poller was removed and those guards moved to
+ * src/lib/platform/in-process-host.ts.
  */
 export function runEarlyBirdsCloseSchedulerTests() {
-  const pollerSource = readFileSync(new URL("../src/lib/crm/live-poller.ts", import.meta.url), "utf8");
+  const hostSource = readFileSync(new URL("../src/lib/platform/in-process-host.ts", import.meta.url), "utf8");
   const schedulerSource = readFileSync(new URL("../src/lib/early-birds/close-scheduler.ts", import.meta.url), "utf8");
   const instrumentationSource = readFileSync(new URL("../instrumentation.ts", import.meta.url), "utf8");
 
-  // ── (A) The poller no longer runs the close ──────────────────────────────────────────────
-  assert.doesNotMatch(
-    pollerSource,
-    /runDueEarlyBirdsClose/,
-    "the CRM poller must not call runDueEarlyBirdsClose — it only runs with iReports360 credentials",
+  // ── (A) The poller is gone, and the host guards it left behind need no vendor ──────────────
+  assert.equal(
+    existsSync(new URL("../src/lib/crm/live-poller.ts", import.meta.url)),
+    false,
+    "the iReports360 live poller was removed with the vendor (6 November 2026)",
   );
+  assert.doesNotMatch(hostSource, /isIReports360Configured|IREPORTS360_/, "the host guards must not require iReports360 credentials");
 
-  // ── (B) instrumentation starts the scheduler, apart from the poller ────────────────────────
+  // ── (B) instrumentation starts the scheduler, in its own try ──────────────────────────────
   const schedulerStartAt = instrumentationSource.indexOf("startEarlyBirdsCloseScheduler()");
   assert.ok(schedulerStartAt >= 0, "instrumentation.ts must start the Early Birds close scheduler");
   assert.match(
     instrumentationSource,
     /await import\("@\/lib\/early-birds\/close-scheduler"\)/,
-    "the scheduler must be imported dynamically, like the poller, to keep the hook edge-safe",
+    "the scheduler must be imported dynamically to keep the hook edge-safe",
   );
-  const pollerCatchAt = instrumentationSource.indexOf('console.error("[crm:live-poll] failed to start:"');
+  assert.doesNotMatch(instrumentationSource, /live-poller|startLiveCrmPoller/, "instrumentation.ts must not start the retired iReports360 poller");
+  const closeCatchAt = instrumentationSource.indexOf('console.error("[early-birds:close] failed to start:"');
+  const housekeepingStartAt = instrumentationSource.indexOf("startCrmHousekeepingScheduler()");
   assert.ok(
-    pollerCatchAt >= 0 && schedulerStartAt > pollerCatchAt,
-    "the scheduler must start in its own try, after the poller's — a poller that fails to start must not take the close with it",
+    closeCatchAt > schedulerStartAt && housekeepingStartAt > closeCatchAt,
+    "the close must start in its own try, before the housekeeping timer's — one scheduler that fails to start must not take the other with it",
   );
 
   // ── (C) The scheduler keeps the host guards and drops the credential check ─────────────────
-  assert.match(schedulerSource, /resolveInProcessHostRefusal\(\)/, "the scheduler must apply the poller's host guards");
+  assert.match(schedulerSource, /resolveInProcessHostRefusal\(\)/, "the scheduler must apply the in-process host guards");
   assert.doesNotMatch(
     schedulerSource,
     /isIReports360Configured|IREPORTS360_/,
@@ -66,12 +66,11 @@ export function runEarlyBirdsCloseSchedulerTests() {
   const tickMs = Number(schedulerSource.match(/EARLY_BIRDS_CLOSE_SCHEDULER_TICK_MS = ([\d_]+);/)?.[1]?.replace(/_/g, ""));
   assert.ok(
     Number.isFinite(tickMs) && tickMs > 0 && tickMs < EARLY_BIRDS_DUE_CHECK_MIN_GAP_MS,
-    "the timer must ask more often than the close's own 15-minute gate, or closes arrive later than they did on the poller",
+    "the timer must ask more often than the close's own 15-minute gate, or closes arrive later than they did on the old poller",
   );
 
-  // Behaviour, not just source: on a production Railway host with NO vendor credentials, the host
-  // guards pass (so the close runs) while the poller still refuses. Nothing is started here — the
-  // poller refuses before any timer, and the scheduler itself is never called.
+  // Behaviour, not just source: on a production Railway worker the host guards pass (so the close
+  // runs), and every other host is refused. Nothing is started here — the scheduler is never called.
   const saved = new Map<string, string | undefined>(ENV_KEYS.map((key) => [key, process.env[key]]));
   const env = process.env as Record<string, string | undefined>;
   try {
@@ -79,19 +78,8 @@ export function runEarlyBirdsCloseSchedulerTests() {
     env.PHOENIX_LIVE_CRM_POLL = "true";
     env.NODE_ENV = "production";
     env.RAILWAY_ENVIRONMENT_NAME = "production";
-    delete env.IREPORTS360_BASE_URL;
-    delete env.IREPORTS360_USERNAME;
-    delete env.IREPORTS360_PASSWORD;
-    assert.equal(isIReports360Configured(), false, "precondition: no vendor credentials in this process");
 
-    assert.equal(
-      resolveInProcessHostRefusal(),
-      null,
-      "a production Railway host without iReports360 credentials must pass the host guards the close runs under",
-    );
-    const pollerRefusal = startLiveCrmPoller();
-    assert.equal(pollerRefusal.started, false, "the poller still refuses without credentials");
-    assert.match(pollerRefusal.reason ?? "", /iReports360/, "and it refuses on the credential check, not a host guard");
+    assert.equal(resolveInProcessHostRefusal(), null, "a production Railway worker must pass the host guards the close runs under");
 
     env.RAILWAY_ENVIRONMENT_NAME = "staging";
     assert.ok(resolveInProcessHostRefusal(), "a non-production Railway environment is still refused");

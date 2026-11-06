@@ -70,15 +70,6 @@ export async function runJobLeaseTests() {
   };
   assert.equal((await claimJobLease(blank, { holder: "h", jobKey: "k", ttlSeconds: 180 })).held, true);
 
-  // The poller is wired to it: every tick claims before any work, and a heartbeat renews it.
-  const poller = readFileSync("src/lib/crm/live-poller.ts", "utf8");
-  const tick = poller.slice(poller.indexOf("async function tick(): Promise<void> {"));
-  assert.match(tick.slice(0, 1_500), /if \(!\(await liveLease\.ensure\(\)\)\) return;/, "each tick claims the lease before any vendor call");
-  assert.ok(tick.indexOf("liveLease.ensure()") < tick.indexOf("seedMarkers("), "and before any deep-run weighing");
-  assert.match(poller, /LIVE_POLL_LEASE_TTL_SECONDS = 180/);
-  assert.match(poller, /setInterval\(\(\) => void liveLease\.renew\(\), LIVE_POLL_LEASE_HEARTBEAT_MS\)/, "a heartbeat renews the lease while held");
-  assert.match(poller, /clearInterval\(leaseHeartbeat\)/, "and stopping the poller stops the heartbeat");
-
   // The migration: one table, RLS on, browser roles locked out, takeover only when free/ours/expired.
   const migration = readFileSync("supabase/migrations/20261023140000_job_leases.sql", "utf8");
   assert.match(migration, /create table if not exists public\.job_leases/);

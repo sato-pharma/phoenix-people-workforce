@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { LIST_TYPES } from "../src/lib/crm/contacts-web-client.ts";
+import { LIST_TYPES } from "../src/lib/crm/list-types.ts";
 import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_LABEL } from "../src/lib/crm/kpis-tabs.ts";
 import { coverageTargetForGrade } from "../src/lib/crm/sfe-doctor-coverage.ts";
 import {

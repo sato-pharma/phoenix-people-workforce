@@ -10,7 +10,7 @@ import {
 } from "../src/lib/field-workforce-compliance/ireports360-source.ts";
 import { buildFieldWorkforceRecommendationsReportFromArchive } from "../src/lib/field-workforce-compliance/recommendations.ts";
 import { computeAttendanceCrossCheck } from "../src/lib/field-workforce-compliance/attendance-cross-check.ts";
-import type { IReports360Visit } from "../src/lib/field-workforce-compliance/ireports360-client.ts";
+import type { IReports360Visit } from "../src/lib/crm/vendor-row-types.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
 function visit(

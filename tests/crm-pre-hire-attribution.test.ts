@@ -7,7 +7,6 @@ import {
   resolveEmployeeAttribution,
   resolveEmployeeHrId,
 } from "../src/lib/crm/identity.ts";
-import { isSilentAttribution } from "../src/lib/crm/sync.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { CrmResolutionRow } from "../src/lib/crm/types.ts";
 
@@ -114,23 +113,6 @@ export function runCrmPreHireAttributionTests() {
     resolveEmployeeAttribution(null, "Soad.Atef ( Cairo East 1 / A )", byNameOnly, "2026-05-07").blockedHrId,
     "AI-0003",
     "a username-tier block is reported the same way, so it is counted and alerted on",
-  );
-
-  // ── (E) A blocked attribution must never be treated as SILENT ────────────────────────────
-  //
-  // The sync restores an identity from the mirror when a fresh attribution comes back silent, to
-  // stop an upsert nulling out a good agent_hr_id. If a pre-hire block counted as silent, that
-  // rescue would write the wrong hr id straight back and the guard would be a no-op on exactly the
-  // rows it exists for. isSilentAttribution requires BOTH nulls; this pins that it stays that way.
-  assert.equal(
-    isSilentAttribution(blocked),
-    false,
-    "a pre-hire block is a deliberate answer, not a silent one — the mirror must not restore over it",
-  );
-  assert.equal(
-    isSilentAttribution({ blockedHrId: null, hrId: null }),
-    true,
-    "sanity: a genuinely unresolved agent is still silent",
   );
 
   // ── (F) An employee with no recorded hire date is never blocked ──────────────────────────

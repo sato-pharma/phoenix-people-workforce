@@ -217,8 +217,6 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/phoenix-crm/validation-reviews": { admin: "/admin/field-crm/validation-reviews", portal: "/employee-portals/field-crm" },
   "/api/phoenix-crm/visit-report": { admin: "/admin/phoenix-crm/visit-report", portal: "/employee-portals/visit-report" },
   "/api/crm": { admin: "/admin/crm", portal: "/employee-portals/crm" },
-  "/api/crm/early-birds": { admin: "/admin/early-birds", portal: "/employee-portals/early-birds" },
-  "/api/crm/plan-verification": { admin: "/admin/plan-verification" },
   "/api/outstation": { admin: "/admin/outstation/expenses", portal: "/employee-portals/expenses" },
   "/api/outstation/medical-rep-expenses": { admin: "/admin/outstation/expenses", portal: "/employee-portals/expenses" },
   "/api/outstation/my-submissions": { admin: "/admin/outstation/expenses", portal: "/employee-portals/expense-submissions" },
