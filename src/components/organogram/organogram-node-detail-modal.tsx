@@ -147,7 +147,7 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   const [error, setError] = React.useState<string | null>(null);
   // What this viewer is told about the person's CV. The ?meta=1 probe answers two questions at
   // once — may this viewer read a CV at all (the CV route gates on the named
-  // employeeCvReaderRoles set: Super Admin, SFE Manager, HR Operations, and 401/403s everyone
+  // employeeCvReaderRoles set: Super Admin, SFE Manager, the two HR seats, and 401/403s everyone
   // else — a viewer the page already knows is outside it never sends the probe), and is there a file on this person's master record — so the three
   // answers are three different things to show, NOT one boolean:
   //
