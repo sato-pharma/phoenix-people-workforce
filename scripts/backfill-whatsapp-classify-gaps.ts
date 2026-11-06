@@ -65,6 +65,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { applyClassificationToCandidate } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
 import { EXTRA_SESSION_COLUMNS, type ExtraSessionRow } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -152,26 +153,26 @@ const DISCOVERY_SESSION_COLUMNS =
  * newest-first, so the first one seen per applied_candidate_id is kept — the same "most recent
  * wins" rule applyClassificationToCandidate applies to any live completion today.
  *
- * `.range(0, 999)` is explicit rather than relying on the client default: an unbounded
- * `.select()` on this table stops at 1000 rows with no marker (a documented trap here), and
- * production held 383 eligible rows at authoring time — comfortably under the cap, but the
- * length check below still fires loudly if that ever changes instead of silently truncating.
+ * Read in pages: an unbounded `.select()` on this table stops at 1000 rows with no marker (a
+ * documented trap here), and this script used to refuse to run at 1000 eligible rows instead of
+ * reading past them. `id` is the tiebreak, so two sessions completed in the same instant keep a
+ * stable order across pages.
  */
 async function loadLatestSessionByCandidate(supabase: SupabaseClient): Promise<Map<string, SessionDiscoveryRow>> {
-  const { data, error } = await supabase
-    .from(SESSIONS_TABLE)
-    .select(DISCOVERY_SESSION_COLUMNS)
-    .not("applied_candidate_id", "is", null)
-    .not("completed_at", "is", null)
-    .order("completed_at", { ascending: false })
-    .range(0, 999);
-  if (error) throw new Error(`${SESSIONS_TABLE} load failed: ${error.message}`);
-
-  const rows = (data ?? []) as SessionDiscoveryRow[];
-  if (rows.length >= 1000) {
-    throw new Error(
-      `${SESSIONS_TABLE} returned 1000 rows — the discovery query may be truncated. Raise the range and re-run.`,
+  let rows: SessionDiscoveryRow[];
+  try {
+    rows = await fetchAllRows<SessionDiscoveryRow>(
+      () =>
+        supabase
+          .from(SESSIONS_TABLE)
+          .select(DISCOVERY_SESSION_COLUMNS)
+          .not("applied_candidate_id", "is", null)
+          .not("completed_at", "is", null)
+          .order("completed_at", { ascending: false }),
+      "id",
     );
+  } catch (error) {
+    throw new Error(`${SESSIONS_TABLE} load failed: ${(error as { message?: string }).message ?? String(error)}`);
   }
 
   const latest = new Map<string, SessionDiscoveryRow>();

@@ -28,6 +28,7 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { cairoDateKey, cairoHour } from "@/lib/recruitment/inbound/whatsapp-health";
 import { intakeSourceLabel } from "@/lib/recruitment/intake-source";
 import { listPlacementsFor } from "@/lib/recruitment/workspace/placements-db";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   NEEDS_PLACING,
   personVisibleToViewer,
@@ -317,15 +318,19 @@ export async function loadRecentCandidateDigestRows(now: Date = new Date()): Pro
   const since = new Date(now.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
   const supabase = recruitmentDb();
 
+  // Every candidate of the look-back window, paged to a short page by the unique `id`: a digest that
+  // counted only the first response's worth of a heavy day would report a short day as the whole one.
+  const readWindow = (columns: string) =>
+    fetchAllRows<CandidateDigestDbRow>(
+      () => supabase.from("ats_candidates").select(columns).gte("created_at", since),
+      "id",
+    );
   let rows: CandidateDigestDbRow[];
-  const first = await supabase.from("ats_candidates").select(DIGEST_COLUMNS).gte("created_at", since);
-  if (!first.error) {
-    rows = (first.data ?? []) as CandidateDigestDbRow[];
-  } else {
-    if ((first.error as { code?: string }).code !== "42703") throw first.error;
-    const fallback = await supabase.from("ats_candidates").select(PRE_MIGRATION_DIGEST_COLUMNS).gte("created_at", since);
-    if (fallback.error) throw fallback.error;
-    rows = (fallback.data ?? []) as CandidateDigestDbRow[];
+  try {
+    rows = await readWindow(DIGEST_COLUMNS);
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code !== "42703") throw error;
+    rows = await readWindow(PRE_MIGRATION_DIGEST_COLUMNS);
   }
 
   const placements = await listPlacementsFor(rows.map((row) => String(row.id)));

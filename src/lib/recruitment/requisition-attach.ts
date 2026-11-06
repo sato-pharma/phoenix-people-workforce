@@ -15,9 +15,11 @@ import { createApplication } from "@/lib/recruitment/applications";
 import { candidateStatusLabels, normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { getCandidate, updateCandidateStatus } from "@/lib/recruitment/candidates";
 import { numberOrNull, recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { chunkIds } from "@/lib/recruitment/db-batch";
 import type { OpenRequisitionOption } from "@/lib/recruitment/requisition-match";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 /** The two seats that may attach a CV to a requisition (owner, 2026-10-16: "admin or ta"). */
 export const REQUISITION_ATTACH_ROLES = ["Super Admin", "HR Resourcing"] as const;
@@ -41,14 +43,19 @@ export async function loadRequisitionMatchInputs(vacancies: readonly VacancyOpti
   attachedByCandidate: Map<string, string[]>;
 }> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_requisitions")
-    .select("id,requisition_code,job_title,vacancy_id,status,created_at")
-    .in("status", [...RECRUITING])
-    .order("created_at", { ascending: true });
-  if (error) throw error;
+  // Every recruiting requisition, paged to a short page by the unique `id`: one a response cap
+  // dropped would never be offered to attach a CV to.
+  const data = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("ats_requisitions")
+        .select("id,requisition_code,job_title,vacancy_id,status,created_at")
+        .in("status", [...RECRUITING])
+        .order("created_at", { ascending: true }),
+    "id",
+  );
   const byVacancy = new Map(vacancies.map((vacancy) => [vacancy.id, vacancy]));
-  const requisitions: OpenRequisitionOption[] = ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  const requisitions: OpenRequisitionOption[] = data.map((row) => {
     const vacancyId = numberOrNull(row.vacancy_id);
     const seat = vacancyId === null ? undefined : byVacancy.get(vacancyId);
     return {
@@ -64,18 +71,21 @@ export async function loadRequisitionMatchInputs(vacancies: readonly VacancyOpti
 
   const attachedByCandidate = new Map<string, string[]>();
   if (requisitions.length > 0) {
-    const { data: applications, error: applicationsError } = await supabase
-      .from("ats_applications")
-      .select("candidate_id,requisition_id")
-      .in("requisition_id", requisitions.map((requisition) => requisition.id));
-    if (applicationsError) throw applicationsError;
-    for (const row of (applications ?? []) as Array<{ candidate_id?: string | null; requisition_id?: string | null }>) {
-      const candidateId = textOrNull(row.candidate_id);
-      const requisitionId = textOrNull(row.requisition_id);
-      if (!candidateId || !requisitionId) continue;
-      const list = attachedByCandidate.get(candidateId) ?? [];
-      list.push(requisitionId);
-      attachedByCandidate.set(candidateId, list);
+    // In batches of a hundred requisitions (a longer `.in()` overflows the request URL and answers no
+    // rows, not an error), each paged to a short page: a CV already attached must never read as free.
+    for (const batch of chunkIds(requisitions.map((requisition) => requisition.id))) {
+      const applications = await fetchAllRows<{ candidate_id?: string | null; requisition_id?: string | null }>(
+        () => supabase.from("ats_applications").select("candidate_id,requisition_id").in("requisition_id", batch),
+        "id",
+      );
+      for (const row of applications) {
+        const candidateId = textOrNull(row.candidate_id);
+        const requisitionId = textOrNull(row.requisition_id);
+        if (!candidateId || !requisitionId) continue;
+        const list = attachedByCandidate.get(candidateId) ?? [];
+        list.push(requisitionId);
+        attachedByCandidate.set(candidateId, list);
+      }
     }
   }
   return { attachedByCandidate, requisitions };

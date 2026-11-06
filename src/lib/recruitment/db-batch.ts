@@ -35,9 +35,31 @@ export async function fetchRowsInBatches<TRow>(
 ): Promise<TRow[]> {
   const rows: TRow[] = [];
   for (const batch of chunkIds(ids)) {
-    const { data, error } = await fetchBatch(batch);
-    if (error) throw error;
-    rows.push(...(data ?? []));
+    rows.push(...(await fetchBatchWhole(batch, fetchBatch)));
   }
   return rows;
+}
+
+/**
+ * A response this long may have been cut by PostgREST's response cap (Supabase's default is 1,000
+ * rows, answered with no error and no marker). A batch of ids that fills one is read again in two
+ * halves, and each half the same way, so a one-to-many read (an extraction per re-read, a view per
+ * viewer) can never lose rows to the cap. Production's cap is unset today and a full response then
+ * costs one extra pair of reads; the day the cap is switched on, nothing here silently shortens.
+ */
+const RESPONSE_SATURATION = 1000;
+
+async function fetchBatchWhole<TRow>(
+  batch: string[],
+  fetchBatch: (batch: string[]) => PromiseLike<{ data: TRow[] | null; error: { message?: string } | null }>,
+): Promise<TRow[]> {
+  const { data, error } = await fetchBatch(batch);
+  if (error) throw error;
+  const rows = data ?? [];
+  // One id left: its own rows are all there is to read, so there is nothing smaller to split into.
+  if (rows.length < RESPONSE_SATURATION || batch.length < 2) return rows;
+  const middle = Math.ceil(batch.length / 2);
+  const first = await fetchBatchWhole(batch.slice(0, middle), fetchBatch);
+  const second = await fetchBatchWhole(batch.slice(middle), fetchBatch);
+  return [...first, ...second];
 }

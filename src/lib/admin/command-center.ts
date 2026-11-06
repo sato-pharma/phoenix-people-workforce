@@ -16,6 +16,7 @@ import { getPayrollDashboard } from "@/lib/payroll/service";
 import { countUnoccupiedWorkforceSeats, getPlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import { getProbationRows } from "@/lib/probation/service";
 import { getSalesPlatformMetrics } from "@/lib/sales/service";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
@@ -160,26 +161,6 @@ export type AdminCommandCenterData = {
 function safeNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-async function readAllRows<T = Record<string, unknown>>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  buildQuery: () => any,
-  pageSize = 1000,
-): Promise<T[]> {
-  const rows: T[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
-    if (error) throw error;
-    const pageRows = (Array.isArray(data) ? data : []) as T[];
-    rows.push(...pageRows);
-    if (pageRows.length < pageSize) break;
-    offset += pageSize;
-  }
-
-  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,11 +323,15 @@ async function fetchPayrollSummary(): Promise<AdminCommandCenterData["overview"]
 
     const batchId = String(batch.id);
     const [records, flagsResult] = await Promise.all([
-      readAllRows<Record<string, unknown>>(() =>
-        supabase
-          .from("salary_records")
-          .select("gross_salary,net_salary")
-          .eq("batch_id", batchId),
+      // Paged in a fixed order (the old walk had none, so a batch past one page could repeat or skip
+      // rows and the gross and net totals with them). MONEY: these are the payroll totals.
+      fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("salary_records")
+            .select("gross_salary,net_salary")
+            .eq("batch_id", batchId),
+        "id",
       ),
       supabase
         .from("salary_flags")

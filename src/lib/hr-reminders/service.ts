@@ -41,14 +41,12 @@ import type {
   ReminderView,
   TeamMember,
 } from "@/lib/hr-reminders/types";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** A finished item stays on the board this long before it drops out of the lists. */
 export const DONE_ITEM_KEEP_DAYS = 120;
-/** One read never returns more than this many items; the oldest finished ones are what falls off. */
-export const BOARD_ROW_CAP = 2000;
 const COMMENT_ID_CHUNK = 80;
-const COMMENT_THREAD_CAP = 500;
 
 export class ReminderServiceError extends Error {
   readonly status: 400 | 403 | 404 | 503;
@@ -226,20 +224,25 @@ export async function loadReminderBoard(access: Pick<AccessContext, "hrId" | "ro
   const viewerInfo = { hrId: viewer.hrId, isOverseer: viewer.isOverseer, name: viewerName };
 
   const keepSince = new Date(Date.parse(`${addDays(today, -DONE_ITEM_KEEP_DAYS)}T00:00:00Z`)).toISOString();
-  const { data, error } = await db
-    .from("hr_reminders")
-    .select(REMINDER_COLUMNS)
-    .is("deleted_at", null)
-    .or(`status.eq.open,done_at.gte.${keepSince}`)
-    .order("remind_on", { ascending: true, nullsFirst: false })
-    .range(0, BOARD_ROW_CAP - 1);
-
-  if (error) {
+  // Every item the board shows, page by page: the board never drops an open item because the list grew.
+  let boardRows: ReminderRow[];
+  try {
+    boardRows = await fetchAllRows<ReminderRow>(
+      () =>
+        db
+          .from("hr_reminders")
+          .select(REMINDER_COLUMNS)
+          .is("deleted_at", null)
+          .or(`status.eq.open,done_at.gte.${keepSince}`)
+          .order("remind_on", { ascending: true, nullsFirst: false }),
+      "id",
+    );
+  } catch (error) {
     if (isMissingTable(error)) return { reminders: [], schemaReady: false, team, today, viewer: viewerInfo };
     throw new ReminderServiceError("Reminders could not be read right now.", 503);
   }
 
-  const visible = ((data ?? []) as ReminderRow[]).filter((row) => canSeeReminder(viewer, recordOf(row)));
+  const visible = boardRows.filter((row) => canSeeReminder(viewer, recordOf(row)));
   return { reminders: await hydrate(visible, viewer), schemaReady: true, team, today, viewer: viewerInfo };
 }
 
@@ -377,14 +380,20 @@ export async function deleteReminder(access: Pick<AccessContext, "hrId" | "role"
 // ── The conversation ───────────────────────────────────────────────────────────────────────────
 
 async function readComments(reminderId: string): Promise<CommentRow[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("hr_reminder_comments")
-    .select(COMMENT_COLUMNS)
-    .eq("reminder_id", reminderId)
-    .order("created_at", { ascending: true })
-    .range(0, COMMENT_THREAD_CAP - 1);
-  if (error) throw new ReminderServiceError("The conversation could not be read right now.", 503);
-  return (data ?? []) as CommentRow[];
+  // The whole conversation, oldest first: a long thread is never cut short at a fixed number.
+  try {
+    return await fetchAllRows<CommentRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("hr_reminder_comments")
+          .select(COMMENT_COLUMNS)
+          .eq("reminder_id", reminderId)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
+  } catch {
+    throw new ReminderServiceError("The conversation could not be read right now.", 503);
+  }
 }
 
 async function commentViews(rows: readonly CommentRow[], viewer: ReminderAudience): Promise<ReminderCommentView[]> {

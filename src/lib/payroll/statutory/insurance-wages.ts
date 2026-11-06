@@ -1,5 +1,6 @@
 import { logError } from "@/lib/observability/log";
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { computeSocialInsurance } from "./calculator.ts";
@@ -47,15 +48,14 @@ export async function loadInsuranceWages(): Promise<InsuranceWageMap> {
   const map: InsuranceWageMap = new Map();
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.from("employees").select("hr_id,social_insurance_wage");
-    if (error) {
-      logError("Failed to load employee social-insurance wage data", {
-        labels: { event: "insurance_wage_load_failed" },
-        error,
-      });
-      return map;
-    }
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    // The WHOLE roster, page by page: a person cut off by a response ceiling would read as "no wage
+    // on file" and fall back to the raw figure. A failed page falls to the catch below, which logs
+    // it and hands back the (empty) map as before.
+    const rows = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("employees").select("hr_id,social_insurance_wage"),
+      "hr_id",
+    );
+    for (const row of rows) {
       const key = compactHrKey(String(row.hr_id ?? ""));
       if (!key) continue;
       const wage = row.social_insurance_wage;

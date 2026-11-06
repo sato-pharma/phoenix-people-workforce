@@ -40,6 +40,7 @@ import { boardsForManager, type DistrictSeatRow } from "@/lib/recruitment/distri
 import { loadDistrictSeatRows } from "@/lib/recruitment/folder-holders";
 import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
 import { recordManagerSends } from "@/lib/recruitment/manager-sends";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { quotedInList } from "@/lib/supabase/search-filter";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
@@ -297,19 +298,9 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
   // break the filter.
   const seatHolderClause = seatHolderIds.length > 0 ? `,hr_id.in.(${quotedInList(seatHolderIds)})` : "";
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    // The area from the `area_id` LINK: `employees.area_name` was a label frozen at write time and
-    // was dropped on 2026-09-29. A select naming it fails the WHOLE read, which here would throw and
-    // lose the send.
-    .select(`hr_id,full_name,nickname,job_title,region_name,${EMPLOYEE_AREA_SELECT}`)
-    .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
-    .or(
-      `job_title.ilike.*manager*,job_title.ilike.*director*,job_title.ilike.*head*,job_title.ilike.*chief*${seatHolderClause}`,
-    );
-  if (error) throw error;
-
-  const rows = (data ?? []) as Array<
+  // Every matching manager, paged to a short page by the unique `hr_id`: a manager a response cap
+  // dropped would be missing from the picker and from the notification this function exists to send.
+  const rows = await fetchAllRows<
     EmployeeOrgFields & {
       hr_id?: string | null;
       full_name?: string | null;
@@ -317,7 +308,20 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
       job_title?: string | null;
       region_name?: string | null;
     }
-  >;
+  >(
+    () =>
+      getSupabaseAdmin()
+        .from("employees")
+        // The area from the `area_id` LINK: `employees.area_name` was a label frozen at write time and
+        // was dropped on 2026-09-29. A select naming it fails the WHOLE read, which here would throw and
+        // lose the send.
+        .select(`hr_id,full_name,nickname,job_title,region_name,${EMPLOYEE_AREA_SELECT}`)
+        .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
+        .or(
+          `job_title.ilike.*manager*,job_title.ilike.*director*,job_title.ilike.*head*,job_title.ilike.*chief*${seatHolderClause}`,
+        ),
+    "hr_id",
+  );
 
   return rows
     .filter((row) => Boolean(row.hr_id) && Boolean(row.full_name))

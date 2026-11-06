@@ -24,14 +24,17 @@ const flat = (relative: string) => code(relative).replace(/\s+/g, " ");
 
 /**
  * A stand-in for `db.from("employees")` that behaves like PostgREST where these checks depend on it:
- * rows come back in the order given, `limit` cuts them, and only the selected columns come back, so a
- * read that forgets `employment_status` or keeps `limit(1)` fails here as it would on production.
+ * rows come back in the order given, `limit` cuts them, `range` returns one window of them (the shared
+ * pager walks the table with it, ordering by a tiebreak column the stand-in leaves alone), and only the
+ * selected columns come back, so a read that forgets `employment_status` or keeps `limit(1)` fails here
+ * as it would on production.
  */
 function fakeEmployeesDb(rows: Array<Record<string, unknown>>, failing?: "identity" | "recent") {
   const orFilters: string[] = [];
   const from = () => {
     let columns: string[] = [];
     let cut: number | null = null;
+    let offset = 0;
     let kept = [...rows];
     let isFailing = false;
     const builder = {
@@ -48,6 +51,14 @@ function fakeEmployeesDb(rows: Array<Record<string, unknown>>, failing?: "identi
         cut = count;
         return builder;
       },
+      order() {
+        return builder;
+      },
+      range(start: number, end: number) {
+        offset = start;
+        cut = end - start + 1;
+        return builder;
+      },
       or(filter: string) {
         orFilters.push(filter);
         if (failing === "identity") isFailing = true;
@@ -62,7 +73,7 @@ function fakeEmployeesDb(rows: Array<Record<string, unknown>>, failing?: "identi
       },
       then(resolve: (value: { data: unknown; error: unknown }) => void) {
         if (isFailing) return resolve({ data: null, error: { message: "read failed" } });
-        const shown = (cut === null ? kept : kept.slice(0, cut)).map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])));
+        const shown = (cut === null ? kept.slice(offset) : kept.slice(offset, offset + cut)).map((row) => Object.fromEntries(columns.map((column) => [column, row[column]])));
         return resolve({ data: shown, error: null });
       },
     };

@@ -613,7 +613,7 @@ async function runDeviceTests() {
   // with "that tablet is not in the Headwind fleet any more".
   for (const file of ["src/lib/devices/headwind/apps.ts", "src/lib/devices/headwind/configurations.ts"] as const) {
     const text = stripComments(source(file));
-    assert.ok(text.includes("deviceRecordsFromSearch"), `${file} unwraps the device search through the shared reader`);
+    assert.ok(text.includes("searchHeadwindDevices"), `${file} reads the device search through the shared paged reader`);
     assert.ok(!/payload\.items|found\?\.items|found\.items/.test(text), `${file} does not read the flat page itself`);
   }
 

@@ -174,9 +174,6 @@ async function workingDaysOf(period: string): Promise<{ workingDays: number; com
 /** The CNS targets of one month, by area, then product. */
 async function cnsTargets(period: string): Promise<Map<string, Map<string, MonthlyTargetRow>>> {
   const rows = await loadMonthlyTargets(period);
-  // The targets read is ONE PostgREST call, and PostgREST stops at 1,000 rows without saying so. A
-  // month holds ~730 today; past the cap this refuses rather than pre-filling half the line with blanks.
-  if (rows.length >= 1000) throw new Error(`au.monthly_targets returned ${rows.length} rows for ${period}, at PostgREST's cap.`);
   const byArea = new Map<string, Map<string, MonthlyTargetRow>>();
   for (const row of rows) {
     if (!isForecastLine(row.lineCode) || !row.areaCode || !row.productCode) continue;

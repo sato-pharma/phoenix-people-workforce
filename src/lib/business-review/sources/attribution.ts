@@ -22,6 +22,7 @@
 // selling. That fallback is today's answer applied to a historical month, so it is flagged
 // (`placedFromLiveTree`) and the coverage tab says so rather than pretending otherwise.
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
@@ -71,12 +72,21 @@ type LiveSeatRow = {
  */
 async function loadLiveTree(): Promise<Map<string, Placement>> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("au_v_org_tree")
-    .select("occupant_hr_id, area_code, line_code, region_code, seat_id, seat_tier, parent_seat_id");
-  if (error || !data) return new Map();
-
-  const rows = data as LiveSeatRow[];
+  // Paged, every seat: the parent walk below needs the whole tree, and a cut tree misplaces people.
+  // As before, an unreadable tree answers an empty map rather than failing the pack.
+  let rows: LiveSeatRow[];
+  try {
+    rows = await fetchAllRows<LiveSeatRow>(
+      () =>
+        supabase
+          .from("au_v_org_tree")
+          .select("occupant_hr_id, area_code, line_code, region_code, seat_id, seat_tier, parent_seat_id")
+          .order("seat_id", { ascending: true }),
+      "occupant_hr_id",
+    );
+  } catch {
+    return new Map();
+  }
   const bySeat = new Map(rows.filter((r) => r.seat_id).map((r) => [r.seat_id as string, r]));
 
   const dmSeatOf = (row: LiveSeatRow): { seatId: string | null; hrId: string | null } => {

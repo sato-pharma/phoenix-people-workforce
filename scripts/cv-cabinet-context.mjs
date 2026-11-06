@@ -54,14 +54,14 @@ export async function loadCabinetFacts(rest, fileIds) {
     fileIds,
     (idList, offset, limit) =>
       `ats_cv_intake_events?select=file_id,channel,mailbox_label,sender_identifier,raw_metadata,created_at`
-      + `&file_id=in.(${idList})&order=created_at.asc&offset=${offset}&limit=${limit}`,
+      + `&file_id=in.(${idList})&order=created_at.asc,id.asc&offset=${offset}&limit=${limit}`,
   );
   const verdicts = await pagedByFile(
     rest,
     fileIds,
     (idList, offset, limit) =>
       `ats_candidate_cv_extractions?select=file_id,is_cv,created_at`
-      + `&file_id=in.(${idList})&order=created_at.asc&offset=${offset}&limit=${limit}`,
+      + `&file_id=in.(${idList})&order=created_at.asc,id.asc&offset=${offset}&limit=${limit}`,
   );
   // THE WHATSAPP LINE for a CV a recruiter saved out of the inbox. That file has no intake record —
   // a person moved it, nothing imported it — so the line lives on the inbox MESSAGE, joined back by
@@ -72,7 +72,7 @@ export async function loadCabinetFacts(rest, fileIds) {
     fileIds,
     (idList, offset, limit) =>
       `whatsapp_inbox_messages?select=file_id:saved_file_id,line_display_number,saved_at`
-      + `&saved_file_id=in.(${idList})&order=saved_at.asc&offset=${offset}&limit=${limit}`,
+      + `&saved_file_id=in.(${idList})&order=saved_at.asc,id.asc&offset=${offset}&limit=${limit}`,
   );
   return {
     inboxLineByFile: groupByFile(inboxMessages),

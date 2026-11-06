@@ -1,5 +1,6 @@
 import { logError } from "@/lib/observability/log";
 import type { ImportPreviewDiff } from "@/lib/sales/import-preview";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type NewCustomerDetail = { address: string; code: string; name: string };
@@ -497,13 +498,22 @@ async function backfillNamesFromImportRows(items: PersistentUnmappedCustomer[]):
 
   const codes = [...new Set(needing.map((i) => i.customerCode))];
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("source_of_sales_import_rows")
-    .select("distributor_code,client_code,client_name,client_address")
-    .in("client_code", codes)
-    .not("client_name", "is", null)
-    .limit(5000);
-  if (error || !data) return items;
+  // Keyset-paged: a customer left unmapped across many imports holds many rows, and one read would
+  // stop at a fixed count with no error. Best-effort as before: a failed read leaves the names blank.
+  let data: Record<string, unknown>[];
+  try {
+    data = await fetchAllRowsKeyset<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("source_of_sales_import_rows")
+          .select("id,distributor_code,client_code,client_name,client_address")
+          .in("client_code", codes)
+          .not("client_name", "is", null),
+      { cursorColumn: "id", cursorOf: (row) => row.id as number | string | null | undefined },
+    );
+  } catch {
+    return items;
+  }
 
   const namesByKey = new Map<string, { address: string; name: string }>();
   for (const row of data as Record<string, unknown>[]) {

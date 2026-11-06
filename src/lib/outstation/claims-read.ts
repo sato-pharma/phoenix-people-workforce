@@ -22,6 +22,7 @@
  * set. Flipping it back is the rollback.
  */
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -163,32 +164,31 @@ export async function listExpenseClaims(
   const accessFilter = await resolveExpenseAccessFilter(accessContext);
   const supabase = await rowSecurityClientFor("outstation.listExpenseClaims");
 
-  let query = supabase
-    .from("expense_claims")
-    .select(CLAIM_COLUMNS)
-    .order("trip_start_date", { ascending: false });
-
   const allowedHrIds = Array.from(accessFilter.allowedHrIds);
-  if (!accessFilter.all) {
-    if (allowedHrIds.length === 0) return [];
-    query = applyEmployeeHrIdInFilter(query, allowedHrIds);
-  }
+  if (!accessFilter.all && allowedHrIds.length === 0) return [];
 
-  // Period filtering happens in the QUERY, not in memory. The legacy path loaded every request and
-  // filtered afterwards (see listOutstationRequestExpenses), which is why a period view still paid
-  // for the whole table.
-  if (month && year) {
-    query = query.eq("payout_month", month).eq("payout_year", year);
-  }
+  // Paged: one read is cut at 1,000 rows by the API, which would silently drop the oldest claims.
+  // A FRESH query per page, filtered and ordered the same way each time; `claim_ref` (unique) is the
+  // tiebreak so a day shared by several trips cannot lose or repeat a row between pages.
+  const buildQuery = () => {
+    let query = supabase
+      .from("expense_claims")
+      .select(CLAIM_COLUMNS)
+      .order("trip_start_date", { ascending: false });
 
-  const { data, error } = await query;
-  if (error) throw error;
+    if (!accessFilter.all) query = applyEmployeeHrIdInFilter(query, allowedHrIds);
 
-  // Double cast: CLAIM_COLUMNS is a joined constant rather than a string literal, so PostgREST's
-  // generic cannot infer the row shape and falls back to GenericStringError[].
-  return keepExpenseRowsInScope((data ?? []) as unknown as Array<Record<string, unknown>>, accessFilter, "employee_hr_id").map(
-    mapClaimToPayrollApproval,
-  );
+    // Period filtering happens in the QUERY, not in memory. The legacy path loaded every request and
+    // filtered afterwards (see listOutstationRequestExpenses), which is why a period view still paid
+    // for the whole table.
+    if (month && year) {
+      query = query.eq("payout_month", month).eq("payout_year", year);
+    }
+    return query;
+  };
+  const data = await fetchAllRows<Record<string, unknown>>(buildQuery, "claim_ref");
+
+  return keepExpenseRowsInScope(data, accessFilter, "employee_hr_id").map(mapClaimToPayrollApproval);
 }
 
 /** Parity row as `v_expense_claims_parity` exposes it. */

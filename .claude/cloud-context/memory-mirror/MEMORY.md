@@ -29,6 +29,8 @@
 
 
 ## Inbox — new notes land here
+- 🔴 [a Thursday holiday-bridge day is a FULL day](a-thursday-holiday-bridge-day-is-a-full-day.md) - owner 2026-11-07; the Thursday half is a CRM rule only, never weight a bridge row.
+- 🔴 [released daily lines show on the portal; Finance Manager reads Daily Deductions](daily-deductions-reach-the-portal-and-the-finance-manager-reads.md) - owner 2026-11-07 (PR 74); he stays OFF the month Deductions screen.
 
 
 

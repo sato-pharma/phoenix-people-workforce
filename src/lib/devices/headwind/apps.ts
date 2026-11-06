@@ -28,7 +28,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/commands";
-import { deviceRecordsFromSearch } from "@/lib/devices/headwind/devices";
+import { searchHeadwindDevices } from "@/lib/devices/headwind/devices";
 
 export class HeadwindAppInputError extends Error {
   constructor(message: string) {
@@ -115,8 +115,6 @@ export function installedAppsFromInfo(info: unknown, remoteScreenPackage: string
   return out.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-type SearchResponse = RawRecord & { items?: unknown; devices?: unknown };
-
 /**
  * The apps on one tablet.
  *
@@ -132,17 +130,12 @@ export async function getHeadwindDeviceApps(
   const number = deviceNumber.trim();
   if (!number) throw new HeadwindAppInputError("Say which tablet to read.");
 
-  const payload = await callHeadwind<SearchResponse>(
-    "/rest/private/devices/search",
-    { body: JSON.stringify({ pageNum: 1, pageSize: 1000, value: number }), method: "POST" },
-    fetchImpl,
-    env,
-  );
-  // 🔴 ONE UNWRAPPER FOR THE SEARCH, BECAUSE THE LIVE REPLY NESTS THE PAGE — see
-  // `deviceRecordsFromSearch`. Reading `payload.items` here answered "no apps installed" for every
-  // tablet, which is indistinguishable from a tablet that has genuinely installed nothing.
-  const record =
-    deviceRecordsFromSearch(payload).find((entry) => pickString(entry, ["number", "deviceNumber"]) === number) ?? null;
+  // 🔴 ONE SEARCH FOR THE FLEET AND THIS, BECAUSE THE LIVE REPLY NESTS THE PAGE — see
+  // `deviceRecordsFromSearch`, which `searchHeadwindDevices` reads every page through. Reading
+  // `payload.items` here answered "no apps installed" for every tablet, which is indistinguishable
+  // from a tablet that has genuinely installed nothing.
+  const { records } = await searchHeadwindDevices(number, fetchImpl, env);
+  const record = records.find((entry) => pickString(entry, ["number", "deviceNumber"]) === number) ?? null;
   const installed = record ? installedAppsFromInfo(record.info ?? record.deviceInfo, remoteScreenPackage) : [];
 
   return { installed, remoteScreenAppPresent: installed.some((app) => app.isRemoteScreenApp) };

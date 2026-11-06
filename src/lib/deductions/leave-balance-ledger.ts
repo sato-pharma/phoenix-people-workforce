@@ -7,6 +7,7 @@
 // must refuse to change a charged deduction) and the charge service (which calls recordDecision) can
 // both depend on it without a cycle.
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** One deduction currently paid from annual leave: the net days still charged and the comment written. */
@@ -73,20 +74,24 @@ export function foldLeaveBalanceCharges(rows: readonly LedgerRow[]): Map<string,
 }
 
 async function readDeductionsRows(filter?: { employeeHrId?: string; candidateId?: string }): Promise<LedgerRow[]> {
-  let query = getSupabaseAdmin()
-    .from("attendance_annual_balance_charges")
-    .select(LEDGER_COLUMNS)
-    .eq("source", "deductions");
-  if (filter?.candidateId) query = query.eq("deduction_candidate_id", filter.candidateId);
-  if (filter?.employeeHrId) {
-    query = query.ilike("employee_hr_id", filter.employeeHrId.trim().replace(/[\\%_]/g, (char) => `\\${char}`));
-  }
-  const { data, error } = await query.limit(5000);
-  if (error) {
+  // Every row, page by page: the fold below nets charges against give-backs per deduction, so a read
+  // cut short would drop a give-back (or the charge it reverses) and mis-state what is paid from leave.
+  try {
+    return await fetchAllRows<LedgerRow>(() => {
+      let query = getSupabaseAdmin()
+        .from("attendance_annual_balance_charges")
+        .select(LEDGER_COLUMNS)
+        .eq("source", "deductions");
+      if (filter?.candidateId) query = query.eq("deduction_candidate_id", filter.candidateId);
+      if (filter?.employeeHrId) {
+        query = query.ilike("employee_hr_id", filter.employeeHrId.trim().replace(/[\\%_]/g, (char) => `\\${char}`));
+      }
+      return query;
+    }, "id");
+  } catch (error) {
     if (isLedgerNotReadyError(error)) return [];
     throw new Error(`Failed to read the leave balance charges: ${(error as { message?: string }).message ?? String(error)}`);
   }
-  return (data ?? []) as unknown as LedgerRow[];
 }
 
 /** Every deduction currently paid from annual leave, keyed by deduction id. */

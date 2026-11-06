@@ -241,6 +241,8 @@ export async function loadUntriagedApplicants(): Promise<UntriagedApplicant[]> {
       .select("id,created_at,status_changed_at,phone,email")
       .eq("status", DEFAULT_CANDIDATE_STATUS)
       .order("created_at", { ascending: true })
+      // `created_at` alone ties on a bulk import, and a tied order lets a row slip between two pages.
+      .order("id", { ascending: true })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
     if (error) {

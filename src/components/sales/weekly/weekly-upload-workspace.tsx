@@ -1771,6 +1771,9 @@ function ValidationResultPanel({
               ))}
             </ul>
           </div>
+          {result.issues.length > 100 ? (
+            <p className="mt-2 text-xs text-phx-ink-soft">Showing the first 100 of {result.issues.length} row issues.</p>
+          ) : null}
         </div>
       )}
 

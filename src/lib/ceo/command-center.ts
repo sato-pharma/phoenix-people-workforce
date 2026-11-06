@@ -39,6 +39,7 @@ import {
   getSalesMarketingDashboard,
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getVacationPendingApprovalCounts } from "@/lib/vacation/service";
 
@@ -255,12 +256,15 @@ async function getCeoPendingPlansCount(): Promise<number> {
   // Not a head-only count: a District Manager plan resting at manager_approved under a manager with
   // a second approver (second-approver.ts) is waiting on THAT approver, never on the CEO, so it
   // must not be counted here — and only the rows themselves say which plans those are.
-  const [legacy, crm] = await Promise.all([
-    getSupabaseAdmin().from("employee_plan_headers").select("id,manager_hr_id,employee_job_title").eq("status", "manager_approved").limit(1000),
+  // Paged, every plan at this step: a fixed ceiling would silently under-count the CEO's tile.
+  const [legacyRows, crm] = await Promise.all([
+    fetchAllRows<{ manager_hr_id: string | null; employee_job_title: string | null }>(
+      () => getSupabaseAdmin().from("employee_plan_headers").select("id,manager_hr_id,employee_job_title").eq("status", "manager_approved"),
+      "id",
+    ),
     getCeoCrmManagerPlansWaiting(),
   ]);
-  if (legacy.error) throw legacy.error;
-  const legacyCount = ((legacy.data ?? []) as Array<{ manager_hr_id: string | null; employee_job_title: string | null }>).filter(
+  const legacyCount = legacyRows.filter(
     (row) => !planHasSecondApprover(row.manager_hr_id, isDistrictManagerPlanTitle(row.employee_job_title)),
   ).length;
   return legacyCount + crm;

@@ -18,6 +18,7 @@ import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { getFileForDownload, uploadCandidateFile } from "@/lib/recruitment/files";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { REPLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-conversation";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
 import { pickInboxCvs, type InboxDocumentMessage } from "@/lib/whatsapp-inbox/cv-pick";
@@ -295,16 +296,20 @@ async function cvsFor(rows: ConversationRow[]): Promise<Map<string, CvSummary>> 
   const documents: InboxDocumentMessage[] = [];
   const ids = rows.map((row) => row.id);
   for (let index = 0; index < ids.length; index += 50) {
-    const { data, error } = await supabase
-      .from(WHATSAPP_INBOX_MESSAGES_TABLE)
-      .select("id, conversation_id, media_file_name, sent_at")
-      .in("conversation_id", ids.slice(index, index + 50))
-      .eq("direction", "inbound")
-      .eq("message_type", "document")
-      .order("sent_at", { ascending: false })
-      .limit(1000);
-    if (error) throw error;
-    documents.push(...((data ?? []) as InboxDocumentMessage[]));
+    const chunk = ids.slice(index, index + 50);
+    // Paged: fifty chats can hold more documents than one response carries, and the file count comes from every one.
+    const chunkDocuments = await fetchAllRows<InboxDocumentMessage>(
+      () =>
+        supabase
+          .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+          .select("id, conversation_id, media_file_name, sent_at")
+          .in("conversation_id", chunk)
+          .eq("direction", "inbound")
+          .eq("message_type", "document")
+          .order("sent_at", { ascending: false }),
+      "id",
+    );
+    documents.push(...chunkDocuments);
   }
   return pickInboxCvs(documents);
 }
@@ -359,12 +364,13 @@ export function sanitizeInboxSearch(value: string | null | undefined): string {
 }
 
 export const INBOX_LIST_PAGE_SIZE = 150;
-const INBOX_LIST_MAX = 1500;
+/** The most one database response is asked for; a longer page is read in several windows. */
+const INBOX_READ_WINDOW = 1000;
 
-/** How many chats one list request returns: a page by default, never more than the ceiling. */
+/** How many chats one list request returns: a page by default, as many as "Show more" has asked for. There is no ceiling. */
 export function clampInboxListLimit(value: number | null | undefined): number {
   const wanted = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : INBOX_LIST_PAGE_SIZE;
-  return Math.max(1, Math.min(INBOX_LIST_MAX, wanted));
+  return Math.max(1, wanted);
 }
 
 /** How far back "Waiting for us" looks. A chat older than this has gone cold, and the pile says how far it reaches. */
@@ -418,52 +424,75 @@ export async function listInboxConversations(input: {
     logError("Could not read which WhatsApp chats are waiting for a reply", { error, labels: { event: "whatsapp_inbox_waiting_read_failed" } });
   }
   // The position lives in the recruitment tables, not on the chat, so a position filter reads every
-  // chat the other filters allow (up to the list ceiling) and narrows them here; the page is cut
-  // after. Without one, the database cuts the page as before. Region and area ride on the position.
+  // chat the other filters allow and narrows them here; the page is cut after. Without one, the
+  // database cuts the page as before. Region and area ride on the position.
   const place = parseInboxPlaceFilter(input);
   const position = place.position;
-  // THE TALENT ACQUISITION FENCE. Her list reads every chat the filters allow (up to the ceiling, the
-  // same way a position filter does), drops the HR applicants' chats, and cuts the page after — so a
-  // page is never short and no count includes a chat she cannot open. Everyone else pays nothing.
+  // THE TALENT ACQUISITION FENCE. Her list reads every chat the filters allow (the same way a
+  // position filter does), drops the HR applicants' chats, and cuts the page after — so a page is
+  // never short and no count includes a chat she cannot open. Everyone else pays nothing.
   const fenced = fenceApplies(input.access);
   // The list shows the newest chats first and grows on request. `totalCount` is every chat matching
   // the filters, so the screen can say how many there are and offer the rest, rather than letting
-  // the page size pass for the whole inbox.
-  let query = supabase
-    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
-    .select(CONVERSATION_COLUMNS, { count: "exact" })
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(position || fenced || waitingOnly ? INBOX_LIST_MAX : limit);
-  if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
-  if (input.readState === "unread") query = query.gt("unread_count", 0);
-  if (input.readState === "read") query = query.eq("unread_count", 0);
-  if (waitingOnly) query = query.gte("last_inbound_at", new Date(nowForWaiting - INBOX_WAITING_WINDOW_DAYS * 86_400_000).toISOString());
-  const search = sanitizeInboxSearch(input.search);
-  if (search) {
-    const value = ilikeContainsValue(search);
-    const digits = search.replace(/\D+/g, "");
-    const clauses = value ? [`contact_name.ilike.${value}`, `contact_username.ilike.${value}`] : [];
-    if (digits.length >= 4) {
-      const digitsValue = ilikeContainsValue(digits.replace(/^0+/, ""));
-      if (digitsValue) clauses.push(`contact_wa_id.ilike.${digitsValue}`);
+  // the page size pass for the whole inbox. A fresh query per call: the pager asks again for every page.
+  const chatQuery = (withCount: boolean) => {
+    let query = supabase
+      .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+      .select(CONVERSATION_COLUMNS, withCount ? { count: "exact" } : undefined)
+      .order("last_message_at", { ascending: false, nullsFirst: false });
+    if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
+    if (input.readState === "unread") query = query.gt("unread_count", 0);
+    if (input.readState === "read") query = query.eq("unread_count", 0);
+    if (waitingOnly) query = query.gte("last_inbound_at", new Date(nowForWaiting - INBOX_WAITING_WINDOW_DAYS * 86_400_000).toISOString());
+    const search = sanitizeInboxSearch(input.search);
+    if (search) {
+      const value = ilikeContainsValue(search);
+      const digits = search.replace(/\D+/g, "");
+      const clauses = value ? [`contact_name.ilike.${value}`, `contact_username.ilike.${value}`] : [];
+      if (digits.length >= 4) {
+        const digitsValue = ilikeContainsValue(digits.replace(/^0+/, ""));
+        if (digitsValue) clauses.push(`contact_wa_id.ilike.${digitsValue}`);
+      }
+      // A term that left nothing searchable applies NO filter rather than `.or("")`, which is a 400.
+      if (clauses.length > 0) query = query.or(clauses.join(","));
     }
-    // A term that left nothing searchable applies NO filter rather than `.or("")`, which is a 400.
-    if (clauses.length > 0) query = query.or(clauses.join(","));
+    return query;
+  };
+  let read: ConversationRow[] = [];
+  let count: number | null = null;
+  if (position || fenced || waitingOnly) {
+    read = await fetchAllRows<ConversationRow>(() => chatQuery(false), "id");
+  } else {
+    // The page is the newest `limit` chats, read in windows so no response size can cut a long page short.
+    for (let from = 0; from < limit; from += INBOX_READ_WINDOW) {
+      const to = Math.min(from + INBOX_READ_WINDOW, limit) - 1;
+      const { count: exact, data, error } = await chatQuery(true).order("id", { ascending: true }).range(from, to);
+      if (error) throw error;
+      const windowRows = (data ?? []) as ConversationRow[];
+      read.push(...windowRows);
+      count = exact;
+      if (windowRows.length < to - from + 1) break;
+    }
   }
-  const { count, data, error } = await query;
-  if (error) throw error;
-  const read = (data ?? []) as ConversationRow[];
   const hiddenChats = fenced ? await inboxConversationsHiddenFrom(input.access, read.map(fenceRowOf)) : new Set<string>();
   const matched = hiddenChats.size > 0 ? read.filter((row) => !hiddenChats.has(row.id)) : read;
 
-  let unreadQuery = supabase
-    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
-    .select("id, candidate_id, contact_wa_id, unread_count")
-    .gt("unread_count", 0)
-    .limit(1000);
-  if (input.phoneNumberId) unreadQuery = unreadQuery.eq("phone_number_id", input.phoneNumberId);
-  const { data: unreadRead } = await unreadQuery;
-  const unreadAll = (unreadRead ?? []) as Array<Pick<ConversationRow, "id" | "candidate_id" | "contact_wa_id" | "unread_count">>;
+  // Every chat with something unread, paged, so the tile's total is never short of one response.
+  // A failed read leaves the tile at nothing, as it always has, but is logged now.
+  type UnreadChat = Pick<ConversationRow, "id" | "candidate_id" | "contact_wa_id" | "unread_count">;
+  let unreadAll: UnreadChat[] = [];
+  try {
+    unreadAll = await fetchAllRows<UnreadChat>(() => {
+      let unreadQuery = supabase
+        .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+        .select("id, candidate_id, contact_wa_id, unread_count")
+        .gt("unread_count", 0);
+      if (input.phoneNumberId) unreadQuery = unreadQuery.eq("phone_number_id", input.phoneNumberId);
+      return unreadQuery;
+    }, "id");
+  } catch (error) {
+    logError("Could not read the unread WhatsApp chats", { error, labels: { event: "whatsapp_inbox_unread_read_failed" } });
+  }
   const hiddenUnread = fenced ? await inboxConversationsHiddenFrom(input.access, unreadAll.map(fenceRowOf)) : new Set<string>();
   const totalUnread = unreadAll.filter((row) => !hiddenUnread.has(row.id)).reduce((sum, row) => sum + row.unread_count, 0);
 
@@ -503,15 +532,9 @@ export async function listInboxConversations(input: {
   return {
     areaOptions,
     conversations: rows.map((row) => summarize(row, names, now, positions, cvs, waitingSince)),
-    // Fenced and unfiltered by position: every chat was read when the count fits the ceiling, so the
-    // fenced length is exact; past it, the database count less the chats this read hid.
-    totalCount: position || waitingOnly
-      ? narrowed.length
-      : fenced
-        ? (count ?? 0) <= read.length
-          ? narrowed.length
-          : Math.max((count ?? 0) - hiddenChats.size, rows.length)
-        : Math.max(count ?? 0, rows.length),
+    // A position, Waiting or fenced list holds every chat the filters allow, so its length is exact;
+    // an unfiltered page reports the database's own count.
+    totalCount: position || waitingOnly || fenced ? narrowed.length : Math.max(count ?? 0, rows.length),
     totalUnread,
     totalWaiting: waitingRead ? waitingSince.size : null,
   };
@@ -576,14 +599,17 @@ export function cannotSendReason(row: Pick<ConversationRow, "contact_wa_id" | "p
 export async function loadInboxThread(conversationId: string, options?: { limit?: number }): Promise<InboxThread> {
   const row = await loadConversationRow(conversationId);
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(WHATSAPP_INBOX_MESSAGES_TABLE)
-    .select(MESSAGE_COLUMNS)
-    .eq("conversation_id", conversationId)
-    .order("sent_at", { ascending: false })
-    .limit(Math.max(1, Math.min(500, options?.limit ?? 300)));
-  if (error) throw error;
-  const messages = ((data ?? []) as MessageRow[]).reverse();
+  // The whole chat, paged: the screen has no "older messages" control, so a long chat must not lose its start.
+  const everyMessage = await fetchAllRows<MessageRow>(
+    () =>
+      supabase
+        .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+        .select(MESSAGE_COLUMNS)
+        .eq("conversation_id", conversationId)
+        .order("sent_at", { ascending: false }),
+    "id",
+  );
+  const messages = (options?.limit ? everyMessage.slice(0, Math.max(1, Math.floor(options.limit))) : everyMessage).reverse();
 
   const senderIds = Array.from(new Set(messages.map((m) => m.sent_by_hr_id).filter((id): id is string => Boolean(id))));
   const names = await namesFor(

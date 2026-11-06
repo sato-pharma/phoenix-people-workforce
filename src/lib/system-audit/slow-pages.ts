@@ -11,7 +11,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { PageTimingDevice, PageTimingKind, PageTimingMetric } from "@/lib/observability/page-timing-intake";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 export const SLOW_PAGES_WINDOW_DAYS = 7;
 export const SLOW_PAGES_SUMMARY_RPC = "phx_page_timings_summary";
@@ -118,14 +118,15 @@ export function summariseSlowPages(rows: PageTimingSummaryRow[]): SlowPage[] {
 }
 
 export async function loadSlowPagesOverview(
-  input: { client?: Pick<SupabaseClient, "rpc">; days?: number; now?: Date } = {},
+  input: { client?: SupabaseClient; days?: number; now?: Date } = {},
 ): Promise<SlowPagesOverview> {
   const days = input.days ?? SLOW_PAGES_WINDOW_DAYS;
   const since = new Date((input.now ?? new Date()).getTime() - days * 86_400_000).toISOString();
   const client = input.client ?? getSupabaseAdmin({ requestTimeoutMs: 15_000 });
-  const { data, error } = await client.rpc(SLOW_PAGES_SUMMARY_RPC, { p_since: since });
-  if (error) throw new Error(error.message);
-  const rows = (Array.isArray(data) ? data : []).map(readSummaryRow).filter((row): row is PageTimingSummaryRow => row !== null);
+  // One grouped row per page, kind, device and metric (749 over the last 7 days): paged by the shared
+  // RPC pager so a response ceiling can never cut pages off the list. A failed page throws.
+  const data = await rpcAll(client, SLOW_PAGES_SUMMARY_RPC, { p_since: since }, ["path", "kind", "device", "metric"]);
+  const rows = data.map(readSummaryRow).filter((row): row is PageTimingSummaryRow => row !== null);
   const pages = summariseSlowPages(rows);
   return {
     days,

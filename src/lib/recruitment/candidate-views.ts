@@ -23,6 +23,7 @@
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 /** One person's history with one candidate. */
 export type CandidateView = {
@@ -309,14 +310,21 @@ export async function listLiveClaimsByCandidate(
   const claims = new Map<string, CandidateClaim>();
   const supabase = recruitmentDb();
 
-  const { data, error } = await supabase
-    .from("ats_candidate_views")
-    .select("candidate_id,viewer_hr_id,claimed_until")
-    .gt("claimed_until", now.toISOString())
-    .order("claimed_until", { ascending: false })
-    .limit(VIEW_PAGE_SIZE);
-
-  if (error) {
+  // Paged to the end: a fixed row ceiling would drop the freshest claims past it without a sound.
+  type ClaimRow = { candidate_id?: string | null; viewer_hr_id?: string | null; claimed_until?: string | null };
+  let data: ClaimRow[];
+  try {
+    data = await fetchAllRows<ClaimRow>(
+      () =>
+        supabase
+          .from("ats_candidate_views")
+          .select("candidate_id,viewer_hr_id,claimed_until")
+          .gt("claimed_until", now.toISOString())
+          .order("claimed_until", { ascending: false })
+          .order("candidate_id", { ascending: true }),
+      "viewer_hr_id",
+    );
+  } catch (error) {
     // A missing table OR a missing column degrades to "nobody is reading anything", which is
     // exactly how the screen behaved before this shipped. The code reaches production on a merge
     // and the migration is a separate step, so that window is real.
@@ -324,7 +332,7 @@ export async function listLiveClaimsByCandidate(
     throw error;
   }
 
-  for (const row of (data ?? []) as Array<{ candidate_id?: string | null; viewer_hr_id?: string | null; claimed_until?: string | null }>) {
+  for (const row of data) {
     const candidateId = row.candidate_id ? String(row.candidate_id) : null;
     const viewer = row.viewer_hr_id ? String(row.viewer_hr_id) : null;
     const until = row.claimed_until ? String(row.claimed_until) : null;

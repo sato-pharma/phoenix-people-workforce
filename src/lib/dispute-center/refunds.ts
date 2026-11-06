@@ -1,5 +1,6 @@
 import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import { roundCurrency } from "@/lib/payroll/money";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { recordCaseEvent } from "./events.ts";
@@ -58,17 +59,25 @@ export async function listRefundsForCases(
   const ids = Array.from(new Set(refs.filter(Boolean)));
   if (ids.length === 0) return byRef;
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("dispute_refunds")
-      .select(COLUMNS)
-      .eq("case_kind", kind)
-      .in("case_ref", ids.slice(i, i + 200))
-      .order("created_at", { ascending: true });
-    if (error) {
+    // Every refund of this batch of cases, page by page: a refund missing from a case's screen reads
+    // as "nothing recommended", and the reviewer could recommend the same money again.
+    let rows: RefundRow[];
+    try {
+      rows = await fetchAllRows<RefundRow>(
+        () =>
+          getSupabaseAdmin()
+            .from("dispute_refunds")
+            .select(COLUMNS)
+            .eq("case_kind", kind)
+            .in("case_ref", ids.slice(i, i + 200))
+            .order("created_at", { ascending: true }),
+        "id",
+      );
+    } catch (error) {
       if (isMissingTable(error)) return byRef;
       throw error;
     }
-    for (const row of (data ?? []) as RefundRow[]) {
+    for (const row of rows) {
       const list = byRef.get(row.case_ref) ?? [];
       list.push(mapRefund(row));
       byRef.set(row.case_ref, list);

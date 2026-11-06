@@ -21,6 +21,7 @@ import { loadFolderHolderKeys, managerHoldsFolders } from "@/lib/recruitment/fol
 import { isWithinManagerHold, managerHoldCutoffIso } from "@/lib/recruitment/manager-hold-window";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { SentForPosition } from "@/lib/recruitment/types";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 /** The table, named once so a rename is one edit and a typo cannot half-apply. */
 export const MANAGER_SENDS_TABLE = "ats_candidate_manager_sends";
@@ -256,15 +257,20 @@ export async function listSendsForManager(
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0) return [];
 
-  let query = recruitmentDb().from(MANAGER_SENDS_TABLE).select(SEND_COLUMNS).in("manager_hr_id", keys);
-  if (!(await managerHoldsFolders(managerHrId))) query = query.gte("sent_at", managerHoldCutoffIso(now));
-  const { data, error } = await query.order("sent_at", { ascending: false });
-
-  if (error) {
+  const holdsFolders = await managerHoldsFolders(managerHrId);
+  let rows: SendDbRow[];
+  try {
+    // Every send of this manager, paged to a short page by the unique `id`: a folder holder has no
+    // window, so his list only grows, and a send a response cap dropped is a CV he is never shown.
+    rows = await fetchAllRows<SendDbRow>(() => {
+      const query = recruitmentDb().from(MANAGER_SENDS_TABLE).select(SEND_COLUMNS).in("manager_hr_id", keys);
+      return (holdsFolders ? query : query.gte("sent_at", managerHoldCutoffIso(now))).order("sent_at", { ascending: false });
+    }, "id");
+  } catch (error) {
     if (isMissingTable(error)) return null;
     throw error;
   }
-  return ((data ?? []) as SendDbRow[]).map(mapSend).filter((send) => send.candidateId.length > 0);
+  return rows.map(mapSend).filter((send) => send.candidateId.length > 0);
 }
 
 /**

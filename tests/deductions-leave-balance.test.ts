@@ -548,10 +548,16 @@ export async function runDeductionsLeaveBalanceTests() {
           const entry = { table, filters: [] as string[] };
           seen.push(entry);
           const builder: Record<string, (...args: unknown[]) => unknown> = {};
-          for (const method of ["select", "in", "is", "eq", "gte", "lt", "ilike", "limit"]) {
+          for (const method of ["select", "in", "is", "eq", "gte", "lt", "ilike", "order", "range"]) {
             builder[method] = (...args: unknown[]) => {
               entry.filters.push(`${method}:${String(args[0] ?? "")}`);
-              return method === "limit" ? Promise.resolve({ data: rowsByTable[table] ?? [], error: null }) : builder;
+              // `range` ends the chain the way the paged read does: one window of the table's rows.
+              return method === "range"
+                ? Promise.resolve({
+                    data: (rowsByTable[table] ?? []).slice(Number(args[0]), Number(args[1]) + 1),
+                    error: null,
+                  })
+                : builder;
             };
           }
           return builder;
@@ -586,6 +592,16 @@ export async function runDeductionsLeaveBalanceTests() {
       })[0];
       assert.equal(charged?.annualUsedDays, 2.5, "all four ledger rows reach Used, in any HR_ID casing");
       assert.equal(charged?.annualBalanceDays, 0, "and the accrued 1.25 is spent, floored at 0");
+
+      // No ceiling: a ledger past one page (and past any fixed limit) comes back whole, because a
+      // balance that forgot days already spent says more is left than there is.
+      rowsByTable.attendance_annual_balance_charges = Array.from({ length: 2500 }, (_, index) => ({
+        employee_hr_id: "MR-9",
+        work_date: "2026-09-10",
+        days: 0.001,
+      }));
+      const wide = await annualBalanceLedgerDays(client as unknown as Parameters<typeof annualBalanceLedgerDays>[0]);
+      assert.equal(wide.length, 2501, "2,500 charges and 1 settlement: every row is read, not the first page");
     }
 
     // 🔴 10. A FAILED LEDGER READ MUST SAY SO ON THIS TAB. Falling back to no rows leaves Used and

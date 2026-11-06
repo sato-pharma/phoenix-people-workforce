@@ -1,5 +1,6 @@
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { DisputeCaseEvent, DisputeCaseEventType, DisputeCaseKind } from "./types.ts";
@@ -98,17 +99,25 @@ export async function listCaseEvents(kind: DisputeCaseKind, refs: string[]): Pro
   if (ids.length === 0) return byRef;
   const rows: EventRow[] = [];
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("dispute_case_events")
-      .select(EVENT_COLUMNS)
-      .eq("case_kind", kind)
-      .in("case_ref", ids.slice(i, i + 200))
-      .order("created_at", { ascending: true });
-    if (error) {
+    // Every event of this batch of cases, page by page: a batch of 200 cases holds more than a
+    // thousand events once each has a few, and a case missing its history would read as untouched.
+    try {
+      rows.push(
+        ...(await fetchAllRows<EventRow>(
+          () =>
+            getSupabaseAdmin()
+              .from("dispute_case_events")
+              .select(EVENT_COLUMNS)
+              .eq("case_kind", kind)
+              .in("case_ref", ids.slice(i, i + 200))
+              .order("created_at", { ascending: true }),
+          "id",
+        )),
+      );
+    } catch (error) {
       if (isMissingTable(error)) return byRef;
       throw error;
     }
-    rows.push(...((data ?? []) as EventRow[]));
   }
   const names = await resolvePeopleNames(rows.map((row) => row.actor_hr_id));
   for (const row of rows) {

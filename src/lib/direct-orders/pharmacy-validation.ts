@@ -32,6 +32,7 @@ import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-inp
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   parsePharmacyLicenseDataUrl,
@@ -268,13 +269,25 @@ async function resolveAreaProximity(input: {
     return { distanceKm: null, inside: null };
   }
   const supabase = getSupabaseAdmin();
-  const { data: bricks } = await supabase
-    .from("source_of_sales_customer_map")
-    .select("brick_id")
-    .eq("active", true)
-    .eq("area_code", input.areaCode)
-    .not("brick_id", "is", null)
-    .limit(500);
+  // EVERY active customer row of the area, page by page, so the set of bricks is the area's whole set.
+  // It used to stop at an unordered 500 rows; an area holds more customers than that, and a brick whose
+  // customers fell past the cut was left out, which could read a real capture as outside its area.
+  // A failed read stays "unknown", exactly as before, never "inside".
+  let bricks: Array<{ brick_id: string | null }>;
+  try {
+    bricks = await fetchAllRows<{ brick_id: string | null }>(
+      () =>
+        supabase
+          .from("source_of_sales_customer_map")
+          .select("brick_id")
+          .eq("active", true)
+          .eq("area_code", input.areaCode)
+          .not("brick_id", "is", null),
+      "id",
+    );
+  } catch {
+    return { distanceKm: null, inside: null };
+  }
   const brickIds = Array.from(
     new Set(((bricks ?? []) as Array<{ brick_id: string | null }>).map((r) => r.brick_id).filter(Boolean) as string[]),
   );

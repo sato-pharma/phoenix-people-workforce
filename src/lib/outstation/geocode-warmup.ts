@@ -29,6 +29,8 @@ async function listDistinctDestinations(): Promise<string[]> {
       const { data, error } = await supabase
         .from("outstation_expenses")
         .select("to_location, location")
+        // A total order: an unordered offset walk can drop one row and repeat another between pages.
+        .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
       if (error) break;
       const rows = (data ?? []) as Array<{ to_location?: string | null; location?: string | null }>;
@@ -48,6 +50,7 @@ async function listDistinctDestinations(): Promise<string[]> {
       const { data, error } = await supabase
         .from("outstation_expense_requests")
         .select("to_label")
+        .order("id", { ascending: true })
         .range(from, from + PAGE_SIZE - 1);
       if (error) break;
       const rows = (data ?? []) as Array<{ to_label?: string | null }>;

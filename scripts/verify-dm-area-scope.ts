@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { resolveSeatAreaScope } from "@/lib/sales/seat-area-scope";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 function ctxFor(hrId: string, role: AccessContext["role"], scope: AccessContext["scope"]): AccessContext {
@@ -54,15 +55,19 @@ async function main() {
   console.log("PASS  resolveSalesAccessScope(B-119).allowedAreaCodes =", sorted(salesScope.allowedAreaCodes).join(", "));
 
   // 3. How much sales data this actually unhides, from the live rollup.
-  const { data: factRows, error: factError } = await supabase
-    .from("source_of_sales_fact_rollup")
-    .select("area_code,effective_units")
-    .eq("official_line", "CNS")
-    .eq("area_code", "D16");
-  if (factError) throw factError;
-  const units = (factRows ?? []).reduce((sum, r) => sum + Number(r.effective_units ?? 0), 0);
-  console.log(`PASS  D16 CNS rows now in his scope: ${(factRows ?? []).length} rows, ${units.toFixed(0)} units`);
-  assert.ok((factRows ?? []).length > 0, "there is real D16 CNS data to unhide");
+  // Paged: the rollup holds far more than 1,000 rows for one area, and a cut read would under-count what this unhides.
+  const factRows = await fetchAllRows<{ area_code: string | null; effective_units: number | string | null }>(
+    () =>
+      supabase
+        .from("source_of_sales_fact_rollup")
+        .select("area_code,effective_units")
+        .eq("official_line", "CNS")
+        .eq("area_code", "D16"),
+    "id",
+  );
+  const units = factRows.reduce((sum, r) => sum + Number(r.effective_units ?? 0), 0);
+  console.log(`PASS  D16 CNS rows now in his scope: ${factRows.length} rows, ${units.toFixed(0)} units`);
+  assert.ok(factRows.length > 0, "there is real D16 CNS data to unhide");
 
   // 4. The Delta (1) DM must NOT gain Saad's areas — and, in the other direction, must LOSE the ones
   //    the old region-name bound wrongly gave him. Scoping him by region name "Delta (1)" handed him

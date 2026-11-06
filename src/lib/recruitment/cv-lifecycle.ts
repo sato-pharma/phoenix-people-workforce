@@ -49,9 +49,6 @@ const VIEW = "ats_v_cv_lifecycle";
  */
 const PAGE_SIZE = 500;
 
-/** Hard stop, so a mistake here can never become an unbounded loop against production. */
-const MAX_PAGES = 200;
-
 export type CvLifecycleChannel = "whatsapp" | "email" | "upload";
 
 /** How precise `reachedPhoenixAt` is. See the header — this is published, never inferred. */
@@ -337,7 +334,9 @@ export async function loadCvLifecycle(): Promise<CvLifecycleRow[]> {
   const rows: CvLifecycleRow[] = [];
   let cursor: CvLifecycleCursor | null = null;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
+  // No page ceiling: a loop that gave up after a fixed number of pages would return a short list that
+  // reads as complete. The walk ends on a short page, and a cursor that stops moving throws.
+  while (true) {
     let query = supabase
       .from(VIEW)
       .select("*")
@@ -356,7 +355,11 @@ export async function loadCvLifecycle(): Promise<CvLifecycleRow[]> {
     if (batch.length < PAGE_SIZE) break;
 
     const last = batch[batch.length - 1]!;
-    cursor = { fileId: String(last.file_id ?? ""), savedInPhoenixAt: String(last.saved_in_phoenix_at ?? "") };
+    const next = { fileId: String(last.file_id ?? ""), savedInPhoenixAt: String(last.saved_in_phoenix_at ?? "") };
+    if (cursor && next.fileId === cursor.fileId && next.savedInPhoenixAt === cursor.savedInPhoenixAt) {
+      throw new Error("CV lifecycle paging stopped moving. Refusing to report a short list of CVs.");
+    }
+    cursor = next;
   }
 
   return rows;

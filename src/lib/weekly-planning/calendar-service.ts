@@ -3,6 +3,7 @@ import { assertPermission, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/auth
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { activeRoleSignIns } from "@/lib/employees/role-lookup";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cairoDateKey } from "@/lib/activity/working-baseline";
 import { loadManagerPlanHalfDays, loadManagerVisitAreas, managerHalfDayText, managerPlanLegacyStatus } from "@/lib/phoenix-crm/server/manager-plan-readers";
@@ -306,21 +307,24 @@ async function loadHolidayItems(year: number, month: number, start: string, end:
 async function loadPlaceEvidence(start: string, end: string): Promise<Map<string, string>> {
   try {
     const supabase = getSupabaseAdmin();
-    const [visits, claimsResult] = await Promise.all([
+    const [visits, claims] = await Promise.all([
       loadManagerVisitAreas({ end, start }),
-      supabase
-        .from("expense_claims")
-        .select("employee_hr_id,trip_start_date,trip_end_date,area_name")
-        .lte("trip_start_date", `${end}T23:59:59Z`)
-        .gte("trip_end_date", `${start}T00:00:00Z`)
-        .neq("status", "rejected")
-        .not("area_name", "is", null)
-        .limit(5000),
+      // Paged: a fixed cap would drop the later trips, and their days would lose the place they were spent in.
+      fetchAllRows<{ area_name: string | null; employee_hr_id: string; trip_end_date: string | null; trip_start_date: string | null }>(
+        () =>
+          supabase
+            .from("expense_claims")
+            .select("employee_hr_id,trip_start_date,trip_end_date,area_name")
+            .lte("trip_start_date", `${end}T23:59:59Z`)
+            .gte("trip_end_date", `${start}T00:00:00Z`)
+            .neq("status", "rejected")
+            .not("area_name", "is", null),
+        "id",
+      ),
     ]);
-    if (claimsResult.error) throw claimsResult.error;
     return buildPlaceEvidence(
       visits,
-      (claimsResult.data ?? []).flatMap((row) => {
+      claims.flatMap((row) => {
         const startDate = cairoDateKey(row.trip_start_date);
         const endDate = cairoDateKey(row.trip_end_date) ?? startDate;
         return startDate && endDate ? [{ areaName: row.area_name, endDate, hrId: row.employee_hr_id, startDate }] : [];

@@ -18,6 +18,7 @@ import {
 import { interviewTypes, type Interview, type InterviewType } from "@/lib/recruitment/types";
 import { isInterviewOutcome, normalizeScorecard } from "@/lib/recruitment/scorecards";
 import { notifyInterviewFeedback, sendInterviewScheduledNotifications } from "@/lib/recruitment/interview-notifications";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 // Rule 7 — notify candidate + interviewer + owner; never block the action on a
 // notification failure.
@@ -92,17 +93,27 @@ export async function createInterview(
     // Casing-blind: hr ids are mixed case here, and a plain .eq would return nothing, which reads
     // as "this interviewer is free" - the direction that books them twice.
     const keys = hrIdLookupKeys(interviewerHrId);
-    const { data: booked } = await supabase
-      .from("ats_interviews")
-      .select("id, interviewer_hr_id, scheduled_at")
-      .in("interviewer_hr_id", keys.length > 0 ? keys : [interviewerHrId])
-      .not("scheduled_at", "is", null);
+    // Every interview this person has, paged to a short page by the unique `id`: a booking a response
+    // cap dropped would read as a free slot, the direction that books them twice. A failed read still
+    // answers "no bookings", exactly as it did before.
+    let booked: Array<{ id: string; interviewer_hr_id: string | null; scheduled_at: string | null }> = [];
+    try {
+      booked = await fetchAllRows<{ id: string; interviewer_hr_id: string | null; scheduled_at: string | null }>(
+        () =>
+          supabase
+            .from("ats_interviews")
+            .select("id, interviewer_hr_id, scheduled_at")
+            .in("interviewer_hr_id", keys.length > 0 ? keys : [interviewerHrId])
+            .not("scheduled_at", "is", null),
+        "id",
+      );
+    } catch {
+      booked = [];
+    }
 
     const clash = findInterviewClash(
       { interviewerHrId, scheduledAt },
-      ((booked ?? []) as Array<{ id: string; interviewer_hr_id: string | null; scheduled_at: string | null }>).map(
-        (row) => ({ id: String(row.id), interviewerHrId: row.interviewer_hr_id, scheduledAt: row.scheduled_at }),
-      ),
+      booked.map((row) => ({ id: String(row.id), interviewerHrId: row.interviewer_hr_id, scheduledAt: row.scheduled_at })),
     );
     if (clash) {
       // Named, not coded: the owner's standing rule is human-readable names in every message. The
@@ -255,14 +266,19 @@ export type InterviewReminder = {
 // Scheduled within [fromIso, toIso) and not yet recorded — for daily reminders.
 export async function listInterviewsDueForReminder(fromIso: string, toIso: string): Promise<InterviewReminder[]> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_interviews")
-    .select("id,application_id,interview_type,interviewer_hr_id,scheduled_at,outcome")
-    .gte("scheduled_at", fromIso)
-    .lt("scheduled_at", toIso)
-    .is("outcome", null);
-  if (error) throw error;
-  return ((data ?? []) as InterviewDbRow[]).map((row) => ({
+  // Every interview in the window, paged to a short page by the unique `id`: a reminder a response
+  // cap dropped is an interviewer who is never told.
+  const data = await fetchAllRows<InterviewDbRow>(
+    () =>
+      supabase
+        .from("ats_interviews")
+        .select("id,application_id,interview_type,interviewer_hr_id,scheduled_at,outcome")
+        .gte("scheduled_at", fromIso)
+        .lt("scheduled_at", toIso)
+        .is("outcome", null),
+    "id",
+  );
+  return data.map((row) => ({
     id: String(row.id),
     applicationId: String(row.application_id),
     interviewType: (textOrNull(row.interview_type) ?? "hr") as InterviewType,
@@ -292,15 +308,19 @@ export async function listCandidateIdsWithInterviewToday(): Promise<Set<string>>
   const to = cairoMidnightUtcIso(today, 1);
 
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_interviews")
-    .select("application_id")
-    .gte("scheduled_at", from)
-    .lt("scheduled_at", to);
-  if (error) return new Set();
+  let data: Array<Record<string, unknown>>;
+  try {
+    // Every interview today, paged to a short page by the unique `id`.
+    data = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("ats_interviews").select("application_id").gte("scheduled_at", from).lt("scheduled_at", to),
+      "id",
+    );
+  } catch {
+    return new Set();
+  }
 
   const applicationIds = Array.from(
-    new Set(((data ?? []) as Array<Record<string, unknown>>).map((row) => String(row.application_id ?? "")).filter(Boolean)),
+    new Set(data.map((row) => String(row.application_id ?? "")).filter(Boolean)),
   );
   if (applicationIds.length === 0) return new Set();
 

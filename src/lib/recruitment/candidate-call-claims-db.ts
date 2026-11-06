@@ -17,6 +17,7 @@
 
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { logError } from "@/lib/observability/log";
 import {
   type CandidateCallClaim,
@@ -145,13 +146,21 @@ export async function loadManagerSkipSuppressions(
   const key = canonicalHrIdForDisplay(managerHrId);
   if (!key) return EMPTY_SUPPRESSIONS;
 
-  const { data, error } = await recruitmentDb()
-    .from(CALL_ACTIONS_TABLE)
-    .select("candidate_id")
-    .eq("manager_hr_id", key)
-    .eq("action", "skipped");
-
-  if (error) {
+  let data: Array<{ candidate_id: string }>;
+  try {
+    // Every skip of this manager, paged to a short page. `candidate_id` is unique within one manager
+    // (unique index on candidate and manager), so the page boundary cannot repeat or drop a row, and a
+    // skip a response cap dropped would put that CV back in front of him.
+    data = await fetchAllRows<{ candidate_id: string }>(
+      () =>
+        recruitmentDb()
+          .from(CALL_ACTIONS_TABLE)
+          .select("candidate_id")
+          .eq("manager_hr_id", key)
+          .eq("action", "skipped"),
+      "candidate_id",
+    );
+  } catch (error) {
     if (!isMissingTable(error)) {
       logError("Candidate skips could not be read for the folder view", {
         error,
@@ -162,7 +171,7 @@ export async function loadManagerSkipSuppressions(
   }
 
   const set = new Set<string>();
-  for (const row of data ?? []) {
+  for (const row of data) {
     set.add(districtReturnSuppressionKey(managerHrId, String((row as { candidate_id: string }).candidate_id)));
   }
   return set;

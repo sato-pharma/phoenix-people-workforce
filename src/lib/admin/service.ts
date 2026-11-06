@@ -223,11 +223,11 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     getEmployeeDirectory(),
     getWorkforceMetrics(dataHealthAccessContext),
     settle("Sign-in accounts", () =>
-      fetchAllRows<Record<string, unknown>>(() => supabase.from("app_auth_users").select("hr_id,is_active,login_id"), "hr_id")),
+      fetchAllRows<Record<string, unknown>>(() => supabase.from("app_auth_users").select("hr_id,is_active,login_id"), "login_id")),
     settle("Access profiles", () =>
       fetchAllRows<Record<string, unknown>>(
         () => supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
-        "hr_id",
+        "auth_user_id",
       )),
     settle("Attendance device mappings", () =>
       fetchAllRows<Record<string, unknown>>(

@@ -418,6 +418,7 @@ async function main(): Promise<void> {
       .from("ats_candidates")
       .select(CANDIDATE_COLUMNS)
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const rows = (page ?? []) as unknown as CandidateRow[];
@@ -566,6 +567,7 @@ async function loadNewestExtractions(supabase: OpsClient): Promise<Map<string, N
       .from("ats_candidate_cv_extractions")
       .select("candidate_id, created_at, extracted_fields, position_key")
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = (page ?? []) as unknown as Row[];

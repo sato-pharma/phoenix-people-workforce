@@ -4,6 +4,7 @@ import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { computeDirectOrderSalesValue } from "@/lib/direct-orders/approval-flow";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -149,30 +150,38 @@ const money = (value: number): string => value.toLocaleString("en-US", { minimum
 
 /** Every candidate row plus today's pharmacy price per product. */
 async function loadCandidates(supabase: SupabaseClient) {
-  const { data: requestData, error: requestError } = await supabase
-    .from("direct_order_requests")
-    .select(
-      "id, product_code, product_name, status, qty, bonus, sales_value, sales_month, pharmacy_price_snapshot, sos_batch_id, reversal_of_request_id",
-    )
-    .eq("deal_type", "bonus")
-    // See the header: reversal rows read deal_type 'bonus' regardless of what they reverse.
-    .is("reversal_of_request_id", null)
-    .in("status", RECOMPUTE_STATUSES as unknown as string[])
-    .order("created_at", { ascending: true });
-  if (requestError) throw new Error(`Loading requests failed: ${requestError.message}`);
+  // Both reads are paged: one read stops silently at 1,000 rows, and this script restates every row it reads.
+  const requestData = await fetchAllRows<RequestRow>(
+    () =>
+      supabase
+        .from("direct_order_requests")
+        .select(
+          "id, product_code, product_name, status, qty, bonus, sales_value, sales_month, pharmacy_price_snapshot, sos_batch_id, reversal_of_request_id",
+        )
+        .eq("deal_type", "bonus")
+        // See the header: reversal rows read deal_type 'bonus' regardless of what they reverse.
+        .is("reversal_of_request_id", null)
+        .in("status", RECOMPUTE_STATUSES as unknown as string[])
+        .order("created_at", { ascending: true }),
+    "id",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`Loading requests failed: ${error.message ?? String(error)}`);
+  });
 
-  const { data: productData, error: productError } = await supabase
-    .from("source_of_sales_products")
-    .select("product_code, pharmacy_price");
-  if (productError) throw new Error(`Loading products failed: ${productError.message}`);
+  const productData = await fetchAllRows<{ product_code: string; pharmacy_price: number | string | null }>(
+    () => supabase.from("source_of_sales_products").select("product_code, pharmacy_price"),
+    "product_code",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`Loading products failed: ${error.message ?? String(error)}`);
+  });
 
   const pharmacyPriceByCode = new Map<string, number | null>();
-  for (const row of (productData ?? []) as Array<{ product_code: string; pharmacy_price: number | string | null }>) {
+  for (const row of productData) {
     const raw = row.pharmacy_price == null ? null : Number(row.pharmacy_price);
     pharmacyPriceByCode.set(row.product_code, raw != null && Number.isFinite(raw) && raw > 0 ? raw : null);
   }
 
-  return { requests: (requestData ?? []) as RequestRow[], pharmacyPriceByCode };
+  return { requests: requestData, pharmacyPriceByCode };
 }
 
 /** Pure: decide what each candidate becomes. No writes, no side effects. */

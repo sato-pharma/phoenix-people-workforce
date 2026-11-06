@@ -520,16 +520,6 @@ const BOARD_READ_MAX = 5_000;
 const BEHAVIOUR_READ_MAX = 5_000;
 
 /**
- * One page for the weekly scan's window — a Sat–Wed week, never the whole table.
- *
- * Left as a single page deliberately: a working week has never come near 200 capture cases (the board
- * carried 11 standing on 2026-10-12), and the scan has no channel to admit a truncation through — it
- * sends counts, and `summarizeFraudCases` has no `capped`. If a week ever reaches this, the honest fix
- * is to page it AND give the summary somewhere to say so, not to raise the number quietly.
- */
-const WEEK_WINDOW_LIMIT = 200;
-
-/**
  * May this viewer read the evidence at all? The Super Admin and the SFE Manager, and nobody else.
  *
  * One predicate, two readers — this service and the page — so the board's audience is stated once
@@ -1451,21 +1441,24 @@ export async function loadIntegrityCasesForWindow(options: {
   toIso: string;
   includeGps: boolean;
 }): Promise<FraudScanCase[]> {
-  let query = getSupabaseAdmin()
-    .from("phoenix_crm_location_integrity")
-    .select("subject_kind, rep_hr_id, source, flags, strong, settled_at, settled_by, settled_note, settled_flags")
-    .eq("is_test", false)
-    .gte("visit_date", options.fromIso)
-    .lte("visit_date", options.toIso)
-    .order("captured_at", { ascending: false })
-    .limit(WEEK_WINDOW_LIMIT);
-  // The position cases are the Super Admin's alone: the SFE copy asks only for the detectors on the
-  // allow-list, so a case a recipient may not see is never read for him — and a detector added later
-  // is kept out of his copy by the same rule rather than by `photo` happening to be the only other.
-  if (!options.includeGps) query = query.in("source", SFE_SOURCES);
-
-  const { data, error } = await query;
-  throwIfError(error);
+  // Paged to the last case (keyset on the id: the detectors write while the scan reads). A fixed page of 200
+  // counted only the newest 200 of a week that held 383 on production, and the scan sends counts.
+  const data = await fetchAllRowsKeyset<Row>(
+    () => {
+      let query = getSupabaseAdmin()
+        .from("phoenix_crm_location_integrity")
+        .select("id, subject_kind, rep_hr_id, source, flags, strong, settled_at, settled_by, settled_note, settled_flags")
+        .eq("is_test", false)
+        .gte("visit_date", options.fromIso)
+        .lte("visit_date", options.toIso);
+      // The position cases are the Super Admin's alone: the SFE copy asks only for the detectors on the
+      // allow-list, so a case a recipient may not see is never read for him — and a detector added later
+      // is kept out of his copy by the same rule rather than by `photo` happening to be the only other.
+      if (!options.includeGps) query = query.in("source", SFE_SOURCES);
+      return query;
+    },
+    { cursorColumn: "id", cursorOf: (entry) => (entry.id === null || entry.id === undefined ? null : String(entry.id)) },
+  );
   // A case the Super Admin has already settled is not a finding for this week. The comparison is
   // done HERE rather than in the query because the test is `settled_flags = flags`, a column against
   // a column, which PostgREST cannot ask — and asking only for `settled_at is null` would wrongly
@@ -1473,7 +1466,7 @@ export async function loadIntegrityCasesForWindow(options: {
   //
   // `isSettledIntegrityRow` and not `settlementOf(row, new Map())`: this reader needs only the
   // yes/no, and that empty Map existed purely to satisfy a name lookup whose answer nobody read.
-  const rows = ((data ?? []) as Row[]).filter((row) => !isSettledIntegrityRow(row));
+  const rows = data.filter((row) => !isSettledIntegrityRow(row));
   if (rows.length === 0) return [];
 
   const people = await loadPeopleNames([...new Set(rows.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))]);

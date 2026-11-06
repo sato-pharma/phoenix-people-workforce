@@ -41,6 +41,7 @@ import {
   STALE_SEND_ESCALATE_AFTER_DAYS,
   STALE_SEND_NUDGE_AFTER_DAYS,
 } from "@/lib/recruitment/stale-send-thresholds";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -274,13 +275,20 @@ export function buildStrandedEscalationMessage(stranded: readonly StrandedSend[]
 /** Every candidate still sitting in `sent_to_manager` with a recorded send time. */
 export async function loadSentCandidatesAwaitingDecision(): Promise<SentCandidate[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("ats_candidates")
-    .select("id,full_name,sent_for_job_title,applied_for_job_title,manager_notified_hr_id,manager_notified_name,manager_notified_at")
-    .eq("status", "sent_to_manager")
-    .not("manager_notified_at", "is", null);
-
-  if (error) {
+  let data: Array<Record<string, unknown>>;
+  try {
+    // Every candidate waiting on a manager, paged to a short page by the unique `id`: a stale-send
+    // alarm that read only the first response's worth would stay quiet about the rest.
+    data = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("ats_candidates")
+          .select("id,full_name,sent_for_job_title,applied_for_job_title,manager_notified_hr_id,manager_notified_name,manager_notified_at")
+          .eq("status", "sent_to_manager")
+          .not("manager_notified_at", "is", null),
+      "id",
+    );
+  } catch (error) {
     logError("Stale-send check could not read candidates awaiting a manager decision.", {
       error,
       labels: { event: "recruitment_stale_send_load_failed" },
@@ -288,7 +296,7 @@ export async function loadSentCandidatesAwaitingDecision(): Promise<SentCandidat
     return [];
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>)
+  return data
     .map((row) => ({
       fullName: String(row.full_name ?? "").trim() || "(no name recorded)",
       id: String(row.id ?? "").trim(),

@@ -23,6 +23,7 @@ import crypto from "node:crypto";
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { EMPLOYEE_PHOTOS_BUCKET } from "@/lib/employees/employee-photo";
 import { normalizeEmployeePhoto } from "@/lib/employees/photo-normalize";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
@@ -47,14 +48,17 @@ type Row = { hr_id: string; full_name: string | null; photo_path: string };
 
 const supabase = getSupabaseAdmin();
 
-let query = supabase.from("employees").select("hr_id, full_name, photo_path").not("photo_path", "is", null).order("hr_id");
-if (onlyHrId) query = query.ilike("hr_id", onlyHrId);
-const { data, error } = await query;
-if (error) {
-  console.error(`normalize-employee-photos: could not list employees — ${error.message}`);
+// Paged: one read stops silently at 1,000 rows, and a photo left unread would stay un-normalised without a word.
+let rows: Row[];
+try {
+  rows = await fetchAllRows<Row>(() => {
+    const query = supabase.from("employees").select("hr_id, full_name, photo_path").not("photo_path", "is", null);
+    return onlyHrId ? query.ilike("hr_id", onlyHrId) : query;
+  }, "hr_id");
+} catch (error) {
+  console.error(`normalize-employee-photos: could not list employees — ${(error as { message?: string }).message ?? String(error)}`);
   process.exit(1);
 }
-const rows = (data ?? []) as Row[];
 console.log(`${apply ? "APPLY" : "DRY RUN"} — ${rows.length} stored photo(s)${onlyHrId ? ` for ${onlyHrId}` : ""}`);
 
 let changed = 0;

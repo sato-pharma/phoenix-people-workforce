@@ -239,9 +239,8 @@ export function buildMilestonePrintHistoryEntry(
 export async function getMilestonePrintHistory(options: {
   fromIso: string;
   toIso: string;
-  limit?: number;
 }): Promise<MilestonePrintHistoryEntry[]> {
-  const rows = await loadMilestonePrintHistory(options.fromIso, options.toIso, options.limit ?? 1000);
+  const rows = await loadMilestonePrintHistory(options.fromIso, options.toIso);
   if (rows.length === 0) return [];
   const { employees } = await getEmployeeDirectory();
   const names = new Map<string, string>();

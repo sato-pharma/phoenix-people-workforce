@@ -20,7 +20,8 @@
  */
 
 import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matching";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 import { haversineKm, isUsablePoint, roundKm, type Point } from "./geo";
 import { getTerritoryReference, resolveTerritory } from "./reference";
@@ -42,18 +43,26 @@ async function loadBrickPins(): Promise<BrickPin[]> {
   if (cachedPins && Date.now() - cachedPins.loadedAt < PIN_TTL_MS) return cachedPins.pins;
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("geo_locations")
-    .select("source_key, latitude, longitude")
-    .eq("source_type", "brick_centroid")
-    .limit(5000);
-
-  if (error) throw new Error(`Could not load brick centroids: ${error.message}`);
+  // Paged to the end: a fixed `.limit(5000)` would leave the nearest-brick snap choosing among a
+  // subset of the pins, and the brick it returned would be wrong with nothing to show it.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("geo_locations")
+          .select("source_key, latitude, longitude")
+          .eq("source_type", "brick_centroid"),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(`Could not load brick centroids: ${toQueryError(error).message}`);
+  }
 
   // A faithful read of the table, retired brick ids included — `pickNearestBrick` is where the
   // live-brick rule is applied, so this stays a plain read with one meaning.
   const pins: BrickPin[] = [];
-  for (const row of data ?? []) {
+  for (const row of data) {
     const brickId = String(row.source_key ?? "").trim();
     if (!brickId || !isUsablePoint(row.latitude as number, row.longitude as number)) continue;
     pins.push({ brickId, latitude: row.latitude as number, longitude: row.longitude as number });

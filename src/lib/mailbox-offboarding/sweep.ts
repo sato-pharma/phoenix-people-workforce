@@ -36,6 +36,7 @@ import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-reci
 import { createSystemNotification } from "@/lib/notifications/system";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -159,14 +160,20 @@ export async function runMailboxOffboardingSweep(): Promise<MailboxSweepResult> 
     (role) => role !== HR_OPERATIONS_SPECIALIST_SEAT,
   );
   const supabase = getSupabaseAdmin();
-  const { data: recipients } = await supabase
-    .from("app_auth_users")
-    .select("hr_id")
-    .in("role", roles)
-    .eq("is_active", true);
+  // Paged to the last row, so no recipient is dropped by a response cap. A failed read still means
+  // no recipients, as before (the register's own error is reported by the caller).
+  let recipients: Array<{ hr_id?: unknown }> = [];
+  try {
+    recipients = await fetchAllRows<{ hr_id?: unknown }>(
+      () => supabase.from("app_auth_users").select("hr_id").in("role", roles).eq("is_active", true),
+      "login_id",
+    );
+  } catch {
+    recipients = [];
+  }
 
-  const recipientHrIds = (recipients ?? [])
-    .map((row) => String((row as { hr_id?: unknown }).hr_id ?? ""))
+  const recipientHrIds = recipients
+    .map((row) => String(row.hr_id ?? ""))
     .filter((hrId) => hrId.length > 0);
 
   // The half-revoked ones lead, because they are the ones nobody would otherwise find.

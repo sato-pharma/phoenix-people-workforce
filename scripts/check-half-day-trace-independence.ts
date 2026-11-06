@@ -64,6 +64,7 @@ import {
 } from "@/lib/deductions/half-day-rule";
 import { isFieldForceWorkingDay } from "@/lib/deductions/holiday-bridge";
 import { isFieldWorkforceThursday } from "@/lib/field-workforce-compliance/weekend-policy";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
@@ -137,21 +138,27 @@ async function main(): Promise<void> {
       dateTo: addDay(end),
       includeResignedAgents: true,
     }),
-    supabase.from("employees").select("hr_id, full_name, job_title, crm_id, employment_status, work_half").order("hr_id"),
-    supabase
-      .from("attendance_raw_punches")
-      .select("employee_hr_id")
-      .not("employee_hr_id", "is", null)
-      .gte("punch_time", `${start}T00:00:00`)
-      .lt("punch_time", `${addDay(end)}T00:00:00`),
+    // Both paged: one read stops silently at 1,000 rows, and a missing punch reads as "never punches".
+    fetchAllRows<{ hr_id: unknown; full_name: unknown; job_title: unknown; crm_id: unknown; work_half: unknown }>(
+      () => supabase.from("employees").select("hr_id, full_name, job_title, crm_id, employment_status, work_half"),
+      "hr_id",
+    ),
+    fetchAllRows<{ employee_hr_id: unknown }>(
+      () =>
+        supabase
+          .from("attendance_raw_punches")
+          .select("employee_hr_id")
+          .not("employee_hr_id", "is", null)
+          .gte("punch_time", `${start}T00:00:00`)
+          .lt("punch_time", `${addDay(end)}T00:00:00`),
+      "id",
+    ),
   ]);
-  if (employees.error) throw new Error(`the employee directory: ${employees.error.message}`);
-  if (punches.error) throw new Error(`the device punches: ${punches.error.message}`);
 
   const nameOf = new Map<string, string>();
   const titleOf = new Map<string, string>();
   const contractOf = new Map<string, "full_day" | "am_only" | "pm_only">();
-  for (const row of employees.data ?? []) {
+  for (const row of employees) {
     const compact = compactDeductionsHrId(String(row.hr_id ?? ""));
     if (!compact) continue;
     nameOf.set(compact, String(row.full_name ?? row.hr_id));
@@ -160,13 +167,13 @@ async function main(): Promise<void> {
   }
 
   const punchedBy = new Set<string>();
-  for (const row of punches.data ?? []) {
+  for (const row of punches) {
     const compact = compactDeductionsHrId(String(row.employee_hr_id ?? ""));
     if (compact) punchedBy.add(compact);
   }
 
   const identity = buildHalfDayIdentity([
-    ...(employees.data ?? []).map((row) => ({ hrId: row.hr_id, crmId: row.crm_id })),
+    ...employees.map((row) => ({ hrId: row.hr_id, crmId: row.crm_id })),
     ...visits.map((row) => ({ hrId: row.agent_hr_id, crmId: row.agent_crm_id })),
     ...visits.map((row) => ({ hrId: row.double_hr_id, crmId: row.double_crm_id })),
     ...visits.map((row) => ({ hrId: row.double2_hr_id, crmId: row.double2_crm_id })),

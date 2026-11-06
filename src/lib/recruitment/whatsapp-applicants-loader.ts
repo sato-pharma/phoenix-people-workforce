@@ -33,13 +33,12 @@ import { loadSavedAudiences } from "@/lib/recruitment/inbound/whatsapp-classify-
 import { loadAllQuestions } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import {
   MESSAGE_ID_BATCH,
-  PAGE_LIMIT,
-  PAGE_SIZE,
   readEveryPage,
   SESSION_LINK_RULES,
 } from "@/lib/recruitment/inbound/whatsapp-session-link";
 import type { WhatsAppApplicantRow, WhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicant-filters";
 import type { Candidate } from "@/lib/recruitment/types";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   applicantTitleLabel,
   buildWhatsAppApplicantsView,
@@ -162,19 +161,20 @@ async function markCvFolderMembers(candidates: Map<string, WhatsAppApplicantCand
   if (candidates.size === 0) return;
   const supabase = recruitmentDb();
   const filed = new Set<string>();
-  for (let page = 0; page < PAGE_LIMIT; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await supabase
-      .from("ats_cv_folder_items")
-      .select("id,candidate_id")
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error || !data) return;
-    for (const row of data as { candidate_id: string | null }[]) {
+  try {
+    // Every row, paged to a short page by the unique `id`. No page ceiling: a silent one would stop
+    // marking the rest of the filed CVs and list them as if they were in no folder.
+    const items = await fetchAllRows<{ candidate_id: string | null }>(
+      () => supabase.from("ats_cv_folder_items").select("id,candidate_id"),
+      "id",
+    );
+    for (const row of items) {
       const candidateId = textOrNull(row.candidate_id);
       if (candidateId) filed.add(candidateId);
     }
-    if (data.length < PAGE_SIZE) break;
+  } catch {
+    // Best-effort, as the header says: a failed read marks nothing, so every CV stays listed.
+    return;
   }
   for (const candidate of candidates.values()) candidate.in_cv_folder = filed.has(candidate.id);
 }
@@ -460,7 +460,16 @@ export async function findWhatsAppApplicantNumber(candidateId: string): Promise<
   for (const row of (data ?? []) as { wa_id: string | null }[]) {
     const waId = textOrNull(row.wa_id);
     if (!waId || !/^\d{8,15}$/.test(waId)) continue;
-    const senders = await supabase.from(INTAKE_TABLE).select("candidate_id").eq("sender_identifier", `+${waId}`).not("candidate_id", "is", null).limit(50);
+    // Only "did this number send a CV for anybody else?" is asked, so the read excludes this candidate
+    // itself and takes one row. A bare `.limit(50)` over every row of the number could be filled by this
+    // candidate's own events and never reach the other person.
+    const senders = await supabase
+      .from(INTAKE_TABLE)
+      .select("candidate_id")
+      .eq("sender_identifier", `+${waId}`)
+      .not("candidate_id", "is", null)
+      .neq("candidate_id", candidateId)
+      .limit(1);
     if (senders.error) throw senders.error;
     const people = new Set((senders.data ?? []).map((sender) => String((sender as { candidate_id: string }).candidate_id)));
     people.delete(candidateId);

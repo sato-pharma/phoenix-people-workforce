@@ -15,6 +15,7 @@ import {
 } from "@/lib/employees/total-experience";
 import { hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildSkillsSurveyChainIndex,
@@ -246,13 +247,14 @@ async function readQuarterRows(quarter: SkillsSurveyQuarter): Promise<SurveyDbRo
 }
 
 async function readQuartersWithSurveys(): Promise<SkillsSurveyQuarter[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("coaching_skills_surveys")
-    .select("survey_year,survey_quarter")
-    .limit(5000);
-  if (error) throw error;
+  // Every survey row, paged (id is the tiebreak): the quarter picker is built from the distinct
+  // quarters in this read, so a fixed row count would drop whole quarters off the list.
+  const surveyRows = await fetchAllRows<{ survey_year: number; survey_quarter: number }>(
+    () => getSupabaseAdmin().from("coaching_skills_surveys").select("survey_year,survey_quarter"),
+    "id",
+  );
   const seen = new Map<string, SkillsSurveyQuarter>();
-  for (const row of (data ?? []) as Array<{ survey_year: number; survey_quarter: number }>) {
+  for (const row of surveyRows) {
     seen.set(`${row.survey_year}-${row.survey_quarter}`, { quarter: row.survey_quarter, year: row.survey_year });
   }
   return [...seen.values()];

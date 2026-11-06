@@ -4,6 +4,7 @@ import {
   isDisposablePayrollBatchRow,
   isDisposableSalesBatchRow,
 } from "@/lib/fixture-hygiene";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // The Monitoring page this module also fed (its aggregate stats, its email-delivery summary and
@@ -190,8 +191,51 @@ export async function getOperationalRecentActivity(
       : Promise.resolve([] as SalesAuditActivityRow[]),
   ]);
 
+  // The 24-hour counts are read over the WHOLE window. Counting inside the newest `limit` rows above
+  // could never report more than `limit` events a day per source, a count cut short with no word.
+  const readWindow = async <T,>(label: string, read: () => Promise<T[]>): Promise<T[]> => {
+    try {
+      return await read();
+    } catch {
+      staleSources.push(label);
+      return [];
+    }
+  };
+  const [salaryBatchWindow, salesAuditWindow] = await Promise.all([
+    canReadPayroll
+      ? readWindow<SalaryBatchActivityRow>("Payroll", () =>
+          fetchAllRows<SalaryBatchActivityRow>(
+            () =>
+              supabase
+                .from("salary_batches")
+                .select("month,year,status,uploaded_by,approved_by,approved_at,created_at,updated_at")
+                // An event is stamped by `updated_at`, else `created_at` (eventTimestamp below).
+                .or(`updated_at.gte.${since24h},and(updated_at.is.null,created_at.gte.${since24h})`),
+            "id",
+          ),
+        )
+      : Promise.resolve([] as SalaryBatchActivityRow[]),
+    canReadSales
+      ? readWindow<SalesAuditActivityRow>("Sales", () =>
+          fetchAllRows<SalesAuditActivityRow>(
+            () =>
+              supabase
+                .from("sales_audit_logs")
+                .select("action,actor_username,actor_display_name,line,period,created_at")
+                .gte("created_at", since24h),
+            "id",
+          ),
+        )
+      : Promise.resolve([] as SalesAuditActivityRow[]),
+  ]);
+  const uniqueStaleSources = [...new Set(staleSources)];
+  staleSources.length = 0;
+  staleSources.push(...uniqueStaleSources);
+
   const businessSalaryBatchActivity = salaryBatchActivity.filter((row) => !isDisposablePayrollFixture(row));
   const businessSalesAuditActivity = salesAuditActivity.filter((row) => !isDisposableSalesFixture(row));
+  const businessSalaryBatchWindow = salaryBatchWindow.filter((row) => !isDisposablePayrollFixture(row));
+  const businessSalesAuditWindow = salesAuditWindow.filter((row) => !isDisposableSalesFixture(row));
 
   const recent = [
     ...businessSalaryBatchActivity.map((row) => ({
@@ -212,7 +256,7 @@ export async function getOperationalRecentActivity(
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
     .slice(0, limit);
 
-  const allEvents = [...businessSalaryBatchActivity, ...businessSalesAuditActivity];
+  const allEvents = [...businessSalaryBatchWindow, ...businessSalesAuditWindow];
   const eventTimestamp = (row: SalaryBatchActivityRow | SalesAuditActivityRow) =>
     "updated_at" in row ? row.updated_at ?? row.created_at : row.created_at;
   const totalEvents24h = allEvents.filter((row) => {

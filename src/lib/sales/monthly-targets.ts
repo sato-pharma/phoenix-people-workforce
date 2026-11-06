@@ -384,9 +384,15 @@ export type MonthlyTargetRow = {
 export async function loadMonthlyTargets(period: string): Promise<MonthlyTargetRow[]> {
   if (!isValidPeriod(period)) return [];
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("phx_monthly_targets", { p_period: period });
-  if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+  // Paged to the last row on the table's unique key within a month (line, area, product): one call
+  // would end at the server's response ceiling with no error and drop the rest of the month's targets.
+  const rows = await rpcAll<Record<string, unknown>>(
+    supabase,
+    "phx_monthly_targets",
+    { p_period: period },
+    ["line_code", "area_code", "product_code"],
+  );
+  return rows.map((row) => ({
     period: str(row.period),
     lineCode: str(row.line_code),
     areaCode: str(row.area_code),

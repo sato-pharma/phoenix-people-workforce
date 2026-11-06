@@ -303,6 +303,9 @@ async function selectRows(table: string, select = "*") {
       .from(table)
       .select(select)
       .order("created_at", { ascending: false })
+      // Every table read here has a unique `id`; without it two rows sharing a created_at can swap
+      // places between pages and one record is listed twice while another is never listed.
+      .order("id", { ascending: false })
       .range(from, from + SYSTEM_CLEANUP_PAGE_SIZE - 1);
 
     if (error) throw new Error(error.message);

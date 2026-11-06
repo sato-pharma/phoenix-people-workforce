@@ -24,6 +24,7 @@ import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/week
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { isWhatsAppImportSender, parseWhatsAppImportSenders } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 const DEFAULT_SILENCE_ALERT_HOURS = 24;
@@ -656,8 +657,6 @@ const NOT_BULK_IMPORT = "raw_metadata->>bulkImport.is.null,raw_metadata->>bulkIm
 
 /** One page of the newest events to sift for a public arrival. */
 const PUBLIC_ARRIVAL_PAGE = 100;
-/** How many such pages to walk before giving up. Bounds the cost on a day of heavy forwarding. */
-const PUBLIC_ARRIVAL_MAX_PAGES = 5;
 
 type IntakeEventRow = {
   created_at?: string | null;
@@ -693,11 +692,14 @@ export function isPublicWhatsAppArrival(row: IntakeEventRow, importSenders: read
  * check can only run in JS, so the newest row the database returns is not necessarily the newest
  * PUBLIC one. Every page carries an explicit order and range — an unordered page boundary can
  * repeat a row or skip one entirely.
+ *
+ * The walk has no page ceiling: it stops at the first public arrival or at the end of the table, because
+ * giving up early would answer null ("nobody has ever got through") and raise a false outage alarm.
  */
 async function lastPublicInboundWhatsAppAt(phoneNumberId?: string): Promise<Date | null> {
   const supabase = recruitmentDb();
   const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
-  for (let page = 0; page < PUBLIC_ARRIVAL_MAX_PAGES; page += 1) {
+  for (let page = 0; ; page += 1) {
     let query = supabase
       .from("ats_cv_intake_events")
       .select("created_at, sender_identifier, raw_metadata")
@@ -707,6 +709,7 @@ async function lastPublicInboundWhatsAppAt(phoneNumberId?: string): Promise<Date
     if (phoneNumberId) query = query.eq("raw_metadata->>deliveredToPhoneNumberId", phoneNumberId);
     const { data, error } = await query
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(page * PUBLIC_ARRIVAL_PAGE, page * PUBLIC_ARRIVAL_PAGE + PUBLIC_ARRIVAL_PAGE - 1);
     if (error) throw error;
     const rows = (data ?? []) as IntakeEventRow[];
@@ -718,9 +721,8 @@ async function lastPublicInboundWhatsAppAt(phoneNumberId?: string): Promise<Date
       if (!Number.isNaN(parsed.getTime())) return parsed;
     }
     // A short page is the end of the table — walking further would only re-ask for nothing.
-    if (rows.length < PUBLIC_ARRIVAL_PAGE) break;
+    if (rows.length < PUBLIC_ARRIVAL_PAGE) return null;
   }
-  return null;
 }
 
 async function lastInboundWhatsAppAt(): Promise<Date | null> {
@@ -753,26 +755,36 @@ export async function measurePublicReach(now: Date, windowHours: number): Promis
     const supabase = recruitmentDb();
     const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
 
-    const [whatsapp, email] = await Promise.all([
-      supabase
-        .from("ats_cv_intake_events")
-        .select("sender_identifier, raw_metadata")
-        .eq("channel", "whatsapp")
-        .gte("created_at", since),
+    // Every row of the window, walked by id. A backfill or a forwarded batch lands hundreds of rows at
+    // once, and a read cut at one response's worth would understate who got through and raise a
+    // false "nobody is reaching us" alarm. A failed read throws into the catch below (null = unmeasured).
+    const [whatsappRows, emailRows] = await Promise.all([
+      fetchAllRowsKeyset<IntakeEventRow & { id: string }>(
+        () =>
+          supabase
+            .from("ats_cv_intake_events")
+            .select("id, sender_identifier, raw_metadata")
+            .eq("channel", "whatsapp")
+            .gte("created_at", since),
+        { cursorColumn: "id", cursorOf: (row) => row.id },
+      ),
       // Only outcomes that produced a real candidate count as an applicant. The email mailbox also
       // records ignored_no_attachment for newsletters, bounces and internal traffic, and counting
       // those as "people are applying" would make the contrast lie in the dangerous direction.
-      supabase
-        .from("ats_cv_intake_events")
-        .select("sender_identifier")
-        .eq("channel", "email")
-        .gte("created_at", since)
-        .in("outcome", ["candidate_created", "candidate_matched"]),
+      fetchAllRowsKeyset<{ id: string; sender_identifier?: string | null }>(
+        () =>
+          supabase
+            .from("ats_cv_intake_events")
+            .select("id, sender_identifier")
+            .eq("channel", "email")
+            .gte("created_at", since)
+            .in("outcome", ["candidate_created", "candidate_matched"]),
+        { cursorColumn: "id", cursorOf: (row) => row.id },
+      ),
     ]);
-    if (whatsapp.error || email.error) return null;
 
     const outside = new Set<string>();
-    for (const row of (whatsapp.data ?? []) as IntakeEventRow[]) {
+    for (const row of whatsappRows) {
       // The same rule the silence clock uses. A coexistence backfill lands hundreds of real
       // applicants at once, all stamped with today's timestamp, so counting either those or a
       // forward as reach would prove the channel is open using messages that arrived while it was shut.
@@ -782,7 +794,7 @@ export async function measurePublicReach(now: Date, windowHours: number): Promis
     }
 
     const emailSenders = new Set<string>();
-    for (const row of (email.data ?? []) as Array<{ sender_identifier?: string | null }>) {
+    for (const row of emailRows) {
       const sender = row.sender_identifier?.trim().toLowerCase();
       if (sender) emailSenders.add(sender);
     }

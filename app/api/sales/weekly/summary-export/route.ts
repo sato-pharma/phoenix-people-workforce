@@ -123,7 +123,7 @@ export async function GET(request: Request) {
     let effectiveMonths = cycleMonths;
     let effectiveWeeks = weekNumbers;
     if (batchIds.length === 0 && !periodFilterSet) {
-      const validated = (await listWeeklyBatches(500)).filter((batch) => batch.status === "validated");
+      const validated = (await listWeeklyBatches()).filter((batch) => batch.status === "validated");
       const latest = latestUploadedPeriod(validated);
       if (latest) {
         effectiveMonths = [latest.cycleMonth];

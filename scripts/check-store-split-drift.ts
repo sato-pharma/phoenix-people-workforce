@@ -35,6 +35,7 @@
  */
 import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
 import { loadStoreSplitDrift, type StoreSplitDriftReport } from "@/lib/sales/store-split-drift";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertTreeIsCurrent } from "./lib/tree-is-current.ts";
 
@@ -72,13 +73,13 @@ async function publishedPeriods(): Promise<Set<string>> {
 }
 
 async function periodsOnRecord(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("source_of_sales_import_batches")
-    .select("period")
-    .eq("status", "validated");
-  if (error) throw error;
+  // Paged: one batch per distributor per month outgrows a single 1,000-row read, and a period dropped here is never checked.
+  const data = await fetchAllRows<{ period?: string | null }>(
+    () => supabase.from("source_of_sales_import_batches").select("period").eq("status", "validated"),
+    "id",
+  );
   const periods = new Set<string>();
-  for (const row of (data ?? []) as { period?: string | null }[]) {
+  for (const row of data) {
     const period = String(row?.period ?? "").trim();
     if (/^\d{4}-\d{2}$/.test(period)) periods.add(period);
   }

@@ -24,6 +24,7 @@ import {
   selectRulesOnlyCandidateIds,
 } from "@/lib/recruitment/cv-reread-target-sets";
 import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -354,6 +355,7 @@ async function main(): Promise<void> {
       .from("ats_candidate_cv_extractions")
       .select("candidate_id, ai_model, created_at")
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (readError) throw readError;
     const rows = (page ?? []) as ExtractionRow[];
@@ -398,6 +400,7 @@ async function main(): Promise<void> {
       .from("ats_candidates")
       .select("id, full_name, created_at, source, degree, faculty, applied_for_job_title")
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (candidateError) throw candidateError;
     const rows = (page ?? []) as TargetRow[];
@@ -496,21 +499,23 @@ async function main(): Promise<void> {
 
   if (unresolvedOnly) {
     // Two extra reads, both cheap, both needed to answer "would this row change on screen?".
-    const { data: contextRows, error: contextError } = await supabase
-      .from("ats_candidate_source_context")
-      .select("candidate_id, channel, subject, raw_metadata");
-    if (contextError) throw contextError;
+    // Both reads are paged: a candidate past an unpaged read's first 1000 rows would be dropped from the targets.
+    const contextRows = await fetchAllRows<SourceContextRow & { candidate_id: unknown }>(
+      () => supabase.from("ats_candidate_source_context").select("candidate_id, channel, subject, raw_metadata"),
+      "candidate_id",
+    );
     const contexts = new Map<string, ReturnType<typeof describeCandidateSource>>();
-    for (const row of contextRows ?? []) {
-      const key = String((row as { candidate_id: unknown }).candidate_id);
-      contexts.set(key, describeCandidateSource(row as SourceContextRow));
+    for (const row of contextRows) {
+      contexts.set(String(row.candidate_id), describeCandidateSource(row));
     }
 
     // A candidate with no stored CV cannot be read at all — including one buys a guaranteed
     // failure and an entry in the report that looks like a problem to fix.
-    const { data: fileRows, error: fileError } = await supabase.from("ats_files").select("candidate_id");
-    if (fileError) throw fileError;
-    const withAFile = new Set((fileRows ?? []).map((row) => String((row as { candidate_id: unknown }).candidate_id)));
+    const fileRows = await fetchAllRows<{ candidate_id: unknown }>(
+      () => supabase.from("ats_files").select("candidate_id"),
+      "id",
+    );
+    const withAFile = new Set(fileRows.map((row) => String(row.candidate_id)));
 
     const before = targets.length;
     targets = targets.filter((row) => {

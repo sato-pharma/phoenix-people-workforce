@@ -23,6 +23,7 @@
 // that says it was settled automatically, so nobody mistakes it for a person's word.
 
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
 import type { InterviewOutcome } from "@/lib/recruitment/interview-calendar-types";
@@ -137,16 +138,18 @@ const SCAN_WINDOW_DAYS = DECISION_WINDOW_DAYS + INTERVIEW_OUTCOME_WINDOW_DAYS;
  * re-reading, every ten minutes, every old interview the record can never prove.
  */
 async function candidatesHiredOrOfferedSince(db: Db, sinceIso: string): Promise<string[]> {
+  // Paged: a fixed read ceiling would silently drop the hires or offers past it, and their older interviews with them.
   const [hires, offers] = await Promise.all([
-    db.from("ats_candidate_status_events").select("candidate_id").eq("to_status", "hired").gte("created_at", sinceIso).limit(5000),
-    db.from("offers").select("id").gte("created_at", sinceIso).limit(5000),
+    fetchAllRows<{ candidate_id: string | null }>(
+      () => db.from("ats_candidate_status_events").select("candidate_id").eq("to_status", "hired").gte("created_at", sinceIso),
+      "id",
+    ),
+    fetchAllRows<{ id: string }>(() => db.from("offers").select("id").gte("created_at", sinceIso), "id"),
   ]);
-  if (hires.error) throw hires.error;
-  if (offers.error) throw offers.error;
   const ids = new Set<string>();
-  for (const row of (hires.data ?? []) as Array<{ candidate_id: string | null }>) if (row.candidate_id) ids.add(String(row.candidate_id));
+  for (const row of hires) if (row.candidate_id) ids.add(String(row.candidate_id));
   // An offer names no candidate; the candidate names the offer.
-  for (const part of chunk(((offers.data ?? []) as Array<{ id: string }>).map((row) => String(row.id)), READ_CHUNK)) {
+  for (const part of chunk(offers.map((row) => String(row.id)), READ_CHUNK)) {
     const { data, error } = await db.from("ats_candidates").select("id").in("offer_id", part);
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ id: string }>) ids.add(String(row.id));
@@ -201,27 +204,25 @@ export async function settleFinishedInterviewOutcomes(
 ): Promise<SettleRun> {
   const db = getSupabaseAdmin();
   const sinceIso = new Date(now.getTime() - SCAN_WINDOW_DAYS * DAY_MS).toISOString();
-  let query = db
-    .from("ats_interview_bookings")
-    .select(BOOKING_COLUMNS)
-    .is("outcome", null)
-    .not("candidate_id", "is", null)
-    .lt("starts_at", now.toISOString());
-  if (!options.allTime) query = query.gte("starts_at", sinceIso);
-  const { data, error } = await query.order("starts_at", { ascending: true }).limit(1000);
-  if (error) throw error;
-  const found = new Map(((data ?? []) as BookingRow[]).map((row) => [row.id, row]));
+  // Every read below pages to the end: a fixed ceiling would leave the oldest-first tail unsettled without a sound.
+  const data = await fetchAllRows<BookingRow>(() => {
+    let query = db
+      .from("ats_interview_bookings")
+      .select(BOOKING_COLUMNS)
+      .is("outcome", null)
+      .not("candidate_id", "is", null)
+      .lt("starts_at", now.toISOString());
+    if (!options.allTime) query = query.gte("starts_at", sinceIso);
+    return query.order("starts_at", { ascending: true });
+  }, "id");
+  const found = new Map(data.map((row) => [row.id, row]));
   if (!options.allTime) {
     for (const ids of chunk(await candidatesHiredOrOfferedSince(db, sinceIso), READ_CHUNK)) {
-      const older = await db
-        .from("ats_interview_bookings")
-        .select(BOOKING_COLUMNS)
-        .is("outcome", null)
-        .in("candidate_id", ids)
-        .lt("starts_at", sinceIso)
-        .limit(1000);
-      if (older.error) throw older.error;
-      for (const row of (older.data ?? []) as BookingRow[]) found.set(row.id, row);
+      const older = await fetchAllRows<BookingRow>(
+        () => db.from("ats_interview_bookings").select(BOOKING_COLUMNS).is("outcome", null).in("candidate_id", ids).lt("starts_at", sinceIso),
+        "id",
+      );
+      for (const row of older) found.set(row.id, row);
     }
   }
   const rows = [...found.values()].filter(
@@ -238,23 +239,25 @@ export async function settleFinishedInterviewOutcomes(
   for (const ids of chunk(candidateIds, READ_CHUNK)) {
     const [bookings, events, candidates] = await Promise.all([
       db.from("ats_interview_bookings").select("candidate_id,starts_at").in("candidate_id", ids),
-      db
-        .from("ats_candidate_status_events")
-        .select("candidate_id,from_status,to_status,actor_hr_id,created_at")
-        .in("candidate_id", ids)
-        .order("created_at", { ascending: true })
-        .limit(5000),
+      fetchAllRows<{ candidate_id: string; from_status: string | null; to_status: string; actor_hr_id: string | null; created_at: string }>(
+        () =>
+          db
+            .from("ats_candidate_status_events")
+            .select("candidate_id,from_status,to_status,actor_hr_id,created_at")
+            .in("candidate_id", ids)
+            .order("created_at", { ascending: true }),
+        "id",
+      ),
       db.from("ats_candidates").select("id,offer_id").in("id", ids),
     ]);
     if (bookings.error) throw bookings.error;
-    if (events.error) throw events.error;
     if (candidates.error) throw candidates.error;
     for (const row of (bookings.data ?? []) as Array<{ candidate_id: string; starts_at: string }>) {
       const list = bookingsByCandidate.get(String(row.candidate_id)) ?? [];
       list.push(row.starts_at);
       bookingsByCandidate.set(String(row.candidate_id), list);
     }
-    for (const row of (events.data ?? []) as Array<{ candidate_id: string; from_status: string | null; to_status: string; actor_hr_id: string | null; created_at: string }>) {
+    for (const row of events) {
       const list = eventsByCandidate.get(String(row.candidate_id)) ?? [];
       list.push({ actorHrId: row.actor_hr_id, createdAt: row.created_at, fromStatus: row.from_status, toStatus: row.to_status });
       eventsByCandidate.set(String(row.candidate_id), list);

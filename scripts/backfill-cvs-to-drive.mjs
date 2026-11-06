@@ -300,7 +300,7 @@ async function loadCvSiblingsByCandidate(candidateIds) {
     for (let offset = 0; ; offset += PAGE) {
       const page = await rest(
         `ats_files?select=id,candidate_id,content_md5,created_at&kind=eq.cv&drive_file_id=not.is.null`
-          + `&candidate_id=in.(${chunk.join(",")})&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+          + `&candidate_id=in.(${chunk.join(",")})&order=created_at.asc,id.asc&offset=${offset}&limit=${PAGE}`,
       );
       for (const row of page) {
         if (!byCandidate.has(row.candidate_id)) byCandidate.set(row.candidate_id, []);
@@ -344,7 +344,7 @@ async function main() {
   for (let offset = 0; ; offset += PAGE) {
     // Paged with an explicit order: an unbounded PostgREST select silently stops at 1000 rows.
     const page = await rest(
-      `ats_files?select=id,candidate_id,content_md5,created_at,file_name,mime_type,drive_file_id,drive_mirror_file_id,drive_mirror_path,drive_mirror_error,upload_origin&kind=eq.cv&drive_file_id=not.is.null${mirrorClause}${failedClause}&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+      `ats_files?select=id,candidate_id,content_md5,created_at,file_name,mime_type,drive_file_id,drive_mirror_file_id,drive_mirror_path,drive_mirror_error,upload_origin&kind=eq.cv&drive_file_id=not.is.null${mirrorClause}${failedClause}&order=created_at.asc,id.asc&offset=${offset}&limit=${PAGE}`,
     );
     rows.push(...page);
     if (page.length < PAGE) break;
@@ -537,7 +537,7 @@ async function verifyMirror(areaRegions, importSenders) {
   const PAGE = 500;
   for (let offset = 0; ; offset += PAGE) {
     const page = await rest(
-      `ats_files?select=id,candidate_id,content_md5,created_at,drive_mirror_file_id,drive_mirror_path,drive_mirror_error,upload_origin&kind=eq.cv&drive_file_id=not.is.null&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+      `ats_files?select=id,candidate_id,content_md5,created_at,drive_mirror_file_id,drive_mirror_path,drive_mirror_error,upload_origin&kind=eq.cv&drive_file_id=not.is.null&order=created_at.asc,id.asc&offset=${offset}&limit=${PAGE}`,
     );
     rows.push(...page);
     if (page.length < PAGE) break;

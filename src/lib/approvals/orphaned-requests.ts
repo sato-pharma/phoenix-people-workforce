@@ -39,6 +39,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Which workflow the stranded request belongs to. */
@@ -260,6 +261,23 @@ const NO_ACTOR_EXPECTED: Record<OrphanedRequestModule, readonly string[]> = {
 /** Page size for the employee-master read. Supabase caps a response at 1,000 rows. */
 const EMPLOYEE_PAGE_SIZE = 1000;
 
+/** PostgREST folds every `.in()` value into the request URL; past a few hundred ids it answers EMPTY with no error. */
+const REQUEST_ID_BATCH = 100;
+
+/** The approval-step rows of many requests: ids in batches, every batch read to its end. A failed page throws. */
+async function stepsInBatches<T>(
+  requestIds: readonly string[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  buildQuery: (batch: string[]) => any,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let index = 0; index < requestIds.length; index += REQUEST_ID_BATCH) {
+    const batch = requestIds.slice(index, index + REQUEST_ID_BATCH);
+    rows.push(...(await fetchAllRows<T>(() => buildQuery(batch), "id")));
+  }
+  return rows;
+}
+
 type ParentRow = { id: string; status: string | null; actorHrId: string | null; updatedAt: string | null };
 
 /** The earliest still-pending rung's named approver for each request id, or null for a role rung. */
@@ -327,26 +345,27 @@ export async function findOrphanedRequests(
   supabase: SupabaseClient = getSupabaseAdmin(),
 ): Promise<OrphanedRequest[]> {
   // ── Marketing ──
-  const marketingParents = await supabase
-    .from("marketing_requests")
-    .select("id, status, requester_hr_id, updated_at")
-    .not("status", "in", `(${NO_ACTOR_EXPECTED.marketing.join(",")})`);
-  if (marketingParents.error) throw marketingParents.error;
-  const marketingRows = (marketingParents.data ?? []) as Array<{ id: string; status: string | null; requester_hr_id: string | null; updated_at: string | null }>;
+  // Every read below is paged (a page error throws, as before): this board's one job is never to
+  // under-report, so a response cut at a row ceiling must not be able to hide a stranded request.
+  const marketingParentsQuery = () =>
+    supabase
+      .from("marketing_requests")
+      .select("id, status, requester_hr_id, updated_at")
+      .not("status", "in", `(${NO_ACTOR_EXPECTED.marketing.join(",")})`);
+  const marketingRows = await fetchAllRows<{ id: string; status: string | null; requester_hr_id: string | null; updated_at: string | null }>(marketingParentsQuery, "id");
   const marketingAwaiting = marketingRows
     .filter((row) => !new Set(BACK_WITH_REQUESTER.marketing).has(String(row.status ?? "").trim().toLowerCase()))
     .map((row) => row.id);
-  const marketingCurrent = marketingAwaiting.length
-    ? await supabase
-        .from("marketing_request_approval_steps")
-        .select("request_id, assigned_hr_id")
-        .eq("status", "current")
-        .eq("is_cc", false)
-        .in("request_id", marketingAwaiting)
-    : { data: [], error: null };
-  if (marketingCurrent.error) throw marketingCurrent.error;
+  const marketingCurrent = await stepsInBatches<{ request_id: string; assigned_hr_id: string | null }>(marketingAwaiting, (batch) =>
+    supabase
+      .from("marketing_request_approval_steps")
+      .select("request_id, assigned_hr_id")
+      .eq("status", "current")
+      .eq("is_cc", false)
+      .in("request_id", batch),
+  );
   const marketingApproverByRequest = new Map<string, string | null>();
-  for (const step of (marketingCurrent.data ?? []) as Array<{ request_id: string; assigned_hr_id: string | null }>) {
+  for (const step of marketingCurrent) {
     marketingApproverByRequest.set(step.request_id, step.assigned_hr_id ?? null);
   }
   const marketingCandidates = candidatesForModule(
@@ -356,25 +375,24 @@ export async function findOrphanedRequests(
   );
 
   // ── Direct orders ──
-  const directParents = await supabase
-    .from("direct_order_requests")
-    .select("id, status, requester_hr_id, updated_at")
-    .not("status", "in", `(${NO_ACTOR_EXPECTED["direct-order"].join(",")})`);
-  if (directParents.error) throw directParents.error;
-  const directRows = (directParents.data ?? []) as Array<{ id: string; status: string | null; requester_hr_id: string | null; updated_at: string | null }>;
+  const directParentsQuery = () =>
+    supabase
+      .from("direct_order_requests")
+      .select("id, status, requester_hr_id, updated_at")
+      .not("status", "in", `(${NO_ACTOR_EXPECTED["direct-order"].join(",")})`);
+  const directRows = await fetchAllRows<{ id: string; status: string | null; requester_hr_id: string | null; updated_at: string | null }>(directParentsQuery, "id");
   const directAwaiting = directRows
     .filter((row) => !new Set(BACK_WITH_REQUESTER["direct-order"]).has(String(row.status ?? "").trim().toLowerCase()))
     .map((row) => row.id);
-  const directSteps = directAwaiting.length
-    ? await supabase
+  const directSteps = await stepsInBatches<{ request_id: string; step_order: number | null; approver_hr_id: string | null; status: string | null }>(
+    directAwaiting,
+    (batch) =>
+      supabase
         .from("direct_order_approval_steps")
         .select("request_id, step_order, approver_hr_id, status")
-        .in("request_id", directAwaiting)
-    : { data: [], error: null };
-  if (directSteps.error) throw directSteps.error;
-  const directApproverByRequest = earliestPendingApprover(
-    (directSteps.data ?? []) as Array<{ request_id: string; step_order: number | null; approver_hr_id: string | null; status: string | null }>,
+        .in("request_id", batch),
   );
+  const directApproverByRequest = earliestPendingApprover(directSteps);
   const directCandidates = candidatesForModule(
     "direct-order",
     directRows.map((row) => ({ id: row.id, status: row.status, actorHrId: row.requester_hr_id, updatedAt: row.updated_at })),
@@ -382,25 +400,24 @@ export async function findOrphanedRequests(
   );
 
   // ── Vacation ──
-  const vacationParents = await supabase
-    .from("v2_vacation_requests")
-    .select("id, status, employee_hr_id, updated_at")
-    .not("status", "in", `(${NO_ACTOR_EXPECTED.vacation.join(",")})`);
-  if (vacationParents.error) throw vacationParents.error;
-  const vacationRows = (vacationParents.data ?? []) as Array<{ id: string; status: string | null; employee_hr_id: string | null; updated_at: string | null }>;
+  const vacationParentsQuery = () =>
+    supabase
+      .from("v2_vacation_requests")
+      .select("id, status, employee_hr_id, updated_at")
+      .not("status", "in", `(${NO_ACTOR_EXPECTED.vacation.join(",")})`);
+  const vacationRows = await fetchAllRows<{ id: string; status: string | null; employee_hr_id: string | null; updated_at: string | null }>(vacationParentsQuery, "id");
   const vacationAwaiting = vacationRows
     .filter((row) => !new Set(BACK_WITH_REQUESTER.vacation).has(String(row.status ?? "").trim().toLowerCase()))
     .map((row) => row.id);
-  const vacationSteps = vacationAwaiting.length
-    ? await supabase
+  const vacationSteps = await stepsInBatches<{ request_id: string; step_order: number | null; approver_hr_id: string | null; status: string | null }>(
+    vacationAwaiting,
+    (batch) =>
+      supabase
         .from("v2_vacation_approval_steps")
         .select("request_id, step_order, approver_hr_id, status")
-        .in("request_id", vacationAwaiting)
-    : { data: [], error: null };
-  if (vacationSteps.error) throw vacationSteps.error;
-  const vacationApproverByRequest = earliestPendingApprover(
-    (vacationSteps.data ?? []) as Array<{ request_id: string; step_order: number | null; approver_hr_id: string | null; status: string | null }>,
+        .in("request_id", batch),
   );
+  const vacationApproverByRequest = earliestPendingApprover(vacationSteps);
   const vacationCandidates = candidatesForModule(
     "vacation",
     vacationRows.map((row) => ({ id: row.id, status: row.status, actorHrId: row.employee_hr_id, updatedAt: row.updated_at })),

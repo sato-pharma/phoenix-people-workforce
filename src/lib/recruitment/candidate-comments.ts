@@ -22,6 +22,7 @@ import { recruitmentDb } from "@/lib/recruitment/db";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
 import { notifyConversationMessage, resolveInAppOnlyAudience } from "@/lib/conversations/notify";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 export { CANDIDATE_COMMENT_MAX_LENGTH } from "@/lib/recruitment/types";
 
@@ -79,16 +80,20 @@ export async function countCommentsByCandidate(candidateIds: readonly string[]):
 
   const supabase = recruitmentDb();
   for (const batch of chunkIds(ids)) {
-    const { data, error } = await supabase
-      .from("ats_candidate_comments")
-      .select("candidate_id")
-      .in("candidate_id", batch);
-    if (error) {
+    // Each batch paged to a short page by the unique `id`: a count read from a capped response would
+    // under-report, and a card would read "no comments" over a thread somebody wrote.
+    let data: Array<Record<string, unknown>>;
+    try {
+      data = await fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("ats_candidate_comments").select("candidate_id").in("candidate_id", batch),
+        "id",
+      );
+    } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === "42P01" || code === "42703") return counts;
       throw error;
     }
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of data) {
       const key = String(row.candidate_id ?? "");
       if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -116,18 +121,21 @@ export async function summarizeCommentsByCandidate(
 
   const supabase = recruitmentDb();
   for (const batch of chunkIds(ids)) {
-    const { data, error } = await supabase
-      .from("ats_candidate_comments")
-      .select("candidate_id,created_at")
-      .in("candidate_id", batch);
-    if (error) {
+    // Paged like the counter above: a newest-comment time read from a capped response could be stale.
+    let data: Array<Record<string, unknown>>;
+    try {
+      data = await fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("ats_candidate_comments").select("candidate_id,created_at").in("candidate_id", batch),
+        "id",
+      );
+    } catch (error) {
       const code = (error as { code?: string }).code;
       // Same fail-soft as the counter: a missing table is a gap in a side panel, never a reason for
       // the screening queue itself to fail to render.
       if (code === "42P01" || code === "42703") return summary;
       throw error;
     }
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of data) {
       const key = String(row.candidate_id ?? "");
       if (!key) continue;
       const at = String(row.created_at ?? "").trim() || null;

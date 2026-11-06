@@ -69,8 +69,8 @@ import type {
   WeeklyUnitFigures,
 } from "@/lib/sales/weekly/types";
 import { weeklyUnitViewProduct, weeklyWeekKey, weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
-import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows, fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 import { asyncPool } from "@/lib/utils/async-pool";
 
 /**
@@ -496,15 +496,19 @@ async function persistWeeklyUpload(
 
 // ── upload history ───────────────────────────────────────────────────────────────────────────
 
-export async function listWeeklyBatches(limit = 100): Promise<WeeklyBatch[]> {
+// Every upload, newest first, paged: the Upload page lists these to be deleted or re-tagged, so a fixed
+// window (it was the newest 100, with 94 uploads on production) would put the oldest out of reach.
+export async function listWeeklyBatches(): Promise<WeeklyBatch[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("weekly_sales_batches")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
-  return (data ?? []).map(mapBatch);
+  try {
+    const data = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("weekly_sales_batches").select("*").order("created_at", { ascending: false }),
+      "id",
+    );
+    return data.map(mapBatch);
+  } catch (error) {
+    throw new SalesWorkflowError("load_failed", toQueryError(error).message, 500);
+  }
 }
 
 // What the audit row keeps of an upload. A delete leaves nothing to read afterwards — the batch goes,
@@ -705,6 +709,17 @@ function mapBatch(row: Record<string, unknown>): WeeklyBatch {
 }
 
 // ── dashboard ──────────────────────────────────────────────────────────────────────────────────
+
+/** One validated upload as the dashboard reads it for its week picker, its sources and its row fetch. */
+type DashboardBatch = {
+  cycle_month: string | null;
+  distributor_code: string | null;
+  distributor_name: string | null;
+  file_name: string | null;
+  id: string;
+  week_number: number | null;
+  week_start: string | null;
+};
 
 type FactRow = {
   /**
@@ -1067,17 +1082,23 @@ export async function loadWeeklyDashboard(filters: {
   const liveReferenceLoad = loadSalesReferenceData({ includeCustomerBricks: false });
   liveReferenceLoad.catch(() => {});
 
-  // Validated batches — ordered newest-first; limit to 200 in the common case (200 ÷ 8 distributors
-  // ≈ 25 weeks of dropdown history). allWeeks skips the limit so the full history stays available.
-  let batchQuery = supabase
-    .from("weekly_sales_batches")
-    .select("id, week_start, cycle_month, week_number, distributor_code, distributor_name, file_name")
-    .eq("status", "validated")
-    .order("week_start", { ascending: false });
-  if (!filters?.allWeeks) batchQuery = batchQuery.limit(200);
-  const batchesResult = await batchQuery;
-  if (batchesResult.error) throw new SalesWorkflowError("load_failed", batchesResult.error.message, 500);
-  const batches = batchesResult.data ?? [];
+  // Validated batches — ordered newest-first, ALL of them, paged. With no week named the dashboard
+  // defaults to every week this list holds, so a fixed window here (it was the newest 200) would drop
+  // the oldest weeks out of the totals and the week picker with nothing on screen to say so.
+  let batches: DashboardBatch[];
+  try {
+    batches = await fetchAllRows<DashboardBatch>(
+      () =>
+        supabase
+          .from("weekly_sales_batches")
+          .select("id, week_start, cycle_month, week_number, distributor_code, distributor_name, file_name")
+          .eq("status", "validated")
+          .order("week_start", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    throw new SalesWorkflowError("load_failed", toQueryError(error).message, 500);
+  }
 
   const rawAvailableWeeks = [...new Set(batches.map((batch) => String(batch.week_start)).filter(Boolean))].sort(
     (left, right) => right.localeCompare(left),

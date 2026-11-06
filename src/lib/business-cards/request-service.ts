@@ -30,6 +30,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { HR_GENERALIST_SEAT, onePerPerson, resolveSeatOrStandInHrIds } from "@/lib/notifications/vacant-seat";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   BUSINESS_CARD_REQUEST_STATUSES,
@@ -158,18 +159,25 @@ export type LatestCardRequest = RequestedCardLines & { status: BusinessCardReque
  */
 export async function listLatestCardRequestsByPerson(): Promise<Map<string, LatestCardRequest>> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(tableName)
-    .select("hr_id, card_name, card_mobile, created_at, status")
-    .neq("status", "Cancelled")
-    .order("created_at", { ascending: false })
-    .limit(1000);
-  if (error) {
+  // Every request, newest first, paged: with a fixed ceiling a person whose only request sat past it
+  // would print as if nobody had asked. The first row seen for a person is their latest.
+  let rows: Array<Record<string, unknown>>;
+  try {
+    rows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from(tableName)
+          .select("hr_id, card_name, card_mobile, created_at, status")
+          .neq("status", "Cancelled")
+          .order("created_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
     if (isMissingTable(error)) return new Map();
-    throw new Error(error.message);
+    throw new Error((error as { message?: string } | null)?.message ?? "The business card requests could not be read.");
   }
   const latest = new Map<string, LatestCardRequest>();
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const row of rows) {
     const key = canonicalHrIdKey(row.hr_id as string);
     if (!key || latest.has(key)) continue;
     latest.set(key, {
@@ -225,23 +233,21 @@ export async function listAllBusinessCardRequests(
 ): Promise<BusinessCardRequestRow[]> {
   await assertPermission(access, "business_card_requests", "read");
 
-  const limit = Math.max(1, Math.min(500, filter.limit ?? 200));
+  // The whole queue, paged. `filter.limit` is no longer a ceiling: HR must see every request, and the
+  // callers that still send one (200) must not hide the rest.
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from(tableName)
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (filter.status && filter.status !== "all") {
-    query = query.eq("status", filter.status);
-  }
-
-  const { data, error } = await query;
-  if (error) {
+  const status = filter.status && filter.status !== "all" ? filter.status : null;
+  let rows: Array<Record<string, unknown>>;
+  try {
+    rows = await fetchAllRows<Record<string, unknown>>(() => {
+      const query = supabase.from(tableName).select("*").order("created_at", { ascending: false });
+      return status ? query.eq("status", status) : query;
+    }, "id");
+  } catch (error) {
     if (isMissingTable(error)) return [];
-    throw new Error(error.message);
+    throw new Error((error as { message?: string } | null)?.message ?? "The business card requests could not be read.");
   }
-  return (data ?? []).map((row) => rowToView(row as Record<string, unknown>));
+  return rows.map((row) => rowToView(row));
 }
 
 /**

@@ -22,14 +22,9 @@ import {
 } from "@/lib/recruitment/candidate-openers";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 const EMPTY_OPENERS: CandidateOpeners = Object.freeze({});
-
-/** PostgREST answers at most this many rows per request, silently — so a batch read must page. */
-const PAGE_SIZE = 1000;
-
-/** A runaway guard, not a cap: 20 pages of 1,000 rows for ONE batch of 100 CVs is far past real. */
-const PAGE_LIMIT = 20;
 
 function isMissingRelation(error: unknown): boolean {
   const code = (error as { code?: string } | null)?.code;
@@ -48,29 +43,26 @@ type ViewRow = {
 async function readViewRows(candidateIds: readonly string[]): Promise<CandidateViewRow[]> {
   const rows: CandidateViewRow[] = [];
   for (const batch of chunkIds(candidateIds)) {
-    for (let page = 0; page < PAGE_LIMIT; page += 1) {
-      const from = page * PAGE_SIZE;
-      const { data, error } = await recruitmentDb()
-        .from("ats_candidate_views")
-        .select("candidate_id,viewer_hr_id,first_seen_at,last_seen_at,view_count")
-        .in("candidate_id", batch)
-        // A unique order, so `.range()` cannot repeat one row and drop another between pages.
-        .order("candidate_id", { ascending: true })
-        .order("viewer_hr_id", { ascending: true })
-        .range(from, from + PAGE_SIZE - 1);
-      if (error) throw error;
-
-      const pageRows = (data ?? []) as ViewRow[];
-      for (const row of pageRows) {
-        rows.push({
-          candidateId: String(row.candidate_id ?? ""),
-          firstSeenAt: String(row.first_seen_at ?? ""),
-          lastSeenAt: String(row.last_seen_at ?? ""),
-          viewCount: Number(row.view_count ?? 1),
-          viewerHrId: String(row.viewer_hr_id ?? ""),
-        });
-      }
-      if (pageRows.length < PAGE_SIZE) break;
+    // Every row of the batch, paged until a short page. The pager appends `viewer_hr_id` after the
+    // `candidate_id` order below, which together are unique, so a page boundary cannot repeat or drop
+    // a row. There is no page ceiling: a silent one would drop the rest of the batch without a sound.
+    const pageRows = await fetchAllRows<ViewRow>(
+      () =>
+        recruitmentDb()
+          .from("ats_candidate_views")
+          .select("candidate_id,viewer_hr_id,first_seen_at,last_seen_at,view_count")
+          .in("candidate_id", batch)
+          .order("candidate_id", { ascending: true }),
+      "viewer_hr_id",
+    );
+    for (const row of pageRows) {
+      rows.push({
+        candidateId: String(row.candidate_id ?? ""),
+        firstSeenAt: String(row.first_seen_at ?? ""),
+        lastSeenAt: String(row.last_seen_at ?? ""),
+        viewCount: Number(row.view_count ?? 1),
+        viewerHrId: String(row.viewer_hr_id ?? ""),
+      });
     }
   }
   return rows;

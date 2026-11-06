@@ -22,6 +22,7 @@
 //     --experimental-loader ./tests/alias-loader.mjs \
 //     scripts/dry-run-vacation-ledger-guard.ts 2026-07
 
+import { fetchAllRows } from "../src/lib/supabase/paginated.ts";
 import { getSupabaseAdmin } from "../src/lib/supabase/server.ts";
 import { buildDeductionsCandidateKey, compactDeductionsHrId } from "../src/lib/deductions/candidate-key.ts";
 import { clipLeaveToMonth, collectUnpaidVacationCandidates } from "../src/lib/deductions/connectors/vacation.ts";
@@ -67,13 +68,19 @@ async function main() {
   }
 
   // ── 1. The live ledger as it stands right now ────────────────────────────
-  const { data, error } = await getSupabaseAdmin()
-    .from("deductions_candidates")
-    .select("candidate_key, category, source_system, employee_hr_id_compact, employee_name, dates")
-    .eq("month_key", monthKey)
-    .is("superseded_at", null);
-  if (error) throw new Error(`Failed to read the live ledger: ${error.message}`);
-  const live = (data ?? []) as LiveRow[];
+  // Paged: one read stops silently at 1,000 rows, and a ledger day missed here would hide a collision.
+  const supabase = getSupabaseAdmin();
+  const live = await fetchAllRows<LiveRow>(
+    () =>
+      supabase
+        .from("deductions_candidates")
+        .select("candidate_key, category, source_system, employee_hr_id_compact, employee_name, dates")
+        .eq("month_key", monthKey)
+        .is("superseded_at", null),
+    "id",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`Failed to read the live ledger: ${error.message ?? String(error)}`);
+  });
 
   const claimedDays = new Map<string, LiveRow>();
   const liveKeys = new Set<string>();
@@ -157,19 +164,24 @@ async function main() {
   // connector runs, through the connector's OWN exported clip helper and the
   // shared hr-id normaliser — so hr-id handling and a null end_date behave
   // identically here, and this reporting cannot drift from the code it checks.
-  const { data: requestData, error: requestError } = await getSupabaseAdmin()
-    .from("v2_vacation_requests")
-    .select("id,employee_hr_id,employee_name,start_date,end_date,unpaid_duration_days,unpaid_reason")
-    .eq("status", "approved")
-    .gt("unpaid_duration_days", 0)
-    .in("unpaid_reason", ["first_six_months", "missing_hire_date"])
-    .lte("start_date", `${monthKey}-31`)
-    .gte("end_date", `${monthKey}-01`);
-  if (requestError) throw new Error(`Failed to read vacation requests: ${requestError.message}`);
+  const requestData = await fetchAllRows<Record<string, string | number | null>>(
+    () =>
+      supabase
+        .from("v2_vacation_requests")
+        .select("id,employee_hr_id,employee_name,start_date,end_date,unpaid_duration_days,unpaid_reason")
+        .eq("status", "approved")
+        .gt("unpaid_duration_days", 0)
+        .in("unpaid_reason", ["first_six_months", "missing_hire_date"])
+        .lte("start_date", `${monthKey}-31`)
+        .gte("end_date", `${monthKey}-01`),
+    "id",
+  ).catch((error: { message?: string }) => {
+    throw new Error(`Failed to read vacation requests: ${error.message ?? String(error)}`);
+  });
 
   let preGuardDays = 0;
   const prevented: Array<{ name: string; days: string[]; against: string[] }> = [];
-  for (const row of (requestData ?? []) as Array<Record<string, string | number | null>>) {
+  for (const row of requestData) {
     const compact = compactDeductionsHrId(String(row.employee_hr_id ?? ""));
     if (!compact) continue;
     const startDate = String(row.start_date ?? "").slice(0, 10);

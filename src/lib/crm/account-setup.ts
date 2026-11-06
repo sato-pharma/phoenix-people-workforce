@@ -27,6 +27,7 @@ import {
 import { getEmployeeCvFileNames } from "@/lib/employees/employee-cv";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CrmAccountSetupSubject } from "@/lib/crm/account-setup-messages";
 
@@ -240,13 +241,16 @@ export async function openCrmAccountSetupTasks(input: {
 export async function getCrmAccountSetupQueue(): Promise<CrmAccountSetupQueue> {
   let rows: TaskDbRow[] = [];
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from(CRM_ACCOUNT_SETUP_TABLE)
-      .select("id,employee_hr_id,status,source,opened_at,resolved_at,resolved_by_hr_id,resolution_note")
-      .order("opened_at", { ascending: false })
-      .limit(500);
-    if (error) throw error;
-    rows = (data ?? []) as TaskDbRow[];
+    // Paged to the last task, newest first with the id as the tie-break: "everything still pending" cannot sit
+    // behind a fixed page, however many hires have been opened.
+    rows = await fetchAllRows<TaskDbRow>(
+      () =>
+        getSupabaseAdmin()
+          .from(CRM_ACCOUNT_SETUP_TABLE)
+          .select("id,employee_hr_id,status,source,opened_at,resolved_at,resolved_by_hr_id,resolution_note")
+          .order("opened_at", { ascending: false }),
+      "id",
+    );
   } catch (error) {
     if (isCrmAccountSetupSchemaMissing(error)) {
       return { pending: [], recentlyResolved: [], schemaMissing: true };
@@ -255,8 +259,8 @@ export async function getCrmAccountSetupQueue(): Promise<CrmAccountSetupQueue> {
   }
 
   const byKey = await employeesByKey();
-  // One query for every CV filename on the board, rather than one per card. The queue holds up to
-  // 500 rows, so this is the difference between one round trip and five hundred.
+  // One query for every CV filename on the board, rather than one per card — a round trip per
+  // card would be one for every row the queue holds.
   const cvNames = await getEmployeeCvFileNames(rows.map((row) => String(row.employee_hr_id ?? "").trim()));
   const mapped: CrmAccountSetupTaskRow[] = rows.map((row) => {
     const hrId = String(row.employee_hr_id ?? "").trim();

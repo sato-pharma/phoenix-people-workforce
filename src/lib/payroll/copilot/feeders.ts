@@ -1,4 +1,5 @@
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { CopilotPeriod, EmployeeFeederState } from "./types.ts";
@@ -36,15 +37,14 @@ export async function getBaseSalaryMap(): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.from("employees").select("hr_id,base_salary");
-    if (error) {
-      logError("Failed to load base-salary map for payroll copilot feeders", {
-        labels: { event: "feeders_base_salary_load_failed" },
-        error,
-      });
-      return map;
-    }
-    for (const row of (data ?? []) as Array<{ hr_id: string; base_salary: number | null }>) {
+    // The WHOLE roster, page by page: every deduction estimate prices a day from this map, and a
+    // person cut off by a response ceiling would silently be priced at nothing. A failed page falls
+    // to the catch below, which logs it and hands back the (empty) map as before.
+    const rows = await fetchAllRows<{ hr_id: string; base_salary: number | null }>(
+      () => supabase.from("employees").select("hr_id,base_salary"),
+      "hr_id",
+    );
+    for (const row of rows) {
       const key = compactHrKey(String(row.hr_id ?? ""));
       const salary = Number(row.base_salary ?? 0);
       if (key && Number.isFinite(salary) && salary > 0) map.set(key, salary);

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { BankLetterEmployee } from "./bank-account-letter.ts";
@@ -42,14 +43,21 @@ function toNumber(value: number | string | null): number | null {
 
 export async function listBankLetterEmployees(): Promise<BankLetterEmployee[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select(EMPLOYEE_COLUMNS)
-    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
-    .limit(2000)
-    .returns<EmployeeRow[]>();
-  if (error) throw new Error(error.message);
-  const rows: EmployeeRow[] = data ?? [];
+  // Every active person, paged (hr_id is the tiebreak). A fixed row count here would leave the
+  // overflow off the bank's account-opening letter without a word.
+  let rows: EmployeeRow[];
+  try {
+    rows = await fetchAllRows<EmployeeRow>(
+      () =>
+        supabase
+          .from("employees")
+          .select(EMPLOYEE_COLUMNS)
+          .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`),
+      "hr_id",
+    );
+  } catch (error) {
+    throw new Error((error as { message?: string } | null)?.message ?? String(error));
+  }
 
   const titles = new Map<string, string | null>();
   const hrIds = rows.map((row) => row.hr_id);

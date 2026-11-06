@@ -33,6 +33,7 @@ import {
 } from "@/lib/devices/device-identity";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
@@ -144,6 +145,18 @@ export function deviceErrorMessage(error: unknown): string {
     return String((error as { message?: unknown }).message ?? "Device register request failed.");
   }
   return "Device register request failed.";
+}
+
+/** A whole read, page by page, with a failed page raised as the register's own error. */
+export async function readAllRegisterRows<T>(
+  buildQuery: Parameters<typeof fetchAllRows>[0],
+  tiebreakColumn: string,
+): Promise<T[]> {
+  try {
+    return await fetchAllRows<T>(buildQuery, tiebreakColumn);
+  } catch (error) {
+    throw new Error(deviceErrorMessage(error));
+  }
 }
 
 /**
@@ -501,21 +514,23 @@ export function buildLeaversHolding(devices: CompanyDevice[], todayIso: string):
  */
 async function loadAssignableEmployees(): Promise<AssignableEmployee[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,nickname,job_title,employment_status")
-    // Explicit order, because an unbounded select silently stops at 1000 rows with no marker.
-    .order("full_name", { ascending: true })
-    .limit(1000);
-  if (error) throw new Error(deviceErrorMessage(error));
-
-  return ((data ?? []) as Array<{
+  // Paged, because one select silently stops at a fixed row count with no marker.
+  const data = await readAllRegisterRows<{
     hr_id: string;
     full_name: string;
     nickname: string | null;
     job_title: string | null;
     employment_status: string | null;
-  }>)
+  }>(
+    () =>
+      supabase
+        .from("employees")
+        .select("hr_id,full_name,nickname,job_title,employment_status")
+        .order("full_name", { ascending: true }),
+    "hr_id",
+  );
+
+  return data
     .filter((row) => !LEAVER_STATUSES.has(String(row.employment_status ?? "").trim().toLowerCase()))
     .map((row) => ({
       hrId: row.hr_id,
@@ -533,36 +548,34 @@ export async function loadReservedAssignments(): Promise<
   Array<{ deviceId: string; assignmentId: string; placeholderName: string | null }>
 > {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("device_assignments")
-    .select("id, device_id, placeholder_name")
-    .eq("status", "reserved")
-    .limit(2000);
-  if (error) throw new Error(deviceErrorMessage(error));
-  return ((data ?? []) as Array<{ id: string; device_id: string; placeholder_name: string | null }>).map(
-    (row) => ({ assignmentId: row.id, deviceId: row.device_id, placeholderName: row.placeholder_name ?? null }),
+  const data = await readAllRegisterRows<{ id: string; device_id: string; placeholder_name: string | null }>(
+    () => supabase.from("device_assignments").select("id, device_id, placeholder_name").eq("status", "reserved"),
+    "id",
   );
+  return data.map((row) => ({
+    assignmentId: row.id,
+    deviceId: row.device_id,
+    placeholderName: row.placeholder_name ?? null,
+  }));
 }
 
 export async function getDeviceRegisterData(): Promise<DeviceRegisterData> {
   const supabase = getSupabaseAdmin();
 
-  const { data: deviceData, error: deviceError } = await supabase
-    .from("company_devices")
-    .select(DEVICE_COLUMNS)
-    .order("asset_tag", { ascending: true })
-    .limit(2000);
-  if (deviceError) throw new Error(deviceErrorMessage(deviceError));
-  const deviceRows = (deviceData ?? []) as DeviceRow[];
+  const deviceRows = await readAllRegisterRows<DeviceRow>(
+    () => supabase.from("company_devices").select(DEVICE_COLUMNS).order("asset_tag", { ascending: true }),
+    "id",
+  );
 
-  const { data: assignmentData, error: assignmentError } = await supabase
-    .from("device_assignments")
-    .select(ASSIGNMENT_COLUMNS)
-    .eq("status", "outstanding")
-    .order("issued_on", { ascending: false })
-    .limit(2000);
-  if (assignmentError) throw new Error(deviceErrorMessage(assignmentError));
-  const outstanding = (assignmentData ?? []) as AssignmentRow[];
+  const outstanding = await readAllRegisterRows<AssignmentRow>(
+    () =>
+      supabase
+        .from("device_assignments")
+        .select(ASSIGNMENT_COLUMNS)
+        .eq("status", "outstanding")
+        .order("issued_on", { ascending: false }),
+    "id",
+  );
 
   const byDevice = new Map(outstanding.map((row) => [row.device_id, row]));
   const holders = await resolveHolders(outstanding.map((row) => row.employee_hr_id));
@@ -731,14 +744,17 @@ export async function getOutstandingDevicesByEmployee(
 
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("device_assignments")
-      .select(`id,employee_hr_id,agreed_value_egp,company_devices!inner(asset_tag,category,serial_number,imei)`)
-      .eq("status", "outstanding")
-      .limit(2000);
-    if (error) return byPerson;
+    // A failed page throws into the catch below, which returns the empty map as before.
+    const data = await fetchAllRows(
+      () =>
+        supabase
+          .from("device_assignments")
+          .select(`id,employee_hr_id,agreed_value_egp,company_devices!inner(asset_tag,category,serial_number,imei)`)
+          .eq("status", "outstanding"),
+      "id",
+    );
 
-    for (const entry of (data ?? []) as unknown as Array<{
+    for (const entry of data as unknown as Array<{
       id: string;
       employee_hr_id: string;
       agreed_value_egp: number | string | null;

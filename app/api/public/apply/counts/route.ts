@@ -25,6 +25,7 @@ import {
   websiteApplyRoleKeys,
   type WebsiteApplyRoleKey,
 } from "@/lib/recruitment/inbound/website-apply";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,25 +96,12 @@ export function OPTIONS(request: Request): NextResponse {
   return new NextResponse(null, { headers: corsHeaders(request), status: 204 });
 }
 
-/** Every row of a table, in pages — the REST client caps a single select at 1000. */
+/** Every row of a table, in pages (ordered by `id`, so no page overlaps or skips). */
 async function fetchAll<T>(
   table: string,
   columns: string,
 ): Promise<T[]> {
-  const supabase = recruitmentDb();
-  const pageSize = 1000;
-  const rows: T[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(columns)
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    const page = (data ?? []) as T[];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return rows;
+  return fetchAllRows<T>(() => recruitmentDb().from(table).select(columns), "id");
 }
 
 /** A code's region label, or the shared "no region stated" bucket for a null / un-coded region. */

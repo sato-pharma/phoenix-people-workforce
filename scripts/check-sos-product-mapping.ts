@@ -267,7 +267,10 @@ function projectRef(url: string | undefined): string {
   return m ? m[1] : "unknown";
 }
 
-/** PostgREST caps a response at 1000 rows; the fact table is far larger, so page explicitly. */
+/**
+ * PostgREST caps a response at 1000 rows; the fact table is far larger, so page explicitly. Every
+ * `run` must order by a unique key, or an offset walk can skip or repeat a row between pages.
+ */
 async function fetchAll<T>(
   run: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
 ): Promise<T[]> {
@@ -298,16 +301,18 @@ async function main() {
       .from("source_of_sales_product_aliases")
       .select("alias,distributor_code,product_code")
       .eq("active", true)
+      .order("id", { ascending: true })
       .range(from, to),
   );
   const sales = await fetchAll<SalesRow>((from, to) =>
     supabase
       .from("source_of_sales_import_rows")
       .select("distributor_code,invoice_period,official_line,product_code,qty")
+      .order("id", { ascending: true })
       .range(from, to),
   );
   const distributors = await fetchAll<DistributorRow>((from, to) =>
-    supabase.from("source_of_sales_distributors").select("distributor_code").range(from, to),
+    supabase.from("source_of_sales_distributors").select("distributor_code").order("distributor_code", { ascending: true }).range(from, to),
   );
   console.log(
     `[sos-mapping] read ${aliases.length} active aliases, ${sales.length} imported rows, ` +

@@ -26,6 +26,7 @@
 
 import { unstable_cache } from "next/cache";
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type SalesSeat = {
@@ -126,18 +127,16 @@ export function districtRegionCodesHeldBy(hrId: string | null | undefined, seats
  * of the same view. The ROWS are cached, never the Map: unstable_cache serialises what it stores.
  */
 const loadSalesSeatRows = unstable_cache(
-  async (): Promise<Array<Record<string, unknown>>> => {
-    const { data, error } = await getSupabaseAdmin()
-      .from("au_v_org_tree_sales")
-      .select("seat_id,parent_seat_id,seat_tier,line_code,region_code,region_name,occupant_hr_id,is_other_pseudo_dm");
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
-    // An unbounded PostgREST read stops at 1,000 rows with no error; never resolve half a tree.
-    if (rows.length >= 1000) {
-      throw new Error(`au_v_org_tree_sales returned ${rows.length} rows, at PostgREST's cap. Paginate this read before trusting it.`);
-    }
-    return rows;
-  },
+  // Paged to the last row by the unique seat id: an unbounded read ends at one response's worth with
+  // no error, and half a seat tree would name the wrong vacancies. Never a throw at a row count.
+  async (): Promise<Array<Record<string, unknown>>> =>
+    fetchAllRows<Record<string, unknown>>(
+      () =>
+        getSupabaseAdmin()
+          .from("au_v_org_tree_sales")
+          .select("seat_id,parent_seat_id,seat_tier,line_code,region_code,region_name,occupant_hr_id,is_other_pseudo_dm"),
+      "seat_id",
+    ),
   // v2: the rows gained `region_code` and come from the sales tree. A new key, so a cached copy of the
   // old shape is never served to a reader that needs them.
   ["sales-seat-hierarchy-v2"],

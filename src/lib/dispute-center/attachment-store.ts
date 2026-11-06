@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
@@ -109,14 +110,19 @@ export async function listDisputeCenterAttachments(
   if (ids.length === 0) return { byMessage, opening };
   try {
     for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await getSupabaseAdmin()
-        .from("dispute_attachments")
-        .select(ATTACHMENT_COLUMNS)
-        .eq("case_kind", kind)
-        .in("case_ref", ids.slice(i, i + 200))
-        .order("created_at", { ascending: true });
-      if (error) return { byMessage, opening };
-      for (const row of (data ?? []) as AttachmentRow[]) {
+      // Every picture of this batch of cases, page by page; a failed page lands in the catch below,
+      // which keeps the conversation rendering without pictures exactly as a failed read did before.
+      const rows = await fetchAllRows<AttachmentRow>(
+        () =>
+          getSupabaseAdmin()
+            .from("dispute_attachments")
+            .select(ATTACHMENT_COLUMNS)
+            .eq("case_kind", kind)
+            .in("case_ref", ids.slice(i, i + 200))
+            .order("created_at", { ascending: true }),
+        "id",
+      );
+      for (const row of rows) {
         const target = row.message_id ? byMessage : opening;
         const key = row.message_id ?? row.case_ref;
         const list = target.get(key) ?? [];

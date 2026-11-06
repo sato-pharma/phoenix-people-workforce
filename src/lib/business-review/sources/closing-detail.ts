@@ -44,6 +44,7 @@ import {
   withoutMaskedSourceRows,
   type SourceMaskViewer,
 } from "@/lib/sales/closing-source-mask";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { asyncPool } from "@/lib/utils/async-pool";
 
@@ -141,8 +142,12 @@ export async function loadClosingDetailFacts(input: {
   const brickNamesLoad = (async (): Promise<Map<string, string>> => {
     const names = new Map<string, string>();
     try {
-      const { data } = await db.from("source_of_sales_bricks").select("brick_id, brick_name");
-      for (const b of (data ?? []) as { brick_id?: unknown; brick_name?: unknown }[]) {
+      // Paged: 704 bricks today, and a read cut at a ceiling would print the rest as "Brick not named".
+      const data = await fetchAllRows<{ brick_id?: unknown; brick_name?: unknown }>(
+        () => db.from("source_of_sales_bricks").select("brick_id, brick_name"),
+        "brick_id",
+      );
+      for (const b of data) {
         const id = text(b.brick_id);
         const name = text(b.brick_name);
         if (id && name) names.set(id, name);

@@ -284,7 +284,7 @@ async function main() {
   const files = await pageAll(
     (offset, page) =>
       `ats_files?select=id,candidate_id,file_name,mime_type,content_md5,created_at,drive_file_id,drive_mirror_file_id,upload_origin` +
-      `&kind=eq.cv&candidate_id=not.is.null&order=created_at.asc&offset=${offset}&limit=${page}`,
+      `&kind=eq.cv&candidate_id=not.is.null&order=created_at.asc,id.asc&offset=${offset}&limit=${page}`,
   );
   console.log(`CV rows: ${files.length}`);
 

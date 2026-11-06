@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { summarizePreview } from "../src/lib/sales/recognize.ts";
-import { parseUnmappedCustomers, UNMAPPED_ROW_CEILING } from "../src/lib/sales/normalizer/unmapped-customers.ts";
+import { parseUnmappedCustomers } from "../src/lib/sales/normalizer/unmapped-customers.ts";
 import type { NormalizeResult } from "../src/lib/sales/normalizer/types.ts";
 
 const ROOT = process.cwd();
@@ -68,8 +68,12 @@ function theUnmappedRowsAreReadAsTheDatabaseGivesThem() {
   assert.equal(parsed.customers[1]?.salesRows, 0);
   assert.equal(parsed.possiblyTruncated, false);
 
-  const full = parseUnmappedCustomers(Array.from({ length: UNMAPPED_ROW_CEILING }, (_, i) => ({ distributor_code: "IS", customer_code: String(i), why: "never mapped" })));
-  assert.equal(full.possiblyTruncated, true, "a result that fills the ceiling exactly is reported as possibly cut, never as complete");
+  const full = parseUnmappedCustomers(Array.from({ length: 1500 }, (_, i) => ({ distributor_code: "IS", customer_code: String(i), why: "never mapped" })));
+  assert.equal(full.customers.length, 1500, "a list past 1,000 rows is kept whole, none cut");
+  assert.equal(full.possiblyTruncated, false, "the list is read in full, so a long one is never reported as cut");
+  const source = read("src/lib/sales/normalizer/unmapped-customers.ts");
+  assert.ok(/rpcAll\(\s*getSupabaseAdmin\(\), "sos_unmapped_customers"/.test(source), "the list is read through rpcAll, which pages past a server row ceiling");
+  assert.ok(!/\.rpc\("sos_unmapped_customers"/.test(source), "never a bare .rpc(), which stops silently at the ceiling");
   assert.equal(parseUnmappedCustomers(null).customers.length, 0, "a missing answer is an empty list, not a crash");
 }
 

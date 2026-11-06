@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import type { getSupabaseAdmin } from "@/lib/supabase/server";
 import { decodeErrorMessage } from "@/lib/error-monitor/message-decode";
 import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
@@ -62,8 +63,6 @@ const SETTLE_MS = 10 * 60 * 1000;
  * for any page load shorter than that.
  */
 const OPEN_LOOKBACK_MS = 24 * 60 * 60 * 1000;
-/** Ledger occurrences read as open: the newest first, so a busy day loses the oldest, never the latest. */
-const OPEN_READ_LIMIT = 5_000;
 /** How far back a person's page view may be to name an API error's module. */
 const PAGE_TRAIL_WINDOW_MS = 30 * 60 * 1000;
 const PAGE_TRAIL_PAGE = 1_000;
@@ -185,16 +184,24 @@ export function createDatabaseAppErrorSource(supabase: Client): AppErrorSource {
       return rows;
     },
     async readOpenOccurrences(sinceIso) {
-      const { data, error } = await supabase
-        .from("system_audit_occurrences")
-        .select("dedupe_key, signature_key, occurred_at, first_event_at, last_event_at, evidence")
-        .eq("family", "app_error")
-        .gte("last_event_at", sinceIso)
-        .order("last_event_at", { ascending: false })
-        .limit(OPEN_READ_LIMIT);
-      if (error) throw readError("system_audit_occurrences", error);
+      // Every open occurrence, paged: one left out here is folded again as a NEW occurrence beside it.
+      let ledgerRows: LedgerOpenRow[];
+      try {
+        ledgerRows = await fetchAllRows<LedgerOpenRow>(
+          () =>
+            supabase
+              .from("system_audit_occurrences")
+              .select("dedupe_key, signature_key, occurred_at, first_event_at, last_event_at, evidence")
+              .eq("family", "app_error")
+              .gte("last_event_at", sinceIso)
+              .order("last_event_at", { ascending: false }),
+          "id",
+        );
+      } catch (error) {
+        throw readError("system_audit_occurrences", error as { message?: string; code?: string });
+      }
       const open: OpenOccurrence[] = [];
-      for (const row of (data ?? []) as LedgerOpenRow[]) {
+      for (const row of ledgerRows) {
         const evidence = row.evidence ?? {};
         const actor = typeof evidence.actor === "string" ? evidence.actor : null;
         if (!actor) continue;

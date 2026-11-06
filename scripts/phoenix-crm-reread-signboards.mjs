@@ -45,6 +45,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readStoredPlaceSignboard, recordPlaceSignboard } from "@/lib/phoenix-crm/server/signboard-check";
 import { rejudgeStoredSignboardsOnce, rereadUnreadablePlacesOnce } from "@/lib/phoenix-crm/server/signboard-sweep";
 import { signboardHoldsForReview, signboardNextAttempt, signboardReadsRecorded } from "@/lib/phoenix-crm/signboard-rules";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // By hand, for the reason `cv-area-questions.mjs` records: this has to run from a bare worktree where
@@ -282,12 +283,18 @@ async function main() {
     await runUnreadable();
     return;
   }
-  const { data: flags, error: flagError } = await db
-    .from("phoenix_crm_location_integrity")
-    .select("id, subject_id, flags, strong, created_at")
-    .eq("source", "signboard")
-    .eq("subject_kind", "place");
-  if (flagError) throw new Error(`integrity board: ${flagError.message}`);
+  // Paged: one read of the board stops silently at 1,000 rows and would leave the flags past them un-re-read.
+  const flags = await fetchAllRows(
+    () =>
+      db
+        .from("phoenix_crm_location_integrity")
+        .select("id, subject_id, flags, strong, created_at")
+        .eq("source", "signboard")
+        .eq("subject_kind", "place"),
+    "id",
+  ).catch((error) => {
+    throw new Error(`integrity board: ${error.message}`);
+  });
 
   // 🔴 A NAMED PLACE IS RE-READ WHETHER OR NOT IT CARRIES A FLAG. The board is the right DEFAULT
   // scope, but it is not the set of places a wrong reader has damaged: a verdict of `match` raises
@@ -308,13 +315,19 @@ async function main() {
     return;
   }
 
-  const { data: places, error: placeError } = await db
-    .from("phoenix_crm_places")
-    .select("id, photo_path, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
-    .in("id", wanted.map((entry) => entry.placeId));
-  if (placeError) throw new Error(`places: ${placeError.message}`);
+  // Chunked at 200, as repNames is: a long `in.()` list answers ZERO rows and no error.
+  const places = [];
+  const wantedIds = wanted.map((entry) => entry.placeId);
+  for (let from = 0; from < wantedIds.length; from += 200) {
+    const { data, error: placeError } = await db
+      .from("phoenix_crm_places")
+      .select("id, photo_path, signboard_check, customer:phoenix_crm_customers!inner(name, list_type)")
+      .in("id", wantedIds.slice(from, from + 200));
+    if (placeError) throw new Error(`places: ${placeError.message}`);
+    places.push(...(data ?? []));
+  }
 
-  const byId = new Map((places ?? []).map((place) => [place.id, place]));
+  const byId = new Map(places.map((place) => [place.id, place]));
   const offBoard = wanted.filter((entry) => !entry.flag).length;
   console.log(
     `${wanted.length} place(s) to re-read — ${wanted.length - offBoard} carrying a flag, ${offBoard} with no flag on the board; ` +

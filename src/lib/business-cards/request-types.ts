@@ -46,6 +46,7 @@ export type CreateBusinessCardRequestInput = {
 };
 
 export type BusinessCardRequestListFilter = {
+  /** Ignored: the HR queue returns every request. Kept so older callers still compile. */
   limit?: number;
   status?: BusinessCardRequestStatus | "all";
 };

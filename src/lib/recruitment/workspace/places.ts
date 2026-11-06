@@ -27,6 +27,7 @@ import { unstable_cache } from "next/cache";
 
 import { candidateRegionCodes, candidateRegionLabels, recruitmentRegionForArea, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import type { WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspacePlaces, WorkspaceRegion } from "@/lib/recruitment/workspace/types";
 
@@ -85,21 +86,26 @@ export function foldPlacesSnapshot(
 const loadPlacesSnapshot = unstable_cache(
   async (): Promise<PlacesSnapshot> => {
     const supabase = recruitmentDb();
-    const [areasResult, seatsResult] = await Promise.all([
+    const [areasResult, seats] = await Promise.all([
       supabase
         .from("au_v_canonical_areas")
         .select("area_code,area_name,code_region_code,sort_order,is_active")
         .eq("is_active", true)
         .order("sort_order", { ascending: true }),
-      supabase.from("au_v_org_tree").select("seat_tier,region_code,area_code,is_vacant,is_other_pseudo_dm"),
+      // Every seat, paged to the last row: an unpaged read stops at one response's worth with no error,
+      // and half a seat model would count the wrong vacancies. The view holds one row per OCCUPANT (a
+      // handover seat has two), so the order is occupant then seat id: together they are unique, which
+      // paging needs.
+      fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("au_v_org_tree")
+            .select("seat_tier,region_code,area_code,is_vacant,is_other_pseudo_dm")
+            .order("occupant_hr_id", { ascending: true }),
+        "seat_id",
+      ),
     ]);
     if (areasResult.error) throw new Error(areasResult.error.message);
-    if (seatsResult.error) throw new Error(seatsResult.error.message);
-    const seats = (seatsResult.data ?? []) as Array<Record<string, unknown>>;
-    // An unbounded PostgREST read stops at 1,000 rows with no error; never count half a seat model.
-    if (seats.length >= 1000) {
-      throw new Error(`au_v_org_tree returned ${seats.length} rows, at PostgREST's cap. Paginate this read before trusting it.`);
-    }
     return foldPlacesSnapshot((areasResult.data ?? []) as Array<Record<string, unknown>>, seats);
   },
   ["recruitment-workspace-places-v1"],

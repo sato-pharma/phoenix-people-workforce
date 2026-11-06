@@ -233,11 +233,12 @@ export function ModuleLocksManager({
               Account
             </label>
             {/* maxResults defaults to 100 and this company has more logins than that — an account
-                past the hundredth would simply not be in the list until you typed. */}
+                past the hundredth would simply not be in the list until you typed. It is set to the
+                whole list (plus the placeholder row), never a fixed number a bigger company outgrows. */}
             <SearchableSelect
               className="w-full"
               id="module-lock-account"
-              maxResults={1000}
+              maxResults={accounts.length + 1}
               onChange={(event) => selectAccount(event.target.value)}
               value={loginId}
             >

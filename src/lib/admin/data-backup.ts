@@ -2,9 +2,8 @@ import ExcelJS from "exceljs";
 import { once } from "node:events";
 import { PassThrough } from "node:stream";
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const PAGE_SIZE = 1000;
 
 export type DataBackupScope = "all" | "sales" | "weekly" | "marketing";
 
@@ -13,6 +12,8 @@ type BackupTableConfig = {
   name: string;
   table: string;
   orderBy?: string;
+  /** A unique column to sort by LAST, when `orderBy` is not itself unique (created_at, sequence). */
+  tiebreak?: string;
 };
 
 export type DataBackupDataset = {
@@ -32,7 +33,7 @@ export type DataBackupPayload = {
 
 const SALES_TABLES: BackupTableConfig[] = [
   // Transactional — uploaded data
-  { module: "sales", name: "SoS Upload Batches", table: "source_of_sales_import_batches", orderBy: "created_at" },
+  { module: "sales", name: "SoS Upload Batches", table: "source_of_sales_import_batches", orderBy: "created_at", tiebreak: "id" },
   { module: "sales", name: "SoS Uploaded Rows", table: "source_of_sales_import_rows", orderBy: "id" },
   { module: "sales", name: "SoS Import Summaries", table: "source_of_sales_import_summaries", orderBy: "id" },
   // Mapping & validation
@@ -50,7 +51,7 @@ const SALES_TABLES: BackupTableConfig[] = [
 
 const WEEKLY_TABLES: BackupTableConfig[] = [
   // Transactional
-  { module: "weekly", name: "Weekly Sales Batches", table: "weekly_sales_batches", orderBy: "created_at" },
+  { module: "weekly", name: "Weekly Sales Batches", table: "weekly_sales_batches", orderBy: "created_at", tiebreak: "id" },
   { module: "weekly", name: "Weekly Sales Rows", table: "weekly_sales_rows", orderBy: "id" },
   // Config & mapping
   { module: "weekly", name: "Weekly Distributor Column Profile", table: "weekly_sales_distributor_column_profile", orderBy: "distributor_code" },
@@ -62,7 +63,7 @@ const WEEKLY_TABLES: BackupTableConfig[] = [
 
 const MARKETING_TABLES: BackupTableConfig[] = [
   // Core requests & workflow
-  { module: "marketing", name: "Marketing Requests", table: "marketing_requests", orderBy: "created_at" },
+  { module: "marketing", name: "Marketing Requests", table: "marketing_requests", orderBy: "created_at", tiebreak: "id" },
   { module: "marketing", name: "Marketing Request Products", table: "marketing_request_products", orderBy: "id" },
   { module: "marketing", name: "Marketing Request Pharmacies", table: "marketing_request_pharmacies", orderBy: "id" },
   { module: "marketing", name: "Marketing Approval Steps", table: "marketing_request_approval_steps", orderBy: "id" },
@@ -81,7 +82,7 @@ const MARKETING_TABLES: BackupTableConfig[] = [
   { module: "marketing", name: "Marketing Request Types", table: "marketing_request_types", orderBy: "id" },
   { module: "marketing", name: "Marketing Distributors", table: "marketing_distributors", orderBy: "id" },
   { module: "marketing", name: "Marketing Products", table: "marketing_products", orderBy: "id" },
-  { module: "marketing", name: "Marketing Workflow Steps", table: "marketing_workflow_steps", orderBy: "sequence" },
+  { module: "marketing", name: "Marketing Workflow Steps", table: "marketing_workflow_steps", orderBy: "sequence", tiebreak: "id" },
   { module: "marketing", name: "Marketing Review Routing", table: "marketing_review_routing", orderBy: "id" },
   // PK is setting_key — no `id` column here either.
   { module: "marketing", name: "Marketing Control Settings", table: "marketing_control_settings", orderBy: "setting_key" },
@@ -147,21 +148,21 @@ function collectHeaders(rows: Record<string, unknown>[]) {
   return [...set].sort();
 }
 
-async function fetchTableRows(table: string, orderBy?: string): Promise<Record<string, unknown>[]> {
+/**
+ * Every row of one table, for the backup. Walked by the shared pager with a UNIQUE last sort key: the
+ * old walk ordered by `orderBy` alone, and two rows sharing a created_at (or a table with no order at
+ * all) can swap places between pages, so a backup could repeat one row and silently leave another out.
+ */
+async function fetchTableRows(table: string, orderBy?: string, tiebreak?: string): Promise<Record<string, unknown>[]> {
   const supabase = getSupabaseAdmin();
-  const rows: Record<string, unknown>[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    let query = supabase.from(table).select("*").range(from, from + PAGE_SIZE - 1);
-    if (orderBy) query = query.order(orderBy, { ascending: false });
-    const { data, error } = await query;
-    if (error) {
-      throw new Error(`Failed to load ${table}: ${error.message}`);
-    }
-    const batch = (data ?? []) as Record<string, unknown>[];
-    rows.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
+  try {
+    return await fetchAllRows<Record<string, unknown>>(() => {
+      const query = supabase.from(table).select("*");
+      return orderBy ? query.order(orderBy, { ascending: false }) : query;
+    }, tiebreak ?? orderBy ?? "id");
+  } catch (error) {
+    throw new Error(`Failed to load ${table}: ${(error as { message?: string } | null)?.message ?? "read failed"}`);
   }
-  return rows;
 }
 
 function makeUniqueSheetName(base: string, used: Set<string>) {
@@ -213,7 +214,7 @@ export async function loadDataBackup(scope: DataBackupScope, generatedBy: string
   const datasets: DataBackupDataset[] = [];
 
   for (const table of tables) {
-    const rows = await fetchTableRows(table.table, table.orderBy);
+    const rows = await fetchTableRows(table.table, table.orderBy, table.tiebreak);
     // Normalised IN PLACE (PERF-009). These rows were fetched for this backup alone and nothing
     // else holds them, so copying each into a fresh object only doubled the peak heap of an
     // "all"-scope export for the length of the loop. Re-assigning an existing key keeps the key

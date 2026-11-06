@@ -10,7 +10,8 @@
 import { unstable_cache } from "next/cache";
 
 import { buildOrgIndex, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 const text = (value: unknown): string | null => {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -19,17 +20,19 @@ const text = (value: unknown): string | null => {
 
 const loadOrgSeats = unstable_cache(
   async (): Promise<OrgSeat[]> => {
-    const { data, error } = await getSupabaseAdmin()
-      .from("au_v_org_tree")
-      .select(
-        "seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_code, region_name, seat_label, is_other_pseudo_dm",
-      );
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as Array<Record<string, unknown>>;
-    // An unbounded PostgREST read stops at 1,000 rows with no error; never resolve half a tree.
-    if (rows.length >= 1000) {
-      throw new Error(`au_v_org_tree returned ${rows.length} rows, at PostgREST's cap. Paginate this read before trusting it.`);
-    }
+    // Paged to the last row, never half a tree: a handover seat is two rows, so (seat, occupant) closes the order.
+    const rows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        getSupabaseAdmin()
+          .from("au_v_org_tree")
+          .select(
+            "seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_code, region_name, seat_label, is_other_pseudo_dm",
+          )
+          .order("seat_id", { ascending: true }),
+      "occupant_hr_id",
+    ).catch((error: unknown) => {
+      throw toQueryError(error);
+    });
     return rows.flatMap((row) => {
       const seatId = text(row.seat_id);
       const tier = text(row.seat_tier);

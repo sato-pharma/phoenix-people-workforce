@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 import { displayPlaceName } from "@/lib/org/place-name";
 
@@ -147,17 +148,26 @@ export async function findArea(
  */
 export async function loadBricksForArea(areaCode: string): Promise<MarketAwarenessBrickOption[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("source_of_sales_bricks")
-    .select("brick_id, brick_name, block_code, active, effective_to")
-    .eq("area_code", areaCode.trim())
-    .is("effective_to", null)
-    .eq("active", true)
-    .order("brick_name", { ascending: true })
-    .limit(1000);
-  if (error) throw toQueryError(error);
+  // Paged in full: a fixed row limit would cut the picker's list with no marker. `brick_id` is
+  // unique, so it ends the order.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("source_of_sales_bricks")
+          .select("brick_id, brick_name, block_code, active, effective_to")
+          .eq("area_code", areaCode.trim())
+          .is("effective_to", null)
+          .eq("active", true)
+          .order("brick_name", { ascending: true }),
+      "brick_id",
+    );
+  } catch (error) {
+    throw toQueryError(error);
+  }
 
-  return ((data as Array<Record<string, unknown>> | null) ?? []).map((row) => ({
+  return data.map((row) => ({
     brickId: String(row.brick_id ?? "").trim(),
     brickName: String(row.brick_name ?? row.brick_id ?? "").trim(),
     blockCode: row.block_code ? String(row.block_code).trim() : null,

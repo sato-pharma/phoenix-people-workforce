@@ -18,6 +18,7 @@ import {
   type TelegramModulePolicy,
 } from "@/lib/notifications/telegram-governance";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 function testRunId() {
@@ -263,28 +264,31 @@ export async function getTelegramAdminControlCenter(access?: AccessContext | nul
   let auditLogs: TelegramAdminAuditLog[] = [];
 
   try {
-    const [{ data: connectionData, error: connectionError }, { data: preferencesData, error: preferencesError }] = await Promise.all([
-      supabase
-        .from("telegram_connections")
-        .select("user_id,hr_id,telegram_chat_id,telegram_username,status,linked_at,updated_at")
-        .order("updated_at", { ascending: false })
-        .limit(500),
-      supabase
-        .from("notification_preferences")
-        .select("user_id,hr_id,telegram_enabled")
-        .limit(1000),
+    // Both lists are paged, every row: a cut list hides a connection or reads its Telegram switch as off.
+    // A page that fails throws into the catch below, as the old per-read error did.
+    const [connectionData, preferencesData] = await Promise.all([
+      fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("telegram_connections")
+            .select("user_id,hr_id,telegram_chat_id,telegram_username,status,linked_at,updated_at")
+            .order("updated_at", { ascending: false }),
+        "id",
+      ),
+      fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("notification_preferences").select("user_id,hr_id,telegram_enabled"),
+        "user_id",
+      ),
     ]);
-    if (connectionError) throw connectionError;
-    if (preferencesError) throw preferencesError;
 
     const prefs = new Map(
-      ((preferencesData ?? []) as Record<string, unknown>[]).map((row) => [
+      preferencesData.map((row) => [
         cleanText(row.user_id) || cleanHrId(row.hr_id),
         row.telegram_enabled === true,
       ]),
     );
 
-    connections = ((connectionData ?? []) as Record<string, unknown>[]).map((row) => {
+    connections = connectionData.map((row) => {
       const userId = cleanText(row.user_id);
       const hrId = cleanHrId(row.hr_id);
       const employee = employeesByHrId.get(hrId);

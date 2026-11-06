@@ -24,6 +24,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { expenseApprovalState, isRejectedStatus } from "@/lib/outstation/approval-state";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { managerVisitWhereLines } from "@/lib/phoenix-crm/manager-visit-detail";
 import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
@@ -76,6 +77,15 @@ type MirrorRow = Record<string, unknown>;
  * the model and render as a field day, which is the worst shape a wrong answer can take here: a day
  * that looks worked. Narrowing throws instead, so a malformed select fails loudly at the seam.
  */
+/** A whole read, paged to its last row (the id closes the order); a failed page keeps this report's own words. */
+async function readAllRows(where: string, buildQuery: Parameters<typeof fetchAllRows>[0]): Promise<unknown[]> {
+  try {
+    return await fetchAllRows(buildQuery, "id");
+  } catch (error) {
+    throw new Error(`field activity: ${where} — ${error instanceof Error ? error.message : String((error as { message?: unknown } | null)?.message ?? error)}`);
+  }
+}
+
 function rowsOf(data: unknown, where: string): Record<string, unknown>[] {
   if (!Array.isArray(data)) return [];
   return data.map((row) => {
@@ -261,21 +271,23 @@ export async function loadFieldActivityReport(input: {
 
   let trips: FieldActivityTripRow[] = [];
   if (input.panels.expenses) {
-    const { data, error } = await supabase
-      .from("outstation_expense_requests")
-      .select(
-        "id, trip_start_date, to_label, to_city, to_area, transportation_type, distance_km, duration_minutes, " +
-          "minimum_required_distance_km, fuel_amount, allowance_amount, ticket_amount, meeting_amount, other_amount, " +
-          "claimed_total_amount, status, eligibility_status, approval_recommendation, evidence_gate_status, " +
-          "workload_gate_status, am_workload, pm_workload, pharmacy_workload, captured_at, captured_latitude, " +
-          "captured_longitude, captured_accuracy_meters, submitted_at",
-      )
-      .eq("employee_hr_id", employee.hrId)
-      .gte("trip_start_date", fromIso)
-      .lte("trip_start_date", `${toIso}T23:59:59`)
-      .limit(500);
-    if (error) throw new Error(`field activity: trips — ${error.message}`);
-    const tripRecords = rowsOf(data, "trips");
+    const tripRecords = rowsOf(
+      await readAllRows("trips", () =>
+        supabase
+          .from("outstation_expense_requests")
+          .select(
+            "id, trip_start_date, to_label, to_city, to_area, transportation_type, distance_km, duration_minutes, " +
+              "minimum_required_distance_km, fuel_amount, allowance_amount, ticket_amount, meeting_amount, other_amount, " +
+              "claimed_total_amount, status, eligibility_status, approval_recommendation, evidence_gate_status, " +
+              "workload_gate_status, am_workload, pm_workload, pharmacy_workload, captured_at, captured_latitude, " +
+              "captured_longitude, captured_accuracy_meters, submitted_at",
+          )
+          .eq("employee_hr_id", employee.hrId)
+          .gte("trip_start_date", fromIso)
+          .lte("trip_start_date", `${toIso}T23:59:59`),
+      ),
+      "trips",
+    );
     const ledgerByTrip = new Map<string, Parameters<typeof decidedTripAmount>[1]>();
     if (tripRecords.length > 0) {
       const { data: ledgerRows, error: ledgerError } = await supabase
@@ -350,18 +362,20 @@ export async function loadFieldActivityReport(input: {
 
   let leave: FieldActivityLeaveRow[] = [];
   if (input.panels.leave) {
-    const { data, error } = await supabase
-      .from("v2_vacation_requests")
-      .select(
-        "request_code, vacation_type, day_part, start_date, end_date, status, payment_status, manager_name, " +
-          "manager_decision_at, hr_decision_at, created_at, balance_before_days, balance_after_days",
-      )
-      .eq("employee_hr_id", employee.hrId)
-      .lte("start_date", toIso)
-      .gte("end_date", fromIso)
-      .limit(200);
-    if (error) throw new Error(`field activity: leave — ${error.message}`);
-    leave = rowsOf(data, "leave")
+    leave = rowsOf(
+      await readAllRows("leave", () =>
+        supabase
+          .from("v2_vacation_requests")
+          .select(
+            "request_code, vacation_type, day_part, start_date, end_date, status, payment_status, manager_name, " +
+              "manager_decision_at, hr_decision_at, created_at, balance_before_days, balance_after_days",
+          )
+          .eq("employee_hr_id", employee.hrId)
+          .lte("start_date", toIso)
+          .gte("end_date", fromIso),
+      ),
+      "leave",
+    )
       .map((record) => {
         return {
           reference: (record.request_code as string | null) ?? null,

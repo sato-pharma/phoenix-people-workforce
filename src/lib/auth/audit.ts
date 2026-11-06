@@ -10,6 +10,7 @@ import {
   loginThrottleWindowMinutes,
 } from "@/lib/auth/login-throttle-policy";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientAddress } from "@/lib/security/client-address";
 
@@ -193,21 +194,27 @@ export async function isLoginRateLimited(loginId: string, ip: string | null) {
 // keeps the strict limit: the extra room has to be earned, never assumed.
 async function countAccountsSignedInFromIp(ip: string) {
   const since = new Date(Date.now() - loginSharedNetworkLookbackHours * 60 * 60 * 1000).toISOString();
-  const { data, error } = await getSupabaseAdmin()
-    .from("auth_login_attempts")
-    .select("login_id")
-    .eq("ip", ip)
-    .eq("success", true)
-    .gte("attempted_at", since)
-    .limit(1000);
-
-  if (error) {
+  // Paged, every successful sign-in of the lookback: a cut read would under-count the colleagues.
+  let data: { login_id?: string | null }[];
+  try {
+    const supabase = getSupabaseAdmin();
+    data = await fetchAllRows<{ login_id?: string | null }>(
+      () =>
+        supabase
+          .from("auth_login_attempts")
+          .select("login_id")
+          .eq("ip", ip)
+          .eq("success", true)
+          .gte("attempted_at", since),
+      "id",
+    );
+  } catch (error) {
     logError("Could not count the accounts signed in from a throttled address (keeping the strict limit)", { labels: { event: "login_shared_network_lookup_failed", component: "auth", ip }, error });
     return 0;
   }
 
   const accounts = new Set<string>();
-  for (const row of (data ?? []) as { login_id?: string | null }[]) {
+  for (const row of data) {
     const key = normalizeLoginId(row.login_id).toUpperCase();
     if (key) accounts.add(key);
   }

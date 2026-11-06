@@ -6,6 +6,7 @@ import { aiSuggest, hasAiKey, type AiKind, type AiReferenceAlias, type AiUnknown
 import { suggestCustomerBricks } from "@/lib/sales/normalizer/customer-suggest";
 import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -68,14 +69,17 @@ export async function POST(request: Request) {
     type Rows = { data: unknown[] | null };
     const run = async (q: unknown): Promise<Rows> => (q ? ((await (q as PromiseLike<Rows>)) ?? { data: [] }) : { data: [] });
 
-    let aliasQuery: unknown = null;
-    if (kind === "product") aliasQuery = supabase.from("source_of_sales_product_aliases").select("alias,product_code").eq("active", true).neq("product_code", "IGNORE").limit(1000);
-    else aliasQuery = supabase.from("source_of_sales_territory_aliases").select("alias,target_code").eq("active", true).limit(1000);
+    // Paged: a single read stops at 1,000 rows with no error, and the territory aliases hold more than that.
+    const loadAliasRows = async (): Promise<Rows> => ({
+      data: await (kind === "product"
+        ? fetchAllRows(() => supabase.from("source_of_sales_product_aliases").select("alias,product_code").eq("active", true).neq("product_code", "IGNORE"), "id")
+        : fetchAllRows(() => supabase.from("source_of_sales_territory_aliases").select("alias,target_code").eq("active", true), "id")),
+    });
 
     let importQuery: unknown = null;
     if (kind === "product") importQuery = supabase.from("source_of_sales_import_rows").select("product_name,product_code").not("product_name", "is", null).not("product_code", "is", null).neq("product_code", "IGNORE").limit(800);
 
-    const [aliasResult, importResult] = await Promise.all([run(aliasQuery), run(importQuery)]);
+    const [aliasResult, importResult] = await Promise.all([loadAliasRows(), run(importQuery)]);
 
     const seen = new Set<string>();
     const referenceAliases: AiReferenceAlias[] = [];

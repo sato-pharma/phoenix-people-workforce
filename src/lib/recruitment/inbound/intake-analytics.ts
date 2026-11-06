@@ -6,6 +6,7 @@
 // summarize step is pure so the whole funnel is unit-testable without a database.
 
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 
 export type IntakeEventRow = { channel: string | null; outcome: string | null; created_at: string | null };
 
@@ -104,15 +105,14 @@ export function shouldAlertIntakeSpike(input: { errors: number; deadLettered: nu
   return input.errors + input.deadLettered >= Math.max(1, input.threshold);
 }
 
+// Every event in the window, walked by id: the log is written while it is read, and a fixed row ceiling
+// would understate the funnel (and the spike alert) without a sound.
 async function fetchIntakeEvents(sinceIso: string): Promise<IntakeEventRow[]> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_cv_intake_events")
-    .select("channel,outcome,created_at")
-    .gte("created_at", sinceIso)
-    .limit(5000);
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as IntakeEventRow[];
+  return fetchAllRowsKeyset<IntakeEventRow & { id: string }>(
+    () => supabase.from("ats_cv_intake_events").select("id,channel,outcome,created_at").gte("created_at", sinceIso),
+    { cursorColumn: "id", cursorOf: (row) => row.id },
+  );
 }
 
 async function countDeadLettered(sinceIso: string): Promise<number> {

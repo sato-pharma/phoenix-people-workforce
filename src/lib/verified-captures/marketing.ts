@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assessCaptureTrust } from "@/lib/evidence/capture-trust";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMarketingEvidencePhotosByEntityIds } from "@/lib/marketing-requests/evidence-photo-storage";
 
@@ -71,18 +72,20 @@ export async function listVerifiedMarketingCaptures(
 
   // Only customers whose OWN capture is complete can be verified — the customer half of the rule —
   // so filter here and let the pharmacy check below finish it. Company-wide, newest first.
-  const { data: customerData, error: customerError } = await supabase
-    .from("marketing_customers")
-    .select(
-      "id, customer_code, display_name, evidence_status, owner_hr_id, manager_hr_id, area_id, line_id, region_name, extracted_governorate_name, captured_latitude, captured_longitude, captured_address, captured_at",
-    )
-    .eq("evidence_status", COMPLETE)
-    .neq("active", false)
-    .order("captured_at", { ascending: false })
-    .limit(2000);
-  if (customerError) throw customerError;
-
-  const customers = (customerData ?? []) as CustomerRow[];
+  // Paged to the end: a fixed ceiling here would drop the oldest verified customers from the gallery
+  // with no sign that the list was cut. `id` ends the order so the pages cannot overlap.
+  const customers = await fetchAllRows<CustomerRow>(
+    () =>
+      supabase
+        .from("marketing_customers")
+        .select(
+          "id, customer_code, display_name, evidence_status, owner_hr_id, manager_hr_id, area_id, line_id, region_name, extracted_governorate_name, captured_latitude, captured_longitude, captured_address, captured_at",
+        )
+        .eq("evidence_status", COMPLETE)
+        .neq("active", false)
+        .order("captured_at", { ascending: false }),
+    "id",
+  );
   if (customers.length === 0) return [];
 
   const customerIds = customers.map((row) => row.id);

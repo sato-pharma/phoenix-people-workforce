@@ -55,11 +55,11 @@ import {
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** How far back the page lists requests. */
 const HISTORY_DAYS = 30;
-const LIST_LIMIT = 200;
 const COLUMNS =
   "id,hr_id,visit_date,reason,manager_hr_id,manager_decision,manager_decided_at,manager_note,hr_decision,hr_decided_by,hr_decided_at,hr_note,cancelled_at,created_at";
 
@@ -165,19 +165,24 @@ async function loadRequest(requestId: string): Promise<RequestRecord> {
 
 
 async function fetchRequests(filter: "mine" | "manager" | "hr", hrId: string, since: string): Promise<RequestRecord[]> {
-  const base = getSupabaseAdmin().from(CRM_NATIVE_VISIT_VACATION_DAY_REQUESTS_TABLE).select(COLUMNS).gte("visit_date", since);
-  const filtered =
-    filter === "mine"
+  // A fresh query per page: a PostgREST builder is used up once it is awaited.
+  const filtered = () => {
+    const base = getSupabaseAdmin().from(CRM_NATIVE_VISIT_VACATION_DAY_REQUESTS_TABLE).select(COLUMNS).gte("visit_date", since);
+    return filter === "mine"
       ? base.in("hr_id", hrIdLookupKeys(hrId))
       : filter === "manager"
         ? base.in("manager_hr_id", hrIdLookupKeys(hrId))
         : base;
-  const { data, error } = await filtered.order("visit_date", { ascending: false }).limit(LIST_LIMIT);
-  if (error) {
-    if (isMissingTable(error)) return [];
+  };
+  // Paged to the last request (newest day first, the id as the tie-break), never a fixed page of 200.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(() => filtered().order("visit_date", { ascending: false }), "id");
+  } catch (error) {
+    if (isMissingTable(error as { code?: string | null })) return [];
     throw error;
   }
-  return ((data ?? []) as Array<Record<string, unknown>>).map(toRecord);
+  return data.map(toRecord);
 }
 
 async function recordEvent(requestId: string, event: string, actorHrId: string | null, detail: Record<string, unknown>) {

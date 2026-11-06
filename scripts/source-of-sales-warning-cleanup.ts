@@ -110,16 +110,18 @@ function currentProjectRef() {
   return (process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)\.supabase\.co/) ?? [])[1] ?? "unknown";
 }
 
+// `orderColumn` must be the table's unique key: without a total order an offset walk can skip or repeat a row.
 async function fetchAll<T>(
   supabase: SupabaseClient,
   table: string,
   columns: string,
+  orderColumn: string,
   mutate?: (query: ReturnType<SupabaseClient["from"]> extends infer R ? R : never) => unknown,
 ): Promise<T[]> {
   const rows: T[] = [];
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
-    let query = supabase.from(table).select(columns).range(from, from + pageSize - 1);
+    let query = supabase.from(table).select(columns).order(orderColumn, { ascending: true }).range(from, from + pageSize - 1);
     if (mutate) query = mutate(query as never) as typeof query;
     const { data, error } = await query;
     if (error) throw new Error(`${table}: ${error.message}`);
@@ -198,11 +200,11 @@ function nullableText(value: unknown) {
 
 async function loadReferences(supabase: SupabaseClient): Promise<SourceOfSalesReferenceData> {
   const [products, distributors, regions, areas, bricks] = await Promise.all([
-    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_products", "product_code,product_name,line"),
-    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_distributors", "distributor_code,distributor_name"),
-    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_regions", "region_code,region_name"),
-    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_areas", "area_code,area_name,region_code"),
-    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_bricks", "brick_id,area_code,region_code"),
+    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_products", "product_code,product_name,line", "product_code"),
+    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_distributors", "distributor_code,distributor_name", "distributor_code"),
+    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_regions", "region_code,region_name", "region_code"),
+    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_areas", "area_code,area_name,region_code", "area_code"),
+    fetchAll<Record<string, unknown>>(supabase, "source_of_sales_bricks", "brick_id,area_code,region_code", "brick_id"),
   ]);
   return {
     areas: areas.map((row) => ({

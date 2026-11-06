@@ -76,6 +76,7 @@ import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 /**
@@ -216,13 +217,17 @@ export async function searchCvLookup(access: AccessContext, query: string): Prom
 
   // BOTH HALVES IN PARALLEL. They touch different tables and neither needs the other's answer, so
   // the search costs the slower of the two (~135 ms) rather than their sum.
-  const [cvHalf, applicationHalf] = await Promise.all([
+  const [cvHalf, applicationRows] = await Promise.all([
     supabase.rpc("ats_search_candidate_cvs", { p_limit: CV_HALF_LIMIT, p_query: cleaned }),
-    supabase.from("ats_candidates").select(DISPLAY_COLUMNS).or(applicationFilter),
+    // Every match, paged to a short page by the unique `id`: the owner chose NO cap on a search, and an
+    // unpaged read would stop at one response's worth with no error and no `truncated`.
+    fetchAllRows<CandidateRow>(
+      () => supabase.from("ats_candidates").select(DISPLAY_COLUMNS).or(applicationFilter),
+      "id",
+    ),
   ]);
 
   if (cvHalf.error) throw cvHalf.error;
-  if (applicationHalf.error) throw applicationHalf.error;
 
   const cvRows = (cvHalf.data ?? []) as Array<{ candidate_id?: string | null; matched_on?: string | null }>;
   const matchedOnById = new Map<string, string>();
@@ -235,7 +240,6 @@ export async function searchCvLookup(access: AccessContext, query: string): Prom
     cvOrder.push(id);
   }
 
-  const applicationRows = (applicationHalf.data ?? []) as CandidateRow[];
   const rowById = new Map<string, CandidateRow>();
   for (const row of applicationRows) {
     const id = text(row.id);

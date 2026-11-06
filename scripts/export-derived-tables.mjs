@@ -34,10 +34,13 @@ const supabase = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
+// `pkType: "int"` is a unique ascending id, walked by cursor. The two composite-key tables carry no
+// unique single column (client_code repeats across batches and products, so a cursor on it skips every
+// row that shares the last one's code), so `orderBy` is their whole primary key, walked by offset.
 const TABLES = [
-  { table: "source_of_sales_fact_rollup",              pkCol: "id",          pkType: "int",  color: "F97316" },
-  { table: "source_of_sales_customer_directory_rollup",pkCol: "client_code", pkType: "text", color: "FB923C" },
-  { table: "source_of_sales_customer_presence_rollup", pkCol: "client_code", pkType: "text", color: "FED7AA" },
+  { table: "source_of_sales_fact_rollup",              pkCol: "id", pkType: "int", color: "F97316" },
+  { table: "source_of_sales_customer_directory_rollup", orderBy: ["batch_id", "period", "distributor_code", "client_code", "product_code", "is_direct"], color: "FB923C" },
+  { table: "source_of_sales_customer_presence_rollup",  orderBy: ["batch_id", "period", "client_code", "official_line", "region_code"], color: "FED7AA" },
 ];
 
 const PAGE_SIZE = 500;
@@ -55,10 +58,8 @@ async function fetchCursor(table, pkCol, pkType) {
     let q = supabase.from(table).select("*").order(pkCol, { ascending: true }).limit(PAGE_SIZE);
     if (cursor !== null) q = q.gt(pkCol, cursor);
     const { data, error } = await q;
-    if (error) {
-      // composite PK tables — fall back to offset pagination
-      return await fetchOffset(table);
-    }
+    // A failed page is never the end of the data: an export that stops quietly is a short backup.
+    if (error) throw new Error(`${table}: ${error.message}`);
     const batch = data ?? [];
     rows.push(...batch);
     process.stdout.write(`\r  ${table}: ${rows.length.toLocaleString()} rows`);
@@ -70,11 +71,13 @@ async function fetchCursor(table, pkCol, pkType) {
   return rows;
 }
 
-async function fetchOffset(table) {
+async function fetchOffset(table, orderBy) {
   const rows = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase.from(table).select("*").range(from, from + PAGE_SIZE - 1);
-    if (error) { console.error(`\n  ✗ ${table}: ${error.message}`); break; }
+    let q = supabase.from(table).select("*");
+    for (const column of orderBy) q = q.order(column, { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(`${table}: ${error.message}`);
     const batch = data ?? [];
     rows.push(...batch);
     process.stdout.write(`\r  ${table}: ${rows.length.toLocaleString()} rows`);
@@ -94,9 +97,9 @@ async function main() {
 
   const datasets = [];
 
-  for (const { table, pkCol, pkType, color } of TABLES) {
+  for (const { table, pkCol, pkType, orderBy, color } of TABLES) {
     process.stdout.write(`  ${table}: fetching...`);
-    const rows = await fetchCursor(table, pkCol, pkType);
+    const rows = orderBy ? await fetchOffset(table, orderBy) : await fetchCursor(table, pkCol, pkType);
     const normalized = rows.map(row => {
       const r = {};
       for (const [k, v] of Object.entries(row)) r[k] = safeValue(v);

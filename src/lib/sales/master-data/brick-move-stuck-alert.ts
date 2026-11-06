@@ -2,6 +2,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -137,14 +138,19 @@ export function buildBrickMoveStuckMessage(verdict: BrickMoveStuckVerdict): stri
 
 /** Reads the queue. Pending files only — a rebuilt file is of no interest. */
 export async function readPendingBrickMoveFiles(): Promise<StuckBrickMoveFile[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("source_of_sales_brick_move_files")
-    .select("old_brick_id, batch_id, moved_at, refresh_started_at")
-    .is("refreshed_at", null)
-    .order("moved_at", { ascending: true })
-    .limit(500);
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
+  // Paged: one read stops at a fixed row count with no error, and the alert reports how many are stuck.
+  // The key is (old_brick_id, batch_id), so both end the order and the walk is total.
+  const data = await fetchAllRows<{ batch_id: unknown; moved_at: unknown; old_brick_id: unknown; refresh_started_at: unknown }>(
+    () =>
+      getSupabaseAdmin()
+        .from("source_of_sales_brick_move_files")
+        .select("old_brick_id, batch_id, moved_at, refresh_started_at")
+        .is("refreshed_at", null)
+        .order("moved_at", { ascending: true })
+        .order("old_brick_id", { ascending: true }),
+    "batch_id",
+  );
+  return data.map((row) => ({
     batchId: String(row.batch_id),
     movedAt: String(row.moved_at),
     oldBrickId: String(row.old_brick_id),

@@ -34,6 +34,7 @@ import {
   type FolderSend,
 } from "@/lib/recruitment/manager-cv-folders";
 import { listAllManagerSends } from "@/lib/recruitment/manager-sends";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 export type ManagerCvReminderResult = {
   /** CVs named across every reminder sent (or that would be, on a dry run). */
@@ -56,17 +57,27 @@ async function loadLastSeen(candidateIds: readonly string[]): Promise<Map<string
   const lastSeen = new Map<string, string>();
   const supabase = recruitmentDb();
   for (const batch of chunkIds([...new Set(candidateIds)])) {
-    const { data, error } = await supabase
-      .from("ats_candidate_views")
-      .select("candidate_id,viewer_hr_id,last_seen_at")
-      .in("candidate_id", batch);
-    if (error) {
+    let rows: Array<{ candidate_id?: string; viewer_hr_id?: string; last_seen_at?: string }>;
+    try {
+      // Every open of the batch, paged to a short page: one row per viewer per CV, so a batch of a
+      // hundred CVs can outgrow one response, and an open that was cut off would be nagged about again.
+      // `viewer_hr_id` follows the `candidate_id` order and together they are unique.
+      rows = await fetchAllRows<{ candidate_id?: string; viewer_hr_id?: string; last_seen_at?: string }>(
+        () =>
+          supabase
+            .from("ats_candidate_views")
+            .select("candidate_id,viewer_hr_id,last_seen_at")
+            .in("candidate_id", batch)
+            .order("candidate_id", { ascending: true }),
+        "viewer_hr_id",
+      );
+    } catch (error) {
       // A missing table reads as "nobody has seen anything" — the reminders then go out, which is the
       // safe direction for a feature whose whole point is not to be missed.
       if ((error as { code?: string }).code === "42P01") continue;
       throw error;
     }
-    for (const row of (data ?? []) as Array<{ candidate_id?: string; viewer_hr_id?: string; last_seen_at?: string }>) {
+    for (const row of rows) {
       if (!row.candidate_id || !row.viewer_hr_id || !row.last_seen_at) continue;
       lastSeen.set(districtReturnSuppressionKey(row.viewer_hr_id, row.candidate_id), row.last_seen_at);
     }

@@ -11,6 +11,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { isReplacementRequisition, requisitionOpenBlock } from "@/lib/recruitment/requisition-open-gate";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getVacancyListRows, type VacancyReportRow } from "@/lib/reports/vacancies";
 import {
@@ -73,12 +74,12 @@ function enrich(requisition: Requisition, names: Map<string, string>): Requisiti
  * maps them into new objects.
  */
 const loadAllRequisitionRows = cache(async (): Promise<RequisitionDbRow[]> => {
-  const { data, error } = await recruitmentDb()
-    .from("ats_requisitions")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as RequisitionDbRow[];
+  // Paged to a short page by the unique `id`: the scope check on every application reads these rows,
+  // so a requisition a response cap dropped would hide that requisition's applications from a viewer.
+  return fetchAllRows<RequisitionDbRow>(
+    () => recruitmentDb().from("ats_requisitions").select("*").order("created_at", { ascending: false }),
+    "id",
+  );
 });
 
 export async function listRequisitions(access: AccessContext): Promise<Requisition[]> {
@@ -115,16 +116,17 @@ export async function listOpenVacanciesForRequisition(): Promise<VacancyReportRo
   const supabase = recruitmentDb();
   // Concurrently: the active-requisition read does not depend on the vacancy list, and run after
   // it, it was a second round trip waiting on the first. A failed list still throws first.
-  const [openRows, { data, error }] = await Promise.all([
+  const [openRows, data] = await Promise.all([
     getVacancyListRows({ openOnly: true }),
-    supabase
-      .from("ats_requisitions")
-      .select("vacancy_id,status")
-      .in("status", activeRequisitionStatuses),
+    // Every active requisition, paged to a short page by the unique `id`: one a response cap hid would
+    // offer its seat again as if nobody had raised a requisition for it.
+    fetchAllRows<RequisitionDbRow>(
+      () => supabase.from("ats_requisitions").select("vacancy_id,status").in("status", activeRequisitionStatuses),
+      "id",
+    ),
   ]);
-  if (error) throw error;
   const wrapped = new Set(
-    ((data ?? []) as RequisitionDbRow[])
+    data
       .map((row) => numberOrNull(row.vacancy_id))
       .filter((value): value is number => value !== null),
   );

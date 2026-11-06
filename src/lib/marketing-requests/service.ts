@@ -189,6 +189,7 @@ import {
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { loadAlsoKnownAsBatch } from "@/lib/customer-identity/server/profile";
 import { bumpCustomer360Cache } from "@/lib/cache/namespaces";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
@@ -5255,7 +5256,7 @@ function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
 }
 
 /**
- * Safety bound for the scoped marketing workspaces — NOT a page size.
+ * Full reads for the scoped marketing workspaces — never a capped read.
  *
  * These queries fetch COMPANY-WIDE and the viewer's hierarchy filter is applied afterwards, in
  * memory (canSeeMarketingRequest / canSeeMarketingCustomer). Any cap below the table size therefore
@@ -5266,11 +5267,27 @@ function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
  * It was live, not theoretical: at the time of this fix production held 303 marketing_customer_pharmacies
  * against a .limit(200) (≈34% dropped) and 217 marketing_requests against a .limit(200).
  *
- * The bound exists only so a pathological table can never become an unbounded scan; it must stay well
- * above the real row counts (hundreds). If these tables ever approach it, the fix is to push the scope
- * filter into the query (scope-then-limit), not to raise this number again.
+ * These reads used to end in a fixed `.limit(10000)` "safety bound". It never raised the server's own
+ * response ceiling (PostgREST's db-max-rows, 1,000 by default, wins over a larger limit and says
+ * nothing), so the bound was a hidden cap in two ways. Every read now pages in full, and a failed
+ * page throws.
  */
-const MARKETING_WORKSPACE_SAFETY_LIMIT = 10000;
+async function fetchAllActiveMarketingLinks(supabase: SupabaseClient): Promise<MarketingCustomerPharmacyDbRow[]> {
+  return fetchAllRows<MarketingCustomerPharmacyDbRow>(
+    () =>
+      supabase
+        .from("marketing_customer_pharmacies")
+        .select("*")
+        .eq("active", true)
+        .order("created_at", { ascending: false }),
+    "id",
+  );
+}
+
+/** A full read of marketing_requests in the one-shot `{ data, error }` shape, so the callers below keep their form. */
+async function readAllMarketingRequests(build: () => unknown): Promise<{ data: MarketingRequestDbRow[]; error: null }> {
+  return { data: await fetchAllRows<MarketingRequestDbRow>(build, "id"), error: null };
+}
 
 /**
  * The viewer's own area, used by every territory-scoped marketing rule below.
@@ -5365,8 +5382,8 @@ export function assertMarketingCustomerIsInScope(
 
 // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
 // can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
-// HeadersOverflowError (the Customer Database workspace dedupes ids from an org-wide, .limit(1000)
-// links query, well past that threshold). Batch instead of passing the whole array in one .in().
+// HeadersOverflowError (the Customer Database workspace dedupes ids from an org-wide links query,
+// well past that threshold). Batch instead of passing the whole array in one .in().
 function chunk<T>(items: T[], size = 100): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -6120,16 +6137,16 @@ async function buildReusableMarketingPharmacies(params: {
 }): Promise<MarketingReusablePharmacy[]> {
   const { access, distributorRows, employeeRows, links, supabase } = params;
 
-  const pharmaciesResult = await supabase
-    .from("marketing_pharmacies")
-    .select("*")
-    .not("owner_hr_id", "is", null)
-    .or("active.is.null,active.eq.true")
-    .order("display_name")
-    .limit(MARKETING_WORKSPACE_SAFETY_LIMIT);
-  if (pharmaciesResult.error) throw pharmaciesResult.error;
-
-  const pharmacyRows = (pharmaciesResult.data ?? []) as MarketingPharmacyDbRow[];
+  const pharmacyRows = await fetchAllRows<MarketingPharmacyDbRow>(
+    () =>
+      supabase
+        .from("marketing_pharmacies")
+        .select("*")
+        .not("owner_hr_id", "is", null)
+        .or("active.is.null,active.eq.true")
+        .order("display_name"),
+    "id",
+  );
   if (pharmacyRows.length === 0) return [];
 
   const employeesByHrId = employeeRowByHrId(employeeRows);
@@ -6200,24 +6217,17 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   assertMarketingAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [distributorsResult, linksResult, employeeRows] = await Promise.all([
+  const [distributorsResult, links, employeeRows] = await Promise.all([
     supabase.from("marketing_distributors").select("*").eq("active", true).order("display_name"),
-    supabase
-      .from("marketing_customer_pharmacies")
-      .select("*")
-      .eq("active", true)
-      .order("created_at", { ascending: false })
-      .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    fetchAllActiveMarketingLinks(supabase),
     loadEmployeeDirectoryRows(),
   ]);
 
   if (distributorsResult.error) throw distributorsResult.error;
-  if (linksResult.error) throw linksResult.error;
 
   const distributorRows = (distributorsResult.data ?? []) as MarketingDistributorDbRow[];
   const distributors = distributorRows.map(mapDistributor);
   const canActOnBehalf = canValidateMarketingOnBehalf(access);
-  const links = (linksResult.data ?? []) as MarketingCustomerPharmacyDbRow[];
 
   // Built even when the workspace is otherwise empty: a rep whose only validated customer belongs
   // to a colleague still has that colleague's pharmacies to reuse, and the very first customer he
@@ -6318,20 +6328,13 @@ export async function getMarketingCustomerDatabaseWorkspace(
   assertMarketingCustomerDatabaseAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [distributorsResult, linksResult] = await Promise.all([
+  const [distributorsResult, links] = await Promise.all([
     supabase.from("marketing_distributors").select("*").eq("active", true).order("display_name"),
-    supabase
-      .from("marketing_customer_pharmacies")
-      .select("*")
-      .eq("active", true)
-      .order("created_at", { ascending: false })
-      .limit(1000),
+    fetchAllActiveMarketingLinks(supabase),
   ]);
 
   if (distributorsResult.error) throw distributorsResult.error;
-  if (linksResult.error) throw linksResult.error;
 
-  const links = (linksResult.data ?? []) as MarketingCustomerPharmacyDbRow[];
   if (links.length === 0) {
     return {
       rows: [],
@@ -7872,15 +7875,12 @@ export async function getMarketingAllRequestsWorkspace(
 
   const supabase = getSupabaseAdmin();
   const [requestsResult, customersResult, employeeRows] = await Promise.all([
-    supabase
-      .from("marketing_requests")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    readAllMarketingRequests(() =>
+      supabase.from("marketing_requests").select("*").order("created_at", { ascending: false }),
+    ),
     supabase.from("marketing_customers").select("id, display_name"),
     loadEmployeeDirectoryRows(),
   ]);
-  if (requestsResult.error) throw requestsResult.error;
   if (customersResult.error) throw customersResult.error;
 
   const requestDbRows = (requestsResult.data ?? []) as MarketingRequestDbRow[];
@@ -8033,20 +8033,21 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   // queries stay direct.
   const [referenceData, draftsResult, approvedRequestsResult, returnedResult, inApprovalResult, rejectedResult] = await Promise.all([
     loadMarketingDraftReferenceDataCached(),
-    supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
-    supabase
-      .from("marketing_requests")
-      .select("*")
-      .in("status", approvedMarketingRequestStatuses)
-      .order("pay_date", { ascending: false, nullsFirst: false })
-      .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
-    supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
-    supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    readAllMarketingRequests(() => supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false })),
+    readAllMarketingRequests(() =>
+      supabase
+        .from("marketing_requests")
+        .select("*")
+        .in("status", approvedMarketingRequestStatuses)
+        .order("pay_date", { ascending: false, nullsFirst: false }),
+    ),
+    readAllMarketingRequests(() => supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false })),
+    readAllMarketingRequests(() => supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false })),
     // Rejected. Every other status a requester can reach was already queried above; this one was
     // not, so a refused request appeared in NO list on the workspace — not even to the person who
     // raised it. The rejection note is the single most valuable sentence on the whole record (it is
     // the only place the "why" is written down at all), and it was unreachable from any screen.
-    supabase.from("marketing_requests").select("*").eq("status", "rejected").order("rejected_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    readAllMarketingRequests(() => supabase.from("marketing_requests").select("*").eq("status", "rejected").order("rejected_at", { ascending: false, nullsFirst: false })),
   ]);
   const typesResult = { data: referenceData.types, error: null as null };
   const productsResult = { data: referenceData.products, error: null as null };
@@ -8057,11 +8058,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const distributorCodesResult = { data: referenceData.distributorCodes, error: null as null };
   const contactsResult = { data: referenceData.contacts, error: null as null };
 
-  if (draftsResult.error) throw draftsResult.error;
-  if (approvedRequestsResult.error) throw approvedRequestsResult.error;
-  if (returnedResult.error) throw returnedResult.error;
-  if (inApprovalResult.error) throw inApprovalResult.error;
-  if (rejectedResult.error) throw rejectedResult.error;
+  // The five request reads page in full and throw on a failed page, so there is no `.error` to check.
 
   const [employeeRows, rawProductOverride] = await Promise.all([
     loadEmployeeDirectoryRows(),
@@ -10649,14 +10646,12 @@ export async function listMarketingVenueMergeCandidates(
   assertMarketingControlAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const result = await supabase
-    .from("marketing_pharmacies")
-    .select("*")
-    .order("display_name", { ascending: true })
-    .limit(MARKETING_WORKSPACE_SAFETY_LIMIT);
-  if (result.error) throw result.error;
+  const venueRows = await fetchAllRows<MarketingPharmacyDbRow>(
+    () => supabase.from("marketing_pharmacies").select("*").order("display_name", { ascending: true }),
+    "id",
+  );
 
-  return ((result.data ?? []) as MarketingPharmacyDbRow[]).map((row) => {
+  return venueRows.map((row) => {
     const venue = mapMarketingPharmacy(row);
     return {
       active: venue.active,

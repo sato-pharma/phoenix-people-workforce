@@ -5,6 +5,7 @@ import { assertPermission, canAccess, resolveEmployeeIdentityId, type AccessCont
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   assertVisualAidFileAllowed,
@@ -167,11 +168,17 @@ export async function listVisualAids(access: AccessContext): Promise<VisualAidLi
     return { aids: [], allLines: [...VISUAL_AID_LINES], canManage: manage, lines };
   }
 
-  const base = getSupabaseAdmin().from(TABLE).select(COLUMNS).in("line_name", lines);
-  const { data, error } = await (manage ? base : base.eq("status", "active")).order("created_at", { ascending: false });
-  if (error) throw new Error(`Could not read the visual aids: ${error.message}`);
-
-  const rows = (data ?? []) as VisualAidRow[];
+  // Every aid of the viewer's lines, paged: the library is one list, and a read that stops at the
+  // server's row ceiling would drop its oldest aids with no word.
+  let rows: VisualAidRow[];
+  try {
+    rows = await fetchAllRows<VisualAidRow>(() => {
+      const base = getSupabaseAdmin().from(TABLE).select(COLUMNS).in("line_name", lines);
+      return (manage ? base : base.eq("status", "active")).order("created_at", { ascending: false });
+    }, "id");
+  } catch (error) {
+    throw new Error(`Could not read the visual aids: ${error instanceof Error ? error.message : (error as { message?: string })?.message ?? String(error)}`);
+  }
   // Belt and braces over the query: the same predicate the file route applies decides what a reader
   // may see, so the list can never offer an aid the viewer would then be refused.
   const visible = manage ? rows : rows.filter((row) => canReaderOpenVisualAid({ lineName: row.line_name, status: row.status }, lines));

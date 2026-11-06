@@ -23,6 +23,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
@@ -274,17 +275,9 @@ async function resolveActorNames(ids: Array<string | null>): Promise<Map<string,
  */
 async function loadAwaitingLeavers(taskedHrIds: Set<string>): Promise<MailboxAwaitingLeaver[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,nickname,work_email,job_title,last_working_date,employment_status")
-    .in("employment_status", [...LEAVER_STATUSES])
-    .not("work_email", "is", null)
-    // Explicit order, because an unbounded select silently stops at 1000 rows with no marker.
-    .order("last_working_date", { ascending: false, nullsFirst: false });
-  if (error) throw new Error(mailboxOffboardingErrorMessage(error));
-
-  const awaiting: MailboxAwaitingLeaver[] = [];
-  for (const row of (data ?? []) as Array<{
+  // Paged to the last row. An ORDER BY does not lift the response cap: an unpaged select silently
+  // stops at one response's worth of leavers with no marker, and the rest would never be offered.
+  type LeaverRow = {
     hr_id: string;
     full_name: string;
     nickname: string | null;
@@ -292,7 +285,25 @@ async function loadAwaitingLeavers(taskedHrIds: Set<string>): Promise<MailboxAwa
     job_title: string | null;
     last_working_date: string | null;
     employment_status: string | null;
-  }>) {
+  };
+  let leavers: LeaverRow[];
+  try {
+    leavers = await fetchAllRows<LeaverRow>(
+      () =>
+        supabase
+          .from("employees")
+          .select("hr_id,full_name,nickname,work_email,job_title,last_working_date,employment_status")
+          .in("employment_status", [...LEAVER_STATUSES])
+          .not("work_email", "is", null)
+          .order("last_working_date", { ascending: false, nullsFirst: false }),
+      "hr_id",
+    );
+  } catch (error) {
+    throw new Error(mailboxOffboardingErrorMessage(error));
+  }
+
+  const awaiting: MailboxAwaitingLeaver[] = [];
+  for (const row of leavers) {
     const email = String(row.work_email ?? "").trim();
     if (!email) continue;
     if (taskedHrIds.has(String(row.hr_id).toLowerCase())) continue;
@@ -310,14 +321,22 @@ async function loadAwaitingLeavers(taskedHrIds: Set<string>): Promise<MailboxAwa
 
 export async function getMailboxOffboardingDashboardData(): Promise<MailboxOffboardingDashboardData> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("mailbox_offboarding_tasks")
-    .select(TASK_COLUMNS)
-    .order("last_working_date", { ascending: false, nullsFirst: false })
-    .order("opened_at", { ascending: false });
-  if (error) throw new Error(mailboxOffboardingErrorMessage(error));
-
-  const rows = (data ?? []) as TaskRow[];
+  // Every task, paged to the last row: the "awaiting" list below is everyone with NO task, so one
+  // task cut off by a response cap would put a closed mailbox back on the page as awaiting.
+  let rows: TaskRow[];
+  try {
+    rows = await fetchAllRows<TaskRow>(
+      () =>
+        supabase
+          .from("mailbox_offboarding_tasks")
+          .select(TASK_COLUMNS)
+          .order("last_working_date", { ascending: false, nullsFirst: false })
+          .order("opened_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(mailboxOffboardingErrorMessage(error));
+  }
   const todayIso = currentCairoDateOnlyIso();
   const names = await resolveActorNames(
     rows.flatMap((row) => [row.password_reset_by, row.app_passwords_cleared_by, row.disposition_by]),

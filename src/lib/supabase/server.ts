@@ -24,6 +24,7 @@ import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
 import { logWarning } from "@/lib/observability/log";
 import { scrubSentryPath } from "@/lib/observability/sentry-policy";
 import { recordTiming } from "@/lib/observability/timings";
+import { rowCapFinding, shouldNoteRowCap } from "@/lib/supabase/row-cap-watch";
 
 const supabaseRequestTimeoutMs = 15000;
 
@@ -91,6 +92,30 @@ function describeSupabaseCall(input: RequestInfo | URL, init: RequestInit | unde
     return { method, path: scrubSentryPath(new URL(raw).pathname) };
   } catch {
     return { method, path: "unknown" };
+  }
+}
+
+/**
+ * Reports a read that came back cut at PostgREST's 1,000-row ceiling (see row-cap-watch.ts). Reads the
+ * response headers only and logs the relation name, never a filter value. Never throws: a watch must
+ * not be able to fail the read it is watching.
+ */
+function watchRowCap(input: RequestInfo | URL, init: RequestInit | undefined, response: Response): void {
+  try {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const requestHeaders = new Headers(init?.headers ?? (typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined));
+    const finding = rowCapFinding(
+      { method: requestMethod(input, init), url, hasRange: requestHeaders.has("range") },
+      { status: response.status, contentRange: response.headers.get("content-range") },
+    );
+    if (finding && shouldNoteRowCap(finding.table)) {
+      logWarning("PostgREST read ended at the 1,000-row ceiling", {
+        labels: { event: "supabase_row_ceiling" },
+        context: { table: finding.table, returned: finding.returned, total: finding.total, proven: finding.proven },
+      });
+    }
+  } catch {
+    // Deliberately empty: see the docstring.
   }
 }
 
@@ -232,6 +257,7 @@ function createSupabaseClient(apiKey: string, requestTimeoutMs = supabaseRequest
             break;
           }
 
+          watchRowCap(input, init, response);
           return response;
         },
       },

@@ -57,6 +57,7 @@ import {
   type OffboardingDbRow,
   type ProfileDbRow,
 } from "@/lib/hiring-pack/service";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Said out loud rather than left as a bare -1: this field does not depend on who is being printed. */
@@ -157,20 +158,26 @@ export async function computeFieldFillRates(keySets: string[][]): Promise<FieldF
 async function loadRosterRecords(): Promise<RosterRecords> {
   const supabase = getSupabaseAdmin();
 
-  const { data: employees, error } = await supabase
-    .from("employees")
-    .select(HIRING_PACK_EMPLOYEE_COLUMNS)
-    .or(
-      `employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST},employment_status.in.${DEPARTED_EMPLOYMENT_STATUSES_IN_LIST}`,
-    )
-    .limit(2000)
-    .returns<EmployeeDbRow[]>();
-
-  if (error) throw new Error(error.message);
-  // Annotated rather than inferred: `.select()` over a shared column CONSTANT hands back a row type
-  // the client cannot narrow from a literal, so `rows` would be `any[]` and every read off it would
-  // typecheck against nothing at all.
-  const rows: EmployeeDbRow[] = employees ?? [];
+  // The whole roster, paged (hr_id is the tiebreak): a fixed row count would shrink the "filled"
+  // numbers for the same people every time without ever saying so. Typed through the pager's
+  // generic: `.select()` over a shared column CONSTANT hands back a row type the client cannot
+  // narrow from a literal, so the rows would be `any[]` and every read off them would typecheck
+  // against nothing at all.
+  let rows: EmployeeDbRow[];
+  try {
+    rows = await fetchAllRows<EmployeeDbRow>(
+      () =>
+        supabase
+          .from("employees")
+          .select(HIRING_PACK_EMPLOYEE_COLUMNS)
+          .or(
+            `employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST},employment_status.in.${DEPARTED_EMPLOYMENT_STATUSES_IN_LIST}`,
+          ),
+      "hr_id",
+    );
+  } catch (error) {
+    throw new Error((error as { message?: string } | null)?.message ?? String(error));
+  }
   if (rows.length === 0) return [];
 
   // The department table whole, once — eleven rows, against one join per employee. From the shared

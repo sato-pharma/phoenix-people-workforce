@@ -26,6 +26,7 @@ import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitm
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { logError } from "@/lib/observability/log";
 import type { Candidate } from "@/lib/recruitment/types";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 export type CandidateMergeResult = {
   borrowedFields: string[];
@@ -387,11 +388,14 @@ async function moveDeduped(
   const supabase = recruitmentDb();
   const columns = [...new Set([spec.identityColumn, spec.keyColumn, ...(spec.onlyWhen ? [spec.onlyWhen.column] : [])])];
 
-  const read = async (candidateId: string) => {
-    const { data, error } = await supabase.from(spec.table).select(columns.join(",")).eq("candidate_id", candidateId);
-    if (error) throw error;
-    return (data ?? []) as unknown as Record<string, unknown>[];
-  };
+  // Every row of the candidate, paged to a short page by the table's own unique column. The split
+  // below decides what moves and what is blocked, so a row cut off by the response cap would be
+  // neither moved nor compared against the survivor's.
+  const read = (candidateId: string) =>
+    fetchAllRows<Record<string, unknown>>(
+      () => supabase.from(spec.table).select(columns.join(",")).eq("candidate_id", candidateId),
+      spec.identityColumn,
+    );
   const [duplicateRows, survivorRows] = await Promise.all([read(fromCandidateId), read(toCandidateId)]);
 
   // A row outside a PARTIAL index's predicate is unconstrained, so it reports no key and always
@@ -447,14 +451,17 @@ async function copyAppendOnlyRows(
   mergedOn: string,
 ): Promise<number> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from(spec.table)
-    .select(spec.columns.join(","))
-    .eq("candidate_id", fromCandidateId)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-
-  const rows = (data ?? []) as unknown as Record<string, unknown>[];
+  // Every row, paged to a short page: the originals are DELETED below with one filter on the
+  // candidate, so a read cut off by the response cap would delete rows that were never copied.
+  const rows = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from(spec.table)
+        .select(spec.columns.join(","))
+        .eq("candidate_id", fromCandidateId)
+        .order("created_at", { ascending: true }),
+    "id",
+  );
   if (rows.length === 0) return 0;
 
   const copies = rows.map((row) => {

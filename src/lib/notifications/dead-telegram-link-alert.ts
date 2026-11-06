@@ -31,6 +31,7 @@ import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The exact sentence the Telegram sender writes when the recipient has no live link. */
@@ -121,16 +122,20 @@ async function namesAndLinkStatus(hrIds: ReadonlyArray<string>): Promise<Map<str
 export async function runDeadTelegramLinkAlert(): Promise<DeadTelegramLinkRun> {
   try {
     const since = new Date(Date.now() - WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-    const { data, error } = await getSupabaseAdmin()
-      .from("notification_deliveries")
-      .select("recipient_hr_id")
-      .eq("channel", "telegram")
-      .eq("last_error", NOT_CONNECTED_ERROR)
-      .gte("created_at", since)
-      .limit(5000);
-    if (error) throw error;
+    // Paged, every dropped message of the window: the alert counts them, and a cut read would under-count.
+    const supabase = getSupabaseAdmin();
+    const data = await fetchAllRows<{ recipient_hr_id?: string | null }>(
+      () =>
+        supabase
+          .from("notification_deliveries")
+          .select("recipient_hr_id")
+          .eq("channel", "telegram")
+          .eq("last_error", NOT_CONNECTED_ERROR)
+          .gte("created_at", since),
+      "id",
+    );
 
-    const people = rollUpDrops((data ?? []) as Array<{ recipient_hr_id?: string | null }>);
+    const people = rollUpDrops(data);
     // The good outcome: every link that is being written to is working.
     if (people.length === 0) return { dropped: 0, people: 0, delivered: 0, skippedReason: "nothing_dropped" };
 

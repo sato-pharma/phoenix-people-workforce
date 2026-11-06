@@ -50,6 +50,7 @@ import { checkVisitLocation } from "@/lib/phoenix-crm/geo";
 import { BRICK_TRUST_KM, OWN_AREA_REACH_KM, resolvePlaceLocation, territoryOfSeat } from "@/lib/phoenix-crm/server/place-location";
 import { loadPhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 import { placesFor, restampVisitLocations, type MeasurablePlace } from "@/lib/phoenix-crm/server/visit-locations";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -99,10 +100,8 @@ async function readAll(table: string, columns: string, apply: (query: any) => an
 }
 
 async function loadSeatAreas(): Promise<Map<string, string | null>> {
-  const { data, error } = await getSupabaseAdmin().from("au_v_org_tree").select("seat_id, area_code");
-  if (error) throw new Error(`au_v_org_tree: ${error.message}`);
-  if ((data ?? []).length >= 1000) throw new Error("au_v_org_tree hit PostgREST's 1,000-row cap; paginate before trusting it");
-  return new Map(((data ?? []) as Row[]).map((row) => [String(row.seat_id), text(row.area_code)]));
+  const data = await fetchAllRows<Row>(() => getSupabaseAdmin().from("au_v_org_tree").select("seat_id, area_code"), "seat_id");
+  return new Map(data.map((row) => [String(row.seat_id), text(row.area_code)]));
 }
 
 const PLACE_COLUMNS =

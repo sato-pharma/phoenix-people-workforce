@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { compactHrKey } from "./feeders.ts";
@@ -121,15 +122,13 @@ export async function getHireDateMap(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.from("employees").select("hr_id,hire_date");
-    if (error) {
-      logError("Failed to load employee hire-date map for payroll copilot report export", {
-        labels: { event: "report_exports_hire_date_load_failed" },
-        error,
-      });
-      return map;
-    }
-    for (const row of (data ?? []) as Array<{ hr_id: string; hire_date: string | null }>) {
+    // The WHOLE roster, page by page; a failed page falls to the catch below, which logs it and
+    // hands back the (empty) map as before.
+    const rows = await fetchAllRows<{ hr_id: string; hire_date: string | null }>(
+      () => supabase.from("employees").select("hr_id,hire_date"),
+      "hr_id",
+    );
+    for (const row of rows) {
       const key = compactHrKey(String(row.hr_id ?? ""));
       if (key) map.set(key, row.hire_date ? String(row.hire_date).slice(0, 10) : "");
     }

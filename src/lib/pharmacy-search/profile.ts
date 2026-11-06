@@ -12,7 +12,8 @@ import {
   loadSalesReleaseKeys,
   readsUnpublishedSalesTools,
 } from "@/lib/sales/unpublished-sales-access";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 import { googleMapsUrlFor, resolvePharmacyCoordinates } from "./locate";
 import { DEFAULT_RADIUS_KM, findKnownHospitals, findNearbyContacts, mergeHospitals } from "./nearby";
@@ -208,19 +209,34 @@ async function loadSales(
   const clientCodes = [...new Set(pairs.map((pair) => pair.clientCode))];
   const distributorCodes = [...new Set(pairs.map((pair) => pair.distributorCode))];
 
-  const { data, error } = await supabase
-    .from("source_of_sales_customer_directory_rollup")
-    .select("period, distributor_code, client_code, product_code, effective_units")
-    .in("client_code", clientCodes)
-    .in("distributor_code", distributorCodes)
-    .limit(4000);
-
-  if (error) throw new Error(`Sales history lookup failed: ${error.message}`);
+  // Every row of the pharmacy's history, paged: the units are summed per month, so a fixed ceiling
+  // (this read used to stop at 4,000, in no stated order) would drop an arbitrary part of a month's
+  // units and print the shortfall as the pharmacy's real figure. The rollup's key is the six columns
+  // below; the last, `is_direct`, is appended by the pager, which makes the order total.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("source_of_sales_customer_directory_rollup")
+          .select("period, distributor_code, client_code, product_code, effective_units")
+          .in("client_code", clientCodes)
+          .in("distributor_code", distributorCodes)
+          .order("batch_id", { ascending: true })
+          .order("period", { ascending: true })
+          .order("distributor_code", { ascending: true })
+          .order("client_code", { ascending: true })
+          .order("product_code", { ascending: true }),
+      "is_direct",
+    );
+  } catch (error) {
+    throw new Error(`Sales history lookup failed: ${toQueryError(error).message}`);
+  }
 
   const allowed = new Set(pairs.map((pair) => `${pair.distributorCode}:${pair.clientCode}`));
   const byPeriod = new Map<string, { products: Set<string>; units: number }>();
 
-  for (const row of data ?? []) {
+  for (const row of data) {
     const key = `${String(row.distributor_code ?? "")}:${String(row.client_code ?? "")}`;
     if (!allowed.has(key)) continue;
     const period = String(row.period ?? "").trim();

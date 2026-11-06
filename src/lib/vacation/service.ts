@@ -38,6 +38,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { isUuid } from "@/lib/http/uuid";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   isWithinManagerHierarchy,
   reportsToManagerSeat,
@@ -3051,12 +3052,6 @@ export async function attendanceChargedDaysInPeriod(
 }
 
 /**
- * A full ledger read past this many rows is refused rather than silently truncated: a balance that
- * forgot days already spent says more is left than there is.
- */
-const ANNUAL_BALANCE_LEDGER_READ_LIMIT = 20_000;
-
-/**
  * EVERY annual-balance ledger day, for `buildEmployeeEligibilityRows` — the Entitlements tab's
  * counterpart to `attendanceChargedDaysInPeriod` and `balanceSettledDaysInPeriod` above, which take
  * one employee and one period each and would be two round trips per row of the report.
@@ -3082,39 +3077,37 @@ export async function annualBalanceLedgerDays(
     const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
     return code === "PGRST205" || code === "42P01" || code === "42703" || message.includes("could not find the table");
   };
-  const rowsOf = (label: string, result: { data?: unknown; error?: unknown }) => {
-    if (result.error) {
-      if (tableMissing(result.error)) return [];
-      const message = (result.error as { message?: unknown }).message;
-      throw new Error(`Failed to read ${label}: ${typeof message === "string" ? message : String(result.error)}`);
+  // Every row, paged to the last: a balance that forgot days already spent says more is left than there is.
+  const readAll = async (label: string, buildQuery: () => unknown) => {
+    try {
+      return await fetchAllRows<Record<string, unknown>>(buildQuery, "id");
+    } catch (error) {
+      if (tableMissing(error)) return [];
+      const message = (error as { message?: unknown } | null)?.message;
+      throw new Error(`Failed to read ${label}: ${typeof message === "string" ? message : String(error)}`);
     }
-    const rows = (result.data ?? []) as Array<Record<string, unknown>>;
-    if (rows.length >= ANNUAL_BALANCE_LEDGER_READ_LIMIT) {
-      throw new Error(`${label} returned ${rows.length} rows or more, so the balance would be understated`);
-    }
-    return rows;
   };
 
-  const [chargeRead, settlementRead] = await Promise.all([
-    client
-      .from("attendance_annual_balance_charges")
-      .select("employee_hr_id,work_date,days")
-      .limit(ANNUAL_BALANCE_LEDGER_READ_LIMIT),
-    client
-      .from("payroll_copilot_vacation_settlements")
-      .select("employee_hr_id_compact,start_date,balance_days_consumed")
-      .in("settlement_method", ["balance", "partial_balance", "defer_to_balance"])
-      .is("superseded_at", null)
-      .limit(ANNUAL_BALANCE_LEDGER_READ_LIMIT),
+  const [chargeRows, settlementRows] = await Promise.all([
+    readAll("the annual balance charges", () =>
+      client.from("attendance_annual_balance_charges").select("employee_hr_id,work_date,days"),
+    ),
+    readAll("the vacation balance settlements", () =>
+      client
+        .from("payroll_copilot_vacation_settlements")
+        .select("employee_hr_id_compact,start_date,balance_days_consumed")
+        .in("settlement_method", ["balance", "partial_balance", "defer_to_balance"])
+        .is("superseded_at", null),
+    ),
   ]);
 
   return [
-    ...rowsOf("the annual balance charges", chargeRead as { data?: unknown; error?: unknown }).map((row) => ({
+    ...chargeRows.map((row) => ({
       employeeHrId: String(row.employee_hr_id ?? ""),
       workDate: String(row.work_date ?? ""),
       days: numberValue(row.days),
     })),
-    ...rowsOf("the vacation balance settlements", settlementRead as { data?: unknown; error?: unknown }).map((row) => ({
+    ...settlementRows.map((row) => ({
       employeeHrId: String(row.employee_hr_id_compact ?? ""),
       workDate: String(row.start_date ?? ""),
       days: numberValue(row.balance_days_consumed),
@@ -5945,6 +5938,7 @@ async function loadAllVacationRequestRowsRaw(): Promise<VacationRequestDbRow[]> 
         .from(vacationRequestsTable)
         .select("*")
         .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .range(from, to);
       if (error) throwVacationDatabaseError(error);
       const page = (data ?? []) as VacationRequestDbRow[];
@@ -6751,6 +6745,8 @@ async function retentionCount(table: string, column: string, cutoff: string) {
   }
 }
 
+// One purge run takes at most 500 requests: the file delete and the row updates after it are not one
+// transaction, so the batch is the bound on what a crash can leave half-done. Run it again for the next 500.
 async function fetchEvidencePurgeCandidates(cutoff: string) {
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -6798,13 +6794,18 @@ type VacationPurgeManifestRow = {
  */
 async function fetchRequestHistoryPurgeManifest(cutoff: string): Promise<VacationPurgeManifestRow[]> {
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from(vacationRequestsTable)
-      .select("id,employee_hr_id,employee_name,vacation_type,start_date,end_date,status,created_at")
-      .lt("created_at", cutoff)
-      .order("created_at", { ascending: true });
-    if (error) throwVacationDatabaseError(error);
-    return (data ?? []) as VacationPurgeManifestRow[];
+    // Paged, never capped: the delete that follows takes EVERY row past the cutoff, so a short
+    // manifest would leave destroyed rows with no record.
+    const client = getSupabaseAdmin();
+    return await fetchAllRows<VacationPurgeManifestRow>(
+      () =>
+        client
+          .from(vacationRequestsTable)
+          .select("id,employee_hr_id,employee_name,vacation_type,start_date,end_date,status,created_at")
+          .lt("created_at", cutoff)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
   } catch (error) {
     if (!isVacationSchemaMissingError(error)) throw error;
     return [];

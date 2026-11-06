@@ -15,6 +15,7 @@
 // exactly this triple, through `occurrenceKey`, so they cannot drift.
 
 import { logWarning } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { formatPlainDateIso, type PlainDate } from "./periods";
@@ -125,14 +126,20 @@ export async function recordMilestonePrint(row: MilestonePrintRow): Promise<void
  */
 export async function loadMilestonePrintMarks(from: PlainDate, to: PlainDate): Promise<Set<string>> {
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("milestone_card_prints")
-      .select("subject_hr_id,period_spec,derived_on")
-      .gte("derived_on", formatPlainDateIso(from))
-      .lte("derived_on", formatPlainDateIso(to));
-    if (error) throw error;
+    // Paged to the last row: a window with more prints than one response carries must not lose the
+    // rest, or the "already printed" badge would silently go missing on those occasions.
+    const supabase = getSupabaseAdmin();
+    const data = await fetchAllRows<{ subject_hr_id?: string; period_spec?: string; derived_on?: string }>(
+      () =>
+        supabase
+          .from("milestone_card_prints")
+          .select("subject_hr_id,period_spec,derived_on")
+          .gte("derived_on", formatPlainDateIso(from))
+          .lte("derived_on", formatPlainDateIso(to)),
+      "id",
+    );
     const keys = new Set<string>();
-    for (const row of (data ?? []) as Array<{ subject_hr_id?: string; period_spec?: string; derived_on?: string }>) {
+    for (const row of data) {
       if (!row.subject_hr_id || !row.period_spec || !row.derived_on) continue;
       keys.add(occurrenceKey({ subjectHrId: row.subject_hr_id, periodSpec: row.period_spec, derivedOn: row.derived_on }));
     }
@@ -170,28 +177,32 @@ export type MilestonePrintHistoryRow = {
  * nothing rather than breaking the page; the log is a record, not a control, so a read failure must
  * not cost anyone the rest of the module.
  *
- * `limit` bounds the rows read into memory; the caller states it, and a window with more than that
- * is truncated newest-first (the on-screen list stays a list, the XLSX carries the same rows).
+ * EVERY row of the window is read, page by page. This is a record a Super Admin looks back through,
+ * and the XLSX carries the same rows, so a fixed row ceiling would silently drop the OLDEST prints of
+ * a long window with no sign on the page.
  */
 export async function loadMilestonePrintHistory(
   fromIso: string,
   toIso: string,
-  limit = 1000,
 ): Promise<MilestonePrintHistoryRow[]> {
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("milestone_card_prints")
-      .select(
-        "created_at,subject_hr_id,printed_name,period_spec,derived_on,milestone_on,format,variant,file_name,photo_source,actor_hr_id,actor_name,actor_login_id",
-      )
-      // `created_at` is a timestamptz; the window is print DATES, so the upper bound reaches the end
-      // of `toIso` rather than its midnight, or a card printed later that day would fall outside it.
-      .gte("created_at", `${fromIso}T00:00:00Z`)
-      .lte("created_at", `${toIso}T23:59:59.999Z`)
-      .order("created_at", { ascending: false })
-      .limit(Math.max(1, Math.min(limit, 5000)));
-    if (error) throw error;
-    return ((data ?? []) as MilestonePrintHistoryRow[]).filter((row) => Boolean(row.subject_hr_id));
+    const supabase = getSupabaseAdmin();
+    const data = await fetchAllRows<MilestonePrintHistoryRow>(
+      () =>
+        supabase
+          .from("milestone_card_prints")
+          .select(
+            "created_at,subject_hr_id,printed_name,period_spec,derived_on,milestone_on,format,variant,file_name,photo_source,actor_hr_id,actor_name,actor_login_id",
+          )
+          // `created_at` is a timestamptz; the window is print DATES, so the upper bound reaches the end
+          // of `toIso` rather than its midnight, or a card printed later that day would fall outside it.
+          .gte("created_at", `${fromIso}T00:00:00Z`)
+          .lte("created_at", `${toIso}T23:59:59.999Z`)
+          // Newest first; the unique `id` the pager appends settles rows printed in the same instant.
+          .order("created_at", { ascending: false }),
+      "id",
+    );
+    return data.filter((row) => Boolean(row.subject_hr_id));
   } catch (error) {
     logWarning("Milestone print history unreadable", { error, labels: { event: "milestone_print_history_failed" } });
     return [];
@@ -215,15 +226,23 @@ export async function loadSeenOccurrenceKeys(
   const viewer = viewerHrId.trim().toUpperCase();
   if (!viewer) return new Set();
   try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("milestone_notice_marks")
-      .select("subject_hr_id,period_spec,derived_on")
-      .eq("seen_by_hr_id", viewer)
-      .gte("derived_on", formatPlainDateIso(from))
-      .lte("derived_on", formatPlainDateIso(to));
-    if (error) throw error;
+    // Paged to the last row. This table has no `id`; for one viewer the unique key is the other three
+    // columns of its unique constraint, so they are ordered together and `period_spec` goes last.
+    const supabase = getSupabaseAdmin();
+    const data = await fetchAllRows<{ subject_hr_id?: string; period_spec?: string; derived_on?: string }>(
+      () =>
+        supabase
+          .from("milestone_notice_marks")
+          .select("subject_hr_id,period_spec,derived_on")
+          .eq("seen_by_hr_id", viewer)
+          .gte("derived_on", formatPlainDateIso(from))
+          .lte("derived_on", formatPlainDateIso(to))
+          .order("derived_on", { ascending: true })
+          .order("subject_hr_id", { ascending: true }),
+      "period_spec",
+    );
     const keys = new Set<string>();
-    for (const row of (data ?? []) as Array<{ subject_hr_id?: string; period_spec?: string; derived_on?: string }>) {
+    for (const row of data) {
       if (!row.subject_hr_id || !row.period_spec || !row.derived_on) continue;
       keys.add(occurrenceKey({ subjectHrId: row.subject_hr_id, periodSpec: row.period_spec, derivedOn: row.derived_on }));
     }

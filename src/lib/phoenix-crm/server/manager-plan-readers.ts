@@ -515,16 +515,19 @@ export async function loadManagerOwnVisitDays(input: {
  */
 export async function loadManagerVisitAreas(input: { start: string; end: string }): Promise<Array<{ areaName: string; date: string; hrId: string }>> {
   if (input.end < input.start) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from("phoenix_crm_manager_visits")
-    .select("manager_hr_id,visit_date,area_name")
-    .gte("visit_date", input.start)
-    .lte("visit_date", input.end)
-    .eq("is_test", false)
-    .not("area_name", "is", null)
-    .limit(5000);
-  if (error) throw error;
-  return (data ?? []).flatMap((row) => {
+  // Paged to the last visit (keyset on the id, as the manager's own visit days above), never a fixed ceiling.
+  const data = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_manager_visits")
+        .select("id,manager_hr_id,visit_date,area_name")
+        .gte("visit_date", input.start)
+        .lte("visit_date", input.end)
+        .eq("is_test", false)
+        .not("area_name", "is", null),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  return data.flatMap((row) => {
     const hrId = textOrNull(row.manager_hr_id);
     const date = (textOrNull(row.visit_date) ?? "").slice(0, 10);
     const areaName = textOrNull(row.area_name);

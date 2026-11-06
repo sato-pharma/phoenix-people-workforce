@@ -117,11 +117,12 @@ function env() {
 /**
  * PostgREST answers at most 1,000 rows and says nothing when it truncates, so every read that could
  * exceed that — fourteen reps' customer lists are 1,971 rows between them — pages explicitly.
+ * `orderBy` is the table's unique key, so the walk skips and repeats no row between pages.
  */
-async function all(build) {
+async function all(build, orderBy) {
   const rows = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await build().range(from, from + 999);
+    const { data, error } = await build().order(orderBy, { ascending: true }).range(from, from + 999);
     if (error) throw new Error(error.message);
     const page = data ?? [];
     rows.push(...page);
@@ -138,25 +139,34 @@ export async function readDay(day = cairoToday()) {
 
   const [holiday, tree, visits, allPlaces, dayStarts, unplanned, requests] = await Promise.all([
     readConfirmedHoliday(db, day),
-    all(() => db.from("au_v_org_tree").select("seat_id, parent_seat_id, line_name, area_name, occupant_hr_id, is_vacant")),
-    all(() =>
-      db
-        .from("phoenix_crm_visits")
-        .select("seat_id, customer_id, list_type, captured_at, location_flag, distance_meters")
-        .eq("is_test", false)
-        .eq("visit_date", day),
+    all(() => db.from("au_v_org_tree").select("seat_id, parent_seat_id, line_name, area_name, occupant_hr_id, is_vacant"), "seat_id"),
+    all(
+      () =>
+        db
+          .from("phoenix_crm_visits")
+          .select("seat_id, customer_id, list_type, captured_at, location_flag, distance_meters")
+          .eq("is_test", false)
+          .eq("visit_date", day),
+      "id",
     ),
-    all(() =>
-      db
-        .from("phoenix_crm_places")
-        .select("seat_id, customer_id, created_at, status, photo_accuracy_meters, pin_accuracy_meters")
-        .eq("is_test", false),
+    all(
+      () =>
+        db
+          .from("phoenix_crm_places")
+          .select("seat_id, customer_id, created_at, status, photo_accuracy_meters, pin_accuracy_meters")
+          .eq("is_test", false),
+      "id",
     ),
-    all(() => db.from("phoenix_crm_day_starts").select("seat_id, started_at").eq("is_test", false).eq("started_on", day)),
-    all(() =>
-      db.from("phoenix_crm_unplanned_visits").select("seat_id, customer_id, status, clarification").eq("is_test", false).eq("visit_date", day),
+    all(() => db.from("phoenix_crm_day_starts").select("seat_id, started_at").eq("is_test", false).eq("started_on", day), "id"),
+    all(
+      () =>
+        db.from("phoenix_crm_unplanned_visits").select("seat_id, customer_id, status, clarification").eq("is_test", false).eq("visit_date", day),
+      "visit_id",
     ),
-    all(() => db.from("phoenix_crm_list_requests").select("seat_id, kind, customer_name, requested_at").eq("is_test", false).eq("status", "pending")),
+    all(
+      () => db.from("phoenix_crm_list_requests").select("seat_id, kind, customer_name, requested_at").eq("is_test", false).eq("status", "pending"),
+      "id",
+    ),
   ]);
 
   const repSeats = tree.filter((row) => TEAM_SEATS.includes(row.parent_seat_id));
@@ -164,17 +174,19 @@ export async function readDay(day = cairoToday()) {
   const seatIds = repSeats.filter((row) => !row.is_vacant).map((row) => row.seat_id);
 
   const [customers, plans, people] = await Promise.all([
-    all(() => db.from("phoenix_crm_customers").select("id, seat_id, name, status, validated_at").eq("is_test", false).in("seat_id", seatIds)),
-    all(() => db.from("phoenix_crm_plans").select("id, seat_id").eq("is_test", false).in("seat_id", seatIds).in("status", ["submitted", "approved"])),
-    all(() =>
-      db
-        .from("employees")
-        .select("hr_id, full_name, job_title")
-        .in("hr_id", [...new Set([...repSeats, ...dmSeats].map((row) => row.occupant_hr_id).filter(Boolean))]),
+    all(() => db.from("phoenix_crm_customers").select("id, seat_id, name, status, validated_at").eq("is_test", false).in("seat_id", seatIds), "id"),
+    all(() => db.from("phoenix_crm_plans").select("id, seat_id").eq("is_test", false).in("seat_id", seatIds).in("status", ["submitted", "approved"]), "id"),
+    all(
+      () =>
+        db
+          .from("employees")
+          .select("hr_id, full_name, job_title")
+          .in("hr_id", [...new Set([...repSeats, ...dmSeats].map((row) => row.occupant_hr_id).filter(Boolean))]),
+      "hr_id",
     ),
   ]);
   const planItems = plans.length
-    ? await all(() => db.from("phoenix_crm_plan_items").select("plan_id").eq("plan_date", day).in("plan_id", plans.map((plan) => plan.id)))
+    ? await all(() => db.from("phoenix_crm_plan_items").select("plan_id").eq("plan_date", day).in("plan_id", plans.map((plan) => plan.id)), "id")
     : [];
 
   const names = new Map(people.map((row) => [row.hr_id, row]));
