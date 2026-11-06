@@ -115,7 +115,9 @@
  *     Medical Rep holds);
  *   - the outstation trip workload (`getRepTripVisitWorkload` `includePhoenixCheckins`), only for an
  *     approver or a manager looking at SOMEONE ELSE's trip and for the Super Admin's claim check — the
- *     employee's own trip panel stays blind (7 Nov 2026).
+ *     employee's own trip panel stays blind (7 Nov 2026);
+ *   - Employee 360's GPS module (`fetchCheckinRows` `includePhoenixCheckins`), only for a reader whose
+ *     row sight on the subject is not "none" — never the subject on his own record (7 Nov 2026).
  * Every other check-in reader reads iReports360 check-ins only, so a started team's people show none
  * there within the start — see "Which still do not".
  *

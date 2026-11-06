@@ -58,6 +58,7 @@ import {
   classifyVisit,
   customerKeyOf,
   defaultWindow,
+  employee360ReaderSeesPhoenixCheckins,
   fetchCheckinRows,
   fetchVisitRows,
   isProductiveVisit,
@@ -1988,7 +1989,9 @@ export async function getEmployee360Profile(
   const holidaysPromise = loadCallRateHolidays(window.from, window.to);
   const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact, fieldBenchmarks, coaching] = await Promise.all([
     fetchVisitRows(hrId, window),
-    fetchCheckinRows(hrId, window),
+    fetchCheckinRows(hrId, window, {
+      includePhoenixCheckins: employee360ReaderSeesPhoenixCheckins(hrId, { hrId: viewerHrId, role: viewerRole }),
+    }),
     salesPromise,
     getTrainingManagerHrIds(),
     includeExpenses ? getEmployeeExpenses(hrId, window) : Promise.resolve(emptyEmployeeExpenses()),

@@ -154,7 +154,7 @@ export default async function Employee360DetailPage({
   try {
     const [cur, prev] = await Promise.all([
       getEmployee360Profile(target.hrId, nameByHrId, period.current, teamHrIds, showExpenses, access.role, roleCategory, access.hrId),
-      getEmployee360Summary(target.hrId, period.previous),
+      getEmployee360Summary(target.hrId, period.previous, { hrId: access.hrId, role: access.role }),
     ]);
     summary = cur;
     previous = prev;

@@ -1771,12 +1771,12 @@ const PHOENIX_CHECKIN_READERS = [
  */
 const VIEWER_GATED_CHECKIN_READERS: ReadonlyArray<{ expression: string; file: string }> = [
   { expression: "includePhoenixVisits: input.includePhoenixCheckins === true,", file: "src/lib/crm/visit-workload.ts" },
+  { expression: "includePhoenixVisits: options.includePhoenixCheckins === true,", file: "src/lib/employee-360/service.ts" },
 ];
 
 /** Readers a rep CAN reach: they read iReports360 check-ins only. */
 const REP_REACHABLE_CHECKIN_READERS = [
   "src/lib/early-birds/collect.ts",
-  "src/lib/employee-360/service.ts",
   "src/lib/employee-portal/my-crm-visits.ts",
   "src/lib/crm/phoenix-kpi-data.ts",
   "src/lib/pharmacy-search/nearby.ts",
@@ -1914,6 +1914,24 @@ function runCheckinDoorTests(plans: string): void {
     workloadRoute.includes("const viewingSomeoneElse = Boolean(requestedKey) && !ownKeys.includes(requestedKey as string);") &&
       workloadRoute.includes("includePhoenixCheckins: viewingSomeoneElse,"),
     "the trip panel's route gives Phoenix positions only to a viewer looking at someone else's trip",
+  );
+  // Employee 360: the GPS module reads Phoenix positions only for a reader whose row sight on the subject is
+  // not "none" — never the subject himself (phoenixRowSight), never a role with no sight, never no reader.
+  const e360 = stripComments(read("src/lib/employee-360/service.ts"));
+  assert.ok(
+    e360.includes("if (!viewer || !viewer.hrId) return false;") &&
+      e360.includes('return phoenixRowSight(phoenixDetailViewer(viewer.role, viewer.hrId), subjectHrId) !== "none";'),
+    "Employee 360 gives Phoenix positions only to a reader who is not the subject and has sight",
+  );
+  assert.ok(
+    e360.includes("fetchCheckinRows(hrId, window, { includePhoenixCheckins: employee360ReaderSeesPhoenixCheckins(hrId, viewer) })"),
+    "the comparison period asks the same question",
+  );
+  assert.ok(
+    stripComments(read("src/lib/employee-360/deep-service.ts")).includes(
+      "includePhoenixCheckins: employee360ReaderSeesPhoenixCheckins(hrId, { hrId: viewerHrId, role: viewerRole }),",
+    ),
+    "and so does the profile, with the reader the page names",
   );
   const askingOutright = sourceFiles("src")
     .concat(sourceFiles("app"))
