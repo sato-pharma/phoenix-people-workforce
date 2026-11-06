@@ -10,6 +10,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string, defaultStatus = 500) {
+  if (error instanceof SyntaxError) {
+    return NextResponse.json({ success: false, message: "The request body is not valid JSON." }, { status: 400 });
+  }
   if (isForbiddenError(error)) {
     return NextResponse.json({ success: false, message: (error as Error).message }, { status: 403 });
   }
@@ -17,9 +20,13 @@ function jsonError(error: unknown, fallback: string, defaultStatus = 500) {
   const lower = message.toLowerCase();
   if (lower.includes("not authenticated")) return NextResponse.json({ success: false, message }, { status: 401 });
   if (lower.includes("forbidden")) return NextResponse.json({ success: false, message }, { status: 403 });
-  if (lower.includes("required") || lower.includes("comment") || lower.includes("only after")) {
+  // Matched on the sentences the comment service writes, never on the word "comment" alone: the
+  // route's own fallback ("Failed to save deduction comment.") contains it, so every unexpected
+  // server failure used to answer 400 and never reached monitoring.
+  if (message !== fallback && (lower.includes("required") || lower.includes("cannot exceed") || lower.includes("only after"))) {
     return NextResponse.json({ success: false, message }, { status: 400 });
   }
+  if (lower.includes("not found")) return NextResponse.json({ success: false, message }, { status: 404 });
   return NextResponse.json({ success: false, message }, { status: defaultStatus });
 }
 

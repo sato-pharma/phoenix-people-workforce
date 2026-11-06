@@ -65,7 +65,7 @@
  */
 
 import { isDayActivity, dayActivityLabel } from "@/lib/phoenix-crm/day-activities";
-import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** `phoenix_crm_visits` — every visit Phoenix CRM holds, started team or not. */
@@ -236,7 +236,7 @@ export function foldPhoenixWorkEvidence(input: {
  * THROWS on a failed read — see the header. `hrIds`, when given, filters the REP side only: a
  * manager's own credit comes from visits his reps logged, so narrowing those reads by hr id would
  * drop exactly the rows that prove his day. Company-wide is the shape every deduction caller wants
- * anyway. Each read pages by id, because one company month is several thousand visits.
+ * anyway. Every read is PAGED: October 2026 alone held 8,146 visits, eight times one response.
  */
 export async function loadPhoenixWorkEvidenceDays(input: {
   end: string;
@@ -246,12 +246,14 @@ export async function loadPhoenixWorkEvidenceDays(input: {
   const end = isoDay(input.end);
   if (!start || !end || end < start) return [];
 
+  // PAGED, every one of them. PostgREST stops a read at 1,000 rows, and production logged 8,146 real
+  // Phoenix CRM visits in October 2026 alone — an unpaged read silently kept the first 1,000, so most
+  // provably worked days never reached the suppression and could be charged. `fetchAllRows` walks the
+  // whole window on a stable `id` order and throws on any page error, never a short list.
   const supabase = getSupabaseAdmin();
-  // Every read pages by id: PostgREST stops at 1,000 rows, and a company month holds several thousand
-  // visits, so an unpaged read proved only the first 1,000 and charged the rest (src/lib/supabase/paginated.ts).
-  const everyRow = async <T extends { id: string }>(label: string, buildQuery: () => unknown): Promise<T[]> => {
+  const read = async <T>(label: string, buildQuery: () => unknown): Promise<T[]> => {
     try {
-      return await fetchAllRowsKeyset<T>(buildQuery, { cursorColumn: "id", cursorOf: (row) => row.id });
+      return await fetchAllRows<T>(buildQuery, "id");
     } catch (error) {
       const message = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
       throw new Error(
@@ -261,27 +263,27 @@ export async function loadPhoenixWorkEvidenceDays(input: {
     }
   };
   const [visits, activities, starts] = await Promise.all([
-    everyRow<VisitRow & { id: string }>("visits", () =>
+    read<VisitRow>("visits", () =>
       supabase
         .from(PHOENIX_CRM_VISITS_TABLE)
-        .select("id,visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id")
+        .select("visit_date,rep_hr_id,manager_hr_id,senior_hr_id,product_manager_hr_id")
         .eq("is_test", false)
         .is("imported_from_ireports360_at", null)
         .gte("visit_date", start)
         .lte("visit_date", end),
     ),
-    everyRow<ActivityRow & { id: string }>("day activities", () =>
+    read<ActivityRow>("day activities", () =>
       supabase
         .from(PHOENIX_CRM_DAY_ACTIVITIES_TABLE)
-        .select("id,activity_date,rep_hr_id,activity_type")
+        .select("activity_date,rep_hr_id,activity_type")
         .eq("is_test", false)
         .gte("activity_date", start)
         .lte("activity_date", end),
     ),
-    everyRow<StartRow & { id: string }>("day starts", () =>
+    read<StartRow>("day starts", () =>
       supabase
         .from(PHOENIX_CRM_DAY_STARTS_TABLE)
-        .select("id,started_on,rep_hr_id")
+        .select("started_on,rep_hr_id")
         .eq("is_test", false)
         .gte("started_on", start)
         .lte("started_on", end),

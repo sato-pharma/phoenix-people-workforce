@@ -469,6 +469,7 @@ import { runDeductionsModuleFoundationTests } from "./deductions-module-foundati
 import { runDeductionsModulePublishTests } from "./deductions-module-publish.test.ts";
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
 import { runDailyDeductionsReleaseNoticeTests } from "./daily-deductions-release-notice.test.ts";
+import { runDailyDeductionsPortalAndReadersTests } from "./daily-deductions-portal-and-readers.test.ts";
 import { runDeductionsOutstationTripDaysTests } from "./deductions-outstation-trip-days.test.ts";
 import { runDeductionsPhoenixWorkEvidenceTests } from "./deductions-phoenix-work-evidence.test.ts";
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
@@ -2574,6 +2575,7 @@ import { runDisputeCenterParticipantsTests } from "./dispute-center-participants
 import { runDisputeCenterAssistAccuracyTests } from "./dispute-center-assist-accuracy.test.ts";
 import { runDisputeCenterDigestRevisionTests } from "./dispute-center-digest-revision.test.ts";
 import { runDisputeCenterRefundsTests } from "./dispute-center-refunds.test.ts";
+import { runDisputeModuleScreensDecideTests } from "./dispute-module-screens-decide.test.ts";
 import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
@@ -2912,6 +2914,7 @@ import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
+import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
@@ -4120,6 +4123,7 @@ await runTest("deductions module CRM guards (suspect-date sync-gap detection + e
 await runTest("deductions Phoenix CRM work evidence (no day the rep provably worked is charged, started team or not)", runDeductionsPhoenixWorkEvidenceTests);
 await runTest("deductions outstation trip days (any trip not rejected spares the day; a rejected one does not)", runDeductionsOutstationTripDaysTests);
 await runTest("daily deductions release notice (the employee is told when a line is released, in-app and Telegram)", runDailyDeductionsReleaseNoticeTests);
+await runTest("daily deductions on the employee portal and for readers (released lines show on his Deductions page and a failed read says so; the Finance Manager reads the page and only the Super Admin computes)", runDailyDeductionsPortalAndReadersTests);
 await runTest("deductions module portal read path (single-source publications: line mapping + sort order)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
@@ -9845,6 +9849,10 @@ await runTest(
   runDisputeCenterRefundsTests,
 );
 await runTest(
+  "the deductions Disputes tab and the calendar inbox decide a dispute on the card — accept, reduce or reject through the Dispute Center's one rule, never a reply box alone",
+  runDisputeModuleScreensDecideTests,
+);
+await runTest(
   "a Google Calendar outage is not 'no holidays' (every pay-affecting reader refuses while calendarReachable is false; display surfaces say so)",
   runHolidayCalendarOutageGateTests,
 );
@@ -11840,6 +11848,10 @@ await runTest(
 await runTest(
   "Expense Approvals reads a multi-day trip as one: the trip length (3 days · 2 nights) is one helper shown on the queue row and the decision panel, each trip day is one folding row whose map is drawn only when opened, nothing is cut off with an ellipsis, and Approve is the panel's pinned last part below the scrolling evidence",
   runOutstationExpenseApprovalsLayoutTests,
+);
+await runTest(
+  "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and applied only on a click, never over the reviewer's own reason",
+  runOutstationExpenseApprovalsQueueTests,
 );
 await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
 await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);

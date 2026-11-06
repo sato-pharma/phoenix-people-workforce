@@ -7,7 +7,8 @@
 // "money charged" in step. aggregateClippedLines then sums per employee×category
 // into the running-tally lines a publication stores.
 
-import { scaleDeductionAmountToDays } from "@/lib/deductions/calculations.ts";
+import { scaleDeductionAmountToKeptDates } from "@/lib/deductions/calculations.ts";
+import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import type { DeductionsCandidateDraft } from "@/lib/deductions/types.ts";
 import { clipDatesToRange } from "./range.ts";
@@ -60,13 +61,20 @@ export function clipDraftToRange(
   if (!Number.isFinite(rawValue) || rawValue <= 0 || originalCount <= 0) return null;
 
   const fraction = keptDates.length / originalCount;
-  const daysCount = round2(rawValue * fraction);
+  // A count-based CRM row is priced on WEIGHTED days (a Thursday is half, owner rule 2026-08-02), so
+  // its kept day count and its money both follow what the kept dates weigh — the table's own comment
+  // says `days_count` is "the clipped, weighted day count". Every other draft keeps the fraction.
+  const weighted = draft.category === "crm" && rawValue === originalCount;
+  const daysCount = weighted ? sumDetectedDeductionDayWeights(keptDates) : round2(rawValue * fraction);
 
   const estimatedAmount = draft.estimatedAmount ?? null;
-  const scaled = scaleDeductionAmountToDays({
-    estimatedAmount,
-    rawValue,
+  const scaled = scaleDeductionAmountToKeptDates({
     appliedDays: rawValue * fraction,
+    category: draft.category,
+    detectedDates: Array.isArray(draft.dates) ? draft.dates : [],
+    estimatedAmount,
+    keptDates,
+    rawValue,
   });
   const amountUnknown = scaled == null;
 
@@ -121,6 +129,7 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
       existing.amount = round2(existing.amount + line.amount);
       for (const date of line.dates) existing._dateSet.add(date);
       if (!existing.employeeName && line.employeeName) existing.employeeName = line.employeeName;
+      if (line.amountUnknown) existing.amountUnknown = true;
     } else {
       byKey.set(key, {
         category: line.category,
@@ -134,6 +143,7 @@ export function aggregateClippedLines(lines: readonly ClippedDraftLine[]): {
         dates: [],
         sourceSystem: line.sourceSystem,
         reason: line.reason,
+        amountUnknown: line.amountUnknown,
         _dateSet: new Set<string>(line.dates),
       });
     }

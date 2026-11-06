@@ -88,7 +88,9 @@ export function runDeductionsSameDayGuardTests() {
   assert.ok(!/reconcileCandidateDrafts\(/.test(code), "the settlement path must stay insert-only: a one-employee draft set would supersede the whole month");
 
   const workspace = readFileSync(path.join(ROOT, "src/components/admin/deductions-workspace.tsx"), "utf8");
-  assert.ok(/findSameDayOverlaps\(rows\)/.test(workspace), "the category tab no longer looks for same-day pairs");
+  // Over EVERY row of the tab, never the filtered view: a search or decision filter must not hide
+  // the clash it is meant to explain (2026-11-07, when the tab gained filters).
+  assert.ok(/findSameDayOverlaps\(allRows\)/.test(workspace), "the category tab no longer looks for same-day pairs across all its rows");
   assert.ok(/<SameDayBadge overlap=/.test(workspace), "the same-day marker is not rendered on the rows");
   assert.ok(/clashingNames/.test(workspace) && /charges that day twice|charge the same day/.test(workspace), "the bulk bar no longer warns before approving both rows of a pair");
 }

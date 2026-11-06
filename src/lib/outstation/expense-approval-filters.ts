@@ -9,6 +9,12 @@
  */
 
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import {
+  type ExpenseApprovalSort,
+  type ExpenseTripTriageFilter,
+  type ExpenseTripTriageRecord,
+  matchesExpenseTripTriage,
+} from "@/lib/outstation/expense-approval-triage";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -24,7 +30,7 @@ const CAIRO_MONTH_FORMAT = new Intl.DateTimeFormat("en-US", {
 /** The key a trip with no employee name is grouped under — matches the list's own fallback text. */
 export const UNASSIGNED_EMPLOYEE_KEY = "unassigned";
 
-export type ExpenseApprovalFilterRecord = {
+export type ExpenseApprovalFilterRecord = ExpenseTripTriageRecord & {
   date: string;
   specialist: string;
 };
@@ -32,10 +38,14 @@ export type ExpenseApprovalFilterRecord = {
 export type ExpenseApprovalFilters = {
   employee: string;
   month: string;
+  /** The order within each decision state. Not a narrowing, so never counted as an active filter. */
+  sort?: ExpenseApprovalSort;
+  /** The rail's "Needs a look" / "Clean" (expense-approval-triage.ts). Empty or absent = all. */
+  triage?: ExpenseTripTriageFilter;
 };
 
-/** Both empty = nothing narrowed. */
-export const NO_EXPENSE_APPROVAL_FILTERS: ExpenseApprovalFilters = { employee: "", month: "" };
+/** Everything empty = nothing narrowed. */
+export const NO_EXPENSE_APPROVAL_FILTERS: ExpenseApprovalFilters = { employee: "", month: "", sort: "value", triage: "" };
 
 export type ExpenseApprovalFilterOption = { label: string; value: string };
 
@@ -137,11 +147,17 @@ export function matchesExpenseApprovalFilters(
 ): boolean {
   if (filters.month && expenseTripMonthKey(record.date) !== filters.month) return false;
   if (filters.employee && expenseEmployeeKey(record) !== filters.employee) return false;
+  if (!matchesExpenseTripTriage(record, filters.triage)) return false;
   return true;
 }
 
 export function countActiveExpenseApprovalFilters(filters: ExpenseApprovalFilters): number {
-  return (filters.month ? 1 : 0) + (filters.employee ? 1 : 0);
+  return (filters.month ? 1 : 0) + (filters.employee ? 1 : 0) + (filters.triage ? 1 : 0);
+}
+
+/** The export URL's `triage` value, read back strictly: anything unknown narrows nothing. */
+export function parseExpenseTripTriageFilter(value: string | null | undefined): ExpenseTripTriageFilter {
+  return value === "look" || value === "clean" ? value : "";
 }
 
 export type ExpenseApprovalSearchRecord = {

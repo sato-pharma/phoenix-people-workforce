@@ -20,6 +20,7 @@ import {
   resolveAppliedDeductionDates,
   resolveCarriedDecision,
   scaleDeductionAmountToDays,
+  scaleDeductionAmountToKeptDates,
 } from "./calculations.ts";
 import { findDayCollisions } from "./conflict.ts";
 import { allowedDraftDateWindow } from "./cycle.ts";
@@ -703,7 +704,7 @@ export async function reconcileCandidateDrafts(input: {
     const datesByIdentity = new Map<string, string[]>();
     // The replacement's OWN estimate and detected-day count, by identity — what a narrowed or
     // zeroed carried decision scales its applied_amount from (see the carry write below).
-    const replacementByIdentity = new Map<string, { estimatedAmount: number | null; rawValue: number }>();
+    const replacementByIdentity = new Map<string, { category: string; estimatedAmount: number | null; rawValue: number }>();
     for (const draft of input.drafts) {
       try {
         const payload = prepareCandidateInsertPayload(draft, { createdBy: input.createdBy });
@@ -711,6 +712,7 @@ export async function reconcileCandidateDrafts(input: {
         const identity = deductionsCandidateIdentityKey(payload.candidate_key);
         datesByIdentity.set(identity, payload.dates);
         replacementByIdentity.set(identity, {
+          category: draft.category,
           estimatedAmount: draft.estimatedAmount ?? null,
           rawValue: Number(draft.rawValue ?? 0),
         });
@@ -821,7 +823,7 @@ export async function reconcileCandidateDrafts(input: {
       //   - A NARROWED or EMPTIED selection pins value + amount to that subset. Leaving them null
       //     here was the bug: the resolvers' `?? rawValue` / `?? estimatedAmount` fallback then
       //     republished a narrowed approval at FULL and re-armed a zeroed one to a full charge.
-      const replacement = replacementByIdentity.get(identity) ?? { estimatedAmount: null, rawValue: 0 };
+      const replacement = replacementByIdentity.get(identity) ?? { category: "", estimatedAmount: null, rawValue: 0 };
       const { appliedValue, appliedAmount } = carriedAppliedFigures({
         appliedDates: carried.appliedDates,
         // The replacement's FULL day set — the denominator for the retained fraction, so a
@@ -830,6 +832,7 @@ export async function reconcileCandidateDrafts(input: {
         replacementDates: datesByIdentity.get(identity) ?? [],
         replacementEstimatedAmount: replacement.estimatedAmount,
         replacementRawValue: replacement.rawValue,
+        category: replacement.category,
       });
       const { error: carryError } = await supabase
         .from("deductions_decisions")
@@ -1397,7 +1400,14 @@ export async function getCompanyMonthSummaryByCategory(input: {
  *      from the caller — a browser must not be able to dictate a payroll figure.
  */
 export function resolveDecisionCharge(input: {
-  candidate: { unit: DeductionsCandidate["unit"]; rawValue: number; estimatedAmount: number | null; dates: readonly string[] };
+  candidate: {
+    unit: DeductionsCandidate["unit"];
+    rawValue: number;
+    estimatedAmount: number | null;
+    dates: readonly string[];
+    /** A CRM row's ticked dates are priced on their weight — a Thursday is half a day. */
+    category?: string;
+  };
   appliedDates?: readonly unknown[] | null;
   appliedValue?: number | null;
   /**
@@ -1430,19 +1440,32 @@ export function resolveDecisionCharge(input: {
     if (value != null && (!Number.isFinite(value) || value < 0)) {
       throw new Error("Validation: the applied amount must be a non-negative number.");
     }
-    return { appliedDates: null, appliedValue: value, appliedAmount: value };
+    // Capped at what was entered, the same way a day count is capped at what was detected: a 5,000
+    // EGP loan instalment typed as "50000" in the decision editor went straight to payroll as
+    // 50,000.00 EGP. A larger figure is a change to the ENTRY, made where the entry is made.
+    const entered = Math.max(Number(candidate.rawValue) || 0, Number(candidate.estimatedAmount) || 0);
+    if (value != null && entered > 0 && value > entered && input.allowAboveDetected !== true) {
+      throw new Error(
+        `Validation: cannot deduct ${value} EGP — the entry is for ${entered} EGP. Lower the amount, or change the entry itself.`,
+      );
+    }
+    const rounded = value == null ? null : Math.round(value * 100) / 100;
+    return { appliedDates: null, appliedValue: rounded, appliedAmount: rounded };
   }
 
   // Ticked dates weigh what the candidate's own dates weigh — a half-day date is 0.5, never 1.
-  const appliedValue =
-    input.appliedValue ??
-    (appliedDates == null
+  const tickedValue =
+    appliedDates == null
       ? null
       : daysForTickedDates({
           rawValue: candidate.rawValue,
           detectedDates: candidate.dates.length,
           tickedDates: appliedDates.length,
-        }));
+        });
+  const appliedValue = input.appliedValue ?? tickedValue;
+  // The editor always sends the quantity beside the ticks, so "typed by a reviewer" means a quantity
+  // that DIFFERS from what the ticks give — the same reading payroll's chargeableDeductionDays makes.
+  const followsTheTicks = appliedDates != null && (input.appliedValue == null || input.appliedValue === tickedValue);
   if (appliedValue != null) {
     if (!Number.isFinite(appliedValue) || appliedValue < 0) {
       throw new Error("Validation: the number of deducted days must be a non-negative number.");
@@ -1461,11 +1484,22 @@ export function resolveDecisionCharge(input: {
   return {
     appliedDates,
     appliedValue,
-    appliedAmount: scaleDeductionAmountToDays({
-      estimatedAmount: candidate.estimatedAmount,
-      rawValue: candidate.rawValue,
-      appliedDays: appliedValue,
-    }),
+    // A typed quantity scales by the count; a ticked selection is priced on what its days weigh.
+    appliedAmount:
+      followsTheTicks && appliedDates != null
+        ? scaleDeductionAmountToKeptDates({
+            appliedDays: appliedValue,
+            category: candidate.category ?? "",
+            detectedDates: candidate.dates,
+            estimatedAmount: candidate.estimatedAmount,
+            keptDates: appliedDates,
+            rawValue: candidate.rawValue,
+          })
+        : scaleDeductionAmountToDays({
+            estimatedAmount: candidate.estimatedAmount,
+            rawValue: candidate.rawValue,
+            appliedDays: appliedValue,
+          }),
   };
 }
 
@@ -1806,6 +1840,7 @@ export async function recordDecision(input: {
       rawValue: Number(candidateRow.raw_value),
       estimatedAmount: candidateRow.estimated_amount == null ? null : Number(candidateRow.estimated_amount),
       dates: Array.isArray(candidateRow.dates) ? (candidateRow.dates as string[]) : [],
+      category: String(candidateRow.category ?? ""),
     },
     appliedDates: appliedDatesInput,
     appliedValue: appliedValueInput,

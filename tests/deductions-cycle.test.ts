@@ -143,7 +143,15 @@ export async function runDeductionsCycleTests(): Promise<void> {
     assert.equal(half.month, 11);
     assert.equal(half.year, 2026);
     assert.equal(half.rawValue, 2, "the day count scales by the kept fraction");
-    assert.equal(half.estimatedAmount, 200.01, "the amount scales through scaleDeductionAmountToDays");
+    // A CRM row is priced on what its days WEIGH: Tue 20, Wed 21, Thu 22 (half), Fri 23 is 3.5 days,
+    // and the kept Thu 22 + Fri 23 are 1.5 of them — 400.01 × 1.5 / 3.5, never half the money.
+    assert.equal(
+      half.estimatedAmount,
+      171.43,
+      "REGRESSION: a CRM row cut at the cycle boundary is priced on the kept days' weight (Thursday is half), not their count",
+    );
+    const countBased = clipDraftToCycleWindow(draft({ category: "fingerprint", sourceSystem: "fingerprint" }), november, "2026-10");
+    assert.equal(countBased?.estimatedAmount, 200.01, "every other category still scales by the kept fraction");
     assert.deepEqual(
       (half.evidence as Record<string, unknown>).deductionCycle,
       { cycle: "office", windowStart: "2026-10-22", windowEnd: "2026-11-21", calendarMonths: ["2026-10"] },
@@ -459,8 +467,14 @@ export async function runDeductionsCycleTests(): Promise<void> {
       "a collection run must bump the data version when it ends, or the panels keep the pre-run numbers",
     );
     assert.ok(workspace.includes("const panelKey = `${monthKey}:${dataVersion}`;"), "the panel key must carry the data version");
+    // Every panel carries the version AND its own name: they are siblings, and siblings sharing one key
+    // leave a stale copy behind on each re-read (November 2026: the leaver banner showed two and three times).
+    const keys: string[] = [];
     for (const panel of ["MasterExportBar", "OverviewTab", "ByEmployeeTab", "CategoryTab", "LeaverSettlementPanel"]) {
-      assert.ok(workspace.includes(`<${panel} key={panelKey}`), `${panel} must remount after a collection run`);
+      const match = workspace.match(new RegExp("<" + panel + " key=\\{`([a-z-]+):\\$\\{panelKey\\}`\\}"));
+      assert.ok(match, `${panel} must be keyed on its own name plus panelKey, or it never remounts after a collection run`);
+      keys.push(match[1]);
     }
+    assert.equal(new Set(keys).size, keys.length, `two sibling panels share a key prefix (${keys.join(", ")}) — React leaves duplicates behind`);
   }
 }

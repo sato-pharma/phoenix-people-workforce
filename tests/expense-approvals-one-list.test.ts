@@ -121,8 +121,10 @@ export function runExpenseApprovalsOneListTests() {
   );
 
   // A decided row carries no tick box — offering one invites a click that silently does nothing.
+  // The row itself lives in the rail since the 2026-11-07 rebuild.
+  const rail = readSource("../src/components/outstation/expense-approvals/trip-list.tsx");
   assert.match(
-    workspace,
+    rail,
     // ...and neither does imported history, which is values only (imported-history.ts).
     /\{state === "pending" && !isImportedHistoryTrip\(record\.date\) \? \(\s*\n\s*<label className="flex shrink-0 cursor-pointer items-center pl-3">/,
     "only an undecided row may show a checkbox",

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
 import { cn } from "@/lib/utils";
 
-type WorkloadVisitDetail = {
+export type WorkloadVisitDetail = {
   ampm: string | null;
   contact: string | null;
   customer: string | null;
@@ -31,7 +31,7 @@ type WorkloadVisitDetail = {
   submittedAt: string | null;
 };
 
-type WorkloadCheckinDetail = {
+export type WorkloadCheckinDetail = {
   address: string | null;
   at: string | null;
   contact: string | null;
@@ -40,7 +40,7 @@ type WorkloadCheckinDetail = {
   via: string | null;
 };
 
-type WorkloadEvidenceDay = {
+export type WorkloadEvidenceDay = {
   am: number;
   campaign: number;
   checkins: WorkloadCheckinDetail[];
@@ -99,9 +99,120 @@ function fmt(value: number) {
 }
 
 // CRM timestamps are already Africa/Cairo — extract HH:MM from the raw string with NO tz shift.
-function formatClock(value: string | null) {
+export function formatClock(value: string | null) {
   const match = /[T ](\d{2}:\d{2})/.exec(String(value ?? ""));
   return match ? match[1] : "—";
+}
+
+/**
+ * A day's visits and check-ins, every one printed: the visit's kind, who was visited, the partner
+ * on a double, AM or PM and the time the rep SAVED it; the check-in's number (the same number its
+ * pin wears on the map), who or where, how it was logged and the time of the check-in itself.
+ * Shared by the folded row and the always-open block below, so the two cannot drift.
+ */
+function DayDetail({
+  checkins,
+  firstCheckinNumber,
+  visits,
+}: {
+  checkins: WorkloadCheckinDetail[];
+  /** Trip-wide numbering when the whole trip is on one map; 1 for a day on its own. */
+  firstCheckinNumber: number;
+  visits: WorkloadVisitDetail[];
+}) {
+  return (
+    // `[&>*]:min-w-0`: below `md` this is one column, and a grid item defaults to
+    // `min-width: auto`, so the longest visit line would size the column (measured 283 vs 436).
+    <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
+      <div>
+        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Visits</p>
+        {visits.length === 0 ? (
+          <p className="mt-1 text-xs text-slate-400">No visits saved</p>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {visits.map((visit, index) => (
+              <li className="flex items-center justify-between gap-2 text-xs" key={index}>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "shrink-0 px-1 py-0.5 text-phx-3xs font-bold uppercase",
+                      visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
+                    )}
+                  >
+                    {visit.kind === "campaign" ? "Unplanned" : "Planned"}
+                  </span>
+                  <span className="break-words text-slate-700">
+                    {visit.contact || visit.customer || "—"}
+                    {visit.contact && visit.customer && visit.customer !== visit.contact ? (
+                      <span className="text-slate-400"> · {visit.customer}</span>
+                    ) : null}
+                    {visit.role === "partner" ? (
+                      visit.repName ? (
+                        <>
+                          {" · double with "}
+                          <span className="font-semibold text-slate-900">{visit.repName}</span>
+                        </>
+                      ) : (
+                        " · double"
+                      )
+                    ) : visit.role === "own" ? (
+                      " · own visit"
+                    ) : null}
+                  </span>
+                </span>
+                {/* Each timing says what it IS: when the rep SAVED the CRM record is a
+                    different clock from when he physically checked in. */}
+                <span className="flex shrink-0 flex-col items-end leading-tight">
+                  <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
+                    Saved visit time
+                  </span>
+                  <span className="whitespace-nowrap font-mono text-slate-500">
+                    {formatClock(visit.submittedAt)}
+                    {visit.ampm ? ` · ${visit.ampm}` : ""}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div>
+        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Check-ins</p>
+        {checkins.length === 0 ? (
+          <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
+        ) : (
+          <ol className="mt-1 space-y-1">
+            {checkins.map((checkin, index) => (
+              <li className="flex items-center justify-between gap-2 text-xs" key={index}>
+                <span className="flex min-w-0 items-start gap-1.5">
+                  <span className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center bg-orange-500 px-1 font-mono text-phx-3xs font-black text-white">
+                    {firstCheckinNumber + index}
+                  </span>
+                  <span className="break-words text-slate-700">
+                    {checkin.contact ||
+                      checkin.address ||
+                      (checkin.lat != null && checkin.lon != null
+                        ? `${checkin.lat.toFixed(4)}, ${checkin.lon.toFixed(4)}`
+                        : "—")}
+                    {checkin.contact && checkin.address ? (
+                      <span className="block text-slate-500">{checkin.address}</span>
+                    ) : null}
+                    {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end leading-tight">
+                  <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
+                    Check-in time
+                  </span>
+                  <span className="whitespace-nowrap font-mono text-slate-500">{formatClock(checkin.at)}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // Memoize the mapped check-ins so FieldWorkforceRouteMap gets a stable `checkins` reference. Passing
@@ -207,87 +318,7 @@ function TripDayRow({
           {head}
         </summary>
         <div className="space-y-3 border-t border-slate-100 bg-slate-50 px-3 py-3">
-          {/* `[&>*]:min-w-0`: below `md` this is one column, and a grid item defaults to
-              `min-width: auto`, so the longest visit line would size the column (measured 283 vs 436). */}
-          <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
-            <div>
-              <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Visits</p>
-              {visits.length === 0 ? (
-                <p className="mt-1 text-xs text-slate-400">—</p>
-              ) : (
-                <ul className="mt-1 space-y-1">
-                  {visits.map((visit, index) => (
-                    <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span
-                          className={cn(
-                            "shrink-0 px-1 py-0.5 text-phx-3xs font-bold uppercase",
-                            visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
-                          )}
-                        >
-                          {visit.kind === "campaign" ? "Unplanned" : "Planned"}
-                        </span>
-                        <span className="break-words text-slate-700">
-                          {visit.contact || visit.customer || "—"}
-                          {visit.role === "partner" ? (
-                            visit.repName ? (
-                              <>
-                                {" · double with "}
-                                <span className="font-semibold text-slate-900">{visit.repName}</span>
-                              </>
-                            ) : (
-                              " · double"
-                            )
-                          ) : visit.role === "own" ? (
-                            " · own visit"
-                          ) : null}
-                        </span>
-                      </span>
-                      {/* Each timing says what it IS: when the rep SAVED the CRM record is a
-                          different clock from when he physically checked in. */}
-                      <span className="flex shrink-0 flex-col items-end leading-tight">
-                        <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                          Saved visit time
-                        </span>
-                        <span className="whitespace-nowrap font-mono text-slate-500">
-                          {formatClock(visit.submittedAt)}
-                          {visit.ampm ? ` · ${visit.ampm}` : ""}
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div>
-              <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Check-ins</p>
-              {checkins.length === 0 ? (
-                <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
-              ) : (
-                <ol className="mt-1 space-y-1">
-                  {checkins.map((checkin, index) => (
-                    <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                      <span className="break-words text-slate-700">
-                        {index + 1}.{" "}
-                        {checkin.contact ||
-                          checkin.address ||
-                          (checkin.lat != null && checkin.lon != null
-                            ? `${checkin.lat.toFixed(4)}, ${checkin.lon.toFixed(4)}`
-                            : "—")}
-                        {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
-                      </span>
-                      <span className="flex shrink-0 flex-col items-end leading-tight">
-                        <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                          Check-in time
-                        </span>
-                        <span className="whitespace-nowrap font-mono text-slate-500">{formatClock(checkin.at)}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-          </div>
+          <DayDetail checkins={checkins} firstCheckinNumber={1} visits={visits} />
           {opened && checkins.length > 0 ? (
             <div className="min-w-0">
               <p className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">Route map</p>
@@ -305,27 +336,125 @@ function TripDayRow({
 }
 
 /**
+ * One trip day with nothing behind a click (owner, 2026-11-07: "any information or data you have
+ * for the trip must be shown"). The day's figures on the first line, then every visit and every
+ * check-in. No map here: the page that asks for this draws the WHOLE trip on one map above.
+ */
+function TripDayOpen({
+  day,
+  dayCount,
+  dayNumber,
+  firstCheckinNumber,
+  map,
+  pharmacyText,
+}: {
+  day: WorkloadEvidenceDay;
+  dayCount: number;
+  dayNumber: number;
+  firstCheckinNumber: number;
+  /** The day's own map, drawn by the caller (Expense Approvals: one map for each trip day). */
+  map?: ReactNode;
+  pharmacyText: string;
+}) {
+  const visits = day.visits ?? [];
+  const checkins = day.checkins ?? [];
+  const idle = day.total === 0;
+  return (
+    <li className="border border-slate-200 bg-white">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-x-4 gap-y-1.5 border-l-[3px] px-3 py-2.5",
+          idle ? "border-l-rose-500 bg-rose-50" : "border-l-emerald-500 bg-slate-50",
+        )}
+      >
+        <span className="min-w-0">
+          {dayCount > 1 ? (
+            <span className="mr-2 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+              Day {fmt(dayNumber)} of {fmt(dayCount)}
+            </span>
+          ) : null}
+          <span className="text-sm font-bold text-slate-900">{formatDateValue(day.date, null, { weekday: "short" })}</span>
+        </span>
+        {idle ? (
+          <span className="whitespace-nowrap text-xs font-black text-rose-600">No field activity</span>
+        ) : (
+          <span className="whitespace-nowrap text-xs font-bold text-emerald-700">{fmt(day.total)} field visits</span>
+        )}
+        <span className="grid grid-cols-3 gap-x-3 font-mono text-xs text-slate-700 sm:ml-auto sm:flex sm:flex-wrap sm:gap-x-4">
+          <span>
+            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">AM </span>
+            {fmt(day.am)}
+          </span>
+          <span>
+            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">PM </span>
+            {fmt(day.pm)}
+          </span>
+          <span className="break-words">
+            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Pharmacies </span>
+            {pharmacyText}
+          </span>
+          <span className="text-sky-700">
+            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Planned </span>
+            {fmt(day.regular)}
+          </span>
+          <span className="text-violet-700">
+            <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Unplanned </span>
+            {fmt(day.campaign)}
+          </span>
+        </span>
+      </div>
+      {/* The map first, the day's visits and check-ins listed UNDER it (owner, 2026-11-07:
+          "and every day's visits is listed under the map"). */}
+      {map}
+      {visits.length > 0 || checkins.length > 0 ? (
+        <div className="border-t border-slate-200 px-3 py-3">
+          <DayDetail checkins={checkins} firstCheckinNumber={firstCheckinNumber} visits={visits} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/**
  * Actual field-visit workload for one trip, read from the admin/CRM mirror
  * (`/api/outstation/visit-workload`) — every field visit where the rep is the primary agent OR
  * the double-visit partner, planned AND unplanned, with no departed-agent exclusion. Auto-loads
  * for the given rep + trip window so a focused decision panel needs no extra click.
  */
 export function TripWorkloadEvidencePanel({
+  alwaysOpen = false,
   declaredAm,
   declaredPharmacies = null,
   declaredPm,
   hrId,
+  onLoaded,
+  renderDayMap,
   storedMatchedAt = null,
   storedMatchStatus = null,
   tripEndDate,
   tripStartDate,
 }: {
+  /**
+   * Every day printed in full, folding nothing (Expense Approvals, 2026-11-07). Default false:
+   * the request drawer keeps its folding rows, each with its own map when opened.
+   */
+  alwaysOpen?: boolean;
   declaredAm: number;
   /** The stored third figure. NULL = not counted separately: a request stamped before the
    * 2026-09-21 split (its pharmacies sit inside AM/PM), a hand-typed workload, or an import. */
   declaredPharmacies?: number | null;
   declaredPm: number;
   hrId: string | null;
+  /** The live read, once it lands (null on a failure) — so the caller can pin the check-ins on its
+   * own map and word its verdict. The fetch is this panel's; nothing is read twice. */
+  onLoaded?: (data: TripWorkloadEvidence | null) => void;
+  /**
+   * With `alwaysOpen`, the map drawn at the foot of EACH day block — the caller owns it so it can
+   * pin that day's photos and stops beside the check-ins (owner, 2026-11-07: "in a multiple day
+   * trip separate each day from the other; if 3 days then I should have 3 maps"). The check-ins
+   * are numbered across the trip; `firstCheckinNumber` is this day's first.
+   */
+  renderDayMap?: (day: WorkloadEvidenceDay, firstCheckinNumber: number) => ReactNode;
   /**
    * The verdict STAMPED on the request at submission, and when. Optional, so a caller with no
    * stored verdict (an imported expense) simply gets no staleness notice.
@@ -346,6 +475,12 @@ export function TripWorkloadEvidencePanel({
     error?: string;
     sessionExpired?: boolean;
   }>({ status: "idle" });
+  // The latest callback, read when the fetch lands — a new function identity on every render of
+  // the caller must not re-run the fetch.
+  const onLoadedRef = useRef(onLoaded);
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -356,6 +491,7 @@ export function TripWorkloadEvidencePanel({
       if (cancelled) return;
       if (!hrId || !tripStartDate) {
         setState({ status: "idle" });
+        onLoadedRef.current?.(null);
         return;
       }
       setState({ status: "loading" });
@@ -377,7 +513,10 @@ export function TripWorkloadEvidencePanel({
             response.status === 401 || payload?.error === "session_expired";
           throw error;
         }
-        if (!cancelled) setState({ data: payload.data as TripWorkloadEvidence, status: "done" });
+        if (!cancelled) {
+          setState({ data: payload.data as TripWorkloadEvidence, status: "done" });
+          onLoadedRef.current?.(payload.data as TripWorkloadEvidence);
+        }
       } catch (error) {
         if (!cancelled) {
           setState({
@@ -385,6 +524,7 @@ export function TripWorkloadEvidencePanel({
             sessionExpired: Boolean((error as { sessionExpired?: boolean })?.sessionExpired),
             status: "error",
           });
+          onLoadedRef.current?.(null);
         }
       }
     }
@@ -520,26 +660,54 @@ export function TripWorkloadEvidencePanel({
       </div>
       {/* DAY BY DAY (owner, 2026-11-06: "so confusing … specially when the trip is more than 1 day").
           This used to be a seven-column table, then — further down — a second, always-open list of
-          the same days with every visit, every check-in and a Google map EACH, so a three-day trip
-          put three maps between the reviewer and the decision. Now each trip day is ONE row: its
-          figures and verdict in the row itself, and its visits, check-ins and route behind a click.
-          The map is only drawn for a day that is opened. A list, not a table, so a phone gets the
-          same rows with nothing scrolling sideways. */}
-      <ol className="divide-y divide-slate-200 border border-phx-line bg-white">
-        {data.dateBreakdown.length === 0 ? (
-          <li className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</li>
-        ) : (
-          data.dateBreakdown.map((day, index) => (
-            <TripDayRow
-              day={day}
-              dayCount={data.dateBreakdown.length}
-              dayNumber={index + 1}
-              key={day.date}
-              pharmacyText={pharmacyCellText(day)}
-            />
-          ))
-        )}
-      </ol>
+          the same days with every visit and every check-in. Now each trip day is ONE block: its
+          figures and verdict in the row itself. In the request drawer its visits, check-ins and
+          route sit behind a click and the map is only drawn for a day that is opened; on Expense
+          Approvals (`alwaysOpen`) every day is open and the caller draws ONE MAP PER DAY under it
+          (owner, 2026-11-07: "if 3 days then I should have 3 maps"). A list, not a table, so a
+          phone gets the same rows with nothing scrolling sideways. */}
+      {alwaysOpen ? (
+        <ol className="space-y-2">
+          {data.dateBreakdown.length === 0 ? (
+            <li className="border border-phx-line bg-white px-3 py-6 text-center text-xs font-semibold text-slate-400">
+              No days in range.
+            </li>
+          ) : (
+            data.dateBreakdown.map((day, index) => {
+              // The check-ins are numbered across the whole trip, matching their pins on the map.
+              const firstCheckinNumber =
+                1 + data.dateBreakdown.slice(0, index).reduce((sum, earlier) => sum + (earlier.checkins?.length ?? 0), 0);
+              return (
+                <TripDayOpen
+                  day={day}
+                  dayCount={data.dateBreakdown.length}
+                  dayNumber={index + 1}
+                  firstCheckinNumber={firstCheckinNumber}
+                  key={day.date}
+                  map={renderDayMap?.(day, firstCheckinNumber)}
+                  pharmacyText={pharmacyCellText(day)}
+                />
+              );
+            })
+          )}
+        </ol>
+      ) : (
+        <ol className="divide-y divide-slate-200 border border-phx-line bg-white">
+          {data.dateBreakdown.length === 0 ? (
+            <li className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</li>
+          ) : (
+            data.dateBreakdown.map((day, index) => (
+              <TripDayRow
+                day={day}
+                dayCount={data.dateBreakdown.length}
+                dayNumber={index + 1}
+                key={day.date}
+                pharmacyText={pharmacyCellText(day)}
+              />
+            ))
+          )}
+        </ol>
+      )}
     </div>
   );
 }
