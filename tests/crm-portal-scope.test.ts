@@ -148,17 +148,12 @@ export function runCrmPortalScopeTests() {
     "the portal page must catch a ForbiddenError from assertPermission and redirect, never surface it as a 500",
   );
   assert.ok(portalPage.includes("resolvePortalCrmScope(access)"), "the portal page must resolve the per-viewer scope");
-  // A manager reads the mirror on a decision surface, so the portal shows the sync freshness panel —
-  // but read-only: its backfill control hits a Super-Admin-only endpoint, so a field manager must
-  // never see it. getCrmMasterData already loads the sync runs this renders from.
+  // A manager reads the mirror on a decision surface, so the portal shows the sync freshness panel.
+  // getCrmMasterData already loads the sync runs this renders from. Its backfill control went with
+  // the vendor (2026-11-06), so there is no read-only switch left to pin.
   assert.ok(portalPage.includes("<CrmSyncStatusPanel"), "the portal page must render the CRM sync-status panel for a freshness signal");
-  assert.ok(portalPage.includes("readOnly"), "the portal sync panel must render read-only (the backfill control is Super-Admin-only)");
   const syncPanel = readFileSync("src/components/crm/crm-sync-status-panel.tsx", "utf8");
-  assert.ok(syncPanel.includes("readOnly"), "CrmSyncStatusPanel must accept a readOnly prop");
-  assert.ok(
-    syncPanel.includes("retiredAt || readOnly"),
-    "readOnly must drop the backfill footer, the same way a retired vendor does",
-  );
+  assert.equal(syncPanel.includes("/api/admin/visits-report/backfill"), false, "no surface of the sync panel can start a vendor backfill");
   assert.ok(portalPage.includes("extraTabs={[]}"), "the portal page must pass extraTabs={[]} so the unscoped governance panels never render");
   assert.ok(portalPage.includes("showMappingFilter={false}"), "the portal page must hide the agent-unmapped Mapping filter");
   // The page must not implement a `view` param at all, so ?view=unmapped can't reach a governance panel.

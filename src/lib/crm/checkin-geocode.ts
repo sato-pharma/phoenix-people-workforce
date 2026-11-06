@@ -8,8 +8,8 @@
  *
  * Deliberately isolated from src/lib/google-maps/server.ts: outstation, marketing-requests, and
  * Routes/Directions distance calculations keep calling googleReverseGeocode/googleDirectionsRoute
- * directly and are untouched by this module. Only backfillMissingCheckinAddresses (crm/sync.ts)
- * and scripts/backfill-checkin-addresses.ts go through this door.
+ * directly and are untouched by this module. Only scripts/backfill-checkin-addresses.ts goes through
+ * this door (the retired iReports360 sync's backfillMissingCheckinAddresses was the other caller).
  */
 
 import { googleReverseGeocode } from "@/lib/google-maps/server";

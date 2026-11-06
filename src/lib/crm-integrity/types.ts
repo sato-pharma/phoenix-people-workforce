@@ -39,7 +39,6 @@ export type CrmIntegrityFilterInput = {
 };
 
 export type CrmIntegrityData = {
-  configured: boolean;
   dateFrom: string;
   dateTo: string;
   filters: {

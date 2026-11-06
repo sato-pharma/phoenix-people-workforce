@@ -1,30 +1,13 @@
 /**
- * Per-rep-day visit + GPS drill-down ("click a visit day") — the one CRM read that can go to
- * the live API. Policy: **mirror-first, live fallback for recent dates**.
- *
- * - Historical days are served entirely from the synced mirror (no live call) — it holds every
- *   visit + GPS field, so this is complete and fast, and works even if the live CRM is down.
- * - Recent days (today / the last couple of days, where the mirror can lag its ~3×/day sync)
- *   prefer a live call for freshness; if that live call fails we degrade to the mirror, and only
- *   surface the CRM error when the mirror has nothing to show either.
- *
- * Either way the live call lives INSIDE the CRM module, so the "one door" rule holds. Relocated
- * from field-workforce-compliance/ireports360-source.ts, where it used to always call live.
+ * Per-rep-day visit + GPS drill-down ("click a visit day"), read from the stored tables only: the
+ * unified visits view and the check-ins door. The old CRM was retired on 6 November 2026, so there
+ * is no live vendor call any more. Relocated from field-workforce-compliance/ireports360-source.ts.
  */
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { googleRouteThroughStops } from "@/lib/google-maps/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  iReports360GetCheckins,
-  iReports360GetVisits,
-  iReports360Login,
-  type IReports360Checkin,
-  type IReports360Visit,
-} from "@/lib/crm/client";
-import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
-import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { checkinAgentKey, indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import {
   buildParticipantCrmIdOrFilter,
@@ -33,11 +16,9 @@ import {
   getEffectiveExcludedAgentCrmIds,
   queryCheckins,
 } from "@/lib/crm/reads";
-import { getCrmCutoverSetting, isOnOrAfterCrmCutover, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
-import { loadStartedRepWindows } from "@/lib/crm/phoenix-started-reps";
-import { startedWindowCovers } from "@/lib/crm/phoenix-team-starts";
 import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
+import type { IReports360Checkin, IReports360Visit } from "@/lib/crm/vendor-row-types";
 
 export type IReports360RepDayVisit = IReports360Visit & {
   kind: "campaign" | "regular" | "other";
@@ -71,15 +52,6 @@ export type IReports360RepDayResult = {
   route: IReports360DayRoute | null;
   visits: IReports360RepDayVisit[];
 };
-
-/** How recent a day must be to prefer a live CRM call over the mirror. The daily sync runs
- * ~3×/day over a 10-day lookback, so only today + the last day or two can be materially staler
- * in the mirror than the live API; older days are already fully synced. */
-const REP_DAY_FRESH_LOOKBACK_DAYS = 2;
-
-function isRecentRepDay(day: string): boolean {
-  return day >= addDaysIso(todayIso(), -REP_DAY_FRESH_LOOKBACK_DAYS);
-}
 
 // In-memory cache of computed driving routes, keyed by rep + day + the exact ordered
 // check-in coordinates (so corrected GPS recomputes under a new key). A historical
@@ -181,12 +153,12 @@ export function resolveRepDayCheckinOwnerKeys(
 /** The drilled person: his CRM id when he has one (null for a rep hired after the cutover), and his hr id. */
 type RepDaySelf = { crmId: number | null; hrId: string };
 
-/** The live client's shapes, plus the hr ids only the unified view carries (absent on a live row). */
+/** The vendor row shapes, plus the hr ids only the unified view carries. */
 type RepDayVisitSource = IReports360Visit & {
   agentHrId?: string | null;
   doubleHrId?: string | null;
   // The chain visit's OTHER partner — the senior above the manager, or the product manager who came
-  // with him. Optional because the live vendor client has no such field and both vendor branches of
+  // with him. Optional because the vendor row shape has no such field and both vendor branches of
   // the door emit NULL: only a Phoenix `chain` visit fills it.
   double2HrId?: string | null;
   double2ID?: number | null;
@@ -200,7 +172,7 @@ function cleanAgentDisplayName(name: string | null | undefined): string | null {
   return cleaned || null;
 }
 
-/** Maps a stored `ireports360_checkins` row back onto the live client's check-in shape. */
+/** Maps a stored check-in row back onto the vendor check-in shape. */
 function checkinFromMirrorRow(row: CrmCheckinRow): RepDayCheckinSource {
   return {
     address: row.address,
@@ -243,8 +215,7 @@ type RepDayVisitMirrorRow = {
   visit_type_description: string | null;
 };
 
-/** Maps a stored `ireports360_visits` row back onto the live client's visit shape so the same
- * annotate/route pipeline runs regardless of whether the source was live or the mirror. */
+/** Maps a stored visit row back onto the vendor visit shape the annotate/route pipeline speaks. */
 function visitFromMirrorRow(row: RepDayVisitMirrorRow): RepDayVisitSource {
   return {
     agentHrId: row.agent_hr_id,
@@ -307,7 +278,7 @@ export function selectRepDayCheckins<C extends RepDayCheckinSource>(input: {
     (checkin) => owners.has(ownerKeyOf(checkin)) && String(checkin.checkDate ?? "").slice(0, 10) === day,
   );
 
-  // The canonical matcher speaks snake_case mirror rows; these are the live client's shape. Same
+  // The canonical matcher speaks snake_case mirror rows; these are the vendor row shape. Same
   // adapter pattern as collapseDuplicateVisitSubmissionsLiveShape, and it carries the original row
   // back so the caller keeps every field it displays.
   const index = indexCheckinsByAgentContactDay(
@@ -354,8 +325,7 @@ export function selectRepDayCheckins<C extends RepDayCheckinSource>(input: {
 /**
  * Shared post-processing: keep the records where the rep is the primary agent OR the joined
  * double-visit partner, annotate each visit (kind/role/mode/partner), sort check-ins by time,
- * and compute the cached driving route through the GPS stops. Identical for the live and mirror
- * sources — they differ only in how `allVisits` / `allCheckins` were obtained.
+ * and compute the cached driving route through the GPS stops.
  */
 async function buildRepDayResult(
   rep: { crmId: string | null; fullName: string | null; hrId: string },
@@ -368,14 +338,13 @@ async function buildRepDayResult(
   // comparison this always was — else his hr id. `hrId` comes from the directory, so the key exists.
   const selfKey = repDayPersonKey(self.crmId, self.hrId) ?? "";
   // Effective (static ∪ live departed) exclusion, resolved per call so a newly-resigned rep is
-  // dropped without a redeploy. Applied to BOTH the live and mirror sources so this drill-down
-  // stays consistent with the aggregate metric that links to it (a double visit whose PRIMARY
-  // agent is excluded, with the drilled rep as partner, must not surface here).
+  // dropped without a redeploy, so this drill-down stays consistent with the aggregate metric that
+  // links to it (a double visit whose PRIMARY agent is excluded, with the drilled rep as partner,
+  // must not surface here).
   const excludedAgentIds = new Set<number>(await getEffectiveExcludedAgentCrmIds());
   const dayVisits = allVisits
     // Resigned/departed agents are invisible in every aggregate (agent-side exclusion), so drop
-    // their rows here too — keeps this drill-down consistent with the metric it links to and makes
-    // the live and mirror sources agree.
+    // their rows here too — keeps this drill-down consistent with the metric it links to.
     .filter((visit) => !excludedAgentIds.has(visit.agentID))
     .filter(
       (visit) =>
@@ -389,9 +358,8 @@ async function buildRepDayResult(
   // Burst-duplicate collapse: every aggregate that links INTO this page (FWC day cells, portal
   // Team Calendar counts, DV analytics) already collapses the CRM mobile client's re-saves of
   // one real stop at read time — without the same collapse here, a day cell of "4" opens a
-  // drill-down listing the same visit 2–8 times (confirmed in production, 2026-08-01). Applied
-  // to both sources: the mirror never collapses for this caller, and the live API returns the
-  // raw duplicates too.
+  // drill-down listing the same visit 2–8 times (confirmed in production, 2026-08-01). The
+  // stored read never collapses for this caller.
   const visits: IReports360RepDayVisit[] = collapseDuplicateVisitSubmissionsLiveShape(dayVisits)
     .map((visit) => {
       const role: "primary" | "double" = repDayPersonKey(visit.agentID, visit.agentHrId) === selfKey ? "primary" : "double";
@@ -446,25 +414,8 @@ async function buildRepDayResult(
   return { checkins, rep, route, visits };
 }
 
-/** Live-source visits + check-ins for one rep-day (one login, both fetched in parallel). */
-async function fetchRepDayFromLive(
-  rep: { crmId: string | null; fullName: string | null; hrId: string },
-  self: RepDaySelf,
-  day: string,
-): Promise<IReports360RepDayResult> {
-  const config = getIReports360Config();
-  const token = await iReports360Login(config);
-  // Visits are required for this page; GPS check-ins are a best-effort overlay, so a
-  // check-ins API problem must never break the core visit drill-down.
-  const [allVisits, allCheckins] = await Promise.all([
-    iReports360GetVisits(config, token, day, day),
-    iReports360GetCheckins(config, token, day, day).catch(() => [] as IReports360Checkin[]),
-  ]);
-  return buildRepDayResult(rep, self, day, allVisits, allCheckins);
-}
-
-/** Mirror-source visits + check-ins for one rep-day. Reads the synced tables directly (this
- * module is inside the CRM domain, so it owns the raw table access). */
+/** Stored visits + check-ins for one rep-day. Reads the tables directly (this module is inside
+ * the CRM domain, so it owns the raw table access). */
 async function fetchRepDayFromMirror(
   rep: { crmId: string | null; fullName: string | null; hrId: string },
   self: RepDaySelf,
@@ -499,8 +450,7 @@ async function fetchRepDayFromMirror(
 
   // Fetch check-ins for every SUBMITTER of the day's visits, not just this person. A manager never
   // submits, so `[agentId]` alone returned nothing and their route was empty no matter how
-  // buildRepDayResult filtered. The live source needs no equivalent change — it already pulls the
-  // whole day's check-ins and lets buildRepDayResult decide.
+  // buildRepDayResult filtered.
   //
   // Over-fetching slightly is safe and deliberate: buildRepDayResult re-derives the owner set from
   // the exclusion-filtered visits, so a departed submitter's check-ins are dropped there.
@@ -534,13 +484,12 @@ async function fetchRepDayFromMirror(
 
 /**
  * Read-only drill-down for the "click a visit day" page: the visit records AND the GPS
- * check-ins one rep logged on one day. Resolves the rep's crm_id from the directory, then serves
- * from the mirror (historical) or live (recent, freshest) per the module policy above.
+ * check-ins one rep logged on one day. Resolves the rep's crm_id from the directory, then reads
+ * the stored tables.
  */
 export async function getIReports360RepDayVisits(input: {
   date: string;
   hrId: string;
-  preferLive?: boolean;
 }): Promise<IReports360RepDayResult> {
   const day = input.date.slice(0, 10);
   // Historical drill-down: include inactive so a rep who has since departed still resolves
@@ -557,49 +506,12 @@ export async function getIReports360RepDayVisits(input: {
     hrId: employee.hrId,
   };
   // A rep with no CRM id is no longer an empty day: a rep hired after the CRM cutover has none, and
-  // his native visits are found by hr id. The vendor never knew him, so he is never sent live.
+  // his native visits are found by hr id.
   const crmNumber = rep.crmId ? Number(rep.crmId) : Number.NaN;
   const self: RepDaySelf = {
     crmId: Number.isFinite(crmNumber) && crmNumber !== 0 ? crmNumber : null,
     hrId: rep.hrId,
   };
 
-  // THE CRM CUTOVER. From the cutover date the day is Phoenix's own record, and after the vendor is
-  // retired there is no live CRM to ask — both read the unified view only. An unreadable setting falls
-  // back to no cutover, which is the pre-cutover behaviour and never hides a row.
-  //
-  // A STARTED TEAM'S DAY IS NEVER FETCHED LIVE (owner, 2026-10-02 — "from the team's start"). The global
-  // cutover above is NOT that switch: a per-team start never sets `crm_cutover.cutover_date`, so this gate
-  // used to let a started rep's recent day through to the vendor, and a live call that SUCCEEDS with zero
-  // rows is served as the truth (the fallback below only catches a THROW). Measured on production
-  // 2026-10-04: 14 of Delta (1)'s 17 people had logged Phoenix visits since their 3 October start and the
-  // unified view returns no vendor row for any of the 17, so B-158's 22 Phoenix calls rendered as "no
-  // visits" on HR's field-workforce-compliance drill-down and the National Sales Manager's team calendar.
-  // B-120 is the sharper case: 3 of his rows are still in the raw mirror, which the view hides correctly,
-  // so going around it answered with the vendor's 3 rather than his 2 Phoenix visits. The mirror path below
-  // already reads the unified view with `includePhoenixVisits`, so it is the right answer for these days.
-  const [cutover, startedWindows] = await Promise.all([
-    getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
-    loadStartedRepWindows(),
-  ]);
-  const countedFromPhoenix = startedWindowCovers(startedWindows, { hrId: rep.hrId, crmId: self.crmId }, day);
-  const wantLive =
-    self.crmId != null &&
-    (input.preferLive ?? isRecentRepDay(day)) &&
-    isIReports360Configured() &&
-    !countedFromPhoenix &&
-    !cutover.vendorSyncRetiredAt &&
-    !isOnOrAfterCrmCutover(cutover, day);
-  if (wantLive) {
-    try {
-      return await fetchRepDayFromLive(rep, self, day);
-    } catch (liveError) {
-      // Recent-day live call failed — degrade to the mirror. Only surface the CRM error when
-      // the mirror has nothing to show either (so a genuine outage isn't hidden as an empty day).
-      const mirror = await fetchRepDayFromMirror(rep, self, day);
-      if (mirror.visits.length > 0 || mirror.checkins.length > 0) return mirror;
-      throw liveError;
-    }
-  }
   return fetchRepDayFromMirror(rep, self, day);
 }

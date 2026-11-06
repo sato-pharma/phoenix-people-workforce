@@ -89,14 +89,14 @@ function cairoStamp(iso: string): string {
 export function PlanVerificationBoardView({
   basePath,
   board,
-  canVerify,
+  canApprove,
   years,
 }: {
   basePath: string;
   board: PlanVerificationBoard;
-  /** False for a read-only viewer (the CEO account). The button is not rendered, and the route
-   * refuses it independently — the hidden button is UX, the route is the boundary. */
-  canVerify: boolean;
+  /** `phoenix_crm:approve`. False for a read-only viewer (the CEO account): the button is not rendered,
+   * and the decide route refuses it independently — the hidden button is UX, the route is the boundary. */
+  canApprove: boolean;
   years: number[];
 }) {
   const { kind, missingReps, month, plans, rosterKnown, scopeLabel, scopeReason, selected, year } = board;
@@ -211,15 +211,15 @@ export function PlanVerificationBoardView({
 
       <Section
         description={
-          canVerify
-            ? "Verifying writes the approval straight into the CRM and tells the rep. There is no way to undo it here."
+          canApprove
+            ? "A week sent in Phoenix CRM is approved here, exactly as on the Team tab. Old-CRM plans are read-only: iReports360 was retired on 6 November 2026."
             : "Read-only for your role — plan approvals are made by the manager the rep reports to."
         }
         title={`Plans — ${plans.length}`}
       >
         <PlanListTable
           basePath={basePath}
-          canVerify={canVerify}
+          canApprove={canApprove}
           kind={kind}
           month={month}
           plans={plans}

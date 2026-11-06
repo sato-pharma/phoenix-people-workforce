@@ -33,7 +33,7 @@
  *     leave on its own.
  *   - {@link crmVisitTypeMeaningStrict} answers undefined. The attendance digest day map uses it:
  *     silently cancelling a punch deduction for a code nobody has classified is the riskier
- *     default there. The CRM sync alerts on such a code (crm/unrecognized-visit-type-alert.ts).
+ *     default there. (The retired iReports360 sync alerted on such a code; no vendor row arrives now.)
  * For every code listed below, both lookups return the same answer.
  *
  * If iReports360 ever sends a new code, classify it HERE, deliberately, and nowhere else.

@@ -17,7 +17,7 @@ import { CrmCard, CrmCardsOnPhone, CrmFacts, CrmTable } from "@/components/phoen
 //
 // formatTime takes `check_date`, a `timestamptz` holding a VENDOR timestamp — iReports360 sends
 // zone-less Africa/Cairo wall-clock which is stored verbatim (see the VENDOR TIMESTAMP INVARIANT
-// in src/lib/crm/sync.ts), so its clock reading is ALREADY Cairo-local. This is a client
+// in src/lib/crm/vendor-row-types.ts), so its clock reading is ALREADY Cairo-local. This is a client
 // component, so rendering it in Africa/Cairo would double-add the offset and show check-in times
 // 2–3h late.
 function formatDate(value: string) {

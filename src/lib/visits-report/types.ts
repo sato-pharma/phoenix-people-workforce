@@ -82,7 +82,6 @@ export type VisitsSyncRun = {
 };
 
 export type VisitsReportData = {
-  configured: boolean;
   dateFrom: string;
   dateTo: string;
   filters: {

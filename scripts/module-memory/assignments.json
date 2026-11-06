@@ -392,6 +392,7 @@
   "ci-does-not-run-check-harden": "engineering",
   "ci-jobs-failing-in-seconds-means-billing-not-code": "engineering",
   "ci-on-main-is-hosted-so-an-actions-incident-withholds-the-deploy": "engineering-deploys",
+  "ci-runs-on-the-spare-laptop-until-money-returns": "engineering",
   "ci-smoke-login-prod-audit-noise": "sessions",
   "city-split-hides-same-city-customer-moves": "sales-closing",
   "claude-app-3-6556-2-kept-and-nvidia-is-ignored": "sessions",

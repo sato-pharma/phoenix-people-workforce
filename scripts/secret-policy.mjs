@@ -70,11 +70,9 @@ export const REQUIRED_VARIABLES = [
   // Added 2026-08-08 — code-verified to have no fallback/default, unlike the other 18 newly
   // GitHub-tracked variables (see sync-railway-production-secrets.mjs). Safe to require here
   // regardless of GitHub backfill status: this script checks Railway's live value, which is
-  // already correct for all 8.
+  // already correct for all 8. Three of the 8 — IREPORTS360_BASE_URL, _USERNAME and _PASSWORD — left
+  // with the iReports360 vendor, retired on 6 November 2026; removed from BOTH scripts in one change.
   "EMAIL_NOTIFICATIONS_ENABLED",
-  "IREPORTS360_BASE_URL",
-  "IREPORTS360_USERNAME",
-  "IREPORTS360_PASSWORD",
   "NOTIFICATION_EMAIL_FROM",
   "PHOENIX_APP_URL",
   "PHOENIX_LIVE_CRM_POLL",

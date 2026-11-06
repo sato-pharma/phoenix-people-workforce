@@ -240,7 +240,7 @@ rotation must also be updated in the Resend dashboard (§8).
 | Resend webhook | inbound | Svix signature (`RESEND_WEBHOOK_SECRET`) | `…/api/webhooks/resend` (owner sets in Resend dashboard) | `provider_event_id` upsert |
 | Supabase (DB/Storage/GoTrue bridge) | both | anon + service-role keys | `NEXT_PUBLIC_SUPABASE_URL` | — |
 | Telegram | both | bot token + `NOTIFICATION_WEBHOOK_SECRET` | `api.telegram.org`; inbound `…/api/integrations/telegram/webhook` | secret-token header |
-| iReports360 CRM | outbound | `IREPORTS360_USERNAME/PASSWORD` | `IREPORTS360_BASE_URL` | chunk upsert |
+| iReports360 CRM | — | **retired 6 November 2026** — nothing calls it, and its `IREPORTS360_*` secrets are no longer required | — | — |
 | Google Maps / Calendar | outbound | server + browser keys | Google APIs | — |
 | OpenAI (+ fallbacks) | outbound | `OPENAI_API_KEY` | api.openai.com | — |
 | On-prem attendance agent | inbound | `ATTENDANCE_AGENT_TOKEN` bearer | `…/api/attendance/raw-punches` | `ON CONFLICT DO NOTHING` |

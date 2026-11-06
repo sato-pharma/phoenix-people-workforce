@@ -35,12 +35,6 @@ export type JobScheduleDeclaration = {
   /** How late a ping may be, in seconds, before the job counts as stranded. */
   graceSeconds: number;
   /**
-   * Set on a job that pulls from iReports360. Once the CRM cutover retires the vendor these jobs
-   * stand down and stop pinging BY DESIGN, so the sweep stops watching them — see
-   * {@link watchedJobSchedules}.
-   */
-  vendorSync?: true;
-  /**
    * When this system started watching this job, as an ISO instant — set ONLY on a declaration that
    * was RESTORED after being stood down, never on a new one.
    *
@@ -247,28 +241,8 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // above have written their findings, on a minute nothing else in the account holds. Must match
   // scripts/cronjob-sync.mjs exactly. In-house only — the Healthchecks project has no slot left.
   { slug: "phoenix-system-audit-sweep", kind: "cron", schedule: "57 4 * * *", graceSeconds: 2 * HOUR },
-  // Twelve ticks inside a single hour, then 23 hours of deliberate silence. This is exactly the
-  // shape a naive "expected period" calculation gets wrong — it would read the 23-hour gap as a
-  // strand every single day. The register computes the previous scheduled fire from the expression
-  // instead, which is why cron-parser is used rather than an interval.
-  // 🔴 20 MINUTES, NOT 10 — ONE MISSED SLICE IS TOLERATED, THREE STILL ALARM. The window is twelve
-  // five-minute slices inside hour 5, so at a 10-minute grace a single slow slice was a page: of 12
-  // outages measured 2026-10-15, six lasted 5.2-5.8 minutes (one slice) and three lasted ~15.5
-  // (three slices). 20 silences the six and keeps the nine- and the 26-hour ones, which are real. It
-  // does NOT blind the morning: a job that does not start at all is still reported by 05:30.
-  { slug: "phoenix-crm-contact-lists", kind: "cron", schedule: "*/5 5 * * *", graceSeconds: 20 * MINUTE, vendorSync: true },
   { slug: "phoenix-expense-claims-refresh", kind: "cron", schedule: "51 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-recruitment-cv-digest", kind: "cron", schedule: "47 0,6,12,18 * * *", graceSeconds: 1 * HOUR },
-  // 🔴 30 MINUTES, NOT 15 — THE DEPLOY RESTART IS WIDER THAN THE OLD GRACE. This poller runs INSIDE
-  // the production process, so every deploy silences it, and this repo merges many times a day: of
-  // 33 outages measured 2026-10-15, 26 recovered within 4.3 minutes of going down — a ~21-minute
-  // silence against a 20-minute threshold, which is the restart, not a stall. 30 would have silenced
-  // 14 of the 15 alerts in the last 30 days. **Liveness is not weakened by this:**
-  // `phoenix-inbound-intake` (2m period, 10m grace) is the fast "is Phoenix alive?" signal and stays
-  // exactly where it is — widening that one is what would hurt.
-  { slug: "phoenix-ireports360-live-poll", kind: "simple", periodSeconds: 5 * MINUTE, graceSeconds: 30 * MINUTE, vendorSync: true },
-  { slug: "phoenix-ireports360-sync", kind: "cron", schedule: "0 6-21/3 * * *", graceSeconds: 2 * HOUR, vendorSync: true },
-  { slug: "phoenix-reconcile-visits", kind: "cron", schedule: "0 4 * * 0", graceSeconds: 12 * HOUR, vendorSync: true },
   // 🔴 PINGED FROM INSIDE THE DATABASE, NOT BY CRON-JOB.ORG. The pg_cron job
   // `crm-agent-crm-ids-reconcile` is the only thing keeping the departed-agent CRM id cache current,
   // and the door never falls back to the live read, so a stopped job froze the cache silently.
@@ -307,19 +281,6 @@ export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
 /** Declared slugs, for the sweeper's bootstrap and for the doc-parity test. */
 export function declaredJobSlugs(): string[] {
   return JOB_SCHEDULES.map((declaration) => declaration.slug);
-}
-
-/**
- * The declarations the sweep should judge. Pure — the caller resolves the stand-down reason
- * (`resolveVendorSyncStandDown`, which fails OPEN to null), so this module stays importable by the
- * unit test. With a reason, the iReports360 jobs are left out: after the cutover they are silent on
- * purpose, and judging them would page in-app, Telegram and push once a Cairo day, forever.
- */
-export function watchedJobSchedules(
-  declarations: readonly JobScheduleDeclaration[],
-  vendorStandDownReason: string | null,
-): JobScheduleDeclaration[] {
-  return vendorStandDownReason ? declarations.filter((declaration) => !declaration.vendorSync) : [...declarations];
 }
 
 export function findJobSchedule(slug: string): JobScheduleDeclaration | undefined {

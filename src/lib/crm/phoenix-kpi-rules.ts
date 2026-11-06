@@ -35,7 +35,7 @@
 
 import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, countCallRateWorkingDays, isCallRateWorkingDay, normalizeSession, type CallRateHolidays } from "@/lib/crm/call-rate";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
-import type { CrmListType } from "@/lib/crm/contacts-web-client";
+import type { CrmListType } from "@/lib/crm/list-types";
 import { isOnOrAfterCrmCutover, type CrmCutoverSetting } from "@/lib/crm/cutover";
 import { isPhoenixNativeVisitRow, type StartedRepWindow } from "@/lib/crm/phoenix-team-starts";
 import { CATCH_ALL_CONTACT_CRM_ID, DEFAULT_REP_KPI_STANDARDS, kpiGradeTierOf, type RepKpiStandards } from "@/lib/crm/rep-kpi-reports";

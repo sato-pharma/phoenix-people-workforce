@@ -254,8 +254,11 @@ function cronMonitorTests() {
   assert.equal(daily?.timezone, "Africa/Cairo", "the register is Cairo local; UTC would put every window hours off");
   assert.equal(daily?.failureIssueThreshold, 2);
   assert.equal(daily?.recoveryThreshold, 1);
-  // A job on a plain interval becomes an interval monitor.
-  assert.deepEqual(sentryMonitorConfigFor("phoenix-ireports360-live-poll")?.schedule, { type: "interval", value: 5, unit: "minute" });
+  // A job on a plain interval becomes an interval monitor. None is declared since the iReports360 live
+  // poller was retired on 6 November 2026, so this holds for whichever one is declared next.
+  for (const job of JOB_SCHEDULES.filter((declaration) => declaration.kind === "simple")) {
+    assert.deepEqual(sentryMonitorConfigFor(job.slug)?.schedule, { type: "interval", value: Math.max(1, Math.round((job.periodSeconds ?? 0) / 60)), unit: "minute" });
+  }
   // A job the register never declared sends no config, so Sentry ignores its check-in and creates nothing.
   assert.equal(sentryMonitorConfigFor("not-a-declared-job"), undefined);
   assert.equal(sentryMonitorConfigFor(""), undefined);

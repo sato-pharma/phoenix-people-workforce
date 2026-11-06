@@ -328,8 +328,7 @@ export async function notifyNotificationHeld(input: HeldNotificationAlertInput):
             reviewId: input.reviewId,
           },
           // module: "system" is the module actually enabled in notification_module_channel_policies
-          // for Telegram — the same reason background-jobs-digest.ts and ireports360-sync-digest.ts
-          // use it. An unknown module string fails closed in resolveTelegramGovernance.
+          // for Telegram — the same reason background-jobs-digest.ts uses it. An unknown module string fails closed in resolveTelegramGovernance.
           module: "system",
           priority: "high",
           recipientHrId: recipient.hrId,

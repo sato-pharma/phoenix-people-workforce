@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { summarizeFieldWorkforceMirrorFreshness } from "../src/lib/field-workforce-compliance/live-snapshots.ts";
-import { JOB_SCHEDULES, watchedJobSchedules } from "../src/lib/observability/job-schedule.ts";
+import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import { detectDvDays } from "../src/lib/probation/intelligence/dv-detection.ts";
 import type { RawDvVisitRow } from "../src/lib/probation/intelligence/dv-source.ts";
 
 // What must keep working, stay quiet, or stop crying wolf once iReports360 is switched off and Phoenix
 // records visits itself. Each block names the finding it pins. The pure rules are exercised for real;
 // the paths that only exist behind a database read or a client component are pinned by source shape.
+// iReports360 was retired on 6 November 2026 and its code removed, so the blocks that once pinned a
+// stand-down gate now pin that the vendor code is GONE and the module it fed was rewired, not closed.
 
 const read = (path: string) => readFileSync(path, "utf8");
 
@@ -55,38 +57,24 @@ export function runCrmSwitchOffSafetyTests() {
     assert.equal(zero.unresolved[0]?.reason, "missing_crm_visit_id", "F1a: id 0 is still reported as missing");
   }
 
-  // F2 — the heartbeat sweep stops watching the four vendor jobs once the vendor is stood down.
+  // F2 — the four vendor jobs left the schedule with the vendor, so the heartbeat sweep judges every job.
   {
-    const tagged = JOB_SCHEDULES.filter((job) => job.vendorSync).map((job) => job.slug).sort();
-    assert.deepEqual(tagged, [...VENDOR_JOB_SLUGS].sort(), "F2: exactly the four vendor jobs are tagged vendorSync");
-
-    const retired = watchedJobSchedules(JOB_SCHEDULES, "vendor_sync_retired").map((job) => job.slug);
+    const declared = JOB_SCHEDULES.map((job) => job.slug);
     for (const slug of VENDOR_JOB_SLUGS) {
-      assert.ok(!retired.includes(slug), `F2: ${slug} is not watched once the vendor is retired`);
+      assert.ok(!declared.includes(slug), `F2: ${slug} is no longer a declared job`);
     }
-    assert.equal(retired.length, JOB_SCHEDULES.length - VENDOR_JOB_SLUGS.length, "F2: every other job is still watched");
-    assert.equal(watchedJobSchedules(JOB_SCHEDULES, null).length, JOB_SCHEDULES.length, "F2: before retirement every job is watched");
+    const schedule = read("src/lib/observability/job-schedule.ts");
+    assert.doesNotMatch(schedule, /watchedJobSchedules|vendorSync:/, "F2: the stand-down filter left with the vendor jobs");
 
     const heartbeat = read("src/lib/observability/job-heartbeat.ts");
-    assert.match(
-      heartbeat,
-      /declarations:\s*watchedJobSchedules\(JOB_SCHEDULES,\s*vendorStandDown\)/,
-      "F2: sweepJobHeartbeats assesses watchedJobSchedules, not the raw JOB_SCHEDULES",
-    );
-    assert.match(heartbeat, /const vendorStandDown = await resolveVendorSyncStandDown\(\);/, "F2: the sweep reads the stand-down");
+    assert.match(heartbeat, /declarations:\s*JOB_SCHEDULES\b/, "F2: sweepJobHeartbeats assesses every declared job");
+    assert.doesNotMatch(heartbeat, /resolveVendorSyncStandDown/, "F2: the sweep no longer asks the stand-down");
   }
 
-  // F3 — reconciliation check 10 holds once iReports360 is retired instead of reporting a breach.
+  // F3 — reconciliation check 10 (the vendor sync's freshness) left with the vendor instead of holding forever.
   {
     const source = read("src/lib/reconciliation/checks/crm-sales.ts");
-    const start = source.indexOf("const visitsSyncHasARecentSuccess");
-    assert.ok(start >= 0, "F3: check 10 is still defined");
-    const check = source.slice(start, source.indexOf("\n};", start));
-    const standDown = check.indexOf("await resolveVendorSyncStandDown()");
-    const retiredDetail = check.indexOf('detail: "iReports360 retired; Phoenix records visits directly."');
-    assert.ok(standDown >= 0, "F3: check 10 asks the stand-down");
-    assert.ok(retiredDetail > standDown, "F3: check 10 returns the retired detail after the stand-down question");
-    assert.match(check.slice(standDown, retiredDetail), /holds: true/, "F3: the retired outcome holds");
+    assert.doesNotMatch(source, /visitsSyncHasARecentSuccess|SYNC_FRESHNESS_HOURS/, "F3: check 10 is gone, and nothing lists it");
   }
 
   // F4 — the live-snapshot page stops calling the data stale once the vendor sync is retired.
@@ -121,48 +109,55 @@ export function runCrmSwitchOffSafetyTests() {
     assert.doesNotMatch(board, /iReports360 sent no usable clock/, "F5: the no-clock badge no longer names the vendor");
   }
 
-  // F6 — every board mounts the server-decided sync action, never the raw button.
+  // F6 — Early Birds stays and keeps scoring from Phoenix CRM (owner, 6 November 2026: "donot close early
+  // birds just make it grab its data from phx crm"); only its vendor Sync control left.
   {
-    const callers = [
+    const pages = [
       "src/components/employee-portal/dashboards/nsm-command-center.tsx",
       "src/components/employee-portal/dashboards/rm-command-center.tsx",
       "src/components/employee-portal/dashboards/dsm-command-center.tsx",
       "app/employee-portals/early-birds/page.tsx",
       "app/(admin)/admin/early-birds/page.tsx",
     ];
-    for (const path of callers) {
-      const source = read(path);
-      assert.match(source, /<EarlyBirdsSyncAction \/>/, `F6: ${path} mounts EarlyBirdsSyncAction`);
-      assert.doesNotMatch(source, /<EarlyBirdsSyncButton \/>/, `F6: ${path} no longer mounts the raw button`);
+    for (const path of pages) {
+      assert.ok(existsSync(path), `F6: ${path} is still there`);
+      assert.doesNotMatch(read(path), /EarlyBirdsSync(Action|Button)/, `F6: ${path} mounts no vendor Sync control`);
     }
-    const action = read("src/components/crm/early-birds-sync-action.tsx");
-    assert.match(action, /if \(await resolveVendorSyncStandDown\(\)\) return null;/, "F6: the action renders nothing once retired");
+    for (const path of [
+      "src/components/crm/early-birds-sync-action.tsx",
+      "src/components/crm/early-birds-sync-button.tsx",
+      "app/api/crm/early-birds/sync/route.ts",
+    ]) {
+      assert.equal(existsSync(path), false, `F6: ${path} left with the vendor`);
+    }
+    const collect = read("src/lib/early-birds/collect.ts");
+    assert.match(collect, /import \{[^}]*\bqueryVisits\b[^}]*\} from "@\/lib\/crm\/reads"/, "F6: Early Birds reads visits through the CRM read door");
+    assert.match(collect, /import \{[^}]*\bqueryCheckins\b[^}]*\} from "@\/lib\/crm\/reads"/, "F6: and check-ins through it");
   }
 
-  // F7 — a Phoenix plan (negative id) gets no verify action and says where it is reviewed.
+  // F7 — the plan board's button, which only ever wrote into iReports360, now approves a sent Phoenix CRM
+  // week through Phoenix's own decide route; an old-CRM plan is history in words.
   {
+    assert.equal(existsSync("app/api/crm/plan-verification/verify/route.ts"), false, "F7: the vendor verify route is gone");
+    assert.equal(existsSync("src/lib/crm/plan-verification-service.ts"), false, "F7: its vendor write service is gone");
+
     const button = read("src/components/crm/plan-verify-button.tsx");
     assert.match(button, /const phoenixPlan = plan\.crmPlanId < 0;/, "F7: the button recognises a Phoenix plan");
-    assert.match(button, /const action: PlanVerificationAction \| null = phoenixPlan\s*\?\s*null/, "F7: a Phoenix plan has no action");
-    assert.match(button, /phoenixPlan \? "Reviewed in Phoenix"/, "F7: a Phoenix plan reads Reviewed in Phoenix");
-
-    const route = read("app/api/crm/plan-verification/verify/route.ts");
-    const negative = route.indexOf("crmPlanId < 0");
-    const standDown = route.indexOf("await resolveVendorSyncStandDown()");
-    assert.ok(negative >= 0 && standDown >= 0, "F7: the route has both refusals");
-    assert.ok(negative < standDown, "F7: the negative-id answer comes before the generic retired 409");
+    assert.match(button, /phoenixStatus === "submitted"/, "F7: only a sent Phoenix week can be approved");
+    assert.match(button, /fetch\("\/api\/phoenix-crm\/plans\/decide"/, "F7: it posts to Phoenix's own decide route");
+    assert.match(button, /action: "approve"/, "F7: approve only — a return needs the Team tab's note");
+    assert.match(button, /expectedVersion: plan\.phoenixVersion/, "F7: a stale version is refused by the route, not guessed");
+    assert.match(button, /payload\.message \?\?/, "F7: the route's own refusal is what the screen shows");
+    assert.doesNotMatch(button, /\/api\/crm\/plan-verification/, "F7: nothing still writes into the old CRM");
   }
 
-  // F8 — the CRM hub's sync panel says the vendor is retired and offers no backfill.
+  // F8 — the CRM hub's sync panel says the vendor is retired, keeps the run history, and offers no backfill.
   {
     const panel = read("src/components/crm/crm-sync-status-panel.tsx");
     assert.match(panel, /iReports360 was retired on \{formatCairoDay\(retiredAt\)\}\. Phoenix records visits directly\./, "F8: one retired line");
     assert.match(panel, /function formatCairoDay[\s\S]*?timeZone: "Africa\/Cairo"/, "F8: the retirement day is a Cairo day");
-    // retiredAt leads the guard so a retired vendor hides the backfill; the read-only portal surface
-    // (crm-portal-scope.test.ts) shares the same guard via `|| readOnly`, which does not weaken F8.
-    const hide = panel.search(/\{retiredAt(?: \|\| readOnly)? \? null : \(/);
-    const backfill = panel.indexOf("Run backfill");
-    assert.ok(hide >= 0 && hide < backfill, "F8: the backfill control sits inside the retired guard");
+    assert.equal(panel.includes("Run backfill"), false, "F8: the backfill control left with the vendor");
+    assert.equal(existsSync("app/api/admin/visits-report/backfill/route.ts"), false, "F8: and so did its route");
 
     const page = read("app/(admin)/admin/crm/page.tsx");
     assert.match(page, /retiredAt=\{vendorSyncRetiredAt\}/, "F8: the hub passes the retirement to the panel");

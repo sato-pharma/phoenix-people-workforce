@@ -142,10 +142,10 @@ export default async function RepsListPage({ searchParams }: PageProps) {
   }
 
   if (tab === "plans") {
-    // Read separately from `crm_plans:read`: more seats may READ a plan than may sign one. This
-    // hides the button; POST /api/crm/plan-verification/verify re-checks it, which is the boundary —
-    // an absent button is UX, never the control.
-    const canVerify = await canAccess(access, "crm_plans", "approve");
+    // Read separately from `crm_plans:read`: more seats may READ a plan than may approve one. This
+    // hides the button; POST /api/phoenix-crm/plans/decide re-checks it, which is the boundary — an
+    // absent button is UX, never the control.
+    const canApprove = await canAccess(access, "phoenix_crm", "approve");
 
     // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
     // inside try/catch). A data failure renders a plain explanation, never a crash page.
@@ -174,7 +174,7 @@ export default async function RepsListPage({ searchParams }: PageProps) {
           week={plansBoard?.week.key ?? params?.week ?? null}
         />
         {plansBoard ? (
-          <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canVerify={canVerify} />
+          <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canApprove={canApprove} />
         ) : (
           <LoadFailure message={plansError} />
         )}

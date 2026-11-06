@@ -79,7 +79,6 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   resignation_sla_reminder: "Resignations",
   weekly_plans_drift_alert: "Weekly & Monthly Plans",
   excuse_drift_alert: "Excuses",
-  ireports360_sync_notify: SYSTEM_HEALTH_MODULE,
   attendance_ingestion_alert: SYSTEM_HEALTH_MODULE,
   marketing_sla_reminder: "Marketing Requests",
   resignation_workflow_alert: "Resignations",

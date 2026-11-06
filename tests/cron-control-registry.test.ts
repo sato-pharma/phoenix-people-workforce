@@ -11,7 +11,7 @@ import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts"
 const KNOWN_DUAL_AUTH_EXCEPTIONS = new Set(["/api/notifications/process"]);
 
 export function runCronControlRegistryTests() {
-  assert.equal(cronJobRegistry.length, 9, "expected exactly the 9 live Cloud Scheduler jobs");
+  assert.equal(cronJobRegistry.length, 6, "expected exactly the 6 registered cron routes (the three iReports360 routes were retired with the vendor on 6 November 2026)");
 
   const seenJobNames = new Set<string>();
   const seenRoutes = new Set<string>();

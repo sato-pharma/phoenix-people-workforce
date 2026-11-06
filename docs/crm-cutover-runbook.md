@@ -50,6 +50,59 @@ month, the KPI rule switch and vacation-day requests) stays a separate decision 
 3. **Retire vendor sync** — step 6 below, with `cutover_date` left null (announce first).
 4. Steps 7 to 9 below: cron-job.org, Healthchecks, secrets.
 
+### Done — iReports360 retired on Friday 6 November 2026, 03:16 Cairo
+
+Owner, 6 November 2026, after the last reps' training: *"no more accepted visits or records on old crm … take all
+its data and close and retire its api and any relatings to the old crm."* Read on production `ozucdzovmcqvepbozvqf`:
+
+- **The last pull, just before the switch:** the 10-day visits sync fetched and upserted 437 visits and 614
+  check-ins (0 deleted); the plan sync pulled 314 entries for 1 November to 13 December (0 pruned); the parity
+  sweep of 28 October to 6 November read **318 = 318, equal**. All 11 parity windows from 1 January are equal
+  except 31 January to 1 March, where the mirror holds 338 rows MORE than the vendor still returns — nothing is
+  missing there. The mirror holds 144,524 visits, 1 January to 5 November 2026. The history copy's dry run: 66,954
+  visits in scope, all already copied into `phoenix_crm_visits`, 0 to write.
+- **Still recording there at the switch** (own entries, 24 October onwards): Salim Gomaa, district manager, no Phoenix
+  entry since 7 October, last old-CRM entry Thursday 5 November 14:26; Nermeen Salah, district manager, meeting and
+  training days only, last saved Friday 6 November 01:03. Both are in the mirror. Anything either enters there
+  from now on is not read — the owner's ruling.
+- **The switch:** `vendor_sync_retired_at` = 2026-11-06 03:16:26 Cairo, `cutover_date` still null, so no month is
+  waived and no KPI rule moved. No sync run started after it; the last vendor row was synced at 03:14:40.
+- **cron-job.org:** `phoenix-crm-contact-lists` (8344730) switched off and read back off; the four iReports360 jobs
+  (8200910, 8200916, 8200918, 8203342) were already off.
+- **Healthchecks.io:** `phoenix-crm-contact-lists`, `phoenix-ireports360-live-poll`, `phoenix-ireports360-sync` and
+  `phoenix-reconcile-visits` paused and read back paused; `phoenix-ireports360-live-sync` does not exist.
+- **Secrets:** the four `IREPORTS360_*` names (`BASE_URL`, `USERNAME`, `PASSWORD`, `TIMEOUT_MS`) were on GitHub
+  and on the Railway services `phoenix-people-workforce` and `phoenix-workforce-worker`. Removing them is a
+  secret-store write the session's classifier refuses, so it is the owner's own step. `PHOENIX_LIVE_CRM_POLL` stays.
+- **The code:** the vendor sync engine, the poller, the vendor cron routes, the scraper and their tests leave in
+  the same PR as this record — on the owner's word, not after the month step 10 below once asked for. Gone: every
+  call to the vendor (the HTTP client, its credentials check, the visits, plan, contact-list and parity syncs, the
+  live poller, the rep-day live fetch), the four vendor cron routes, the four vendor buttons (the CRM hub's
+  backfill, the Early Birds Sync, the rep-doctor-lists sync, the plan Verify that wrote into the vendor), the
+  Team tab's old-CRM week approval, the holdouts tab, and the vendor jobs in the schedule, heartbeat, cron-control,
+  Healthchecks and cron-job.org declarations. Every stored row stays and every report keeps reading it.
+- **Rewired, not closed** (owner, 6 November 2026: *"do not close early birds just make it grab its data from phx
+  crm .. phx crm replaced the old crm so any module was wired with old crm must wire with phx crm"*): Early Birds
+  already scored from Phoenix CRM through the read door (a day with a Phoenix visit takes that visit's time,
+  2 October 2026), so only its vendor Sync button went. The plan verification board's button, which only ever
+  wrote into iReports360, now approves a sent Phoenix CRM week through Phoenix's own plan decision
+  (`/api/phoenix-crm/plans/decide`); old-CRM plans on that board are history in words. The CRM housekeeping timer
+  (contact master, probation double visits) now runs unconditionally, because with the poller gone it is the only
+  caller of both. Measured before the change: no database view or function reads the vendor tables except the
+  three combined views, the contact master, the history copy and one identity lookup.
+
+#### The live poller's rules, retired with it
+
+Moved here verbatim from `.claude/rules/crm-sync.md` when the code they governed was deleted, so the account
+outlives the code:
+
+- 🔴 **THE POLLER REMEMBERS ITS LAST ROLLING SYNC AND WEEKLY RECONCILE BY READING DEEP RUNS ONLY (`readDeepRunMarkers`, `date_from` at least 9 days back) — NEVER "THE NEWEST 200 SUCCESSFUL ROWS" OF `ireports360_visits_sync_runs`.** The live poll writes a small row per probe (20-44 an hour from 10:00 Cairo on 11 Oct 2026), so by a 17:35 deploy that Sunday the 04:00 reconcile was 231 rows back, the marker came back null and the 30-day reconcile ran again, digest included. It only shows on a Sunday after 04:00 because the reconcile is due on no other day. Pinned by the 231-probe-row block of `tests/crm-live-poller.test.ts`, whose fake applies the filters it is given.
+- 🔴 **A RESTART MARKER THE POLLER COULD NOT READ HOLDS THE JOBS IT TIMES, AND IS READ AGAIN EVERY TICK — FOR 30 MINUTES AT MOST, THEN THEY RUN WITHOUT IT AS BEFORE** (19 Oct 2026, 15:21 Cairo: one marker read timed out in a database burst, a 6.5 ms query, and the first due tick would have re-run the 10-day sync it had just run; on a Sunday afternoon, the 30-day reconcile). `seedMarkers` and `nextSeedHold` in `src/lib/crm/live-poller.ts`; three groups, each its own hold: the deep runs (rolling sync and reconcile), the plan sync and the parity sweep. `resolveDueScheduledWork` takes `held`; the live poll and the contact lists are never held. A failure is a `logWarning` while held and ONE error row when the hold gives up (`SEED_HOLD_MAX_MS`), never sooner — never lengthen it, the rolling sync feeds payroll attendance. Pinned by the last block of `tests/crm-live-poller.test.ts`.
+- 🔴 **NO RECONCILE OR PRUNE DELETES A ROW AN OVERLAPPING SYNC WROTE** (audit F-07/S-SAL-01, 2026-10-23). Visits, check-ins and the weekly and monthly plan prune all judge stale rows through `staleReconcileIds` (`src/lib/crm/reconcile-guard.ts`): unseen by this fetch AND synced before this run began, compared as instants. The plan prune also records every row it removes in a required `crm_plan_sync` audit row before the delete, and deletes nothing it could not record.
+- 🔴 **ONE POLLER ACROSS EVERY PROCESS — EACH TICK CLAIMS THE `crm-live-poll` LEASE IN `public.job_leases` FIRST, AND STANDS BY WHILE ANOTHER LIVE PROCESS HOLDS IT** (23 Oct 2026 audit, P5-05). A heartbeat renews it every minute (ttl 180 s), so a long deep run never lets it lapse and a dead holder is replaced within three minutes. It FAILS OPEN: until `20261023140000_job_leases.sql` is applied, or whenever `claim_job_lease` cannot be read, every claim answers "held" — today's behaviour, said once in the log (`job_lease_unavailable`). Never make an unreadable lease stop the poller. `src/lib/platform/job-lease.ts`; pinned by `tests/job-lease.test.ts`.
+- 🔴 **THE PARITY SWEEP'S "MIRROR" IS `ireports360_visits`, READ DIRECTLY — NEVER `queryVisits`, WHICH SCANS `crm_visits_unified` AND COUNTS EVERY PHOENIX-BORN VISIT AS A ROW THE VENDOR LOST** (23 Oct 2026). The newest window was refused at 4,779 extra of 12,116 — 4,780 of them Phoenix rows, first one 3 Oct, growing ~300 a day — so it could never be verified again and 8 real late saves went unwritten; nothing was ever at risk of deletion, because the repair path only ever touches the mirror table. `loadMirrorVisitIds` in `src/lib/crm/parity.ts`, keyset by `crm_visit_id`. Account: `docs/crm-parity-sweep-mirror-only.md`, which also holds the one window still legitimately refused.
+
+
 ## Who enters what from the cutover date
 
 - **Every rep of every line** enters visits in Phoenix (My Visits → Log a visit). A regular (doctor)

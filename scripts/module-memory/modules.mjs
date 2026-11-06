@@ -424,8 +424,7 @@ export const MODULES = [
       "src/lib/workforce/plan-second-approver.ts",
       "app/api/phoenix-crm/manager-plans/**",
       "src/lib/phoenix-crm/old-crm-plan-*.ts",
-      "src/lib/phoenix-crm/server/old-crm-plan-*.ts",
-      "app/api/phoenix-crm/plans/old-crm/**",
+      "src/lib/phoenix-crm/server/manager-old-crm-weeks.ts",
       "supabase/migrations/*phoenix_crm_manager_plan*",
       "tests/phoenix-crm-manager-plan*",
       "tests/phoenix-crm-training-manager-plan*",
@@ -841,7 +840,6 @@ export const MODULES = [
       "src/lib/crm/contact-lists.ts",
       "src/lib/crm/contact-master.ts",
       "src/lib/crm/phoenix-team-starts.ts",
-      "app/api/cron/crm-contact-lists/**",
       "app/**/{doctor-list,rep-doctor-lists,my-list}/**",
       "tests/*{contact-master,contact-list,doctor-list}*",
       "supabase/migrations/*contact_master*",
@@ -860,14 +858,14 @@ export const MODULES = [
   // nothing that used to arrive stops arriving.
   {
     id: "crm-sync",
-    title: "Field CRM sync — the iReports360 live poller, its scheduled jobs and their restart markers",
-    scope: "The in-process iReports360 loop: the live probe, the rolling 10-day sync, the weekly 30-day reconcile, the plan sync, the contact-list sweep and the parity sweep, the order it runs them in, and the markers a deploy restart reads back so it does not run one again.",
+    title: "Field CRM sync — the retired iReports360 sync's record, the cutover switch and the housekeeping timer",
+    scope: "What outlived the iReports360 sync: the vendor sync-run log and its history panel, the cutover and retirement switch (crm_cutover), the in-process host guards, and the CRM housekeeping timer (contact-master refresh, probation double-visit capture). The poller and every vendor call were removed on 6 November 2026.",
     globs: [
-      "src/lib/crm/{live-poller,sync,sync-run-groups,parity,plan-sync,cutover,housekeeping-scheduler}.ts",
-      "app/api/cron/ireports360-visits-{live-sync,reconcile,sync}/**",
-      "tests/crm-live-*",
+      "src/lib/crm/{sync-run-groups,cutover,housekeeping-scheduler,vendor-row-types}.ts",
+      "src/lib/platform/in-process-host.ts",
+      "tests/crm-cutover.test.ts",
     ],
-    keywords: ["live poller", "crm poller", "rolling sync", "weekly reconcile", "wide reconcile", "parity sweep", "restart marker", "deep run", "scheduled work", "seed the markers"],
+    keywords: ["live poller", "crm poller", "ireports360 retired", "vendor sync retired", "housekeeping timer", "in-process host", "sync run log", "retire the vendor"],
     tables: ["ireports360_visits_sync_runs"],
   },
   {

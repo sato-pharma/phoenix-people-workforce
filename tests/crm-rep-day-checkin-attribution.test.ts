@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { resolveRepDayCheckinOwners, resolveRepDayCheckinOwnerKeys, selectRepDayCheckins } from "../src/lib/crm/rep-day.ts";
-import type { IReports360Checkin, IReports360Visit } from "../src/lib/crm/client.ts";
+import type { IReports360Checkin, IReports360Visit } from "../src/lib/crm/vendor-row-types.ts";
 
 /** A-7 (crm 1234) on 2026-06-14, as it really is in production. */
 const MANAGER = 1234;

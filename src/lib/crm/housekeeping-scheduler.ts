@@ -1,21 +1,19 @@
 // The CRM housekeeping timer — the work that must outlive iReports360.
 //
-// Probation double-visit days are captured from the CRM record by syncProbationDvDays. Until the CRM
-// cutover that capture rides the live poller's deep runs (runProbationDvCapture in live-poller.ts),
-// and before that it rode the two vendor cron routes. Once the cutover retires the vendor, the poller
-// stands down whole and the crons answer "skipped" — and with them would go the only caller of the
-// capture, silently, exactly as happened on 2026-08-16 when the crons were switched off.
-//
-// So this timer takes the capture over from the moment vendor sync is retired, and does nothing
-// before that (the poller still owns it, and running both would only repeat idempotent reads). It
-// reads the unified CRM view through the read door and never calls the vendor, so, like the Early
-// Birds close, it keeps the poller's HOST guards and needs no iReports360 credentials.
+// Probation double-visit days are captured from the CRM record by syncProbationDvDays. That capture
+// first rode the two vendor cron routes, then the iReports360 live poller's deep runs, and this timer
+// took it over when the vendor was retired. The poller was REMOVED with the vendor (6 November 2026),
+// so this timer is now the ONLY caller of the capture and of the contact-master refresh below — and it
+// runs UNCONDITIONALLY: it no longer waits for vendor_sync_retired_at, because an unreadable or unset
+// setting would otherwise stop both jobs silently, exactly as happened on 2026-08-16 when the crons
+// were switched off. It reads the unified CRM view through the read door, never the vendor, and keeps
+// the in-process HOST guards it shares with the Early Birds close (src/lib/platform/in-process-host.ts).
 //
 // THE CONTACT MASTER IS THE SECOND JOB IT TAKES OVER (re-audit, 2026-10-22). crm_contact_master_refresh
 // turns each Phoenix-born doctor into a crm_contacts row and keeps every started rep's dated doctor-list
 // assignments, and its own SQL switches the vendor half off after the cutover date — it was written to
 // keep running. But its only callers were the poller's contact-list slice and the crm-contact-lists cron,
-// and both stand down with the vendor, so from the cutover a doctor a rep adds in Phoenix would never reach
+// and both went with the vendor, so without this timer a doctor a rep adds in Phoenix would never reach
 // the master. This timer runs it from the same moment: the list half every tick, the activity half (every
 // visit and plan row, ~2.5 s) once per Cairo day — the cadence the poller gave it.
 //
@@ -28,20 +26,24 @@
 // OPEN — an unreadable lease or stamp runs the refresh exactly as before.
 
 import { readCrmContactMasterInputsStamp, refreshCrmContactMaster } from "@/lib/crm/contact-master";
-import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
-import { PROBATION_DV_LOOKBACK_DAYS, resolveInProcessHostRefusal, unrefTimer } from "@/lib/crm/live-poller";
 import { logError } from "@/lib/observability/log";
 import { createJobLeaseKeeper, type JobLeaseRpcClient } from "@/lib/platform/job-lease";
 import { trackJob } from "@/lib/observability/running-jobs";
+import { resolveInProcessHostRefusal, unrefTimer } from "@/lib/platform/in-process-host";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-/** How often the timer asks. Cheap: one cached settings read, and nothing more until work is due. */
+// How far back each run re-captures probation Double-Visit days. A double visit could be saved up to
+// 16 days late (August 2026 maximum); the window reads only the mirror and writes new days only, so its
+// width costs a few reads. Carried over unchanged from the retired iReports360 poller.
+export const PROBATION_DV_LOOKBACK_DAYS = 45;
+
+/** How often the timer asks. Cheap: one lease claim, and nothing more until work is due. */
 export const CRM_HOUSEKEEPING_TICK_MS = 15 * 60_000;
 
-/** The capture's cadence once the vendor is retired — about four times a day, the rhythm the vendor
- * sync gave it. Each run re-reads a 45-day window and writes new days only. */
+/** The capture's cadence — about four times a day, the rhythm the vendor sync gave it. Each run
+ * re-reads a 45-day window and writes new days only. */
 export const CRM_HOUSEKEEPING_PROBATION_DV_GAP_MS = 6 * 60 * 60_000;
 
 /** After a failed capture, wait this long before trying again rather than retrying every tick. */
@@ -94,7 +96,7 @@ export function isContactMasterActivityDue(input: { cairoToday: string; lastActi
 let started = false;
 let inFlight = false;
 const state: { lastFailureMs: number | null; lastSuccessMs: number | null } = { lastFailureMs: null, lastSuccessMs: null };
-/** In memory, like the poller's stamp: a deploy resets it and that day gets one more activity pass. */
+/** In memory: a deploy resets it and that day gets one more activity pass. */
 let contactActivityRebuiltOnCairoDay: string | null = null;
 /** The inputs' stamp the last successful refresh read, and when it landed. In memory: a deploy or a lease
  * changing hands refreshes once more, which is the safe direction. */
@@ -110,8 +112,6 @@ async function runOnce(): Promise<void> {
   if (inFlight) return;
   inFlight = true;
   try {
-    // Before the vendor is retired the poller's deep runs own the capture and the contact master.
-    if (!(await resolveVendorSyncStandDown())) return;
     // Another process holds the timer — stand by; it is doing this tick's work.
     if (!(await housekeepingLease.ensure())) return;
     await refreshContactMasterAfterCutover();
@@ -184,7 +184,7 @@ export function startCrmHousekeepingScheduler(): CrmHousekeepingSchedulerStartRe
   }, CRM_HOUSEKEEPING_TICK_MS);
   unrefTimer(timer);
   console.log(
-    `[crm:housekeeping] started — asks every ${CRM_HOUSEKEEPING_TICK_MS / 60_000} minutes; refreshes the contact master and captures probation double visits only once the CRM cutover retires iReports360`,
+    `[crm:housekeeping] started — asks every ${CRM_HOUSEKEEPING_TICK_MS / 60_000} minutes; refreshes the contact master and captures probation double visits`,
   );
   return { started: true };
 }

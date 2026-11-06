@@ -1,6 +1,5 @@
 import { systemAccessContext } from "@/lib/auth/permissions";
-import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
-import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
+import { getUnmappedCrmIdentities } from "@/lib/crm/admin";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getCrmIdentityResolutions, isSettledUnmappedRow, loadCrmIdentityMaps } from "@/lib/crm/identity";
 import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
@@ -13,17 +12,6 @@ import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const RECENT_VISIT_WINDOW_DAYS = 30;
-
-/**
- * How stale the visits sync may be before a human must look.
- *
- * The scheduler is cron-job.org — a free third-party service outside this repo — and the Cloud
- * Scheduler crons it replaced died silently. Measured cadence over the 20 days to 2026-08-04: 3 to
- * 438 successful runs a day, worst observed gap between consecutive successes 14.00h. A 24h
- * threshold therefore carries at least 10h of headroom over real schedule jitter, so this can only
- * fire on a genuine outage rather than on a late tick.
- */
-const SYNC_FRESHNESS_HOURS = 24;
 
 type VisitIdentityScanRow = {
   agent_crm_id: number | null;
@@ -154,99 +142,9 @@ const recentVisitsAllResolveToAnEmployee: ReconciliationCheck = {
   }),
 };
 
-/**
- * Check 10 — the sync-health panel's last successful run against the run ledger, and against the
- * clock.
- *
- * Two guards in one. The equality half is the read path: mapSyncRun hand-maps every column out of
- * a `select("*")` and this table has already had a column-shape regression, so a renamed column
- * would make the health panel print a stale or null timestamp while the table is perfectly fine.
- * The freshness half is the data path: when the sync stops, nothing in the product says so —
- * Doctor Coverage, Field Workforce Compliance and Double Visit Analytics all just report fewer
- * visits, which reads as reps not working. That is the same shape as reporting a device outage as
- * company-wide absence.
- */
-const visitsSyncHasARecentSuccess: ReconciliationCheck = {
-  id: "crm-visits-sync-has-a-recent-successful-run",
-  title: "The iReports360 visits sync has a successful run inside its freshness window",
-  domain: "crm-sales",
-  severity: "high",
-  expectation: "holds",
-  // The panel read and the ledger read are separate queries against a table the sync writes to
-  // every few minutes: a run finishing between them shifts one side by one row and nothing else.
-  // Only a mismatch that survives a fresh read is a read-path defect.
-  run: retryOnceIfBreached(async (): Promise<ReconciliationOutcome> => {
-    // THE CRM CUTOVER. Once iReports360 is retired nothing pulls from it, so a sync ledger that has
-    // stopped growing is the designed state, not an outage. An unreadable setting answers null and
-    // the check runs exactly as before.
-    if (await resolveVendorSyncStandDown()) {
-      return {
-        left: { source: "crm_cutover.vendor_sync_retired_at", value: "iReports360 retired" },
-        right: { source: "ireports360_visits_sync_runs — not expected to grow after the cutover", value: "not checked" },
-        holds: true,
-        detail: "iReports360 retired; Phoenix records visits directly.",
-      };
-    }
-
-    // 50 rather than the default 10: a short burst of failures must not be able to push the last
-    // success out of the window this check can see, which would report a healthy sync as dead.
-    const runs = await getLatestVisitsSyncRuns(50);
-    const latestSuccess = runs.find((run) => run.status === "success")?.startedAt ?? null;
-
-    // Same door rule as above. Independence is the WINDOW, not the client: the panel read looks at
-    // the most recent 50 runs, this one at the single newest success across the whole ledger, so a
-    // success that fell out of the panel's window still shows up here.
-    const ledgerRuns = await getLatestVisitsSyncRuns(1000);
-    const ledgerSuccess = ledgerRuns
-      .filter((run) => run.status === "success")
-      .reduce<string | null>((newest, run) => (newest === null || run.startedAt > newest ? run.startedAt : newest), null);
-
-    const sameInstant =
-      latestSuccess !== null &&
-      ledgerSuccess !== null &&
-      new Date(latestSuccess).getTime() === new Date(ledgerSuccess).getTime();
-    const ageHours =
-      ledgerSuccess === null ? Number.POSITIVE_INFINITY : (Date.now() - new Date(ledgerSuccess).getTime()) / 3_600_000;
-    const fresh = ageHours <= SYNC_FRESHNESS_HOURS;
-
-    const cairo = (iso: string | null) =>
-      iso
-        ? new Intl.DateTimeFormat("en-GB", {
-            dateStyle: "medium",
-            timeStyle: "short",
-            timeZone: "Africa/Cairo",
-          }).format(new Date(iso))
-        : "never";
-
-    const problems: string[] = [];
-    if (!sameInstant) {
-      problems.push(
-        `The sync-health panel reports ${cairo(latestSuccess)} but the run ledger's newest success is ${cairo(ledgerSuccess)}`,
-      );
-    }
-    if (!fresh) {
-      problems.push(
-        `The last successful visits sync started ${cairo(ledgerSuccess)} — ${ageHours === Number.POSITIVE_INFINITY ? "never" : `${ageHours.toFixed(1)}h ago`}, past the ${SYNC_FRESHNESS_HOURS}h freshness window. Every CRM figure is reading a mirror that has stopped growing.`,
-      );
-    }
-
-    return {
-      left: {
-        source: "getLatestVisitsSyncRuns(50) — the newest run the CRM control centre calls successful",
-        value: `${cairo(latestSuccess)} Cairo`,
-      },
-      right: {
-        source: "ireports360_visits_sync_runs — newest row with status 'success'",
-        value: `${cairo(ledgerSuccess)} Cairo`,
-      },
-      holds: problems.length === 0,
-      detail:
-        problems.length === 0
-          ? `The visits sync last succeeded ${cairo(ledgerSuccess)} Cairo, ${ageHours.toFixed(1)}h ago, and the health panel says the same.`
-          : formatList(problems),
-    };
-  }),
-};
+// Check 10 — the iReports360 visits-sync freshness check — was retired with the vendor on 6 November
+// 2026: nothing pulls from it any more, so its run ledger is history, not a pipeline to watch. The
+// numbers of the checks after it are left as they were; the other files refer to them by number.
 
 /** A customer is one (client, distributor) pair — a client code alone is not unique across distributors. */
 function customerKey(row: SosCustomerRow): string {
@@ -448,7 +346,6 @@ const coverageNumeratorInsideMasterDenominator: ReconciliationCheck = {
 
 export const crmSalesReconciliationChecks: ReconciliationCheck[] = [
   recentVisitsAllResolveToAnEmployee,
-  visitsSyncHasARecentSuccess,
   topCustomersListEachCustomerOnce,
   coverageNumeratorInsideMasterDenominator,
 ];

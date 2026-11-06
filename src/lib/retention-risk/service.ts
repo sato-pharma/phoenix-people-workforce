@@ -245,7 +245,8 @@ function buildSubjects(
       // 2026-09-06: of 69 active medical reps, exactly 4 had no CRM row in the 66-day scan — and
       // those same 4 have never had one in the mirror's whole history. "Silent for the entire
       // window" and "no CRM account yet" are the same four people, so treating null as a signal
-      // would report only unmapped accounts, which src/lib/crm/unmapped-alert.ts already covers.
+      // would report only unmapped accounts, a different problem (the iReports360 unmapped-agent
+      // alert covered it until the vendor was retired, 6 November 2026).
       firstCrmActivityDate: firstSeen.get(key) ?? null,
       hireDate: employee.hireDate,
       hrId: employee.hrId,

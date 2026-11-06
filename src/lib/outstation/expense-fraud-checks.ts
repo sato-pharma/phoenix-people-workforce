@@ -21,7 +21,7 @@
  *
  * The precedent is expensive: `agent_hr_id` being NULL on 5-9% of CRM rows once produced
  * 14,629.01 EGP of wrong "no CRM activity" deductions against seven real medical reps
- * (see src/lib/crm/sync.ts). Absence of evidence is not evidence.
+ * (the retired iReports360 sync's attribution fix). Absence of evidence is not evidence.
  */
 
 import { hasRealVendorTime } from "@/lib/crm/dates";

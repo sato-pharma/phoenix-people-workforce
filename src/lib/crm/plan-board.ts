@@ -27,6 +27,8 @@
  * applied afterwards.
  */
 
+import { createHash } from "node:crypto";
+
 import { CRM_PLAN_ENTRIES_TABLE, CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { IREPORTS360_VISIT_SOURCE } from "@/lib/crm/phoenix-team-starts";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
@@ -39,6 +41,7 @@ import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { PLAN_STATUS_NEW, type PlanKind } from "@/lib/crm/plan-verification";
 import { scopeAllowsAgent, type PlanVerificationScope } from "@/lib/crm/plan-verification-access";
+import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 
 /** PostgREST caps a page at 1000 rows and gives no marker when it truncates. */
 const PAGE_SIZE = 1000;
@@ -71,6 +74,14 @@ export type PlanSummary = {
   lastDate: string | null;
   /** Monthly only. */
   month: number | null;
+  /**
+   * A plan filed in Phoenix CRM (negative `crmPlanId`): its own id, status and version, read from
+   * `phoenix_crm_plans` by {@link attachPhoenixPlanState}, so the board approves it through Phoenix
+   * CRM's own decide route. Absent on an old-CRM plan.
+   */
+  phoenixPlanId?: string;
+  phoenixStatus?: PhoenixCrmPlanStatus;
+  phoenixVersion?: number;
   repName: string;
   status: number | null;
   syncedAt: string | null;
@@ -145,6 +156,15 @@ export function monthBounds(month: number, year: number): { start: string; end: 
   // Day 0 of the next month is the last day of this one; Date.UTC normalises December.
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return { end: `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`, start };
+}
+
+/**
+ * The board number of a Phoenix plan: the `crm_plan_id` the unified plan view gives it,
+ * `-1 - ('x' || substr(md5(plan_id::text), 1, 8))::bit(30)::integer`. Eight hex digits are 32 bits and
+ * `bit(30)` keeps the top thirty, which is the unsigned shift by two here. Pure, so a test pins it.
+ */
+export function phoenixPlanBoardId(planUuid: string): number {
+  return -1 - (Number.parseInt(createHash("md5").update(planUuid).digest("hex").slice(0, 8), 16) >>> 2);
 }
 
 /**
@@ -382,8 +402,8 @@ async function fetchPlanRows(input: {
     let cursor: ScannedPlanRow | null = null;
     for (;;) {
       // The unified view: vendor plans before the CRM cutover date, plans filed in Phoenix from it
-      // (negative crm_plan_id, so they never meet a vendor id). Verification itself stays on the
-      // vendor table below — it writes back into iReports360.
+      // (negative crm_plan_id, so they never meet a vendor id). iReports360 was retired on 6 November
+      // 2026; a Phoenix plan is approved through Phoenix CRM's own route (`attachPhoenixPlanState`).
       let query = supabase.from(CRM_PLAN_ENTRIES_UNIFIED_VIEW).select(SCAN_COLUMNS).eq("plan_kind", input.kind);
       if (input.window.kind === "dates") {
         query = query.gte("plan_date", cursor?.plan_date ?? input.window.start).lte("plan_date", input.window.end);
@@ -471,7 +491,53 @@ export async function getWeeklyPlansForWeek(input: {
       start: addDays(input.weekStart, -PLAN_STRADDLE_MARGIN_DAYS),
     },
   });
-  return summarisePlans(rows, { keepRange: { end: input.weekEnd, start: input.weekStart }, kind: "weekly" });
+  return attachPhoenixPlanState(
+    summarisePlans(rows, { keepRange: { end: input.weekEnd, start: input.weekStart }, kind: "weekly" }),
+  );
+}
+
+const PHOENIX_PLAN_STATUSES: ReadonlySet<string> = new Set<PhoenixCrmPlanStatus>(["draft", "submitted", "approved", "returned"]);
+
+/**
+ * Each Phoenix plan's own id, status and version, attached to its summary (owner, 2026-11-06: "phx crm
+ * replaced the old crm so any module was wired with old crm must wire with phx crm"). The board's
+ * Approve posts them to Phoenix CRM's own decide route, which re-reads the plan and refuses a stale
+ * version, so nothing here is trusted for the write. Matched by the board number the view gives each
+ * plan ({@link phoenixPlanBoardId}), over the field weeks the plans start in: a week starts on a
+ * Saturday and a plan's first day falls within six days of it. Test plans never reach the view.
+ */
+async function attachPhoenixPlanState(plans: PlanSummary[]): Promise<PlanSummary[]> {
+  const firstDays = plans.flatMap((plan) => (plan.crmPlanId < 0 && plan.firstDate ? [plan.firstDate] : []));
+  if (firstDays.length === 0) return plans;
+  const earliest = firstDays.reduce((left, right) => (right < left ? right : left));
+  const latest = firstDays.reduce((left, right) => (right > left ? right : left));
+  const byBoardId = new Map<number, { id: string; status: PhoenixCrmPlanStatus; version: number }>();
+  let cursor: string | null = null;
+  for (;;) {
+    let query = getSupabaseAdmin()
+      .from("phoenix_crm_plans")
+      .select("id, status, version, week_start, seat_id")
+      .eq("is_test", false)
+      .gte("week_start", addDays(earliest, -6))
+      .lte("week_start", latest);
+    if (cursor !== null) query = query.gt("id", cursor);
+    const { data, error } = await query.order("id", { ascending: true }).limit(PAGE_SIZE);
+    if (error) throw new Error(`Could not read the Phoenix plans: ${error.message}`);
+    const page = (data ?? []) as unknown as Array<{ id: string; status: string; version: number }>;
+    for (const row of page) {
+      if (!PHOENIX_PLAN_STATUSES.has(row.status)) continue;
+      const id = String(row.id);
+      byBoardId.set(phoenixPlanBoardId(id), { id, status: row.status as PhoenixCrmPlanStatus, version: Number(row.version) });
+    }
+    if (page.length < PAGE_SIZE) break;
+    cursor = String(page[page.length - 1].id);
+  }
+  return plans.map((plan) => {
+    const phoenix = plan.crmPlanId < 0 ? byBoardId.get(plan.crmPlanId) : undefined;
+    return phoenix
+      ? { ...plan, phoenixPlanId: phoenix.id, phoenixStatus: phoenix.status, phoenixVersion: phoenix.version }
+      : plan;
+  });
 }
 
 /**
@@ -662,9 +728,8 @@ export type AgentWeekPlanEntry = {
  * synced 14:04 Cairo) and the view held none, so the manager's board read "No plan this week" and greyed
  * every old-CRM rep out. The question here is what a rep filed in the OLD app, which the raw mirror
  * answers and the counting view must not. The raw table carries no Phoenix plans (those live in
- * `phoenix_crm_plans`), so no `source` filter is needed. Plan verification resolves a plan the same way
- * (`getPlanForVerification`). `ilike` with no wildcard is a case-insensitive exact match, for the
- * mixed-case `agent_hr_id`. A missing plan schema degrades to `null`, never an error.
+ * `phoenix_crm_plans`), so no `source` filter is needed. `ilike` with no wildcard is a case-insensitive
+ * exact match, for the mixed-case `agent_hr_id`. A missing plan schema degrades to `null`, never an error.
  */
 export async function getAgentsWeekPlanEntries(
   agentHrIds: ReadonlyArray<string>,
@@ -722,93 +787,6 @@ export async function getAgentsWeekPlanEntries(
     }
   }
   return found;
-}
-
-/**
- * One plan's identity, read fresh.
- *
- * The verify route calls this immediately before writing, rather than trusting anything the browser
- * posted. Two things depend on it: the scope check (is this rep mine?) and the status check (is this
- * plan still pending?). Both must be answered from the database at the moment of the write — a
- * board rendered ten minutes ago is not evidence about either.
- */
-export async function getPlanForVerification(crmPlanId: number): Promise<{
-  agentCrmId: number;
-  agentHrId: string | null;
-  /** Weekly only — the plan's span, so the rep's notification can name the week it covers. */
-  firstDate: string | null;
-  kind: PlanKind;
-  lastDate: string | null;
-  month: number | null;
-  status: number | null;
-  year: number | null;
-} | null> {
-  const supabase = getSupabaseAdmin();
-  // Read the MOST-RECENTLY-SYNCED row, so the status the write is checked against matches the one
-  // the board shows. Without an order, `.limit(1)` returned an arbitrary row of the plan's ~100: for
-  // a plan straddling a month end (Aug rows frozen Pending, Sep rows Verified — see summarisePlans),
-  // the same Verify click randomly got "already verified" or a real re-write (audit, 2026-09-21). The
-  // agent, month, year and kind are plan-level constants, so only the status turns on which row wins;
-  // the plan_status tiebreak keeps it deterministic when two rows share a sync stamp.
-  const { data, error } = await supabase
-    .from(CRM_PLAN_ENTRIES_TABLE)
-    .select("agent_crm_id, agent_hr_id, plan_kind, plan_month, plan_status, plan_year, synced_at")
-    .eq("crm_plan_id", crmPlanId)
-    .order("synced_at", { ascending: false, nullsFirst: false })
-    .order("plan_status", { ascending: false })
-    .limit(1);
-  if (error) {
-    if (isPlanSchemaMissing(error)) return null;
-    throw new Error(error.message);
-  }
-  const row = (data ?? [])[0] as
-    | {
-        agent_crm_id: number;
-        agent_hr_id: string | null;
-        plan_kind: string;
-        plan_month: number | null;
-        plan_status: number | null;
-        plan_year: number | null;
-      }
-    | undefined;
-  if (!row) return null;
-  const kind: PlanKind = row.plan_kind === "monthly" ? "monthly" : "weekly";
-
-  // A weekly plan's period is its date span, and the rep's notification names it. Two limit-1 reads
-  // rather than pulling the plan's ~100 rows to compute a min and a max the database can answer.
-  let firstDate: string | null = null;
-  let lastDate: string | null = null;
-  if (kind === "weekly") {
-    const [first, last] = await Promise.all([
-      supabase
-        .from(CRM_PLAN_ENTRIES_TABLE)
-        .select("plan_date")
-        .eq("crm_plan_id", crmPlanId)
-        .not("plan_date", "is", null)
-        .order("plan_date", { ascending: true })
-        .limit(1),
-      supabase
-        .from(CRM_PLAN_ENTRIES_TABLE)
-        .select("plan_date")
-        .eq("crm_plan_id", crmPlanId)
-        .not("plan_date", "is", null)
-        .order("plan_date", { ascending: false })
-        .limit(1),
-    ]);
-    firstDate = ((first.data ?? [])[0] as { plan_date: string | null } | undefined)?.plan_date ?? null;
-    lastDate = ((last.data ?? [])[0] as { plan_date: string | null } | undefined)?.plan_date ?? null;
-  }
-
-  return {
-    agentCrmId: row.agent_crm_id,
-    agentHrId: row.agent_hr_id,
-    firstDate,
-    kind,
-    lastDate,
-    month: row.plan_month,
-    status: row.plan_status,
-    year: row.plan_year,
-  };
 }
 
 /** A rep in the viewer's reach who filed no plan at all for the period. */
@@ -899,10 +877,12 @@ export async function getPlanVerificationBoard(input: {
     scope: input.scope,
     year: input.year,
   });
-  const plans = summarisePlans(rows, {
-    kind: input.kind,
-    ...(input.kind === "weekly" ? { keepMonth: { month: input.month, year: input.year } } : {}),
-  });
+  const plans = await attachPhoenixPlanState(
+    summarisePlans(rows, {
+      kind: input.kind,
+      ...(input.kind === "weekly" ? { keepMonth: { month: input.month, year: input.year } } : {}),
+    }),
+  );
 
   const hrIds = [...new Set(plans.map((plan) => plan.agentHrId).filter((id): id is string => Boolean(id)))];
   const nameByHrId = new Map<string, string>();

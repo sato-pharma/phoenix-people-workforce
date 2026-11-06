@@ -34,7 +34,6 @@ import { loadReferenceLines } from "@/lib/reference/reference-lists";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { loadPhoenixContactPlaces } from "@/lib/crm/validated-place-points";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
-import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, dayScanSlices, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, REAL_DOUBLE_PARTNER_OR_FILTER, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
@@ -445,7 +444,6 @@ export type CrmMasterData = {
   agentHrId: string | null;
   ampm: CrmMasterAmpm;
   columns: readonly CrmMasterColumn[];
-  configured: boolean;
   dataset: CrmMasterDataset;
   dateFrom: string | null;
   dateTo: string | null;
@@ -2129,8 +2127,6 @@ export async function getCrmMasterData(
   const halfDaysOnly = input.halfDaysOnly === true;
   const mappingStatus: CrmMasterMappingStatus =
     input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped" ? input.mappingStatus : "all";
-  const configured = isIReports360Configured();
-
   const columns = columnsForDataset(dataset, viewer.sight);
 
   // Line / hiring-date resolve to an employee-hr-id allow-set (applied to every tab). With neither
@@ -2195,7 +2191,6 @@ export async function getCrmMasterData(
     agentHrId,
     ampm: supports("ampm") ? ampm : ("all" as CrmMasterAmpm),
     columns,
-    configured,
     dataset,
     dateFrom,
     dateTo,

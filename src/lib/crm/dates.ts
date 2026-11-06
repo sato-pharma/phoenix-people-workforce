@@ -11,7 +11,7 @@ export function todayIso(): string {
  * iReports360's `visit_date_time` is `00:00:00` on ~100% of rows, and `crm_save_date` is midnight
  * on ~3% — a midnight value is a date-only placeholder with no usable clock, so it must be treated
  * as "no time" rather than as midnight. Vendor timestamps are stored as Cairo wall-clock (see
- * crm/sync.ts); this inspects only the time-of-day portion of the stored string, never a timezone.
+ * crm/vendor-row-types.ts); this inspects only the time-of-day portion of the stored string, never a timezone.
  *
  * Lives here (rather than in crm/reads.ts, which historically owned it) so that crm/checkin-match.ts
  * can use it too: reads.ts imports checkin-match.ts, so the reverse import would be circular.
@@ -58,16 +58,3 @@ export function cairoDayOfWeek(at: Date = new Date()): number {
   return CAIRO_WEEKDAY_INDEX[short] ?? new Date(at).getUTCDay();
 }
 
-// The business window the live-sync cron exists for: reps are expected to log their first CRM
-// visit by late morning, so polling every ~15 min is only useful 8:30 AM-12:01 PM Cairo. The GCP
-// schedule itself fires a little wider than this (see setup-gcp-cron.sh) so this is the real,
-// exact gate — a firing outside it is a cheap, intentional no-op rather than a wasted vendor pull.
-const LIVE_SYNC_WINDOW_START_MINUTES = 8 * 60 + 30; // 8:30 AM
-const LIVE_SYNC_WINDOW_END_MINUTES = 12 * 60 + 1; // 12:01 PM
-
-/** True when `at` (defaults to now) falls inside the live-sync compliance window, Cairo time. */
-export function isWithinLiveSyncWindow(at: Date = new Date()): boolean {
-  const { hour, minute } = cairoHourMinute(at);
-  const minutesSinceMidnight = hour * 60 + minute;
-  return minutesSinceMidnight >= LIVE_SYNC_WINDOW_START_MINUTES && minutesSinceMidnight <= LIVE_SYNC_WINDOW_END_MINUTES;
-}

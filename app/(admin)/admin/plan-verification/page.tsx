@@ -7,14 +7,14 @@
 // same managers through the CRM hub and the sidebar, not through a tab beside this one.
 //
 // The owner's specification: weekly and monthly plans the DM can verify or leave pending, with the
-// verification written back into the CRM. Reject and return-for-edit were explicitly dropped, and
-// "leave pending" is the absence of an action rather than an action of its own — so this board has
-// exactly one button and no way to lower a status.
+// verification written back into the CRM. iReports360 was retired on 6 November 2026 and that write
+// went with it: an old-CRM plan is read-only now, and a plan filed in Phoenix CRM carries Phoenix's
+// own Approve (owner, 2026-11-06: "phx crm replaced the old crm so any module was wired with old crm
+// must wire with phx crm"). One button, approve only; a return is made on the Team tab.
 //
 // The role list and the scope live in src/lib/crm/plan-verification-access.ts. A district manager
-// sees his own reps' plans and nobody else's, and the SAME scope object is re-resolved inside the
-// verify route: a board that hides a plan while the route still accepts a POST for it is not
-// scoped, it is merely tidy.
+// sees his own reps' plans and nobody else's. The Approve posts to /api/phoenix-crm/plans/decide,
+// which asks phoenix_crm:approve and checks the viewer reviews that territory on its own.
 //
 // Period and plan ride in the URL, so every change re-runs the gate server-side.
 import { redirect } from "next/navigation";
@@ -60,10 +60,10 @@ export default async function PlanVerificationPage({ searchParams }: PageProps) 
   // unreachable page should behave as if it does not exist for that role.
   if (!canAccessPlanVerification(access)) redirect("/admin");
   if (!(await canAccess(access, "crm_plans", "read"))) redirect("/admin");
-  // Verifying is a SEPARATE grant, asked separately and asked again by the route. The CEO account
-  // holds read and not approve, so it reads every plan and is shown no button — the same
+  // Approving is a SEPARATE grant, Phoenix CRM's own, asked again by its decide route. The CEO
+  // account holds read and not approve, so it reads every plan and is shown no button — the same
   // segregation of duties that keeps it observational on the rest of the irreversible workflows.
-  const canVerify = await canAccess(access, "crm_plans", "approve");
+  const canApprove = await canAccess(access, "phoenix_crm", "approve");
 
   const params = await searchParams;
   const today = cairoToday();
@@ -106,7 +106,7 @@ export default async function PlanVerificationPage({ searchParams }: PageProps) 
     <PlanVerificationBoardView
       basePath="/admin/plan-verification"
       board={board}
-      canVerify={canVerify}
+      canApprove={canApprove}
       years={years}
     />
   );

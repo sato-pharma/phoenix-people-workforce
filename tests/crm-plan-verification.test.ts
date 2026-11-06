@@ -16,6 +16,7 @@ import {
 import {
   PLAN_STRADDLE_MARGIN_DAYS,
   monthBounds,
+  phoenixPlanBoardId,
   repsWithNoPlan,
   summarisePlans,
   type PlanMissingRep,
@@ -27,8 +28,6 @@ import {
   planVerificationBasisForRole,
 } from "../src/lib/crm/plan-verification-access.ts";
 import { canAccessDoctorList, doctorListBasisForRole } from "../src/lib/crm/doctor-list-access.ts";
-import { assertPlanMonth, rowFromMonthlyPlanEntry } from "../src/lib/crm/plan-sync.ts";
-import { NEW_PLAN_ANNOUNCE_LIMIT, planPeriodLabel } from "../src/lib/crm/plan-notifications.ts";
 import { permissionResources } from "../src/lib/auth/permissions.ts";
 
 /**
@@ -58,6 +57,10 @@ import { permissionResources } from "../src/lib/auth/permissions.ts";
  *    `permissionResources` array makes the sidebar's lookup FAIL OPEN (the documented trap on
  *    `early_birds`), and a role map is a partial Record, so a missing grant is not a type error — it
  *    is a district manager who cannot use the feature built for him, discovered in production.
+ *
+ * 5. A PHOENIX PLAN IS FOUND BY THE VIEW'S OWN NUMBER. iReports360 was retired on 6 November 2026; a
+ *    plan filed in Phoenix CRM is approved through Phoenix CRM's own route, and the board finds its row
+ *    by recomputing the negative id the unified view gave it. One helper, pinned to the view's answer.
  */
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────────────────────
@@ -357,70 +360,7 @@ export function runCrmPlanVerificationTests() {
       "unseen key, which would offer a CRM-writing button to every role",
   );
 
-  // ── 6. Monthly plans are a different shape, and the guard that keeps them one ──────────────────
-  assert.doesNotThrow(() => assertPlanMonth(8, 2026));
-  assert.throws(() => assertPlanMonth(0, 2026), /month/i, "month 0 is not a month");
-  assert.throws(() => assertPlanMonth(13, 2026), /month/i);
-  assert.throws(() => assertPlanMonth(8, 1999), /year/i);
-
-  const emptyMaps = {
-    crmUsernameByHrId: new Map<string, string>(),
-    hireDateByHrId: new Map<string, string>(),
-    hrIdByCrmId: new Map<string, string>(),
-    hrIdByCrmUsername: new Map<string, string>(),
-    hrIdByManualOverride: new Map(),
-    lastWorkingDateByHrId: new Map<string, string>(),
-  } as Parameters<typeof rowFromMonthlyPlanEntry>[1];
-
-  const monthlyRow = rowFromMonthlyPlanEntry(
-    {
-      agentID: 500,
-      contactID: 77,
-      contactName: "Doctor A",
-      frequency: 4,
-      id: 4242,
-      month: 8,
-      planID: 920,
-      planStatus: PLAN_STATUS_NEW,
-      year: 2026,
-    } as Parameters<typeof rowFromMonthlyPlanEntry>[0],
-    emptyMaps,
-  );
-  assert.equal(monthlyRow.plan_kind, "monthly");
-  assert.equal(monthlyRow.plan_frequency, 4, "a monthly plan carries a frequency instead of repeating the row");
-  // EXPLICIT nulls, not omitted keys. A plan that changes kind must not keep a stale date on the
-  // mirrored row — an omitted column in an upsert leaves the old value in place.
-  assert.equal(monthlyRow.plan_date, null, "a monthly plan has no date, and the column must be actively cleared");
-  assert.equal(monthlyRow.start_am, null);
-  assert.equal(monthlyRow.start_pm, null);
-
-  // ── 7. The bulk-email guard ───────────────────────────────────────────────────────────────────
-  // Production holds 204 pending weekly plans going back to January. A naive "announce everything
-  // pending" first run would have emailed all of them at once — a bulk-mail incident, against the
-  // owner's standing rule that bulk or test email is never fired.
-  assert.ok(
-    NEW_PLAN_ANNOUNCE_LIMIT > 0 && NEW_PLAN_ANNOUNCE_LIMIT <= 50,
-    "the announce limit exists to stop a first sync emailing a historical backlog; it must be a real ceiling",
-  );
-
-  // A period a human can read — never a bare plan id, which is what the rep would otherwise be
-  // emailed about. A straddling week names BOTH months, which is the whole point of the label.
-  assert.equal(
-    planPeriodLabel({ firstDate: "2026-08-30", kind: "weekly", lastDate: "2026-09-05" }),
-    "2026-08-30 to 2026-09-05",
-  );
-  assert.equal(
-    planPeriodLabel({ firstDate: "2026-08-30", kind: "weekly", lastDate: "2026-08-30" }),
-    "2026-08-30",
-    "a single-day plan reads as one date, not as a range from a day to itself",
-  );
-  assert.equal(planPeriodLabel({ kind: "monthly", month: 8, year: 2026 }), "August 2026");
-  // Never an empty string or a bare id: a plan with nothing to place it still has to produce a
-  // sentence the rep can read.
-  assert.equal(planPeriodLabel({ kind: "weekly" }), "an unrecorded week");
-  assert.equal(planPeriodLabel({ kind: "monthly" }), "an unrecorded month");
-
-  // ── 8. Opening a plan has to be VISIBLE ───────────────────────────────────────────────────────
+  // ── 6. Opening a plan has to be VISIBLE ───────────────────────────────────────────────────────
   // The owner's whole report was "I press on the rep name nothing happens". Nothing was broken: the
   // click pushed the URL, the server re-rendered, and the doctors appeared in a section BELOW the
   // entire plans table — off the bottom of the screen, with the only cue at the click site being a
@@ -481,7 +421,7 @@ export function runCrmPlanVerificationTests() {
     "the rep name is the primary way into a plan and must look pressable, not like plain text",
   );
 
-  // ── 9. A rep who filed NOTHING must still be on the board ─────────────────────────────────────
+  // ── 7. A rep who filed NOTHING must still be on the board ─────────────────────────────────────
   //
   // The board is built from plans that exist, so a rep who filed none is not "shown as zero" — he is
   // absent entirely, and "Reps with a plan: 12" reads as complete whether the true roster is 12 or
@@ -549,5 +489,31 @@ export function runCrmPlanVerificationTests() {
       (rep) => rep.name,
     ),
     ["Adel", "Mostafa", "Zaki"],
+  );
+
+  // ── 8. A Phoenix plan's board number is the view's ─────────────────────────────────────────────
+  //
+  // iReports360 was retired on 6 November 2026 (owner: "phx crm replaced the old crm so any module was
+  // wired with old crm must wire with phx crm"). The board's Approve posts the plan's own uuid and
+  // version, so the board finds each Phoenix plan's row by the number `crm_plan_entries_unified` gave
+  // it: `-1 - ('x' || substr(md5(plan_id::text), 1, 8))::bit(30)::integer`. -844718716 is what the view
+  // computed on staging for this uuid (tests/phoenix-crm-visits-everywhere.test.ts, STAGING_IDS). A hash
+  // that drifted from the view would match no plan, and every Phoenix week would show no button.
+  assert.equal(
+    phoenixPlanBoardId("00000000-0000-0000-0000-000000000001"),
+    -844718716,
+    "the board number of a Phoenix plan is the one the unified plan view computes",
+  );
+  assert.equal(phoenixPlanBoardId("ffffffff-ffff-ffff-ffff-ffffffffffff"), -760078620, "the top thirty bits, never all thirty-two");
+  const attachBody = planBoardSource.slice(
+    planBoardSource.indexOf("async function attachPhoenixPlanState("),
+    planBoardSource.indexOf("export async function getPlanEntries("),
+  );
+  assert.match(attachBody, /\.from\("phoenix_crm_plans"\)[\s\S]*\.eq\("is_test", false\)/, "real plans only: a test plan never reaches the view");
+  assert.match(attachBody, /byBoardId\.set\(phoenixPlanBoardId\(id\)/, "each row is keyed by the one helper");
+  assert.equal(
+    (planBoardSource.match(/await attachPhoenixPlanState\(|return attachPhoenixPlanState\(/g) ?? []).length,
+    2,
+    "both plan boards carry it: the month board and the Reps Weekly Plans week, which mount the same button",
   );
 }

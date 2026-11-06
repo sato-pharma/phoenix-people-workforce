@@ -34,7 +34,7 @@ import {
   visitCategoryOfType,
   type PairableDoubleVisitRow,
 } from "../src/lib/private-calendar/activity-kinds.ts";
-import type { CrmListType } from "../src/lib/crm/contacts-web-client.ts";
+import type { CrmListType } from "../src/lib/crm/list-types.ts";
 import { phoenixVisitLane, type PhoenixVisit } from "../src/lib/crm/phoenix-kpi-rules.ts";
 import { summarizeVisits, type VisitRow } from "../src/lib/employee-360/service.ts";
 import { fieldVisitActivityKind } from "../src/lib/private-calendar/field-visits.ts";

@@ -14,12 +14,13 @@ import { isModuleLockRefusal } from "@/lib/error-monitor/expected-refusal";
 // Import-free as well. The SDK itself is only ever loaded dynamically, from inside the nodejs guards below.
 import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 
-// Starts the continuous iReports360 live poller (src/lib/crm/live-poller.ts) exactly once per
-// server process. The import MUST stay dynamic and inside the nodejs-runtime guard: this hook is
-// bundled for BOTH runtimes (see the edge-safety note below), and the poller pulls in the whole
-// CRM/Supabase server stack. The poller's own guards (PHOENIX_LIVE_CRM_POLL flag, production
-// build, Railway production env) make this a no-op everywhere except the live Railway service —
-// and a startup failure must never break boot, hence the catch.
+// Starts this process's in-process schedulers (the Early Birds fortnight close and the CRM
+// housekeeping timer) exactly once per server process. Their imports MUST stay dynamic and inside
+// the nodejs-runtime guard: this hook is bundled for BOTH runtimes (see the edge-safety note below),
+// and each pulls in the whole CRM/Supabase server stack. Their own host guards
+// (src/lib/platform/in-process-host.ts) make them a no-op everywhere except the Railway worker — and
+// a startup failure must never break boot, hence the catches. (The iReports360 live poller that
+// started here was removed with the vendor, retired on 6 November 2026.)
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // FIRST, before anything can make an outbound call: hold the sockets to Supabase open.
@@ -65,7 +66,7 @@ export async function register() {
       console.error("[sentry] failed to start:", error);
     }
 
-    // Which process this is. A `web` process answers pages and starts none of the three schedulers below
+    // Which process this is. A `web` process answers pages and starts none of the schedulers below
     // (resolveInProcessHostRefusal refuses them); the `worker` service runs them, so a heavy job can no
     // longer freeze every page (src/lib/platform/process-role.ts). Said once at boot, a typo loudest.
     try {
@@ -88,25 +89,16 @@ export async function register() {
       console.error("[process-role] failed to resolve:", error);
     }
 
-    // 🔴 THE THREE SCHEDULERS AND PROCESS-HEALTH ARE COMPILED ONLY IN A PRODUCTION BUILD. Each refuses a
+    // 🔴 THE TWO SCHEDULERS AND PROCESS-HEALTH ARE COMPILED ONLY IN A PRODUCTION BUILD. Each refuses a
     // non-production build at run time anyway (resolveInProcessHostRefusal: "not a production build";
     // startProcessHealthReporter returns on NODE_ENV), so under `next dev` they were compiled and never
     // run: 465 repo files and 52 MB of emitted code, more than half of everything a dev server compiled
     // before its first page (measured on the Hetzner box, 2026-10-17). A BLOCK-form NODE_ENV test is the
     // only shape webpack prunes — Next inlines the value, so the branch is `if (false)` in dev — and the
-    // nodejs block above is the proof: it keeps all four out of the edge bundle the same way.
+    // nodejs block above is the proof: it keeps all three out of the edge bundle the same way.
     if (process.env.NODE_ENV === "production") {
-      try {
-        const { startLiveCrmPoller } = await import("@/lib/crm/live-poller");
-        const result = startLiveCrmPoller();
-        if (!result.started) console.log(`[crm:live-poll] not started: ${result.reason}`);
-      } catch (error) {
-        console.error("[crm:live-poll] failed to start:", error);
-      }
-
-      // The Early Birds fortnight close runs on its own timer, started separately and in its own try:
-      // it needs the poller's host guards but NOT the iReports360 credentials, so a poller that refuses
-      // to start (or fails to) must not take the close down with it.
+      // The Early Birds fortnight close runs on its own timer, in its own try, so a scheduler that
+      // refuses to start (or fails to) never takes the other one down with it.
       try {
         const { startEarlyBirdsCloseScheduler } = await import("@/lib/early-birds/close-scheduler");
         const result = startEarlyBirdsCloseScheduler();
@@ -115,9 +107,8 @@ export async function register() {
         console.error("[early-birds:close] failed to start:", error);
       }
 
-      // The CRM housekeeping timer keeps the probation double-visit capture running after the CRM
-      // cutover stands the poller and the vendor crons down. Same host guards, no vendor credentials,
-      // and its own try for the same reason as the close above.
+      // The CRM housekeeping timer: the contact-master refresh and the probation double-visit capture.
+      // Same host guards, and its own try for the same reason as the close above.
       try {
         const { startCrmHousekeepingScheduler } = await import("@/lib/crm/housekeeping-scheduler");
         const result = startCrmHousekeepingScheduler();
@@ -127,7 +118,7 @@ export async function register() {
       }
 
       // One process-health line a minute (event-loop delay, heap, RSS, request timings). Production
-      // only by its own guard; dynamic for the same edge-safety reason as the three above, and its
+      // only by its own guard; dynamic for the same edge-safety reason as the two above, and its
       // own try so telemetry can never take a scheduler down with it.
       try {
         const { startProcessHealthReporter } = await import("@/lib/observability/process-health");

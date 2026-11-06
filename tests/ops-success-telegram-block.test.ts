@@ -102,13 +102,11 @@ export function runOpsSuccessTelegramBlockTests() {
       "and that result must be threaded into the next link, or the guard runs and its output is discarded — which is indistinguishable from not guarding at all",
     );
 
-    // The two call sites state the same intent where the digest is composed. Two co-operating
-    // values is exactly what drifts, which is why the guard above is the enforcement — but a call
-    // site that asks for Telegram on a success would still be a lie about what the code does.
-    for (const file of [
-      "src/lib/notifications/ireports360-sync-digest.ts",
-      "src/lib/notifications/background-jobs-digest.ts",
-    ]) {
+    // The call site states the same intent where the digest is composed (the iReports360 sync digest
+    // was the second one until the vendor was retired on 6 November 2026). Two co-operating values is
+    // exactly what drifts, which is why the guard above is the enforcement — but a call site that asks
+    // for Telegram on a success would still be a lie about what the code does.
+    for (const file of ["src/lib/notifications/background-jobs-digest.ts"]) {
       assert.match(
         readFileSync(file, "utf8"),
         /channels: input\.status === "failed" \? \["in_app", "telegram", "push"\] : \["in_app", "push"\],/,

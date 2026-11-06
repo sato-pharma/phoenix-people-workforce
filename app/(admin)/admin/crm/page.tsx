@@ -11,7 +11,6 @@ import { CrmAccountSetupPanel } from "@/components/crm/crm-account-setup-panel";
 import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-panel";
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
-import { CrmIReports360HoldoutsPanel } from "@/components/crm/crm-ireports360-holdouts-panel";
 import { CrmPhoenixTeamReadinessPanel } from "@/components/crm/crm-phoenix-team-readiness-panel";
 import { CrmPhoenixTeamStartsPanel } from "@/components/crm/crm-phoenix-team-starts-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
@@ -20,7 +19,6 @@ import { getCrmMappingEmployeeOptions, getLatestVisitsSyncRuns, getUnmappedCrmId
 import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
 import { getCrmAccountSetupQueue } from "@/lib/crm/account-setup";
 import { getCrmCustomerMappingPunchList } from "@/lib/crm/customer-brick";
-import { isIReports360Configured } from "@/lib/crm/config";
 import { getCrmCutoverSetting } from "@/lib/crm/cutover";
 import { loadPhoenixTeamStartsPanel } from "@/lib/crm/phoenix-team-starts-server";
 import { logError } from "@/lib/observability/log";
@@ -29,7 +27,6 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitRecoveredChains } from "@/lib/double-visit-analytics/service";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
-import { loadIReports360Holdouts, type IReports360HoldoutsData } from "@/lib/crm/ireports360-holdouts-server";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
@@ -53,8 +50,8 @@ function stringParam(value: string | string[] | undefined) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | "ireports360_holdouts" | null {
-  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" || value === "account_setup" || value === "ireports360_holdouts"
+function viewParam(value: string | string[] | undefined): "unmapped" | "recovered" | "region_mapping" | "customer_mapping" | "account_setup" | null {
+  return value === "unmapped" || value === "recovered" || value === "region_mapping" || value === "customer_mapping" || value === "account_setup"
     ? value
     : null;
 }
@@ -86,7 +83,7 @@ export default async function CrmHubPage({
   const dateTo = dateParam(params.dateTo) ?? today;
 
   let activeTab: CrmActiveTab;
-  let syncPanel: { configured: boolean; latestSyncRuns: VisitsSyncRun[] };
+  let latestSyncRuns: VisitsSyncRun[];
   let masterTable: ReactNode = null;
   let derivedView: ReactNode = null;
 
@@ -95,8 +92,8 @@ export default async function CrmHubPage({
     // hrId it carries only spotlights a card — it never filters the queue, so arriving from an
     // old notice still shows everyone else who is waiting.
     activeTab = "account_setup";
-    const [queue, latestSyncRuns] = await Promise.all([getCrmAccountSetupQueue(), getLatestVisitsSyncRuns()]);
-    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    const [queue, syncRuns] = await Promise.all([getCrmAccountSetupQueue(), getLatestVisitsSyncRuns()]);
+    latestSyncRuns = syncRuns;
     derivedView = (
       <CrmAccountSetupPanel
         pending={queue.pending}
@@ -107,24 +104,24 @@ export default async function CrmHubPage({
     );
   } else if (view === "unmapped") {
     activeTab = "unmapped";
-    const [identities, latestSyncRuns, employeeOptions] = await Promise.all([
+    const [identities, syncRuns, employeeOptions] = await Promise.all([
       getUnmappedCrmIdentities(),
       getLatestVisitsSyncRuns(),
       getCrmMappingEmployeeOptions(),
     ]);
-    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    latestSyncRuns = syncRuns;
     derivedView = (
       <CrmUnmappedIdentitiesPanel employeeOptions={employeeOptions} identities={identities} pathname={HUB_PATHNAME} />
     );
   } else if (view === "region_mapping") {
     activeTab = "region_mapping";
-    const [regions, latestSyncRuns] = await Promise.all([getUnmappedCrmRegions(), getLatestVisitsSyncRuns()]);
-    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    const [regions, syncRuns] = await Promise.all([getUnmappedCrmRegions(), getLatestVisitsSyncRuns()]);
+    latestSyncRuns = syncRuns;
     derivedView = <CrmRegionMappingPanel pathname={HUB_PATHNAME} regions={regions} />;
   } else if (view === "customer_mapping") {
     activeTab = "customer_mapping";
-    const [punchList, latestSyncRuns] = await Promise.all([getCrmCustomerMappingPunchList(), getLatestVisitsSyncRuns()]);
-    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    const [punchList, syncRuns] = await Promise.all([getCrmCustomerMappingPunchList(), getLatestVisitsSyncRuns()]);
+    latestSyncRuns = syncRuns;
     derivedView = (
       <CrmCustomerMappingPanel
         customers={punchList.customers}
@@ -136,16 +133,12 @@ export default async function CrmHubPage({
     );
   } else if (view === "recovered") {
     activeTab = "recovered";
-    const [recoveredChains, latestSyncRuns] = await Promise.all([
+    const [recoveredChains, syncRuns] = await Promise.all([
       getDoubleVisitRecoveredChains({ access, dateFrom, dateTo }),
       getLatestVisitsSyncRuns(),
     ]);
-    syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
+    latestSyncRuns = syncRuns;
     derivedView = <CrmRecoveredChainsPanel chains={recoveredChains} />;
-  } else if (view === "ireports360_holdouts") {
-    // Its panel is built below, from the same team rows as the Start button.
-    activeTab = "ireports360_holdouts";
-    syncPanel = { configured: isIReports360Configured(), latestSyncRuns: await getLatestVisitsSyncRuns() };
   } else {
     // getCrmMasterData normalizes any unknown value back to "visits".
     const dataset = (typeof params.dataset === "string" ? params.dataset : "visits") as CrmMasterDataset;
@@ -168,7 +161,7 @@ export default async function CrmHubPage({
       ampm,
       dataset,
       // The raw master table itself allows a fully open date range (no default) — only the
-      // sync panel / derived views below need a concrete default window.
+      // derived views above need a concrete default window.
       dateFrom: dateParam(params.dateFrom),
       dateTo: dateParam(params.dateTo),
       halfDaysOnly,
@@ -191,14 +184,14 @@ export default async function CrmHubPage({
     phoenixDetailViewer(access.role, access.hrId));
 
     activeTab = data.dataset;
-    syncPanel = { configured: data.configured, latestSyncRuns: data.latestSyncRuns };
+    latestSyncRuns = data.latestSyncRuns;
     // Remount the client table when any URL-derived input changes so its filter inputs re-seed.
     const tableKey = `${dataset}:${data.dateFrom}:${data.dateTo}:${page}:${pageSize}:${search}:${agentHrId}:${ampm}:${visitType}:${mappingStatus}:${line}:${hireFrom}:${hireTo}:${minDuration}:${halfDaysOnly}`;
     masterTable = <CrmMasterTable data={data} key={tableKey} />;
   }
 
-  // THE CRM CUTOVER. Once iReports360 is retired the sync panel says so and offers no backfill (the
-  // route would answer 409). An unreadable setting leaves the panel exactly as it was.
+  // THE CRM CUTOVER. Once iReports360 is retired the sync panel says so above its run history. An
+  // unreadable setting leaves the panel with the history alone.
   // Beside it, the teams every other screen counts from Phoenix CRM (owner, 2026-10-02) — read in the
   // same breath, and an unreadable list says so in its own panel rather than failing the page.
   const [vendorSyncRetiredAt, phoenixTeamStarts] = await Promise.all([
@@ -213,17 +206,6 @@ export default async function CrmHubPage({
       return null;
     }),
   ]);
-
-  if (view === "ireports360_holdouts") {
-    let holdouts: IReports360HoldoutsData | null = null;
-    let holdoutsError: string | null = null;
-    try {
-      holdouts = await loadIReports360Holdouts({ teams: phoenixTeamStarts?.teams ?? null });
-    } catch (error) {
-      holdoutsError = error instanceof Error ? error.message : "Unable to read this right now.";
-    }
-    derivedView = <CrmIReports360HoldoutsPanel data={holdouts} error={holdoutsError} />;
-  }
 
   return (
     <div className="space-y-5">
@@ -254,13 +236,7 @@ export default async function CrmHubPage({
         </div>
       </div>
 
-      <CrmSyncStatusPanel
-        configured={syncPanel.configured}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        latestSyncRuns={syncPanel.latestSyncRuns}
-        retiredAt={vendorSyncRetiredAt}
-      />
+      <CrmSyncStatusPanel latestSyncRuns={latestSyncRuns} retiredAt={vendorSyncRetiredAt} />
 
       <CrmPhoenixTeamStartsPanel data={phoenixTeamStarts} />
 

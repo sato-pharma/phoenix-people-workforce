@@ -201,8 +201,8 @@ function withCompanyHolidays(
  * Both helpers hand the RESPONSE back to their caller, which then reads `.text()` / `.json()` on
  * it — so a manual `AbortController` + `clearTimeout(timer)` in a `finally` protected nothing that
  * mattered: the deadline died here, at the return, and the caller's body read ran unbounded. That
- * is the same defect that let a CRM sync burn 301 seconds on 2026-09-02 (see fetchJson in
- * src/lib/crm/client.ts). `AbortSignal.timeout` is the right shape for a helper like this: the
+ * is the same defect that let a CRM sync burn 301 seconds on 2026-09-02 (fetchJson in the
+ * iReports360 client, since retired). `AbortSignal.timeout` is the right shape for a helper like this: the
  * deadline travels WITH the response and stays armed across the caller's body read. No caller here
  * keys on the error's name, so the DOMException rename (AbortError -> TimeoutError) changes nothing.
  */

@@ -4,8 +4,7 @@ import {
   type JobHeartbeatRow,
   type JobHeartbeatVerdict,
 } from "@/lib/observability/job-heartbeat-assess";
-import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
-import { JOB_SCHEDULES, declaredJobSlugs, watchedJobSchedules } from "@/lib/observability/job-schedule";
+import { JOB_SCHEDULES, declaredJobSlugs } from "@/lib/observability/job-schedule";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -135,8 +134,5 @@ export async function readJobHeartbeats(): Promise<JobHeartbeatRow[]> {
 export async function sweepJobHeartbeats(now: Date = new Date()): Promise<JobHeartbeatVerdict> {
   await bootstrapJobHeartbeatRows();
   const rows = await readJobHeartbeats();
-  // THE CRM CUTOVER. Once iReports360 is retired its four jobs stop pinging by design, so they are
-  // not judged. An unreadable setting answers null and every job stays watched, exactly as before.
-  const vendorStandDown = await resolveVendorSyncStandDown();
-  return assessJobHeartbeats({ declarations: watchedJobSchedules(JOB_SCHEDULES, vendorStandDown), now, rows });
+  return assessJobHeartbeats({ declarations: JOB_SCHEDULES, now, rows });
 }

@@ -23,7 +23,7 @@ function graphApiVersion(): string {
 // `AbortSignal.timeout` rather than a hand-rolled AbortController: this helper RETURNS the response
 // and both callers then read `.json()` off it, so clearing a manual timer in a `finally` here would
 // have cancelled the deadline before the body those callers actually wait on had arrived — the same
-// defect that let a CRM sync burn 301 seconds on 2026-09-02 (see fetchJson in src/lib/crm/client.ts).
+// defect that let a CRM sync burn 301 seconds on 2026-09-02 (fetchJson in the iReports360 client, since retired).
 // This signal stays armed across the caller's body read.
 async function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Promise<Response> {
   return await fetch(input, { ...init, signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) });

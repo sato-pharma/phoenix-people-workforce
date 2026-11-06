@@ -25,6 +25,7 @@ function setEntries(text: string, declaration: RegExp, label: string) {
  * different ways that shared the one symptom:
  *
  *   plan_awaiting_verification  60 rows, 0 sent, 2026-08-29 -> 09-04.  CONFLICTING subject.
+ *       (Its sender, src/lib/crm/plan-notifications.ts, went with iReports360 on 6 November 2026.)
  *       The caller put the rep in `subjectHrId` and the rep's MANAGER in `email.employeeHrId`,
  *       so two different people claimed the single subject slot (PD-0010, a District Sales
  *       Manager; B-58, his Medical Representative). `email.employeeHrId` is the SUBJECT, not
@@ -46,35 +47,8 @@ function setEntries(text: string, declaration: RegExp, label: string) {
  */
 export function runEmailIdentityGuardCallersTests() {
   const systemSource = source("src/lib/notifications/system.ts");
-  const planNotificationsSource = source("src/lib/crm/plan-notifications.ts");
   const excusesServiceSource = source("src/lib/excuses/service.ts");
   const outstationSource = source("src/lib/outstation/service.ts");
-
-  // ── plan_awaiting_verification: exactly ONE subject, and it is the REP ──────────────────
-  assert.match(
-    planNotificationsSource,
-    /subjectHrId: plan\.repHrId,/,
-    "the plan-awaiting-verification notice must name the REP as its subject — the email is about his plan",
-  );
-  assert.doesNotMatch(
-    planNotificationsSource,
-    /employeeHrId: rep\.manager_hr_id/,
-    "the MANAGER must never be passed as email.employeeHrId: that field is the subject slot, so naming " +
-      "the recipient there makes two people claim one subject and the guard refuses the send (60 skipped, " +
-      "zero sent). It also drives the manager-chain CC, so it would leak the notice to the manager's own " +
-      "manager once unblocked.",
-  );
-  // The manager must STILL be the recipient — this fix changes nothing about who is told.
-  assert.match(
-    planNotificationsSource,
-    /recipientHrId: rep\.manager_hr_id,/,
-    "the manager remains the RECIPIENT of the plan-verification notice; only the subject slot was corrected",
-  );
-  assert.match(
-    planNotificationsSource,
-    /recipients: \[manager\.work_email\]/,
-    "the explicit recipient address stays the manager's work email — the audience is unchanged",
-  );
 
   // ── excuse_sla_reminder: the subject is the EMPLOYEE whose excuse is pending ────────────
   assert.match(

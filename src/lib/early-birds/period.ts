@@ -2,7 +2,7 @@
 //
 // Everything here is pure string arithmetic on YYYY-MM-DD. That is safe precisely BECAUSE it never
 // constructs a Cairo instant: `ireports360_visits.visit_date` is already stored as the Cairo
-// calendar day (see crm/sync.ts's vendor-timestamp invariant), and `cairoTodayIso()` hands back the
+// calendar day (the retired vendor sync stored it that way), and `cairoTodayIso()` hands back the
 // Cairo day directly. Introduce a `new Date(...)` on a local timestamp anywhere in this file and a
 // rep's last-day visit starts landing in the wrong fortnight for three hours every evening.
 

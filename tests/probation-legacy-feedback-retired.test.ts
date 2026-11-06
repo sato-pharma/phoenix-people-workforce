@@ -121,23 +121,6 @@ export function runProbationLegacyFeedbackRetiredTests() {
     "live code references the retired legacy probation feedback path:\n  " + offenders.join("\n  "),
   );
 
-  // ── The crons keep the LIVE probation step and lost only the dead one ───────
-  // Removing the wrong one here is the expensive mistake: syncProbationDvDays is what fills
-  // probation_dv_days (108 rows in production), which is what the Case model and every live
-  // feedback task read. tickDvCheckboxesFromSync only ever wrote employee_probation.
-  for (const cron of [
-    "app/api/cron/ireports360-visits-sync/route.ts",
-    "app/api/cron/ireports360-visits-reconcile/route.ts",
-  ]) {
-    const source = readFileSync(path.join(REPO_ROOT, cron), "utf8");
-    assert.match(
-      source,
-      /syncProbationDvDays\(/,
-      `${cron} lost syncProbationDvDays. That is the LIVE probation DV pipeline — dropping it ` +
-        "stops probation_dv_days being fed, and with it every feedback task in the Case model.",
-    );
-  }
-
   // ── The replacement is actually there ───────────────────────────────────────
   // Tie the retirement to its cause, the same way the removal notes do. Retiring the legacy path is
   // only correct while a live one exists; if this ever fails, the product has no feedback capture

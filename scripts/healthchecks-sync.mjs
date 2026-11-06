@@ -137,11 +137,12 @@ export function parseDuration(text) {
 /**
  * Read the "Check slug | Cron expression | Suggested grace" table out of the doc.
  *
- * Two shapes appear in that column, and both are real:
+ * Two shapes are accepted in that column:
  *   | `phoenix-notify-daily`          | `36 6 * * *`              | 1h  | ...
- *   | `phoenix-ireports360-live-poll` | **Simple**, period `5m`   | 15m | ...
+ *   | `phoenix-example-poll`          | **Simple**, period `5m`   | 15m | ...
  * The second is a period check, not a cron one - it is pinged by an in-process poller on a plain
- * interval, so it has no cron expression to give.
+ * interval, so it has no cron expression to give. No declared job uses it since the iReports360
+ * live poller was retired on 6 November 2026; the parser keeps it for the next one that does.
  */
 export function parseDesiredChecks(markdown) {
   const out = [];

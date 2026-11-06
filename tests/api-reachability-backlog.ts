@@ -156,14 +156,6 @@ export const API_REACHABILITY_BACKLOG: readonly ApiReachabilityGap[] = [
     recorded: "2026-10-08",
   },
   {
-    route: "/api/crm/rep-doctor-lists/sync",
-    authMode: "session",
-    kind: "delisted-by-ruling",
-    reason:
-      "The sync behind /admin/rep-doctor-lists, retired by the same 2026-08-28 ruling. Its only remaining mentions are tests/crm-cutover.test.ts and tests/crm-rep-doctor-lists.test.ts — assertions about it, not callers of it.",
-    recorded: "2026-10-08",
-  },
-  {
     route: "/api/phoenix-crm/double-visit-plans",
     authMode: "session",
     kind: "delisted-by-ruling",

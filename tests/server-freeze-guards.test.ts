@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { resolveInProcessHostRefusal } from "../src/lib/crm/live-poller.ts";
+import { resolveInProcessHostRefusal } from "../src/lib/platform/in-process-host.ts";
 import { EVENT_LOOP_STALL_ALERT_MS, stallAlertFor } from "../src/lib/observability/process-health.ts";
 import { beginJob, drainJobWindow, trackJob } from "../src/lib/observability/running-jobs.ts";
 import { SENTRY_PAGE_SURVEY_ENDS_AT_MS, sentryProfileSessionSampleRate } from "../src/lib/observability/sentry-policy.ts";
@@ -71,7 +71,7 @@ export async function runServerFreezeGuardsTests() {
   assert.equal(processRoleRefusal("worker"), null);
   assert.equal(processRoleRefusal(undefined), null);
 
-  // Behaviour through the shared host guard every scheduler uses (the poller, the Early Birds close, CRM
+  // Behaviour through the shared host guard every scheduler uses (the Early Birds close and CRM
   // housekeeping): with every other guard passing, only the role decides.
   const env = process.env as Record<string, string | undefined>;
   const saved = new Map<string, string | undefined>(ENV_KEYS.map((key) => [key, env[key]]));
@@ -117,9 +117,6 @@ export async function runServerFreezeGuardsTests() {
   assert.deepEqual(drainOwn(), ["job-c"]);
   assert.deepEqual(drainOwn(), [], "a failed job is unregistered too");
 
-  const poller = code("src/lib/crm/live-poller.ts");
-  assert.match(poller, /trackJob\("crm:live-poll", tick\)/, "RED every poller tick must register itself");
-  assert.match(poller, /trackJob\(`crm:\$\{dueWork\}`, \(\) => runScheduledWork\(dueWork\)\)/, "RED each deep run must register under its own name (crm:contact-lists, crm:rolling-sync, ...)");
   assert.match(code("src/lib/notifications/step-runner.ts"), /trackJob\(`cron:process:\$\{name\}`, thunk\)/, "RED every step of the 5-minute notification job must register itself");
   assert.match(code("src/lib/early-birds/close-scheduler.ts"), /trackJob\("early-birds:close", runDueEarlyBirdsClose\)/);
   assert.match(code("src/lib/crm/housekeeping-scheduler.ts"), /trackJob\("crm:housekeeping", /);

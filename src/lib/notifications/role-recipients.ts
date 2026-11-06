@@ -27,7 +27,6 @@ export const notificationRoleKeys = [
   "resignation_sla_reminder",
   "weekly_plans_drift_alert",
   "excuse_drift_alert",
-  "ireports360_sync_notify",
   "attendance_ingestion_alert",
   "marketing_sla_reminder",
   "resignation_workflow_alert",
@@ -141,13 +140,6 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     label: "Excuse drift alert",
     description: "Alert when excuse requests are stuck on a resigned or missing manager.",
     // Same artifact — dropped, see telegram_daily_hr_digest above.
-    roles: ["Super Admin"],
-    enabled: true,
-  },
-  ireports360_sync_notify: {
-    key: "ireports360_sync_notify",
-    label: "iReports360 sync notify",
-    description: "Notifies after every iReports360 CRM sync/reconcile run, success or failure.",
     roles: ["Super Admin"],
     enabled: true,
   },

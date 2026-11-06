@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { cronJobRegistry } from "../src/lib/cron-control/job-registry.ts";
 import {
@@ -49,8 +49,8 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 //     with no CRM id.
 //   · DECISION 18: the cutover month's CRM no-activity days are never charged, and the collection says
 //     why instead of reporting a silent zero.
-//   · A RETIRED VENDOR stands the poller, the four vendor crons and the four vendor sync buttons down,
-//     and the probation double-visit capture moves to the housekeeping timer instead of dying with them.
+//   · A RETIRED VENDOR (6 November 2026) leaves no vendor route, poller or sync button behind, and the
+//     housekeeping timer runs the probation double-visit capture and the contact master unconditionally.
 //   · A native rep with no CRM id still has his half-day leave matched against his own work that day.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -255,14 +255,15 @@ function readDoorTests() {
       + "sorted by an id the view synthesises, so every page rebuilt the month: 452.6 ms a page, "
       + "~17.1 s for 44 days, half of all database time left after the roster index). Raising this "
       + "number is only correct when the new site reads the UNIFIED VIEW — which is the whole point "
-      + "of the guard. The four `.from(CRM_PLAN_ENTRIES_TABLE)` reads below it are deliberate and "
-      + "separate: verification writes back to the vendor, so it resolves the plan's identity from "
-      + "the vendor's own rows, and so does the read of what a rep filed in the old app.",
+      + "of the guard. The one `.from(CRM_PLAN_ENTRIES_TABLE)` read below it is deliberate and "
+      + "separate: what a rep filed in the old app is read from the vendor's own rows. (There were "
+      + "four until 6 November 2026; the three that resolved a plan's identity for the vendor write "
+      + "left with iReports360.)",
   );
   assert.equal(
     (planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_TABLE\s*\)/g) ?? []).length,
-    4,
-    "the plan's identity (three reads) and the old-CRM weeks of reps already in a started team (one) read the vendor's own rows",
+    1,
+    "the old-CRM weeks of reps already in a started team read the vendor's own rows (the plan-identity reads left with the vendor write)",
   );
   assert.ok(read("src/lib/crm/rep-doctor-lists.ts").includes(".from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)"), "rep doctor lists read the unified plan view");
   const repsList = read("src/lib/crm/reps-list.ts");
@@ -271,9 +272,10 @@ function readDoorTests() {
 
   const repDay = read("src/lib/crm/rep-day.ts");
   assert.ok(repDay.includes(".from(CRM_VISITS_UNIFIED_VIEW)"), "the rep day's record read is the unified view");
-  assert.ok(
-    repDay.includes("!cutover.vendorSyncRetiredAt &&") && repDay.includes("!isOnOrAfterCrmCutover(cutover, day)"),
-    "the rep day never asks the live vendor for a day Phoenix owns, nor once the vendor is retired",
+  assert.equal(
+    /@\/lib\/crm\/(client|config)"/.test(repDay),
+    false,
+    "the rep day never asks the vendor: it reads the stored record only (iReports360 retired 6 November 2026)",
   );
 
   for (const route of [
@@ -285,55 +287,33 @@ function readDoorTests() {
 }
 
 function standDownTests() {
-  for (const route of [
+  // iReports360 was RETIRED on 6 November 2026 (owner: "no more accepted visits or records on old crm"). The
+  // stand-down this block once pinned — every vendor route answering "skipped" or 409 — is now the removal of
+  // every one of them, the poller with them. A vendor route coming back is a RED.
+  for (const path of [
     "app/api/cron/ireports360-visits-sync/route.ts",
     "app/api/cron/ireports360-visits-reconcile/route.ts",
     "app/api/cron/ireports360-visits-live-sync/route.ts",
     "app/api/cron/crm-contact-lists/route.ts",
-  ]) {
-    const source = read(route);
-    const denied = source.indexOf("if (denied) return denied;");
-    const standDown = source.indexOf("const standDown = await resolveVendorSyncStandDown();");
-    assert.ok(denied > 0 && standDown > denied, `${route}: the stand-down runs after the cron secret is checked`);
-    assert.ok(
-      source.includes("if (standDown) return NextResponse.json({ reason: standDown, skipped: true });"),
-      `${route}: a retired vendor answers skipped, not an error that pages`,
-    );
-    const config = source.indexOf("isIReports360Configured()");
-    if (config > 0) assert.ok(standDown < config, `${route}: the stand-down comes before the credentials check`);
-  }
-
-  for (const route of [
     "app/api/crm/early-birds/sync/route.ts",
     "app/api/admin/visits-report/backfill/route.ts",
     "app/api/crm/rep-doctor-lists/sync/route.ts",
     "app/api/crm/plan-verification/verify/route.ts",
+    "app/api/phoenix-crm/plans/old-crm/decide/route.ts",
+    "src/lib/crm/live-poller.ts",
+    "src/lib/crm/sync.ts",
+    "src/lib/crm/client.ts",
+    "src/lib/crm/config.ts",
   ]) {
-    const source = read(route);
-    const standDown = source.indexOf("await resolveVendorSyncStandDown()");
-    assert.ok(standDown > 0, `${route} asks whether the vendor is retired`);
-    assert.ok(source.includes("VENDOR_SYNC_RETIRED_MESSAGE") && source.includes("status: 409"), `${route}: a retired vendor answers 409 with a plain message`);
-    const config = source.indexOf("isIReports360Configured()");
-    if (config > 0) assert.ok(standDown < config, `${route}: the stand-down comes before the credentials check`);
+    assert.equal(existsSync(path), false, `${path} was removed with the retired vendor`);
   }
-
-  const verify = read("app/api/crm/plan-verification/verify/route.ts");
-  const negative = verify.indexOf("if (Number.isInteger(crmPlanId) && crmPlanId < 0) {");
-  assert.ok(negative > 0, "a Phoenix plan's negative id is refused by the iReports360 verify route");
-  assert.ok(negative < verify.indexOf("crmPlanId <= 0"), "it is told apart from a malformed id before the 400");
-
-  const poller = read("src/lib/crm/live-poller.ts");
-  const tick = poller.slice(poller.indexOf("async function tick(): Promise<void> {"));
-  const guard = tick.indexOf("if (await resolveVendorSyncStandDown()) return;");
-  assert.ok(guard > 0, "the live poller's tick stands down once the vendor is retired");
-  assert.equal(/\bawait\s/.test(tick.slice(0, guard)), false, "it stands down before any pull or ping");
-
-  const retiredDescriptions = cronJobRegistry.filter((entry) =>
-    JSON.stringify(entry).includes("Stands down (answers skipped) once the CRM cutover retires the vendor."),
+  assert.equal(
+    cronJobRegistry.some((entry) => /ireports360|crm-contact-lists/i.test(JSON.stringify(entry))),
+    false,
+    "no cron-control registry entry names a retired vendor job",
   );
-  assert.equal(retiredDescriptions.length, 3, "the three iReports360 registry entries say they stand down at the cutover");
-  assert.equal(cronJobRegistry.length, 9, "no job was added to or dropped from the registry");
 }
+
 
 function housekeepingTests() {
   const now = Date.UTC(2026, 9, 5, 12, 0, 0);
@@ -353,17 +333,18 @@ function housekeepingTests() {
 
   const scheduler = read("src/lib/crm/housekeeping-scheduler.ts");
   assert.equal(scheduler.includes("isIReports360Configured"), false, "the capture outlives the vendor credentials");
-  assert.ok(scheduler.includes("const hostRefusal = resolveInProcessHostRefusal();"), "it keeps the poller's host guards");
+  assert.ok(scheduler.includes("const hostRefusal = resolveInProcessHostRefusal();"), "it keeps the in-process host guards");
   assert.ok(scheduler.includes("unrefTimer(timer);"), "its timer never holds the process open");
   const runOnce = scheduler.slice(scheduler.indexOf("async function runOnce"));
-  const standDown = runOnce.indexOf("if (!(await resolveVendorSyncStandDown())) return;");
-  assert.ok(standDown > 0 && standDown < runOnce.indexOf("syncProbationDvDays("), "it captures only once the vendor is retired, when the poller no longer does");
+  // The poller left with the vendor, so this timer is the ONLY caller of both jobs: it must never wait for
+  // vendor_sync_retired_at again — an unreadable or unset setting would stop both silently.
+  assert.equal(scheduler.includes("resolveVendorSyncStandDown"), false, "it runs unconditionally, never gated on the retired vendor");
   assert.ok(runOnce.includes("addDaysIso(today, -PROBATION_DV_LOOKBACK_DAYS)"), "it reads the same 45-day window the poller used");
 
   // The contact master outlives the vendor too (re-audit, 2026-10-22): its only callers were the poller and the
-  // doctor-lists cron, so from the cutover a doctor a rep adds in Phoenix would never reach crm_contacts.
+  // doctor-lists cron, so without this timer a doctor a rep adds in Phoenix would never reach crm_contacts.
   const refreshAt = runOnce.indexOf("await refreshContactMasterAfterCutover();");
-  assert.ok(standDown > 0 && refreshAt > standDown, "the contact master is refreshed only once the vendor is retired, when the poller no longer does");
+  assert.ok(refreshAt > 0, "the contact master is refreshed by this timer");
   assert.ok(runOnce.includes("refreshCrmContactMaster({ includeActivity })"), "it runs the same refresh the poller and the cron ran");
   assert.ok(refreshAt < runOnce.indexOf("await captureProbationDvDays();"), "a refresh never blocks the capture: it never throws, and the capture runs after it");
   assert.equal(isContactMasterActivityDue({ cairoToday: "2026-10-22", lastActivityCairoDay: null }), true, "the first retired tick runs the activity pass");
@@ -373,7 +354,7 @@ function housekeepingTests() {
   // ONE timer across every process, and no refresh when nothing changed (owner, 2026-10-27, the afternoon
   // stalls): every process ran its own timer, so the 1.1 s refresh ran ~8 times an hour instead of 4.
   const leaseAt = runOnce.indexOf("if (!(await housekeepingLease.ensure())) return;");
-  assert.ok(leaseAt > standDown && leaseAt < refreshAt, "the lease is claimed after the stand-down and before any refresh or capture");
+  assert.ok(leaseAt > 0 && leaseAt < refreshAt, "the lease is claimed before any refresh or capture");
   assert.ok(scheduler.includes("jobKey: CRM_HOUSEKEEPING_LEASE_KEY,"), "the lease is keyed on the housekeeping job");
   assert.equal(CRM_HOUSEKEEPING_LEASE_KEY, "crm-housekeeping");
   assert.ok(CRM_HOUSEKEEPING_LEASE_TTL_SECONDS * 1000 > CRM_HOUSEKEEPING_TICK_MS, "the lease outlives one tick, so its holder keeps it");

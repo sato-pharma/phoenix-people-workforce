@@ -63,7 +63,7 @@ const WINDOWED: JobScheduleDeclaration = {
   graceSeconds: 600,
   kind: "cron",
   schedule: "*/5 5 * * *",
-  slug: "phoenix-crm-contact-lists",
+  slug: "phoenix-windowed-example",
 };
 
 export async function runJobHeartbeatRegisterTests() {
@@ -420,7 +420,7 @@ export async function runJobHeartbeatRegisterTests() {
     graceSeconds: 900,
     kind: "simple",
     periodSeconds: 300,
-    slug: "phoenix-ireports360-live-poll",
+    slug: "phoenix-period-example",
   };
   const pollNow = new Date("2026-08-30T12:00:00.000Z");
   assert.equal(

@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { isNationalSalesManager } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isHrIdInNsmTeamScope } from "@/lib/employee-portal/team-calendar";
-import { IReports360ApiError } from "@/lib/crm/client";
 import { getIReports360RepDayVisits } from "@/lib/crm/rep-day";
 import { loadSingleEmployeeDayPunchSummary } from "@/lib/attendance/punch-minutes";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -62,13 +61,6 @@ export async function GET(request: Request) {
         message: "You do not have access to the Team Calendar visits.",
         success: false,
       }, { status: 403 });
-    }
-    if (error instanceof IReports360ApiError) {
-      return NextResponse.json({
-        error: "ireports360_request_failed",
-        message: error.message,
-        success: false,
-      }, { status: error.status });
     }
     return NextResponse.json({
       error: "team_calendar_visits_failed",

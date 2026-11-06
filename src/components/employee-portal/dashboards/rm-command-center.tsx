@@ -39,7 +39,6 @@ import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
-import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
@@ -342,7 +341,6 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
         <AwaitRoleExtras extras={extras}>
           {({ rmRegional }) => (
             <CrmFirstVisitBoard
-              action={<EarlyBirdsSyncAction />}
               crm={rmRegional?.crm ?? null}
               allClearMessage="Everyone in your region has submitted their first visit."
             />

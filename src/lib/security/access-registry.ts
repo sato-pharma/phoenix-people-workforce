@@ -249,9 +249,6 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/contract-renewals", reason: "Scheduled notification route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/holiday-confirmation", reason: "Scheduled notification route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/notifications/daily", reason: "Scheduled notification route guarded by cron controls." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-sync", reason: "Scheduled iReports360 visits sync route guarded by cron controls." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-reconcile", reason: "Scheduled wide iReports360 reconciliation sync route guarded by cron controls." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-live-sync", reason: "Scheduled high-frequency morning iReports360 visits sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/probation-milestones", reason: "Probation Day 30/60/75 milestone emails — To the owner alone. The sweep also rides the daily notifications cron; this route runs ONLY it, so a catch-up need not wait for 06:36 Cairo and does not re-fire that route's other 29 sub-jobs. Guarded by CRON_SECRET; idempotent per (case, milestone), so a repeat call sends nothing." }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/mcp-source/authorize", reason: "Owner-only live authorization for the isolated MCP reader. Disabled unless PHOENIX_MCP_SOURCE_ENABLED is true; a dedicated bearer secret with no development bypass; reads every input uncached and fails closed." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/background-jobs", reason: "Durable background-job worker drain guarded by CRON_SECRET." }),
@@ -260,7 +257,6 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-cv-digest", reason: "6-hourly email digest to each hiring manager who received candidate pushes, with their manager CC chain; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/mailbox-offboarding-sweep", reason: "Daily sweep of the Turbify mailbox revocation register: opens a task for any leaver still holding a mailbox and alerts on the ones nobody has shut. Turbify publishes no email API, so this sweep and the register it drives are the only way the company learns that a leaver is still reachable; guarded by CRON_SECRET." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/cron/crm-contact-lists", reason: "Daily refresh of each rep's assigned doctor list from the CRM web app (ContactsList.aspx), which the Reporting API does not expose at all. Sole writer of ireports360_contacts and the only path by which Phoenix learns of a doctor assigned to a rep but never planned and never visited; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-expire-held", reason: "Daily 14-day expiry sweep for held direct orders (spec B6), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-probation", reason: "Daily 90-day probation sweep: promotes pharmacies with a footprint, reports phantoms (spec A3), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/cron/direct-orders-rotate-sheet-token", reason: "Rotates the live Google Sheet's feed token so the bootstrap token committed in docs/direct-orders-live-sheet.gs is revoked and worthless; revokes the old link only after the sheet confirms the new one; guarded by CRON_SECRET." }),
@@ -468,7 +464,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "PATCH"], pattern: "/api/admin/notifications/telegram", permission: { resource: "communication", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/email-reply/send", permission: { resource: "communication", action: "update" } }),
   // Super-Admin-only via assertSystemAdministratorWorkspaceAccess (direct role check), not
-  // the permission matrix — same pattern as the visits-report/backfill entry below.
+  // the permission matrix — same pattern as the visits-report/resolve-identity entry below.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/vacation/company-report/export", permission: null, guard: "domain-helper" }),
   // Converts one CRM-signal row into a real, balance-deducting vacation_requests row —
   // Super-Admin-only, same direct-role-check pattern as the export route above. Individual,
@@ -481,11 +477,9 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/admin/data-backup/status/:jobId", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/data-backup/download/:jobId", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/exports/table", permission: { resource: "overview", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  // Company-wide unscoped iReports360 data sync utility; checks access.role === "Super Admin"
-  // directly rather than the permission matrix. Both routes now back the CRM hub (/admin/crm)
-  // directly — the curated visits-report/export route was retired when its page merged into the
-  // hub's own (superset) master-export.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/visits-report/backfill", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The identity-resolution utility behind the CRM hub (/admin/crm); checks access.role === "Super Admin"
+  // directly rather than the permission matrix. (Its sibling, the iReports360 backfill, was removed with
+  // the vendor on 6 November 2026.)
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/visits-report/resolve-identity", permission: null, guard: "domain-helper", csrfRequired: true }),
   // CRM master table XLSX export: returns all rows for the current dataset+filters. Super-Admin-gated
   // inline (same as the /admin/crm page), so guarded by the domain helper, not the permission matrix.
@@ -869,10 +863,6 @@ export const accessRegistry = [
   // the requester can still log in — that last refusal is what keeps this a clear-up rather than a
   // delete button, and no permission string can express it.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/close-orphaned", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  // Early Birds. The sync route mirrors the whole company-day from the vendor, so it is gated on a
-  // role allowlist plus a GLOBAL rate-limit bucket rather than on a per-roster permission — the
-  // roster guarantee is a read guarantee, not a write one.
-  sessionApi({ methods: ["POST"], pattern: "/api/crm/early-birds/sync", permission: { resource: "crm_visits", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The KPIs board as XLSX (owner, 2026-10-25). The KPIs pages' own gate — canSeeDoctorCoverage plus
   // crm_visits:read — and getKpisBoard's scope decides whose rows the file holds.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/crm/kpis-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
@@ -883,29 +873,12 @@ export const accessRegistry = [
   // coverage % means, and "why did coverage jump" has to be answerable later.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/doctor-coverage/config", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/crm/doctor-coverage/config", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  // Rep Doctor Lists. Pulls one month of the vendor's WEEKLY PLAN into ireports360_plan_entries --
-  // the rep's assigned doctor list, the counterpart to the visits mirror. Audited as a mutation
-  // because it reaches an external system and rewrites a mirror table on every call; gated on
-  // `crm_visits:update` (Super Admin + SFE Manager) and then narrowed again to Super Admin alone by
-  // assertRepDoctorListsAccess, per the owner's "admin account only for now" (2026-08-21).
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/rep-doctor-lists/sync", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // Teams counted from Phoenix CRM (owner, 2026-10-02: "Only when I start it"). Start or stop counting
   // a team's Phoenix visits and plans instead of its reps' iReports360 rows on every other screen — the
   // field-work compliance matrix and the deductions connectors among them. Gated on `crm_visits:update`
   // and narrowed again to Super Admin alone by assertPhoenixTeamStartsAdmin, both before the write; the
   // writer (phoenix_crm_set_team_start, service role only) records the audit row in its own transaction.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/phoenix-team-starts", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  // Plan Verification. The ONLY route in Phoenix that writes into the customer's CRM: a manager
-  // signs off one rep's weekly or monthly plan and the vendor's own status moves. Audited as a
-  // mutation because it leaves our system and cannot be undone from here — there is no unverify.
-  //
-  // `crm_plans:approve` and NOT `crm_visits:update`: the latter is the Doctor Coverage visit-norms
-  // gate held only by Super Admin and SFE Manager, and reusing it would either lock out the district
-  // managers this feature is for, or hand them company-wide visit norms. The permission is then
-  // narrowed AGAIN inside the route by the viewer's org scope against the plan's own rep — a
-  // district manager holding `approve` is still only entitled to HIS reps' plans, and that is the
-  // gate a role check cannot perform.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/plan-verification/verify", permission: { resource: "crm_plans", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Working on an approved vacation day (CRM phase 6, rule 9). `guard: "domain-helper"` — the gate is
   // assertVacationDayAccess(): a rep who may enter visits asks, a manager holding crm_visit_entry
   // approve answers for a rep beneath him, and only the administrator gives the HR approval. Each
@@ -1105,9 +1078,6 @@ export const accessRegistry = [
   // approves or returns (`approve`). Each route refuses the other's actions before the service runs.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans/submit", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
-  // The week a rep filed in the OLD CRM, approved (or the approval taken back) from the Team tab (owner,
-  // 2026-10-17). The service asks the admin board's own second grant, `crm_plans:approve`, and the viewer's reach.
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans/old-crm/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // A sent week is changed through a request (owner, 2026-10-01): the rep asks (`create`), and the
   // district manager, SFE and HR take their steps (`approve`) — the step is read from the row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans/edit-requests", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),

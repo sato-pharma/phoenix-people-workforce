@@ -445,8 +445,8 @@ export function runDoctorListsFollowTeamStartsTests() {
     /loadDoctorListRepWindows\(\), getCrmCutoverSetting\(\)/,
     "the doctor-list service reads the doctor-list door, so the screen and the database agree",
   );
+  // rep-day.ts left this list on 2026-11-06: with the old CRM retired it has no live gate to ask.
   for (const reader of [
-    "src/lib/crm/rep-day.ts",
     "src/lib/crm/kpis-board.ts",
     "src/lib/crm/call-rate-service.ts",
   ]) {

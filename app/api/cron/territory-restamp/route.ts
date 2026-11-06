@@ -35,7 +35,7 @@ const JOB_SLUG = "phoenix-territory-restamp";
  *
  * TIMEOUT SHAPE. cron-job.org cuts every request at 30s — a platform cap `requestTimeout` cannot
  * raise — while `phx_sync_sos_run` is allowed 300s server-side. That is fine here and does not need
- * the slicing `/api/cron/crm-contact-lists` uses, because the run is idempotent and cheap at rest:
+ * the slicing the retired `/api/cron/crm-contact-lists` used, because the run is idempotent and cheap at rest:
  * it writes only rows whose brick actually moved and refreshes rollups only for batches it moved,
  * so a steady-state night is one indexed scan (the read-only reconciliation over a full 12-month
  * window measured 1.19s). The re-stamp runs ONE PERIOD PER CALL, each its own transaction, so a slow

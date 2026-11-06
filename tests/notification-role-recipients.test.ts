@@ -31,7 +31,6 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   resignation_sla_reminder: { roles: ["Super Admin"], enabled: true },
   weekly_plans_drift_alert: { roles: ["Super Admin"], enabled: true },
   excuse_drift_alert: { roles: ["Super Admin"], enabled: true },
-  ireports360_sync_notify: { roles: ["Super Admin"], enabled: true },
   attendance_ingestion_alert: { roles: ["Super Admin"], enabled: true },
   marketing_sla_reminder: { roles: [], enabled: false },
   // 14th key, added 2026-08-09 with the resignation-notification fix. Owner-set
@@ -117,11 +116,13 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 25, "expected exactly the 25 confirmed notification-role keys");
+  // 24 since 6 Nov 2026: ireports360_sync_notify left with the retired vendor sync
+  // (20261106043000_notification_role_policies_retire_ireports360_sync_key.sql).
+  assert.equal(notificationRoleKeys.length, 24, "expected exactly the 24 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 25 keys",
+    "notificationRoleKeys set does not match the confirmed 24 keys",
   );
 
   for (const key of notificationRoleKeys) {

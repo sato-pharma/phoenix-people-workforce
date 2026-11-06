@@ -38,7 +38,7 @@ import { fetchAllRowsKeyset, keysetRanges } from "@/lib/supabase/paginated";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
-import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
+import { LIST_TYPES, type CrmListType } from "@/lib/crm/list-types";
 import { scopeAllowsAgent, type CrmManagerScope } from "@/lib/crm/manager-scope";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 

@@ -257,9 +257,6 @@ import { runCrmPreHireAttributionTests } from "./crm-pre-hire-attribution.test.t
 import { runCrmPreHireMappingGuardTests } from "./crm-pre-hire-mapping-guard.test.ts";
 import { runCrmMappingPickerTests } from "./crm-mapping-picker.test.ts";
 import { runCrmOverrideEmploymentScopeTests } from "./crm-override-employment-scope.test.ts";
-import { runCrmParitySweepTests } from "./crm-parity-sweep.test.ts";
-import { runCrmParityDeleteArchiveTests } from "./crm-parity-delete-archive.test.ts";
-import { runCrmSyncRunColumnsTests } from "./crm-sync-run-columns.test.ts";
 import { runProbationDvSourceTests } from "./probation-dv-source.test.ts";
 import { runProbationDvDetectionTests } from "./probation-dv-detection.test.ts";
 import { runProbationDvValidationTests } from "./probation-dv-validation.test.ts";
@@ -618,23 +615,18 @@ import { runPortalHomeCardReadsTests } from "./portal-home-card-reads.test.ts";
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
-import { runCrmSyncIdentityPreservationTests } from "./crm-sync-identity-preservation.test.ts";
-import { runCrmPlanEntryRestampTests } from "./crm-plan-entry-restamp.test.ts";
 import { runEarlyBirdsCloseSchedulerTests } from "./early-birds-close-scheduler.test.ts";
 import { runCrmParticipantFilterTests } from "./crm-participant-filter.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
 import { runMyVisitsFieldSplitTests } from "./my-visits-field-split.test.ts";
-import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
-import { runCrmLivePollerTests } from "./crm-live-poller.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
 import { runCrmMasterExportKeysetTests } from "./crm-master-export-keyset.test.ts";
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
-import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRouteMapAddressTests } from "./crm-route-map-address-never-ellipsises.test.ts";
 import {
@@ -806,7 +798,6 @@ import {
   runWeeklyDateCellTests,
   runWeeklyNumberCellTests,
 } from "./sales-imports-audit-fixes.test.ts";
-import { runCrmCheckinReconcileGuardTests, runCrmPlanPruneArchiveTests } from "./crm-reconcile-overlap-guard.test.ts";
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
 import { runSosCrosswalkPaginationTests } from "./sos-crosswalk-pagination.test.ts";
 import { runSosCustomerMapKeysetTests } from "./sos-customer-map-keyset.test.ts";
@@ -1767,8 +1758,6 @@ import { runDoctorCoverageScopeTests } from "./doctor-coverage-scope.test.ts";
 import { runDoctorCoverageNormsTests } from "./doctor-coverage-norms.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
-import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.ts";
-import { runCrmUnrecognizedVisitTypeAlertTests } from "./crm-unrecognized-visit-type-alert.test.ts";
 
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
@@ -2477,7 +2466,6 @@ import { runRepoDoctorGitMaintenanceTests } from "./repo-doctor-git-maintenance.
 import { runRepoDoctorLoadBearingTests } from "./repo-doctor-load-bearing.test.ts";
 import { runWorktreeLivenessTests } from "./worktree-liveness.test.ts";
 import { runWorktreeReferencesTests } from "./worktree-references.test.ts";
-import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
 import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sync-body-parity.test.ts";
@@ -2957,7 +2945,6 @@ import {
 } from "./app-layer-audit.test.ts";
 import { runNeedsYouDigestRunsOutsideTheFanoutTests } from "./needs-you-digest-runs-outside-the-fanout.test.ts";
 import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-reach-the-row.test.ts";
-import { runCrmParityMirrorExcludesPhoenixVisitsTests } from "./crm-parity-mirror-excludes-phoenix-visits.test.ts";
 import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
 import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
 import { createShardDeal } from "./shard-deal.ts";
@@ -2990,7 +2977,6 @@ import { runMarketingVendorAndCustomerMergeTests } from "./marketing-vendor-and-
 import { runWhatsappHandsetClockTests } from "./whatsapp-handset-clock.test.ts";
 import { runMarketingPharmacyCodeSyncJobTests } from "./marketing-pharmacy-code-sync-job.test.ts";
 import { runExpensePayslipReconciliationTests } from "./expense-payslip-reconciliation.test.ts";
-import { runCrmIReports360HoldoutsTests } from "./crm-ireports360-holdouts.test.ts";
 import { runRecruitmentJobPostWebsiteTests } from "./recruitment-job-post-website.test.ts";
 import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
 import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fence.test.ts";
@@ -3592,9 +3578,6 @@ await runTest("crm pre-hire mapping guard (the Unmapped Agents screen refuses to
 await runTest("crm mapping picker (map an unmapped CRM account by name or HR ID)", runCrmMappingPickerTests);
 await runTest("crm override employment scope (one mapping credits both holders of a handed-over slot)", runCrmOverrideEmploymentScopeTests);
 await runTest("crm blocked-attribution counting (a holiday marker on a dead slot is not a handover)", runCrmBlockCountingTests);
-await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);
-await runTest("crm parity deletes are archived by id before they run, and bounded by a ceiling", runCrmParityDeleteArchiveTests);
-await runTest("crm sync-run columns (every persisted column exists in the schema)", runCrmSyncRunColumnsTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
 await runTest("probation DV-Day detection (P3-T02 grouping + visit_count + unresolved surfacing)", runProbationDvDetectionTests);
 await runTest("probation DV-Day validation (P3-T03/T04/T05/T06 dedup+identity+role+window)", runProbationDvValidationTests);
@@ -4250,7 +4233,7 @@ await runTest("double visit coaching audit export (weeks, period filter, workboo
 await runTest("double visit downward scope (chain + ladder cut, hidden from totals, coaching line roles)", runDoubleVisitDownwardScopeTests);
 await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
 await runTest("dv planner counts a rep from their hire date (future hire off the roster; never-visited overdue only past 30/60 days since hire)", runDvPlannerNewHiresTests);
-await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
+await runTest("visits report row mapping (mapVisitRow: null-guard + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaign never lifts the verified rate)", runCrmCallRateTests);
 await runTest("KPIs call rate holidays (a national holiday takes the week from five days to four)", runKpiCallRateHolidayTests);
 await runTest("KPIs board join (keyed on the CRM agent id, and scope fails closed on an unresolved hr id)", runKpisBoardJoinTests);
@@ -4390,21 +4373,12 @@ await runTest("portal home card reads (a rep's KPI tile asks each plan read once
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
-await runTest("crm sync identity preservation (a SILENT null never overwrites a resolved agent_hr_id; a BLOCKED null still does)", runCrmSyncIdentityPreservationTests);
-await runTest("crm plan entry re-stamp (null agent_hr_id rows re-linked through the employment guard; plan upserts preserve resolved identities)", runCrmPlanEntryRestampTests);
-await runTest("early birds close scheduler (runs beside the CRM poller with its host guards, never gated on iReports360 credentials)", runEarlyBirdsCloseSchedulerTests);
+await runTest("early birds close scheduler (keeps its host guards; the retired iReports360 poller is never started again)", runEarlyBirdsCloseSchedulerTests);
 await runTest("crm participant visit filter (agent-or-partner door filter fails closed)", runCrmParticipantFilterTests);
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
 await runTest("my visits field split (My Visits and Team Visits count calls only, like the KPI drill-down)", runMyVisitsFieldSplitTests);
-await runTest("crm live-sync window (8:30 AM-12:01 PM Cairo boundary, inclusive both ends)", runCrmLiveSyncWindowTests);
-await runTest(
-  "crm live poller (stable fingerprint, delta vs memo, cadence tiers, upsert-filter seam, startup "
-  + "guards, and the hourly rep-doctor-list sync which is ranked BELOW both visit jobs and never "
-  + "runs overnight)",
-  runCrmLivePollerTests,
-);
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
 await runTest(
   "crm master export paging (keyset not OFFSET, calendar days newest first, every row exactly once across a tie)",
@@ -4418,12 +4392,6 @@ await runTest(
   + "glitch is refused, every bound is load-bearing, and the vendor's constant-zero `attendance` "
   + "field stays out of the master export)",
   runCrmCheckinCoordGuardTests,
-);
-await runTest(
-  "crm ampm normalization (the vendor's mis-cased half-day markers are folded to AM/PM so the "
-  + "master filter and the half-day count both see them; blank means no marker; an unrecognized "
-  + "marker is kept, never dropped)",
-  runCrmAmpmNormalizationTests,
 );
 await runTest(
   "crm visit type labels (the seven codes iReports360 never documented stop reaching a human as "
@@ -4744,8 +4712,6 @@ await runTest("the history correction queues the files it moves in the same tran
 await runTest("sales import finalize recovery (a finalize that committed after an error is treated as landed)", runFinalizeRecoveryTests);
 await runTest("sales import repair note (written before finalize, crossed off after the tail)", runImportTailRepairNoteTests);
 await runTest("closing publish refuses a stale city split and rebuilds it", runPublishSplitGateTests);
-await runTest("crm check-in reconcile guard (a check-in an overlapping sync wrote is never deleted)", runCrmCheckinReconcileGuardTests);
-await runTest("crm plan prune (guarded against an overlapping sync, every row recorded before delete)", runCrmPlanPruneArchiveTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
 await runTest("sos crosswalk pagination (keyset, never unordered offset)", runSosCrosswalkPaginationTests);
 await runTest("sos customer_map keyset guard (every .range() read is ORDER BY-stable)", runSosCustomerMapKeysetTests);
@@ -6498,8 +6464,6 @@ await runTest("a button's answer never waits for the notices it raises: vacation
 await runTest("the confirmed defects the System Audit root-cause report found stay fixed", runSystemAuditRootCauseFixesTests);
 
 await runTest("outstation metrics use the canonical 3-state approval detector (rejected is never pending; Approved means the payable everywhere)", runOutstationExpenseApprovalStateMetricsTests);
-await runTest("CRM unmapped-agent alerts (invisible-work tripwire: new/reused/drifted identities alert, historical stay silent, weekly idempotency key)", runCrmUnmappedAgentAlertTests);
-await runTest("CRM unrecognized visit-type alerts (a code nobody classified alerts; all 16 production codes stay silent; recognized set stays derived from the two Sets)", runCrmUnrecognizedVisitTypeAlertTests);
 
 await runTest(
   "payroll ⨯ deductions gate composition (payroll never pays what the module refuses to publish; dsm_no_record never auto-publishes into a sheet; holiday_bridge reaches the other bucket)",
@@ -9485,7 +9449,6 @@ await runTest(
     + "every unreadable reading answers NOT landed",
   runDeltaLandedVerdictTests,
 );
-await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
 await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);
 await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
 await runTest("a stored outstation workload verdict that the CRM has since contradicted is named as stale (14 of 26 \"no activity\" requests on production have visits the stamp does not reflect)", runOutstationWorkloadFreshnessTests);
@@ -11792,10 +11755,6 @@ await runTest(
   runStructuredLogLabelsReachTheRowTests,
 );
 await runTest(
-  "the parity sweep reads the window's ids off the ireports360 mirror table, never through queryVisits and the unified view — whose Phoenix-born visits counted as rows the vendor had lost and refused the newest window at 4,779 extra, growing ~300 a day",
-  runCrmParityMirrorExcludesPhoenixVisitsTests,
-);
-await runTest(
   "the published-closing snapshot resolves each product's period price ONCE from a distinct-product CTE, never once per rollup row — 18,558 SECURITY DEFINER invocations the planner cannot inline cost 1,645 ms and 38,963 buffers per line, and timed the Needs You drift source out on 12 of 15 mornings",
   runClosingSnapshotPricesOnceTests,
 );
@@ -11896,7 +11855,6 @@ await runTest("the checks on GitHub (3 Nov 2026): every scheduled workflow is wa
 await runTest("the HR handset's 14-day clock (3 Nov 2026): the stages, him only, honest wording, and a lost echoes field is not a routing fault", runWhatsappHandsetClockTests);
 await runTest("the nightly pharmacy-code sync (3 Nov 2026): a new vendor starts hidden, both guards survive, and it refuses a mass retirement", runMarketingPharmacyCodeSyncJobTests);
 await runTest("approved expenses against the payslips (3 Nov 2026): four findings, held is not unpaid, carried is an inference, and the check reads three salary columns and writes nothing", runExpensePayslipReconciliationTests);
-await runTest("who still records only in iReports360 (3 Nov 2026): vendor rows and real partners only, a day Phoenix holds is not only there, leave is its own line, and the tab offers no action", runCrmIReports360HoldoutsTests);
 await runTest("the Publish press reaches the careers page one card at a time", runRecruitmentJobPostWebsiteTests);
 await runTest("the code backup's check reads Drive and the job can never decrypt", runCodeBackupVerifyTests);
 await runTest("Award Cheques refuses the Talent Acquisition seat on the page and every API verb, and her Spotlight read and print stay", runSpotlightChequesSeatFenceTests);

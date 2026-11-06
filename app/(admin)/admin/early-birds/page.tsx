@@ -12,7 +12,6 @@ import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
 import { EarlyBirdsControls } from "@/components/early-birds/early-birds-controls";
 import { formatShownScopeLabel } from "@/components/early-birds/early-birds-format";
 import { EarlyBirdsRepHistoryPanel } from "@/components/early-birds/early-birds-rep-history-panel";
-import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEarlyBirdsRepHistory } from "@/lib/early-birds/history";
@@ -152,7 +151,6 @@ export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
       ) : null}
 
       <EarlyBirdsBoard
-        action={<EarlyBirdsSyncAction />}
         data={data}
         openRepHrIdKey={rep?.hrIdKey ?? null}
         repLink={{ basePath: BASE_PATH, district: district.hrId, period: period.periodKey }}

@@ -2,9 +2,8 @@
  * One-off backfill: reverse-geocodes ireports360_checkins rows that have real GPS coordinates but
  * no address, for a chosen date range. The vendor's own reverse-geocoding rarely succeeds (~83% of
  * all check-ins are missing an address despite 100% having coordinates, confirmed 2026-07-21). The
- * regular sync (crm/sync.ts's backfillMissingCheckinAddresses) only trickle-fixes new/recently
- * re-synced check-ins going forward, capped per run to protect the cron's time budget; this script
- * is for a deliberate, one-time catch-up over a chosen historical window, run outside any cron's
+ * retired iReports360 sync (removed 6 November 2026) trickle-fixed new check-ins as they arrived;
+ * this script is for a deliberate, one-time catch-up over a chosen historical window, run outside any cron's
  * time/cost budget and only when explicitly triggered.
  *
  * Idempotent and safe to re-run/resume: only ever selects rows still missing an address (fetched

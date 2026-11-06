@@ -261,9 +261,10 @@ running (plans 22:06, visits 22:14) and 42 reps were still logging visits there.
   (synced 14:04 Cairo; her plan 27550, 59 calls) and the view held none, so the board printed "No plan this
   week" and greyed each rep out. After the fix, run through the board's own loader on production, 22 of 22 reps
   read, Gehad's week gives 10 half-days with 59 of 59 customers tickable. The sync was never down. A reader that
-  asks "what did this rep file in the old app" reads the vendor's rows, as plan verification already does
-  (`getPlanForVerification`); the counting views are for counting. Pinned by `tests/crm-cutover.test.ts` (five
-  unified-view reads, four raw ones in `plan-board.ts`) and `tests/phoenix-crm-manager-plan.test.ts`.
+  asks "what did this rep file in the old app" reads the vendor's rows, as plan verification did until the
+  vendor write left (`getPlanForVerification`, deleted 6 Nov 2026); the counting views are for counting. Pinned by
+  `tests/crm-cutover.test.ts` (five unified-view reads, one raw one in `plan-board.ts`) and
+  `tests/phoenix-crm-manager-plan.test.ts`.
 - **When the old week exists.** Reps file the next week in the old CRM on Wednesday to Friday (the 17 Oct plans
   were first synced 14 Oct 17:06 to 16 Oct 19:05 Cairo). Before then the coming week shows "No plan this
   week" for an old-CRM rep exactly as it does for a Phoenix rep who has not started a draft; it is not a
@@ -277,7 +278,9 @@ running (plans 22:06, visits 22:14) and 42 reps were still logging visits there.
   left out (never planned with a rep, owner 2026-10-02), and the vendor's catch-all contact is not a customer.
 - **The server holds it too.** `assertOnTheRepsHalf` reads the same old plan, so a tick must still sit on
   the rep's half, whichever system the rep plans in.
-- **Approving.** The Team tab's Weekly plans list shows such a rep's week with its status and the buttons
+- **Approving — retired with iReports360, 6 November 2026.** The approval below was written into the vendor,
+  so it left with the vendor's code; the old week stays on the board as history. Until then: the Team tab's
+  Weekly plans list showed such a rep's week with its status and the buttons
   **Approve the week** and **Take back approval**. It is the vendor's own supervisor approval and nothing
   else: `setPlanVerification` (the admin Plan Verification board's own service), so
   `decidePlanVerification` refuses an approval over an area manager's (status 2), a take-back of anything
@@ -286,12 +289,13 @@ running (plans 22:06, visits 22:14) and 42 reps were still logging visits there.
 - **Who.** Exactly the admin board's reach: the District Manager and Regional Manager roles, the
   `crm_plans:approve` grant (the CEO stays observational), and the plan's rep inside the viewer's reach. On
   top of that the Phoenix refusals: the Super Admin decides nothing, and a test login holds no vendor plan.
-- **When the vendor is retired.** The buttons go (`resolveVendorSyncStandDown`); the plan stays readable.
+- **When the vendor is retired.** The buttons went (6 November 2026: the buttons, the route and the service
+  were deleted, not hidden); the plan stays readable on the board.
 - **What it does not do.** It writes nothing about a rep's visits, never pulls a plan on demand, and adds no
   count to the "waiting for you" totals (those count Phoenix weeks); the week's list does count it in its
   own "Waiting for review" filter.
-- **Where it lives.** `old-crm-plan-rules.ts` (rules), `server/manager-old-crm-weeks.ts` (the board's read),
-  `server/old-crm-plan-approval.ts` (the Team tab's read and the decision), `app/api/phoenix-crm/plans/old-crm/decide`.
+- **Where it lives.** `old-crm-plan-rules.ts` (rules), `server/manager-old-crm-weeks.ts` (the board's read).
+  `server/old-crm-plan-approval.ts` and `app/api/phoenix-crm/plans/old-crm/decide` were deleted with the vendor.
 
 ## Screens outside Phoenix CRM
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
@@ -15,6 +15,7 @@ import {
 } from "../src/lib/crm/call-rate.ts";
 import { indexCheckinsByAgentContactDay, type CheckinForMatch } from "../src/lib/crm/checkin-match.ts";
 import { attachEffectiveType, REGULAR_NO_GPS_CHECKIN_LABEL, type CrmMasterRow } from "../src/lib/crm/master.ts";
+import { phoenixPlanBoardId } from "../src/lib/crm/plan-board.ts";
 import {
   buildPhoenixTeamRows,
   cairoMonthFloor,
@@ -1611,12 +1612,21 @@ function runPlanDoorTests(plans: string): void {
   for (const sample of STAGING_IDS) {
     assert.equal(phoenixPlanId(sample.uuid), sample.plan, `the plan id for ${sample.uuid} is the one staging computed`);
     assert.ok(sample.plan < 0 && sample.plan >= -(2 ** 30), "negative, and inside an integer");
+    // iReports360 was retired on 6 November 2026 and the vendor verify route went with it. The plan
+    // board finds a Phoenix plan's own row by this same number, to approve it in Phoenix CRM.
+    assert.equal(phoenixPlanBoardId(sample.uuid), sample.plan, `the plan board's number for ${sample.uuid} is the view's`);
   }
-  const verify = stripComments(read("app/api/crm/plan-verification/verify/route.ts"));
-  const negative = verify.indexOf("if (Number.isInteger(crmPlanId) && crmPlanId < 0) {");
+  assert.equal(existsSync("app/api/crm/plan-verification/verify/route.ts"), false, "the vendor plan-verification route is gone");
+  const approveButton = stripComments(read("src/components/crm/plan-verify-button.tsx"));
   assert.ok(
-    negative > 0 && negative < verify.indexOf("{ status: 409 }"),
-    "the plan verification route answers a negative (Phoenix) plan id with 409 and no vendor write",
+    approveButton.includes('fetch("/api/phoenix-crm/plans/decide"') && !approveButton.includes("/api/crm/plan-verification"),
+    "the plan board's button posts to Phoenix CRM's own decide route, and never to the old CRM",
+  );
+  assert.ok(
+    approveButton.includes("const phoenixPlan = plan.crmPlanId < 0;") &&
+      approveButton.includes("const phoenixStatus = phoenixPlan ? plan.phoenixStatus : undefined;") &&
+      /canApprove &&\s*phoenixStatus === "submitted"/.test(approveButton),
+    "and only for a negative (Phoenix) plan id: an old-CRM plan has no Phoenix status, so nothing to press",
   );
 
   // The vendor's own reference plans stay vendor-only.
@@ -1838,31 +1848,12 @@ function runStartClockTests(): void {
   assert.equal(startedWindowCovers(windows, { hrId: null, crmId: 6006 }, "2026-10-12"), true, "a row with no hr id is matched on its CRM id");
   assert.equal(startedWindowCovers(windows, { hrId: "Z-9", crmId: 6006 }, "2026-10-12"), false, "but a row WITH an hr id never on the CRM id alone");
 
-  // A STARTED TEAM'S DAY IS NEVER FETCHED LIVE FROM THE VENDOR. `rep-day.ts` prefers a live iReports360
-  // call for any day within 2 days of today, and gated that on the GLOBAL `crm_cutover` alone — which a
-  // per-team start never sets. A live call that SUCCEEDS with zero rows is served as the truth (the
-  // fallback below it only catches a THROW), and on production 2026-10-04 thirteen of Delta (1)'s
-  // seventeen people had Phoenix visits since their 3 October start and no vendor visits at all — so
-  // B-158's 22 Phoenix calls rendered as "no visits" on HR's field-workforce-compliance drill-down and
-  // the National Sales Manager's team calendar. Asserted on the stripped source: the comment above the
-  // gate names every one of these symbols, so a test reading the raw file would pass with the gate gone.
+  // A STARTED TEAM'S DAY IS NEVER FETCHED LIVE FROM THE VENDOR — and since the old CRM was retired
+  // (6 November 2026) no rep-day is: the drill-down reads the stored tables only, so a live call that
+  // succeeded with zero rows can never again hide a day of Phoenix visits.
   const repDay = stripComments(read("src/lib/crm/rep-day.ts"));
-  assert.match(repDay, /loadStartedRepWindows\(\)/, "rep-day reads the started windows");
-  assert.match(
-    repDay,
-    /const countedFromPhoenix = startedWindowCovers\(startedWindows, \{ hrId: rep\.hrId, crmId: self\.crmId \}, day\)/,
-    "it asks the shared rule for THIS rep on THIS day, matched on the hr id with the CRM id as the fallback",
-  );
-  assert.match(repDay, /!countedFromPhoenix &&/, "and a started rep-day can never reach the live vendor call");
-  // Bounded by the gate's own semicolon, NOT by the `if (wantLive)` below it: a clause sitting between
-  // the two would otherwise read as "inside the gate" when it decides nothing. Measured — a decoy
-  // `const decoy = !countedFromPhoenix && true;` placed there passed a slice cut at the `if`.
-  const gateStart = repDay.indexOf("const wantLive =");
-  assert.ok(gateStart >= 0, "the live gate is still one `const wantLive =` expression");
-  const liveGate = repDay.slice(gateStart, repDay.indexOf(";", gateStart));
-  assert.ok(liveGate.length > 0 && liveGate.length < 600, "and it is the expression alone, not the block after it");
-  assert.match(liveGate, /!countedFromPhoenix/, "the clause is INSIDE the gate, not merely somewhere in the file");
-  assert.match(liveGate, /!isOnOrAfterCrmCutover\(cutover, day\)/, "and it stands BESIDE the global cutover, which it did not replace — neither one implies the other");
+  assert.doesNotMatch(repDay, /@\/lib\/crm\/client|iReports360Get|iReports360Login|wantLive/, "the rep day has no live vendor path at all");
+  assert.ok(repDay.includes(".from(CRM_VISITS_UNIFIED_VIEW)"), "it reads the unified view, which holds a started team's Phoenix visits");
 
   // THE ONE HELPER: the first countable Phoenix visit of a rep-day, Cairo wall clock, never before 05:00.
   type StartRow = { agent_hr_id: string | null; crm_save_date: string | null; crm_visit_id?: number | null; source?: string | null; visit_date: string | null; visit_type: number | null };

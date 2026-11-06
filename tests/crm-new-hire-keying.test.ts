@@ -412,7 +412,6 @@ export function runCrmNewHireKeyingTests() {
     const repDay = readFileSync("src/lib/crm/rep-day.ts", "utf8");
     assert.match(repDay, /buildParticipantHrIdOrFilter\(\[self\.hrId\]\)/, "C7: the rep day reads a no-CRM-id rep by hr id");
     assert.doesNotMatch(repDay, /if \(!rep\.crmId\) return/, "C7: the rep day no longer returns an empty day for a missing CRM id");
-    assert.match(repDay, /self\.crmId != null &&\s*\(input\.preferLive/, "C7: a rep with no CRM id is never sent to the live vendor");
     const partners = readFileSync("src/lib/crm/visit-partners.ts", "utf8");
     assert.match(partners, /participantHrIds: toQueryHr\.map/, "C7: visit partners walk a no-CRM-id person by hr id");
     const planActuals = readFileSync("src/lib/crm/plan-actuals-data.ts", "utf8");

@@ -48,20 +48,6 @@ export type ContactMasterRefreshOutcome =
   | { status: "failed"; error: string };
 
 /**
- * Whether this cron tick should also run the visit and plan pass.
- *
- * The list half is cheap and runs on every slice, so an assignment opens or closes within five
- * minutes of the mirror changing. The activity half reads every visit and plan row — measured 2.5 s
- * on production 2026-09-13 — and visits do not arrive through this job at all, so once per daily
- * sweep is enough: on the LAST slice of the hour, after every agent's list has been refreshed, and
- * on a by-hand `?all=1` run, which is one slice of one.
- */
-export function contactMasterRefreshIncludesActivity(input: { slice: number; sliceOf: number }): boolean {
-  if (input.sliceOf <= 1) return true;
-  return input.slice === input.sliceOf - 1;
-}
-
-/**
  * Only a missing FUNCTION reads as "not provisioned". Anything else — a timeout, a constraint, a
  * lock — is a real failure and is reported as one, never folded into the benign answer.
  */

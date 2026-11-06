@@ -20,7 +20,6 @@ import { CRM_MASTER_DATASETS } from "@/lib/crm/master-datasets";
 import { isPortalCrmRole, resolvePortalCrmScope, toPortalCrmScopeView } from "@/lib/crm/portal-crm-scope";
 import { phoenixDetailViewer } from "@/lib/crm/phoenix-visit-detail";
 import { getCrmCutoverSetting } from "@/lib/crm/cutover";
-import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -129,10 +128,8 @@ async function PortalCrmContent({
 
   // Freshness signal for the manager reading a decision surface. getCrmMasterData ALREADY fetches
   // these sync runs (data.latestSyncRuns) and the admin hub renders exactly this panel from them — the
-  // portal fetched them and threw them away. Rendered read-only: the backfill control it carries hits
-  // a Super-Admin-only endpoint, so a field manager must never see it. retiredAt drives the "iReports360
-  // was retired" line; an unreadable setting leaves the panel exactly as it would be otherwise.
-  const today = todayIso();
+  // portal fetched them and threw them away. retiredAt hides the line once iReports360 is retired; an
+  // unreadable setting leaves the panel exactly as it would be otherwise.
   const vendorSyncRetiredAt = await vendorSyncRetiredAtRead;
 
   // Remount the client table whenever ANY applied input changes, so its filter inputs re-seed — the
@@ -162,15 +159,7 @@ async function PortalCrmContent({
       <span className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-orange-700">
         {scopeView.scopeSummary}
       </span>
-      <CrmSyncStatusPanel
-        configured={data.configured}
-        dateFrom={addDaysIso(today, -30)}
-        dateTo={today}
-        latestSyncRuns={data.latestSyncRuns}
-        readOnly
-        retiredAt={vendorSyncRetiredAt}
-        surface="portal"
-      />
+      <CrmSyncStatusPanel latestSyncRuns={data.latestSyncRuns} retiredAt={vendorSyncRetiredAt} surface="portal" />
       <CrmTabBar active={data.dataset} extraTabs={[]} surface="portal" />
       <CrmMasterTable
         data={data}

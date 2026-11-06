@@ -734,8 +734,8 @@ policy):
    `in place` and `withheld`.
 
    What a withheld row gives up is the outside observer for that one job — and "is Phoenix alive?" is
-   already answered within minutes by `phoenix-inbound-intake` (2m),
-   `phoenix-process-notifications` (5m) and `phoenix-ireports360-live-poll` (5m). **To give a withheld
+   already answered within minutes by `phoenix-inbound-intake` (2m) and
+   `phoenix-process-notifications` (5m). **To give a withheld
    row its own check:** free a check in the Healthchecks project or raise the plan, delete
    `· **in-house only**` from its row, and re-run the sync with `--apply`. **To free a check, hand it
    over rather than delete it** (done 2 Nov 2026): pause it, rename its name and slug to the new job,
@@ -791,12 +791,8 @@ policy):
    | `phoenix-brick-move-drain` | `19,39,59 * * * *` | 1h | cron-job.org job `(set on first --apply)` |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
    | `phoenix-system-audit-sweep` | `57 4 * * *` | 2h | cron-job.org, armed on merge by `cron-autoarm.yml` · **in-house only** |
-   | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 20m | cron-job.org job `8344730` |
    | `phoenix-expense-claims-refresh` | `51 * * * *` | 1h | cron-job.org job `8350207` |
    | `phoenix-recruitment-cv-digest` | `47 0,6,12,18 * * *` | 1h | cron-job.org job `8334658` |
-   | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 30m | the in-process poller, every tick |
-   | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
-   | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
    | `phoenix-crm-agent-crm-ids-reconcile` | `7 * * * *` | 2h | pg_cron job `crm-agent-crm-ids-reconcile`, inside the database · **in-house only** |
    | `phoenix-crm-person-by-hr-key-reconcile` | `*/15 * * * *` | 1h | pg_cron job `crm-person-by-hr-key-reconcile`, inside the database · **in-house only** |
    | `phoenix-crm-contact-truth-reconcile` | `*/15 * * * *` | 1h | pg_cron job `phoenix-crm-contact-truth-reconcile`, inside the database · **in-house only** |
@@ -900,12 +896,8 @@ policy):
    | `phoenix-brick-move-drain` | `sales` | Settles the net effect of brick moves three times an hour and alerts on what it could not settle. |
    | `phoenix-reconciliation-check` | `sales silent-when-clean` | The nightly 04:40 integrity checks. They store their report and write every breach into the System Audit ledger, which the 04:57 daily message carries; they send nothing of their own. A red means last night's checks were neither stored nor reported. |
    | `phoenix-system-audit-sweep` | `platform in-house-only silent-when-clean` | The nightly 04:57 System Audit sweep: every detector in turn, the verifier, then one in-app and Telegram message, sent only when an issue is new, newly shared or reopened, so a quiet morning is correct. A red means last night's findings were not collected and nobody was told. |
-   | `phoenix-crm-contact-lists` | `crm` | Rebuilds the CRM doctor and pharmacy contact lists every five minutes through hour 5. It pings directly rather than through the wrapper, because this route answers 500 without throwing. |
    | `phoenix-expense-claims-refresh` | `hr` | Rebuilds the expense-claims read mirror from the legacy outstation tables every hour. Production reads are live on that mirror, so a red means the claims people are reading go stale. |
    | `phoenix-recruitment-cv-digest` | `recruitment silent-when-clean` | Emails each hiring manager who had candidates pushed to them in the last six hours a summary of what they received and from whom. Silent when no manager received any. |
-   | `phoenix-ireports360-live-poll` | `crm` | The in-process poller's own tick, every five minutes. A brief red is usually the production process restarting on a deploy, which is why its grace is 30 minutes; a sustained red means the poller is dead and CRM has stopped pulling iReports360. |
-   | `phoenix-ireports360-sync` | `crm` | The rolling iReports360 visits sync, every three hours between 06:00 and 21:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
-   | `phoenix-reconcile-visits` | `crm` | The weekly full-window iReports360 reconciliation, Sunday 04:00, run by the in-process poller. Its cron-job.org backstop is OFF by design while the poller runs. |
    | `phoenix-crm-agent-crm-ids-reconcile` | `crm in-house-only` | The hourly pg_cron reconcile inside the database that keeps the departed-agent CRM id cache in step with the visits; nothing else refreshes it. A red means the cache has frozen, so a CRM id first used after it stopped is missing from the departed-agent exclusion that Double Visit Analytics, Field Workforce Compliance and the payroll no-activity detector read. |
    | `phoenix-crm-person-by-hr-key-reconcile` | `crm in-house-only` | The 15-minute pg_cron safety net behind the one-row-per-HR-id employee cache both CRM visit doors join to name a person; a trigger on employees does the real work. A red means a change that trigger missed would stay wrong in every CRM read that names who made a visit. |
    | `phoenix-crm-contact-truth-reconcile` | `crm in-house-only` | The 15-minute pg_cron safety net behind the Phoenix contact-truth cache all three CRM doors read for a doctor's name and speciality; a trigger on the customer table does the real work. A red means a change that trigger missed would stay wrong on every CRM screen. |
@@ -965,8 +957,8 @@ finished** after a restart, and Healthchecks records each run's duration, so a j
 grace shows before it trips. It is **opt-in** (`withDeadMansSwitch(slug, run, { signalStart: true })`),
 external half only (the in-house register records how a run ENDED), awaited so it can never land after
 the ending ping, and inert outside production exactly like a ping. Wired today into
-`phoenix-notify-daily`, `phoenix-crm-integrity-sweep` and `phoenix-ireports360-sync` (the cron route
-and the in-process rolling sync; the weekly reconcile is deliberately not). Add it only to a job whose
+`phoenix-notify-daily` and `phoenix-crm-integrity-sweep` (`phoenix-ireports360-sync` carried it too
+until the vendor was retired on 6 November 2026). Add it only to a job whose
 check has a grace longer than a normal run — Healthchecks measures the grace from the start — and which
 always ends in a success or a fail ping.
 
@@ -1127,25 +1119,12 @@ a new pg_cron job must be declared here too.
    read back out of the live cron-job.org account on **2026-08-23** (17 jobs, 12 enabled) or traced
    to the code that pings it, and the two rows that did not survive that check are called out below.
 
-   **Three of these are pinged by the app itself, not by any scheduler.** `src/lib/crm/live-poller.ts`
-   runs inside the production process and absorbed the iReports360 cron work: it pings
-   `phoenix-ireports360-live-poll` on **every tick** (20 s in the 08:00–12:30 Cairo compliance
-   window, 30 s daytime, 120 s overnight — hence a Simple 5-minute period rather than a cron
-   expression, with a grace wide enough to survive a deploy restart), and it pings
-   `phoenix-ireports360-sync` / `phoenix-reconcile-visits` when their deep runs come due. Those two
-   fire on an elapsed-time guard, not a wall clock — 3 h since the last success and no earlier than
-   06:00 Cairo for the rolling sync, 5.5 days and Sunday from 04:00 for the wide reconcile — so the
-   expressions above are the *envelope* they run inside, and the graces are wide on purpose. The
-   old rows (`7 9,12,19 * * *` at 30 m, `24 4 * * 0` at 2 h) were copied from the dead GCP script
-   and would now go red daily: a poller sync at 09:00 Cairo does not satisfy a check expecting one
-   after 09:07.
-
-   🔴 **`phoenix-ireports360-live-sync` is no longer in this table, and if that check exists in the
-   dashboard it should be deleted.** `/api/cron/ireports360-visits-live-sync` is still wired to the
-   switch, but its only caller — cron-job.org job `8200918` — is **disabled**, last fired
-   2026-08-16, and nothing else pings that slug. It was made redundant by the in-process poller, so
-   the check has been red since 2026-08-16 for no reason at all. This table used to instruct the
-   owner to give it a 15-minute schedule, which would have kept it red forever.
+   **The iReports360 rows left this table when the vendor was retired, on 6 November 2026.**
+   `phoenix-ireports360-live-poll`, `phoenix-ireports360-sync` and `phoenix-reconcile-visits` were
+   pinged by the in-process poller inside the production process, and `phoenix-crm-contact-lists` by
+   cron-job.org job `8344730`. The poller, the four vendor cron routes and their schedules are gone;
+   the four Healthchecks checks were paused on the dashboard the same day, and their leftover
+   `job_heartbeats` rows read as *undeclared*, which never affects health.
 
    The two `phoenix-direct-orders-*` rows **moved into cron-job.org on 2026-08-23** — jobs `8313165`
    (02:17) and `8313177` (02:27), both Africa/Cairo, staggered so the two sweeps never overlap. They

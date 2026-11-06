@@ -17,9 +17,6 @@ export type CronJobKey =
   | "phoenix-background-jobs"
   | "phoenix-process-notifications"
   | "phoenix-notify-daily"
-  | "phoenix-ireports360-sync"
-  | "phoenix-reconcile-visits"
-  | "phoenix-ireports360-live-sync"
   | "phoenix-recruitment-email-intake"
   | "phoenix-inbound-intake"
   | "phoenix-recruitment-cv-digest";
@@ -49,27 +46,6 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
     label: "Daily Notifications",
     description: "Birthdays, contract renewals, holiday reminders, vacation/marketing/outstation SLA digests, and daily notification/activity-log retention cleanup.",
     route: "/api/notifications/daily",
-  },
-  {
-    gcpJobName: "phoenix-ireports360-sync",
-    label: "iReports360 Visits Sync",
-    description:
-      "Backstop for the in-process CRM poller's rolling iReports360 sync; OFF at cron-job.org by design while the poller runs. Stands down (answers skipped) once the CRM cutover retires the vendor.",
-    route: "/api/cron/ireports360-visits-sync",
-  },
-  {
-    gcpJobName: "phoenix-reconcile-visits",
-    label: "iReports360 Wide Reconcile",
-    description:
-      "Backstop for the in-process CRM poller's weekly full-window iReports360 reconciliation; OFF at cron-job.org by design while the poller runs. Stands down (answers skipped) once the CRM cutover retires the vendor.",
-    route: "/api/cron/ireports360-visits-reconcile",
-  },
-  {
-    gcpJobName: "phoenix-ireports360-live-sync",
-    label: "iReports360 Live Morning Sync",
-    description:
-      "Backstop for the in-process CRM poller's same-day iReports360 pull, 8:30 AM-12:01 PM Cairo, so CRM First Visit / Early Birds reflects a visit+check-in within minutes; OFF at cron-job.org by design while the poller runs. Stands down (answers skipped) once the CRM cutover retires the vendor.",
-    route: "/api/cron/ireports360-visits-live-sync",
   },
   {
     gcpJobName: "phoenix-recruitment-email-intake",

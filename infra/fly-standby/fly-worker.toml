@@ -11,7 +11,7 @@
 # 🔴 ONE WORKER ONLY. Railway's worker is stopped and set to PHOENIX_PROCESS_ROLE=web while this one runs; two would
 # run every job twice against one database and point two pollers at one iReports360 account.
 #
-# RAILWAY_ENVIRONMENT_NAME = "production" is deliberate: it is the CRM poller's host pin (src/lib/crm/live-poller.ts,
+# RAILWAY_ENVIRONMENT_NAME = "production" is deliberate: it is the in-process timers' host pin (src/lib/platform/in-process-host.ts,
 # resolveInProcessHostRefusal). It also makes the release gate REQUIRED here: the image carries RAILWAY_GIT_COMMIT_SHA
 # (fallback-image.yml builds it in), so /api/readyz reads the commit's recorded gate (read live 22 Oct: required, passed,
 # "recorded"). Only a gated commit reaches this app anyway: the go-live's own gate job refuses any other.

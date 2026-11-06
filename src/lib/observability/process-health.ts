@@ -261,7 +261,7 @@ export function startProcessHealthReporter(): void {
       histogram.reset();
     }
   }, REPORT_INTERVAL_MS);
-  // Inline rather than live-poller's unrefTimer: importing that would load the whole CRM poller graph
-  // into a module whose only job is one log line a minute.
+  // Inline rather than platform/in-process-host's unrefTimer: one line is cheaper than an import into a
+  // module whose only job is one log line a minute.
   (timer as unknown as { unref?: () => void }).unref?.();
 }
