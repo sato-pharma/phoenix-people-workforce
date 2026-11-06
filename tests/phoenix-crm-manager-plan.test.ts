@@ -602,7 +602,7 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
 
   // ── 5. No email, and the Hub counts each week once ───────────────────────────────────────────
 
-  assert.deepEqual(PHOENIX_CRM_EMAIL_EVENT_TYPES, [], "the district manager's plan emails nobody — Phoenix CRM sends no email at all (owner, 2026-11-06)");
+  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES], [], "the district manager's plan emails nobody — Phoenix CRM sends no email at all (owner, 2026-11-06)");
   assert.ok(PHOENIX_CRM_PUSH_BLOCKED_EVENT_TYPES.includes("manager_plan_edit_expired"), "the expired ask goes in-app and by Telegram only");
   const policy = source("src/lib/notifications/policy.ts");
   const managerPolicies = policy.split("\n").filter((line) => /"phoenix_crm\.manager_(plan|list)_[a-z_]+":/.test(line));
