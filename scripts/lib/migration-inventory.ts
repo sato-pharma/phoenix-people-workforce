@@ -2172,6 +2172,21 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // at 26214400 bytes, storage policy medical_insurance_service_role present. Re-applying it is a no-op
   // (`if not exists`, `on conflict do nothing`, the bucket upsert, `drop policy if exists`).
   "20261104092817_medical_insurance.sql",
+  // 2026-11-06, written by the session that applied it. A first draft (one-argument
+  // phx_make_it_happen_brick_units plus sales_forecast_plans.brick_units) went in through apply_migration,
+  // which stamped ledger rows NAMED make_it_happen_brick_forecast — version 20261106142014 on
+  // ozucdzovmcqvepbozvqf, 20261106141955 on cifwmndunmlxjhyjugxa. Minutes later the file gained the two
+  // scope arrays, which means dropping the draft, and supabase-staging's apply_migration answered
+  // {"status":"declined"} to that `drop function`. So THIS body went in by the standing route,
+  // `node scripts/apply-sql-file.mjs <file> staging|production` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), which writes no ledger row: the ledger
+  // row's NAME matches this file but it records the draft. Proven by digest on BOTH databases, read
+  // straight after: md5(pg_proc.prosrc) of public.phx_make_it_happen_brick_units = d2e0f379359ce08fc9a53ebd15e0c2f4,
+  // equal to the md5 of this file's own body between the $function$ markers; one overload only, identity
+  // arguments (p_period text, p_line_codes text[], p_area_codes text[]); prosecdef true; EXECUTE false for
+  // anon and authenticated, true for service_role; brick_units present with default '{}'::jsonb.
+  // Re-applying is a no-op (`drop function if exists` of the draft, `create or replace`, `add column if not exists`).
+  "20261106161841_make_it_happen_brick_forecast.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

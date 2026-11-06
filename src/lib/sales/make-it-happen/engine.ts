@@ -51,6 +51,16 @@
 //      normal month (a declining product: its best RECENT month, so no old peak comes back). A
 //      product with one closed month, or none that move, has no spread and stays at its pace — and
 //      says so rather than inventing one.
+//   9. THE FORECAST IS PER PRODUCT PER BRICK (owner, 2026-11-06: "I want the bricks listed, per
+//      product, and the forecast is done based on this"). Each brick a product sold on in the
+//      viewer's scope is read from its OWN closed months, the same readTrend, and gives its own
+//      pace. The product's forecast is spread over its bricks in proportion to those paces
+//      (splitAcrossBricks), so the bricks always add up to the product — and the product stays the
+//      Monthly Closing figure the target is graded on. Why not simply add the brick paces: inside
+//      one area the closing moves sales the bricks never show (the city rule, the Office spread,
+//      direct orders, El Qema), and a sum of brick paces would grade a rep on a number he is not
+//      paid on. A rep may type any brick; the product is then the sum of its bricks. Brick history
+//      is never shown — only the bricks and their forecast.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The first month Make It Happen reads (owner decision 2026-09-14). */
@@ -607,6 +617,85 @@ export function buildRealisticMix(items: readonly MixItem[], gapValue: number | 
   return { units: mix.units, reachable: plan.reachable, shortValue: plan.shortValue, plannedValue: mix.plannedValue };
 }
 
+// ── Per brick (rule 9) ───────────────────────────────────────────────────────
+
+/** One brick a product sold on in the viewer's scope. History is read, never shipped. */
+export type BrickPlanRow = {
+  /** brick_id — the key a brick forecast is stored under. Never rendered. */
+  brickId: string;
+  name: string;
+  /** The brick's own pace over the open months: what weights its share of the product. */
+  expectedUnits: number;
+  realisticMaxUnits: number;
+};
+
+/** Order bricks the way the planner lists them: the biggest pace first, then by name. */
+export function sortBricks<T extends BrickPlanRow>(bricks: readonly T[]): T[] {
+  return [...bricks].sort(
+    (a, b) =>
+      b.expectedUnits - a.expectedUnits ||
+      b.realisticMaxUnits - a.realisticMaxUnits ||
+      a.name.localeCompare(b.name) ||
+      a.brickId.localeCompare(b.brickId),
+  );
+}
+
+/**
+ * Spread a product's whole units over its bricks, in proportion to each brick's own pace (rule 9).
+ * Whole units, and they always add up to `total` exactly: each brick takes the floor of its share,
+ * and the units left over go one by one to the largest remainders, ties to the brick listed first.
+ * Weights fall back from the expected pace to the realistic pace to an even split, so a product
+ * with bricks never loses units to a zero weight. No bricks → {} (the product is typed on its own).
+ */
+export function splitAcrossBricks(total: number, bricks: readonly BrickPlanRow[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  const units = Math.max(0, Math.floor(total));
+  if (bricks.length === 0) return out;
+  const sum = (values: number[]) => values.reduce((acc, value) => acc + value, 0);
+  let weights = bricks.map((brick) => Math.max(0, brick.expectedUnits));
+  if (sum(weights) <= 0) weights = bricks.map((brick) => Math.max(0, brick.realisticMaxUnits));
+  if (sum(weights) <= 0) weights = bricks.map(() => 1);
+  const totalWeight = sum(weights);
+  const shares = bricks.map((brick, index) => {
+    const exact = (units * weights[index]) / totalWeight;
+    return { brickId: brick.brickId, index, whole: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let left = units - sum(shares.map((share) => share.whole));
+  const byRemainder = [...shares].sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  for (const share of byRemainder) {
+    if (left <= 0) break;
+    share.whole += 1;
+    left -= 1;
+  }
+  for (const share of shares) out[share.brickId] = share.whole;
+  return out;
+}
+
+/**
+ * A product's units per brick: the brick units given, when they are whole, name only this product's
+ * bricks and add up to the product's units — else the product split by its bricks' pace. A brick the
+ * given split leaves out reads 0. {} for a product with no bricks.
+ */
+export function brickUnitsFor(
+  bricks: readonly BrickPlanRow[],
+  productUnits: number,
+  given: Record<string, number> | null | undefined,
+): Record<string, number> {
+  if (bricks.length === 0) return {};
+  if (given) {
+    const known = new Set(bricks.map((brick) => brick.brickId));
+    const entries = Object.entries(given);
+    const whole = entries.every(([brickId, units]) => known.has(brickId) && Number.isSafeInteger(units) && units >= 0);
+    const sum = entries.reduce((total, [, units]) => total + units, 0);
+    if (whole && sum === productUnits) {
+      const out: Record<string, number> = {};
+      for (const brick of bricks) out[brick.brickId] = given[brick.brickId] ?? 0;
+      return out;
+    }
+  }
+  return splitAcrossBricks(productUnits, bricks);
+}
+
 // ── The payload the screen renders ───────────────────────────────────────────
 
 export type ConcentrationPlanRow = {
@@ -624,6 +713,8 @@ export type ConcentrationPlanRow = {
   /** Closed months, oldest first, with the month's units in this viewer's scope. */
   history: Array<{ period: string; label: string; units: number }>;
   trend: TrendReading;
+  /** Rule 9 — the bricks this product sold on in scope, biggest pace first. [] when none did. */
+  bricks: BrickPlanRow[];
 };
 
 /**
@@ -661,6 +752,8 @@ export type SavedPlanSummary = {
   id: string;
   name: string;
   units: Record<string, number>;
+  /** Rule 9 — product_code → brick_id → units, as saved. A product missing here is split by pace. */
+  bricks: Record<string, Record<string, number>>;
   forecastValue: number;
   forecastAchievement: number | null;
   /** Cairo local, formatted server-side. */
@@ -704,6 +797,8 @@ export type MakeItHappenWorkspace = {
   canSave: boolean;
   /** False until the saved-plans table exists — the planner says so instead of listing nothing. */
   plansAvailable: boolean;
+  /** False when the brick read failed — the products still plan, and the screen says so (rule 9). */
+  bricksAvailable: boolean;
   lines: LinePlanGroup[];
   totals: { targetValue: number | null; gradedValue: number; actualValue: number };
   reps: RepPlanSummary[];

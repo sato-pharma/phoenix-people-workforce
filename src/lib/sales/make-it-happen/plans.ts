@@ -17,6 +17,7 @@ import {
   type SavedPlanSummary,
 } from "@/lib/sales/make-it-happen/engine";
 import { phoenixCoachMessage } from "@/lib/sales/make-it-happen/coach";
+import { PlanBricksError, checkPlanBricks } from "@/lib/sales/make-it-happen/plan-bricks";
 import { insertPlan, updateOwnPlan } from "@/lib/sales/make-it-happen/plan-store";
 import {
   DEFAULT_GOAL_PCT,
@@ -77,6 +78,20 @@ export function validatedUnits(workspace: MakeItHappenWorkspace, raw: unknown): 
     units[code] = parsed;
   }
   return units;
+}
+
+/** A plan's units per brick (engine.ts rule 9), checked in plan-bricks.ts; a refusal is a 400 in words. */
+export function validatedBricks(
+  workspace: MakeItHappenWorkspace,
+  units: Record<string, number>,
+  raw: unknown,
+): Record<string, Record<string, number>> {
+  try {
+    return checkPlanBricks(workspace, units, raw);
+  } catch (error) {
+    if (error instanceof PlanBricksError) throw new MakeItHappenError(400, error.message);
+    throw error;
+  }
 }
 
 export async function workspaceFor(ctx: AccessContext, body: Record<string, unknown>, rep: string | null) {
@@ -144,12 +159,15 @@ export async function saveForecastPlan(ctx: AccessContext, rawBody: unknown): Pr
     forecastValue += parsed * concentration.price;
   }
 
+  const bricks = validatedBricks(workspace, units, body.bricks);
+
   const values = {
     ownerKey,
     periodKind: workspace.periodKind,
     periodKey: workspace.periodKey,
     name,
     units,
+    bricks,
     forecastValue,
     forecastAchievement: achievementOf(workspace.totals.gradedValue, forecastValue, workspace.totals.targetValue),
     targetValue: workspace.totals.targetValue,

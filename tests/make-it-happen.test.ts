@@ -19,6 +19,10 @@ import {
   readTrend,
   realisticUnits,
   buildGoalMix,
+  brickUnitsFor,
+  sortBricks,
+  splitAcrossBricks,
+  type BrickPlanRow,
   type ConcentrationPlanRow,
   type LinePlanGroup,
   type MakeItHappenWorkspace,
@@ -45,6 +49,7 @@ import {
   suggestedScenario,
   type PlannerFilters,
 } from "@/lib/sales/make-it-happen/scenarios";
+import { PlanBricksError, checkPlanBricks } from "@/lib/sales/make-it-happen/plan-bricks";
 import {
   applyMakeItHappenBound,
   canUseMakeItHappen,
@@ -266,6 +271,7 @@ export async function runMakeItHappenTests() {
     gradedValue: 0,
     history: [],
     trend: { kind: "none", historyMonths: 0, spikesIgnored: 0, expectedUnits: 0, realisticMaxUnits: 0 },
+    bricks: [],
     ...overrides,
   });
   const alpha = planRow({
@@ -290,7 +296,7 @@ export async function runMakeItHappenTests() {
   const workspace: MakeItHappenWorkspace = {
     periodKind: "quarter", periodKey: "2026-Q3", periodLabel: "Q3 2026 · July to September",
     offered: { month: [], quarter: [], semester: [] }, scopeLabel: "Your line", isEmptyScope: false, viewingRep: null,
-    canSave: true, plansAvailable: true, lines: [cnsLine, pediaLine],
+    canSave: true, plansAvailable: true, bricksAvailable: true, lines: [cnsLine, pediaLine],
     totals: { targetValue: 2000, gradedValue: 500, actualValue: 500 }, reps: [], plans: [],
   };
 
@@ -536,7 +542,7 @@ export async function runMakeItHappenTests() {
   // The workspace applies the filter to the PER-PERSON loop only: lines, overall and the pace stay on every row.
   const workspaceSource = readFileSync(path.join(process.cwd(), "src/lib/sales/make-it-happen/workspace.ts"), "utf8");
   assert.ok(workspaceSource.includes("isListedOnTeam({"), "the per-person loop asks isListedOnTeam");
-  assert.ok(workspaceSource.includes("const lines = buildLines(rows);"), "the lines still read every row, trend months included");
+  assert.ok(workspaceSource.includes("const lines = buildLines(rows, brickRows);"), "the lines still read every row, trend months included");
   assert.ok(
     workspaceSource.includes("const overall = gradeRows(rows.filter((row) => monthSet.has(row.period))"),
     "the overall total still reads the selected period's rows without any employment filter",
@@ -606,7 +612,7 @@ export async function runMakeItHappenTests() {
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load((await buildForecastWorkbook(model)) as unknown as ArrayBuffer);
-  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Cover", "Forecast", "Scenarios"]);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Cover", "Forecast", "By brick", "Scenarios"]);
   const forecastSheet = workbook.getWorksheet("Forecast");
   assert.ok(forecastSheet);
   const texts: string[] = [];
@@ -683,6 +689,89 @@ export async function runMakeItHappenTests() {
     false,
     "a rewrite measured on 2026-09-14 that kept every figure but lost 'your best' — so the percentage no longer says what it means — is refused",
   );
+
+  // ── Rule 9: the forecast per product per brick ──
+  const brick = (brickId: string, expectedUnits: number, realisticMaxUnits = expectedUnits): BrickPlanRow => ({
+    brickId,
+    name: `Brick ${brickId}`,
+    expectedUnits,
+    realisticMaxUnits,
+  });
+  const tantaBricks = [brick("b1", 30), brick("b2", 10), brick("b3", 0, 5)];
+  assert.deepEqual(
+    splitAcrossBricks(100, tantaBricks),
+    { b1: 75, b2: 25, b3: 0 },
+    "each brick takes its share of the product in proportion to its own pace",
+  );
+  assert.deepEqual(
+    splitAcrossBricks(10, [brick("a", 1), brick("b", 1), brick("c", 1)]),
+    { a: 4, b: 3, c: 3 },
+    "whole units only, and the unit left over goes to the brick listed first",
+  );
+  for (const total of [0, 1, 7, 99, 1234, 100_003]) {
+    const sum = Object.values(splitAcrossBricks(total, tantaBricks)).reduce((acc, value) => acc + value, 0);
+    assert.equal(sum, total, `a product's bricks always add up to its ${total} units`);
+  }
+  assert.deepEqual(
+    splitAcrossBricks(10, [brick("x", 0, 1), brick("y", 0, 3)]),
+    { x: 3, y: 7 },
+    "with no expected pace on any brick, the realistic pace weights the split",
+  );
+  assert.deepEqual(splitAcrossBricks(5, [brick("p", 0), brick("q", 0)]), { p: 3, q: 2 }, "no pace at all: an even split, never lost units");
+  assert.deepEqual(splitAcrossBricks(10, []), {}, "a product with no brick is planned on its own");
+  assert.deepEqual(
+    sortBricks([brick("z", 1), brick("m", 9), brick("a", 1)]).map((item) => item.brickId),
+    ["m", "a", "z"],
+    "bricks list biggest pace first, then by name",
+  );
+  assert.deepEqual(
+    brickUnitsFor(tantaBricks, 100, { b1: 50, b2: 50 }),
+    { b1: 50, b2: 50, b3: 0 },
+    "a typed split that adds up is kept, and a brick it leaves out reads 0",
+  );
+  assert.deepEqual(brickUnitsFor(tantaBricks, 100, { b1: 50, b2: 40 }), { b1: 75, b2: 25, b3: 0 }, "a split that does not add up falls back to the pace");
+  assert.deepEqual(brickUnitsFor(tantaBricks, 100, { zz: 100 }), { b1: 75, b2: 25, b3: 0 }, "a brick the product never sold on falls back to the pace");
+
+  const alphaOnBricks = { ...alpha, bricks: tantaBricks };
+  const brickWorkspace: MakeItHappenWorkspace = {
+    ...workspace,
+    lines: [{ ...cnsLine, rows: [alphaOnBricks, beta] }, { ...pediaLine, rows: [{ ...gamma, bricks: [brick("g1", 4)] }] }],
+  };
+  assert.deepEqual(checkPlanBricks(brickWorkspace, { A: 100, B: 3 }, undefined), { A: { b1: 75, b2: 25 } }, "no bricks sent: each product is split by pace, and a product with no brick stores none");
+  assert.deepEqual(checkPlanBricks(brickWorkspace, { A: 100 }, { A: { b1: 60, b2: "40" } }), { A: { b1: 60, b2: 40 } }, "a typed split that adds up is stored as typed");
+  const refusal = (raw: unknown) => {
+    try {
+      checkPlanBricks(brickWorkspace, { A: 100 }, raw);
+      return "accepted";
+    } catch (error) {
+      assert.ok(error instanceof PlanBricksError, "a brick refusal is a PlanBricksError the route turns into a 400");
+      return (error as Error).message;
+    }
+  };
+  assert.equal(refusal({ A: { b1: 60, b2: 30 } }), "The bricks of Alpha add up to 90 units, not 100.", "the bricks must add up to the product");
+  assert.equal(refusal({ A: { zz: 100 } }), "One of the bricks is not one Alpha sells on in your plan.", "a forged brick is refused, never stored");
+  assert.equal(refusal({ A: { b1: "1.5", b2: 98 } }), "Units must be whole numbers of zero or more.");
+  assert.equal(refusal({ C: { g1: 4 } }), "One of the products is not open in your plan for this period.", "a closed line's bricks cannot be planned");
+
+  const brickModel = buildForecastExportModel({
+    workspace: brickWorkspace, units: { A: 100 }, bricks: { A: { b1: 60, b2: 40 } }, goalPct: 100, filters: NO_PLANNER_FILTERS, now: new Date("2026-11-06T12:00:00Z"),
+  });
+  assert.deepEqual(
+    brickModel.bricks.A,
+    [
+      { name: "Brick b1", units: 60, value: 600 },
+      { name: "Brick b2", units: 40, value: 400 },
+      { name: "Brick b3", units: 0, value: 0 },
+    ],
+    "the file lists every brick of the product with its forecast",
+  );
+  assert.equal(brickModel.bricks.B, undefined, "a product with no brick gets no brick list");
+  assert.ok(buildForecastPdfHtml(brickModel).includes("By brick: Brick b1 60 · Brick b2 40"), "the PDF names the planned bricks under the product");
+  const brickBook = new ExcelJS.Workbook();
+  await brickBook.xlsx.load((await buildForecastWorkbook(brickModel)) as unknown as ArrayBuffer);
+  const brickTexts: string[] = [];
+  brickBook.getWorksheet("By brick")?.eachRow((excelRow) => excelRow.eachCell((cell) => brickTexts.push(String(cell.value ?? ""))));
+  assert.ok(brickTexts.includes("Brick b1") && brickTexts.includes("60"), "the workbook's By brick sheet carries each brick and its units");
 
   // ── Scope ──
   for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "SFE Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Super Admin"]) {

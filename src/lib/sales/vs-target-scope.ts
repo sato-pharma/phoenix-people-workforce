@@ -158,7 +158,10 @@ export function filterRowsForBound(rows: AchievementRow[], bound: VsTargetBound)
 }
 
 /** The same bound applied to brick rows, so a drill-down can never out-reach the page. */
-export function filterBricksForBound(rows: BrickSalesRow[], bound: VsTargetBound): BrickSalesRow[] {
+export function filterBricksForBound<T extends Pick<BrickSalesRow, "period" | "lineCode" | "areaCode" | "repHrId">>(
+  rows: T[],
+  bound: VsTargetBound,
+): T[] {
   switch (bound.kind) {
     case "company":
       return rows;

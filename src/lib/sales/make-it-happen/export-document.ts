@@ -18,7 +18,12 @@ import ExcelJS from "exceljs";
 import { buildHouseCoverSheet, writeHouseTable, type CellValue, type TableColumn } from "@/lib/export/house-table-workbook";
 import { HOUSE_COLORS, HOUSE_IDENTITY_CSS } from "@/lib/hiring-pack/house-identity";
 import { satoLogoDataUri } from "@/lib/offers/brand";
-import { HONESTY_SENTENCE, achievementOf, type MakeItHappenWorkspace } from "@/lib/sales/make-it-happen/engine";
+import {
+  HONESTY_SENTENCE,
+  achievementOf,
+  brickUnitsFor,
+  type MakeItHappenWorkspace,
+} from "@/lib/sales/make-it-happen/engine";
 import {
   buildPlanScenarios,
   describePlannerFilters,
@@ -64,6 +69,8 @@ export type ForecastExportModel = {
   scenarios: PlanScenario[];
   shownRows: number;
   totalRows: number;
+  /** engine.ts rule 9 — each shown product's forecast per brick, biggest pace first. */
+  bricks: Record<string, Array<{ name: string; units: number; value: number }>>;
 };
 
 const INTEGER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -91,6 +98,8 @@ export function cairoStamp(date: Date): string {
 export function buildForecastExportModel(input: {
   workspace: MakeItHappenWorkspace;
   units: Record<string, number>;
+  /** product_code → brick_id → units as typed; a product left out is split by its bricks' pace. */
+  bricks?: Record<string, Record<string, number>>;
   goalPct: number;
   filters: PlannerFilters;
   now: Date;
@@ -118,6 +127,19 @@ export function buildForecastExportModel(input: {
     0,
   );
   const { targetValue, gradedValue } = workspace.totals;
+  const bricks: ForecastExportModel["bricks"] = {};
+  for (const entry of lines) {
+    if (entry.line.remainingMonths <= 0) continue;
+    for (const { row } of entry.rows) {
+      if (row.bricks.length === 0) continue;
+      const split = brickUnitsFor(row.bricks, units[row.productCode] ?? 0, input.bricks?.[row.productCode]);
+      bricks[row.productCode] = row.bricks.map((brick) => ({
+        name: brick.name,
+        units: split[brick.brickId] ?? 0,
+        value: (split[brick.brickId] ?? 0) * row.price,
+      }));
+    }
+  }
   const lineNames = new Map(workspace.lines.map((line) => [line.lineCode, line.lineName]));
 
   return {
@@ -139,6 +161,7 @@ export function buildForecastExportModel(input: {
     scenarios: buildPlanScenarios(workspace, goalPct),
     shownRows: filtered.reduce((sum, line) => sum + line.rows.length, 0),
     totalRows: workspace.lines.reduce((sum, line) => sum + line.rows.length, 0),
+    bricks,
   };
 }
 
@@ -281,6 +304,31 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
     });
   }
 
+  // engine.ts rule 9 — the forecast per product per brick. A product's bricks add up to its units.
+  const byBrick = workbook.addWorksheet("By brick", { properties: { defaultRowHeight: 18 } });
+  byBrick.views = [{ showGridLines: false }];
+  let brickRow = 1;
+  const brickLines = model.lines.filter((line) => line.rows.some(({ row: product }) => model.bricks[product.productCode]));
+  if (brickLines.length === 0) {
+    byBrick.getCell(brickRow, 1).value = "No product in this file sold on a brick in its closed months.";
+  }
+  for (const line of brickLines) {
+    const rows: CellValue[][] = line.rows.flatMap(({ row: product }) =>
+      (model.bricks[product.productCode] ?? []).map((brick) => [product.name, brick.name, brick.units, brick.value]),
+    );
+    brickRow = writeHouseTable(byBrick, brickRow, {
+      columns: [
+        { label: "Product", width: 30 },
+        { label: "Brick", width: 34 },
+        { label: "Forecast units", numFmt: UNITS_FMT, right: true, width: 14 },
+        { label: "Forecast value", numFmt: MONEY_FMT, right: true, width: 16 },
+      ],
+      rows,
+      title: `${line.line.lineName} · forecast per brick`,
+      note: "Each brick's share comes from its own sales of that product. A product's bricks add up to its forecast.",
+    });
+  }
+
   const scenarios = workbook.addWorksheet("Scenarios", { properties: { defaultRowHeight: 18 } });
   scenarios.views = [{ showGridLines: false }];
   let scenarioRow = writeHouseTable(scenarios, 1, {
@@ -336,6 +384,15 @@ export async function buildForecastWorkbook(model: ForecastExportModel): Promise
 }
 
 // ── PDF ──────────────────────────────────────────────────────────────────────
+
+/** The bricks holding units, under the product's name — "By brick: Tanta 1 40 · Kafr 2 30". */
+function brickText(bricks: ForecastExportModel["bricks"][string] | undefined): string {
+  const held = (bricks ?? []).filter((brick) => brick.units > 0);
+  if (held.length === 0) return "";
+  return `<br><span class="muted">By brick: ${held
+    .map((brick) => `${escapeHtml(brick.name)} ${INTEGER.format(brick.units)}`)
+    .join(" · ")}</span>`;
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -430,7 +487,7 @@ export function buildForecastPdfHtml(model: ForecastExportModel): string {
     <tbody>${line.rows
       .map(
         ({ row, figures }) => `<tr>
-        <td><strong>${escapeHtml(row.name)}</strong><br><span class="muted">${escapeHtml([row.family, trendLabel(row.trend)].filter(Boolean).join(" · "))}</span></td>
+        <td><strong>${escapeHtml(row.name)}</strong><br><span class="muted">${escapeHtml([row.family, trendLabel(row.trend)].filter(Boolean).join(" · "))}</span>${brickText(model.bricks[row.productCode])}</td>
         <td class="num">${row.targetValue == null ? "—" : escapeHtml(money(row.targetValue))}<br><span class="muted">${row.targetUnits == null ? "No target" : `${INTEGER.format(row.targetUnits)} units`}</span></td>
         <td class="num">${escapeHtml(money(row.gradedValue))}<br><span class="muted">${INTEGER.format(row.gradedUnits)} units</span></td>
         <td class="num">${INTEGER.format(figures.typedUnits)}</td>

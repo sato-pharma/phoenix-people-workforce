@@ -8,7 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PeriodKind, SavedPlanSummary } from "@/lib/sales/make-it-happen/engine";
 
 const TABLE = "sales_forecast_plans";
-const COLUMNS = "id,owner_hr_id,name,units,forecast_value,forecast_achievement,updated_at";
+const COLUMNS = "id,owner_hr_id,name,units,brick_units,forecast_value,forecast_achievement,updated_at";
 
 export type StoredPlan = SavedPlanSummary & { ownerKey: string };
 
@@ -31,6 +31,22 @@ function cleanUnits(raw: unknown): Record<string, number> {
   return units;
 }
 
+/** product_code → brick_id → whole units; anything else in the stored object is dropped. */
+function cleanBrickUnits(raw: unknown): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [code, bricks] of Object.entries(raw as Record<string, unknown>)) {
+    if (!code || !bricks || typeof bricks !== "object" || Array.isArray(bricks)) continue;
+    const units: Record<string, number> = {};
+    for (const [brickId, value] of Object.entries(bricks as Record<string, unknown>)) {
+      const parsed = Number(value);
+      if (brickId && Number.isSafeInteger(parsed) && parsed >= 0) units[brickId] = parsed;
+    }
+    if (Object.keys(units).length > 0) out[code] = units;
+  }
+  return out;
+}
+
 function toPlan(record: Record<string, unknown>): StoredPlan {
   const updatedAt = new Date(String(record.updated_at ?? ""));
   const achievement = record.forecast_achievement == null ? null : Number(record.forecast_achievement);
@@ -39,6 +55,7 @@ function toPlan(record: Record<string, unknown>): StoredPlan {
     ownerKey: String(record.owner_hr_id ?? ""),
     name: String(record.name ?? ""),
     units: cleanUnits(record.units),
+    bricks: cleanBrickUnits(record.brick_units),
     forecastValue: Number(record.forecast_value ?? 0) || 0,
     forecastAchievement: achievement != null && Number.isFinite(achievement) ? achievement : null,
     updatedAtLabel: Number.isNaN(updatedAt.getTime()) ? "" : CAIRO_STAMP.format(updatedAt),
@@ -78,6 +95,8 @@ export type PlanValues = {
   periodKey: string;
   name: string;
   units: Record<string, number>;
+  /** product_code → brick_id → units (engine.ts rule 9). */
+  bricks: Record<string, Record<string, number>>;
   forecastValue: number;
   forecastAchievement: number | null;
   targetValue: number | null;
@@ -90,6 +109,7 @@ function toRecord(values: PlanValues) {
     period_key: values.periodKey,
     name: values.name,
     units: values.units,
+    brick_units: values.bricks,
     forecast_value: Math.round(values.forecastValue * 100) / 100,
     forecast_achievement: values.forecastAchievement,
     target_value: values.targetValue,
