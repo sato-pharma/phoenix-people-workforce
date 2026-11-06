@@ -94,6 +94,7 @@ import {
   phxFieldClassName,
   phxSelectClassName,
 } from "@/components/ui/form-tokens";
+import { TableRowDetail } from "@/components/ui/table-row-detail";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Make It Happen — the planner screen.
@@ -1803,11 +1804,9 @@ function LineSection({
                   </td>
                 </tr>
                 {bricks ? (
-                  <tr className={cn("border-b border-slate-100", planned && "bg-orange-50/50")}>
-                    <td className="px-3 pb-3 pl-8 pt-0" colSpan={7}>
-                      {bricks}
-                    </td>
-                  </tr>
+                  <TableRowDetail className="pl-8 pt-0" colSpan={7}>
+                    {bricks}
+                  </TableRowDetail>
                 ) : null}
                 </Fragment>
               );
