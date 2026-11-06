@@ -6,6 +6,7 @@
 import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer";
 
+import { isTestDryRunRequest } from "@/lib/auth/test-dry-run";
 import { TURBIFY_SMTP } from "@/lib/personal-mailbox/rules";
 import type { PersonalMailboxCredential, PersonalMailboxSendInput } from "@/lib/personal-mailbox/types";
 
@@ -75,6 +76,9 @@ export async function sendComposedMessage(
   envelope: { from: string; to: string[] },
   raw: Buffer,
 ): Promise<{ rejected: string[] }> {
+  // SMTP is not fetch, so the test-account fence (src/lib/auth/test-dry-run.ts) cannot see it: a test
+  // account's dry run is answered here, accepted and never sent.
+  if (await isTestDryRunRequest()) return { rejected: [] };
   const transport = transportFor(credential);
   try {
     const info = await transport.sendMail({ envelope, raw });

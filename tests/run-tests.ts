@@ -2647,6 +2647,7 @@ import { runShareCardTests } from "./share-card.test.ts";
 import { runShareCardTokenTests } from "./share-card-token.test.ts";
 import { runTestAccountReadonlyPostsTests } from "./test-account-readonly-posts.test.ts";
 import { runTestAccountExpenseDryRunTests } from "./test-account-expense-dry-run.test.ts";
+import { runTestAccountDryRunTests } from "./test-account-dry-run.test.ts";
 import { runOutstationJourneyStopRehearsalTests } from "./outstation-journey-stop-rehearsal.test.ts";
 import { runOutstationJourneyStopRulesTests } from "./outstation-journey-stop-rules.test.ts";
 import { runOutstationAdminMissedStopTests } from "./outstation-admin-missed-stop.test.ts";
@@ -10345,6 +10346,11 @@ await runTest(
 await runTest(
   "test-account expense dry run (owner 2026-10-28): a test account submits an expense through every check and nothing is saved — the stop comes before the first upload or row, and the capture and pricing write nothing as her",
   runTestAccountExpenseDryRunTests,
+);
+
+await runTest(
+  "test-account dry run everywhere (owner 2026-11-06): a test account save or export outside Phoenix CRM runs fully and saves nothing — only its signed session is marked, a forged mark is nothing, every table, function, file and message write is answered in the server, and the guard needs the live fence",
+  runTestAccountDryRunTests,
 );
 
 await runTest(

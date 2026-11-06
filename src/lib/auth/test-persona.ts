@@ -21,9 +21,12 @@
  *   - Only a portal-shell role can be mirrored (`canBeMirrored`), so a test account is always in the
  *     employee portal and can never carry an admin-shell role, the Super Admin's least of all.
  *
- * A refusal is fail-CLOSED on purpose: a module that has no test world yet simply does not save for
- * a test account, and says so. Opening one more module to test accounts means giving that module a
- * test world first, never adding its path to the list below.
+ * A refusal is fail-CLOSED on purpose, and since 2026-11-06 it is the fallback, not the rule (owner:
+ * "Runs fully, saves nothing"): a test account's write outside the lists below is MARKED by proxy.ts
+ * and runs in full, with every database write and outgoing message answered in the server and none
+ * kept (src/lib/auth/test-dry-run.ts). The refusal below still answers a write the proxy could not mark
+ * or the fence could not prove live. Never add a path to the WRITABLE list to make it work — that list
+ * writes for real; the dry run already reaches every other path.
  */
 
 import { forbiddenError } from "@/lib/http/api-errors";
@@ -35,7 +38,7 @@ export const TEST_ACCOUNT_LOGIN_PREFIX = "TEST-";
 
 /** What a test account reads when a save outside Phoenix CRM is refused. */
 export const TEST_ACCOUNT_SAVE_REFUSAL =
-  "This is a test account: it opens everything the real person sees, but only Phoenix CRM saves, and only as test entries. Nothing was changed.";
+  "This is a test account, and this save could not run as a test here. Nothing was changed.";
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 

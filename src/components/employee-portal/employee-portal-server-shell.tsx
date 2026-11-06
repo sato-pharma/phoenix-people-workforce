@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { TestDryRunNotice } from "@/components/employee-portal/test-dry-run-notice";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { SeatViewBanner } from "@/components/layout/seat-view-banner";
 import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
@@ -178,7 +179,8 @@ export async function EmployeePortalServerShell({
           // page, so a test session can never be taken for the real one — by him, or over his shoulder.
           <div className="mb-4 border border-orange-300 bg-orange-50 px-4 py-2.5 text-sm text-orange-900" role="status">
             <span className="font-black">Test account.</span>{" "}
-            {`You are seeing ${data.employee.fullName}'s portal with the real data. Only Phoenix CRM saves, as test entries; every other save is refused.`}
+            {`You are seeing ${data.employee.fullName}'s portal with the real data. Phoenix CRM saves as test entries; every other save and export runs every check and saves nothing.`}
+            <TestDryRunNotice />
           </div>
         ) : null}
         {lockedModuleForPage ? (

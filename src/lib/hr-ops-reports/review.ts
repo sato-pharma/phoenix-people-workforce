@@ -7,7 +7,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage } from "@/lib/hr-id";
-import { assertNotTestAccount } from "@/lib/auth/test-persona";
+import { assertTestAccountWriteIsDryRun } from "@/lib/auth/test-dry-run";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { notifyReportSubmitted } from "./notify";
@@ -38,7 +38,7 @@ async function openReportForReview(reportId: string): Promise<HrOpsReportRow> {
 
 /** Save her answers to one or more rows. Each is checked before any is written. */
 export async function reviewLines(access: AccessContext, reportId: string, body: unknown): Promise<{ saved: number }> {
-  assertNotTestAccount(access);
+  await assertTestAccountWriteIsDryRun(access);
   const raw = (body ?? {}) as { reviews?: unknown };
   const list = Array.isArray(raw.reviews) ? raw.reviews : [body];
   if (list.length === 0) throw new HrOpsReportsError("Nothing to save.");
@@ -93,7 +93,7 @@ export async function reviewLines(access: AccessContext, reportId: string, body:
  * and submitting auto-decides a report with nothing flagged.
  */
 export async function submitReport(access: AccessContext, reportId: string): Promise<{ report: HrOpsReportRow }> {
-  assertNotTestAccount(access);
+  await assertTestAccountWriteIsDryRun(access);
   const open = await openReportForReview(reportId);
   const degraded = degradedSubmitRefusal(open);
   if (degraded) throw new HrOpsReportsError(degraded, 409);

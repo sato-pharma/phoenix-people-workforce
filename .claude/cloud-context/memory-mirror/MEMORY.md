@@ -29,7 +29,6 @@
 
 
 ## Inbox — new notes land here
-- [satopharma.com junk: auth PASSES, cause is Phoenix volume](satopharma-dmarc-relaxed-to-none-2026-11-06.md) — 2026-11-06 company-wide junk; DMARC relaxed then restored to reject; never "fix" it with DNS
 
 
 

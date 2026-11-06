@@ -11,16 +11,16 @@ together.
 | --- | --- |
 | The row | `app_auth_users` with `is_test_persona = true`, a `TEST-…` login id, **no `hr_id` of its own**, and `test_persona_of_hr_id` naming the real employee it mirrors. Two check constraints hold that shape (`supabase/migrations/20260927235452_app_auth_users_test_accounts.sql`). |
 | The session | `resolveSessionState` (`src/lib/auth/server.ts`) turns it into the MIRRORED person: `hrId` and `role` are hers, and `access.testPersona` is set. A test row with no mirror, with an HR id of its own, or pointed at an admin-shell role is **refused**, never downgraded. |
-| The write guard | `resolveAccessContext` refuses every write from a test account outside `/api/phoenix-crm/` and `/api/auth/`, before the route runs; `resolveAccessContextFromPage` refuses server actions. Fail-closed: a module with no test world does not save for a test account, and says so. |
+| The write guard | Phoenix CRM and `/api/auth/` write for real. Since 2026-11-06 every other write **runs fully and saves nothing** — see "Every other save runs fully and saves nothing" below. A write the proxy could not mark, or with the fence not live, is still refused, before the route runs. |
 | Phoenix CRM | Every read and save is forced into the `is_test` world (`src/lib/phoenix-crm/server/access.ts`), with the mirrored person's own territories, scope and authority. A test manager decides **test** entries only, as the reviewer he mirrors — never a real one, never the SFE step. A test entry notifies the **test accounts** and nobody else (see below). |
 | The shell | Only an employee-portal role can be mirrored (`canBeMirrored`), so a test account always lands in the portal. Every portal page carries a "Test account" banner. |
 | The screen | `/admin/test-accounts`, Super Admin only: make one, point it at somebody else, switch it off, and copy its one-time set-password link. The link is never emailed; the Super Admin opens it in a private window and chooses the password himself. |
 
 ## Rules that follow from it
 
-- **Never widen `TEST_ACCOUNT_WRITABLE_PREFIXES`** (`src/lib/auth/test-persona.ts`). A module joins it
-  only after it has a test world of its own, the way Phoenix CRM has `is_test` — otherwise a test
-  account's save is written as the real person.
+- **Never widen `TEST_ACCOUNT_WRITABLE_PREFIXES`** (`src/lib/auth/test-persona.ts`). That list WRITES FOR
+  REAL; a module joins it only after it has a test world of its own, the way Phoenix CRM has `is_test`.
+  Every other module already works for a test account through the dry run below.
 - **A Phoenix CRM test row carries the REAL person's HR id** (`rep_hr_id`, `issued_to_hr_id`, `hr_id`),
   because a test account works as her. Every `phoenix_crm_*` read keyed by a person or a seat must filter
   `is_test`, or test work leaks into her real figures. The behaviour verdict's place read was the one
@@ -123,3 +123,28 @@ person still applies; failed attempts count against the same rate limit as any w
 A session is then given the key in its own chat by him, never pasted into a shared one. **Never set
 the key on production.** Code: `src/lib/auth/staging-test-sign-in.ts`; pinned by
 `tests/staging-test-sign-in.test.ts`.
+
+## Every other save runs fully and saves nothing (owner, 2026-11-06)
+
+**His words:** "make the test account everything in it as the real … never I see you are blocked
+because the test was made for Phoenix CRM; now everything, every export, anything, but on the test
+data". Asked how a save outside Phoenix CRM should behave, he chose **"Runs fully, saves nothing"** —
+the rule the expense form has had since 2026-10-28, now everywhere.
+
+| Piece | What it does |
+| --- | --- |
+| `proxy.ts` | Deletes any `x-phoenix-test-dry-run` the browser sent, then sets it on a write whose signed session cookie is a `TEST-` login and whose path is not one a test account writes to for real (Phoenix CRM, `/api/auth/`, the expense dry run). The response carries the same header. |
+| `resolveAccessContext` / `resolveAccessContextFromPage` | Let a marked test-account write (API route or server action) run — only when `testDryRunFenceIsLive()` proves the fence is the fetch in use. Anything else is refused as before. |
+| The fence (`src/lib/auth/test-dry-run.ts`, installed first in `instrumentation.ts`) | While a marked request is served, no write leaves the server: a PostgREST insert/upsert answers with the rows sent plus an id; an update or delete reads the matching rows for real and answers with the change laid on; a STABLE function runs as it is; a VOLATILE function runs through `phx_test_dry_run_rpc` (migration `20261106183517`), which calls it exactly as PostgREST would inside a sub-transaction, keeps its answer and rolls back every row it wrote — so its checks, refusals and answer are real. Storage uploads, moves and removals answer "done"; signing a link passes. Every other host — email, Telegram, OneSignal, WhatsApp, Google, Phoenix itself — answers "done" and nothing is sent; only POSTs that are reads (AI, Google routes/places/maps, the Google token, Sentry) go out. |
+| Mail that is not fetch | `sendComposedMessage` (SMTP) and `ensureCopyInSent` (IMAP) answer a dry run themselves. |
+| Modules that refused on their own | The coaching skills survey and the HR operations report call `assertTestAccountWriteIsDryRun`. |
+| The page | `TestDryRunNotice` (mounted with the portal's test-account banner) shows "Test account — every check ran on the real data. Nothing was saved and nobody was told." after each such save. |
+
+**What it cannot do:** a flow that saves a row and then reads that same row back (to show it, or to
+build on it) finds nothing, because nothing was kept — that screen can show an error or an empty
+result. A browser upload straight to storage through a signed upload link is not a server write, so
+its file is stored (nothing points at it). The interview-calendar feed link stays refused: it is a
+lasting link to the real person's calendar, not a save.
+
+Pinned by `tests/test-account-dry-run.test.ts` (each headline assertion was proved by breaking the
+fence and watching it fire).

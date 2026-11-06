@@ -5,7 +5,7 @@
 // person rated is never told (Salma Labib, Training Manager).
 
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
-import { assertNotTestAccount } from "@/lib/auth/test-persona";
+import { assertTestAccountWriteIsDryRun } from "@/lib/auth/test-dry-run";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   parseTotalExperienceYears,
@@ -427,7 +427,7 @@ const developmentPrioritiesMaxLength = 2000;
 
 /** Saves the District Manager's survey: creates this quarter's, or updates it until the quarter ends. */
 export async function saveSkillsSurvey(access: AccessContext, input: SkillsSurveySaveInput): Promise<SkillsSurveyEntry> {
-  assertNotTestAccount(access);
+  await assertTestAccountWriteIsDryRun(access);
   if (isSkillsSurveySubject(access, input.memberHrId)) forbidden("nobody rates their own survey.");
   const today = currentCairoDateOnlyIso();
   const quarter = skillsSurveyQuarterOf(today);
@@ -569,7 +569,7 @@ export async function saveSkillsSurveySettings(
   access: AccessContext,
   input: SkillsSurveySettingsInput,
 ): Promise<SkillsSurveyConfig> {
-  assertNotTestAccount(access);
+  await assertTestAccountWriteIsDryRun(access);
   if (!canEditSkillsSurveySettings(access)) {
     forbidden("only the Training Manager changes the survey settings and skills.");
   }
