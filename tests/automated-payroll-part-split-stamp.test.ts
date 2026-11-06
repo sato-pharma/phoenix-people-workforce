@@ -159,4 +159,13 @@ export async function runAutomatedPayrollPartSplitStampTests() {
     /throw new Error\(`Conflict: \$\{describePartSplitConflicts\(partSplitConflicts\)\}`\)/,
     "and it must REFUSE, not warn — waving it through charges somebody twice",
   );
+
+  // And BEFORE the First Part is frozen (audit 2026-11-07): at Part 2 the double charge had already
+  // been taken off money paid from Part 1.
+  const part1At = runService.indexOf("export async function confirmPart1");
+  const part1Body = runService.slice(part1At, runService.indexOf("\nexport ", part1At + 10));
+  const guardAt = part1Body.indexOf("findPartSplitConflicts(draftRows)");
+  assert.ok(guardAt > 0, "HEADLINE: Part 1 confirm checks for a deduction in both instalments");
+  assert.ok(guardAt < part1Body.indexOf("computePart1Freeze("), "before it freezes anything");
+  assert.match(part1Body, /throw new Error\(`Conflict: \$\{describePartSplitConflicts\(part1SplitConflicts\)\}`\)/, "and refuses");
 }

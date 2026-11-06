@@ -147,6 +147,12 @@ export type EmployeeDirectoryRow = {
   organogramVisible: boolean;
   payrollEligible: boolean;
   salaryPaymentMode: PayrollPaymentMode;
+  /**
+   * False when neither the employee row nor their compensation row names a payment mode.
+   * `salaryPaymentMode` above is normalised, which turns a missing mode into "two_parts", so this
+   * is the only way to tell "two parts" from "nobody said" (owner, 2026-11-07: warn on it).
+   */
+  salaryPaymentModeOnRecord?: boolean;
   positionId: number | null;
   positionTitle: string | null;
   residenceAddress: string | null;
@@ -1678,6 +1684,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
         salaryDetails: normalizeEmployeeSalaryDetails(compensation?.salary_details),
         salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
+        salaryPaymentModeOnRecord: Boolean(String(row.payment_mode ?? "").trim() || String(compensation?.payment_mode ?? "").trim()),
         positionId: row.position_id,
         positionTitle,
         residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
@@ -1843,6 +1850,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
         salaryDetails: normalizeEmployeeSalaryDetails(comp?.salary_details),
         salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? comp?.payment_mode),
+        salaryPaymentModeOnRecord: Boolean(String(row.payment_mode ?? "").trim() || String(comp?.payment_mode ?? "").trim()),
         positionId: row.position_id,
         positionTitle,
         residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
@@ -1980,6 +1988,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
       salaryDetails: normalizeEmployeeSalaryDetails(compensation?.salary_details),
       salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
+      salaryPaymentModeOnRecord: Boolean(String(row.payment_mode ?? "").trim() || String(compensation?.payment_mode ?? "").trim()),
       positionId: row.position_id,
       positionTitle,
       residenceAddress: row.residence_address ?? residence?.residence_address ?? null,
@@ -2184,6 +2193,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       payrollEligible: row.payroll_eligible ?? isActiveLifecycleStatus(row.employment_status),
       salaryDetails: normalizeEmployeeSalaryDetails(compensation?.salary_details),
       salaryPaymentMode: normalizePayrollPaymentMode(row.payment_mode ?? compensation?.payment_mode),
+      salaryPaymentModeOnRecord: Boolean(String(row.payment_mode ?? "").trim() || String(compensation?.payment_mode ?? "").trim()),
       positionId: row.position_id,
       positionTitle: row.position_id
         ? positionTitles.get(row.position_id) ?? null

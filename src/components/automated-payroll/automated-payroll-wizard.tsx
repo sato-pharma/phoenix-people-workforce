@@ -126,6 +126,18 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     second: 0,
   });
   const [busy, setBusy] = useState(false);
+  /**
+   * The one in-page "are you sure" for the three moves that cannot be taken back quietly: publish,
+   * unconfirm Part 1 and reopen Part 2. A browser confirm() is a grey box HR clicks through; publish
+   * had none at all, and it writes every payslip and tells the whole company.
+   */
+  const [pendingAction, setPendingAction] = useState<{
+    title: string;
+    body: string;
+    label: string;
+    url: string;
+    ok: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [recon, setRecon] = useState<ReconciliationTotals | null>(null);
@@ -602,13 +614,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               setNonEmployeesOpen(null);
             }}
             className={cn(
-              // shadow-sm + a hover lift on the border is what separates these
-              // from flat swatches; the active pill additionally carries a solid
-              // left rule so the open step is findable in one glance across a
-              // strip of ten look-alikes.
-              "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs shadow-sm transition",
+              // Flat: the border colour and the active pill's solid left rule make the open step
+              // findable in one glance across a strip of ten look-alikes, without a shadow or glow.
+              "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
               isActive
-                ? "border-orange-500 border-l-[3px] bg-orange-50 text-slate-900 shadow-[0_1px_6px_rgba(249,115,22,0.18)]"
+                ? "border-orange-500 border-l-[3px] bg-orange-50 text-slate-900"
                 : isConfirmed
                   ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:border-emerald-400 hover:bg-emerald-100"
                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
@@ -735,7 +745,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           variant="outline"
           disabled={busy}
           onClick={() => void loadRun(month, year)}
-          className="h-10 border-slate-300 font-bold text-slate-700 shadow-sm hover:bg-slate-100"
+          className="h-10 border-slate-300 font-bold text-slate-700 hover:bg-slate-100"
         >
           Load
         </Button>
@@ -743,7 +753,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           <Button
             disabled={busy}
             onClick={() => void onStartClick()}
-            className="h-10 border border-orange-600 bg-orange-600 text-white shadow-sm hover:bg-orange-700"
+            className="h-10 border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
           >
             Start / Resume run
           </Button>
@@ -754,6 +764,29 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
+      {pendingAction ? (
+        <div role="alertdialog" aria-labelledby="payroll-pending-title" className="border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div id="payroll-pending-title" className="font-black">{pendingAction.title}</div>
+          <p className="mt-1 break-words">{pendingAction.body}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+              disabled={busy}
+              onClick={() => {
+                const action = pendingAction;
+                setPendingAction(null);
+                void post(action.url, action.ok);
+              }}
+            >
+              {pendingAction.label}
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setPendingAction(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Unexplained disappearance — the loudest thing on this page by design.
           Someone was paid last month, is absent now, and has no resignation on
@@ -1193,10 +1226,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                           variant="outline"
                           className="border-red-300 text-red-700 hover:bg-red-50"
                           disabled={busy}
-                          onClick={() => {
-                            if (!window.confirm("Unconfirm Part 1? This clears every employee's frozen First Part so it can be recomputed from current data.")) return;
-                            void post(`/api/automated-payroll/runs/${run.id}/part1/unconfirm`, "Part 1 unconfirmed. First Part values cleared for recompute.");
-                          }}
+                          onClick={() =>
+                            setPendingAction({
+                              title: "Unconfirm Part 1?",
+                              body: "This clears every employee's frozen First Part so it can be recomputed from current data. If finance has already paid the Part 1 bank files, the recomputed figures will no longer match what was paid.",
+                              label: "Unconfirm Part 1",
+                              url: `/api/automated-payroll/runs/${run.id}/part1/unconfirm`,
+                              ok: "Part 1 unconfirmed. First Part values cleared for recompute.",
+                            })
+                          }
                         >
                           Unconfirm Part 1
                         </Button>
@@ -1207,18 +1245,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                           variant="outline"
                           className="border-red-300 text-red-700 hover:bg-red-50"
                           disabled={busy}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                "Reopen Part 2? Every step is locked while Part 2 is confirmed, because finance may already have executed this month's bank files. Reopening is the only way to change a figure, and it undoes this run's carry-forward entries until you confirm again.",
-                              )
-                            )
-                              return;
-                            void post(
-                              `/api/automated-payroll/runs/${run.id}/part2/unconfirm`,
-                              "Part 2 reopened. Steps are editable again; confirm Part 2 to re-lock the sheet.",
-                            );
-                          }}
+                          onClick={() =>
+                            setPendingAction({
+                              title: "Reopen Part 2?",
+                              body: "Every step is locked while Part 2 is confirmed, because finance may already have executed this month's bank files. Reopening is the only way to change a figure, and it undoes this run's carry-forward entries until you confirm again.",
+                              label: "Reopen Part 2",
+                              url: `/api/automated-payroll/runs/${run.id}/part2/unconfirm`,
+                              ok: "Part 2 reopened. Steps are editable again; confirm Part 2 to re-lock the sheet.",
+                            })
+                          }
                         >
                           Reopen Part 2
                         </Button>
@@ -1277,7 +1312,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                   size="sm"
                   className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                   disabled={busy}
-                  onClick={() => void post(`/api/automated-payroll/runs/${run.id}/publish`, "Published to payslips.")}
+                  onClick={() =>
+                    setPendingAction({
+                      title: "Publish this month to payslips?",
+                      body: "Every paid employee gets this month's payslip and is told it is ready, the held people are recorded as owed, and the month becomes final. It cannot be unpublished from this screen.",
+                      label: "Publish to payslips",
+                      url: `/api/automated-payroll/runs/${run.id}/publish`,
+                      ok: "Published to payslips.",
+                    })
+                  }
                 >
                   Publish to payslips
                 </Button>

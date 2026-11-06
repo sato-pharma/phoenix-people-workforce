@@ -186,6 +186,7 @@ function buildEffective(
   draft: DraftRow | undefined,
   period: PayrollPeriod,
 ): EffectiveSalary {
+  const prorationOnRecord = member.lifecycle === "joiner" || member.lifecycle === "leaver";
   return effectiveSalary({
     baseSalary: roundCurrency(source?.baseSalary ?? 0),
     extraCostOfLiving: roundCurrency(source?.extraCostOfLiving ?? 0),
@@ -199,9 +200,13 @@ function buildEffective(
     // departure this is — only the employee's own status can. A dismissal keeps neither allowance
     // and gets no >25th waiver (owner ruling 2026-08-14).
     isResignation: isResignationEmploymentStatus(member.employee.employmentStatus),
-    overrideBase: draft?.baseForMonth ?? null,
-    overrideEcol: draft?.ecolPaid ?? null,
-    overrideFuel: draft?.fuelPaid ?? null,
+    // The saved month figures are written only by the New Hires and Resignations steps, so they hold
+    // only while the person is still a joiner or a leaver THIS month. A hire date corrected into an
+    // earlier month, or a leaving date moved to a later one, used to leave the old proration paying a
+    // fraction of a full month (audit 2026-11-07, owner: fix it).
+    overrideBase: prorationOnRecord ? (draft?.baseForMonth ?? null) : null,
+    overrideEcol: prorationOnRecord ? (draft?.ecolPaid ?? null) : null,
+    overrideFuel: prorationOnRecord ? (draft?.fuelPaid ?? null) : null,
   });
 }
 
@@ -215,6 +220,7 @@ export function computeFrozenFirstParts(input: {
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
   period: PayrollPeriod;
+  carryForwardByCompact?: Map<string, number>;
 }): Map<string, number> {
   return new Map([...computePart1Freeze(input)].map(([compact, freeze]) => [compact, freeze.firstPart]));
 }
@@ -237,6 +243,8 @@ export function computePart1Freeze(input: {
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
   period: PayrollPeriod;
+  /** Open overpayments from earlier months — taken here only from a one-instalment row (below). */
+  carryForwardByCompact?: Map<string, number>;
 }): Map<string, Part1Freeze> {
   const drafts = draftByCompact(input.draftRows);
   const frozen = new Map<string, Part1Freeze>();
@@ -252,10 +260,35 @@ export function computePart1Freeze(input: {
         effective,
         fullBaseSalary: roundCurrency(source?.baseSalary ?? 0),
         paymentMode: source?.paymentMode ?? "two_parts",
+        carriedForward: part1CarryForward(member, source, draft, input.carryForwardByCompact),
       }),
     );
   }
   return frozen;
+}
+
+/**
+ * An earlier month's overpayment, taken off the FIRST Part — only for a row paid in one instalment.
+ *
+ * A one-part employee or a leaver is paid everything in Part 1, so a debt deducted only in Part 2
+ * (where it always was) met a Second Part of zero: the whole debt came back as this month's
+ * overpayment, the old entry was marked recovered, and the same amount rolled forward every month,
+ * never collected (audit 2026-11-07, owner: fix it). Taken here, Part 2 still counts it once in the
+ * month total — `secondPart = totalPayable - firstPartFrozen` cancels it — and the ledger is
+ * settled at publish exactly as before. A two-part row, or one held at Part 1, is left to Part 2.
+ */
+function part1CarryForward(
+  member: PopulationMember,
+  source: PayrollSalarySource | undefined,
+  draft: DraftRow | undefined,
+  carryForwardByCompact: Map<string, number> | undefined,
+): number {
+  if (!carryForwardByCompact || part1WithheldFor(draft)) return 0;
+  const settledInPart1 =
+    draft?.settledInPart1 ??
+    (member.lifecycle === "leaver" || normalizePayrollPaymentMode(source?.paymentMode) === "one_part");
+  if (!settledInPart1) return 0;
+  return Math.max(0, roundCurrency(carryForwardByCompact.get(member.compact) ?? 0));
 }
 
 /** Held at Part 1 — the Part 1 bank files paid this person nothing (bank-files heldForScope). */
@@ -289,6 +322,8 @@ function freezeWithPart1Adjustments(input: {
   effective: EffectiveSalary;
   fullBaseSalary: number;
   paymentMode: string;
+  /** part1CarryForward's answer; 0 for every row that settles its debt in Part 2. */
+  carriedForward: number;
 }): Part1Freeze {
   const { member, draft } = input;
   const heldReleaseApplied = heldReleasePart1Amount(draft);
@@ -301,6 +336,7 @@ function freezeWithPart1Adjustments(input: {
       otherPart1Deductions: roundCurrency(
         otherPart1DeductionsTotal(draft) +
           (specialRoutedToFirst(draft) ? specialDeductionAmount(draft) : 0) +
+          input.carriedForward +
           deferral,
       ),
       otherPart1Additions: roundCurrency(
@@ -496,7 +532,14 @@ export function assembleRows(input: {
           }
         : input.part1Confirmed === true
           ? { firstPart: 0, heldReleaseApplied: 0, payDeferralApplied: 0 }
-          : freezeWithPart1Adjustments({ member, draft, effective, fullBaseSalary, paymentMode });
+          : freezeWithPart1Adjustments({
+              member,
+              draft,
+              effective,
+              fullBaseSalary,
+              paymentMode,
+              carriedForward: part1CarryForward(member, source, draft, input.carryForwardByCompact),
+            });
     const firstPartFrozen = part1.firstPart;
     const heldReleasePart1Applied = part1.heldReleaseApplied;
     const payDeferralPart1Applied = part1.payDeferralApplied;
@@ -514,10 +557,15 @@ export function assembleRows(input: {
     // deduction exactly once, like every other component (see the
     // deduction-counted-once test), and is clamped so it can never turn into a
     // negative "addition" if the ledger ever holds a bad value.
-    const carriedForwardApplied = Math.max(
-      0,
-      roundCurrency(input.carryForwardByCompact?.get(member.compact) ?? 0),
-    );
+    //
+    // A HELD row recovers nothing (audit 2026-11-07), the same rule as the held release below. Its
+    // withheld Second Part is recorded at publish and paid later as recorded, so a debt taken off it
+    // was collected — yet publish marks the ledger applied only for rows it paid, so the same debt
+    // stayed open and the next month took it AGAIN. Left on the ledger, it is recovered once, from
+    // the first month that actually pays them.
+    const carriedForwardApplied = draft?.onHold
+      ? 0
+      : Math.max(0, roundCurrency(input.carryForwardByCompact?.get(member.compact) ?? 0));
     // The loan is shown in the Loans column, so it must not also be counted inside Other
     // Deductions — `totalDeductions` adds both, and counting it twice would overstate every
     // affected row's deductions. The freeze (freezeWithPart1Adjustments) still takes it from
