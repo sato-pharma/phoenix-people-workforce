@@ -95,10 +95,19 @@ export function storedWorkloadTotal(row: {
  * is a no-op, so a correct stamp is never touched.
  */
 export function shouldRestampWorkload(
-  stored: { amWorkload: number | null | undefined; pharmacyWorkload: number | null | undefined; pmWorkload: number | null | undefined },
-  live: { amWorkload: number; pharmacyWorkload: number; pmWorkload: number },
+  stored: {
+    amWorkload: number | null | undefined;
+    pharmacyWorkload: number | null | undefined;
+    pmWorkload: number | null | undefined;
+    workloadMatchStatus?: unknown;
+  },
+  live: { amWorkload: number; meetingDates?: readonly string[]; pharmacyWorkload: number; pmWorkload: number },
 ): boolean {
-  return storedWorkloadTotal(live) > storedWorkloadTotal(stored);
+  if (storedWorkloadTotal(live) > storedWorkloadTotal(stored)) return true;
+  // A stamp of "no activity" taken before the day's meeting was saved (Weaam Gweed, 5 Oct 2026:
+  // stamped 13:09, the meeting saved 13:54). The figures stay as they are; only the verdict moves,
+  // and only upward — from "no activity" to the meeting the CRM now holds.
+  return String(stored.workloadMatchStatus ?? "") === "no_activity" && capturedWorkloadMatchStatus(live) === "matched";
 }
 
 /**
