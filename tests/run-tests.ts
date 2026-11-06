@@ -2982,6 +2982,7 @@ import { runCodeBackupVerifyTests } from "./code-backup-verify.test.ts";
 import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fence.test.ts";
 import { runPhoenixCrmSeatAtBuildingTests } from "./phoenix-crm-seat-at-building.test.ts";
 import { runEmployeeNicknameReachesLoginTests } from "./employee-nickname-reaches-login.test.ts";
+import { runOfferEmailViaTurbifyTests } from "./offer-email-via-turbify.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11860,6 +11861,7 @@ await runTest("the code backup's check reads Drive and the job can never decrypt
 await runTest("Award Cheques refuses the Talent Acquisition seat on the page and every API verb, and her Spotlight read and print stay", runSpotlightChequesSeatFenceTests);
 await runTest("a rep seats a customer in a polyclinic only while standing in that building (3 Nov 2026): 3.9 km is refused at both doors before the timetable scan, no reading seats as before, a manager and the Super Admin's move are not asked, the building is filed for the SFE and the row keeps no reading", runPhoenixCrmSeatAtBuildingTests);
 await runTest("a saved nickname reaches the login's name, every HR id spelling, never a test account, and a failed login write never fails the save", runEmployeeNicknameReachesLoginTests);
+await runTest("job offers through the hr@ Turbify mailbox and no standing admin BCC (6 Nov 2026): set, an offer leaves from hr@ and never Resend, a failure never falls back, a lost Sent copy never resends; unset, Resend as before; no email carries the admin BCC and the Telegram mirror stays", runOfferEmailViaTurbifyTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

@@ -15,8 +15,9 @@ import {
   isExemptFromVolumeChecks,
 } from "../src/lib/notifications/confidence-gate.ts";
 
-// The one address send-phoenix-email.ts BCCs onto literally every automated email
-// (ADMIN_STANDING_EMAIL in admin-telegram-mirror.ts). Pinned here on purpose: if it ever changes
+// The standing admin address (ADMIN_STANDING_EMAIL in admin-telegram-mirror.ts) — send-phoenix-email.ts
+// BCC'd it onto every automated email until the owner stopped that on 2026-11-06, and a caller can
+// still copy it explicitly, so the gate keeps never counting it. Pinned here on purpose: if it ever changes
 // without computeRealAudienceSize learning about it, every single-recipient email starts counting
 // as two and the transactional-mail exemption below silently stops applying.
 const STANDING_ADMIN_BCC = "omar.anwar@satopharma.com";
@@ -220,13 +221,13 @@ export function runNotificationConfidenceGateTests() {
   // ── computeRealAudienceSize ────────────────────────────────────────────────────────────────
   // The honest count of REAL people a send reaches. It runs on the arrays the gate receives,
   // which are already rewritten twice: fanoutToBcc moves every recipient into BCC behind a
-  // neutral reply-to placeholder, and the always-BCC block appends the standing admin. Counting
+  // neutral reply-to placeholder, and (until 2026-11-06) the always-BCC block appended the standing admin. Counting
   // raw array lengths after that cannot tell a one-person email from a two-hundred-person one,
   // which is how 6 employees ended up behind undelivered password-reset links for 27 days.
   assert.equal(
     computeRealAudienceSize({ bcc: [STANDING_ADMIN_BCC], to: ["employee@satopharma.com"] }),
     1,
-    "the standing admin BCC is on every email and must never count as an audience member",
+    "the standing admin, wherever it is copied, must never count as an audience member",
   );
   assert.equal(
     computeRealAudienceSize({ to: ["a@satopharma.com", "b@satopharma.com", "c@satopharma.com"] }),

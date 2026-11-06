@@ -22,7 +22,7 @@ import {
 } from "./key-resolution";
 import { TOKEN_REGISTRY } from "./token-registry";
 import { sendPhoenixEmail, type SendPhoenixEmailAttachment, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
-import { isOneTimeCodeTemplateKey, type CredentialEmailKind } from "@/lib/email/transactional-types";
+import type { CredentialEmailKind } from "@/lib/email/transactional-types";
 import type { NotificationOrigin } from "@/lib/notifications/confidence-gate";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -2766,10 +2766,6 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     // Privacy: when a template resolves to multiple TO recipients (HR fan-out), move them
     // to BCC behind a neutral visible To.
     fanoutToBcc: true,
-    // An email whose body IS a live credential takes no standing admin BCC (owner, 2026-10-08).
-    // Decided from the resolved template key here, so a queued outbox row written before this
-    // existed is covered too — the key is re-resolved on every delivery attempt.
-    suppressAdminStandingBcc: isOneTimeCodeTemplateKey(key),
     // The Telegram mirror is withheld only on an explicit credential stamp from the send site.
     credentialEmail: input.credentialEmail ?? null,
     from: input.from ?? undefined,

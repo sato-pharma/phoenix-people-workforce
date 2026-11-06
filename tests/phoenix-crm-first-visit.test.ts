@@ -241,22 +241,13 @@ export function runPhoenixCrmFirstVisitTests() {
       assert.equal(policy.channels.includes(channel), true, `the policy row asks for ${channel} — the row is the intent, the guard the enforcement`);
     }
     assert.equal(policy.channels.includes("email"), false, "and the policy row asks for no email");
-    // 🔴 The owner's BCC is NOT wired here and must never be: `sendPhoenixEmail` puts the standing admin
-    // on the BCC of EVERY email the system sends, so a copy added here would be a second one.
+    // 🔴 The owner's BCC is NOT wired here and must never be. The standing admin BCC that once rode
+    // every email stopped on 2026-11-06 (owner: "Stop the BCC copies"); his copy is the Telegram
+    // mirror, so a BCC built here would bring back exactly what he stopped.
     const notify = stripComments(readFileSync("src/lib/phoenix-crm/server/notifications.ts", "utf8"));
-    assert.doesNotMatch(notify, /bcc/i, "the notifier never builds a BCC of its own — the one send chokepoint owns that");
-    const send = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
-    // The chokepoint moved on 2026-10-08 — it used to be three inline lines here, and is now
-    // `withStandingAdminBcc`, a function so that a test can execute the rule instead of reading it
-    // (the reset code was the first email ever exempted from the standing copy, and the exemption
-    // had to be provable). Both halves are pinned: the send path calls it, and the function is
-    // where ADMIN_STANDING_EMAIL enters an email.
-    assert.match(send, /bcc = withStandingAdminBcc\(\{/, "and that chokepoint is where the owner's copy comes from");
-    assert.match(
-      send,
-      /export function withStandingAdminBcc\([\s\S]{0,1200}ADMIN_STANDING_EMAIL/,
-      "withStandingAdminBcc is the one place the standing admin address is added to an email",
-    );
+    assert.doesNotMatch(notify, /bcc/i, "the notifier never builds a BCC of its own");
+    const send = stripComments(readFileSync("src/lib/email/send-phoenix-email.ts", "utf8"));
+    assert.doesNotMatch(send, /ADMIN_STANDING_EMAIL|withStandingAdminBcc/, "and the one send chokepoint adds no standing admin BCC any more (pinned in full by tests/offer-email-via-turbify.test.ts)");
   }
 
   // ── 6 · the save-side gate ───────────────────────────────────────────────────────────────────

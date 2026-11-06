@@ -25,9 +25,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  *
  * EVERY NOTICE COPIES THE WHOLE WORKFLOW (owner rule, 2026-09-28). The email goes TO whoever must
  * act and CCs the requester, his manager and every approver on the activity — see
- * `resolveWorkflowCcHrIds`. The BCC half of that rule needs nothing here: `send-phoenix-email.ts`
- * puts `ADMIN_STANDING_EMAIL` (omar.anwar@satopharma.com) on every automated email the system
- * sends, and production delivery events confirm it on all eight sends this module has made.
+ * `resolveWorkflowCcHrIds`. The BCC half of that rule was the standing admin BCC
+ * `send-phoenix-email.ts` put on every automated email; the owner stopped it on 2026-11-06 ("Stop
+ * the BCC copies"), and his copy is now the Telegram mirror every email carries. Do not add one here.
  *
  * TELEGRAM WAS DEAD HERE UNTIL 2026-09-28 and nothing said so. All four notifiers below pass a
  * `telegram` block, and `market_awareness` was listed in NEITHER `notifications/policy.ts` NOR
@@ -48,9 +48,8 @@ export const MARKET_AWARENESS_NOTIFICATION_MODULE = "market_awareness";
  *
  * The owner's rule, 2026-09-28: the notice goes TO whoever must act, and everyone else on the
  * workflow is COPIED — one email with the chain visible on it, not a private note to one person.
- * (The BCC half of that rule is already in place and needs nothing here: `send-phoenix-email.ts`
- * puts `ADMIN_STANDING_EMAIL` on every automated email the system sends, and production delivery
- * events confirm it on all eight market-awareness sends to date.)
+ * (The BCC half of that rule was the standing admin BCC, which the owner stopped on 2026-11-06 —
+ * his copy is the Telegram mirror every email carries; none is added here.)
  *
  * Before this, a CEO notice read `To: the CEO, Cc: (nobody)` — the requester could not tell his
  * request had reached the top, the manager who approved it could not tell it had moved on, and an

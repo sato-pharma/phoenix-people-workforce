@@ -38,8 +38,8 @@ import { stripComments } from "./support/comment-strip.ts";
  *     `totalJobs` — the off-by-one, and the silently under-reporting run summary.
  *  5. A job failure whose fallback reports a ZERO rather than `skipped` with a reason. A zero from
  *     a crashed job is indistinguishable from a quiet morning.
- *  6. Email added to the DAILY digest. One email to him is already three deliveries (an always-BCC
- *     plus a Telegram mirror), which is why email is weekly and this is not.
+ *  6. Email added to the DAILY digest. One email to him is already two deliveries (the email plus
+ *     its Telegram mirror), which is why email is weekly and this is not.
  *  7. The recipient resolved by ROLE rather than by his own id — this board is one person's private
  *     decision queue, and a "safe" fallback audience is how it reaches somebody else.
  */
@@ -261,8 +261,8 @@ export function runNeedsYouDailyDigestTests() {
     assert.doesNotMatch(
       channels[0],
       /email/,
-      "the DAILY digest must not request email. One email to him is already three deliveries — an " +
-        "always-BCC plus a Telegram mirror — which is precisely why email is weekly and this is daily.",
+      "the DAILY digest must not request email. One email to him is already two deliveries — the " +
+        "email plus its Telegram mirror — which is precisely why email is weekly and this is daily.",
     );
     assert.match(channels[0], /telegram/, "the daily digest is a Telegram digest");
   }

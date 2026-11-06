@@ -104,8 +104,8 @@ export const systemEmail = {
    * reads changes — only where their Reply button points.
    *
    * 🔴 This address must never be one Resend has suppressed: a suppressed Reply-To is what broke
-   * the 2026-09-13 send. omar.anwar@satopharma.com is the standing admin BCC on every system mail,
-   * so it is a live, deliverable inbox — do not swap it for an untested one.
+   * the 2026-09-13 send. omar.anwar@satopharma.com took a standing BCC of every system mail until
+   * 2026-11-06 without bouncing, so it is a live, deliverable inbox — do not swap it for an untested one.
    */
   satoComposerReplyToEmail: "omar.anwar@satopharma.com",
   /**

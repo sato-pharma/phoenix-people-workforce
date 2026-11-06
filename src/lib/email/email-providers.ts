@@ -529,6 +529,13 @@ export function resolveEmailProviders(email?: Pick<PreparedEmail, "from"> & { mo
 export type FailoverSendResult = { id: string; provider: string };
 
 /**
+ * A replacement for the provider chain, for the ONE message that must not ride it: a job offer sent
+ * through the real `hr@` mailbox on Turbify (`job-offer-smtp.ts`, owner 2026-11-06). Handed the same
+ * prepared email the chain would get; it resolves once the message is accepted, or throws.
+ */
+export type EmailDispatch = (email: PreparedEmail) => Promise<FailoverSendResult>;
+
+/**
  * Dispatch a prepared email through the provider chain with duplicate-safe failover.
  * `providers` is injectable for testing; production passes the env-resolved chain.
  */

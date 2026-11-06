@@ -135,9 +135,9 @@ export function runNeedsYouEmailOwnerOnlyTests() {
   assert.doesNotMatch(
     row[1],
     /"email"/,
-    "email must not be in the module DEFAULT. One email to B-10 is already three deliveries — " +
-      "send-phoenix-email.ts always BCCs his standing address and mirrors a preview to his Telegram — " +
-      "so defaulting to email means four notifications a morning about one board. The weekly send asks " +
+    "email must not be in the module DEFAULT. One email to B-10 is already two deliveries — " +
+      "send-phoenix-email.ts mirrors a preview of every email to his Telegram — " +
+      "so defaulting to email means three notifications a morning about one board. The weekly send asks " +
       "for it explicitly; the guard is what makes that safe.",
   );
   assert.match(row[1], /telegramAllowed: true/, "the daily digest reaches him on Telegram");

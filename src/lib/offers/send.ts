@@ -9,6 +9,7 @@ import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers
 import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
 import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { jobOfferSmtpDispatch } from "@/lib/email/job-offer-smtp";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
@@ -304,6 +305,9 @@ async function deliverOfferLetter(
     // ruled that an offer may be copied to anyone without a reason (2026-09-28) — so an outside
     // address on CC is intended, not a typo the guard should catch. Its shape was already checked
     // by `planOfferCopies` above.
+    // Through the real hr@ mailbox on Turbify when its app password is set (owner, 2026-11-06) —
+    // undefined otherwise, which keeps the provider chain exactly as it was. No fall back to Resend.
+    dispatch: jobOfferSmtpDispatch(),
     externalRecipients: [offer.candidateEmail, ...copies.cc, ...copies.bcc],
     from: sender.from,
     html,
@@ -353,7 +357,7 @@ async function deliverOfferLetter(
  * a planner or a cron, which is what keeps it inside the standing rule that a rejection-style notice
  * is never sent automatically.
  *
- * The standing admin BCC and the Sato From/Reply-To come from the shared send path and
+ * The admin Telegram mirror and the Sato From/Reply-To come from the shared send path and
  * `resolveOfferSender()`, exactly as the offer letter's do. The route writes the audit row.
  */
 export async function expireOfferEmail(offerId: string): Promise<OfferSendOutcome> {
@@ -377,6 +381,8 @@ export async function expireOfferEmail(offerId: string): Promise<OfferSendOutcom
     // A candidate has no employee record, so their address is unknown to the Recipient Assurance
     // Guard — it must be declared here or the notice is blocked as an unrecognised recipient, the
     // same declaration the offer letter makes.
+    // The same hr@ mailbox the letter left from, when its app password is set (owner, 2026-11-06).
+    dispatch: jobOfferSmtpDispatch(),
     externalRecipients: [offer.candidateEmail],
     from: sender.from,
     html,

@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { passwordResetCodeMetricLabel } from "@/lib/auth/password-reset-code.ts";
 import { emailTemplateKeys } from "@/lib/email-templates/key-resolution.ts";
 import { contextVariables, htmlBlockTokens, interpolate } from "@/lib/email-templates/render-core.ts";
-import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror.ts";
-import { withStandingAdminBcc } from "@/lib/email/send-phoenix-email.ts";
-import { isOneTimeCodeTemplateKey } from "@/lib/email/transactional-types.ts";
 import { migratedTemplateKeyForNotification } from "@/lib/notifications/email.ts";
 
 /**
@@ -182,44 +181,17 @@ export function runPasswordResetCodeEmailCarriesTheCodeTests() {
     "the admin-minted reset LINK must stay on the password_reset template — it carries no code metric",
   );
 
-  // --- 7. the code email carries NO standing admin BCC -------------------------------------
-  // Owner, 2026-10-08: "stop bcc-ing the reset code email to my mailbox". Every automated email
-  // is BCC'd to the standing admin address; a six-digit code usable for 15 minutes is the one
-  // body that must not sit in a second mailbox.
-  assert.ok(
-    isOneTimeCodeTemplateKey(CODE_TEMPLATE_KEY),
-    `${CODE_TEMPLATE_KEY} must be a no-standing-copy template key, or the live code is BCC'd to the admin mailbox`,
-  );
-  assert.ok(
-    !isOneTimeCodeTemplateKey("password_reset"),
-    "the admin-minted reset LINK keeps its standing copy — the owner scoped this to the code email only",
-  );
-  assert.ok(
-    !isOneTimeCodeTemplateKey("payroll_update"),
-    "no ordinary template may lose the standing admin copy",
-  );
-
-  assert.deepEqual(
-    withStandingAdminBcc({ bcc: undefined, suppress: true, testingRedirectActive: false }),
-    undefined,
-    "the code email must go out with no BCC at all when nothing else asked for one",
-  );
-  assert.deepEqual(
-    withStandingAdminBcc({ bcc: ["hr@satopharma.com"], suppress: true, testingRedirectActive: false }),
-    ["hr@satopharma.com"],
-    "suppressing the standing copy must not touch a BCC the caller asked for",
-  );
-  assert.deepEqual(
-    withStandingAdminBcc({ bcc: undefined, suppress: false, testingRedirectActive: false }),
-    [ADMIN_STANDING_EMAIL],
-    "every OTHER automated email still carries the standing admin BCC — this change removes one recipient from one template, not the standing copy",
-  );
-
-  // The wiring that connects the two: the resolved template key decides it inside
-  // sendTemplatedEmail, so an outbox row queued before this shipped is covered when it drains.
-  assert.match(
-    service,
-    /suppressAdminStandingBcc:\s*isOneTimeCodeTemplateKey\(key\)/,
-    "sendTemplatedEmail must decide the suppression from the RESOLVED template key — a flag threaded from domain code is lost in the outbox payload",
+  // --- 7. the code email carries NO admin BCC -----------------------------------------------
+  // Owner, 2026-10-08: "stop bcc-ing the reset code email to my mailbox" — the first exemption
+  // from the standing admin BCC. On 2026-11-06 he stopped the standing BCC on EVERY automated
+  // email ("Stop the BCC copies"), so the code email is covered by the general rule: the send
+  // path adds no BCC at all, and the per-template suppression flag is gone with it. Executed
+  // end to end in tests/offer-email-via-turbify.test.ts.
+  const send = stripComments(readFileSync("src/lib/email/send-phoenix-email.ts", "utf8"));
+  assert.doesNotMatch(send, /ADMIN_STANDING_EMAIL/, "no automated email — the reset code included — is blind-copied to the admin mailbox");
+  assert.doesNotMatch(
+    stripComments(service),
+    /suppressAdminStandingBcc/,
+    "the templated path no longer needs a suppression flag, because there is no standing copy to suppress",
   );
 }

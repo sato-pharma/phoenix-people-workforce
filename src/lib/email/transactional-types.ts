@@ -31,29 +31,9 @@ export function isTransactionalEmailType(type: string | null | undefined): boole
   return TRANSACTIONAL_EMAIL_TYPES.has(String(type ?? "").trim().toLowerCase());
 }
 
-/**
- * Template keys whose BODY IS a live credential, and which therefore take NO standing admin BCC.
- *
- * The owner's instruction, 2026-10-08: *"stop bcc-ing the reset code email to my mailbox"*. Every
- * automated email is BCC'd to ADMIN_STANDING_EMAIL (send-phoenix-email.ts), which is a copy of
- * outbound HR mail — but a self-service reset code is not a record of anything, it is the secret
- * itself, usable by whoever reads it for the 15 minutes it lives. A standing copy turns one
- * person's account recovery into a credential sitting in a second mailbox.
- *
- * Keyed on the TEMPLATE KEY, not the notification type: `password_reset` covers both this and the
- * admin-minted reset LINK, and only the code email is scoped here. The owner has not asked for the
- * link emails (`password_reset`, `password_setup`) to lose their copy, so they keep it.
- *
- * It is NOT a privacy flag in general — it removes exactly one recipient from exactly these
- * templates. Every other template, and every other channel, is untouched.
- */
-export const NO_STANDING_COPY_TEMPLATE_KEYS = new Set<string>([
-  "password_reset_code",
-]);
-
-export function isOneTimeCodeTemplateKey(templateKey: string | null | undefined): boolean {
-  return NO_STANDING_COPY_TEMPLATE_KEYS.has(String(templateKey ?? "").trim().toLowerCase());
-}
+// The standing admin BCC, and with it the reset-code exemption from it (2026-10-08), ended on
+// 2026-11-06 (owner: "Stop the BCC copies") — no automated email is blind-copied to him any more.
+// His copy of every email is the Telegram mirror, whose one exception is the list below.
 
 /**
  * The two kinds of email that carry a live credential and are therefore NOT mirrored to the admin's
@@ -66,7 +46,7 @@ export function isOneTimeCodeTemplateKey(templateKey: string | null | undefined)
  * EXPLICIT, NEVER GUESSED. The send site that builds one of these emails stamps the kind on the send
  * (`credentialEmail`), and only that stamp withholds the mirror. Nothing reads the subject, the body or
  * the template to decide it, and no other email loses its mirror: every other automated email keeps
- * its Telegram copy exactly as before. The standing BCC is a separate rule (NO_STANDING_COPY above).
+ * its Telegram copy exactly as before. There is no standing BCC any more (owner, 2026-11-06).
  */
 export const CREDENTIAL_EMAIL_KINDS = ["password_reset_code", "password_setup_link"] as const;
 export type CredentialEmailKind = (typeof CREDENTIAL_EMAIL_KINDS)[number];
