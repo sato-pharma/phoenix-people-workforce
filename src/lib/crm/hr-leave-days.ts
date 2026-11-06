@@ -16,14 +16,11 @@
  */
 
 import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
-import { getCrmCutoverSetting, type CrmCutoverSetting } from "@/lib/crm/cutover";
+import { getCrmCutoverSetting, vendorSyncRetiredOn, type CrmCutoverSetting } from "@/lib/crm/cutover";
 
 /** The first day HR leave is the field-work leave record (UTC date of the retirement), or null. */
 export function fieldLeaveFromHrStartsOn(setting: Pick<CrmCutoverSetting, "vendorSyncRetiredAt">): string | null {
-  const raw = setting.vendorSyncRetiredAt;
-  if (!raw) return null;
-  const at = new Date(raw);
-  return Number.isNaN(at.getTime()) ? null : at.toISOString().slice(0, 10);
+  return vendorSyncRetiredOn(setting);
 }
 
 /** The part of [start, end] on or after `startsOn`, or null when none of it is. Pure. */
