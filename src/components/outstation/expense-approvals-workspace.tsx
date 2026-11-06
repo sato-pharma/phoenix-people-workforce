@@ -78,6 +78,7 @@ import {
   deductionFromApprovedAmount,
 } from "@/lib/outstation/payable";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
 import {
@@ -1475,6 +1476,7 @@ function EmployeeSummaryPanel({
         </thead>
         {summaries.map((summary) => {
           const isOpen = expanded.has(summary.employeeKey);
+          const detailId = `employee-trips-${summary.employeeKey.replace(/[^a-z0-9]+/gi, "-")}`;
           return (
             <tbody className="border-b border-slate-200 last:border-b-0" key={summary.employeeKey}>
               <tr className={cn("transition-colors", isOpen ? "bg-orange-50" : "hover:bg-slate-50")}>
@@ -1486,7 +1488,7 @@ function EmployeeSummaryPanel({
                 </td>
                 <td className="min-w-0 p-0">
                   <button
-                    aria-expanded={isOpen}
+                    {...rowDetailToggleProps(detailId, isOpen)}
                     className="block w-full px-3 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-orange-500"
                     onClick={() => onToggle(summary.employeeKey)}
                     type="button"
@@ -1512,11 +1514,9 @@ function EmployeeSummaryPanel({
                 </td>
               </tr>
               {isOpen ? (
-                <tr>
-                  <td className="border-t border-slate-200 bg-slate-50 px-3 py-3" colSpan={6}>
-                    <EmployeeTripsTable onUndo={onUndo} trips={summary.trips} />
-                  </td>
-                </tr>
+                <TableRowDetail colSpan={6} id={detailId}>
+                  <EmployeeTripsTable onUndo={onUndo} trips={summary.trips} />
+                </TableRowDetail>
               ) : null}
             </tbody>
           );
