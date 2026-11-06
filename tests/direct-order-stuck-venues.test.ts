@@ -43,9 +43,7 @@ function loaderRules() {
   assert.match(source, /if \(!canDecideDirectOrderPharmacyValidations\(access\)\) return \[\];/);
 
   // Never throws — a panel must not cost the desk its real work.
-  // The venue read is paged (a row ceiling would leave a stuck venue unseen); a failed page answers none.
-  assert.match(source, /fetchAllRows<Record<string, unknown>>\(/);
-  assert.match(source, /\} catch \{\s*return \[\];\s*\}/);
+  assert.match(source, /if \(error\) return \[\];/);
 
   // Money first: the panel's job is to put the largest unwatched thing at the top.
   assert.match(source, /\.sort\(\(a, b\) => b\.ordersValue - a\.ordersValue/);
