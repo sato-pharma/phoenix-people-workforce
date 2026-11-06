@@ -138,6 +138,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     url: string;
     ok: string;
   } | null>(null);
+  // The confirm sits with the page's messages, far above the Part 2 buttons that open it. Measured on
+  // production: pressing "Unconfirm Part 1" opened it out of sight, so the click looked dead. Bring it
+  // into view, and hand the keyboard to it.
+  useEffect(() => {
+    if (!pendingAction) return;
+    const dialog = document.getElementById("payroll-pending-action");
+    dialog?.scrollIntoView({ block: "center", behavior: "smooth" });
+    dialog?.focus({ preventScroll: true });
+  }, [pendingAction]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [recon, setRecon] = useState<ReconciliationTotals | null>(null);
@@ -765,7 +774,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
       {pendingAction ? (
-        <div role="alertdialog" aria-labelledby="payroll-pending-title" className="border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div id="payroll-pending-action" tabIndex={-1} role="alertdialog" aria-labelledby="payroll-pending-title" className="outline-none border border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <div id="payroll-pending-title" className="font-black">{pendingAction.title}</div>
           <p className="mt-1 break-words">{pendingAction.body}</p>
           <div className="mt-3 flex flex-wrap gap-2">
