@@ -6,7 +6,6 @@ import { AlertTriangle, Check, X } from "lucide-react";
 import {
   phxButtonApproveClassName,
   phxButtonDangerClassName,
-  phxButtonGhostClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { PrivateCalendarReviewRequestThread } from "@/components/private-calendar/review-request-thread";
@@ -156,13 +155,14 @@ export function PrivateCalendarDisputesWorkspace({
   const router = useRouter();
   const [disputes, setDisputes] = useState(initialDisputes);
   const [error, setError] = useState(initialError);
-  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
   const [noteById, setNoteById] = useState<Record<string, string>>({});
   const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   async function decide(disputeId: string, decision: "accept" | "reject") {
     const note = (noteById[disputeId] ?? "").trim();
     setError(null);
+    setDone(null);
     setSubmittingId(disputeId);
     try {
       const response = await fetch(`/api/private-calendar/disputes/${disputeId}/decide`, {
@@ -172,8 +172,16 @@ export function PrivateCalendarDisputesWorkspace({
       });
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to decide this dispute.");
+      const decided = disputes.find((dispute) => dispute.id === disputeId);
+      const who = decided?.employeeName ?? "The employee";
       setDisputes((current) => current.filter((dispute) => dispute.id !== disputeId));
-      setDecidingId(null);
+      // It leaves this inbox, which holds only what is waiting; the decided case stays readable in the
+      // Dispute Center for both sides, for ever.
+      setDone(
+        decision === "accept"
+          ? `Accepted. ${who}'s day now shows your correction, and they were told. It stays readable in the Dispute Center.`
+          : `Rejected. ${who}'s day stays as it was, and they were told why. It stays readable in the Dispute Center.`,
+      );
     } catch (decideError) {
       setError(decideError instanceof Error ? decideError.message : "Unable to decide this dispute.");
     } finally {
@@ -193,6 +201,13 @@ export function PrivateCalendarDisputesWorkspace({
         <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {error}
+        </div>
+      ) : null}
+
+      {done ? (
+        <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-semibold text-emerald-800" role="status">
+          <Check className="h-4 w-4 shrink-0" />
+          {done}
         </div>
       ) : null}
 
@@ -283,60 +298,46 @@ export function PrivateCalendarDisputesWorkspace({
                 />
               </div>
 
-              {decidingId === dispute.id ? (
-                <div className="mt-3 border border-slate-200 bg-slate-50 p-3">
-                  {/* What each button actually does, beside the buttons. Accepting overlays the
-                      verified correction on the calendar day; the original punch or CRM visit is
-                      never rewritten, because Phoenix does not own that upstream record. */}
-                  <p className="text-sm font-semibold text-slate-600">
-                    <span className="font-black text-emerald-800">Accept</span> shows your correction on top of that day in their
-                    calendar and emails them your note. The original punch or visit record is not changed.{" "}
-                    <span className="font-black text-red-800">Reject</span> leaves the day exactly as it is and emails them why.
-                  </p>
-                  <textarea
-                    className={cn(phxTextareaClassName, "mt-2")}
-                    onChange={(event) => setNoteById((current) => ({ ...current, [dispute.id]: event.target.value }))}
-                    placeholder="Decision note (optional — what you found when you checked)"
-                    rows={2}
-                    value={noteById[dispute.id] ?? ""}
-                  />
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      className={phxButtonApproveClassName}
-                      disabled={submittingId === dispute.id}
-                      onClick={() => decide(dispute.id, "accept")}
-                      type="button"
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      Accept
-                    </button>
-                    <button
-                      className={phxButtonDangerClassName}
-                      disabled={submittingId === dispute.id}
-                      onClick={() => decide(dispute.id, "reject")}
-                      type="button"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Reject
-                    </button>
-                    <button
-                      className={phxButtonGhostClassName}
-                      onClick={() => setDecidingId(null)}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+              {/* THE DECISION IS ALWAYS ON THE CARD (owner, 2026-11-07: "today I do not have the option
+                  except reply"). It sat behind a small "Review" button under the conversation, which
+                  read as if replying were the only thing this inbox could do. */}
+              <div className="mt-3 border border-slate-200 bg-slate-50 p-3">
+                {/* What each button actually does, beside the buttons. Accepting overlays the
+                    verified correction on the calendar day; the original punch or CRM visit is
+                    never rewritten, because Phoenix does not own that upstream record. */}
+                <p className="text-sm font-semibold text-slate-600">
+                  <span className="font-black text-emerald-800">Accept</span> shows your correction on top of that day in their
+                  calendar and emails them your note. The original punch or visit record is not changed.{" "}
+                  <span className="font-black text-red-800">Reject</span> leaves the day exactly as it is and emails them why.
+                </p>
+                <textarea
+                  className={cn(phxTextareaClassName, "mt-2")}
+                  onChange={(event) => setNoteById((current) => ({ ...current, [dispute.id]: event.target.value }))}
+                  placeholder="Decision note (optional — what you found when you checked)"
+                  rows={2}
+                  value={noteById[dispute.id] ?? ""}
+                />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    className={phxButtonApproveClassName}
+                    disabled={submittingId === dispute.id}
+                    onClick={() => decide(dispute.id, "accept")}
+                    type="button"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Accept
+                  </button>
+                  <button
+                    className={phxButtonDangerClassName}
+                    disabled={submittingId === dispute.id}
+                    onClick={() => decide(dispute.id, "reject")}
+                    type="button"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Reject
+                  </button>
                 </div>
-              ) : (
-                <button
-                  className={cn(phxButtonGhostClassName, "mt-3")}
-                  onClick={() => setDecidingId(dispute.id)}
-                  type="button"
-                >
-                  Review
-                </button>
-              )}
+              </div>
             </div>
           ))}
         </div>

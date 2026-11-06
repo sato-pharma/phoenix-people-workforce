@@ -39,6 +39,12 @@ the employee — not a replacement: the three live queues stay, and every notifi
 the wild still lands where it did. What the Center adds is the thing none of them had: a **decided**
 case is still readable, by both sides, for ever.
 
+Since 7 November 2026 the two module inboxes also DECIDE, not only reply (owner: "today I do not
+have the option except reply"). The deductions Disputes tab shows the Dispute Center's own decision
+panel on every card — the same case, the same route, the same accept / reduce / reject and reopen —
+so what the money becomes is still decided in one place. The calendar inbox shows Accept and Reject
+on every card instead of behind a "Review" button.
+
 ## Nothing is stored that can go stale
 
 The state — waiting on the reviewer, waiting on the employee, reopen requested, decided — is

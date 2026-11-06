@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 
 import { PicturePicker, PictureStrip } from "@/components/deductions/dispute-pictures";
+import { DisputeDecisionPanel } from "@/components/disputes/dispute-decision-panel";
+import type { DisputeCase } from "@/lib/dispute-center/types.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations.ts";
 import { disputeDateLabel } from "@/lib/deductions/dispute-basis.ts";
@@ -376,6 +378,59 @@ function AudienceLine({ thread }: { thread: AdminDeductionCommentThread }) {
   );
 }
 
+/**
+ * THE DECISION, ON THE CARD (owner, 2026-11-07: "in deduction disputes I want to be able to approve or
+ * reject the dispute … today I do not have the option except reply"). The tab only ever had the reply
+ * box; the decision lived in the Dispute Center alone. This is that same panel, fed by that same case
+ * and posting to that same route — accept, reduce, reject, and the reopen — so the rule about what the
+ * money becomes (withdraw a pushed line first, refund a paid month through Other Additions) stays in
+ * ONE place, `src/lib/dispute-center/deduction.ts`. Nothing is decided in the browser.
+ */
+function CaseDecision({ candidateId, onDecided }: { candidateId: string; onDecided: () => void }) {
+  const [dispute, setDispute] = useState<DisputeCase | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson<{ case: DisputeCase }>(`/api/dispute-center/cases/deduction/${encodeURIComponent(candidateId)}`)
+      .then((payload) => {
+        if (cancelled) return;
+        setError(null);
+        setDispute(payload.case);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : "The decision could not be loaded.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateId, version]);
+
+  if (error) {
+    return (
+      <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-semibold text-rose-700" role="alert">
+        {error}
+      </p>
+    );
+  }
+  if (!dispute) {
+    return <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-semibold text-slate-500">Loading the decision</p>;
+  }
+  if (!dispute.viewer.isReviewer) return null;
+  return (
+    <div className="mt-4 border-t border-slate-200 pt-4">
+      <DisputeDecisionPanel
+        dispute={dispute}
+        onDone={() => {
+          setVersion((current) => current + 1);
+          onDecided();
+        }}
+      />
+    </div>
+  );
+}
+
 export function DisputesTab({ canReply, highlightCandidateId }: { canReply: boolean; highlightCandidateId?: string }) {
   const [threads, setThreads] = useState<AdminDeductionCommentThread[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -387,6 +442,7 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
   const [savingId, setSavingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Record<string, ReplyNotice>>({});
   const [delivered, setDelivered] = useState<Record<string, DeductionDisputeDelivery>>({});
+  const [withdrawn, setWithdrawn] = useState<Record<string, boolean>>({});
   const highlightRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -404,6 +460,24 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
       cancelled = true;
     };
   }, []);
+
+  // After a decision the list is read again in place, without blanking the screen. An ACCEPTED
+  // dispute's line is withdrawn, so the list no longer carries it — its card stays where it is, marked
+  // as off the payslip, so the sentence the decision returned is still there to read.
+  async function refreshAfterDecision(candidateId: string) {
+    try {
+      const payload = await fetchJson<{ threads: AdminDeductionCommentThread[] }>("/api/admin/deductions/comments");
+      const fresh = payload.threads ?? [];
+      const freshIds = new Set(fresh.map((thread) => thread.candidateId));
+      const kept = (threads ?? []).filter(
+        (thread) => !freshIds.has(thread.candidateId) && (thread.candidateId === candidateId || withdrawn[thread.candidateId]),
+      );
+      setWithdrawn(Object.fromEntries(kept.map((thread) => [thread.candidateId, true])));
+      setThreads([...fresh, ...kept]);
+    } catch {
+      // The decision itself saved and said so in its own panel; a failed re-read leaves the list as it was.
+    }
+  }
 
   // Once the threads are in and the deep-linked one is on screen, bring it into view.
   useEffect(() => {
@@ -653,7 +727,9 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
               <div className="flex items-end justify-between gap-3 @min-[560px]:flex-col @min-[560px]:items-end @min-[560px]:justify-start">
                 <div className="text-left @min-[560px]:text-right">
                   <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">On the payslip</p>
-                  <p className="text-xl font-black text-orange-600">{line ? formatMoney(line.appliedAmount) : "Not charged"}</p>
+                  <p className="text-xl font-black text-orange-600">
+                    {line && !withdrawn[thread.candidateId] ? formatMoney(line.appliedAmount) : "Not charged"}
+                  </p>
                 </div>
                 <button
                   aria-expanded={!detailsHidden}
@@ -769,6 +845,12 @@ export function DisputesTab({ canReply, highlightCandidateId }: { canReply: bool
                       </p>
                     ) : null}
                     {delivery ? <ChannelRecap delivery={delivery} /> : null}
+                    <CaseDecision
+                      candidateId={thread.candidateId}
+                      onDecided={() => {
+                        void refreshAfterDecision(thread.candidateId);
+                      }}
+                    />
                   </div>
                 ) : (
                   <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-semibold text-slate-500">
