@@ -350,6 +350,8 @@ export function mapOutstationRequestRowToPayrollApproval(
     capturedLongitude: toNumber(row.captured_longitude),
     date: tripStartDate,
     description: toText(row.notes) || "Outstation expense request",
+    // The employee's own words, with no placeholder — Expense Approvals shows them on the card.
+    employeeNote: toText(row.notes) || null,
     from: origin || "Residence",
     hr: hrStatus,
     hrApproved: status === "Approved",
