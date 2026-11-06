@@ -936,11 +936,15 @@ async function listEmployeeDocuments(hrId: string): Promise<EmployeePortalDocume
 }
 
 function computeEmploymentJourney(employee: EmployeeDirectoryRow): EmploymentJourney {
-  return resolveEmployeeLifecycleJourney({
+  const journey = resolveEmployeeLifecycleJourney({
     contractRenewalDate: employee.contractRenewalDate,
     contractSignedDate: employee.hireDate,
     hireDate: employee.hireDate,
   });
+  // A re-hired person's tenure counts from her first record, as the Hire date beside it already does
+  // (continuous-service.ts). Probation and renewal stay on this record's own contract.
+  const serviceStart = continuousServiceStartDate(employee.hrId, employee.hireDate);
+  return { ...journey, serviceDurationDays: resolveEmployeeLifecycleJourney({ hireDate: serviceStart }).serviceDurationDays };
 }
 
 async function fetchSalaryTrend(
