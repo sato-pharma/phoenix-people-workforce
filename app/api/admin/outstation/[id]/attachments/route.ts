@@ -98,7 +98,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
               capturedAt: stop.capturedAt,
               evidence: stop.evidence,
               governorate: stop.governorate,
+              // The stop's own position, so the approver's trip map can pin it (2026-11-07).
+              latitude: stop.latitude,
               locationLabel: stop.locationLabel,
+              longitude: stop.longitude,
               addedByAdmin: stop.addedByAdmin ?? null,
               stopNumber: stop.stopNumber,
               ticketAmount: stop.ticketAmount,
