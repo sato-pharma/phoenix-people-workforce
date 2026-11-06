@@ -477,6 +477,13 @@ export async function fetchAction1Endpoints(): Promise<Action1Fetch> {
     const next = nextPageUrl(payload);
     url = next ? new URL(next, `${config.baseUrl}/`).toString() : null;
   }
+  // The guard tripped with a next page still on offer: refuse rather than register a part of the fleet.
+  if (url) {
+    throw new Action1RequestError(
+      "Action1 is still listing endpoints after the page limit, so Phoenix stops here rather than show a partial fleet.",
+      502,
+    );
+  }
 
   return { organizationId, records };
 }

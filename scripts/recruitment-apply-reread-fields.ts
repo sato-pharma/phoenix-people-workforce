@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recruitment/cv-auto-apply";
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 import { isCvRereadMarker } from "@/lib/recruitment/ops-marker";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -102,33 +103,51 @@ async function main(): Promise<void> {
   // ever fills a column that is currently BLANK — it cannot overwrite a human edit or an earlier
   // extraction — and roughly 200 of these candidates were read BEFORE auto-apply-at-intake
   // shipped, so their extracted values have never reached the columns at all.
-  const { data: extractionRows, error: extractionError } = await supabase
-    .from("ats_candidate_cv_extractions")
-    .select("id, candidate_id, extracted_fields, position_key, created_by, created_at")
-    .order("created_at", { ascending: true });
-  if (extractionError) throw extractionError;
+  // Paged: one read stops silently at 1,000 rows and drops the NEWEST extractions, the ones that win below.
+  type ExtractionRow = {
+    id: string;
+    candidate_id: string;
+    extracted_fields: unknown;
+    position_key: string | null;
+    created_by: string | null;
+    created_at: string;
+  };
+  const extractionRows = await fetchAllRows<ExtractionRow>(
+    () =>
+      supabase
+        .from("ats_candidate_cv_extractions")
+        .select("id, candidate_id, extracted_fields, position_key, created_by, created_at")
+        .order("created_at", { ascending: true }),
+    "id",
+  );
 
   // A candidate can hold several extraction rows; the latest wins.
-  const latestByCandidate = new Map<string, (typeof extractionRows)[number]>();
-  for (const row of extractionRows ?? []) latestByCandidate.set(String(row.candidate_id), row);
+  const latestByCandidate = new Map<string, ExtractionRow>();
+  for (const row of extractionRows) latestByCandidate.set(String(row.candidate_id), row);
   // Prefix, never an exact marker. This line used to compare against a hardcoded
   // `ops:cv-reread-20260816`, which is the reason the writer could never be allowed to move: the
   // two were kept in agreement only by both being frozen.
   const fromReread = [...latestByCandidate.values()].filter((row) => isCvRereadMarker(row.created_by)).length;
-  console.log(`Extractions         : ${(extractionRows ?? []).length} rows, ${latestByCandidate.size} candidates`);
+  console.log(`Extractions         : ${extractionRows.length} rows, ${latestByCandidate.size} candidates`);
   console.log(`  of which re-read  : ${fromReread}`);
 
   // The shipped phone gate: allowed on candidate_created, withheld on candidate_matched. A
   // candidate carrying BOTH events has a second CV on file whose identity was resolved
   // separately, so it is treated as matched — the stricter reading.
-  const { data: intakeRows, error: intakeError } = await supabase
-    .from("ats_cv_intake_events")
-    .select("candidate_id, outcome")
-    .in("candidate_id", [...latestByCandidate.keys()]);
-  if (intakeError) throw intakeError;
-  const everMatched = new Set(
-    (intakeRows ?? []).filter((row) => row.outcome === "candidate_matched").map((row) => String(row.candidate_id)),
-  );
+  // Paged, and the id list chunked at 50 (a long `in.()` answers ZERO rows and no error): a missed
+  // `candidate_matched` event would let a phone through that this gate exists to withhold.
+  const candidateIds = [...latestByCandidate.keys()];
+  const everMatched = new Set<string>();
+  for (let from = 0; from < candidateIds.length; from += 50) {
+    const chunk = candidateIds.slice(from, from + 50);
+    const intakeRows = await fetchAllRows<{ candidate_id: string; outcome: string | null }>(
+      () => supabase.from("ats_cv_intake_events").select("candidate_id, outcome").in("candidate_id", chunk),
+      "id",
+    );
+    for (const row of intakeRows) {
+      if (row.outcome === "candidate_matched") everMatched.add(String(row.candidate_id));
+    }
+  }
 
   const plans: Plan[] = [];
   for (const [candidateId, extraction] of latestByCandidate) {

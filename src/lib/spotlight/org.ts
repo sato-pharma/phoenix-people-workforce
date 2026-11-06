@@ -11,6 +11,7 @@
 
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { isRegionalManagerHeldDistrict } from "@/lib/org/sales-only-seats";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { hrKey, type OrgPerson, type OrgSeat, type SpotlightOrg } from "./rank";
@@ -27,23 +28,18 @@ export type SpotlightOrgIndex = SpotlightOrg & {
 };
 
 /**
- * 🔴 THE 1000-ROW CAP IS ASSERTED, NEVER TRUSTED. An unbounded PostgREST select stops at exactly
- * 1,000 rows with no error and no marker — the array simply ends. On a truncated org read the
- * symptom would be a spotlight that silently omits whole districts, which looks like a filter
- * working rather than a read failing.
+ * Every row of a table, paged to the last one by its unique tiebreak column. An unbounded PostgREST
+ * select stops at one response's worth with no error and no marker, and on a truncated org read the
+ * symptom would be a spotlight that silently omits whole districts, which looks like a filter working
+ * rather than a read failing. The pager ends only on a short page and throws on a read error.
  */
-async function selectAll(table: string, columns: string): Promise<Record<string, unknown>[]> {
+async function selectAll(table: string, columns: string, tiebreak: string): Promise<Record<string, unknown>[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from(table).select(columns);
-  if (error) throw new Error(`${table}: ${error.message}`);
-  const rows = (data ?? []) as unknown as Record<string, unknown>[];
-  if (rows.length >= 1000) {
-    throw new Error(
-      `${table} returned ${rows.length} rows — at or past PostgREST's unbounded cap, so the read may be`
-      + " truncated. Paginate it before a spotlight is built on it.",
-    );
+  try {
+    return await fetchAllRows<Record<string, unknown>>(() => supabase.from(table).select(columns), tiebreak);
+  } catch (error) {
+    throw new Error(`${table}: ${error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error)}`);
   }
-  return rows;
 }
 
 /**
@@ -59,8 +55,9 @@ export async function loadSpotlightOrg(): Promise<SpotlightOrgIndex> {
     selectAll(
       "au_v_org_tree_sales",
       "seat_id, parent_seat_id, seat_tier, line_code, line_name, region_code, region_name, area_code, area_name, occupant_hr_id, is_vacant, seat_display_label",
+      "seat_id",
     ),
-    selectAll("employees", "hr_id, full_name, nickname, name_ar, job_title"),
+    selectAll("employees", "hr_id, full_name, nickname, name_ar, job_title", "hr_id"),
   ]);
 
   const seats = new Map<string, OrgSeat>();

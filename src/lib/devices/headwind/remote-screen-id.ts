@@ -21,7 +21,7 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
-import { deviceRecordsFromSearch, deviceWriteBody } from "@/lib/devices/headwind/devices";
+import { deviceWriteBody, searchHeadwindDevices } from "@/lib/devices/headwind/devices";
 
 export class HeadwindRemoteScreenIdError extends Error {
   constructor(message: string) {
@@ -58,13 +58,8 @@ export function normalizeRemoteScreenId(raw: string): string {
 type DeviceRecord = Record<string, unknown>;
 
 async function findDevice(deviceNumber: string, fetchImpl: typeof fetch, env: NodeJS.ProcessEnv): Promise<DeviceRecord> {
-  const payload = await callHeadwind<unknown>(
-    "/rest/private/devices/search",
-    { body: JSON.stringify({ pageNum: 1, pageSize: 1000, value: deviceNumber }), method: "POST" },
-    fetchImpl,
-    env,
-  );
-  const device = deviceRecordsFromSearch(payload).find((entry) => entry.number === deviceNumber);
+  const { records } = await searchHeadwindDevices(deviceNumber, fetchImpl, env);
+  const device = records.find((entry) => entry.number === deviceNumber);
   if (!device) {
     throw new HeadwindRemoteScreenIdError(
       "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",

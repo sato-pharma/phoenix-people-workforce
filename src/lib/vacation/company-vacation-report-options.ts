@@ -21,6 +21,7 @@ import {
   resolveEmployeeLineName,
   type EmployeeLineFields,
 } from "@/lib/employees/employee-org-labels";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type CompanyVacationReportEmployeeOption = {
@@ -67,19 +68,30 @@ async function loadFilterOptionsRaw(): Promise<CompanyVacationReportFilterOption
   // title/line but take the HR id and name from whichever side produced the row, so an employee
   // with leave on record but no `employees` row (a real, recurring condition in this data) would
   // be missing from a roster-only dropdown — invisible in a filter that claims to list everyone.
-  const [employeeResult, requestResult] = await Promise.all([
+  // Both reads are paged: a dropdown that "lists everyone" must not stop at the API's row ceiling
+  // (the request table grows with every leave filed). A failed page keeps this module's own message.
+  const readAll = async <T>(label: string, buildQuery: () => unknown, tiebreak: string): Promise<T[]> => {
+    try {
+      return await fetchAllRows<T>(buildQuery, tiebreak);
+    } catch (error) {
+      throw new Error(`${label}: ${(error as { message?: string } | null)?.message ?? String(error)}`);
+    }
+  };
+  const [employeeRows, requestRows] = await Promise.all([
     // The line comes from the `line_id` LINK, not from `employees.line_name` — that label is a
     // denormalized copy nothing writes (1 of 198 rows carry it), so a roster read that took it
     // alone offered a Line filter with one entry in it. See employee-line.ts.
-    supabase.from("employees").select(`hr_id,full_name,job_title,nickname,${EMPLOYEE_LINE_SELECT}`),
-    supabase.from("v2_vacation_requests").select("employee_hr_id,employee_name,line_name"),
+    readAll<EmployeeOptionRow>(
+      "Failed to load vacation report employee options",
+      () => supabase.from("employees").select(`hr_id,full_name,job_title,nickname,${EMPLOYEE_LINE_SELECT}`),
+      "hr_id",
+    ),
+    readAll<RequestOptionRow>(
+      "Failed to load vacation report request options",
+      () => supabase.from("v2_vacation_requests").select("employee_hr_id,employee_name,line_name"),
+      "id",
+    ),
   ]);
-
-  if (employeeResult.error) throw new Error(`Failed to load vacation report employee options: ${employeeResult.error.message}`);
-  if (requestResult.error) throw new Error(`Failed to load vacation report request options: ${requestResult.error.message}`);
-
-  const employeeRows = (employeeResult.data ?? []) as EmployeeOptionRow[];
-  const requestRows = (requestResult.data ?? []) as RequestOptionRow[];
 
   const byKey = new Map<string, CompanyVacationReportEmployeeOption>();
   for (const employee of employeeRows) {

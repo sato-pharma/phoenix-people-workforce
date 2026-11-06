@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache.js";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
@@ -51,8 +52,18 @@ const PAGE_SIZE = 1000;
 // started silently dropping the oldest events within weeks. Raised, AND the
 // truncation is now reported (ActivityOverview.eventsTruncated): raising a cap
 // on its own only moves a silent cliff, it does not remove one.
+//
+// 🔴 MEASURED 2026-11-07: the 90-day window already holds 209,522 events, so the 90-day OVERVIEW
+// stops at this cap and says so (eventsTruncated). The EXPORT does not stop: see
+// EXPORT_EVENT_FETCH_CAP, because a file that is silently short is worse than a slow one.
 const EVENT_FETCH_CAP = 200_000;
-const SESSION_FETCH_CAP = 60_000;
+// The export reads every event of its window. Nothing reads this as a number of rows; it only
+// stands in for "no stop", so the export's rows and the file built from them cannot disagree.
+const EXPORT_EVENT_FETCH_CAP = Number.POSITIVE_INFINITY;
+// Sessions are read WITHOUT a stop. Every caller used to discard the "truncated" answer, so a
+// 60,000-row stop here could only ever have been silent: it would have dropped the OLDEST sessions
+// and shown people as inactive, or as never signed in. 8,595 sessions fall in the 90-day window.
+const SESSION_FETCH_CAP = Number.POSITIVE_INFINITY;
 // No cap on the People list. It was TOP_USERS_LIMIT = 30 until 2026-09-26; the
 // section is now searchable by name, and a capped list answers a search for the
 // 31st person with "not found" rather than with their row. ~55 people at a few
@@ -73,7 +84,9 @@ const LIVE_EVENT_DISPLAY_LIMIT = 20;
 // 300 on the page and 100 on the poll would make the online list shrink a second
 // after the page loaded. The display limit is applied AFTER the per-person
 // de-duplication, so it means 300 PEOPLE, not 300 session rows.
-const ONLINE_SESSION_FETCH_CAP = PAGE_SIZE;
+// The READ has no stop: a live session expires on its own clock (44 were live on 2026-11-07), and
+// the one-page stop it had before discarded its "truncated" answer, so it could only ever be silent.
+const ONLINE_SESSION_FETCH_CAP = Number.POSITIVE_INFINITY;
 const ONLINE_SESSION_DISPLAY_LIMIT = 300;
 
 type Row = Record<string, unknown>;
@@ -229,7 +242,9 @@ async function fetchAll(
   const rows: Row[] = [];
   let truncated = false;
   for (let offset = 0; offset < cap; offset += PAGE_SIZE) {
-    const query = apply(supabase.from(table).select(columns)).range(offset, offset + PAGE_SIZE - 1);
+    // `id` LAST: the caller's own order (created_at, last_seen_at) is not unique, and an offset page
+    // over a tied order can repeat one row and skip its neighbour. Both tables read here carry an id.
+    const query = apply(supabase.from(table).select(columns)).order("id", { ascending: true }).range(offset, offset + PAGE_SIZE - 1);
     const { data, error } = await query;
     if (error) {
       // Degrade gracefully when the activity_events table doesn't exist yet (its
@@ -333,19 +348,18 @@ type IdentityMaps = {
 };
 
 async function loadIdentityMaps(): Promise<IdentityMaps> {
+  // Both are read in full by the shared pager (a unique last sort key, no stop). They used to go
+  // through `fetchAll` with a 50,000-row stop and no order at all.
+  const supabase = getSupabaseAdmin();
   const [employees, accounts] = await Promise.all([
-    fetchAll(
-      "employees",
-      "hr_id,full_name,nickname,job_title,region_name,employment_status",
-      (q) => q,
-      50_000,
-    ).then((result) => result.rows),
-    fetchAll(
-      "app_auth_users",
-      "login_id,hr_id,role,is_active",
-      (q) => q,
-      50_000,
-    ).then((result) => result.rows),
+    fetchAllRows<Row>(
+      () => supabase.from("employees").select("hr_id,full_name,nickname,job_title,region_name,employment_status"),
+      "hr_id",
+    ),
+    fetchAllRows<Row>(
+      () => supabase.from("app_auth_users").select("login_id,hr_id,role,is_active"),
+      "login_id",
+    ),
   ]);
 
   const employeeByHrId = new Map<string, { name: string; jobTitle: string | null; team: string | null; status: string | null }>();
@@ -1028,8 +1042,8 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
   };
 }
 
-// This diagnostic loads up to EVENT_FETCH_CAP (200k) events / SESSION_FETCH_CAP
-// (60k) sessions into Node per call and aggregates them there — a real cost on
+// This diagnostic loads up to EVENT_FETCH_CAP (200k) events and every session of
+// its window into Node per call and aggregates them there — a real cost on
 // every page load with no caching previously. Company-wide (no per-viewer
 // scoping, page-level access-gated), so caching by `days` alone is scope-safe:
 // every admin who can reach this page sees the same aggregate for the same
@@ -1367,7 +1381,7 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
       "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
       (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso),
       "desc",
-      EVENT_FETCH_CAP,
+      EXPORT_EVENT_FETCH_CAP,
     ),
   ]);
 

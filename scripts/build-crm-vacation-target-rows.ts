@@ -39,6 +39,7 @@ import fs from "node:fs";
 
 import { getEmployeeDirectory, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source";
 import { fieldWorkforceDeductionDayWeight } from "@/lib/field-workforce-compliance/weekend-policy";
@@ -104,16 +105,23 @@ console.log(`  CRM vacation signals in the compliance matrix: ${signals.length}`
 // 2) Days Phoenix already knows about, in the statuses the balance engine counts.
 const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 const monthStart = `${periodLabel}-01`;
-const { data: existing, error: existingError } = await getSupabaseAdmin()
-  .from("v2_vacation_requests")
-  .select("employee_hr_id,start_date,end_date")
-  .in("status", ["approved", "pending_manager"])
-  .lte("start_date", monthEnd)
-  .gte("end_date", monthStart);
-if (existingError) throw new Error(`Could not read existing vacation requests: ${existingError.message}`);
+// Paged: a request missed by a single read would be imported again as a second leave day.
+const supabase = getSupabaseAdmin();
+const existing = await fetchAllRows<{ employee_hr_id: string | null; start_date: string; end_date: string }>(
+  () =>
+    supabase
+      .from("v2_vacation_requests")
+      .select("employee_hr_id,start_date,end_date")
+      .in("status", ["approved", "pending_manager"])
+      .lte("start_date", monthEnd)
+      .gte("end_date", monthStart),
+  "id",
+).catch((error: { message?: string }) => {
+  throw new Error(`Could not read existing vacation requests: ${error.message ?? String(error)}`);
+});
 
 const coveredDates = new Set<string>();
-for (const row of (existing ?? []) as Array<{ employee_hr_id: string | null; start_date: string; end_date: string }>) {
+for (const row of existing) {
   const key = canonicalHrIdKey(row.employee_hr_id ?? "");
   if (!key) continue;
   for (let d = new Date(`${row.start_date}T00:00:00Z`); d <= new Date(`${row.end_date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {

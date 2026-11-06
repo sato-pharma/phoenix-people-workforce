@@ -5,6 +5,7 @@
 // by (employeeHrId, dateIso) instead of display strings — exactly the shape the
 // flexible-hours engine consumes.
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
@@ -67,31 +68,31 @@ export async function loadEmployeeDayPunchMinutes(input: {
 
   const supabase = getSupabaseAdmin();
   const punches: RawPunchRow[] = [];
-  const PAGE_SIZE = 20000;
   // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
   // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
   // HeadersOverflowError — callers pass company/site-wide rosters here, so batch the id filter
-  // (nested inside the existing result-row range pagination).
+  // (each batch is then paged at PostgREST's own 1,000-row page, so no ceiling can end it early;
+  // the id tiebreak keeps pages of equal punch times from losing or repeating a punch).
   for (let h = 0; h < normalizedHrIds.length; h += 100) {
     const hrIdBatch = normalizedHrIds.slice(h, h + 100);
-    let offset = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from("attendance_raw_punches")
-        .select("employee_hr_id,punch_time")
-        .not("employee_hr_id", "is", null)
-        .in("employee_hr_id", hrIdBatch)
-        .gte("punch_time", cairoMidnightUtcIso(input.dateFromIso))
-        .lt("punch_time", cairoMidnightUtcIso(input.dateToIso, 1))
-        .order("punch_time", { ascending: true })
-        .range(offset, offset + PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Punch minutes lookup failed: ${error.message}`);
-      const page = (data ?? []) as RawPunchRow[];
-      punches.push(...page);
-      if (page.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+    let page: RawPunchRow[];
+    try {
+      page = await fetchAllRows<RawPunchRow>(
+        () =>
+          supabase
+            .from("attendance_raw_punches")
+            .select("employee_hr_id,punch_time")
+            .not("employee_hr_id", "is", null)
+            .in("employee_hr_id", hrIdBatch)
+            .gte("punch_time", cairoMidnightUtcIso(input.dateFromIso))
+            .lt("punch_time", cairoMidnightUtcIso(input.dateToIso, 1))
+            .order("punch_time", { ascending: true }),
+        "id",
+      );
+    } catch (error) {
+      throw new Error(`Punch minutes lookup failed: ${(error as { message?: string } | null)?.message ?? String(error)}`);
     }
+    for (const row of page) punches.push(row);
   }
 
   // employeeHrId -> dateIso -> punch times that local day.

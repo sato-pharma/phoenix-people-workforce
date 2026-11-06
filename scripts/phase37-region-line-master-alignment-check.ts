@@ -45,17 +45,19 @@ loadLocalEnv();
 
 /** Pages through a table with `.range()` so a table that grows past PostgREST's default
  *  row cap is never silently truncated (the exact failure mode this script exists to catch
- *  elsewhere — see the organogram-audit "PostgREST 1000-row cap" finding this session). */
+ *  elsewhere — see the organogram-audit "PostgREST 1000-row cap" finding this session).
+ *  `orderColumn` must be the table's unique key, so the walk skips and repeats no row. */
 async function fetchAll(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   table: string,
   select: string,
+  orderColumn: string,
   eqFilter?: { column: string; value: unknown },
 ): Promise<Row[]> {
   const rows: Row[] = [];
   let from = 0;
   for (;;) {
-    let query = supabase.from(table).select(select).range(from, from + PAGE_SIZE - 1);
+    let query = supabase.from(table).select(select).order(orderColumn, { ascending: true }).range(from, from + PAGE_SIZE - 1);
     if (eqFilter) query = query.eq(eqFilter.column, eqFilter.value);
     const { data, error } = await query;
     if (error) throw new Error(`${table}: ${error.message}`);
@@ -79,10 +81,10 @@ async function main() {
   const supabase = getSupabaseAdmin();
 
   const [authUsers, employees, regions, orgLines] = await Promise.all([
-    fetchAll(supabase, "app_auth_users", "login_id, role"),
-    fetchAll(supabase, "employees", "hr_id, full_name, employment_status, region_name, line_id"),
-    fetchAll(supabase, "source_of_sales_regions", "region_name", { column: "active", value: true }),
-    fetchAll(supabase, "lines", "id, code, name"),
+    fetchAll(supabase, "app_auth_users", "login_id, role", "login_id"),
+    fetchAll(supabase, "employees", "hr_id, full_name, employment_status, region_name, line_id", "hr_id"),
+    fetchAll(supabase, "source_of_sales_regions", "region_name", "region_code", { column: "active", value: true }),
+    fetchAll(supabase, "lines", "id, code, name", "id"),
   ]);
 
   // ── 3 & 4: rogue line labels — bounded existence queries, not full-table enumeration.

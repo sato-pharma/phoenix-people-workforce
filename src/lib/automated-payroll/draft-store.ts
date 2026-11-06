@@ -2,6 +2,7 @@ import { compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 
 import { TRANSITION_CLAIM_LOST } from "./transition-claim.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { groupRowsByColumnSet } from "@/lib/imports/upsert-by-column-set.ts";
 
 import { normalizeHoldReason, previousPeriod } from "./hold-reason.ts";
@@ -512,16 +513,20 @@ const CELL_HISTORY = "automated_payroll_draft_cell_history";
 export async function listDraftCellHistory(runId: string, hrId: string): Promise<DraftCellChange[]> {
   const compact = compactHrKey(hrId);
   if (!compact) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from(CELL_HISTORY)
-    .select("employee_hr_id, column_name, old_value, new_value, changed_by, write_reason, step_key, input_mode, changed_at")
-    .eq("run_id", runId)
-    .eq("employee_hr_id_compact", compact)
-    .order("changed_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(500);
-  if (error) throw error;
-  return ((data ?? []) as RunRow[]).map((row) => ({
+  // Paged, never capped: "every recorded change" must not stop at a fixed row count.
+  const client = getSupabaseAdmin();
+  const data = await fetchAllRows<RunRow>(
+    () =>
+      client
+        .from(CELL_HISTORY)
+        .select("employee_hr_id, column_name, old_value, new_value, changed_by, write_reason, step_key, input_mode, changed_at")
+        .eq("run_id", runId)
+        .eq("employee_hr_id_compact", compact)
+        .order("changed_at", { ascending: false })
+        .order("id", { ascending: false }),
+    "id",
+  );
+  return data.map((row) => ({
     employeeHrId: String(row.employee_hr_id ?? ""),
     column: String(row.column_name ?? ""),
     oldValue: (row.old_value as string | null) ?? null,
@@ -546,17 +551,21 @@ export async function listLatestCellWrites(
 ): Promise<Map<string, DraftCellChange>> {
   const latest = new Map<string, DraftCellChange>();
   if (compacts.length === 0 || columns.length === 0) return latest;
-  const { data, error } = await getSupabaseAdmin()
-    .from(CELL_HISTORY)
-    .select("employee_hr_id, employee_hr_id_compact, column_name, old_value, new_value, changed_by, write_reason, step_key, input_mode, changed_at")
-    .eq("run_id", runId)
-    .in("employee_hr_id_compact", compacts)
-    .in("column_name", columns)
-    .order("changed_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(2000);
-  if (error) throw error;
-  for (const row of (data ?? []) as RunRow[]) {
+  // Paged, never capped: a missing newest write would read as "no history" for that figure.
+  const client = getSupabaseAdmin();
+  const data = await fetchAllRows<RunRow>(
+    () =>
+      client
+        .from(CELL_HISTORY)
+        .select("employee_hr_id, employee_hr_id_compact, column_name, old_value, new_value, changed_by, write_reason, step_key, input_mode, changed_at")
+        .eq("run_id", runId)
+        .in("employee_hr_id_compact", compacts)
+        .in("column_name", columns)
+        .order("changed_at", { ascending: false })
+        .order("id", { ascending: false }),
+    "id",
+  );
+  for (const row of data) {
     const key = `${String(row.employee_hr_id_compact ?? "")}|${String(row.column_name ?? "")}`;
     if (latest.has(key)) continue;
     latest.set(key, {

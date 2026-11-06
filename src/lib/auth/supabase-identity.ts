@@ -159,7 +159,11 @@ async function findAuthUserIdByEmail(authEmail: string) {
     if (data.users.length < authUserListPageSize) return null;
   }
 
-  return null;
+  // Every page the scan is allowed was full and held no match: the person may sit on a page it never
+  // read. Say so, rather than answer "no such user" over users it did not look at.
+  throw new Error(
+    `The sign-in bridge user scan read ${authUserListMaxPages * authUserListPageSize} accounts without reaching the end, so it cannot tell whether this account exists.`,
+  );
 }
 
 async function updateSupabaseAuthUser(input: SupabaseAuthProvisionInput, authUserId: string) {

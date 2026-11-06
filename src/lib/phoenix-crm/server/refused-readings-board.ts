@@ -33,18 +33,16 @@ import {
   type RepRefusals,
 } from "@/lib/phoenix-crm/refused-readings-rules";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoPathTerritory } from "@/lib/phoenix-crm/server/photos";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
 /** How far back the board reads. Two weeks: long enough to see a habit, short enough to be a worklist. */
 export const REFUSED_READINGS_WINDOW_DAYS = 14;
-/** PostgREST's own row ceiling; a result this size is a truncated read and the page says so. */
-const ROW_LIMIT = 1000;
 /** The attempts the page prints in full. The by-rep summary still counts every row read. */
 const LATEST_LIMIT = 100;
 /** A `.in()` carrying several hundred ids comes back empty past some URL length — never read wider. */
@@ -87,7 +85,7 @@ export type RefusedReadingsBoard = {
   windowDays: number;
   /** Every refusal read in the window, before the page's own cut of the latest ones. */
   total: number;
-  /** True when the read hit the row ceiling, so the counts are a floor rather than the whole window. */
+  /** Always false now: the window is read to its last row. Kept so the page's own check still has its field. */
   truncated: boolean;
   reps: RepRefusalRow[];
   /** Reps with at least one customer still blocked. */
@@ -182,16 +180,26 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   // `distance_meters` is asked for EVERYONE: on a visit refused for being logged away from the customer's
   // validated photo (owner, 2026-10-20) the metres ARE the refusal, and both readers act on them.
   const columns = `id, subject_kind, reason, blocked_permission, rep_hr_id, customer_id, refused_at, accuracy_meters, photo_accuracy_meters, max_accuracy_meters, distance_meters, photo_path${mock ? ", device_mocked" : ""}`;
-  const { data, error } = await supabase
-    .from("phoenix_crm_refused_readings")
-    .select(columns)
-    .gte("refused_at", since)
-    // The Super Admin's own trial entries never belong on the SFE's worklist, nor on his own.
-    .eq("is_test", false)
-    .order("refused_at", { ascending: false })
-    .limit(ROW_LIMIT);
-  throwIfError(error);
-  const rows = (data ?? []) as unknown as Row[];
+  // Paged to the last row (a window of two weeks can hold more than a thousand), newest first with the id as
+  // the tie-break. A refusal written while the walk runs shifts a seam, so a repeated row is dropped by its id.
+  const read = await fetchAllRows<Row>(
+    () =>
+      supabase
+        .from("phoenix_crm_refused_readings")
+        .select(columns)
+        .gte("refused_at", since)
+        // The Super Admin's own trial entries never belong on the SFE's worklist, nor on his own.
+        .eq("is_test", false)
+        .order("refused_at", { ascending: false }),
+    "id",
+  );
+  const seenIds = new Set<string>();
+  const rows = read.filter((row) => {
+    const id = String(row.id);
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
 
   const attempts: RefusedAttempt[] = rows.map((row) => ({
     id: String(row.id),
@@ -247,7 +255,7 @@ export async function loadRefusedReadingsBoard(viewer: PhoenixCrmViewer, now: Da
   return {
     windowDays: REFUSED_READINGS_WINDOW_DAYS,
     total: attempts.length,
-    truncated: rows.length >= ROW_LIMIT,
+    truncated: false,
     reps,
     stuckReps: reps.filter((entry) => entry.targets - entry.gotThrough > 0).length,
     latest: attempts.slice(0, LATEST_LIMIT).map((attempt) => ({

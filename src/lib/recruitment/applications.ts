@@ -12,6 +12,7 @@ import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { createInitialProbationRecord } from "@/lib/probation/provisioning";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   MANAGER_NOTIFIED_ACTION,
   notifyHiringManagerOfCandidate,
@@ -191,21 +192,26 @@ export async function listSeatHireApplications(
   access: AccessContext,
 ): Promise<ApplicationWithContext[]> {
   const supabase = recruitmentDb();
-  const [{ data, error }, requisitions] = await Promise.all([
-    supabase
-      .from("ats_applications")
-      .select("*")
-      .in("stage", [...SEAT_HIRE_STAGES])
-      // Already an employee: the recruitment hub stops offering one at this point and so must
-      // the picker, or the same person is hired twice into two seats.
-      .is("converted_employee_hr_id", null)
-      .order("created_at", { ascending: false }),
+  // Every matching application, paged to a short page by the unique `id`: a picker read from the
+  // first response's worth would stop offering a hireable person with no sign that one is missing.
+  const [data, requisitions] = await Promise.all([
+    fetchAllRows<ApplicationDbRow>(
+      () =>
+        supabase
+          .from("ats_applications")
+          .select("*")
+          .in("stage", [...SEAT_HIRE_STAGES])
+          // Already an employee: the recruitment hub stops offering one at this point and so must
+          // the picker, or the same person is hired twice into two seats.
+          .is("converted_employee_hr_id", null)
+          .order("created_at", { ascending: false }),
+      "id",
+    ),
     listRequisitions(access),
   ]);
-  if (error) throw error;
 
   const requisitionsById = new Map(requisitions.map((requisition) => [requisition.id, requisition]));
-  const visible = ((data ?? []) as ApplicationDbRow[])
+  const visible = data
     .map(mapApplication)
     .filter((application) => canSeeApplication(access, application, requisitionsById));
 
@@ -229,14 +235,18 @@ export async function listSeatHireApplications(
 
 export async function listApplications(access: AccessContext): Promise<ApplicationWithContext[]> {
   const supabase = recruitmentDb();
-  const [{ data, error }, requisitions] = await Promise.all([
-    supabase.from("ats_applications").select("*").order("created_at", { ascending: false }),
+  // Every application, paged to a short page by the unique `id`: this is the company-wide list, and
+  // the scope check below can only hide rows it was given, never ones a response cap dropped.
+  const [data, requisitions] = await Promise.all([
+    fetchAllRows<ApplicationDbRow>(
+      () => supabase.from("ats_applications").select("*").order("created_at", { ascending: false }),
+      "id",
+    ),
     listRequisitions(access),
   ]);
-  if (error) throw error;
 
   const requisitionsById = new Map(requisitions.map((requisition) => [requisition.id, requisition]));
-  const applications = ((data ?? []) as ApplicationDbRow[]).map(mapApplication);
+  const applications = data.map(mapApplication);
   const visible = applications.filter((application) => canSeeApplication(access, application, requisitionsById));
 
   const candidateIds = Array.from(new Set(visible.map((application) => application.candidateId)));

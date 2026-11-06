@@ -148,6 +148,13 @@ function chunk<T>(items: T[], size = 100): T[][] {
   return out;
 }
 
+/** The words of a failed page read: `fetchAllRows` throws the database's own error object. */
+function pagerErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  const message = (error as { message?: unknown } | null)?.message;
+  return typeof message === "string" ? message : String(error);
+}
+
 // A manager's sales = the roll-up of their whole team (subject + all descendants).
 // For a rep, teamHrIds is just [self], so this is their own sales.
 //
@@ -546,13 +553,22 @@ async function getEmployeeCoaching(
   const reportIds = rows.map((r) => r.id);
   const items: CoachingItemRow[] = [];
   for (const batch of chunk(reportIds)) {
-    const { data: itemData, error: itemError } = await supabase
-      .from("coaching_score_items")
-      .select("report_id,parameter_category,score_item_key,score_item_label,score")
-      .in("report_id", batch)
-      .limit(5000);
-    if (itemError) throw new Error(`Employee 360 coaching items: ${itemError.message}`);
-    items.push(...((itemData ?? []) as CoachingItemRow[]));
+    // A hundred reports hold about two thousand scored items, so one request cannot be trusted to
+    // return them all: walked page by page, never cut at a fixed number.
+    try {
+      items.push(
+        ...(await fetchAllRows<CoachingItemRow>(
+          () =>
+            supabase
+              .from("coaching_score_items")
+              .select("report_id,parameter_category,score_item_key,score_item_label,score")
+              .in("report_id", batch),
+          "id",
+        )),
+      );
+    } catch (error) {
+      throw new Error(`Employee 360 coaching items: ${pagerErrorMessage(error)}`);
+    }
   }
 
   const compMap = new Map<string, { label: string; category: string; sum: number; count: number }>();
@@ -1013,26 +1029,34 @@ async function readEmployeeExpenses(hrId: string, window: Employee360Window): Pr
   const supabase = getSupabaseAdmin();
   const keys = hrIdLookupKeys(hrId);
 
-  const [payrollRes, outstationRes] = await Promise.all([
-    supabase
-      .from("outstation_expenses")
-      .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,km,status,hr_approved,am_workload,pharmacy_workload,pm_workload")
-      .in("hr_id", keys)
-      .gte("expense_date", window.from)
-      .lte("expense_date", window.to)
-      .limit(5000),
-    supabase
-      .from("outstation_expense_requests")
-      .select("status,claimed_total_amount,expected_total_amount,eligibility_status,territory_validation_status")
-      .in("employee_hr_id", keys)
-      .gte("trip_start_date", window.from)
-      .lte("trip_start_date", `${window.to} 23:59:59+00`)
-      .limit(2000),
+  // Both are money the profile prints (what the trips pay, what was claimed), so neither read may stop
+  // at a fixed number of rows: each is walked page by page and a failed page is the read's failure.
+  const [rows, outRows] = await Promise.all([
+    fetchAllRows<PayrollExpenseRow>(
+      () =>
+        supabase
+          .from("outstation_expenses")
+          .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,km,status,hr_approved,am_workload,pharmacy_workload,pm_workload")
+          .in("hr_id", keys)
+          .gte("expense_date", window.from)
+          .lte("expense_date", window.to),
+      "id",
+    ).catch((error: unknown): never => {
+      throw new Error(`Employee 360 expenses: ${pagerErrorMessage(error)}`);
+    }),
+    fetchAllRows<OutstationRow>(
+      () =>
+        supabase
+          .from("outstation_expense_requests")
+          .select("status,claimed_total_amount,expected_total_amount,eligibility_status,territory_validation_status")
+          .in("employee_hr_id", keys)
+          .gte("trip_start_date", window.from)
+          .lte("trip_start_date", `${window.to} 23:59:59+00`),
+      "id",
+    ).catch((error: unknown): never => {
+      throw new Error(`Employee 360 outstation: ${pagerErrorMessage(error)}`);
+    }),
   ]);
-  if (payrollRes.error) throw new Error(`Employee 360 expenses: ${payrollRes.error.message}`);
-  if (outstationRes.error) throw new Error(`Employee 360 outstation: ${outstationRes.error.message}`);
-  const rows = (payrollRes.data ?? []) as PayrollExpenseRow[];
-  const outRows = (outstationRes.data ?? []) as OutstationRow[];
 
   const payroll = summarizePayrollExpenseRows(rows);
   const recordedUntil = payroll.hasData ? expenseRecordedUntilNote(payroll.monthly, window.to) : null;

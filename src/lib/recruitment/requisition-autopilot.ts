@@ -51,6 +51,7 @@ import { textOrNull, numberOrNull, recruitmentDb } from "@/lib/recruitment/db";
 import { requisitionOpenBlock } from "@/lib/recruitment/requisition-open-gate";
 import { createRequisition, runRequisitionWorkflow } from "@/lib/recruitment/requisitions";
 import { getVacancyReport } from "@/lib/reports/vacancies";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Statuses in which a requisition is still recruiting, or about to — a seat holding one is covered. */
@@ -261,17 +262,19 @@ async function talentAcquisitionOwnerHrId(directory: EmployeeDirectoryData): Pro
 export async function runRequisitionAutopilot(options: { dryRun?: boolean } = {}): Promise<AutopilotResult> {
   const dryRun = Boolean(options.dryRun);
   const supabase = recruitmentDb();
-  const [directory, report, requisitionRead] = await Promise.all([
+  const [directory, report, requisitionRows] = await Promise.all([
     getEmployeeDirectory(),
     getVacancyReport(),
-    supabase.from("ats_requisitions").select("id,requisition_code,status,vacancy_id,job_title,notes"),
+    // EVERY requisition, paged to a short page by the unique `id`: a requisition a response cap hid
+    // would leave its seat looking uncovered, and the run would open a second one for it.
+    fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("ats_requisitions").select("id,requisition_code,status,vacancy_id,job_title,notes"),
+      "id",
+    ),
   ]);
-  if (requisitionRead.error) throw requisitionRead.error;
   const ownerHrId = await talentAcquisitionOwnerHrId(directory);
 
-  const requisitions: AutopilotRequisition[] = (
-    (requisitionRead.data ?? []) as Array<Record<string, unknown>>
-  ).map((row) => ({
+  const requisitions: AutopilotRequisition[] = requisitionRows.map((row) => ({
     code: textOrNull(row.requisition_code) ?? String(row.id),
     id: String(row.id),
     jobTitle: textOrNull(row.job_title) ?? "",

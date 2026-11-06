@@ -325,13 +325,15 @@ function classifyEvent(row: NotificationEventRow, employeeNames: Map<string, str
   return findings;
 }
 
-async function selectAll<T>(supabase: SupabaseClient, table: string, columns: string) {
+// `orderColumn` must be the table's unique key: an unordered offset walk over 100,000+ rows skips and repeats rows.
+async function selectAll<T>(supabase: SupabaseClient, table: string, columns: string, orderColumn: string) {
   const rows: T[] = [];
   for (let from = 0; ; from += pageSize) {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from(table)
       .select(columns)
+      .order(orderColumn, { ascending: true })
       .range(from, to);
     if (error) throw new Error(`${table} read failed: ${error.message}`);
     rows.push(...((data ?? []) as T[]));
@@ -366,10 +368,10 @@ async function main() {
   });
 
   const [employees, outboxRows, deliveryRows, eventRows] = await Promise.all([
-    selectAll<EmployeeRow>(supabase, "employees", "hr_id,full_name,work_email"),
-    selectAll<NotificationOutboxRow>(supabase, "notification_outbox", "id,status,attempts,max_attempts,next_attempt_at,payload,created_at,updated_at,sent_at"),
-    selectAll<NotificationDeliveryRow>(supabase, "notification_deliveries", "id,channel,status,recipient_hr_id,recipient_user_id,metadata,last_error,created_at,updated_at,sent_at"),
-    selectAll<NotificationEventRow>(supabase, "notification_events", "id,module,event_type,employee_hr_id,recipients,subject,status,metadata,created_at,updated_at"),
+    selectAll<EmployeeRow>(supabase, "employees", "hr_id,full_name,work_email", "hr_id"),
+    selectAll<NotificationOutboxRow>(supabase, "notification_outbox", "id,status,attempts,max_attempts,next_attempt_at,payload,created_at,updated_at,sent_at", "id"),
+    selectAll<NotificationDeliveryRow>(supabase, "notification_deliveries", "id,channel,status,recipient_hr_id,recipient_user_id,metadata,last_error,created_at,updated_at,sent_at", "id"),
+    selectAll<NotificationEventRow>(supabase, "notification_events", "id,module,event_type,employee_hr_id,recipients,subject,status,metadata,created_at,updated_at", "id"),
   ]);
 
   const employeeNames = new Map(

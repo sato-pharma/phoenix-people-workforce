@@ -96,7 +96,7 @@ export async function buildPortalNsmDsmExport(
   if (requestedMonth && CYCLE_MONTH.test(requestedMonth.trim())) {
     cycleMonth = requestedMonth.trim();
   } else {
-    const validated = (await listWeeklyBatches(500)).filter((batch) => batch.status === "validated");
+    const validated = (await listWeeklyBatches()).filter((batch) => batch.status === "validated");
     cycleMonth = latestUploadedPeriod(validated)?.cycleMonth ?? null;
   }
 

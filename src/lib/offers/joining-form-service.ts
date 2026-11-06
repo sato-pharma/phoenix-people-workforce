@@ -45,6 +45,7 @@ import type { OfferRecord, OfferVacancyOption } from "@/lib/offers/types";
 import { findOpenOfferVacancy } from "@/lib/offers/vacancies";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { deriveSalaryFromNet } from "@/lib/payroll/salary-autofill";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { todayInCairo } from "@/lib/date-only";
@@ -175,15 +176,24 @@ async function loadSeat(vacancy: OfferVacancyOption | null): Promise<JoiningForm
  */
 async function residenceAreaOptions(areaCode: string | null): Promise<string[]> {
   if (!areaCode) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from("source_of_sales_bricks")
-    .select("brick_name")
-    .eq("area_code", areaCode)
-    .eq("active", true)
-    .limit(500);
-  if (error) return [];
+  // Every active brick of the area, paged (brick_id is the primary key): a fixed row count would
+  // leave neighbourhoods out of the list he picks his residence from, with nothing to say so.
+  let bricks: Array<{ brick_name: string | null }>;
+  try {
+    bricks = await fetchAllRows<{ brick_name: string | null }>(
+      () =>
+        getSupabaseAdmin()
+          .from("source_of_sales_bricks")
+          .select("brick_name")
+          .eq("area_code", areaCode)
+          .eq("active", true),
+      "brick_id",
+    );
+  } catch {
+    return [];
+  }
   const names = new Set<string>();
-  for (const row of (data ?? []) as Array<{ brick_name: string | null }>) {
+  for (const row of bricks) {
     const name = String(row.brick_name ?? "").replace(/\s+/g, " ").trim();
     if (name) names.add(name);
   }
@@ -198,12 +208,22 @@ async function takenCompanyAddresses(): Promise<Set<string>> {
     const address = String(row.workEmail ?? "").trim().toLowerCase();
     if (address) taken.add(address);
   }
-  const { data } = await getSupabaseAdmin()
-    .from("new_hire_mailbox_tasks")
-    .select("email_address,status")
-    .not("email_address", "is", null)
-    .limit(2000);
-  for (const task of (data ?? []) as Array<{ email_address: string | null; status: string | null }>) {
+  // Every queued address, paged (id is the tiebreak): a fixed row count would let a generated
+  // address collide with one past the cut. A failed read still adds nothing, as it always did.
+  let tasks: Array<{ email_address: string | null; status: string | null }> = [];
+  try {
+    tasks = await fetchAllRows<{ email_address: string | null; status: string | null }>(
+      () =>
+        getSupabaseAdmin()
+          .from("new_hire_mailbox_tasks")
+          .select("email_address,status")
+          .not("email_address", "is", null),
+      "id",
+    );
+  } catch {
+    tasks = [];
+  }
+  for (const task of tasks) {
     if (task.status !== "not_needed" && task.email_address) taken.add(task.email_address.trim().toLowerCase());
   }
   return taken;
@@ -412,9 +432,18 @@ export async function findExistingHire(
     return { kind: "found", reason: "the national ID or mobile typed is on a current Employee Master record." };
   }
   const since = offer.sentAt ?? new Date(Date.now() - 120 * 86_400_000).toISOString();
-  const recent = await db.from("employees").select("hr_id,full_name").gte("created_at", since).limit(500);
-  if (recent.error) return { kind: "unknown" };
-  for (const row of (recent.data ?? []) as Array<{ full_name: string | null }>) {
+  // Every record made since the offer went out, paged (hr_id is the tiebreak): a fixed row count
+  // here could cut off the very record being looked for, and a duplicate employee is paid.
+  let recent: Array<{ full_name: string | null }>;
+  try {
+    recent = await fetchAllRows<{ full_name: string | null }>(
+      () => db.from("employees").select("hr_id,full_name").gte("created_at", since),
+      "hr_id",
+    );
+  } catch {
+    return { kind: "unknown" };
+  }
+  for (const row of recent) {
     if (sameJoinerName(row.full_name, offer.candidateName) || sameJoinerName(row.full_name, answers.fullName)) {
       return { kind: "found", reason: "a record with this candidate's name was created after the offer was sent." };
     }

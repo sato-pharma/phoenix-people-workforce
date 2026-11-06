@@ -2,6 +2,7 @@ import { isDevelopment } from "@/lib/env";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { rowSecurityClientFor } from "@/lib/supabase/rls-server";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
@@ -245,10 +246,19 @@ async function collectPayrollBatchIdsForColumnBatch(
   // one carrying `,` or `)` would otherwise close its own arm and change what the rest of the OR
   // means (AGENTS.md MR-B04).
   const orClause = targetHrIds.map((id) => quotedOrClause(column, "ilike", id)).join(",");
-  const { data, error } = await supabase
-    .from("salary_records")
-    .select("batch_id")
-    .or(orClause);
+  // EVERY matching record, page by page. One row per person per batch means a wide scope across the
+  // months of payroll history outgrows a single response, and a batch missing from this set is a
+  // batch the viewer is never shown. A failed page still reads as before (schema missing = empty).
+  let data: Array<Record<string, unknown>> = [];
+  let error: unknown = null;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("salary_records").select("batch_id").or(orClause),
+      "id",
+    );
+  } catch (caught) {
+    error = caught;
+  }
 
   const schemaMissing = Boolean(error && isPayrollSchemaMissing(error));
   const columnMissing = false;
@@ -258,7 +268,7 @@ async function collectPayrollBatchIdsForColumnBatch(
   }
 
   const batchIds = new Set<string>();
-  (data ?? []).forEach((row) => {
+  data.forEach((row) => {
     const batchId = (row as Record<string, unknown>).batch_id;
     if (typeof batchId === "string") {
       batchIds.add(batchId);

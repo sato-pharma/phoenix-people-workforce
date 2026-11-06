@@ -47,6 +47,7 @@
 // viewer shape can be asserted without a database. `loadReviewPortalScope` is the thin loader the
 // page calls.
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { ReviewLine } from "./canonical";
 import type { AreaSummary, DmSummary, ReviewDataset } from "./types";
@@ -323,14 +324,26 @@ export async function loadReviewOrgSnapshot(options?: {
   const db = getSupabaseAdmin();
 
   const loadSeats = async (): Promise<OrgSeat[]> => {
-    const seatRes = await db
-      // The sales tree: a district a Regional Manager holds himself is one of his districts.
-      .from("au_v_org_tree_sales")
-      .select("seat_tier,seat_id,line_code,occupant_hr_id,path")
-      .in("seat_tier", [...DISTRICT_SEAT_TIERS, "RSM"]);
-    if (seatRes.error) throw new Error(`Business Review: could not read the organogram — ${seatRes.error.message}`);
+    // Paged: every seat decides who may see which district, and a cut list would hide one silently.
+    let seatRows: Array<{ seat_tier: unknown; seat_id: unknown; line_code: unknown; occupant_hr_id: string | null; path: unknown }>;
+    try {
+      seatRows = await fetchAllRows(
+        () =>
+          db
+            // The sales tree: a district a Regional Manager holds himself is one of his districts.
+            .from("au_v_org_tree_sales")
+            .select("seat_tier,seat_id,line_code,occupant_hr_id,path")
+            .in("seat_tier", [...DISTRICT_SEAT_TIERS, "RSM"])
+            .order("seat_id", { ascending: true }),
+        "occupant_hr_id",
+      );
+    } catch (error) {
+      throw new Error(
+        `Business Review: could not read the organogram — ${(error as { message?: string } | null)?.message ?? "unknown error"}`,
+      );
+    }
 
-    return (seatRes.data ?? []).map((r) => ({
+    return seatRows.map((r) => ({
       seatTier: r.seat_tier as DistrictSeatTier | "RSM",
       seatId: String(r.seat_id),
       lineCode: String(r.line_code ?? ""),

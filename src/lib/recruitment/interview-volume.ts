@@ -34,20 +34,17 @@
  * the "Hired" tile carried until the owner asked how it could read what it read (see
  * `hiredWindowCaption` in src/lib/hr/command-center.ts). The window is named on the figure.
  *
- * READ, NOT COUNTED, because a distinct count is not something PostgREST will do for us — and a
- * read has a ceiling, so `truncated` says when the figures became a floor rather than a total
- * rather than letting them silently stop growing. At 63 rows in the first three weeks the cap is
- * roughly a decade away; it is here because a select that silently stops at 1000 is this repo's
- * most expensive recurring trap, not because this table is near it.
+ * READ, NOT COUNTED, because a distinct count is not something PostgREST will do for us. The read
+ * pages to the end, so the figures are a total and never a floor: a fixed row ceiling would have let
+ * them stop growing without a sound (nothing on the page ever read the old `truncated` flag), and a
+ * select that silently stops at a fixed number is this repo's most expensive recurring trap.
  */
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The Interview Calendar's bookings. Same table name as src/lib/recruitment/interview-calendar.ts. */
 const BOOKINGS = "ats_interview_bookings";
-
-/** The read ceiling. See the header — `truncated` reports it rather than hiding it. */
-const READ_CAP = 5000;
 
 /** Candidate ids per request. An id is a uuid, so a batch of 100 keeps the URL well inside the limit. */
 const CANDIDATE_BATCH = 100;
@@ -64,7 +61,7 @@ export type InterviewVolume = {
   offered: number | null;
   /** DISTINCT people interviewed in the window. The interview-to-offer denominator. */
   people: number;
-  /** True when the read hit `READ_CAP`: both figures are then a floor, not a total. */
+  /** Always false: the read pages to the end, so both figures are a total. Kept for the callers that carry it. */
   truncated: boolean;
 };
 
@@ -190,18 +187,18 @@ export async function countInterviewVolume(
   const fromIso = from.toISOString();
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(BOOKINGS)
-    .select("candidate_id,external_email,external_name,starts_at")
-    .gte("starts_at", fromIso)
-    // An interview booked for later has not happened yet. Counting its person as "interviewed" put a
-    // name in the bottom half that no letter could honestly follow.
-    .lte("starts_at", now.toISOString())
-    .order("starts_at", { ascending: true })
-    .range(0, READ_CAP - 1);
-  if (error) throw error;
-
-  const rows = (data ?? []) as unknown as InterviewVolumeRow[];
+  const rows = await fetchAllRows<InterviewVolumeRow>(
+    () =>
+      supabase
+        .from(BOOKINGS)
+        .select("candidate_id,external_email,external_name,starts_at")
+        .gte("starts_at", fromIso)
+        // An interview booked for later has not happened yet. Counting its person as "interviewed" put a
+        // name in the bottom half that no letter could honestly follow.
+        .lte("starts_at", now.toISOString())
+        .order("starts_at", { ascending: true }),
+    "id",
+  );
 
   const candidates = letters ? await readInterviewedCandidates(rows) : null;
 
@@ -210,6 +207,6 @@ export async function countInterviewVolume(
     interviews: rows.length,
     offered: letters && candidates ? countOfferedPeople(rows, candidates, letters) : null,
     people: countDistinctPeople(rows),
-    truncated: rows.length >= READ_CAP,
+    truncated: false,
   };
 }

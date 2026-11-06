@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { POSTGREST_ROW_CEILING } from "../supabase/row-cap-watch";
 import type { RecordedRead } from "./read-recorder";
 
 /**
@@ -75,8 +76,8 @@ export type ReadSummary = {
   relations: string[];
 };
 
-/** Supabase's default `db-max-rows`. A read at exactly this size with no limit may have been cut. */
-export const DEFAULT_MAX_ROWS = 1000;
+/** Supabase's default `db-max-rows`. A read at exactly this size with no limit may have been cut. This is a detector, not a read. */
+export const DEFAULT_MAX_ROWS = POSTGREST_ROW_CEILING;
 
 export function summarizeReads(reads: readonly RecordedRead[], maxRows = DEFAULT_MAX_ROWS): ReadSummary {
   const last = new Map<string, RecordedRead>();

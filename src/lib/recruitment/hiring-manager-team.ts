@@ -20,6 +20,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import {
@@ -56,18 +57,19 @@ export type TeamManagerWithCounts = TeamManager & {
  * that chain would break it and silently empty the picker below them. Filtering is a display
  * decision and belongs on the far side of the walk, never inside it.
  *
- * 179 rows in production on 2026-08-30, so this is one unpaged read on purpose — well under the
- * 1,000-row ceiling a PostgREST select stops at without saying so.
+ * Paged to the end, because a fixed row ceiling would cut the roster short without saying so and a
+ * missing link breaks the walk (179 rows in production on 2026-08-30).
  */
 async function loadTeamRoster(): Promise<TeamRosterEntry[]> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,job_title,manager_hr_id,pending_manager_replacement_for_hr_id,employment_status")
-    .order("hr_id", { ascending: true })
-    .limit(5000);
-  if (error) throw error;
-  return ((data ?? []) as Array<Record<string, unknown>>)
+  const data = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("employees")
+        .select("hr_id,full_name,job_title,manager_hr_id,pending_manager_replacement_for_hr_id,employment_status"),
+    "hr_id",
+  );
+  return data
     .map((row) => ({
       employmentStatus: row.employment_status === null ? null : String(row.employment_status ?? ""),
       fullName: row.full_name === null ? null : String(row.full_name ?? ""),
@@ -104,18 +106,27 @@ async function countPushesByManager(managerHrIds: readonly string[]): Promise<Ma
   // Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns zero rows and no error.
   for (let index = 0; index < keys.length; index += 50) {
     const chunk = keys.slice(index, index + 50);
-    const { data, error } = await supabase
-      .from("ats_candidates")
-      .select("manager_notified_hr_id,status,manager_notified_at")
-      .in("manager_notified_hr_id", chunk);
-    if (error) {
+    let data: Array<Record<string, unknown>>;
+    try {
+      // Every CV stamped for these managers, paged to a short page by the unique `id`: the picker's
+      // number must equal the list behind it, and a count read from the first response's worth of a
+      // growing table would drift below it.
+      data = await fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("ats_candidates")
+            .select("manager_notified_hr_id,status,manager_notified_at")
+            .in("manager_notified_hr_id", chunk),
+        "id",
+      );
+    } catch (error) {
       // 42703 = the column predates migration 20260815180000_candidate_manager_push. Absent counts
       // are a worse answer than zero counts, but they are not this caller's fault and must not take
       // the whole picker down with them.
       if ((error as { code?: string }).code === "42703") return counts;
       throw error;
     }
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of data) {
       const key = canonicalHrIdKey(String(row.manager_notified_hr_id ?? ""));
       if (!key) continue;
       // The picker's number must be the number of CVs the list behind it will show, and that list

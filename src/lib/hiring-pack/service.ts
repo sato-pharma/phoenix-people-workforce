@@ -20,6 +20,7 @@ import {
 import { composeResidenceFromHiringAddress } from "@/lib/hiring-pack/residence-address";
 import { canonicalHrIdForDisplay, hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
 import { loadReferenceLines } from "@/lib/reference/reference-lists";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
 import { isRenewalObjectiveReasonCode } from "@/lib/hiring-pack/renewal-reasons";
@@ -907,6 +908,17 @@ export function mapEmployeeFacts(
   };
 }
 
+type CandidateDbRow = {
+  hr_id: string;
+  full_name: string | null;
+  nickname: string | null;
+  name_ar: string | null;
+  job_title: string | null;
+  hire_date: string | null;
+  employment_status: string | null;
+  last_working_date: string | null;
+};
+
 /**
  * The roster the fill screen picks from — current staff, newest hires first, then the people who
  * have left, most recent departure first.
@@ -930,20 +942,29 @@ export function mapEmployeeFacts(
  * Nulls are kept: a legacy row with no status is not evidence that someone left.
  */
 export async function listHiringPackCandidates(): Promise<HiringPackCandidate[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    .select(
-      "hr_id, full_name, nickname, name_ar, job_title, hire_date, employment_status, last_working_date",
-    )
-    .or(
-      `employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST},employment_status.in.${DEPARTED_EMPLOYMENT_STATUSES_IN_LIST}`,
-    )
-    .order("hire_date", { ascending: false, nullsFirst: false })
-    .limit(2000);
+  // Read in full, page by page (hr_id is the tiebreak under the hire-date order): a fixed row count
+  // here would drop the OLDEST hires first, and a leaver's Form 6 is filed for exactly those people.
+  const admin = getSupabaseAdmin();
+  let data: CandidateDbRow[];
+  try {
+    data = await fetchAllRows<CandidateDbRow>(
+      () =>
+        admin
+          .from("employees")
+          .select(
+            "hr_id, full_name, nickname, name_ar, job_title, hire_date, employment_status, last_working_date",
+          )
+          .or(
+            `employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST},employment_status.in.${DEPARTED_EMPLOYMENT_STATUSES_IN_LIST}`,
+          )
+          .order("hire_date", { ascending: false, nullsFirst: false }),
+      "hr_id",
+    );
+  } catch (error) {
+    throw new Error((error as { message?: string } | null)?.message ?? String(error));
+  }
 
-  if (error) throw new Error(error.message);
-
-  const candidates = (data ?? []).map((row) => ({
+  const candidates = data.map((row) => ({
     hrId: row.hr_id,
     fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id),
     nameAr: cleanText(row.name_ar),
@@ -1001,12 +1022,12 @@ async function loadSuggestedJobTitleAr(jobTitle: string | null): Promise<string 
 
   try {
     const admin = getSupabaseAdmin();
-    const { data: peers, error: peersError } = await admin
-      .from("employees")
-      .select("hr_id")
-      .ilike("job_title", trimmed)
-      .limit(200);
-    if (peersError || !peers?.length) return null;
+    // Every peer with this title, paged (a fixed count would leave later hires out of the match).
+    const peers = await fetchAllRows<{ hr_id: string | null }>(
+      () => admin.from("employees").select("hr_id").ilike("job_title", trimmed),
+      "hr_id",
+    );
+    if (!peers.length) return null;
 
     const hrIds = peers.map((row) => row.hr_id).filter((id): id is string => Boolean(id));
     if (!hrIds.length) return null;

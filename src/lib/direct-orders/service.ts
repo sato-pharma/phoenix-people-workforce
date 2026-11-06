@@ -634,10 +634,21 @@ async function loadDirectOrderItemsForRequests(requestIds: readonly string[]): P
   const byRequest = new Map<string, DirectOrderRequestItem[]>();
   if (requestIds.length === 0) return byRequest;
   const supabase = getSupabaseAdmin();
-  const rows = await fetchAllRows<Record<string, unknown>>(
-    () => supabase.from("direct_order_request_items").select("*").in("request_id", [...requestIds]),
-    "id",
-  );
+  // Batches of 100 ids, each paged: PostgREST folds every .in() value into the request URL, and
+  // about four hundred request ids in one call overflow it and read back EMPTY with no error, which
+  // would price every order on the screen as having no lines. Nine screens call this with the whole
+  // open set or every request.
+  const uniqueRequestIds = Array.from(new Set(requestIds));
+  const rows: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < uniqueRequestIds.length; i += 100) {
+    const batch = uniqueRequestIds.slice(i, i + 100);
+    rows.push(
+      ...(await fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("direct_order_request_items").select("*").in("request_id", batch),
+        "id",
+      )),
+    );
+  }
   for (const row of rows) {
     const key = String(row.request_id ?? "");
     const bucket = byRequest.get(key) ?? [];
@@ -7260,17 +7271,27 @@ export async function listDirectOrderAwaitingFinanceMonth(
   if (!canSetDirectOrderSalesMonth(access)) return [];
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("direct_order_requests")
-    .select("*")
-    .eq("status", "approved")
-    .is("sales_month", null)
-    // Oldest first: the money that has been waiting longest is the money to book next.
-    .order("decided_at", { ascending: true, nullsFirst: false })
-    .limit(options.limit ?? 200);
-  if (error) throw error;
+  // The queue is EVERY approved order still waiting for a month, read page by page: an order cut off by
+  // a row ceiling is money nobody is shown to book. A caller that passes a `limit` asks for just the
+  // oldest that many; none does today.
+  const buildQuery = () =>
+    supabase
+      .from("direct_order_requests")
+      .select("*")
+      .eq("status", "approved")
+      .is("sales_month", null)
+      // Oldest first: the money that has been waiting longest is the money to book next.
+      .order("decided_at", { ascending: true, nullsFirst: false });
+  let rows: Array<Record<string, unknown>>;
+  if (options.limit === undefined) {
+    rows = await fetchAllRows<Record<string, unknown>>(buildQuery, "id");
+  } else {
+    const { data, error } = await buildQuery().limit(options.limit);
+    if (error) throw error;
+    rows = (data ?? []) as Array<Record<string, unknown>>;
+  }
 
-  return decorateDirectOrderPage(((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow));
+  return decorateDirectOrderPage(rows.map(mapRequestRow));
 }
 
 export function resolveDirectOrderReportScope(access: AccessContext): DirectOrderReportScope {
@@ -7346,22 +7367,32 @@ async function loadDecidingActors(requestIds: string[]): Promise<Map<string, str
   if (requestIds.length === 0) return out;
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("direct_order_events")
-    .select("request_id, actor_hr_id, event_type, created_at")
-    .in("request_id", requestIds)
-    .in("event_type", ["approve", "rejected", "held", "expired", "reversed", "return"])
-    .order("created_at", { ascending: true });
-  if (error) throw error;
+  // Batches of 100 requests, each read to the last row. A PostgREST `.in()` that carries every request
+  // of the report comes back EMPTY with no error once its URL grows, and one read of this log is cut
+  // at 1,000 rows by the API; either would print "(system)" against decisions a person made.
+  const uniqueIds = Array.from(new Set(requestIds));
+  for (let index = 0; index < uniqueIds.length; index += 100) {
+    const batch = uniqueIds.slice(index, index + 100);
+    const data = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("direct_order_events")
+          .select("request_id, actor_hr_id, event_type, created_at")
+          .in("request_id", batch)
+          .in("event_type", ["approve", "rejected", "held", "expired", "reversed", "return"])
+          .order("created_at", { ascending: true }),
+      "id",
+    );
 
-  // Ascending, so the last write per request wins and the map ends up holding the MOST RECENT
-  // decision. A null actor is stored as null deliberately rather than skipped — "decided by nobody"
-  // is a fact, not a missing value, and the report renders it as "(system)".
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const id = String(row.request_id ?? "");
-    if (!id) continue;
-    const actor = row.actor_hr_id ? String(row.actor_hr_id) : null;
-    out.set(id, actor);
+    // Ascending, so the last write per request wins and the map ends up holding the MOST RECENT
+    // decision. A null actor is stored as null deliberately rather than skipped — "decided by nobody"
+    // is a fact, not a missing value, and the report renders it as "(system)".
+    for (const row of data) {
+      const id = String(row.request_id ?? "");
+      if (!id) continue;
+      const actor = row.actor_hr_id ? String(row.actor_hr_id) : null;
+      out.set(id, actor);
+    }
   }
   return out;
 }
@@ -7372,11 +7403,13 @@ export async function getDirectOrderReport(
 ): Promise<DirectOrderReportRow[]> {
   await assertPermission(access, "direct_orders", "read");
   const supabase = getSupabaseAdmin();
-  let query = supabase.from("direct_order_requests").select("*").order("created_at", { ascending: false });
-  if (options?.requestId) query = query.eq("id", options.requestId);
-  const { data, error } = await query;
-  if (error) throw error;
-  let requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  // Every request, page by page: this is the report the owner's Google Sheet reads every minute and
+  // Finance books from, so a row past a 1,000-row cut would be money missing from the sheet.
+  const reportRows = await fetchAllRows<Record<string, unknown>>(() => {
+    const query = supabase.from("direct_order_requests").select("*").order("created_at", { ascending: false });
+    return options?.requestId ? query.eq("id", options.requestId) : query;
+  }, "id");
+  let requests = reportRows.map(mapRequestRow);
 
   const scope = resolveDirectOrderReportScope(access);
   if (scope === "own") {
@@ -8279,17 +8312,18 @@ async function loadCleanupRequestSummaries(): Promise<DirectOrderCleanupRequestS
 
   // Decided rungs per request — the measure of how much human work a cancellation would discard.
   const stepCounts = new Map<string, number>();
-  const stepRows = await fetchAllRows<Record<string, unknown>>(
-    () =>
-      supabase
-        .from("direct_order_approval_steps")
-        .select("id, request_id, status")
-        .in(
-          "request_id",
-          requests.map((request) => request.id),
-        ),
-    "id",
-  );
+  // Batches of 100 ids, each paged: a long id list in one .in() overflows the request URL and reads
+  // back empty, which would read as "no human work to discard" and make a cancellation look free.
+  const stepRows: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < requests.length; i += 100) {
+    const batchIds = requests.slice(i, i + 100).map((request) => request.id);
+    stepRows.push(
+      ...(await fetchAllRows<Record<string, unknown>>(
+        () => supabase.from("direct_order_approval_steps").select("id, request_id, status").in("request_id", batchIds),
+        "id",
+      )),
+    );
+  }
   for (const row of stepRows) {
     if (String(row.status ?? "") !== "approved") continue;
     const key = String(row.request_id ?? "");

@@ -8,6 +8,7 @@ import {
   resolveEmployeeIdentityId,
 } from "@/lib/auth/permissions";
 import { cairoTodayIso } from "@/lib/crm/dates";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
@@ -113,13 +114,13 @@ const lineRoles = new Set<AccessContext["role"]>([
   "Product Manager",
   "Group Product Manager",
 ]);
-// These bound a COMPANY-WIDE read whose per-viewer scope (filterSummariesForAccess) is applied
-// afterwards, in memory. The window therefore truncates the wrong end: once the company's report
-// count exceeds it, a scoped viewer's own rows can fall outside the window and silently disappear —
-// the page looks empty rather than truncated. Production held 104 coaching_reports when this was
-// raised, so the old 500 was not yet biting; it is lifted to keep a wide margin. If this table ever
-// approaches the ceiling, the fix is to push the scope filter into the query (scope-then-page), not
-// to raise these again. Same defect class as MARKETING_WORKSPACE_SAFETY_LIMIT.
+// These bound ONLY a window a caller asked for by naming a `page` or a `limit` (see getCoachingReports,
+// which reads every report when neither is named). The read is COMPANY-WIDE and its per-viewer scope
+// (filterSummariesForAccess) is applied afterwards, in memory, so a window truncates the wrong end:
+// once the company's report count exceeds it, a scoped viewer's own rows can fall outside the window
+// and silently disappear — the page looks empty rather than truncated. If a caller needs windows over
+// a table this large, the fix is to push the scope filter into the query (scope-then-page), not to
+// raise these. Same defect class as MARKETING_WORKSPACE_SAFETY_LIMIT.
 const defaultCoachingReportLimit = 5000;
 const maxCoachingReportLimit = 10000;
 
@@ -902,34 +903,49 @@ async function filterSummariesForAccess(rows: CoachingReportSummaryRow[], access
 }
 
 export async function getCoachingReports(filters: CoachingReportFilters, access: AccessContext) {
-  let query = getSupabaseAdmin()
-    .from("coaching_reports_summary")
-    .select("*");
+  // A fresh query per call: the pager below builds one per page, and a builder that has already
+  // been ordered and ranged must not be reused.
+  const buildQuery = () => {
+    let query = getSupabaseAdmin()
+      .from("coaching_reports_summary")
+      .select("*");
 
-  if (filters.medicalRepHrId) query = query.eq("medical_rep_hr_id", String(filters.medicalRepHrId).toUpperCase());
-  if (filters.coachHrId) query = query.eq("coach_hr_id", String(filters.coachHrId).toUpperCase());
-  if (filters.lineId) query = query.eq("line_id", Number(filters.lineId));
-  if (filters.areaId) query = query.eq("area_id", Number(filters.areaId));
-  if (filters.teamId) query = query.eq("team_id", Number(filters.teamId));
-  if (filters.status) query = query.eq("status", String(filters.status));
-  if (filters.performanceZone) query = query.eq("performance_zone", String(filters.performanceZone));
-  if (filters.month) query = query.eq("coaching_month", Number(filters.month));
-  if (filters.quarter) query = query.eq("coaching_quarter", Number(filters.quarter));
-  if (filters.year) query = query.eq("coaching_year", Number(filters.year));
-  if (filters.dateFrom) query = query.gte("coaching_date", String(filters.dateFrom).slice(0, 10));
-  if (filters.dateTo) query = query.lte("coaching_date", String(filters.dateTo).slice(0, 10));
+    if (filters.medicalRepHrId) query = query.eq("medical_rep_hr_id", String(filters.medicalRepHrId).toUpperCase());
+    if (filters.coachHrId) query = query.eq("coach_hr_id", String(filters.coachHrId).toUpperCase());
+    if (filters.lineId) query = query.eq("line_id", Number(filters.lineId));
+    if (filters.areaId) query = query.eq("area_id", Number(filters.areaId));
+    if (filters.teamId) query = query.eq("team_id", Number(filters.teamId));
+    if (filters.status) query = query.eq("status", String(filters.status));
+    if (filters.performanceZone) query = query.eq("performance_zone", String(filters.performanceZone));
+    if (filters.month) query = query.eq("coaching_month", Number(filters.month));
+    if (filters.quarter) query = query.eq("coaching_quarter", Number(filters.quarter));
+    if (filters.year) query = query.eq("coaching_year", Number(filters.year));
+    if (filters.dateFrom) query = query.gte("coaching_date", String(filters.dateFrom).slice(0, 10));
+    if (filters.dateTo) query = query.lte("coaching_date", String(filters.dateTo).slice(0, 10));
 
-  query = query
-    .order("coaching_date", { ascending: false })
-    .order("created_at", { ascending: false });
-  const { from, to } = coachingRange(filters);
-  query = query.range(from, to);
+    return query
+      .order("coaching_date", { ascending: false })
+      .order("created_at", { ascending: false });
+  };
 
-  const { data, error } = await query;
-  if (error) throw error;
+  // A caller that names a page or a limit asked for exactly that window, and gets it. A caller that
+  // names neither asked for the reports — all of them. That path used to be a hidden 5,000-row window
+  // (one request, which the server cuts at its own row cap anyway), and the per-viewer scope below is
+  // applied AFTER the read, so a short read made a scoped viewer's own reports vanish without a word.
+  const callerNamedAWindow =
+    normalizePositiveInteger(filters.limit, 0) > 0 || normalizePositiveInteger(filters.page, 0) > 0;
+  let rows: CoachingSummaryDbRow[];
+  if (callerNamedAWindow) {
+    const { from, to } = coachingRange(filters);
+    const { data, error } = await buildQuery().range(from, to);
+    if (error) throw error;
+    rows = (data ?? []) as CoachingSummaryDbRow[];
+  } else {
+    rows = await fetchAllRows<CoachingSummaryDbRow>(buildQuery, "report_id");
+  }
 
   const directory = await getEmployeeDirectoryRows();
-  const summaries = ((data ?? []) as CoachingSummaryDbRow[]).map((row) =>
+  const summaries = rows.map((row) =>
     applyCoachingDisplayName(mapSummary(row), directory),
   );
   return filterSummariesForAccess(summaries, access);

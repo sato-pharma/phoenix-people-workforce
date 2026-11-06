@@ -135,6 +135,14 @@ async function countRows(supabase: SupabaseClient, table: string, build: Supabas
   return count ?? 0;
 }
 
+// The unique key each backed-up table is paged by. An unordered offset walk over a quarter of a
+// million rows skips or repeats rows, and this read IS the backup: nothing else can restore them.
+// Every cascade table has an `id` except these two, whose primary key is a composite.
+const BACKUP_ORDER_COLUMNS: Record<string, readonly string[]> = {
+  source_of_sales_customer_directory_rollup: ["batch_id", "period", "distributor_code", "client_code", "product_code", "is_direct"],
+  source_of_sales_customer_presence_rollup: ["batch_id", "period", "client_code", "official_line", "region_code"],
+};
+
 // Fetch every row of `table` linked to these batches.
 //
 // This used to swallow "does not exist" and return [], which is precisely how the backup came to be
@@ -148,7 +156,11 @@ async function countRows(supabase: SupabaseClient, table: string, build: Supabas
 async function fetchByBatchIds<T>(supabase: SupabaseClient, table: string, batchIds: string[]): Promise<T[]> {
   if (batchIds.length === 0) return [];
   try {
-    return await fetchAll<T>(supabase, table, "*", (query) => query.in("batch_id", batchIds));
+    return await fetchAll<T>(supabase, table, "*", (query) => {
+      let ordered = query.in("batch_id", batchIds);
+      for (const column of BACKUP_ORDER_COLUMNS[table] ?? ["id"]) ordered = ordered.order(column, { ascending: true });
+      return ordered;
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("does not exist") || message.includes("Could not find the table") || message.includes("PGRST205")) {
@@ -187,7 +199,7 @@ async function buildSnapshot(supabase: SupabaseClient) {
       supabase,
       "source_of_sales_import_batches",
       "*",
-      (query) => query.in("id", directBatchIds).order("period", { ascending: true }),
+      (query) => query.in("id", directBatchIds).order("period", { ascending: true }).order("id", { ascending: true }),
     );
   // Back up EVERY table the database removes by itself, plus the linked run steps whose FK is
   // SET NULL. Previously only rows + summaries were captured and five rollup tables were destroyed

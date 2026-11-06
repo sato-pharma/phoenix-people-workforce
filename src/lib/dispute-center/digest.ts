@@ -4,6 +4,7 @@ import { deductionSourceForDigestLine } from "@/lib/attendance/digest-rules.ts";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { listDisputeCenterAttachments, storeDisputeCenterAttachments } from "./attachment-store.ts";
@@ -96,17 +97,24 @@ export async function listDigestDisputeMessages(lineIds: number[]): Promise<Map<
   if (ids.length === 0) return byLine;
   const rows: MessageRow[] = [];
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await getSupabaseAdmin()
-      .from("attendance_digest_dispute_messages")
-      .select(MESSAGE_COLUMNS)
-      .in("line_id", ids.slice(i, i + 200))
-      .order("created_at", { ascending: true });
-    if (error) {
-      const code = String((error as { code?: unknown }).code ?? "");
+    // Every reply of this batch of days, page by page: a day missing replies would read as unanswered.
+    try {
+      rows.push(
+        ...(await fetchAllRows<MessageRow>(
+          () =>
+            getSupabaseAdmin()
+              .from("attendance_digest_dispute_messages")
+              .select(MESSAGE_COLUMNS)
+              .in("line_id", ids.slice(i, i + 200))
+              .order("created_at", { ascending: true }),
+          "id",
+        )),
+      );
+    } catch (error) {
+      const code = String((error as { code?: unknown } | null)?.code ?? "");
       if (code === "PGRST205" || code === "42P01") return byLine;
       throw error;
     }
-    rows.push(...((data ?? []) as MessageRow[]));
   }
   const [names, pictures] = await Promise.all([
     resolvePeopleNames(rows.map((row) => row.author_hr_id)),

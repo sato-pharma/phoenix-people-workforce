@@ -15,6 +15,7 @@ import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { DISTRICT_SEAT_COLUMNS, type DistrictSeatRow } from "@/lib/recruitment/district-manager-folders";
 import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 /**
  * The organogram.
@@ -28,15 +29,26 @@ import { managerFolderShelves } from "@/lib/recruitment/manager-cv-folders";
  * The rows are shared: callers read them and never mutate them.
  */
 export const loadDistrictSeatRows = cache(async (): Promise<DistrictSeatRow[]> => {
-  const { data, error } = await recruitmentDb().from("au_v_org_tree").select(DISTRICT_SEAT_COLUMNS);
-  if (error) {
+  try {
+    // Every seat, paged to a short page. The view holds one row per OCCUPANT (a handover seat has two),
+    // so the order is occupant then `seat_id`: together they are unique, which paging needs. A row a
+    // response cap dropped would read as a manager with no shelves, and his CVs would fall back
+    // under the 45-day window.
+    return await fetchAllRows<DistrictSeatRow>(
+      () =>
+        recruitmentDb()
+          .from("au_v_org_tree")
+          .select(DISTRICT_SEAT_COLUMNS)
+          .order("occupant_hr_id", { ascending: true }),
+      "seat_id",
+    );
+  } catch (error) {
     logError("Manager CV folders could not read the org tree", {
       error,
       labels: { event: "district_folders_tree_read_failed" },
     });
     return [];
   }
-  return (data ?? []) as DistrictSeatRow[];
 });
 
 /** Canonical HR id keys of every manager with at least one shelf. Pure. */
