@@ -29,6 +29,8 @@ export type ExpenseApprovalSummaryRow = {
   pmWorkload: number;
   specialist: string;
   state: ExpenseApprovalState;
+  /** The trip's last day — the per-employee rows name a multi-day trip's length (2026-11-06). */
+  toDate?: string;
   tripId: string;
 };
 

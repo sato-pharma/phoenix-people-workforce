@@ -2911,6 +2911,7 @@ import { runPlansHistoryReplacedDraftsAndWeekLabelsTests } from "./plans-history
 import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id-fold.test.ts";
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
+import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
@@ -11832,6 +11833,10 @@ await runTest(
 await runTest(
   "one trip is claimed once: a same-person, same-day, same-destination copy of a live claim (OUTSTATION-293 of 292) is refused at submission naming the earlier claim and flagged on the approvals screen, a refused claim or a meeting never blocks; and the NSM audit's labels read Delta 1, Sohag 1, Sdeek, Alex Center 2 rep, 1 request, and no dash for an empty HR note",
   runOutstationDuplicateTripGuardTests,
+);
+await runTest(
+  "Expense Approvals reads a multi-day trip as one: the trip length (3 days · 2 nights) is one helper shown on the queue row and the decision panel, each trip day is one folding row whose map is drawn only when opened, nothing is cut off with an ellipsis, and Approve is the panel's pinned last part below the scrolling evidence",
+  runOutstationExpenseApprovalsLayoutTests,
 );
 await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
 await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);
