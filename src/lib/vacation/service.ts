@@ -6745,26 +6745,25 @@ async function retentionCount(table: string, column: string, cutoff: string) {
   }
 }
 
+// One purge run takes at most 500 requests: the file delete and the row updates after it are not one
+// transaction, so the batch is the bound on what a crash can leave half-done. Run it again for the next 500.
 async function fetchEvidencePurgeCandidates(cutoff: string) {
   try {
-    // EVERY request whose evidence is past retention, page by page: the old `.limit(500)` made the
-    // dry run report at most 500 candidates however many were due, and left the rest unpurged.
-    return await fetchAllRows<{
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationRequestsTable)
+      .select("id,sick_attachment_object_path,compensatory_attachment_object_path,hr_decision_at,updated_at,created_at,status")
+      .in("status", ["approved", "rejected"])
+      .lt("hr_decision_at", cutoff)
+      .or("sick_attachment_object_path.not.is.null,compensatory_attachment_object_path.not.is.null")
+      .limit(500);
+    if (error) throwVacationDatabaseError(error);
+    return (data ?? []) as Array<{
       compensatory_attachment_object_path?: string | null;
       id: string;
       sick_attachment_object_path?: string | null;
-    }>(
-      () =>
-        getSupabaseAdmin()
-          .from(vacationRequestsTable)
-          .select("id,sick_attachment_object_path,compensatory_attachment_object_path,hr_decision_at,updated_at,created_at,status")
-          .in("status", ["approved", "rejected"])
-          .lt("hr_decision_at", cutoff)
-          .or("sick_attachment_object_path.not.is.null,compensatory_attachment_object_path.not.is.null"),
-      "id",
-    );
+    }>;
   } catch (error) {
-    if (!isVacationSchemaMissingError(error)) throwVacationDatabaseError(error);
+    if (!isVacationSchemaMissingError(error)) throw error;
     return [];
   }
 }
