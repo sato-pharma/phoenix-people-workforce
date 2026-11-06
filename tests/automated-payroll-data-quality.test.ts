@@ -215,6 +215,29 @@ export function runAutomatedPayrollDataQualityTests() {
   );
   assert.ok(!gannatallah!.issues.includes("missing_salary"), "B-165 does have a salary — do not over-flag");
 
+  // The payroll builder hands over an ALREADY-NORMALISED mode — a missing one arrives as "two_parts" —
+  // so the fixture above, with a raw null, never matched production. 17 of 142 active employees had
+  // no mode on record and none was ever flagged (owner, 2026-11-07: warn on it).
+  const normalisedSource = { ...sources([{ hrId: "B-170" }]).get("b-170")!, paymentModeOnRecord: false };
+  const recordedSource = { ...sources([{ hrId: "B-171" }]).get("b-171")!, paymentModeOnRecord: true };
+  const asBuilt = auditPayrollDataQuality({
+    members: [member("B-170"), member("B-171")],
+    sources: new Map([
+      ["b-170", normalisedSource],
+      ["b170", normalisedSource],
+      ["b-171", recordedSource],
+      ["b171", recordedSource],
+    ]),
+    draftRows: [draft("B-170", { firstPartFrozen: 7000 }), draft("B-171", { firstPartFrozen: 7000 })],
+    part1Confirmed: true,
+  });
+  const asBuiltByHrId = new Map(asBuilt.rows.map((row) => [row.hrId, row]));
+  assert.ok(
+    asBuiltByHrId.get("B-170")?.issues.includes("missing_payment_mode"),
+    "HEADLINE: a mode normalised to two parts with nothing on record is still flagged",
+  );
+  assert.ok(!asBuiltByHrId.has("B-171"), "and a mode that is on record is not");
+
   // ---- net-salary-only new hires must NOT read as "no salary" --------------
   // Real case, owner-reported 2026-08-08: 6 August new hires whose entered net
   // salary exactly equals their title's standard allowances (e.g. a Medical Rep's

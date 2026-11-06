@@ -1557,7 +1557,15 @@ export async function confirmPart1(
   // Part 1's release must still be owed, and paid in full by the First Part about to be frozen.
   await assertHeldReleasesPayable(runId, draftRows, preflightRows);
 
-  const frozen = computePart1Freeze({ members, sources, draftRows, period });
+  // One deduction, one instalment — refused before the freeze takes both columns (audit 2026-11-07).
+  const part1SplitConflicts = findPartSplitConflicts(draftRows);
+  if (part1SplitConflicts.length > 0) {
+    throw new Error(`Conflict: ${describePartSplitConflicts(part1SplitConflicts)}`);
+  }
+
+  // One-instalment rows repay old overpayments from Part 1 (part1CarryForward).
+  const carryForwardByCompact = await outstandingCarryForwardFor(runId);
+  const frozen = computePart1Freeze({ members, sources, draftRows, period, carryForwardByCompact });
 
   // THE PART 1 / PART 2 DEDUCTION ROUTING IS FROZEN HERE TOO, in the same write.
   //
@@ -1594,6 +1602,7 @@ export async function confirmPart1(
       sources: fresh.sources,
       draftRows: fresh.draftRows,
       period,
+      carryForwardByCompact,
     });
     const movedWhileConfirming = frozenFirstPartsDiffer(
       firstPartsOf(frozen),

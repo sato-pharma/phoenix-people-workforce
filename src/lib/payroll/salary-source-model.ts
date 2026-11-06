@@ -22,6 +22,13 @@ export type PayrollSalarySource = {
    * ECoL + fuel allowance, e.g. 2500 = 2000 + 500 for a Medical Rep).
    */
   hasAnyRawCompensationFigure?: boolean;
+  /**
+   * False when the employee record names no payment mode. `paymentMode` above is normalised, and
+   * normalising turns a missing mode into "two_parts", so data-quality.ts asking that field could
+   * never raise "missing payment mode" (owner, 2026-11-07: warn on it). Populated only by
+   * automated-payroll's builder; undefined means "not known", never "missing".
+   */
+  paymentModeOnRecord?: boolean;
 };
 
 export function salarySourceLookupKeys(value: string | null | undefined) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { assembleRows, type AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
+import { assembleRows, computePart1Freeze, type AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import type { PopulationMember } from "../src/lib/automated-payroll/recommend.ts";
 import { reconcile } from "../src/lib/automated-payroll/reconcile.ts";
 import { OVERPAID_ACK_REQUIRED } from "../src/lib/automated-payroll/run-service.ts";
@@ -359,6 +359,72 @@ export function runAutomatedPayrollAssembleTests() {
   });
   assert.equal(heldWithDebt[0]!.carriedForwardApplied, 0, "HEADLINE: a held row must not recover a debt the ledger keeps open");
   assert.equal(heldWithDebt[0]!.row.otherDeductions, 70, "and its withheld pay carries only its own deductions");
+
+  // A ONE-PART row recovers its debt from the First Part — the only instalment it is paid (audit
+  // 2026-11-07). Taken only in Part 2, it met a Second Part of zero and rolled forward for ever.
+  const onePartDebt = new Map([[member(hrId).compact, 800]]);
+  const onePartFreeze = computePart1Freeze({
+    members: [member(hrId)],
+    sources: sourceMap(hrId, "one_part"),
+    draftRows: [draft(hrId, {})],
+    period: JUNE,
+    carryForwardByCompact: onePartDebt,
+  }).get(member(hrId).compact)!;
+  const onePartNoDebt = computePart1Freeze({
+    members: [member(hrId)],
+    sources: sourceMap(hrId, "one_part"),
+    draftRows: [draft(hrId, {})],
+    period: JUNE,
+  }).get(member(hrId).compact)!;
+  assert.equal(
+    onePartFreeze.firstPart,
+    onePartNoDebt.firstPart - 800,
+    "HEADLINE: a one-part employee's debt comes off the First Part that actually pays them",
+  );
+  const onePartPaid = assembleRows({
+    members: [member(hrId)],
+    sources: sourceMap(hrId, "one_part"),
+    period: JUNE,
+    draftRows: [draft(hrId, { firstPartFrozen: onePartFreeze.firstPart })],
+    carryForwardByCompact: onePartDebt,
+    part1Confirmed: true,
+  })[0]!;
+  assert.equal(onePartPaid.carriedForwardApplied, 800, "the ledger is settled at publish as before");
+  assert.equal(onePartPaid.overpaidResidual, 0, "and the debt is NOT recorded again as this month's overpayment");
+  assert.equal(onePartPaid.row.firstPart + onePartPaid.row.secondPart, onePartPaid.row.monthSalary);
+  // A two-part row keeps recovering in Part 2: its freeze is untouched by the ledger.
+  const twoPartFreeze = computePart1Freeze({
+    members: [member(hrId)],
+    sources: sourceMap(hrId, "two_parts"),
+    draftRows: [draft(hrId, {})],
+    period: JUNE,
+    carryForwardByCompact: onePartDebt,
+  }).get(member(hrId).compact)!;
+  const twoPartNoDebt = computePart1Freeze({
+    members: [member(hrId)],
+    sources: sourceMap(hrId, "two_parts"),
+    draftRows: [draft(hrId, {})],
+    period: JUNE,
+  }).get(member(hrId).compact)!;
+  assert.equal(twoPartFreeze.firstPart, twoPartNoDebt.firstPart, "a two-part First Part never carries the debt");
+
+  // A month base saved by New Hires or Resignations holds only while the person is still a joiner or
+  // leaver this month (audit 2026-11-07): a corrected hire date used to keep paying the old fraction.
+  const prorated = { baseForMonth: 10000, ecolPaid: 0, fuelPaid: 0 };
+  const stillJoiner = assembleRows({
+    members: [member(hrId, { lifecycle: "joiner" })],
+    sources: sourceMap(hrId, "two_parts"),
+    period: JUNE,
+    draftRows: [draft(hrId, prorated)],
+  })[0]!;
+  assert.equal(stillJoiner.row.monthSalary, 10000, "a joiner is paid the month figure HR settled");
+  const noLongerJoiner = assembleRows({
+    members: [member(hrId, { lifecycle: "regular" })],
+    sources: sourceMap(hrId, "two_parts"),
+    period: JUNE,
+    draftRows: [draft(hrId, prorated)],
+  })[0]!;
+  assert.equal(noLongerJoiner.row.monthSalary, NET, "HEADLINE: once not a joiner, the stale fraction no longer applies");
 
   // A negative/corrupt ledger value can never become a stealth ADDITION.
   const negativeLedger = assembleRows({
