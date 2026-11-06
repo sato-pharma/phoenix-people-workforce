@@ -21,10 +21,12 @@ type WorkloadVisitDetail = {
   ampm: string | null;
   contact: string | null;
   customer: string | null;
+  /** "campaign" is the payload's word for an UNPLANNED visit; the card prints "Unplanned" / "Planned". */
   kind: string;
   /** On a partner visit, the rep who logged it — resigned or not (visit-workload.ts). Optional so a
    * payload from a server built before it still renders the bare "double". */
   repName?: string | null;
+  /** "agent" · "partner" (a double visit a rep logged) · "own" (a manager's single visit he logged himself). */
   role: string;
   submittedAt: string | null;
 };
@@ -66,11 +68,14 @@ function evidenceSplit(am: number, pm: number, pharmacies: number | undefined, p
 
 export type TripWorkloadEvidence = {
   amWorkload: number;
+  /** The trip's UNPLANNED visits (the payload keeps the old key). */
   campaignVisits: number;
   dateBreakdown: WorkloadEvidenceDay[];
   idleDates: string[];
   matchStatus: string;
   matchedDates: string[];
+  /** A manager's own single visits on the trip, inside every figure above. Absent when unread. */
+  managerOwnVisits?: number;
   otherVisits: number;
   pharmacyWorkload?: number;
   /** Of the trip's visits, how many are Phoenix CRM's own — display only, see evidenceSplit. */
@@ -155,11 +160,11 @@ function TripDayRow({
         {pharmacyText}
       </span>
       <span className="text-sky-700">
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Regular </span>
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Planned </span>
         {fmt(day.regular)}
       </span>
       <span className="text-violet-700">
-        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Campaign </span>
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Unplanned </span>
         {fmt(day.campaign)}
       </span>
     </span>
@@ -220,7 +225,7 @@ function TripDayRow({
                             visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
                           )}
                         >
-                          {visit.kind}
+                          {visit.kind === "campaign" ? "Unplanned" : "Planned"}
                         </span>
                         <span className="break-words text-slate-700">
                           {visit.contact || visit.customer || "—"}
@@ -233,6 +238,8 @@ function TripDayRow({
                             ) : (
                               " · double"
                             )
+                          ) : visit.role === "own" ? (
+                            " · on his own"
                           ) : null}
                         </span>
                       </span>
@@ -300,7 +307,7 @@ function TripDayRow({
 /**
  * Actual field-visit workload for one trip, read from the admin/CRM mirror
  * (`/api/outstation/visit-workload`) — every field visit where the rep is the primary agent OR
- * the double-visit partner, regular AND campaign, with no departed-agent exclusion. Auto-loads
+ * the double-visit partner, planned AND unplanned, with no departed-agent exclusion. Auto-loads
  * for the given rep + trip window so a focused decision panel needs no extra click.
  */
 export function TripWorkloadEvidencePanel({
@@ -500,8 +507,15 @@ export function TripWorkloadEvidencePanel({
         <div className="border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
-            Regular {fmt(data.regularVisits)} · Campaign {fmt(data.campaignVisits)}
+            Planned {fmt(data.regularVisits)} · Unplanned {fmt(data.campaignVisits)}
           </p>
+          {/* A manager's visits count to him both ways (owner, 6 Nov 2026): with a rep, and on his own. */}
+          {data.managerOwnVisits ? (
+            <p className="mt-0.5 font-mono text-phx-2xs font-bold text-slate-600">
+              With a rep {fmt(data.regularVisits + data.campaignVisits - data.managerOwnVisits)} · On his own{" "}
+              {fmt(data.managerOwnVisits)}
+            </p>
+          ) : null}
         </div>
       </div>
       {/* DAY BY DAY (owner, 2026-11-06: "so confusing … specially when the trip is more than 1 day").

@@ -1,6 +1,10 @@
 /**
- * Per-day field-visit workload for one rep over a trip window, read straight from the
- * synced CRM mirror (`ireports360_visits`) — the admin/CRM source of truth.
+ * Per-day field-visit workload for one person over a trip window, read through the CRM visits door
+ * (`crm_visits_unified`): Phoenix CRM for every territory from its team's start, and from 6 Nov 2026 for
+ * every territory; the stored iReports360 archive only before that (owner, 6 Nov 2026: "ANY SINGLE SOURCE OF
+ * FIELD WORK IS NOW THE PHOENIX CRM"). A manager's own single visits, which live apart from the door in
+ * phoenix_crm_manager_visits, are added through their one reader (loadManagerOwnVisitRows): a double visit a
+ * rep logged with him on it and a single visit he logged himself both count to him (owner, same day).
  *
  * Why this exists separately from `getDoubleVisitExpenseWorkloadEvidence` (double-visit
  * analytics) and `getIReports360RepDayVisits` (the rep-day drill-down):
@@ -21,7 +25,10 @@ import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import type { CrmCheckinRow } from "@/lib/crm/types";
-import { addVisitToSplit } from "@/lib/crm/visit-count-buckets";
+import { addBucketToSplit, addVisitToSplit } from "@/lib/crm/visit-count-buckets";
+import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
+import { visitCountBucketForListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
+import { loadManagerOwnVisitRows } from "@/lib/phoenix-crm/server/manager-plan-readers";
 
 export type RepVisitDetail = {
   ampm: string | null;
@@ -30,6 +37,8 @@ export type RepVisitDetail = {
    * vendor sends speciality on visit_type 0 only). See classifyVisitContactKind. */
   contactKind: VisitContactKind;
   customer: string | null;
+  /** "campaign" is the stored word for an UNPLANNED visit (isUnplannedFieldVisit) — the payload keeps it so
+   * every reader still parses; a screen prints "Unplanned" and "Planned". */
   kind: "campaign" | "regular";
   /**
    * On a "partner" visit, the rep who LOGGED it — the person this one was in the field with (owner,
@@ -40,7 +49,8 @@ export type RepVisitDetail = {
    * the person's own visits, or when no name can be given honestly. Display only — never counted.
    */
   repName: string | null;
-  role: "agent" | "partner";
+  /** "own" is a manager's single visit he logged himself (phoenix_crm_manager_visits). */
+  role: "agent" | "own" | "partner";
   submittedAt: string | null;
 };
 
@@ -85,6 +95,7 @@ export type RepVisitWorkloadDay = {
   /** AM · PM · Pharmacies (the golden rule): `am` and `pm` never hold a pharmacy visit, whatever
    * period the vendor tagged it with — those are in `pharmacies`. am + pm + pharmacies = total. */
   am: number;
+  /** The day's UNPLANNED field visits (the key keeps its old name — see RepVisitDetail.kind). */
   campaign: number;
   checkins: RepCheckinDetail[];
   date: string;
@@ -93,6 +104,8 @@ export type RepVisitWorkloadDay = {
   doctor: number;
   institution: number;
   other: number;
+  /** Of the day's field visits, a manager's own single visits (inside `total` and the split). */
+  own?: number;
   pharmacies: number;
   pharmacy: number;
   /**
@@ -116,6 +129,10 @@ export type RepVisitWorkload = {
   doctorVisits: number;
   idleDates: string[];
   institutionVisits: number;
+  /** A manager's own single visits on the trip, and the unplanned ones among them — counted in every figure
+   * above. Absent when his own visits could not be read (the label says so). */
+  managerOwnUnplannedVisits?: number;
+  managerOwnVisits?: number;
   matchStatus: "matched" | "no_activity" | "partial" | "unmapped";
   matchedDates: string[];
   otherVisits: number;
@@ -146,6 +163,8 @@ type WorkloadVisitRow = {
   customer_name: string | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
+  /** Phoenix marked the visit out of list or out of plan. Null on an iReports360 row. */
+  is_unplanned: boolean | null;
   /** 'phoenix' on a started team's Phoenix CRM visit — the helper counts it into `phoenix`. */
   source: string | null;
   speciality: string | null;
@@ -209,8 +228,9 @@ function emptyWorkload(dates: string[], sourceLabel: string, matchStatus: RepVis
 }
 
 /**
- * Count the rep's field visits (Regular = visit_type 0, Campaign = visit_type -8) per day across
- * the trip window, split AM · PM · Pharmacies. Non-field visit types (Vacation/Meeting/Training/…)
+ * Count the person's field visits per day across the trip window — planned and UNPLANNED (a Phoenix visit
+ * marked out of list or out of plan, or an archive day's iReports360 campaign visit, −8:
+ * isUnplannedFieldVisit) — split AM · PM · Pharmacies. Non-field visit types (Vacation/Meeting/Training/…)
  * are surfaced as `other` but excluded from the workload. No collapse of burst re-saves yet — the
  * count mirrors distinct `ireports360_visits` rows (each keyed on `crm_visit_id`).
  *
@@ -221,13 +241,20 @@ function emptyWorkload(dates: string[], sourceLabel: string, matchStatus: RepVis
  */
 export async function getRepTripVisitWorkload(input: {
   hrId: string | null | undefined;
+  /**
+   * Also read each positioned Phoenix CRM visit as that day's check-in. ONLY for a reader no rep's own
+   * screen reaches — an approver or a manager looking at someone else's trip, or an admin export (owner,
+   * 2026-10-02: "Never on the rep's own screens"). Off by default, so the rep's own trip stays blind.
+   */
+  includePhoenixCheckins?: boolean;
   tripEndDate: string;
   tripStartDate: string;
 }): Promise<RepVisitWorkload> {
   const start = input.tripStartDate.slice(0, 10);
   const end = input.tripEndDate.slice(0, 10);
   const dates = eachDateInclusive(start, end);
-  const sourceLabel = "Live iReports360 Visits Report (admin/CRM — every field visit, agent or double-visit partner).";
+  let sourceLabel =
+    "Phoenix CRM visits — every field visit, his own or with a rep (iReports360 only before his team's start).";
 
   const hrId = String(input.hrId ?? "").trim();
   if (!hrId || dates.length === 0) {
@@ -254,7 +281,7 @@ export async function getRepTripVisitWorkload(input: {
   // so his outstation trip carried no workload evidence however many visits he logged.
   const data = await queryVisits<WorkloadVisitRow>({
     columns:
-      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, source, speciality, visit_date, visit_type",
+      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, is_unplanned, source, speciality, visit_date, visit_type",
     dateFrom: start,
     dateTo: end,
     includeResignedAgents: true,
@@ -264,7 +291,17 @@ export async function getRepTripVisitWorkload(input: {
   // that is everyone without a CRM account — office staff included — and a zero read for them was never
   // evidence of anything; calling it `no_activity` would put an accusation on a trip nobody could have
   // logged against. A person with no CRM id who DID log visits is matched below like anyone else.
-  if (crmId == null && data.length === 0) {
+  // A manager's own single visits, through their one reader. Read here, before the unmapped test, so a
+  // manager with no CRM id whose only field work was his own visits is matched like anyone else. A failed
+  // read leaves them out and says so — the cap then treats them as unmeasured, never as zero.
+  let ownVisits: Awaited<ReturnType<typeof loadManagerOwnVisitRows>> | null = null;
+  try {
+    ownVisits = await loadManagerOwnVisitRows({ end, managerHrIds: [hrId], start });
+  } catch {
+    ownVisits = null;
+    sourceLabel += " His own Phoenix CRM visits could not be read, so they are not counted here.";
+  }
+  if (crmId == null && data.length === 0 && (ownVisits?.length ?? 0) === 0) {
     return emptyWorkload(dates, "This person has no CRM id and no visits under their HR ID, so their visits can't be matched.", "unmapped");
   }
 
@@ -298,12 +335,14 @@ export async function getRepTripVisitWorkload(input: {
     const entry = byDate.get(day);
     if (!entry) continue;
 
-    const isRegular = row.visit_type === 0;
-    const isCampaign = row.visit_type === -8;
-    if (!isRegular && !isCampaign) {
+    // A field visit is a customer visit (0) or an archive day's campaign visit (−8); any other code is a
+    // day's activity, shown as `other` and never counted. Of the field visits, the unplanned ones are
+    // counted apart (isUnplannedFieldVisit): Phoenix serves every visit as type 0 and says unplanned itself.
+    if (row.visit_type !== 0 && row.visit_type !== -8) {
       entry.other += 1;
       continue;
     }
+    const isRegular = !isUnplannedFieldVisit(row);
     const contactKind = classifyVisitContactKind(row.speciality);
     if (isRegular) {
       entry.regular += 1;
@@ -353,6 +392,39 @@ export async function getRepTripVisitWorkload(input: {
     }
   }
 
+  // His own single visits (a manager's): field work like any other, so they make a day worked and land in
+  // AM · PM · Pharmacies by the customer's list, or the half for a customer of his own list (ownVisitBucket).
+  let managerOwnVisits = 0;
+  let managerOwnUnplannedVisits = 0;
+  for (const own of ownVisits ?? []) {
+    const entry = byDate.get(own.date);
+    if (!entry) continue;
+    const contactKind = classifyVisitContactKind(own.speciality);
+    if (own.planned) {
+      entry.regular += 1;
+      if (contactKind === "doctor") entry.doctor += 1;
+      else if (contactKind === "pharmacy") entry.pharmacy += 1;
+      else if (contactKind === "institution") entry.institution += 1;
+    } else {
+      entry.campaign += 1;
+      managerOwnUnplannedVisits += 1;
+    }
+    entry.total += 1;
+    entry.own = (entry.own ?? 0) + 1;
+    managerOwnVisits += 1;
+    addBucketToSplit(entry, visitCountBucketForListType(own.bucket), 1, true);
+    entry.visits.push({
+      ampm: own.loggedHalf ?? (own.bucket === "AM" || own.bucket === "PM" ? own.bucket : null),
+      contact: own.customerName,
+      contactKind,
+      customer: own.placeLabel ?? own.customerName,
+      kind: own.planned ? "regular" : "campaign",
+      repName: null,
+      role: "own",
+      submittedAt: own.loggedAt,
+    });
+  }
+
   // A partner visit with no hr id carries only the vendor's label, and on a handed-over CRM account
   // that label names the LATER holder. Phoenix's hire dates decide (identity.ts): a label naming only
   // people not yet employed that day reads "Previous holder ( territory )"; any other label is the only
@@ -399,6 +471,8 @@ export async function getRepTripVisitWorkload(input: {
     ascending: true,
     dateFrom: start,
     dateTo: end,
+    // The Phoenix positions only for a reader no rep's own screen reaches — see the input.
+    includePhoenixVisits: input.includePhoenixCheckins === true,
     orderBy: "check_date",
   }).catch(() => [] as CrmCheckinRow[]);
 
@@ -440,6 +514,7 @@ export async function getRepTripVisitWorkload(input: {
     doctorVisits: dateBreakdown.reduce((sum, day) => sum + day.doctor, 0),
     idleDates,
     institutionVisits: dateBreakdown.reduce((sum, day) => sum + day.institution, 0),
+    ...(ownVisits === null ? {} : { managerOwnUnplannedVisits, managerOwnVisits }),
     matchStatus,
     matchedDates,
     otherVisits: dateBreakdown.reduce((sum, day) => sum + day.other, 0),

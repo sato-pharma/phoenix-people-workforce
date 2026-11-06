@@ -459,11 +459,10 @@ async function resolveOutstationWorkloadPayload(params: {
   // The double-visit mirror cannot see a rep's SOLO field days, so it reported worked days as
   // "no activity" and the decision engine judged real trips against a workload of zero.
   //
-  // The campaign-visit cap deliberately KEEPS the double-visit source. That rule (rule 3 in
-  // decision.ts, reached through campaignRuleOutcome here) rejects on "campaign DOUBLE-visits" and on
-  // "no double-visit activity". Feeding it the CRM read would break it both ways: solo campaign
-  // visits would inflate campaignVisits into spurious auto-rejections, and solo visits would
-  // satisfy the totalDvVisits > 0 test, silently fail-opening a live rejection rule.
+  // The unplanned-visit cap reads the double-visit source for his double visits, and his OWN single visits
+  // (phoenix_crm_manager_visits) from the CRM read, which carries them apart (managerOwnVisits). Never the
+  // CRM read's whole total: a visit he was only the partner on is already one of his double visits, so
+  // counting both would double it.
   const [doubleVisitEvidence, repWorkload] = await Promise.all([
     getDoubleVisitExpenseWorkloadEvidence(params).catch((error) =>
       fallbackWorkloadEvidence({
@@ -864,9 +863,9 @@ function recommendationForResult(params: {
   };
 }
 
-// Campaign-visit cap (#11): a TRAVELING expense for a District/Training Manager needs
-// at least one double-visit and at most 2 campaign visits (the rest regular). Meeting /
-// other expense types and all other roles are unaffected.
+// Unplanned-visit cap (#11, campaign until 7 Nov 2026): a TRAVELING expense for a District/Training
+// Manager needs at least one field visit (a double visit with a rep or one of his own) and at most 2
+// unplanned visits (the rest planned). Meeting / other expense types and all other roles are unaffected.
 //
 // The RULE itself lives in decision.ts and is called, not copied — a second implementation of a
 // live rejection rule is how the two drift apart. This function only feeds it the two things it
@@ -883,16 +882,22 @@ function campaignRuleOutcome(input: {
   evidence: DoubleVisitExpenseWorkloadEvidence;
   tripEndDate: string;
 }): OutstationCampaignRuleOutcome {
-  const campaignVisits = input.evidence.campaignVisits ?? 0;
+  // His field visits both ways (owner, 6 Nov 2026): the double visits a rep logged with him on them, and
+  // the single visits he logged himself. Absent own counts mean they could not be read — unmeasured.
+  const doubleUnplanned = input.evidence.campaignVisits ?? 0;
+  const doubleTotal = doubleUnplanned + (input.evidence.regularVisits ?? 0);
+  const ownTotal = input.evidence.managerOwnVisits;
+  const ownUnplanned = input.evidence.managerOwnUnplannedVisits ?? 0;
   return outstationCampaignRuleOutcome({
-    campaignVisits,
+    campaignVisits: doubleUnplanned + (ownTotal === undefined ? 0 : ownUnplanned),
     dvEvidenceWindowClosed: outstationDvEvidenceWindowClosed({
       cairoTodayIso: cairoTodayIso(),
       tripEndDate: input.tripEndDate,
     }),
     expenseType: input.expenseType,
+    ownVisitsUnmeasured: ownTotal === undefined,
     role: input.role,
-    totalDvVisits: campaignVisits + (input.evidence.regularVisits ?? 0),
+    totalDvVisits: doubleTotal + (ownTotal ?? 0),
   });
 }
 

@@ -640,7 +640,7 @@ function runPhoenixPharmacyFigureTests() {
     assert.match(src("src/lib/business-review/sources/field-link.ts"), /addBucketToSplit\(entry\.fact\.split, countBucket, 1, fromPhoenix\)/);
     assert.match(src("src/lib/crm/sfe-field-analytics.ts"), /isPhoenixNativeVisitRow\(visit\)\) phoenixVisits\+\+/);
     assert.match(src("src/components/admin/ceo-phase-b.tsx"), /AM \{n\(data\.amVisits\)\} · PM \{n\(data\.pmVisits\)\} · \{pharmacyFigure\}/);
-    assert.match(src("src/lib/crm/visit-workload.ts"), /double_hr_id, source, speciality, visit_date, visit_type/, "the live trip read carries `source`");
+    assert.match(src("src/lib/crm/visit-workload.ts"), /double_hr_id, is_unplanned, source, speciality, visit_date, visit_type/, "the live trip read carries `source` (and `is_unplanned`, for the unplanned cap)");
     assert.match(src("src/lib/double-visit-analytics/service.ts"), /isPhoenixNativeVisitRow\(visit\) \? \{ from_phoenix: true \}/);
     for (const [file, label] of [
       ["src/components/outstation/expense-report.tsx", "the outstation report's live evidence"],

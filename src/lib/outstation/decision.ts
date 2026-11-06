@@ -46,7 +46,8 @@ export type OutstationDecision = {
   reason: string;
 };
 
-// Only District Managers and Training Managers are subject to the campaign-visit cap.
+// Only District Managers and Training Managers are subject to the unplanned-visit cap (it was the
+// campaign-visit cap until 7 Nov 2026 — owner: "replace campaign with unplanned visits").
 export const CAMPAIGN_RULE_ROLES: ReadonlySet<string> = new Set([
   "District Manager",
   "Training Manager",
@@ -105,10 +106,15 @@ export type OutstationCampaignRuleOutcome =
   | null;
 
 export const DV_EVIDENCE_PENDING_HOLD_REASON =
-  "The double-visit record for this trip is not in the CRM yet — reps enter their visits through and after the working day — so this claim is held for review instead of being rejected on evidence that has not been written yet. Re-check the double-visits once the day's visits are in.";
+  "The field visits for this trip are not in Phoenix CRM yet — visits are entered through and after the working day — so this claim is held for review instead of being rejected on evidence that has not been written yet. Re-check the visits once the day's visits are in.";
 
 /**
- * Rule 3 in isolation: the campaign-visit cap for traveling District/Training Manager claims.
+ * Rule 3 in isolation: the unplanned-visit cap for traveling District/Training Manager claims.
+ *
+ * What it counts (owner, 6 Nov 2026): the manager's field visits both ways — the double visits a rep
+ * logged with him on them, and the single visits he logged himself. `totalDvVisits` and
+ * `campaignVisits` are those totals (the names are kept so every stored snapshot and caller still
+ * fits); "campaign" now means UNPLANNED (isUnplannedFieldVisit).
  *
  * Exported for the same reason as {@link outstationTicketEvidenceRejection} — the live submit path
  * in src/lib/outstation/service.ts must apply the SAME rule rather than keep a second copy that
@@ -124,10 +130,17 @@ export const DV_EVIDENCE_PENDING_HOLD_REASON =
  *     visits are entered, so waiting cannot change the answer.
  */
 export function outstationCampaignRuleOutcome(input: {
+  /** The trip's UNPLANNED visits: his double visits' and his own. */
   campaignVisits: number;
   dvEvidenceWindowClosed: boolean;
   expenseType: OutstationExpenseType;
+  /**
+   * His own visits could not be read, so a zero total is unmeasured: it HOLDS, never rejects. Optional and
+   * false by default, so a caller that never read them decides exactly as before.
+   */
+  ownVisitsUnmeasured?: boolean;
   role: string;
+  /** Every field visit of the trip: his double visits and his own. */
   totalDvVisits: number;
 }): OutstationCampaignRuleOutcome {
   if (input.expenseType !== "traveling" || !CAMPAIGN_RULE_ROLES.has(input.role)) return null;
@@ -135,16 +148,16 @@ export function outstationCampaignRuleOutcome(input: {
   if (input.campaignVisits > MAX_CAMPAIGN_VISITS) {
     return {
       kind: "reject",
-      reason: `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} campaign double-visits; this trip has ${input.campaignVisits}. The rest must be regular visits.`,
+      reason: `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} unplanned visits; this trip has ${input.campaignVisits}. The rest must be planned visits.`,
     };
   }
 
   if (input.totalDvVisits <= 0) {
-    return input.dvEvidenceWindowClosed
+    return input.dvEvidenceWindowClosed && !input.ownVisitsUnmeasured
       ? {
           kind: "reject",
           reason:
-            "No double-visit activity was recorded for this trip; a traveling expense for this role requires field double-visits.",
+            "No field visits were recorded for this trip — no double visit with a rep and none of his own; a traveling expense for this role requires field visits.",
         }
       : { kind: "hold", reason: DV_EVIDENCE_PENDING_HOLD_REASON };
   }
@@ -227,9 +240,9 @@ export function outstationGpsAccuracyHoldReason(input: {
  *   2. Governorate — the destination must be OUTSIDE the residence governorate.
  *      Only rejects when both governorates are known and identical (fail-open on
  *      an unresolved governorate; a Super Admin can still reject manually).
- *   3. Campaign cap — TRAVELING expenses for District/Training Managers only:
- *      the trip needs at least one double-visit and at most 2 campaign visits
- *      (the rest regular). Meeting/other expense types and all other roles skip this.
+ *   3. Unplanned cap — TRAVELING expenses for District/Training Managers only:
+ *      the trip needs at least one field visit (a double visit with a rep, or his own)
+ *      and at most 2 unplanned visits (the rest planned). Meeting/other expense types and all other roles skip this.
  *      A trip whose double-visit evidence window is still open HOLDS rather than
  *      rejects on a zero count — see outstationCampaignRuleOutcome().
  *   4. Ticket evidence — train/bus expenses that require a ticket must have one.
@@ -258,7 +271,7 @@ export function decideOutstationRequest(input: OutstationDecisionInput): Outstat
     };
   }
 
-  // 3. Campaign-visit cap — traveling expenses for District/Training Managers only.
+  // 3. Unplanned-visit cap — traveling expenses for District/Training Managers only.
   const campaign = outstationCampaignRuleOutcome({
     campaignVisits: input.campaignVisits,
     dvEvidenceWindowClosed: input.dvEvidenceWindowClosed,

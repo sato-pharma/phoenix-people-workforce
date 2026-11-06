@@ -112,7 +112,10 @@
  *     team calendar; Field Activity (`double_visit_analytics`, which no Medical Rep holds); probation SFE
  *     evidence (company-wide probation access, or the SFE Manager);
  *   - the Double Visit audit workbook's check-in times (`double_visit_analytics` export, which no
- *     Medical Rep holds).
+ *     Medical Rep holds);
+ *   - the outstation trip workload (`getRepTripVisitWorkload` `includePhoenixCheckins`), only for an
+ *     approver or a manager looking at SOMEONE ELSE's trip and for the Super Admin's claim check — the
+ *     employee's own trip panel stays blind (7 Nov 2026).
  * Every other check-in reader reads iReports360 check-ins only, so a started team's people show none
  * there within the start — see "Which still do not".
  *

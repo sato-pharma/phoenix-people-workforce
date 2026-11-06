@@ -1359,7 +1359,7 @@ function runRowShapeTests(code: string): void {
   const activity = flat(activityBranch);
   assert.ok(activity.includes("from public.phoenix_crm_day_activities a"), "the recorded day activities — never a planned one");
   assert.ok(activity.endsWith("and a.activity_type in ('meeting', 'conference', 'health_day', 'sales_day', 'training', 'admin_work', 'travel', 'group_meeting', 'rtd', 'interviews');"), "real only, of a kind the view names");
-  assert.ok(activity.includes("where not a.is_test and a.activity_date >= least("), "real only — never a test account's day");
+  assert.ok(activity.includes("where not a.is_test and a.activity_date >= team.counted_from"), "real only — never a test account's day");
   assert.ok(
     activity.includes(`case a.activity_type ${ACTIVITY_CODES.map((entry) => `when '${entry.kind}' then ${entry.code}`).join(" ")} end`),
     "each kind under its iReports360 code",
@@ -1763,12 +1763,21 @@ const PHOENIX_CHECKIN_READERS = [
   "src/lib/probation/intelligence/sfe-evidence.ts",
 ];
 
+/**
+ * Readers BOTH a rep and an approver reach: they ask for Phoenix check-ins only through a flag the caller
+ * sets when the viewer is looking at someone else's record, never the person's own (owner, 2026-10-02:
+ * "Never on the rep's own screens"; 6 Nov 2026: every territory counts from Phoenix CRM, so a reader left
+ * on iReports360 check-ins alone shows none at all).
+ */
+const VIEWER_GATED_CHECKIN_READERS: ReadonlyArray<{ expression: string; file: string }> = [
+  { expression: "includePhoenixVisits: input.includePhoenixCheckins === true,", file: "src/lib/crm/visit-workload.ts" },
+];
+
 /** Readers a rep CAN reach: they read iReports360 check-ins only. */
 const REP_REACHABLE_CHECKIN_READERS = [
   "src/lib/early-birds/collect.ts",
   "src/lib/employee-360/service.ts",
   "src/lib/employee-portal/my-crm-visits.ts",
-  "src/lib/crm/visit-workload.ts",
   "src/lib/crm/phoenix-kpi-data.ts",
   "src/lib/pharmacy-search/nearby.ts",
   "src/lib/crm/call-rate-service.ts",
@@ -1893,6 +1902,24 @@ function runCheckinDoorTests(plans: string): void {
   for (const file of REP_REACHABLE_CHECKIN_READERS) {
     assert.doesNotMatch(stripComments(read(file)), /includePhoenixVisits/, `${file} reaches a rep, so it reads iReports360 check-ins only`);
   }
+  for (const { expression, file } of VIEWER_GATED_CHECKIN_READERS) {
+    const source = stripComments(read(file));
+    assert.equal(source.split("includePhoenixVisits").length - 1, 1, `${file} asks for Phoenix check-ins in one place`);
+    assert.ok(source.includes(expression), `${file} asks only when its caller says so, never on its own`);
+  }
+  // The trip workload's callers: the employee's own trip panel stays blind; an approver looking at someone
+  // else's trip, and the Super Admin's claim check, see the positions.
+  const workloadRoute = stripComments(read("app/api/outstation/visit-workload/route.ts"));
+  assert.ok(
+    workloadRoute.includes("const viewingSomeoneElse = Boolean(requestedKey) && !ownKeys.includes(requestedKey as string);") &&
+      workloadRoute.includes("includePhoenixCheckins: viewingSomeoneElse,"),
+    "the trip panel's route gives Phoenix positions only to a viewer looking at someone else's trip",
+  );
+  const askingOutright = sourceFiles("src")
+    .concat(sourceFiles("app"))
+    .filter((file) => stripComments(read(file)).includes("includePhoenixCheckins: true"))
+    .sort();
+  assert.deepEqual(askingOutright, ["src/lib/outstation/expense-claim-validation.ts"], "and only the Super Admin's claim check asks for them outright");
   // A reader of the view outside the door reads vendor rows only, except the Super Admin's CRM Master.
   const direct = sourceFiles("src")
     .concat(sourceFiles("app"))

@@ -272,7 +272,7 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
   const days = workload.days.length
     ? `<table class="tbl">
         <colgroup><col style="width:34%"><col style="width:11%"><col style="width:11%"><col style="width:14%"><col style="width:15%"><col style="width:15%"></colgroup>
-        <thead><tr><th>Day</th><th class="num">AM</th><th class="num">PM</th><th class="num">Pharmacies</th><th class="num">Regular</th><th class="num">Campaign</th></tr></thead>
+        <thead><tr><th>Day</th><th class="num">AM</th><th class="num">PM</th><th class="num">Pharmacies</th><th class="num">Planned</th><th class="num">Unplanned</th></tr></thead>
         <tbody>${workload.days
           .map(
             (day) =>
@@ -289,7 +289,7 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
       <div class="box"><p class="box__k">Declared (sheet)</p><p class="box__v">${declared}</p></div>
       <div class="box${differs ? " box--flag" : ""}"><p class="box__k">Actual (evidence)</p><p class="box__v">AM ${live.am} &middot; PM ${live.pm} &middot; ${escapeHtml(formatPharmacyFigure(liveSplit(live)))}</p>
         ${differs ? `<p class="box__flag">&ne; declared (${actualTotal} actual vs ${declaredTotal} declared)</p>` : ""}</div>
-      <div class="box"><p class="box__k">Visit type</p><p class="box__v">Regular ${live.regular} &middot; Campaign ${live.campaign}</p></div>
+      <div class="box"><p class="box__k">Visit type</p><p class="box__v">Planned ${live.regular} &middot; Unplanned ${live.campaign}</p></div>
     </div>
     ${days}`;
 }
