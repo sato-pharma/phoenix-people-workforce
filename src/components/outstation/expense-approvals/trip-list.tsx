@@ -5,6 +5,14 @@ import { type ReactNode, useState } from "react";
 
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { expenseApprovalState, isAdjustedAmount } from "@/lib/outstation/approval-state";
+import {
+  type ExpenseApprovalSort,
+  type ExpenseTripTriageFilter,
+  expenseTripAwaitingLabel,
+  expenseTripDaysAwaiting,
+  expenseTripTriage,
+  expenseTripTriageLabel,
+} from "@/lib/outstation/expense-approval-triage";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 import { displayPlace } from "@/lib/outstation/place-label";
 import { tripSpan } from "@/lib/outstation/trip-span";
@@ -35,12 +43,17 @@ export function TripList({
   narrowed,
   onOpen,
   onRetry,
+  onSort,
+  onTriage,
   pendingCount,
   selectedTripIds,
   sessionExpired,
+  sort,
   toggleAllVisible,
   toggleTrip,
   totalCount,
+  triage,
+  triageCounts,
 }: {
   activeList: LoadedRecord[];
   allVisibleSelected: boolean;
@@ -58,14 +71,24 @@ export function TripList({
   narrowed: boolean;
   onOpen: (tripId: string) => void;
   onRetry: () => void;
+  onSort: (sort: ExpenseApprovalSort) => void;
+  onTriage: (triage: ExpenseTripTriageFilter) => void;
   pendingCount: number;
   selectedTripIds: Set<string>;
   sessionExpired: boolean;
+  sort: ExpenseApprovalSort;
   toggleAllVisible: () => void;
   toggleTrip: (tripId: string) => void;
   totalCount: number;
+  /** "Needs a look" / "Clean" (owner, 2026-11-07). Empty = every trip. */
+  triage: ExpenseTripTriageFilter;
+  /** Trips AWAITING a decision under each choice, within the other filters and the search. */
+  triageCounts: Record<"all" | "clean" | "look", number>;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Read once per mount: "awaiting N days" counts whole days, so a page left open for an hour
+  // never needs to re-render to stay right.
+  const [now] = useState(() => Date.now());
   const selected = activeList.find((record) => record.tripId === effectiveSelectedId) ?? null;
 
   const header = (
@@ -87,6 +110,53 @@ export function TripList({
       >
         <X className="h-4 w-4" /> Close
       </button>
+    </div>
+  );
+
+  // Owner, 2026-11-07 ~01:45: "Rail filter: Needs a look / Clean" and "Oldest first + awaiting
+  // N days". Each choice says how many trips await a decision under it, so "Clean · 0" is read
+  // before it is clicked. Square, flat, the same slate as the rail.
+  const choiceClassName = (active: boolean) =>
+    cn(
+      "border px-2 py-1.5 text-center text-phx-xs font-bold leading-tight transition-colors",
+      active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+    );
+  const controls = (
+    <div className="shrink-0 space-y-1.5 border-b border-slate-200 bg-white px-3 py-2" data-rail-controls>
+      <div aria-label="Show trips" className="grid grid-cols-3 gap-1" role="group">
+        {(["", "look", "clean"] as const).map((choice) => (
+          <button
+            aria-pressed={triage === choice}
+            className={choiceClassName(triage === choice)}
+            data-triage-choice={choice || "all"}
+            key={choice || "all"}
+            onClick={() => onTriage(choice)}
+            type="button"
+          >
+            <span className="block break-words">{expenseTripTriageLabel(choice)}</span>
+            <span className={cn("block text-phx-2xs tabular-nums", triage === choice ? "text-slate-300" : "text-slate-500")}>
+              {formatNumberValue(triageCounts[choice || "all"])} awaiting
+            </span>
+          </button>
+        ))}
+      </div>
+      <div aria-label="Order" className="grid grid-cols-2 gap-1" role="group">
+        {([
+          ["value", "Biggest first"],
+          ["oldest", "Oldest first"],
+        ] as const).map(([choice, label]) => (
+          <button
+            aria-pressed={sort === choice}
+            className={choiceClassName(sort === choice)}
+            data-sort-choice={choice}
+            key={choice}
+            onClick={() => onSort(choice)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 
@@ -121,6 +191,7 @@ export function TripList({
         )}
       >
         {header}
+        {loading ? null : controls}
         {loading ? (
           <div aria-busy="true" className="divide-y divide-slate-200">
             <p className="sr-only">Loading trips…</p>
@@ -186,6 +257,11 @@ export function TripList({
                 const state = expenseApprovalState(decision);
                 const span = tripSpan(record.date, record.toDate);
                 const place = record.location || record.to || "";
+                // Only a trip still waiting on a decision carries its reasons and its wait: a
+                // decided row already says what happened in its own chip.
+                const awaiting = state === "pending" && !isImportedHistoryTrip(record.date);
+                const reading = awaiting ? expenseTripTriage(record) : null;
+                const daysAwaiting = awaiting ? expenseTripDaysAwaiting(record.submittedAt, now) : null;
                 return (
                   // A row is a div, not a button: a checkbox nested inside a button is invalid
                   // HTML and the browser swallows one of the two clicks.
@@ -252,6 +328,20 @@ export function TripList({
                         <p className="break-words text-phx-xs text-slate-500" dir="auto" title={place || undefined}>
                           {displayPlace(place)}
                         </p>
+                        {reading?.triage === "look" ? (
+                          <p className="mt-0.5 flex items-start gap-1 text-phx-2xs font-black uppercase tracking-wide text-rose-600" data-triage-reasons>
+                            <AlertTriangle aria-hidden className="mt-px h-3 w-3 shrink-0" />
+                            <span className="min-w-0 break-words">{reading.reasons.join(" · ")}</span>
+                          </p>
+                        ) : null}
+                        {daysAwaiting !== null ? (
+                          <p
+                            className={cn("text-phx-2xs font-bold", daysAwaiting >= 7 ? "text-orange-700" : "text-slate-500")}
+                            data-days-awaiting={daysAwaiting}
+                          >
+                            {expenseTripAwaitingLabel(daysAwaiting)}
+                          </p>
+                        ) : null}
                         <EmployeeNote note={record.employeeNote} />
                         <DuplicateTripFlag copies={duplicateFlags.get(record.tripId)} />
                       </div>

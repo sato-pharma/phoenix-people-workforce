@@ -17,7 +17,7 @@ import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-sys
 import { Button } from "@/components/ui/button";
 import { DecisionBar } from "@/components/outstation/expense-approvals/decision-bar";
 import { EmployeeSummaryPanel } from "@/components/outstation/expense-approvals/employee-summary";
-import { type Decision, type LoadedRecord, PANEL_CLASS, egp } from "@/components/outstation/expense-approvals/shared";
+import { type Decision, type LoadedRecord, PANEL_CLASS, type TripIdleDays, egp } from "@/components/outstation/expense-approvals/shared";
 import { StatLine } from "@/components/outstation/expense-approvals/stat-line";
 import { TripList } from "@/components/outstation/expense-approvals/trip-list";
 import { TripReview } from "@/components/outstation/expense-approvals/trip-review";
@@ -40,7 +40,9 @@ import {
   countActiveExpenseApprovalFilters,
   matchesExpenseApprovalFilters,
   matchesExpenseApprovalSearchText,
+  NO_EXPENSE_APPROVAL_FILTERS,
 } from "@/lib/outstation/expense-approval-filters";
+import { compareExpenseApprovalTrips, expenseTripTriage } from "@/lib/outstation/expense-approval-triage";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
 import { ExpenseExportButton } from "@/components/outstation/expense-shared/expense-export-button";
 import {
@@ -175,7 +177,10 @@ export function ExpenseApprovalsWorkspace({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<ExpenseApprovalFilters>({ employee: "", month: "" });
+  const [filters, setFilters] = useState<ExpenseApprovalFilters>(NO_EXPENSE_APPROVAL_FILTERS);
+  // Each opened trip's idle days, lifted from its field-work read so the decision box can offer
+  // the allowance share for them (owner, 2026-11-07: "LET ME DECIDE" — offered, never applied).
+  const [idleByTrip, setIdleByTrip] = useState<Record<string, TripIdleDays>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [saving, setSaving] = useState(false);
@@ -356,6 +361,7 @@ export function ExpenseApprovalsWorkspace({
     const params = new URLSearchParams();
     if (filters.month) params.set("month", filters.month);
     if (filters.employee) params.set("employee", filters.employee);
+    if (filters.triage) params.set("triage", filters.triage);
     if (search.trim()) params.set("search", search.trim());
     const query = params.toString();
     return query ? `/api/admin/outstation/expenses/export?${query}` : "/api/admin/outstation/expenses/export";
@@ -366,7 +372,9 @@ export function ExpenseApprovalsWorkspace({
     const visible = records.filter(
       (record) => matchesExpenseApprovalFilters(record, filters) && matches(record),
     );
-    const byValue = (a: LoadedRecord, b: LoadedRecord) => b.total - a.total;
+    // The rail's own order (biggest first, or oldest first), so "approve, then the next one" opens
+    // the row directly under the trip just decided.
+    const byValue = compareExpenseApprovalTrips(filters.sort);
     // One shared rule decides the queue (see approval-state.ts), so a trip lands in exactly one.
     // Pending excludes rejections — otherwise rejecting a trip would leave it sitting in the
     // inbox forever and the button would look like it did nothing.
@@ -382,6 +390,21 @@ export function ExpenseApprovalsWorkspace({
       // ...but its values are still shown: it stays in the per-employee summary below.
       undecidedHistory: undecided.filter((record) => isImportedHistoryTrip(record.date)),
     };
+  }, [records, search, filters, decisionFor]);
+
+  // How many trips AWAIT a decision under each rail choice — within the month, the employee and
+  // the search, but across both triage choices, so each button says what clicking it would show.
+  const triageCounts = useMemo(() => {
+    const counts = { all: 0, clean: 0, look: 0 };
+    const scope = { ...filters, triage: "" as const };
+    for (const record of records) {
+      if (!matchesExpenseApprovalFilters(record, scope) || !matchesExpenseApprovalSearchText(record, search)) continue;
+      if (isImportedHistoryTrip(record.date) || expenseApprovalState(decisionFor(record)) !== "pending") continue;
+      counts.all += 1;
+      const triage = expenseTripTriage(record)?.triage;
+      if (triage) counts[triage] += 1;
+    }
+    return counts;
   }, [records, search, filters, decisionFor]);
 
   /**
@@ -407,7 +430,7 @@ export function ExpenseApprovalsWorkspace({
           matchesExpenseApprovalFilters(record, filters) &&
           matchesExpenseApprovalSearchText(record, search),
       )
-      .sort((left, right) => rank(left) - rank(right) || right.total - left.total);
+      .sort((left, right) => rank(left) - rank(right) || compareExpenseApprovalTrips(filters.sort)(left, right));
   }, [records, filters, search]);
   // Derive (don't store) the effective selection so it stays valid as tabs/filters change,
   // without a setState-in-effect. An explicit click still wins via `selectedId`.
@@ -427,6 +450,13 @@ export function ExpenseApprovalsWorkspace({
 
 
   const openTrip = useCallback((tripId: string) => setSelectedId(tripId), []);
+  const recordIdleDays = useCallback((tripId: string, idle: TripIdleDays) => {
+    setIdleByTrip((current) =>
+      current[tripId]?.idleDays === idle.idleDays && current[tripId]?.tripDays === idle.tripDays
+        ? current
+        : { ...current, [tripId]: idle },
+    );
+  }, []);
 
   // Counts alone don't answer the question this queue exists to answer — "how much money is
   // waiting on me". These follow the filters, so the strip always describes what is on screen.
@@ -792,6 +822,7 @@ export function ExpenseApprovalsWorkspace({
     onSave: () => void save(),
     onUnapprove: () => selected && setDecision(selected, { hrApproved: false, status: "" }),
     onUnreject: () => selected && setDecision(selected, { hrApproved: false, status: "" }),
+    idle: selected ? (idleByTrip[selected.tripId] ?? null) : null,
     record: view === "queue" ? selected : null,
     saving,
     valuesOnly: selected ? isImportedHistoryTrip(selected.date) : false,
@@ -909,7 +940,8 @@ export function ExpenseApprovalsWorkspace({
                 className="inline-flex shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
                 onClick={() => {
                   setSearch("");
-                  setFilters({ employee: "", month: "" });
+                  // The order is a preference, not a narrowing: Clear all keeps it.
+                  setFilters((current) => ({ ...NO_EXPENSE_APPROVAL_FILTERS, sort: current.sort }));
                 }}
                 type="button"
               >
@@ -1047,12 +1079,17 @@ export function ExpenseApprovalsWorkspace({
               setLoadError(null);
               void load();
             }}
+            onSort={(sort) => setFilters((current) => ({ ...current, sort }))}
+            onTriage={(triage) => setFilters((current) => ({ ...current, triage }))}
             pendingCount={pending.length}
             selectedTripIds={selectedTripIds}
             sessionExpired={sessionExpired}
+            sort={filters.sort ?? "value"}
             toggleAllVisible={toggleAllVisible}
             toggleTrip={toggleTrip}
             totalCount={records.length}
+            triage={filters.triage ?? ""}
+            triageCounts={triageCounts}
           />
           <div className="min-w-0 flex-1">
             {!selected ? (
@@ -1065,6 +1102,7 @@ export function ExpenseApprovalsWorkspace({
                 key={selected.tripId}
                 decision={decisionFor(selected)}
                 duplicateOf={duplicateFlags.get(selected.tripId)}
+                onIdleDays={recordIdleDays}
                 onNext={
                   selectedIndex >= 0 && selectedIndex < activeList.length - 1
                     ? () => setSelectedId(activeList[selectedIndex + 1].tripId)

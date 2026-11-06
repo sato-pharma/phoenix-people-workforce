@@ -20,6 +20,7 @@ import {
   matchesExpenseApprovalSearchText,
 } from "@/lib/outstation/expense-approval-filters";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
+import { expenseTripTriageLabel } from "@/lib/outstation/expense-approval-triage";
 import { expenseApprovalState, EXPENSE_STATE_LABEL } from "@/lib/outstation/approval-state";
 // The owner reads every stamp in Cairo local, never raw UTC (house rule).
 import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
@@ -187,6 +188,7 @@ export function expenseApprovalExportSubtitle(
   const scope: string[] = [];
   if (filters.month) scope.push(expenseTripMonthLabel(filters.month));
   if (employeeLabel) scope.push(employeeLabel);
+  if (filters.triage) scope.push(expenseTripTriageLabel(filters.triage));
   const scopeLabel = scope.length > 0 ? scope.join(" · ") : "All trips";
   return `${scopeLabel} · ${rowCount.toLocaleString()} rows · exported ${cairoDateTimeSortable(new Date().toISOString())} Cairo`;
 }

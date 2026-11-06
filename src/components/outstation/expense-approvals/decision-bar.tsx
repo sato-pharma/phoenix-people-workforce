@@ -13,11 +13,12 @@ import {
 } from "@/components/ui/form-tokens";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { isAdjustedAmount, isRejectedStatus } from "@/lib/outstation/approval-state";
+import { idleDayDeductionSuggestions } from "@/lib/outstation/idle-day-deduction";
 import { approvedAmountFromDeduction, deductionFromApprovedAmount } from "@/lib/outstation/payable";
 import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
-import { type Decision, type LoadedRecord, egp } from "./shared";
+import { type Decision, type LoadedRecord, type TripIdleDays, egp } from "./shared";
 
 /**
  * The decision (owner, 2026-11-07: "put it in the left side, make the full right side for
@@ -38,6 +39,7 @@ export function DecisionBar({
   canDecide,
   decision,
   dirtyCount,
+  idle,
   onApprove,
   onChangeAmount,
   onChangeReason,
@@ -53,6 +55,8 @@ export function DecisionBar({
   canDecide: boolean;
   decision: Decision | null;
   dirtyCount: number;
+  /** The open trip's idle days once its field work is read; null until then, or with none to read. */
+  idle?: TripIdleDays | null;
   onApprove: () => void;
   onChangeAmount: (value: number) => void;
   onChangeReason: (value: string) => void;
@@ -109,6 +113,20 @@ export function DecisionBar({
   // A changed amount with no reason cannot be approved, so the box is shown whether or not he
   // opened it — the rose hint under it says why.
   const expanded = open || (reasonMissing && !locked);
+  // Owner, 2026-11-07 ~01:50, on how idle days are deducted: "LET ME DECIDE". The box OFFERS the
+  // allowance share for the idle days — per idle day, or the whole allowance — and nothing moves
+  // until he clicks one; the Deduction it fills stays editable and Approve is still his click.
+  // Only an undecided trip is offered one: a decided trip is reopened with Undo first.
+  const undecided = !decision.hrApproved && !isRejected;
+  const suggestions =
+    !locked && undecided && idle
+      ? idleDayDeductionSuggestions({ allowance: record.allowance, idleDays: idle.idleDays, total: record.total, tripDays: idle.tripDays })
+      : [];
+  const applySuggestion = (suggestion: (typeof suggestions)[number]) => {
+    onChangeAmount(approvedAmountFromDeduction(record.total, suggestion.deduction));
+    // His own words are never written over; the system's sentence fills an empty box only.
+    if (!decision.hrComment.trim()) onChangeReason(suggestion.reason);
+  };
   const openPanel = () => {
     setOpenFor(record.tripId);
     window.requestAnimationFrame(() => reasonRef.current?.focus());
@@ -199,6 +217,17 @@ export function DecisionBar({
             </div>
           ) : null}
         </div>
+        {suggestions.length > 0 && !expanded && !adjusted && idle ? (
+          <button
+            className="self-start text-left text-phx-xs font-bold text-orange-700 underline-offset-2 hover:underline"
+            data-idle-deduction-hint
+            onClick={openPanel}
+            type="button"
+          >
+            {formatNumberValue(idle.idleDays)} of {formatNumberValue(idle.tripDays)} days with no field activity · see the
+            suggested deduction
+          </button>
+        ) : null}
       </div>
 
       {expanded ? (
@@ -275,6 +304,41 @@ export function DecisionBar({
               </button>
             ) : null}
           </div>
+
+          {suggestions.length > 0 && idle ? (
+            <div className="min-w-0 border-l-2 border-orange-400 bg-orange-50/60 px-3 py-2" data-idle-deduction>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700">
+                Suggested deduction · {formatNumberValue(idle.idleDays)} of {formatNumberValue(idle.tripDays)} days with no field
+                activity
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {suggestions.map((suggestion) => {
+                  const chosen = adjusted && Math.abs(deduction - suggestion.deduction) < 0.005;
+                  return (
+                    <button
+                      aria-pressed={chosen}
+                      className={cn(
+                        "border px-2.5 py-1 text-left text-xs font-bold transition-colors",
+                        chosen
+                          ? "border-orange-600 bg-orange-600 text-white"
+                          : "border-orange-300 bg-white text-orange-800 hover:bg-orange-100",
+                      )}
+                      data-idle-suggestion={suggestion.key}
+                      key={suggestion.key}
+                      onClick={() => applySuggestion(suggestion)}
+                      type="button"
+                    >
+                      {suggestion.label} · <span className="font-mono tabular-nums">{egp(suggestion.deduction)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-phx-2xs text-slate-500">
+                Allowance {egp(record.allowance)} only · travel and tickets are never part of it. Nothing changes until you pick
+                one, and the deduction stays editable.
+              </p>
+            </div>
+          ) : null}
 
           {/* The reason: a box that grows with what he writes, never one cut-off line. */}
           <div className="min-w-0">

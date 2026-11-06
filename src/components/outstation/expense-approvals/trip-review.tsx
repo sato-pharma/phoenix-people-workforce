@@ -47,6 +47,7 @@ import {
   EmployeeNote,
   type LoadedRecord,
   PANEL_CLASS,
+  type TripIdleDays,
   capturedLocationConfidenceTone,
   distanceFlag,
   egp,
@@ -77,6 +78,7 @@ import {
 export function TripReview({
   decision,
   duplicateOf,
+  onIdleDays,
   onNext,
   onPrevious,
   position,
@@ -86,6 +88,11 @@ export function TripReview({
   decision: Decision;
   /** Other live claims for the same employee, day and destination (duplicate-trip-guard.ts). */
   duplicateOf?: string[];
+  /**
+   * Hands the trip's idle days up once its field work is read, so the decision box can offer the
+   * allowance share for them (owner, 2026-11-07: "LET ME DECIDE" — offered, never applied).
+   */
+  onIdleDays?: (tripId: string, idle: TripIdleDays) => void;
   /** Absent at either end of the list. */
   onNext?: () => void;
   onPrevious?: () => void;
@@ -99,6 +106,15 @@ export function TripReview({
   const [workload, setWorkload] = useState<TripWorkloadEvidence | null | undefined>(undefined);
   const [attachments, setAttachments] = useState<AttachmentsData | null | undefined>(undefined);
   const [claimOutcome, setClaimOutcome] = useState<ClaimValidationOutcome | undefined>(undefined);
+
+  // The idle-day count the field-work tile states, lifted to the decision box. Not for a rep with no
+  // CRM identity mapped: no visits there is not evidence of an idle day.
+  useEffect(() => {
+    if (!onIdleDays || !workload || workload.matchStatus === "unmapped") return;
+    const days = workload.dateBreakdown;
+    if (days.length === 0) return;
+    onIdleDays(record.tripId, { idleDays: days.filter((day) => day.total === 0).length, tripDays: days.length });
+  }, [onIdleDays, record.tripId, workload]);
 
   const span = tripSpan(record.date, record.toDate);
   const flag = record.km ? distanceFlag(record.km) : null;

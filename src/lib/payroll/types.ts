@@ -114,6 +114,10 @@ export type ExpenseTripRecord = {
    * because a historical row (or one still missing coordinates) has nothing to resolve. */
   capturedLocation?: OutstationCapturedLocationSummary | null;
   date: string;
+  /** True when the departure photo's stored metadata carries a flag (taken far from the arrival
+   * photo, after the trip, not live, …). Phoenix-submitted requests only; absent on an imported row.
+   * Read by the Expense Approvals rail's "Needs a look" filter (expense-approval-triage.ts). */
+  departurePhotoFlagged?: boolean;
   description: string;
   /** Doctor/pharmacy/institution split of the trip's REGULAR CRM visits — display-only context,
    * present only for Phoenix-submitted outstation requests whose workload snapshot recorded it
@@ -148,6 +152,9 @@ export type ExpenseTripRecord = {
   row: number;
   specialist: string;
   status: string;
+  /** When the employee submitted the claim (`created_at`) — the queue's "awaiting N days" and
+   * "Oldest first". Phoenix-submitted requests only; absent on an imported row. */
+  submittedAt?: string;
   to: string;
   toDate: string;
   total: number;
@@ -155,6 +162,10 @@ export type ExpenseTripRecord = {
   travelCost: number;
   tripId: string;
   tripType: string;
+  /** The stored `workload_match_status` (matched · partial · no_activity · manual · manual_override ·
+   * stale_import). Phoenix-submitted requests only; absent on an imported row. Display and triage
+   * only — it decides nothing about pay. */
+  workloadMatchStatus?: string;
 };
 
 export type PayrollExpenseApproval = ExpenseTripRecord & {

@@ -24,6 +24,9 @@ export type LoadedRecord = ExpenseTripRecord & {
   sourceFileName?: string;
 };
 
+/** A trip's days with no field activity, as its field-work read found them. */
+export type TripIdleDays = { idleDays: number; tripDays: number };
+
 export type Decision = { approvedAmount: number; hrApproved: boolean; hrComment: string; status: string };
 
 export function egp(value: number) {
