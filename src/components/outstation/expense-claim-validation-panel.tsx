@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CollapsibleSection, PanelSection } from "@/components/outstation/approval-detail-primitives";
 import type {
@@ -64,18 +64,32 @@ function VerdictIcon({ verdict }: { verdict: FraudVerdict }) {
   return <HelpCircle className="h-4 w-4 text-slate-400" />;
 }
 
+/** What the caller is told once the checks land: a verdict, or why there is none. */
+export type ClaimValidationOutcome = FraudVerdict | "unavailable" | "error";
+
 export function ExpenseClaimValidationPanel({
+  bare = false,
   collapsible = false,
+  onOutcome,
   requestId,
 }: {
-  /** Expense Approvals folds this section, with the verdict in its header, and opens it on its own
-   * only when something needs a look (2026-11-06). The held-request drawer keeps it open. */
+  /** The checks alone, with no header of their own — the caller writes the section around them
+   * (Expense Approvals, 2026-11-07, where nothing folds). */
+  bare?: boolean;
+  /** A folding section with the verdict in its header, opened on its own only when something needs
+   * a look (2026-11-06). The held-request drawer keeps it open. */
   collapsible?: boolean;
+  /** The verdict, once read — so the caller can word it at the top of its page. */
+  onOutcome?: (outcome: ClaimValidationOutcome) => void;
   requestId: number;
 }) {
   const [state, setState] = useState<
     { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ValidationResponse }
   >({ kind: "loading" });
+  const onOutcomeRef = useRef(onOutcome);
+  useEffect(() => {
+    onOutcomeRef.current = onOutcome;
+  });
 
   const load = useCallback(async () => {
     // Yield a microtask before the first setState, the same idiom the other self-fetching panels
@@ -88,12 +102,15 @@ export function ExpenseClaimValidationPanel({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.message || `Request failed (${response.status})`);
-      setState({ data: payload as ValidationResponse, kind: "ready" });
+      const data = payload as ValidationResponse;
+      setState({ data, kind: "ready" });
+      onOutcomeRef.current?.(data.available ? data.headline : "unavailable");
     } catch (error) {
       setState({
         kind: "error",
         message: error instanceof Error ? error.message : "The validation could not be loaded.",
       });
+      onOutcomeRef.current?.("error");
     }
   }, [requestId]);
 
@@ -190,6 +207,7 @@ export function ExpenseClaimValidationPanel({
     </>
   );
 
+  if (bare) return body;
   if (!collapsible) return <PanelSection title="Claim validation">{body}</PanelSection>;
   return (
     <CollapsibleSection

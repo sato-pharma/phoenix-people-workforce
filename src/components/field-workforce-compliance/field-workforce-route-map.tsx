@@ -49,6 +49,24 @@ export type DayRoute = {
   legs: RouteLeg[];
 };
 
+/**
+ * A labelled pin that is NOT a check-in: an arrival or departure photo, a journey stop. Drawn beside
+ * the numbered check-ins and inside the same bounds, with its own letter or number on the pin
+ * (owner, 2026-11-07: the whole trip on one map, every point the trip has).
+ */
+export type RouteMarker = {
+  id: string;
+  /** One or two characters, printed on the pin: "A", "D", "S2". */
+  label: string;
+  lat: number;
+  lon: number;
+  /** The tooltip, e.g. "Arrival photo · Wed 15 Oct 22:21". */
+  title: string;
+};
+
+/** The declared destination, drawn as a hollow circle so a pin far from it is seen at once. */
+export type RouteDestination = { lat: number; lon: number; title: string };
+
 /** Decodes a Google encoded polyline into lat/lng points (same algorithm as the outstation map). */
 function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
   const points: Array<{ lat: number; lng: number }> = [];
@@ -125,13 +143,26 @@ function formatTime(value: string) {
  * each stop's check-in time, and the Google driving distance + drive-time between stops
  * (when available). Read-only; reuses the same Google Maps browser loader as the outstation map.
  */
+const NO_MARKERS: RouteMarker[] = [];
+
 export function FieldWorkforceRouteMap({
   checkins,
   copy = CHECKIN_COPY,
+  destination = null,
+  frame = "card",
+  markers = NO_MARKERS,
   route,
 }: {
   checkins: RouteCheckin[];
   copy?: RouteMapCopy;
+  destination?: RouteDestination | null;
+  /**
+   * "card" is the report card this map was built as: a heading, the description and the numbered
+   * trail under the map. "bare" is the map box alone, square-edged, for a page that writes its own
+   * legend around it (Expense Approvals, 2026-11-07).
+   */
+  frame?: "bare" | "card";
+  markers?: RouteMarker[];
   route?: DayRoute | null;
 }) {
   const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
@@ -154,9 +185,12 @@ export function FieldWorkforceRouteMap({
   const hasRoute = legs.length > 0;
   const totalKm = hasRoute ? Math.round(legs.reduce((sum, leg) => sum + (leg.distanceKm ?? 0), 0) * 10) / 10 : null;
   const totalMin = hasRoute ? legs.reduce((sum, leg) => sum + (leg.durationMinutes ?? 0), 0) : null;
+  // Anything with a position is a reason to draw the map — a trip with photo pins and no check-in
+  // is still a trip on a map.
+  const pinCount = points.length + markers.length + (destination ? 1 : 0);
 
   useEffect(() => {
-    if (!browserKey || points.length === 0) return;
+    if (!browserKey || pinCount === 0) return;
     let cancelled = false;
     void loadGoogleMaps(browserKey)
       .then((maps) => {
@@ -170,11 +204,11 @@ export function FieldWorkforceRouteMap({
     return () => {
       cancelled = true;
     };
-  }, [browserKey, points.length]);
+  }, [browserKey, pinCount]);
 
   useEffect(() => {
     const mapElement = mapRef.current;
-    if (!ready || !mapElement || !googleMaps || points.length === 0) return;
+    if (!ready || !mapElement || !googleMaps || pinCount === 0) return;
     let cancelled = false;
 
     const run = async () => {
@@ -207,8 +241,12 @@ export function FieldWorkforceRouteMap({
         const roadPath = route?.encodedPolyline ? decodePolyline(route.encodedPolyline) : null;
         const isRealRoute = Boolean(roadPath && roadPath.length > 1);
         const linePath = isRealRoute ? roadPath! : path;
+        const extraPins = [
+          ...markers.map((marker) => ({ lat: marker.lat, lng: marker.lon })),
+          ...(destination ? [{ lat: destination.lat, lng: destination.lon }] : []),
+        ];
         const map = new MapCtor(mapElement, {
-          center: path[0],
+          center: path[0] ?? extraPins[0],
           mapTypeControl: false,
           streetViewControl: false,
           zoom: 12,
@@ -223,6 +261,33 @@ export function FieldWorkforceRouteMap({
               title: `${index + 1}. ${point.contactName ?? point.address ?? "Check-in"} (${formatTime(point.checkDate)})`,
             }));
           });
+          // Photo and stop pins: the same pin, its letter in the house orange so it reads apart from
+          // the numbered check-ins at a glance.
+          markers.forEach((marker) => {
+            markersRef.current.push(new MarkerCtor({
+              label: { color: "#9a3412", fontWeight: "900", text: marker.label },
+              map,
+              position: { lat: marker.lat, lng: marker.lon },
+              title: marker.title,
+            }));
+          });
+          if (destination) {
+            markersRef.current.push(new MarkerCtor({
+              icon: googleMaps.SymbolPath
+                ? {
+                    fillOpacity: 0,
+                    path: googleMaps.SymbolPath.CIRCLE,
+                    scale: 11,
+                    strokeColor: "#0f172a",
+                    strokeWeight: 3,
+                  }
+                : undefined,
+              map,
+              position: { lat: destination.lat, lng: destination.lon },
+              title: destination.title,
+              zIndex: 0,
+            }));
+          }
         }
 
         if (PolylineCtor && linePath.length > 1) {
@@ -238,7 +303,8 @@ export function FieldWorkforceRouteMap({
         const bounds = LatLngBoundsCtor ? new LatLngBoundsCtor() : null;
         linePath.forEach((point) => bounds?.extend(point));
         path.forEach((point) => bounds?.extend(point));
-        if (bounds && (linePath.length > 1 || path.length > 1)) map.fitBounds(bounds, 64);
+        extraPins.forEach((point) => bounds?.extend(point));
+        if (bounds && linePath.length + path.length + extraPins.length > 1) map.fitBounds(bounds, 64);
         setError(null);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Google Maps could not render the route.");
@@ -249,7 +315,30 @@ export function FieldWorkforceRouteMap({
     return () => {
       cancelled = true;
     };
-  }, [googleMaps, points, ready, route]);
+  }, [destination, googleMaps, markers, pinCount, points, ready, route]);
+
+  if (frame === "bare") {
+    // The box alone. Square, like everything on the admin shell; the words around it are the
+    // caller's. `overflow-hidden` is load-bearing: Google Maps draws absolutely-positioned internals
+    // wider than their box, which pushed a 375px page sideways.
+    return (
+      <div className="min-w-0 overflow-hidden">
+        {!browserKey ? (
+          <p className="border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">
+            Route map unavailable: the Google Maps browser key is missing from the environment.
+          </p>
+        ) : pinCount === 0 ? (
+          <p className="border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold text-slate-500">{copy.empty}</p>
+        ) : (
+          <>
+            <div className="h-[360px] border border-slate-200 bg-slate-50 sm:h-[420px]" ref={mapRef} />
+            {!ready ? <p className="mt-1 text-xs text-slate-500">Loading Google Maps&hellip;</p> : null}
+            {error ? <p className="mt-1 text-xs text-amber-700">{error}</p> : null}
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (!browserKey) {
     return (

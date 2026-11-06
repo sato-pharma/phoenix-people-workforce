@@ -68,6 +68,13 @@ const REVIEWED_UNRESOLVABLE: ReadonlyArray<{ file: string; marks: string; verdic
     verdict: "C — a full-width bar inside the page's `flex flex-col` shell.",
   },
   {
+    file: "src/components/outstation/expense-approvals/trip-list.tsx",
+    marks: "bg-slate-900 px-4 py-2.5",
+    verdict:
+      "C — the rail's \"Trips · N awaiting\" header is a variable rendered in two `flex flex-col` shells "
+      + "(the desktop rail and the phone sheet); shrink-0 protects its HEIGHT while the list under it scrolls.",
+  },
+  {
     file: "src/components/production-planning/production-planning-workspace.tsx",
     marks: "shrink-0 flex-wrap items-center gap-1",
     verdict:

@@ -32,6 +32,8 @@ import {
 const MODULE = join(process.cwd(), "src/lib/outstation/expense-note-assist.ts");
 const ROUTE = join(process.cwd(), "app/api/admin/outstation/expenses/note-assist/route.ts");
 const WORKSPACE = join(process.cwd(), "src/components/outstation/expense-approvals-workspace.tsx");
+// The rewrite control sits in the decision bar since the 2026-11-07 rebuild.
+const DECISION_BAR = join(process.cwd(), "src/components/outstation/expense-approvals/decision-bar.tsx");
 
 /** The prompt the model saw for a typical reduced-amount decision. */
 const PROMPT = buildExpenseNotePrompt({
@@ -193,7 +195,7 @@ export function runOutstationExpenseNoteAssistTests() {
     "note writing is gated on decision access — a read-only CEO has no decision to attach a note to",
   );
 
-  const workspaceSource = readFileSync(WORKSPACE, "utf8");
+  const workspaceSource = readFileSync(WORKSPACE, "utf8") + readFileSync(DECISION_BAR, "utf8");
   assert.ok(
     /Restore my wording/.test(workspaceSource),
     "the approver's own wording must stay one click away from any rewrite",

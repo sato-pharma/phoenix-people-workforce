@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText, ImageOff, Loader2, MapPin, Paperclip, Route, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { JourneyRouteLine, type JourneyRouteLeg } from "@/components/outstation/journey-route-line";
 import {
   phxButtonGhostClassName,
@@ -20,29 +20,34 @@ import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 
 type Ticket = { contentType: string; name: string; url: string };
 /** A chained journey's stops and drives (owner rule, 2026-10-18 — chained-journey.ts). */
-type ApproverJourney = {
+export type ApproverJourneyStop = {
+  accuracyMeters: number | null;
+  /** Set when a system administrator added the stop: no photo, his reason. */
+  addedByAdmin?: { by: string; reason: string } | null;
+  capturedAt: string;
+  evidence: "live_photo" | "location" | "location_ticket";
+  governorate: string | null;
+  /** Where the stop was recorded — optional so a payload from a server built before 2026-11-07
+   * still renders, with no pin. */
+  latitude?: number | null;
+  locationLabel: string | null;
+  longitude?: number | null;
+  stopNumber: number;
+  ticketAmount: number;
+  url: string | null;
+};
+export type ApproverJourney = {
   flagReasons: string[];
   fuelAmount: number | null;
   legs: JourneyRouteLeg[];
   mode: "chained" | "single_destination" | "ticket_journey" | null;
   modeReason: string | null;
   singleDestinationFuelAmount: number | null;
-  stops: Array<{
-    accuracyMeters: number | null;
-    /** Set when a system administrator added the stop: no photo, his reason. */
-    addedByAdmin?: { by: string; reason: string } | null;
-    capturedAt: string;
-    evidence: "live_photo" | "location" | "location_ticket";
-    governorate: string | null;
-    locationLabel: string | null;
-    stopNumber: number;
-    ticketAmount: number;
-    url: string | null;
-  }>;
+  stops: ApproverJourneyStop[];
 };
 /** Present when the claim may still take a stop the employee missed (2026-11-03). */
 type MissedStopOffer = { nextStopNumber: number; revision: string; tripEndDate: string; tripStartDate: string };
-type AttachmentsData = {
+export type AttachmentsData = {
   employeeName: string | null;
   found: boolean;
   journey?: ApproverJourney | null;
@@ -121,9 +126,14 @@ function TripJourney({ journey }: { journey: ApproverJourney }) {
                 </p>
               )}
               <figcaption className="mt-1 break-words text-xs text-slate-600">
-                <span className="font-bold text-slate-900">{caption}</span>
+                <span className="font-bold text-slate-900">
+                  Stop {stop.stopNumber} · {caption}
+                </span>
                 {` · ${cairoDateTime(stop.capturedAt)}`}
                 {stop.locationLabel ? ` · ${stop.locationLabel}` : ""}
+                {typeof stop.latitude === "number" && typeof stop.longitude === "number"
+                  ? ` · ${stop.latitude.toFixed(5)}, ${stop.longitude.toFixed(5)}`
+                  : ""}
                 {stop.addedByAdmin
                   ? ""
                   : stop.accuracyMeters !== null
@@ -280,7 +290,15 @@ function isPdf(ticket: Ticket): boolean {
  * the departure photo was never sent here, and the Super Admin who approves these could not see
  * it (owner, 2026-09-18). Both now render full width through TripEvidencePhotos.
  */
-export function TripAttachments({ tripId }: { tripId: string }) {
+export function TripAttachments({
+  onLoaded,
+  tripId,
+}: {
+  /** The payload, once it lands (null on a failure or for a sheet-imported trip) — so the caller
+   * can pin the photos and stops on its own map and word its verdict (2026-11-07). */
+  onLoaded?: (data: AttachmentsData | null) => void;
+  tripId: string;
+}) {
   const requestId = parseRequestId(tripId);
   const [reloadKey, setReloadKey] = useState(0);
   // Kept here, not in the form: adding a stop reloads this panel, which unmounts the form.
@@ -290,12 +308,20 @@ export function TripAttachments({ tripId }: { tripId: string }) {
     data?: AttachmentsData;
     error?: string;
   }>({ status: "idle" });
+  const onLoadedRef = useRef(onLoaded);
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
+  });
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       await Promise.resolve();
-      if (cancelled || !requestId) return;
+      if (cancelled) return;
+      if (!requestId) {
+        onLoadedRef.current?.(null);
+        return;
+      }
       setState({ status: "loading" });
       try {
         const response = await fetch(`/api/admin/outstation/${requestId}/attachments`, {
@@ -303,10 +329,14 @@ export function TripAttachments({ tripId }: { tripId: string }) {
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload?.message || `Request failed (${response.status})`);
-        if (!cancelled) setState({ data: payload as AttachmentsData, status: "done" });
+        if (!cancelled) {
+          setState({ data: payload as AttachmentsData, status: "done" });
+          onLoadedRef.current?.(payload as AttachmentsData);
+        }
       } catch (error) {
         if (!cancelled) {
           setState({ error: error instanceof Error ? error.message : "Failed to load attachments.", status: "error" });
+          onLoadedRef.current?.(null);
         }
       }
     }

@@ -88,12 +88,17 @@ export function runOutstationPayrollExpenseMappingTests() {
   });
   assert.equal(arabic.employeeNote, "استلام نسخة العقد", "an Arabic note arrives whole, trimmed");
   assert.notEqual(arabic.employeeNote, arabic.hrComment, "the employee's note is never HR's decision box");
-  const workspace = readFileSync(
-    new URL("../src/components/outstation/expense-approvals-workspace.tsx", import.meta.url),
+  // Since the 2026-11-07 rebuild the queue row is the rail and the trip under review is its own page.
+  const rail = readFileSync(
+    new URL("../src/components/outstation/expense-approvals/trip-list.tsx", import.meta.url),
+    "utf8",
+  );
+  const review = readFileSync(
+    new URL("../src/components/outstation/expense-approvals/trip-review.tsx", import.meta.url),
     "utf8",
   );
   assert.equal(
-    workspace.match(/<EmployeeNote note=\{record\.employeeNote\}/g)?.length,
+    (rail + review).match(/<EmployeeNote note=\{record\.employeeNote\}/g)?.length,
     2,
     "Expense Approvals draws the employee's note on the queue row AND on the trip under review",
   );

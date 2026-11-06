@@ -2,46 +2,27 @@
 
 import {
   AlertTriangle,
-  ArrowRight,
-  CalendarDays,
   Check,
   CheckCircle2,
-  Inbox,
-  Loader2,
-  MapPin,
-  MessageSquareText,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
   ClipboardList,
+  Inbox,
   Search,
-  Sparkles,
-  Undo2,
   Users,
   Wallet,
   X,
-  XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  AdminCallout,
-  AdminInsightChip,
-  AdminPageHero,
-} from "@/components/admin/admin-design-system";
-import { Badge } from "@/components/ui/badge";
+import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
-import {
-  CollapsibleSection,
-  CostBreakdownFact,
-  Fact,
-  RouteFact,
-} from "@/components/outstation/approval-detail-primitives";
-import { TripAttachments } from "@/components/outstation/trip-attachments";
-import { ExpenseClaimValidationPanel } from "@/components/outstation/expense-claim-validation-panel";
-import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
+import { DecisionBar } from "@/components/outstation/expense-approvals/decision-bar";
+import { EmployeeSummaryPanel } from "@/components/outstation/expense-approvals/employee-summary";
+import { type Decision, type LoadedRecord, PANEL_CLASS, egp } from "@/components/outstation/expense-approvals/shared";
+import { StatLine } from "@/components/outstation/expense-approvals/stat-line";
+import { TripList } from "@/components/outstation/expense-approvals/trip-list";
+import { TripReview } from "@/components/outstation/expense-approvals/trip-review";
 import { EXPENSE_DECISION_DRAFT_KEY_BASE, ownerScopedStorageKey } from "@/lib/browser-storage/owner-scoped";
-import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
+import { formatNumberValue } from "@/lib/i18n/format";
 import {
   APPROVED_STATUS,
   REJECTED_STATUS,
@@ -49,12 +30,10 @@ import {
   expenseApprovalState,
   expenseDecisionChanged,
   isAdjustedAmount,
-  isRejectedStatus,
   planBulkApproval,
 } from "@/lib/outstation/approval-state";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
-import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { flagDuplicateTripRows } from "@/lib/outstation/duplicate-trip-guard";
 import {
   buildExpenseApprovalFilterOptions,
@@ -65,38 +44,24 @@ import {
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
 import { ExpenseExportButton } from "@/components/outstation/expense-shared/expense-export-button";
 import {
-  OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
-  TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
-  classifyOutstationExpenseEligibility,
-} from "@/lib/outstation/classification";
-import {
   buildExpenseApprovalEmployeeSummary,
   totalExpenseApprovalSummary,
 } from "@/lib/outstation/expense-approval-summary";
-import type { ExpenseApprovalEmployeeSummary } from "@/lib/outstation/expense-approval-summary";
-import {
-  approvedAmountFromDeduction,
-  deductionFromApprovedAmount,
-} from "@/lib/outstation/payable";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { TableRowDetail, rowDetailToggleProps } from "@/components/ui/table-row-detail";
-import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
-import {
-  phxButtonApproveDenseClassName,
-  phxButtonDangerDenseClassName,
-  phxFieldClassName,
-} from "@/components/ui/form-tokens";
+import { phxButtonApproveDenseClassName, phxFieldClassName } from "@/components/ui/form-tokens";
 
-type LoadedRecord = ExpenseTripRecord & {
-  approvedAmount?: number | null;
-  hrApproved?: boolean;
-  hrComment?: string;
-  reportId?: string | null;
-  sourceFileName?: string;
-};
-
-type Decision = { approvedAmount: number; hrApproved: boolean; hrComment: string; status: string };
+/**
+ * Expense Approvals — the state and money container.
+ *
+ * Rebuilt from scratch on 2026-11-07 (owner: "fully from scratch rebuild the expense approvals,
+ * more premium, polished, more obvious, clear, more easy for design and human review"). Everything
+ * that moves money stays HERE, unchanged: the stored and on-screen decisions, the unsaved count,
+ * which rows a save posts, the one-POST-per-report save loop, the ranked list, the bulk plan, the
+ * owner-scoped draft and the leave guard. The page itself is composed from the parts in
+ * `./expense-approvals/`: one stat line, the trip rail with the decision block under it, the trip
+ * as the whole right side, the By employee table, and the slim decision row at the foot of a phone.
+ */
 
 /** A row the server declined to write, and why (see the POST route's `requestDecisions`). */
 type SkippedDecision = { reason: string; tripId: string };
@@ -185,70 +150,11 @@ function writeExpenseDecisionDraft(draftKey: string | null, decisions: Record<st
   }
 }
 
-function egp(value: number) {
-  return formatCurrencyValue(Number.isFinite(value) ? value : 0);
-}
-
 // The admin shell zeroes every border-radius (globals.css RULE 1 — the deliberately "shredded"
 // look), so these are written square at source: what you read here is what renders.
 const FIELD_CLASS = cn(phxFieldClassName, "w-full px-3");
 // `pr-9` keeps the selected value clear of SearchableSelect's own search icon.
 const FILTER_CONTROL_CLASS = `${FIELD_CLASS} pr-9`;
-const PANEL_CLASS = "border border-slate-200 bg-white shadow-sm";
-
-/**
- * How a trip's distance reads against the outstation distance floor.
- *
- * Driven by the shared classifier rather than a literal `< 58`, so the highlight always tracks the
- * SAME rule the rest of the module enforces (60 km official, 58 km tolerance) — move the policy
- * constants and this moves with them instead of quietly disagreeing.
- *
- * It reads the built-in policy defaults, not a per-rule row from `outstation_policy`, because this
- * page never loads the policy table. If a custom rule ever moves the floor, that policy has to be
- * threaded in here or the highlight would flag against the wrong number.
- */
-function distanceFlag(km: number): { label: string; tone: "fail" | "none" | "warn" } {
-  if (!Number.isFinite(km) || km <= 0) return { label: "", tone: "none" };
-
-  const { classification } = classifyOutstationExpenseEligibility({
-    actualDistanceKm: km,
-    policy: {
-      officialMinimumDistanceKm: OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
-      toleranceMinimumDistanceKm: TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
-    },
-  });
-
-  if (classification === "not_eligible") {
-    return {
-      label: `Under the ${TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM} km outstation floor`,
-      tone: "fail",
-    };
-  }
-  if (classification === "tolerance_eligible") {
-    return {
-      label: `Within tolerance but under the official ${OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM} km`,
-      tone: "warn",
-    };
-  }
-  return { label: "", tone: "none" };
-}
-
-const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
-  fail: "bg-rose-100 font-black text-rose-700 ring-1 ring-inset ring-rose-300",
-  none: "text-slate-700",
-  warn: "bg-amber-100 font-bold text-amber-800",
-};
-
-/** Tone for the nearest-brick match badge — mirrors the "High/Good/Review/Weak" prefixes
- * brickMatchConfidence() actually returns (see @/lib/crm/brick-geo), so a wording change
- * there degrades to the neutral tone instead of silently going stale here. */
-function capturedLocationConfidenceTone(confidence: string): "success" | "warning" | "danger" | "neutral" {
-  if (confidence.startsWith("High") || confidence.startsWith("Good")) return "success";
-  if (confidence.startsWith("Review")) return "warning";
-  if (confidence.startsWith("Weak")) return "danger";
-  return "neutral";
-}
-
 export function ExpenseApprovalsWorkspace({
   /**
    * Whether this viewer may DECIDE, as opposed to merely read. Resolved on the server and passed
@@ -287,7 +193,6 @@ export function ExpenseApprovalsWorkspace({
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(() => new Set());
   const [restoredDraftCount, setRestoredDraftCount] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   // Guards BOTH draft effects below: nothing may be persisted before the stored draft has been
   // read, or the empty initial state would erase the very work being recovered.
   const draftRestoredRef = useRef(false);
@@ -519,11 +424,9 @@ export function ExpenseApprovalsWorkspace({
   // On a phone the panel sits UNDER a 70vh list, so a tapped trip opened out of sight and the
   // reviewer had to scroll down to find it. Bring the panel into view there; a desktop already
   // shows the two side by side.
-  const openTrip = useCallback((tripId: string) => {
-    setSelectedId(tripId);
-    if (typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches) return;
-    window.requestAnimationFrame(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, []);
+
+
+  const openTrip = useCallback((tripId: string) => setSelectedId(tripId), []);
 
   // Counts alone don't answer the question this queue exists to answer — "how much money is
   // waiting on me". These follow the filters, so the strip always describes what is on screen.
@@ -867,76 +770,56 @@ export function ExpenseApprovalsWorkspace({
     }
   }
 
+  // One set of decision handlers for both placements of the decision block (rail and phone row).
+  // Decisions are held locally until Save is pressed; Approve also clears a stale "Rejected"
+  // status, so a row can never be approved AND rejected at once.
+  const decisionBarProps = {
+    canDecide,
+    decision: view === "queue" && selected ? decisionFor(selected) : null,
+    dirtyCount,
+    onApprove: () => {
+      if (!selected) return;
+      setDecision(selected, { hrApproved: true, status: APPROVED_STATUS });
+      selectNextPending(selected.tripId);
+    },
+    onChangeAmount: (value: number) => selected && setDecision(selected, { approvedAmount: value }),
+    onChangeReason: (value: string) => selected && setDecision(selected, { hrComment: value }),
+    onReject: () => {
+      if (!selected) return;
+      setDecision(selected, { hrApproved: false, status: REJECTED_STATUS });
+      selectNextPending(selected.tripId);
+    },
+    onSave: () => void save(),
+    onUnapprove: () => selected && setDecision(selected, { hrApproved: false, status: "" }),
+    onUnreject: () => selected && setDecision(selected, { hrApproved: false, status: "" }),
+    record: view === "queue" ? selected : null,
+    saving,
+    valuesOnly: selected ? isImportedHistoryTrip(selected.date) : false,
+  };
+
   return (
     <div className="space-y-4">
       <AdminPageHero
         actions={
           <ExpenseExportButton disabled={loading || exportCount === 0} href={exportHref} />
         }
-        badges={
-          <>
-            <AdminInsightChip tone="orange">
-              {formatNumberValue(pending.length)} awaiting decision
-            </AdminInsightChip>
-            <AdminInsightChip tone="neutral">{egp(totals.pendingValue)} at stake</AdminInsightChip>
-            {dirtyCount > 0 ? (
-              <AdminInsightChip tone="emerald">{formatNumberValue(dirtyCount)} unsaved</AdminInsightChip>
-            ) : null}
-          </>
-        }
-        description="Pick a trip on the left. Its days, evidence and the decision open on the right."
+        description="Pick a trip on the left and decide it there. The whole right side is the trip — its map, its days, its photos and its checks."
         eyebrow="Outstation expenses"
         icon={<Wallet className="h-3.5 w-3.5" />}
         title="Expense Approvals"
       />
 
-      {/* What the queue is worth, not just how long it is — one flat strip instead of four cards,
-          and it tracks the filters, so it always describes the trips on screen (2026-11-06). */}
-      <div className="grid grid-cols-2 border border-slate-200 bg-white sm:grid-cols-4 [&>*]:min-w-0">
-        {([
-          {
-            key: "pending",
-            label: "Awaiting decision",
-            line: `${egp(totals.pendingValue)} still to decide`,
-            tone: "border-orange-500 text-orange-700",
-            value: pending.length,
-          },
-          {
-            key: "approved",
-            label: "Approved",
-            line: `${egp(totals.approvedValue)} cleared to pay`,
-            tone: "border-emerald-500 text-emerald-700",
-            value: approved.length,
-          },
-          {
-            key: "adjusted",
-            label: "Amount adjusted",
-            line: totals.adjustedCount > 0 ? `${egp(totals.adjustedDelta)} below the claim` : "No amounts changed",
-            tone: "border-blue-500 text-blue-700",
-            value: totals.adjustedCount,
-          },
-          {
-            key: "rejected",
-            label: "Rejected",
-            line: "Returned with a written reason",
-            tone: "border-rose-500 text-rose-700",
-            value: rejected.length,
-          },
-        ] as const).map((cell, index) => (
-          <div
-            className={cn(
-              "border-l-[3px] px-4 py-3",
-              cell.tone,
-              index < 2 ? "border-b border-b-slate-200 sm:border-b-0" : "",
-            )}
-            key={cell.key}
-          >
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{cell.label}</p>
-            <p className="mt-0.5 font-mono text-xl font-black text-slate-900">{formatNumberValue(cell.value)}</p>
-            <p className="break-words text-phx-xs font-semibold text-slate-500">{cell.line}</p>
-          </div>
-        ))}
-      </div>
+      {/* The queue in one line, and the ONLY place these four figures render (owner, 2026-11-07).
+          They follow the filters, so the line always describes the trips on screen. */}
+      <StatLine
+        adjustedCount={totals.adjustedCount}
+        adjustedDelta={totals.adjustedDelta}
+        approvedCount={approved.length}
+        approvedValue={totals.approvedValue}
+        pendingCount={pending.length}
+        pendingValue={totals.pendingValue}
+        rejectedCount={rejected.length}
+      />
 
       {/* Says plainly that work was recovered, and that it is still NOT saved — the whole failure
           this replaces is a reviewer believing decisions were committed when they were not. Tied to
@@ -988,8 +871,7 @@ export function ExpenseApprovalsWorkspace({
       ) : null}
 
       {/* ONE toolbar: the two ways to read the queue, then the narrowing — search, trip month,
-          employee. It used to be a tab strip, a separate filter panel and a keyboard-hint line,
-          three bands before the first trip. Both views obey the same filters. */}
+          employee. Both views obey the same filters. */}
       <div className={cn(PANEL_CLASS, "p-3")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex border border-slate-300" role="tablist">
@@ -1135,9 +1017,6 @@ export function ExpenseApprovalsWorkspace({
         </div>
       ) : null}
 
-      {/* `[&>*]:min-w-0` is load-bearing on mobile: below `lg` this is a SINGLE-column grid, and a
-          grid item defaults to `min-width: auto`, so one long unbreakable destination stretched the
-          column to 729px in a 375px viewport and scrolled the page sideways. */}
       {view === "employees" ? (
         <EmployeeSummaryPanel
           expanded={expandedEmployees}
@@ -1148,1173 +1027,63 @@ export function ExpenseApprovalsWorkspace({
           totals={summaryTotals}
         />
       ) : (
-      <div className="grid gap-4 lg:grid-cols-[minmax(300px,380px)_1fr] lg:items-start [&>*]:min-w-0">
-        {/* Left: the queue */}
-        <div className={cn(PANEL_CLASS, "min-w-0")}>
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 bg-slate-900 px-4 py-2.5">
-            <span className="flex items-center gap-2">
-              <span aria-hidden className="h-4 w-1 bg-orange-500" />
-              <span className="text-phx-xs font-black uppercase tracking-wide text-white">Trips</span>
-            </span>
-            {loading ? null : (
-              <span className="text-phx-xs font-bold text-slate-300">
-                {formatNumberValue(pending.length)} awaiting · {formatNumberValue(activeList.length)} shown
-              </span>
-            )}
-          </div>
-          {loading ? (
-            <div aria-busy="true" className="divide-y divide-slate-200">
-              <p className="sr-only">Loading trips…</p>
-              {[0, 1, 2, 3, 4, 5].map((index) => (
-                <div className="flex items-start justify-between gap-3 px-4 py-3" key={index}>
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-3.5 w-2/3 animate-pulse bg-slate-200" />
-                    <div className="h-3 w-1/2 animate-pulse bg-slate-100" />
-                    <div className="h-2.5 w-1/3 animate-pulse bg-slate-100" />
-                  </div>
-                  <div className="h-3.5 w-20 animate-pulse bg-slate-200" />
-                </div>
-              ))}
-            </div>
-          ) : loadError ? (
-            // An expired session gets a sign-in, not a Retry — retrying just fails again, and
-            // calling it a permissions problem sends the reviewer hunting through roles.
-            sessionExpired ? (
-              <div className="flex flex-wrap items-center gap-2 bg-amber-50 px-4 py-6 text-sm font-semibold text-amber-800">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                Your session has expired.
-                <a className="font-bold underline hover:text-amber-950" href="/login">
-                  Sign in again
-                </a>
-              </div>
-            ) : (
-              <div className="bg-rose-50 px-4 py-6 text-sm text-rose-700">
-                {loadError}
-                <button
-                  className="ml-2 font-bold underline"
-                  onClick={() => {
-                    setLoading(true);
-                    setLoadError(null);
-                    void load();
-                  }}
-                  type="button"
-                >
-                  Retry
-                </button>
-              </div>
-            )
-          ) : activeList.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-slate-500">
-              {/* An empty list because of a filter is a different fact from an empty queue —
-                  "nothing waiting" while a month is selected reads as "this month is done". */}
-              {narrowed ? "No trips match these filters." : "No trips in the queue yet."}
-            </p>
-          ) : (
-            <>
-              {/* Scoped to the PENDING rows, not to everything on screen: "select all" over 400
-                  trips would tick hundreds already decided, which planBulkApproval refuses. */}
-              {pending.length > 0 ? (
-                <label className="flex cursor-pointer items-center gap-2.5 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-black uppercase tracking-wide text-slate-600 transition-colors hover:bg-slate-100">
-                  <input
-                    checked={allVisibleSelected}
-                    className="h-4 w-4 shrink-0 accent-orange-500"
-                    onChange={toggleAllVisible}
-                    type="checkbox"
-                  />
-                  Select all {formatNumberValue(pending.length)} awaiting decision
-                </label>
-              ) : null}
-              <div className="max-h-[70vh] divide-y divide-slate-200 overflow-y-auto">
-                {activeList.map((record) => {
-                  const decision = decisionFor(record);
-                  const adjusted = isAdjustedAmount(decision.approvedAmount, record.total);
-                  // Compare against the EFFECTIVE selection, not the raw click state — otherwise the
-                  // trip already open in the decision panel on first load is highlighted nowhere.
-                  const isSelected = record.tripId === effectiveSelectedId;
-                  const isTicked = selectedTripIds.has(record.tripId);
-                  const state = expenseApprovalState(decision);
-                  const span = tripSpan(record.date, record.toDate);
-                  return (
-                    // A row is a div, not a button: a checkbox nested inside a button is invalid
-                    // HTML and the browser swallows one of the two clicks.
-                    <div
-                      className={cn(
-                        "group flex w-full items-stretch transition-colors",
-                        isSelected ? "bg-orange-50" : isTicked ? "bg-orange-50/50" : "bg-white hover:bg-slate-50",
-                      )}
-                      data-trip-id={record.tripId}
-                      key={record.tripId}
-                    >
-                      {/* Decision state, readable in one glance without reading a word. */}
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "w-1 shrink-0",
-                          state === "approved"
-                            ? "bg-emerald-500"
-                            : state === "rejected"
-                              ? "bg-rose-500"
-                              : isSelected
-                                ? "bg-orange-500"
-                                : "bg-slate-200 group-hover:bg-orange-400",
-                        )}
-                      />
-                      {/* Only an undecided trip carries a tick box — the bulk action can approve
-                          nothing else. Reversing a decision brings the box back. */}
-                      {state === "pending" && !isImportedHistoryTrip(record.date) ? (
-                        <label className="flex shrink-0 cursor-pointer items-center pl-3">
-                          <input
-                            aria-label={`Select ${record.specialist || "Unassigned"} ${record.tripId}`}
-                            checked={isTicked}
-                            className="h-4 w-4 accent-orange-500"
-                            onChange={() => toggleTrip(record.tripId)}
-                            type="checkbox"
-                          />
-                        </label>
-                      ) : null}
-                      <button
-                        aria-current={isSelected ? "true" : undefined}
-                        className="flex min-w-0 flex-1 items-start justify-between gap-3 py-3 pl-3 pr-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-orange-500"
-                        onClick={() => openTrip(record.tripId)}
-                        type="button"
-                      >
-                        {/* Wraps, never an ellipsis (AGENTS.md §4). The trip's length sits beside
-                            its dates, so a three-day trip no longer looks like a same-day one. */}
-                        <div className="min-w-0">
-                          <p className="break-words text-sm font-bold text-slate-900">{record.specialist || "Unassigned"}</p>
-                          <p className="break-words text-xs text-slate-600" dir="auto">
-                            {record.location || record.to || "—"}
-                          </p>
-                          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-phx-xs text-slate-500">
-                            <span className="whitespace-nowrap">
-                              {formatDateValue(record.date, null, { year: undefined })}
-                              {span.multiDay ? ` → ${formatDateValue(record.toDate, null, { year: undefined })}` : ""}
-                            </span>
-                            {span.multiDay ? (
-                              <span className="whitespace-nowrap border border-orange-300 bg-white px-1.5 text-phx-2xs font-black uppercase tracking-wide text-orange-700">
-                                {formatNumberValue(span.days)} days
-                              </span>
-                            ) : null}
-                            <span className="whitespace-nowrap font-mono text-phx-2xs text-slate-400">{record.tripId}</span>
-                          </p>
-                          <EmployeeNote note={record.employeeNote} />
-                          <DuplicateTripFlag copies={duplicateFlags.get(record.tripId)} />
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="font-mono text-sm font-bold tabular-nums text-slate-900">{egp(decision.approvedAmount)}</p>
-                          {adjusted ? (
-                            <p className="font-mono text-phx-2xs text-orange-600 line-through">{egp(record.total)}</p>
-                          ) : null}
-                          {state === "approved" ? (
-                            <span className="mt-0.5 inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-emerald-600">
-                              <CheckCircle2 className="h-3 w-3" /> Approved
-                            </span>
-                          ) : state === "rejected" ? (
-                            <span className="mt-0.5 inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-rose-600">
-                              <XCircle className="h-3 w-3" /> Rejected
-                            </span>
-                          ) : null}
-                          {isImportedHistoryTrip(record.date) ? (
-                            <span className="mt-0.5 block text-phx-2xs font-black uppercase tracking-wide text-slate-400">
-                              Imported · values only
-                            </span>
-                          ) : null}
-                        </div>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Right: the decision panel. On a desktop it is pinned beside the queue at the height of
-            the window — its header and its decision bar stay put and only the evidence between
-            them scrolls — leaving room at the bottom for the Save bar. */}
-        <div
-          className={cn(PANEL_CLASS, "min-h-[300px] scroll-mt-4 lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:flex-col")}
-          ref={panelRef}
-        >
-          {!selected ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center text-slate-400">
-              <Inbox className="h-8 w-8" />
-              <p className="text-sm font-medium">Select a trip to review and approve.</p>
-            </div>
-          ) : (
-            <ExpenseDecisionPanel
-              key={selected.tripId}
-              duplicateOf={duplicateFlags.get(selected.tripId)}
-              decision={decisionFor(selected)}
-              onApprove={() => {
-                // Also clears a stale "Rejected" status, so a row can never be approved AND
-                // rejected at once.
-                setDecision(selected, { hrApproved: true, status: APPROVED_STATUS });
-                selectNextPending(selected.tripId);
-              }}
-              onChangeAmount={(value) => setDecision(selected, { approvedAmount: value })}
-              onChangeReason={(value) => setDecision(selected, { hrComment: value })}
-              onReject={() => {
-                setDecision(selected, { hrApproved: false, status: REJECTED_STATUS });
-                selectNextPending(selected.tripId);
-              }}
-              onUnapprove={() => setDecision(selected, { hrApproved: false, status: "" })}
-              onUnreject={() => setDecision(selected, { hrApproved: false, status: "" })}
-              canDecide={canDecide}
-              onNext={
-                selectedIndex >= 0 && selectedIndex < activeList.length - 1
-                  ? () => setSelectedId(activeList[selectedIndex + 1].tripId)
-                  : undefined
-              }
-              onPrevious={selectedIndex > 0 ? () => setSelectedId(activeList[selectedIndex - 1].tripId) : undefined}
-              position={selectedIndex >= 0 ? { index: selectedIndex + 1, total: activeList.length } : null}
-              record={selected}
-              valuesOnly={isImportedHistoryTrip(selected.date)}
-            />
-          )}
-        </div>
-      </div>
-      )}
-
-      {/* Save follows you down the queue. Decisions are held locally until this is pressed, so a
-          reviewer who approves twenty trips and scrolls away must never have to hunt for it. */}
-      {dirtyCount > 0 ? (
-        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 border border-slate-800 bg-slate-900 px-4 py-3">
-          <p className="text-sm font-bold text-white">
-            {formatNumberValue(dirtyCount)} decision{dirtyCount === 1 ? "" : "s"} not saved yet
-          </p>
-          <Button
-            className="bg-orange-500 text-white hover:bg-orange-600"
-            disabled={saving}
-            onClick={() => void save()}
-          >
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-            Save {formatNumberValue(dirtyCount)}
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * Per-employee roll-up. Desktop lays the numbers out in columns; below `sm` the same row stacks
- * into a card, because the admin shell never shows a table on a phone. Pressing a row expands that
- * person's trips in place — the detail is right under the number it explains, instead of sending
- * the reviewer back to the queue with a filter to re-apply.
- */
-function EmployeeSummaryPanel({
-  summaries,
-  totals,
-  expanded,
-  onToggle,
-  onUndo,
-  narrowed,
-}: {
-  expanded: Set<string>;
-  narrowed: boolean;
-  onToggle: (employeeKey: string) => void;
-  onUndo: (tripId: string) => void;
-  summaries: ExpenseApprovalEmployeeSummary[];
-  totals: ReturnType<typeof totalExpenseApprovalSummary>;
-}) {
-  if (summaries.length === 0) {
-    return (
-      <p className={cn(PANEL_CLASS, "px-4 py-10 text-center text-sm text-slate-500")}>
-        {narrowed ? "No trips match these filters." : "No outstation trips to summarise yet."}
-      </p>
-    );
-  }
-
-  return (
-    <div className={PANEL_CLASS}>
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 px-5 py-3.5">
-        <div className="flex items-center gap-2">
-          <span aria-hidden className="h-4 w-1 bg-orange-500" />
-          <span className="text-phx-xs font-black uppercase tracking-wide text-white">
-            {formatNumberValue(totals.employeeCount)} employees
-          </span>
-        </div>
-        {/* Both money figures, never one. `claimed` spans every trip on screen; `approved` spans
-            only the approved ones — so a single total here reads as whichever the viewer assumed,
-            and the two are not comparable (their difference is not the trim). */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-phx-xs font-bold">
-          <span className="whitespace-nowrap text-slate-300">{egp(totals.claimedTotal)} claimed</span>
-          <span className="whitespace-nowrap text-amber-300">
-            {formatNumberValue(totals.pendingCount)} pending
-          </span>
-          <span className="whitespace-nowrap text-emerald-300">
-            {formatNumberValue(totals.approvedCount)} approved · {egp(totals.approvedValue)}
-          </span>
-          <span className="whitespace-nowrap text-rose-300">
-            {formatNumberValue(totals.rejectedCount)} rejected
-          </span>
-        </div>
-      </div>
-
-      {/* Desktop: one fitted table (AGENTS.md §4 — `w-full table-fixed` + `<colgroup>`, nothing
-          scrolls sideways). The old layout put each person's trips in a `w-max` strip inside an
-          `overflow-x-auto` box, which is exactly the sideways scroll the golden rule forbids. */}
-      <table className="hidden w-full table-fixed md:table">
-        <colgroup>
-          <col className="w-10" />
-          <col />
-          <col className="w-24" />
-          <col className="w-24" />
-          <col className="w-36" />
-          <col className="w-24" />
-        </colgroup>
-        <thead className="border-b border-slate-200 bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-          <tr>
-            <th className="px-3 py-2" scope="col">
-              <span className="sr-only">Open</span>
-            </th>
-            <th className="px-3 py-2 text-left" scope="col">Employee</th>
-            <th className="px-3 py-2 text-right" scope="col">Pending</th>
-            <th className="px-3 py-2 text-right" scope="col">Approved</th>
-            <th className="px-3 py-2 text-right" scope="col">Approved pay</th>
-            <th className="px-3 py-2 text-right" scope="col">Rejected</th>
-          </tr>
-        </thead>
-        {summaries.map((summary) => {
-          const isOpen = expanded.has(summary.employeeKey);
-          const detailId = `employee-trips-${summary.employeeKey.replace(/[^a-z0-9]+/gi, "-")}`;
-          return (
-            <tbody className="border-b border-slate-200 last:border-b-0" key={summary.employeeKey}>
-              <tr className={cn("transition-colors", isOpen ? "bg-orange-50" : "hover:bg-slate-50")}>
-                <td className="px-3 py-3 align-top">
-                  <ChevronRight
-                    aria-hidden
-                    className={cn("mt-0.5 h-4 w-4 transition-transform", isOpen ? "rotate-90 text-orange-500" : "text-slate-400")}
-                  />
-                </td>
-                <td className="min-w-0 p-0">
-                  <button
-                    {...rowDetailToggleProps(detailId, isOpen)}
-                    className="block w-full px-3 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-orange-500"
-                    onClick={() => onToggle(summary.employeeKey)}
-                    type="button"
-                  >
-                    <span className="block break-words text-sm font-bold text-slate-900">{summary.employeeLabel}</span>
-                    <span className="block text-phx-xs text-slate-500">
-                      {formatNumberValue(summary.totalCount)} trip{summary.totalCount === 1 ? "" : "s"} ·{" "}
-                      {egp(summary.claimedTotal)} claimed
-                    </span>
-                  </button>
-                </td>
-                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-amber-600">
-                  {formatNumberValue(summary.pendingCount)}
-                </td>
-                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-emerald-600">
-                  {formatNumberValue(summary.approvedCount)}
-                </td>
-                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-slate-900">
-                  {egp(summary.approvedValue)}
-                </td>
-                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-rose-600">
-                  {formatNumberValue(summary.rejectedCount)}
-                </td>
-              </tr>
-              {isOpen ? (
-                <TableRowDetail colSpan={6} id={detailId}>
-                  <EmployeeTripsTable onUndo={onUndo} trips={summary.trips} />
-                </TableRowDetail>
-              ) : null}
-            </tbody>
-          );
-        })}
-      </table>
-
-      {/* Phone: the same people as cards, each figure carrying its own label. */}
-      <div className="divide-y divide-slate-200 md:hidden">
-        {summaries.map((summary) => {
-          const isOpen = expanded.has(summary.employeeKey);
-          return (
-            <div key={summary.employeeKey}>
-              <button
-                aria-expanded={isOpen}
-                className={cn(
-                  "flex w-full items-start gap-2 px-4 py-3 text-left transition-colors",
-                  isOpen ? "bg-orange-50" : "hover:bg-slate-50",
-                )}
-                onClick={() => onToggle(summary.employeeKey)}
-                type="button"
-              >
-                <ChevronRight
-                  className={cn(
-                    "mt-0.5 h-4 w-4 shrink-0 transition-transform",
-                    isOpen ? "rotate-90 text-orange-500" : "text-slate-400",
-                  )}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block break-words text-sm font-bold text-slate-900">{summary.employeeLabel}</span>
-                  <span className="block text-phx-xs text-slate-500">
-                    {formatNumberValue(summary.totalCount)} trip{summary.totalCount === 1 ? "" : "s"} ·{" "}
-                    {egp(summary.claimedTotal)} claimed
-                  </span>
-                  <span className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs font-bold">
-                    <span className="text-amber-600">
-                      <span className="text-phx-2xs font-black uppercase text-slate-400">Pending </span>
-                      {formatNumberValue(summary.pendingCount)}
-                    </span>
-                    <span className="text-rose-600">
-                      <span className="text-phx-2xs font-black uppercase text-slate-400">Rejected </span>
-                      {formatNumberValue(summary.rejectedCount)}
-                    </span>
-                    <span className="col-span-2 text-emerald-700">
-                      <span className="text-phx-2xs font-black uppercase text-slate-400">Approved </span>
-                      {formatNumberValue(summary.approvedCount)} · {egp(summary.approvedValue)}
-                    </span>
-                  </span>
-                </span>
-              </button>
-              {isOpen ? (
-                <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
-                  <EmployeeTripsTable onUndo={onUndo} trips={summary.trips} />
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-const SUMMARY_STATE_TONE: Record<ExpenseApprovalEmployeeSummary["trips"][number]["state"], { spine: string; text: string }> = {
-  approved: { spine: "bg-emerald-500", text: "text-emerald-700" },
-  pending: { spine: "bg-amber-400", text: "text-amber-700" },
-  rejected: { spine: "bg-rose-500", text: "text-rose-700" },
-};
-
-/** "Unapprove" / "Undo rejection" straight from the summary — local only, Save still commits. */
-function SummaryUndoButton({ onUndo, row }: { onUndo: (tripId: string) => void; row: ExpenseApprovalEmployeeSummary["trips"][number] }) {
-  if (row.state === "pending") return null;
-  return (
-    <button
-      className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2 py-1 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700"
-      onClick={() => onUndo(row.tripId)}
-      type="button"
-    >
-      <Undo2 className="h-3 w-3" />
-      {row.state === "approved" ? "Unapprove" : "Undo rejection"}
-    </button>
-  );
-}
-
-/** One "km" cell, flagged against the outstation distance floor exactly like the decision panel. */
-function SummaryDistance({ km }: { km: number }) {
-  if (!km) return <span className="text-slate-400">—</span>;
-  const flag = distanceFlag(km);
-  return (
-    <span
-      className={cn("inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5", DISTANCE_TONE_CLASS[flag.tone])}
-      title={flag.label || undefined}
-    >
-      {flag.tone === "fail" ? <AlertTriangle className="h-3 w-3" /> : null}
-      {formatNumberValue(km)} km
-    </span>
-  );
-}
-
-/** "AM 3 · PM 9" with the pharmacies on their own line — declared on the sheet, not CRM evidence. */
-function SummaryDeclared({ row }: { row: ExpenseApprovalEmployeeSummary["trips"][number] }) {
-  return (
-    <>
-      AM {formatNumberValue(row.amWorkload)} · PM {formatNumberValue(row.pmWorkload)}
-      {/* Absent on a pre-split trip, whose pharmacies sit inside AM/PM. */}
-      {row.pharmacyWorkload === null || row.pharmacyWorkload === undefined ? null : (
-        <span className="block">Pharmacies {formatNumberValue(row.pharmacyWorkload)}</span>
-      )}
-    </>
-  );
-}
-
-/** A trip's dates, with its length when it ran over more than one day. */
-function SummaryTripDates({ row }: { row: ExpenseApprovalEmployeeSummary["trips"][number] }) {
-  const span = tripSpan(row.date, row.toDate);
-  return (
-    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-      <span className="whitespace-nowrap">
-        {formatDateValue(row.date, null, { year: undefined })}
-        {span.multiDay ? ` → ${formatDateValue(row.toDate, null, { year: undefined })}` : ""}
-      </span>
-      {span.multiDay ? (
-        <span className="whitespace-nowrap border border-orange-300 bg-white px-1 text-phx-2xs font-black uppercase tracking-wide text-orange-700">
-          {formatNumberValue(span.days)} days
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-/**
- * One person's trips. Desktop: a fitted table whose columns MERGE (dates with the trip ID, the
- * payable with the claim it came from, the decision with its undo) so it fits the page width.
- * Phone: the same trips as cards.
- */
-function EmployeeTripsTable({
-  onUndo,
-  trips,
-}: {
-  onUndo: (tripId: string) => void;
-  trips: ExpenseApprovalEmployeeSummary["trips"];
-}) {
-  return (
-    <>
-      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-        Trips · distance and declared workload, AM · PM · Pharmacies
-      </p>
-      <table className="hidden w-full table-fixed border border-slate-200 bg-white text-xs md:table">
-        <colgroup>
-          <col className="w-1" />
-          <col className="w-[22%]" />
-          <col />
-          <col className="w-[11%]" />
-          <col className="w-[15%]" />
-          <col className="w-[14%]" />
-          <col className="w-[16%]" />
-        </colgroup>
-        <thead className="border-b border-slate-200 bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
-          <tr>
-            <th aria-hidden className="p-0" />
-            <th className="px-3 py-2 text-left" scope="col">Trip</th>
-            <th className="px-3 py-2 text-left" scope="col">Destination</th>
-            <th className="px-3 py-2 text-right" scope="col">Distance</th>
-            <th className="px-3 py-2 text-right" scope="col">Declared</th>
-            <th className="px-3 py-2 text-right" scope="col">Payable</th>
-            <th className="px-3 py-2 text-right" scope="col">Decision</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {trips.map((row) => {
-            const tone = SUMMARY_STATE_TONE[row.state];
-            return (
-              <tr key={row.tripId}>
-                <td aria-hidden className={cn("p-0", tone.spine)} />
-                <td className="px-3 py-2 align-top text-slate-600">
-                  <SummaryTripDates row={row} />
-                  <span className="block font-mono text-phx-2xs text-slate-400">{row.tripId}</span>
-                </td>
-                <td className="break-words px-3 py-2 align-top text-slate-800" dir="auto">
-                  {row.destination || "—"}
-                </td>
-                <td className="px-3 py-2 text-right align-top font-mono">
-                  <SummaryDistance km={row.km} />
-                </td>
-                <td className="px-3 py-2 text-right align-top font-mono text-slate-700">
-                  <SummaryDeclared row={row} />
-                </td>
-                <td className="px-3 py-2 text-right align-top font-mono">
-                  <span className="block font-bold text-slate-900">{egp(row.approvedAmount)}</span>
-                  {isAdjustedAmount(row.approvedAmount, row.claimedTotal) ? (
-                    <span className="block text-phx-2xs text-slate-400">of {egp(row.claimedTotal)}</span>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2 text-right align-top">
-                  <span className={cn("block text-phx-2xs font-black uppercase tracking-wide", tone.text)}>{row.state}</span>
-                  <span className="mt-1 block">
-                    <SummaryUndoButton onUndo={onUndo} row={row} />
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      <div className="space-y-2 md:hidden">
-        {trips.map((row) => {
-          const tone = SUMMARY_STATE_TONE[row.state];
-          return (
-            <div className="flex items-stretch border border-slate-200 bg-white" key={row.tripId}>
-              <span aria-hidden className={cn("w-1 shrink-0", tone.spine)} />
-              <div className="min-w-0 flex-1 space-y-1.5 px-3 py-2 text-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="min-w-0 text-slate-600">
-                    <SummaryTripDates row={row} />
-                    <span className="block font-mono text-phx-2xs text-slate-400">{row.tripId}</span>
-                  </span>
-                  <span className="shrink-0 text-right font-mono">
-                    <span className="block font-bold text-slate-900">{egp(row.approvedAmount)}</span>
-                    {isAdjustedAmount(row.approvedAmount, row.claimedTotal) ? (
-                      <span className="block text-phx-2xs text-slate-400">of {egp(row.claimedTotal)}</span>
-                    ) : null}
-                  </span>
-                </div>
-                <p className="break-words text-slate-800" dir="auto">{row.destination || "—"}</p>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
-                  <SummaryDistance km={row.km} />
-                  <span className="text-slate-700">
-                    <SummaryDeclared row={row} />
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className={cn("text-phx-2xs font-black uppercase tracking-wide", tone.text)}>{row.state}</span>
-                  <SummaryUndoButton onUndo={onUndo} row={row} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
-}
-
-/**
- * Rewrites the approver's rough comment into the sentence the employee reads.
- *
- * Owner request 2026-08-08: the note must land "as if the system auto replied" — now that HR sits
- * behind the workflow rather than in front of it, a decision should not read as one named person's
- * verdict. The approver writes what he means, in Arabic or English, however roughly; this puts it
- * into the system's own voice.
- *
- * Deliberately not automatic and not hidden: it replaces the field's text in place, the previous
- * wording stays one click away, and nothing is saved until he presses Save as usual. Per the
- * owner's standing rule, no user-facing surface names a model — this is presented as something
- * Phoenix does.
- */
-function SystemNoteRewriteControl({
-  disabled,
-  facts,
-  onChangeReason,
-  outcome,
-  value,
-}: {
-  disabled: boolean;
-  facts: Array<{ label: string; value: string }>;
-  onChangeReason: (value: string) => void;
-  outcome: "adjusted" | "approved" | "pending" | "rejected";
-  value: string;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // The approver's own wording, kept so a rewrite he dislikes costs one click to undo.
-  const [previous, setPrevious] = useState<string | null>(null);
-
-  async function rewrite() {
-    const draft = value.trim();
-    if (!draft || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/admin/outstation/expenses/note-assist", {
-        body: JSON.stringify({ draft, facts, outcome }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json().catch(() => null)) as { message?: string; note?: string } | null;
-      if (!response.ok || typeof payload?.note !== "string" || !payload.note.trim()) {
-        setError(payload?.message || "The note could not be rewritten. Try again.");
-        return;
-      }
-      setPrevious(draft);
-      onChangeReason(payload.note.trim());
-    } catch {
-      setError("Could not reach the server. Check your connection and try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <div className="flex items-center gap-2">
-        <button
-          className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={disabled || busy || !value.trim()}
-          onClick={() => void rewrite()}
-          title="Rewrite this comment as a formal system note for the employee"
-          type="button"
-        >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {busy ? "Rewriting" : "Rewrite formally"}
-        </button>
-        {previous ? (
-          <button
-            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-900"
-            onClick={() => {
-              onChangeReason(previous);
-              setPrevious(null);
+        // The rail on the left, the trip as the page on the right (owner, 2026-11-07: "one trip
+        // fills the screen"). `[&>*]:min-w-0` is load-bearing: a flex item defaults to
+        // `min-width: auto`, so one long unbreakable address would push the page sideways.
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start [&>*]:min-w-0">
+          <TripList
+            activeList={activeList}
+            allVisibleSelected={allVisibleSelected}
+            decisionFor={decisionFor}
+            duplicateFlags={duplicateFlags}
+            effectiveSelectedId={effectiveSelectedId}
+            footer={<DecisionBar placement="rail" {...decisionBarProps} />}
+            loadError={loadError}
+            loading={loading}
+            narrowed={narrowed}
+            onOpen={openTrip}
+            onRetry={() => {
+              setLoading(true);
+              setLoadError(null);
+              void load();
             }}
-            type="button"
-          >
-            <Undo2 className="h-3.5 w-3.5" /> Restore my wording
-          </button>
-        ) : null}
-      </div>
-      {error ? <p className="mt-1 text-phx-xs font-semibold text-rose-600">{error}</p> : null}
-    </>
-  );
-}
-
-/** "Same trip as OUTSTATION-292" — flat, square, amber; never a decision. */
-/**
- * The employee's own note on the claim (`employeeNote`), in their words and their script — `dir="auto"`
- * so an Arabic note reads right to left — and wrapped in full, never cut. Nothing when they wrote none.
- */
-function EmployeeNote({ note, wide = false }: { note?: string | null; wide?: boolean }) {
-  if (!note) return null;
-  if (!wide) {
-    return (
-      <p className="mt-1 flex items-start gap-1 text-phx-xs text-slate-600">
-        <MessageSquareText aria-hidden className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
-        <span className="sr-only">Employee&apos;s note: </span>
-        <span className="min-w-0 whitespace-pre-wrap break-words" dir="auto">{note}</span>
-      </p>
-    );
-  }
-  return (
-    <>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Employee&apos;s note</p>
-      <p className="mt-1 flex items-start gap-1.5 text-sm font-semibold text-slate-900">
-        <MessageSquareText aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
-        <span className="min-w-0 whitespace-pre-wrap break-words" dir="auto">{note}</span>
-      </p>
-    </>
-  );
-}
-
-function DuplicateTripFlag({ copies, wide = false }: { copies?: string[]; wide?: boolean }) {
-  if (!copies || copies.length === 0) return null;
-  return (
-    <p
-      className={`mt-1 inline-flex items-start gap-1 border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-bold text-amber-800 ${
-        wide ? "text-phx-xs" : "text-phx-2xs"
-      }`}
-    >
-      <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-      <span className="break-words">
-        Same trip as {copies.join(", ")}
-        {wide ? " — same employee, same day, same destination" : ""}
-      </span>
-    </p>
-  );
-}
-
-/**
- * The decision panel, rebuilt (owner, 2026-11-06: "so untidy, so confusing … specially when the
- * trip is more than 1 day … the page needs a heavy big work").
- *
- * It used to be one long column: a fact grid, then the workload table, then every day's visits and a
- * map per day, then the claim checks, then the photos, and only THEN the amount and the Approve
- * button — so on a three-day trip the decision sat thousands of pixels below the name. Now it reads
- * in three fixed parts:
- *
- *   1. WHO AND WHAT — the person, the trip's length in days and nights with both dates and their
- *      weekdays, the route, the transport, the distance and what the claim is made of.
- *   2. THE EVIDENCE — field work day by day, the claim checks, the photos, stops and tickets. Each
- *      folds, with its answer in its header, and this part alone scrolls on a desktop.
- *   3. THE DECISION — claimed − deduction = approved, the reason, Approve / Reject. Pinned to the
- *      bottom of the panel on a desktop, so it is always in reach whatever is open above it.
- *
- * Presentation only: every value, rule and callback is exactly what the old panel used.
- */
-function ExpenseDecisionPanel({
-  record,
-  decision,
-  duplicateOf,
-  canDecide,
-  onApprove,
-  onReject,
-  onUnapprove,
-  onUnreject,
-  onChangeAmount,
-  onChangeReason,
-  onNext,
-  onPrevious,
-  position,
-  valuesOnly,
-}: {
-  canDecide: boolean;
-  decision: Decision;
-  /** Other live claims for the same employee, day and destination (duplicate-trip-guard.ts). */
-  duplicateOf?: string[];
-  onApprove: () => void;
-  onChangeAmount: (value: number) => void;
-  onChangeReason: (value: string) => void;
-  onReject: () => void;
-  onUnapprove: () => void;
-  onUnreject: () => void;
-  /** Absent at either end of the list. */
-  onNext?: () => void;
-  onPrevious?: () => void;
-  /** "Trip 4 of 37" — where this trip sits in the list as filtered. */
-  position: { index: number; total: number } | null;
-  record: LoadedRecord;
-  /** Imported history (trips before July 2026): shown, never decided. See imported-history.ts. */
-  valuesOnly: boolean;
-}) {
-  const adjusted = isAdjustedAmount(decision.approvedAmount, record.total);
-  // Only a Phoenix-submitted trip has an outstation request behind it (and therefore a captured
-  // GPS point). An imported expense returns null here and the validation panel is skipped.
-  const validationRequestId = outstationRequestIdFromTripId(record.tripId);
-  // Derived, never stored: `approvedAmount` stays the single value that gets saved, so the
-  // Deduction field cannot introduce a second source of truth for what a trip pays.
-  const deduction = deductionFromApprovedAmount(record.total, decision.approvedAmount);
-  const reasonMissing = adjusted && !decision.hrComment.trim();
-  const isRejected = isRejectedStatus(decision.status);
-  // A rejection the employee cannot be given a reason for is not defensible, so it is gated the
-  // same way a changed amount is.
-  const rejectReasonMissing = !decision.hrComment.trim();
-  const span = tripSpan(record.date, record.toDate);
-  const flag = record.km ? distanceFlag(record.km) : null;
-
-  return (
-    <div className="flex min-h-0 flex-col lg:h-full">
-      {/* ── 1. Who and what ─────────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-slate-200">
-        {/* Walk the list without leaving the panel — the same order as the queue, so it agrees
-            with the ↑ ↓ keys. */}
-        {position ? (
-          <div className="flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-950 px-3 py-1.5">
-            <button
-              className="inline-flex items-center gap-1 px-2 py-1 text-phx-xs font-bold text-slate-300 transition-colors hover:text-white disabled:cursor-default disabled:text-slate-600"
-              disabled={!onPrevious}
-              onClick={onPrevious}
-              type="button"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" /> Previous
-            </button>
-            <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">
-              Trip {formatNumberValue(position.index)} of {formatNumberValue(position.total)}
-            </span>
-            <button
-              className="inline-flex items-center gap-1 px-2 py-1 text-phx-xs font-bold text-slate-300 transition-colors hover:text-white disabled:cursor-default disabled:text-slate-600"
-              disabled={!onNext}
-              onClick={onNext}
-              type="button"
-            >
-              Next <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-start justify-between gap-3 border-t-[3px] border-orange-500 bg-slate-900 px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">
-              {valuesOnly ? "Imported trip · values only" : "Trip under review"}
-            </p>
-            <h2 className="mt-1 break-words text-lg font-black tracking-tight text-white">
-              {record.specialist || "Unassigned"}
-            </h2>
-            <p className="mt-0.5 font-mono text-xs text-slate-400">{record.tripId}</p>
-            <DuplicateTripFlag copies={duplicateOf} wide />
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
-            {/* A rejected trip used to read "Pending" here — the badge only knew about approval. */}
-            {decision.hrApproved ? (
-              <Badge variant="success">Approved</Badge>
-            ) : isRejected ? (
-              <Badge variant="danger">Rejected</Badge>
-            ) : (
-              <Badge variant="warning">Pending</Badge>
-            )}
-            <p className="font-mono text-xl font-black tabular-nums text-white">{egp(record.total)}</p>
-            <p className="-mt-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">Claimed</p>
-          </div>
-        </div>
-
-        {/* The trip's length is the first thing read, in words, beside both dates — a multi-day trip
-            used to show only a Start and an End date four cells apart. */}
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50 px-5 py-3">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 whitespace-nowrap border px-2 py-0.5 text-xs font-black uppercase tracking-wide",
-              span.multiDay ? "border-orange-400 bg-white text-orange-700" : "border-slate-300 bg-white text-slate-600",
-            )}
-          >
-            <CalendarDays className="h-3.5 w-3.5" />
-            {tripSpanLabel(span)}
-          </span>
-          <span className="break-words text-sm font-bold text-slate-900">
-            {formatDateValue(record.date, null, { weekday: "short" })}
-            {span.multiDay ? (
-              <>
-                {" "}
-                <ArrowRight aria-hidden className="inline h-3.5 w-3.5 text-slate-400" />{" "}
-                {formatDateValue(record.toDate, null, { weekday: "short" })}
-              </>
-            ) : null}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-5 py-4 sm:grid-cols-4">
-          <Fact label="Expense type" value={record.requestType} />
-          <Fact label="Trip" value={record.tripType} />
-          <Fact label="Transport" value={record.transportationType} />
-          {/* Same distance floor flagged on the screen where the money is actually approved — a
-              warning that only appears in the summary would be a gap exactly where it matters. */}
-          <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Distance</p>
-            {record.km && flag ? (
-              <>
-                <p
-                  className={cn(
-                    "mt-0.5 inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5 text-sm font-semibold",
-                    DISTANCE_TONE_CLASS[flag.tone],
-                  )}
-                >
-                  {flag.tone === "fail" ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
-                  {formatNumberValue(record.km)} km
-                </p>
-                {flag.label ? (
-                  <p
-                    className={cn(
-                      "mt-0.5 break-words text-phx-2xs font-bold",
-                      flag.tone === "fail" ? "text-rose-600" : "text-amber-700",
-                    )}
-                  >
-                    {flag.label}
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <p className="mt-0.5 text-sm font-semibold text-slate-900">—</p>
-            )}
-          </div>
-          {/* Wraps, never scrolls sideways (owner, 2026-09-28) — a Phoenix-submitted trip carries a
-              full postal address here, and the old one-line route scrolled inside its own box. */}
-          <RouteFact from={record.from} to={record.location || record.to} />
-          {/* Brick / area / region derived from the trip's captured GPS point (captured-location.ts)
-              — absent, not "Not resolved", for an imported trip that never captured coordinates. */}
-          {record.capturedLocation ? (
-            <div className="col-span-2 min-w-0 border-t border-slate-200 pt-3 sm:col-span-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Captured geography</p>
-                {record.capturedLocation.confidence ? (
-                  <Badge variant={capturedLocationConfidenceTone(record.capturedLocation.confidence)}>
-                    {record.capturedLocation.confidence}
-                  </Badge>
-                ) : null}
+            pendingCount={pending.length}
+            selectedTripIds={selectedTripIds}
+            sessionExpired={sessionExpired}
+            toggleAllVisible={toggleAllVisible}
+            toggleTrip={toggleTrip}
+            totalCount={records.length}
+          />
+          <div className="min-w-0 flex-1">
+            {!selected ? (
+              <div className={cn(PANEL_CLASS, "flex flex-col items-center justify-center gap-2 px-6 py-16 text-center text-slate-400")}>
+                <Inbox className="h-8 w-8" />
+                <p className="text-sm font-medium">Select a trip to review and approve.</p>
               </div>
-              <p className="mt-1 flex items-start gap-1.5 break-words text-sm font-semibold text-slate-900" dir="auto">
-                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
-                {record.capturedLocation.label}
-              </p>
-              <div className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1">
-                <Fact label="Brick" value={record.capturedLocation.brickLabel} />
-                <Fact label="Area" value={record.capturedLocation.areaLabel} />
-                <Fact label="Region" value={record.capturedLocation.regionLabel} />
-              </div>
-            </div>
-          ) : null}
-          {/* What the employee wrote when submitting. Read-only, and apart from "Reason / comment"
-              below, which is HR's own decision box and opens holding the system's sentence. */}
-          {record.employeeNote ? (
-            <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
-              <EmployeeNote note={record.employeeNote} wide />
-            </div>
-          ) : null}
-          <CostBreakdownFact
-            allowance={record.allowance}
-            formatCurrency={egp}
-            meeting={record.meetingAmount}
-            other={record.other}
-            total={record.total}
-            travel={record.travelCost}
-          />
-        </div>
-      </div>
-
-      {/* ── 2. The evidence — the only part that scrolls on a desktop ───────────────────── */}
-      <div className="space-y-3 px-5 py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <CollapsibleSection
-          summary={span.multiDay ? `${tripSpanLabel(span)} · each day below` : "One day"}
-          title="Field work, day by day"
-        >
-          <TripWorkloadEvidencePanel
-            declaredAm={record.amWorkload}
-            declaredPharmacies={record.pharmacyWorkload ?? null}
-            declaredPm={record.pmWorkload}
-            hrId={record.hrId ?? null}
-            tripEndDate={record.toDate || record.date}
-            tripStartDate={record.date}
-          />
-        </CollapsibleSection>
-
-        {/* Claim validation — only for Phoenix-submitted trips. An imported expense carries no
-            captured GPS, so the panel would have nothing to check. Rendering nothing is honest. */}
-        {validationRequestId !== null ? (
-          <ExpenseClaimValidationPanel collapsible requestId={validationRequestId} />
-        ) : null}
-
-        {/* The arrival and departure photos, every added stop, then the ticket/receipt pictures or
-            PDFs — in full, not a thumbnail, because this is where the money is approved. */}
-        <CollapsibleSection title="Photos, stops and tickets">
-          <TripAttachments tripId={record.tripId} />
-        </CollapsibleSection>
-      </div>
-
-      {/* ── 3. The decision — pinned to the bottom of the panel on a desktop ────────────── */}
-      <div className="shrink-0 border-t-2 border-slate-900 bg-white px-5 py-4">
-        {/* Claimed − Deduction = Approved, written out as the equation it is. HR thinks in "cut 200
-            off this", so Deduction is the field to type in and Approved follows; typing Approved
-            directly still works and back-fills the deduction (one function, payable.ts). */}
-        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-          <div>
-            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Claimed</p>
-            <p className="mt-1 font-mono text-lg font-bold text-slate-900">{egp(record.total)}</p>
-          </div>
-          <span aria-hidden className="mb-2 font-mono text-lg font-black text-slate-300">−</span>
-          <div>
-            <label
-              className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-600"
-              htmlFor={`deduct-${record.tripId}`}
-            >
-              Deduction
-            </label>
-            <input
-              className={cn(
-                phxFieldClassName, "mt-1 block w-28 text-right font-mono",
-                deduction > 0 ? "border-orange-400 text-orange-700" : "",
-              )}
-              disabled={valuesOnly || !canDecide}
-              id={`deduct-${record.tripId}`}
-              inputMode="decimal"
-              max={record.total}
-              min={0}
-              onChange={(event) =>
-                onChangeAmount(approvedAmountFromDeduction(record.total, Number(event.target.value)))
-              }
-              type="number"
-              value={String(deduction)}
-            />
-          </div>
-          <span aria-hidden className="mb-2 font-mono text-lg font-black text-slate-300">=</span>
-          <div>
-            <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`amt-${record.tripId}`}>
-              Approved amount
-            </label>
-            <input
-              className={cn(
-                phxFieldClassName, "mt-1 block w-32 text-right font-mono",
-                adjusted ? "border-orange-400" : "",
-              )}
-              disabled={valuesOnly || !canDecide}
-              id={`amt-${record.tripId}`}
-              inputMode="decimal"
-              max={record.total}
-              min={0}
-              onChange={(event) =>
-                onChangeAmount(
-                  approvedAmountFromDeduction(
-                    record.total,
-                    deductionFromApprovedAmount(record.total, Number(event.target.value)),
-                  ),
-                )
-              }
-              type="number"
-              value={String(decision.approvedAmount)}
-            />
-          </div>
-          {adjusted ? (
-            <span className="mb-2 text-xs font-bold text-orange-700">
-              {egp(deduction)} deducted from {egp(record.total)}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`reason-${record.tripId}`}>
-              Reason / comment{" "}
-              {adjusted ? (
-                <span className="text-rose-500">(required for a changed amount)</span>
-              ) : (
-                <span className="text-slate-400">(required to reject)</span>
-              )}
-            </label>
-            {/* Only the figures already on this screen are offered, so the note can cite the
-                deduction without anything being able to invent one. */}
-            <SystemNoteRewriteControl
-              disabled={!canDecide || valuesOnly}
-              facts={[
-                { label: "Claimed total", value: egp(record.total) },
-                { label: "Approved amount", value: egp(decision.approvedAmount) },
-                ...(adjusted ? [{ label: "Deduction", value: egp(deduction) }] : []),
-                { label: "Trip start", value: formatDateValue(record.date) },
-                { label: "Trip end", value: formatDateValue(record.toDate) },
-                { label: "Trip length", value: tripSpanLabel(span) },
-                ...(record.km ? [{ label: "Distance", value: `${formatNumberValue(record.km)} km` }] : []),
-                { label: "Expense type", value: record.requestType || "—" },
-              ]}
-              onChangeReason={onChangeReason}
-              outcome={
-                decision.hrApproved ? (adjusted ? "adjusted" : "approved") : isRejected ? "rejected" : "pending"
-              }
-              value={decision.hrComment}
-            />
-          </div>
-          <input
-            className={cn(
-              phxFieldClassName, "mt-1 w-full",
-              reasonMissing ? "border-rose-400" : "",
-            )}
-            disabled={valuesOnly || !canDecide}
-            id={`reason-${record.tripId}`}
-            onChange={(event) => onChangeReason(event.target.value)}
-            placeholder={
-              adjusted ? "Why is the approved amount different?" : "Optional to approve · required to reject"
-            }
-            value={decision.hrComment}
-          />
-        </div>
-
-        {/* Hidden entirely for a read-only viewer (the CEO, 2026-08-08) rather than disabled: a row
-            of greyed-out buttons invites someone to keep clicking. Presentation only — the decision
-            route asserts system-administrator access on its own. */}
-        {valuesOnly ? (
-          <p className="mt-3 border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-500">
-            Imported from the outside source before Phoenix approvals began on 1 July 2026. It is shown
-            for its values only: there is nothing to approve, and its decision cannot be changed here.
-          </p>
-        ) : !canDecide ? (
-          <p className="mt-3 border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-500">
-            You have read-only access to this workspace. Approving, rejecting and adjusting the
-            payable amount are reserved for a system administrator.
-          </p>
-        ) : (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {decision.hrApproved ? (
-              <Button onClick={onUnapprove} variant="secondary">
-                <Undo2 className="mr-2 h-4 w-4" /> Unapprove
-              </Button>
-            ) : isRejected ? (
-              <Button onClick={onUnreject} variant="secondary">
-                <Undo2 className="mr-2 h-4 w-4" /> Undo rejection
-              </Button>
             ) : (
-              <>
-                <Button
-                  className={cn(phxButtonApproveDenseClassName, "disabled:opacity-60")}
-                  disabled={reasonMissing}
-                  onClick={onApprove}
-                >
-                  <Check className="mr-2 h-4 w-4" /> Approve {egp(decision.approvedAmount)}
-                </Button>
-                <Button
-                  className={cn(phxButtonDangerDenseClassName, "disabled:opacity-60")}
-                  disabled={rejectReasonMissing}
-                  onClick={onReject}
-                >
-                  <XCircle className="mr-2 h-4 w-4" /> Reject
-                </Button>
-              </>
+              <TripReview
+                key={selected.tripId}
+                decision={decisionFor(selected)}
+                duplicateOf={duplicateFlags.get(selected.tripId)}
+                onNext={
+                  selectedIndex >= 0 && selectedIndex < activeList.length - 1
+                    ? () => setSelectedId(activeList[selectedIndex + 1].tripId)
+                    : undefined
+                }
+                onPrevious={selectedIndex > 0 ? () => setSelectedId(activeList[selectedIndex - 1].tripId) : undefined}
+                position={selectedIndex >= 0 ? { index: selectedIndex + 1, total: activeList.length } : null}
+                record={selected}
+                valuesOnly={isImportedHistoryTrip(selected.date)}
+              />
             )}
-            {adjusted ? (
-              <Button onClick={() => onChangeAmount(record.total)} variant="secondary">
-                <RotateCcw className="mr-2 h-4 w-4" /> Clear deduction
-              </Button>
-            ) : null}
-            {reasonMissing ? (
-              <span className="text-xs font-semibold text-rose-600">Add a reason to approve a changed amount.</span>
-            ) : !decision.hrApproved && !isRejected && rejectReasonMissing ? (
-              <span className="text-xs font-semibold text-slate-500">Add a reason to reject this trip.</span>
-            ) : null}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* The slim decision row at the foot of a PHONE only (`lg:hidden` inside). On a desktop the
+          same decision sits in the left column under the trip list (owner, 2026-11-07: "put it in
+          the left side, make the full right side for reviewing"). */}
+      <DecisionBar placement="bar" {...decisionBarProps} />
     </div>
   );
 }
