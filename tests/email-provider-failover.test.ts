@@ -349,18 +349,24 @@ export async function runEmailProviderFailoverTests() {
     assert.equal(suppressionReasonForEvent(row), null, "a provider-side failure must never suppress the recipient");
   }
 
-  // 15) EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day). A second Resend
-  //     account and a second Brevo account join the chain only when their key is set, in the order
-  //     resend → resend-2 → brevo → brevo-2. Each sends with ITS OWN key and its own verified From,
-  //     and the second Resend account reads its accepted-then-failed verdict with its own key — a
-  //     Resend id is readable only by the account that accepted it.
+  // 15) ONE RESEND ACCOUNT, ONE BREVO ACCOUNT — NOTHING ELSE (owner, 2026-11-06: "keep a free Resend
+  //     account as the primary, and one Brevo account in case needed as a fallback"). The retired
+  //     accounts — Resend 2, 3 and 4, the Sales and People module accounts, Brevo 2 — may still have
+  //     keys on Railway, so every one of them is SET here and must not reach the chain, for any
+  //     module or sender. Mail from hr@ no longer gets a chain of its own either.
   {
     const names = [
       "RESEND_API_KEY",
       "RESEND_API_KEY_2",
       "RESEND_EMAIL_FROM_2",
       "RESEND_API_KEY_3",
+      "RESEND_EMAIL_FROM_3",
       "RESEND_API_KEY_4",
+      "RESEND_EMAIL_FROM_4",
+      "RESEND_API_KEY_SALES",
+      "RESEND_EMAIL_FROM_SALES",
+      "RESEND_API_KEY_PEOPLE",
+      "RESEND_EMAIL_FROM_PEOPLE",
       "BREVO_API_KEY",
       "BREVO_API_KEY_2",
       "BREVO_EMAIL_FROM",
@@ -373,74 +379,70 @@ export async function runEmailProviderFailoverTests() {
       for (const name of names) delete process.env[name];
       process.env.RESEND_API_KEY = "re_one";
       process.env.BREVO_API_KEY = "brevo_one";
-      assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend", "brevo"], "no extra keys → the chain is unchanged");
-
       process.env.RESEND_API_KEY_2 = "re_two";
-      process.env.BREVO_API_KEY_2 = "brevo_two";
-      const chain = resolveEmailProviders();
-      assert.deepEqual(chain.map((p) => p.name), ["resend", "resend-2", "brevo", "brevo-2"], "both Resend accounts before both Brevo accounts");
-
+      process.env.RESEND_EMAIL_FROM_2 = "phoenix@send2.satopharma.com";
       process.env.RESEND_API_KEY_3 = "re_three";
-      assert.deepEqual(
-        resolveEmailProviders().map((p) => p.name),
-        ["resend", "resend-2", "resend-3", "brevo", "brevo-2"],
-        "the third Resend account comes after the second and before any Brevo account",
-      );
+      process.env.RESEND_EMAIL_FROM_3 = "phoenix@send3.satopharma.com";
       process.env.RESEND_API_KEY_4 = "re_four";
-      assert.deepEqual(
-        resolveEmailProviders().map((p) => p.name),
-        ["resend", "resend-2", "resend-3", "resend-4", "brevo", "brevo-2"],
-        "the fourth Resend account comes after the third and before any Brevo account",
-      );
-      delete process.env.RESEND_API_KEY_3;
-      assert.deepEqual(
-        resolveEmailProviders().map((p) => p.name),
-        ["resend", "resend-2", "resend-4", "brevo", "brevo-2"],
-        "an unset account is skipped, the rest keep their order",
-      );
-      delete process.env.RESEND_API_KEY_4;
+      process.env.RESEND_EMAIL_FROM_4 = "phoenix@send4.satopharma.com";
+      process.env.RESEND_API_KEY_SALES = "re_sales";
+      process.env.RESEND_EMAIL_FROM_SALES = "sales@sales.satopharma.com";
+      process.env.RESEND_API_KEY_PEOPLE = "re_people";
+      process.env.RESEND_EMAIL_FROM_PEOPLE = "people@people.satopharma.com";
+      process.env.BREVO_API_KEY_2 = "brevo_two";
+
+      assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend", "brevo"], "only one Resend and one Brevo account, whatever else is set");
 
       process.env.EMAIL_FAILOVER_ENABLED = "false";
-      assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend"], "the kill switch drops every backup account");
+      assert.deepEqual(resolveEmailProviders().map((p) => p.name), ["resend"], "the kill switch drops Brevo");
       delete process.env.EMAIL_FAILOVER_ENABLED;
 
-      const requests: Array<{ auth: string; body: Record<string, unknown> | null; url: string }> = [];
+      // Every kind of mail is sent through the same two accounts: a module that used to own an
+      // account, mail from hr@, and plain Phoenix mail. The send is the POST; the accepted check is a GET.
+      const requests: Array<{ auth: string; body: Record<string, unknown> | null; method: string; url: string }> = [];
+      let resendAnswer = 200;
       globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
         const headers = (init?.headers ?? {}) as Record<string, string>;
         const url = String(input);
-        requests.push({ auth: headers.Authorization ?? headers["api-key"] ?? "", body: init?.body ? JSON.parse(String(init.body)) : null, url });
+        const method = init?.method ?? "GET";
+        requests.push({ auth: headers.Authorization ?? headers["api-key"] ?? "", body: init?.body ? JSON.parse(String(init.body)) : null, method, url });
         if (url.includes("brevo")) return new Response(JSON.stringify({ messageId: "<B>" }), { status: 200 });
-        if (init?.method === "GET") return new Response(JSON.stringify({ last_event: "failed" }), { status: 200 });
+        if (method === "GET") return new Response(JSON.stringify({ last_event: "delivered" }), { status: 200 });
+        if (resendAnswer !== 200) return new Response(JSON.stringify({ message: "daily quota" }), { status: resendAnswer });
         return new Response(JSON.stringify({ id: "R" }), { status: 200 });
       }) as typeof fetch;
 
-      const [, resendTwo, , brevoTwo] = chain;
+      const retiredKeys = ["Bearer re_two", "Bearer re_three", "Bearer re_four", "Bearer re_sales", "Bearer re_people", "brevo_two"];
+      const kinds: Array<{ from: string; module: string | null }> = [
+        { from: "Phoenix Workforce <phoenix@send.satopharma.com>", module: "sales" },
+        { from: "Phoenix Workforce <phoenix@send.satopharma.com>", module: "Leave Management" },
+        { from: "Phoenix Workforce <phoenix@send.satopharma.com>", module: "recruitment" },
+        { from: "Phoenix Workforce <phoenix@send.satopharma.com>", module: "payroll" },
+        { from: "Phoenix Workforce <phoenix@send.satopharma.com>", module: null },
+        { from: "Sato Pharma HR <hr@satopharma.com>", module: "recruitment" },
+      ];
+      for (const kind of kinds) {
+        requests.length = 0;
+        const sent = await sendPreparedEmailWithFailover({ ...sampleEmail, ...kind });
+        assert.deepEqual(sent, { id: "R", provider: "resend" }, `${kind.module ?? "no module"} mail goes to the one Resend account`);
+        const post = requests.find((request) => request.method === "POST");
+        assert.equal(post?.auth, "Bearer re_one", "it sends with the one Resend key");
+        assert.equal(post?.body?.from, kind.from, "Resend keeps the message's own From — no account rewrites it");
+        assert.ok(requests.every((request) => !retiredKeys.includes(request.auth)), "no retired account is ever called");
+      }
 
-      // A bare address keeps the message's display name; only the verified address changes.
-      process.env.RESEND_EMAIL_FROM_2 = "phoenix@send2.satopharma.com";
-      await resendTwo.send(sampleEmail);
-      assert.equal(requests.at(-1)?.auth, "Bearer re_two", "the second Resend account sends with its own key");
-      assert.equal(requests.at(-1)?.body?.from, "Phoenix <phoenix@send2.satopharma.com>", "its From is its own verified address");
-      assert.equal(requests.at(-1)?.body?.reply_to, "reply@phoenix.example", "Reply-To is untouched");
-
-      const check = await checkResendAccepted("R2", { apiKey: "re_two", delaysMs: [1], sleep: async () => undefined });
-      assert.equal(check.state, "failed");
-      assert.equal(requests.at(-1)?.auth, "Bearer re_two", "the accepted-then-failed read uses the account that accepted the message");
-      assert.equal(typeof resendTwo.checkAccepted, "function", "the second Resend account carries the accepted check too");
-
-      // Unset, the second account sends from the message's own From.
-      delete process.env.RESEND_EMAIL_FROM_2;
-      await resendTwo.send(sampleEmail);
-      assert.equal(requests.at(-1)?.body?.from, sampleEmail.from);
-
-      // Brevo 2: its own key, then its own sender, falling back to the first account's sender.
-      process.env.BREVO_EMAIL_FROM = "Sato HR <hr@satopharma.com>";
-      await brevoTwo.send(sampleEmail);
-      assert.equal(requests.at(-1)?.auth, "brevo_two", "the second Brevo account sends with its own key");
-      assert.deepEqual(requests.at(-1)?.body?.sender, { email: "hr@satopharma.com", name: "Sato HR" });
-      process.env.BREVO_EMAIL_FROM_2 = "Sato People <people@satopharma.com>";
-      await brevoTwo.send(sampleEmail);
-      assert.deepEqual(requests.at(-1)?.body?.sender, { email: "people@satopharma.com", name: "Sato People" });
+      // Resend out of quota → Brevo, with Brevo's own sender, and still never a retired account.
+      resendAnswer = 429;
+      process.env.BREVO_EMAIL_FROM = "Phoenix Workforce <phoenix@send.satopharma.com>";
+      requests.length = 0;
+      const overflow = await sendPreparedEmailWithFailover({ ...sampleEmail, from: "Phoenix Workforce <phoenix@send.satopharma.com>", module: "sales" });
+      assert.deepEqual(overflow, { id: "<B>", provider: "brevo" }, "a capped Resend account hands the mail to Brevo");
+      assert.deepEqual(
+        requests.map((request) => request.auth),
+        ["Bearer re_one", "brevo_one"],
+        "exactly two calls: the one Resend account, then the one Brevo account",
+      );
+      assert.deepEqual(requests.at(-1)?.body?.sender, { email: "phoenix@send.satopharma.com", name: "Phoenix Workforce" });
     } finally {
       globalThis.fetch = realFetch;
       for (const name of names) {
@@ -448,254 +450,9 @@ export async function runEmailProviderFailoverTests() {
         else process.env[name] = saved[name];
       }
     }
-
-    // The whole chain walks in order when every account before the last is out of quota.
-    const calls: string[] = [];
-    const result = await sendPreparedEmailWithFailover(sampleEmail, [
-      fakeProvider("resend", { outcome: "failover", reason: "daily quota" }, calls),
-      fakeProvider("resend-2", { outcome: "failover", reason: "daily quota" }, calls),
-      fakeProvider("brevo", { outcome: "failover", reason: "daily quota" }, calls),
-      fakeProvider("brevo-2", { outcome: "sent", id: "<B4>" }, calls),
-    ]);
-    assert.deepEqual(result, { id: "<B4>", provider: "brevo-2" });
-    assert.deepEqual(calls, ["resend", "resend-2", "brevo", "brevo-2"]);
 
     assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", ""), "Phoenix HR <hr@send.satopharma.com>");
-    assert.equal(applySenderOverride("hr@send.satopharma.com", "hr@send2.satopharma.com"), "hr@send2.satopharma.com");
+    assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "hr@send2.satopharma.com"), "Phoenix HR <hr@send2.satopharma.com>");
     assert.equal(applySenderOverride("Phoenix HR <hr@send.satopharma.com>", "Other <x@y.com>"), "Other <x@y.com>");
-  }
-
-  // 9) THE DEDICATED ACCOUNT (owner, 2026-10-13: "make it and hrbp dedicated only for job offers
-  //    + sato email composer"). Resend's FIRST account is the only one that can send as hr@, hrbp@
-  //    or ceo@ — and automated notification traffic was spending its ~100/day quota (404 Resend
-  //    messages on 11 Oct 2026), which is why 30 of the last 63 offers were sent by a backup and 18
-  //    of them went out branded Phoenix Workforce. So ordinary Phoenix mail is handed the chain
-  //    WITHOUT it; only a Sato human identity starts there.
-  {
-    const names = ["RESEND_API_KEY_2", "RESEND_API_KEY_3", "RESEND_API_KEY_4", "BREVO_API_KEY", "BREVO_API_KEY_2", "EMAIL_FAILOVER_ENABLED"];
-    const saved: Record<string, string | undefined> = {};
-    for (const name of names) saved[name] = process.env[name];
-    try {
-      for (const name of names) delete process.env[name];
-      process.env.RESEND_API_KEY_2 = "test-key-2";
-      process.env.BREVO_API_KEY = "test-brevo-key";
-
-      const chainFor = (from: string) => resolveEmailProviders({ from }).map((provider) => provider.name);
-
-      // A Sato human identity keeps the dedicated account, and keeps it FIRST.
-      for (const identity of [
-        "Sato Pharma HR <hr@satopharma.com>",
-        "Sato Pharma HR <hr@send.satopharma.com>",
-        "Sato Pharma <hrbp@send.satopharma.com>",
-        "Anwar Gaweesh <ceo@send.satopharma.com>",
-      ]) {
-        assert.equal(chainFor(identity)[0], "resend", `the dedicated account is first for ${identity}`);
-      }
-
-      // Ordinary automated Phoenix mail does not touch it at all — whichever host it names.
-      for (const ordinary of [
-        "Phoenix Workforce <phoenix@send.satopharma.com>",
-        "Phoenix Workforce <phoenix@satopharma.com>",
-        "Phoenix <no-reply@phoenix.example>",
-      ]) {
-        const chain = chainFor(ordinary);
-        assert.ok(!chain.includes("resend"), `ordinary mail must not spend the dedicated quota (${ordinary}): ${chain.join(", ")}`);
-        assert.ok(chain.length > 0, `ordinary mail still has somewhere to go (${ordinary})`);
-      }
-
-      // `hr@send2…` is NOT an identity sender: the mailbox is right, the host is a backup account's.
-      assert.ok(!chainFor("Sato Pharma HR <hr@send2.satopharma.com>").includes("resend"));
-
-      // Asked with no email at all — "is anything configured?" — the whole chain comes back.
-      assert.equal(resolveEmailProviders()[0].name, "resend");
-
-      // With NO backup configured, ordinary mail keeps the only account there is: an email that
-      // cannot be sent at all is worse than one that spends the reserved quota.
-      delete process.env.RESEND_API_KEY_2;
-      delete process.env.BREVO_API_KEY;
-      assert.deepEqual(chainFor("Phoenix Workforce <phoenix@send.satopharma.com>"), ["resend"]);
-    } finally {
-      for (const name of names) {
-        if (saved[name] === undefined) delete process.env[name];
-        else process.env[name] = saved[name];
-      }
-    }
-  }
-
-  // 10) PER-MODULE ACCOUNTS (owner, 2026-10-13: one Resend account per module, sales first, on
-  //     sales.satopharma.com). A module's mail tries ITS account first and then the ordinary chain;
-  //     the account is never in the failover pool, so no other module can spend its quota; and it
-  //     stays inert until BOTH its key and its sender are set.
-  {
-    const names = [
-      "RESEND_API_KEY_2",
-      "RESEND_API_KEY_3",
-      "RESEND_API_KEY_4",
-      "BREVO_API_KEY",
-      "BREVO_API_KEY_2",
-      "EMAIL_FAILOVER_ENABLED",
-      "RESEND_API_KEY_SALES",
-      "RESEND_EMAIL_FROM_SALES",
-    ];
-    const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
-    const realFetch = globalThis.fetch;
-    try {
-      for (const name of names) delete process.env[name];
-      process.env.RESEND_API_KEY_2 = "re_two";
-      process.env.BREVO_API_KEY = "brevo_one";
-
-      const ordinaryFrom = "Phoenix Workforce <phoenix@send.satopharma.com>";
-      const chainFor = (module: string | null | undefined) =>
-        resolveEmailProviders({ from: ordinaryFrom, module }).map((provider) => provider.name);
-      const ordinaryChain = ["resend-2", "brevo"];
-
-      // Nothing set: sales mail rides the ordinary chain exactly as before.
-      assert.deepEqual(chainFor("sales"), ordinaryChain, "no sales key → unchanged");
-      // A key without its verified sender is still inert: it would send from an address its domain does not hold.
-      process.env.RESEND_API_KEY_SALES = "re_sales";
-      assert.deepEqual(chainFor("sales"), ordinaryChain, "a key with no sender stays out of the chain");
-      process.env.RESEND_EMAIL_FROM_SALES = "sales@sales.satopharma.com";
-
-      // Both set: the sales account goes FIRST, behind it the ordinary chain — the mail never stops.
-      assert.deepEqual(chainFor("sales"), ["resend-sales", ...ordinaryChain]);
-      assert.deepEqual(chainFor("Sales"), ["resend-sales", ...ordinaryChain], "the template category spelling reaches it too");
-      assert.deepEqual(chainFor(" SALES "), ["resend-sales", ...ordinaryChain]);
-
-      // No other module reaches it — and a send with no module at all does not either.
-      for (const other of ["payroll", "Direct Orders", "system", "Leave Management", "", null, undefined]) {
-        assert.deepEqual(chainFor(other), ordinaryChain, `module ${JSON.stringify(other)} must not spend the sales quota`);
-      }
-
-      // It is never in the pool: the whole chain (asked with no email) does not list it.
-      assert.deepEqual(resolveEmailProviders().map((provider) => provider.name), ["resend", "resend-2", "brevo"]);
-
-      // A Sato human identity keeps the dedicated first account whatever the module says.
-      assert.deepEqual(
-        resolveEmailProviders({ from: "Sato Pharma HR <hr@satopharma.com>", module: "sales" }).map((provider) => provider.name),
-        ["resend", "resend-2", "brevo"],
-      );
-
-      // The kill switch drops it with every other backup.
-      process.env.EMAIL_FAILOVER_ENABLED = "false";
-      assert.deepEqual(chainFor("sales"), ["resend"]);
-      delete process.env.EMAIL_FAILOVER_ENABLED;
-
-      // Sending: its own key, its own From, the message's display name kept; a refusal falls through.
-      const requests: Array<{ auth: string; body: Record<string, unknown> | null }> = [];
-      let salesAnswer = 200;
-      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-        const headers = (init?.headers ?? {}) as Record<string, string>;
-        requests.push({ auth: headers.Authorization ?? "", body: init?.body ? JSON.parse(String(init.body)) : null });
-        if (headers.Authorization === "Bearer re_sales" && salesAnswer !== 200) {
-          return new Response(JSON.stringify({ message: "daily limit" }), { status: salesAnswer });
-        }
-        if (init?.method === "GET") return new Response(JSON.stringify({ last_event: "delivered" }), { status: 200 });
-        return new Response(JSON.stringify({ id: headers.Authorization === "Bearer re_sales" ? "S1" : "R2" }), { status: 200 });
-      }) as typeof fetch;
-
-      const salesEmail: PreparedEmail = { ...sampleEmail, from: ordinaryFrom, module: "sales" };
-      const sent = await sendPreparedEmailWithFailover(salesEmail);
-      assert.deepEqual(sent, { id: "S1", provider: "resend-sales" });
-      // The accepted-then-failed read follows the send as a GET with no body; the send is the POST.
-      const lastPost = requests.filter((request) => request.body).at(-1);
-      assert.equal(lastPost?.auth, "Bearer re_sales", "it sends with its own key");
-      assert.equal(lastPost?.body?.from, "Phoenix Workforce <sales@sales.satopharma.com>", "a bare sender keeps the display name");
-
-      salesAnswer = 429;
-      const overflow = await sendPreparedEmailWithFailover(salesEmail);
-      assert.deepEqual(overflow, { id: "R2", provider: "resend-2" }, "a capped sales account hands the mail to the ordinary chain");
-
-      // And another module's mail never touches the sales key.
-      salesAnswer = 200;
-      requests.length = 0;
-      await sendPreparedEmailWithFailover({ ...sampleEmail, from: ordinaryFrom, module: "payroll" });
-      assert.ok(requests.every((request) => request.auth !== "Bearer re_sales"), "payroll mail must not use the sales key");
-    } finally {
-      globalThis.fetch = realFetch;
-      for (const name of names) {
-        if (saved[name] === undefined) delete process.env[name];
-        else process.env[name] = saved[name];
-      }
-    }
-  }
-
-  // 11) THE PEOPLE ACCOUNT (owner, 2026-10-13: leave, excuses, attendance; probation, contracts,
-  //     resignations; recruitment and birthdays — and NOT password reset / account setup, which he
-  //     chose to leave on the ordinary chain). Same rules as sales, and the two never mix.
-  {
-    const names = [
-      "RESEND_API_KEY_2",
-      "RESEND_API_KEY_3",
-      "RESEND_API_KEY_4",
-      "BREVO_API_KEY",
-      "BREVO_API_KEY_2",
-      "EMAIL_FAILOVER_ENABLED",
-      "RESEND_API_KEY_SALES",
-      "RESEND_EMAIL_FROM_SALES",
-      "RESEND_API_KEY_PEOPLE",
-      "RESEND_EMAIL_FROM_PEOPLE",
-    ];
-    const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
-    const realFetch = globalThis.fetch;
-    try {
-      for (const name of names) delete process.env[name];
-      process.env.RESEND_API_KEY_2 = "re_two";
-      process.env.BREVO_API_KEY = "brevo_one";
-      process.env.RESEND_API_KEY_SALES = "re_sales";
-      process.env.RESEND_EMAIL_FROM_SALES = "sales@sales.satopharma.com";
-
-      const ordinaryFrom = "Phoenix Workforce <phoenix@send.satopharma.com>";
-      const chainFor = (module: string | null | undefined, from = ordinaryFrom) =>
-        resolveEmailProviders({ from, module }).map((provider) => provider.name);
-      const ordinaryChain = ["resend-2", "brevo"];
-      const peopleModules = [
-        "Leave Management", "leave", "vacation", "Excuses", "excuse", "Attendance", "attendance_digest",
-        "Probation", "Contracts", "contract_renewal", "Resignations", "resignation", "Recruitment", "recruitment", "Birthdays", "birthday",
-      ];
-
-      // Inert without a key, and with a key but no sender.
-      for (const area of peopleModules) assert.deepEqual(chainFor(area), ordinaryChain, `${area} → unchanged with no People key`);
-      process.env.RESEND_API_KEY_PEOPLE = "re_people";
-      assert.deepEqual(chainFor("vacation"), ordinaryChain, "a People key with no sender stays out of the chain");
-      process.env.RESEND_EMAIL_FROM_PEOPLE = "people@people.satopharma.com";
-
-      for (const area of peopleModules) {
-        assert.deepEqual(chainFor(area), ["resend-people", ...ordinaryChain], `${area} mail goes to the People account first`);
-      }
-
-      // Left out on purpose: account access (his answer), money, and the modules he did not name.
-      for (const other of ["Account Access", "password_reset", "password_setup", "user_created", "payroll", "Payroll", "expenses", "outstation", "coaching", "Coaching", "early_birds", "private_calendar", "system", "marketing", "direct_orders", null]) {
-        assert.ok(!chainFor(other).includes("resend-people"), `module ${JSON.stringify(other)} must not take the People account`);
-      }
-
-      // The two accounts never mix: sales mail does not use People's, People's does not use sales's.
-      assert.deepEqual(chainFor("sales"), ["resend-sales", ...ordinaryChain]);
-      assert.ok(!chainFor("leave").includes("resend-sales"));
-
-      // Never in the pool, and a Sato human identity keeps the first account whatever the module.
-      assert.deepEqual(resolveEmailProviders().map((provider) => provider.name), ["resend", "resend-2", "brevo"]);
-      assert.deepEqual(chainFor("recruitment", "Sato Pharma HR <hr@satopharma.com>"), ["resend", "resend-2", "brevo"]);
-      assert.deepEqual(chainFor("recruitment", "Sato Pharma <hrbp@send.satopharma.com>"), ["resend", "resend-2", "brevo"]);
-
-      // Sending: its own key, its own From (display name kept).
-      const requests: Array<{ auth: string; body: Record<string, unknown> | null }> = [];
-      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-        const headers = (init?.headers ?? {}) as Record<string, string>;
-        requests.push({ auth: headers.Authorization ?? "", body: init?.body ? JSON.parse(String(init.body)) : null });
-        if (init?.method === "GET") return new Response(JSON.stringify({ last_event: "delivered" }), { status: 200 });
-        return new Response(JSON.stringify({ id: "P1" }), { status: 200 });
-      }) as typeof fetch;
-      const sent = await sendPreparedEmailWithFailover({ ...sampleEmail, from: ordinaryFrom, module: "Leave Management" });
-      assert.deepEqual(sent, { id: "P1", provider: "resend-people" });
-      const lastPost = requests.filter((request) => request.body).at(-1);
-      assert.equal(lastPost?.auth, "Bearer re_people");
-      assert.equal(lastPost?.body?.from, "Phoenix Workforce <people@people.satopharma.com>");
-    } finally {
-      globalThis.fetch = realFetch;
-      for (const name of names) {
-        if (saved[name] === undefined) delete process.env[name];
-        else process.env[name] = saved[name];
-      }
-    }
   }
 }

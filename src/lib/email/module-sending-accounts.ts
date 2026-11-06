@@ -1,33 +1,21 @@
 /**
- * Resend accounts DEDICATED to one module's mail.
+ * The RETIRED per-module Resend accounts — kept only so their webhooks still verify.
  *
- * Owner decision, 2026-10-13: one Resend account per module (people, total rewards or finance,
- * sales, and so on), each sending only that module's email, "starting with sales". The first
- * module is sales, on `sales.satopharma.com`.
+ * 🔴 Since 2026-11-06 (owner: "keep a free Resend account as the primary, and one Brevo account in
+ * case needed as a fallback") NO module has its own sending account: every email rides the same
+ * Resend → Brevo chain (`email-providers.ts`). The Sales account (`sales.satopharma.com`, owner
+ * 2026-10-13) and the People account (`people.satopharma.com`) no longer send anything.
  *
- * ── Why a registry and not another numbered account ──
- * `RESEND_API_KEY_2/_3/_4` are a FAILOVER pool: any ordinary Phoenix email may land on any of them
- * when the one before runs out of quota. A module account is the opposite — it is never part of
- * that pool, so nothing but its own module's mail can spend its ~100/day, and its own module's
- * mail is tried on it FIRST. Giving it a named suffix (`RESEND_API_KEY_SALES`) instead of the next
- * number keeps it out of `extraResendAccountSuffixes` by construction.
- *
- * ── Adding the next module ──
- * One entry below, plus the three env names it implies (`RESEND_API_KEY_<SUFFIX>`,
- * `RESEND_EMAIL_FROM_<SUFFIX>`, `RESEND_WEBHOOK_SECRET_<SUFFIX>`) in
- * `scripts/sync-railway-production-secrets.mjs`, and its webhook secret in the Resend webhook
- * route's list. The account is INERT until both its key and its sender address are set.
- *
- * ── What a module account never does ──
- * It never carries mail that speaks as a person (`hr@`, `hrbp@`, `ceo@` — the dedicated first
- * account's job, `sato-identity-senders.ts`), and a job offer can never be re-addressed onto it
- * (`senderOverrideRefusal`). Mail with no module, or a module with no account here, is untouched.
+ * This list survives for one reason: the Resend webhook route reads
+ * `RESEND_WEBHOOK_SECRET_<suffix>` for each entry, so the late bounces and complaints of mail
+ * these accounts sent before the cut are still recorded instead of being rejected with a 401.
+ * Never wire it back into the chain without his word.
  */
 
 export type ModuleSendingAccount = {
   /** Plain-language name, for the health read-out. */
   label: string;
-  /** Normalised module keys (see `moduleKey`) whose email this account carries. */
+  /** The modules whose email this account carried before 2026-11-06. */
   modules: readonly string[];
   /** The env suffix: `RESEND_API_KEY_<suffix>`, `RESEND_EMAIL_FROM_<suffix>`, `RESEND_WEBHOOK_SECRET_<suffix>`. */
   suffix: string;
@@ -74,19 +62,3 @@ export const moduleSendingAccounts: readonly ModuleSendingAccount[] = [
     suffix: "PEOPLE",
   },
 ];
-
-/** `"Sales"`, `"sales"`, `" Weekly & Monthly Plans "` → `sales`, `sales`, `weekly_monthly_plans`. */
-export function moduleKey(module: string | null | undefined): string {
-  return String(module ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-/** The dedicated account for a module's mail, or null when that module has none. */
-export function moduleSendingAccountFor(module: string | null | undefined): ModuleSendingAccount | null {
-  const key = moduleKey(module);
-  if (!key) return null;
-  return moduleSendingAccounts.find((account) => account.modules.includes(key)) ?? null;
-}
