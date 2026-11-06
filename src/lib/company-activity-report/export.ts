@@ -11,7 +11,7 @@
 // Summary (one row per employee, via writeTable) — Daily Detail (one row per employee per day in
 // range, every day, via writeTable) — Notes & Legend (definitions, also via writeTable).
 //
-// Cover carries every company-wide KPI, including the campaign-visits-vs-campaign-days comparison as
+// Cover carries every company-wide KPI, including the unplanned-visits-vs-unplanned-days comparison as
 // one explicit row ("N visits across N days — X.X visits/day average") — the concrete ask this report
 // was still missing across the earlier styling-only revisions.
 
@@ -216,8 +216,8 @@ const SUMMARY_COLUMNS: TableColumn[] = [
   { label: "Office Present Days", numFmt: UNITS_FMT, right: true, width: 14 },
   { label: "CRM Field Visit Days", numFmt: UNITS_FMT, right: true, width: 14 },
   { label: "Total CRM Visits", numFmt: UNITS_FMT, right: true, width: 13 },
-  { label: "Campaign Visits", numFmt: UNITS_FMT, right: true, width: 13 },
-  { label: "Campaign Visit Days", numFmt: UNITS_FMT, right: true, width: 14 },
+  { label: "Unplanned Visits", numFmt: UNITS_FMT, right: true, width: 13 },
+  { label: "Unplanned Visit Days", numFmt: UNITS_FMT, right: true, width: 14 },
   { label: "Leave Days (Approved/CRM)", numFmt: UNITS_FMT, right: true, width: 16 },
   { label: "Leave Days (Pending)", numFmt: UNITS_FMT, right: true, width: 14 },
   { label: "No Entry Days", numFmt: UNITS_FMT, right: true, width: 12 },
@@ -318,7 +318,7 @@ const DETAIL_COLUMNS: TableColumn[] = [
   { label: "Outcome", width: 20 },
   { label: "Reason", width: 46 },
   { label: "Visit Count", numFmt: UNITS_FMT, right: true, width: 10 },
-  { label: "Campaign Visits", numFmt: UNITS_FMT, right: true, width: 13 },
+  { label: "Unplanned Visits", numFmt: UNITS_FMT, right: true, width: 13 },
   { label: "Visit Details", width: 46 },
   { label: "Office First Punch", width: 13 },
   { label: "Office Last Punch", width: 13 },
@@ -372,7 +372,7 @@ function addDailyDetailSheet(
     title: "Every employee, every day in range",
     note:
       "One row per employee per day in range, every day — including weekly-off, holidays, and days with nothing recorded — so no day is silently omitted. " +
-      "Visit Count and Campaign Visits reconcile exactly with Cover's company-wide totals.",
+      "Visit Count and Unplanned Visits reconcile exactly with Cover's company-wide totals.",
   });
 
   const firstDataRow = 7;
@@ -406,8 +406,8 @@ const NOTES_COLUMNS: TableColumn[] = [
  * its table at row 4 directly, the same row monthly-closing-export.ts itself starts at. */
 function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport): ExcelJS.Worksheet {
   const rows: CellValue[][] = [
-    ["Campaign Visit", "A CRM visit logged with type \"Campaign/Prospection\" (visit type code -8) — the owner's specific ask, distinct from the broader set of non-desk CRM activity types (meetings, training, etc.) that also count as a CRM Field Visit day."],
-    ["Campaign Visits vs. Campaign Visit Days", "\"Campaign Visits\" sums every campaign visit in range; \"Campaign Visit Days\" counts the distinct days that had at least one. Read together, not as duplicates — e.g. 6 visits over 2 days (3/day, concentrated) reads very differently from 6 visits over 6 days (1/day, spread out), even though the visit total is identical. Cover states this comparison directly for the whole filtered roster."],
+    ["Unplanned Visit", "A visit Phoenix CRM marked out of list or out of plan; on days before Phoenix, a visit iReports360 logged as \"Campaign/Prospection\". It replaced the campaign count (owner, 6 Nov 2026) and is distinct from the broader set of non-desk CRM activity types (meetings, training, etc.) that also count as a CRM Field Visit day."],
+    ["Unplanned Visits vs. Unplanned Visit Days", "\"Unplanned Visits\" sums every unplanned visit in range; \"Unplanned Visit Days\" counts the distinct days that had at least one. Read together, not as duplicates — e.g. 6 visits over 2 days (3/day, concentrated) reads very differently from 6 visits over 6 days (1/day, spread out), even though the visit total is identical. Cover states this comparison directly for the whole filtered roster."],
     ["CRM Field Visit", "A day with a real CRM-logged visit — either a Regular customer visit or one of the CP-type activities (Conference, Group Meeting, Campaign, Training, Meeting, Traveling, Health Day, and the vendor's undocumented-but-classified codes). Counted as proof of field work, the same rule the payroll digest engine uses."],
     ["CRM Leave (Annual Vacation)", "The CRM itself recorded an Annual Vacation entry that day, with no office punch and no CRM field visit — a CRM-confirmed leave signal, independent of whether a matching Phoenix leave request exists."],
     ["Office Present", "At least one fingerprint device punch was recorded for this employee on this day."],
@@ -457,10 +457,10 @@ function buildCoverProvenance(report: CompanyActivityReport, rangeLabel: string)
     ["Office present days", `${total((s) => s.officePresentDays).toLocaleString("en-US")} (at least one fingerprint punch that day)`],
     ["CRM field visit days", `${total((s) => s.crmFieldVisitDays).toLocaleString("en-US")} (at least one CRM-logged field visit that day)`],
     [
-      "Campaign visits vs. campaign days",
+      "Unplanned visits vs. unplanned days",
       totalCampaignVisitDays > 0
-        ? `${totalCampaignVisits.toLocaleString("en-US")} campaign visits across ${totalCampaignVisitDays.toLocaleString("en-US")} days — ${(totalCampaignVisits / totalCampaignVisitDays).toFixed(1)} visits/day average`
-        : `${totalCampaignVisits.toLocaleString("en-US")} campaign visits`,
+        ? `${totalCampaignVisits.toLocaleString("en-US")} unplanned visits across ${totalCampaignVisitDays.toLocaleString("en-US")} days — ${(totalCampaignVisits / totalCampaignVisitDays).toFixed(1)} visits/day average`
+        : `${totalCampaignVisits.toLocaleString("en-US")} unplanned visits`,
     ],
     ["Leave days", `${total((s) => s.leaveApprovedDays).toLocaleString("en-US")} approved/CRM, ${total((s) => s.leavePendingDays).toLocaleString("en-US")} pending`],
     ["No entry days", `${total((s) => s.noEntryDays).toLocaleString("en-US")} (working days with nothing recorded at all)`],
@@ -486,7 +486,7 @@ function buildCoverProvenance(report: CompanyActivityReport, rangeLabel: string)
 
 /**
  * Four-sheet Company Activity Report workbook: Cover (brand band + confidentiality callout +
- * company-wide KPI/provenance rows, including the campaign-visits-vs-campaign-days comparison),
+ * company-wide KPI/provenance rows, including the unplanned-visits-vs-unplanned-days comparison),
  * Summary (one row per employee), Daily Detail (one row per employee per day in range, every day),
  * and Notes & Legend. Export always carries full detail regardless of what's expanded on screen —
  * every employee, every day.

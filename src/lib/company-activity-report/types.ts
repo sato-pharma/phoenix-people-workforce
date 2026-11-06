@@ -60,9 +60,9 @@ export type CompanyActivityVisitDetail = {
   /** Display label, from resolveVisitTypeLabel — never a raw numeric code shown to a reader. */
   label: string;
   bucket: "regular" | "campaign" | "training" | "admin";
-  /** visitType === -8 exactly (classifyVisit's "campaign" bucket) — the owner's specific
-   * "campaign visits" ask, deliberately narrower than the CP/field-work bucket used to explain
-   * office-punch absences. */
+  /** An UNPLANNED visit (isUnplannedFieldVisit) — the word that replaced "campaign" (owner, 6 Nov 2026):
+   * a Phoenix CRM visit marked out of list or out of plan, or an archive-day campaign visit (−8). The key
+   * keeps its old name so every reader still parses; every screen prints "Unplanned". */
   isCampaign: boolean;
   session: string | null;
   contactName: string | null;
@@ -132,8 +132,8 @@ export type CompanyActivityEmployeeSummary = {
   crmFieldVisitDays: number;
   totalCrmVisits: number;
   campaignVisits: number;
-  /** Distinct days with >=1 campaign visit — NOT the same number as campaignVisits, which sums
-   * every visit. Both are shown together so a reader can see density (visits per campaign day),
+  /** Distinct days with >=1 unplanned visit — NOT the same number as campaignVisits, which sums
+   * every visit. Both are shown together so a reader can see density (visits per unplanned day),
    * not just a single total that hides whether it came from many days or a few heavy ones. */
   campaignVisitDays: number;
   leaveApprovedDays: number;

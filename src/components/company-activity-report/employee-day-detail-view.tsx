@@ -124,7 +124,7 @@ function SummaryStrip({ summary }: { summary: CompanyActivityEmployeeSummary | n
       <Stat label="Office" tone="neutral" value={s.officePresentDays} />
       <Stat label="CRM Visits" tone="neutral" value={s.totalCrmVisits} />
       <Stat
-        label="Campaign"
+        label="Unplanned"
         sub={s.campaignVisitDays > 0 ? `${s.campaignVisitDays} ${s.campaignVisitDays === 1 ? "day" : "days"} · ${(s.campaignVisits / s.campaignVisitDays).toFixed(1)}/day` : "0 days"}
         tone="neutral"
         value={s.campaignVisits}

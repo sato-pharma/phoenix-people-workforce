@@ -289,7 +289,7 @@ function EmployeeSummaryCard({ href, row }: { href: string; row: CompanyActivity
           <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{row.totalCrmVisits}</p>
         </div>
         <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-orange-500">Campaign</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-orange-500">Unplanned</p>
           <p className="mt-0.5 text-phx-sm font-extrabold text-orange-700">{row.campaignVisits}</p>
           <p className="text-phx-2xs font-medium text-slate-400">
             {row.campaignVisitDays} {row.campaignVisitDays === 1 ? "day" : "days"}
@@ -633,7 +633,7 @@ export function CompanyActivityReportTable({
           <div className="grid gap-2 xs:grid-cols-2 xl:grid-cols-5">
             <MetricCard description="Distinct people in this result." label="Employees" tone="slate" value={totals.employees} />
             <MetricCard description="Office punches across every employee shown." label="Office Present Days" tone="blue" value={totals.officePresentDays} />
-            <MetricCard description="CRM visits logged as Campaign/Prospection." label="Campaign Visits" tone="orange" value={totals.campaignVisits} />
+            <MetricCard description="Visits out of list or out of plan in Phoenix CRM, and campaign visits on days before Phoenix." label="Unplanned Visits" tone="orange" value={totals.campaignVisits} />
             <MetricCard description="Working days with nothing recorded at all." label="No Entry Days" tone={totals.noEntryDays > 0 ? "rose" : "emerald"} value={totals.noEntryDays} />
             <MetricCard description="Days showing BOTH presence and a leave signal." label="Conflict Days" tone={totals.conflictDays > 0 ? "rose" : "emerald"} value={totals.conflictDays} />
           </div>
@@ -737,7 +737,7 @@ export function CompanyActivityReportTable({
                           CRM Visits
                         </SortableHeader>
                         <SortableHeader active={sortKey === "campaignVisits"} direction={sortDirection} onSort={toggleSort} sortKey="campaignVisits">
-                          Campaign
+                          Unplanned
                         </SortableHeader>
                         <SortableHeader active={sortKey === "leaveApproved"} direction={sortDirection} onSort={toggleSort} sortKey="leaveApproved">
                           Leave
