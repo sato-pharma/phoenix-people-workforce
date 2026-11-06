@@ -166,6 +166,7 @@
     "exceljs": "^4.4.0",
     "framer-motion": "^14.7.1",
     "google-auth-library": "^11.1.0",
+    "heic-to": "1.6.7",
     "html-to-image": "^1.11.13",
     "imapflow": "^2.1.2",
     "jszip": "^3.10.1",
