@@ -26,6 +26,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import { AI_PROVIDER_HOSTS } from "../ai/provider-hosts.ts";
 import { noteTestDryRunSeen, requestIsTestDryRun, testDryRunRecentlySeen } from "./test-dry-run-rules.ts";
 
 type FetchFn = typeof fetch;
@@ -36,9 +37,7 @@ const DRY_RUN_RPC = "phx_test_dry_run_rpc";
 
 /** Hosts whose POST is a read: asking an AI, pricing a route, looking up a place, a Google token, an error report. */
 const READ_ONLY_POST_HOSTS = [
-  "api.openai.com",
-  "api.anthropic.com",
-  "api.groq.com",
+  ...AI_PROVIDER_HOSTS,
   "generativelanguage.googleapis.com",
   "routes.googleapis.com",
   "places.googleapis.com",

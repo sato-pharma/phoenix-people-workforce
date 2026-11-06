@@ -522,13 +522,22 @@ function forwardRequest(request: NextRequest, pathname: string, search: string, 
     const url = request.nextUrl.clone();
     url.pathname = hrNamespaceRemainder(pathname);
     headers.set(SHELL_HEADER, "hr");
-    const rewritten = NextResponse.rewrite(url, { request: { headers } });
-    if (testDryRun) rewritten.headers.set(TEST_DRY_RUN_RESPONSE_HEADER, "1");
-    return rewritten;
+    return markTestDryRun(forwardRewrite(url, headers), testDryRun);
   }
 
-  const response = NextResponse.next({ request: { headers } });
-  // The page reads this and says the save ran every check and saved nothing (TestDryRunNotice).
+  return markTestDryRun(forwardPassThrough(headers), testDryRun);
+}
+
+function forwardRewrite(url: Parameters<typeof NextResponse.rewrite>[0], headers: Headers) {
+  return NextResponse.rewrite(url, { request: { headers } });
+}
+
+function forwardPassThrough(headers: Headers) {
+  return NextResponse.next({ request: { headers } });
+}
+
+/** The page reads this and says the save ran every check and saved nothing (TestDryRunNotice). */
+function markTestDryRun<T extends NextResponse>(response: T, testDryRun: boolean): T {
   if (testDryRun) response.headers.set(TEST_DRY_RUN_RESPONSE_HEADER, "1");
   return response;
 }

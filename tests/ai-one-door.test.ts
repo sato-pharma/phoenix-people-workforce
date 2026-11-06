@@ -23,6 +23,8 @@ const SOURCE_DIRS = ["src", "app"];
 const AI_LIBRARY = "src/lib/ai/";
 const SALES_PROVIDER = "src/lib/sales/ai/provider.ts";
 const GROQ_SPEECH = "src/lib/ai/groq-transcription.ts";
+// The AI library's list of provider HOST NAMES — names the test-account fence lets through, never a call.
+const AI_HOST_NAMES = "src/lib/ai/provider-hosts.ts";
 
 type DoorRule = { allowed: (file: string) => boolean; pattern: RegExp; what: string };
 
@@ -53,7 +55,7 @@ const RULES: DoorRule[] = [
     what: "an OpenAI key read (use hasAiApiKey() to ask whether AI is configured)",
   },
   {
-    allowed: (file) => file === GROQ_SPEECH || file === SALES_PROVIDER,
+    allowed: (file) => file === GROQ_SPEECH || file === SALES_PROVIDER || file === AI_HOST_NAMES,
     pattern: /api\.groq\.com|openrouter\.ai/,
     what: "a Groq or OpenRouter address",
   },
