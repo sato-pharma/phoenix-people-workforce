@@ -106,7 +106,7 @@ decision somebody made rather than an oversight nobody noticed. An alert with no
 been judged yet.
 
 🔴 **ALERT NUMBERS BELONG TO ONE REPOSITORY, AND THE 2 NOV AND 4 NOV 2026 MOVES EACH RESTARTED THEM AT 1.** A row keeps a
-`#N` in its Alert cell only when that number is a live alert on `Omar-3-xx/phoenix-people-workforce`
+`#N` in its Alert cell only when that number is a live alert on `sato-pharma/phoenix-people-workforce`
 for the same advisory in the same manifest. A row from before the move with no such alert names its old
 number in words, so the check cannot read it, and a new alert that later reaches that number is never
 taken as already accepted. If one of those advisories opens here again, put the new `#N` in its Alert

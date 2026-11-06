@@ -16,6 +16,7 @@ import {
   describeProjection,
   describeReadFailure,
   projectActionsCost,
+  usagePath,
 } from "../scripts/check-actions-cost.mjs";
 
 type Row = { date: string; product: string; sku: string; grossAmount: number; discountAmount: number; netAmount: number; pricePerUnit: number };
@@ -35,6 +36,10 @@ function days(fromDay: number, toDay: number, month: string, gross: number): Row
 }
 
 export function runActionsCostAlarmTests() {
+  // The owner is an organization since 2026-11-06: its usage lives under organizations/, and users/ answers 404.
+  assert.equal(usagePath("sato-pharma"), "organizations/sato-pharma", "an organization's billing is read under organizations/");
+  assert.equal(usagePath("someone", false), "users/someone", "a personal account's billing stays under users/");
+
   // 1. The projection. Ten days into November at today's CI shape ($13.80 a day), with the 3,000
   //    included minutes ($18) used up on the 1st and 2nd, a partial row for today and a Copilot row
   //    that is not Actions.
@@ -55,7 +60,7 @@ export function runActionsCostAlarmTests() {
   near(p.projectedNet, 131.1 + 13.8 * 20.5 - 18, "the month's end is today's spend plus the rate over the days left, less the allowance");
   assert.ok(p.finding, "🔴 a month that ends near $396 against a $300 budget must be a finding");
   assert.equal(cairoDay(p.stopDate!), "Tue 24 Nov", "the day the $300 is reached at this rate");
-  const lines = describeProjection(p, { owner: "Omar-3-xx", now }).join("\n");
+  const lines = describeProjection(p, { owner: "sato-pharma", now }).join("\n");
   assert.match(lines, /reached on Tue 24 Nov \(Cairo\)/);
   assert.match(lines, /release gate holds every deploy/, "the line must say what a stop does, not only that it happens");
   assert.doesNotMatch(lines, /weak reading/, "seven days is not a weak reading");
@@ -75,7 +80,7 @@ export function runActionsCostAlarmTests() {
   assert.ok(spent.finding);
   assert.ok(spent.net >= 300);
   assert.match(
-    describeProjection(spent, { owner: "Omar-3-xx", now: new Date("2026-11-03T08:00:00Z") }).join("\n"),
+    describeProjection(spent, { owner: "sato-pharma", now: new Date("2026-11-03T08:00:00Z") }).join("\n"),
     /ALREADY reached/,
     "🔴 a budget already reached must say Actions has stopped, not name a future day",
   );
@@ -88,7 +93,7 @@ export function runActionsCostAlarmTests() {
   );
   assert.equal(early.windowDays, 2, "🔴 the account's part-empty first day was counted as a full day");
   near(early.dailyGross, 13.8, "🔴 the first day pulled the rate down");
-  assert.match(describeProjection(early, { owner: "Omar-3-xx" }).join("\n"), /weak reading/, "a rate on two days must say it is weak");
+  assert.match(describeProjection(early, { owner: "sato-pharma" }).join("\n"), /weak reading/, "a rate on two days must say it is weak");
   //    …but kept when it is the only complete day there is, so the first morning still has a reading.
   const firstMorning = projectActionsCost([row("2026-10-26", 4), row("2026-10-27", 2)], { now: new Date("2026-10-27T09:00:00Z"), budget: 300 });
   assert.equal(firstMorning.windowDays, 1);
@@ -97,7 +102,7 @@ export function runActionsCostAlarmTests() {
   const none = projectActionsCost([row("2026-10-26", 4)], { now: new Date("2026-10-26T15:00:00Z"), budget: 300 });
   assert.equal(none.windowDays, 0);
   assert.equal(none.finding, false);
-  assert.match(describeProjection(none, { owner: "Omar-3-xx" }).join("\n"), /no complete day of usage yet/);
+  assert.match(describeProjection(none, { owner: "sato-pharma" }).join("\n"), /no complete day of usage yet/);
 
   // 6. On the 1st, the rate still has last month's complete days behind it, and none of them is
   //    counted as this month's spend.

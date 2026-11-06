@@ -23,7 +23,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GITHUB_OWNER } from "./required-check-names.mjs";
+import { GITHUB_OWNER, GITHUB_OWNER_IS_ORG } from "./required-check-names.mjs";
 
 const DAY_MS = 86_400_000;
 
@@ -128,8 +128,13 @@ export function describeProjection(p, { owner = GITHUB_OWNER, now = new Date() }
   return lines;
 }
 
+/** An organization's usage is under `organizations/<org>`, a personal account's under `users/<login>`. */
+export function usagePath(owner, isOrg = GITHUB_OWNER_IS_ORG) {
+  return `${isOrg ? "organizations" : "users"}/${owner}`;
+}
+
 function readUsage(owner, year, month) {
-  const raw = execFileSync("gh", ["api", `users/${owner}/settings/billing/usage?year=${year}&month=${month}`], {
+  const raw = execFileSync("gh", ["api", `${usagePath(owner)}/settings/billing/usage?year=${year}&month=${month}`], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 30_000,
@@ -158,7 +163,7 @@ async function main() {
   const budget = Number(process.env.ACTIONS_MONTHLY_BUDGET);
   if (!(budget > 0)) {
     console.log(
-      "[actions-cost] CANNOT TELL — the repository variable ACTIONS_MONTHLY_BUDGET is unset. Set it to the Actions budget on github.com/settings/billing/budgets. This is not a pass.",
+      `[actions-cost] CANNOT TELL — the repository variable ACTIONS_MONTHLY_BUDGET is unset. Set it to the Actions budget on github.com/${usagePath(GITHUB_OWNER)}/settings/billing. This is not a pass.`,
     );
     process.exitCode = 2;
     return;
@@ -181,7 +186,7 @@ async function main() {
   for (const line of describeProjection(projection, { now })) console.log(`  ${line}`);
   if (projection.finding) {
     console.log(
-      "[actions-cost] OVER BUDGET THIS MONTH — the amount is the owner's decision on github.com/settings/billing/budgets; CI's own minutes are in docs/ci-self-hosted-runner.md.",
+      `[actions-cost] OVER BUDGET THIS MONTH — the amount is the owner's decision on github.com/${usagePath(GITHUB_OWNER)}/settings/billing; CI's own minutes are in docs/ci-self-hosted-runner.md.`,
     );
     process.exitCode = 1;
     return;

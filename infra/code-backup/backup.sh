@@ -17,10 +17,13 @@ shopt -s nullglob
 : "${GOOGLE_DRIVE_OAUTH_CLIENT_SECRET:?}"
 : "${GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN:?}"
 
-OWNER="${CODE_BACKUP_OWNER:-Omar-3-xx}"
+# Every account whose repositories are backed up. Since 2026-11-06 Phoenix lives on the organization
+# sato-pharma while the tablet launcher and the website stayed on the personal account, so one owner
+# alone silently dropped the other's repositories from the night.
+OWNERS="${CODE_BACKUP_OWNERS:-sato-pharma Omar-3-xx}"
 FOLDER="${CODE_BACKUP_DRIVE_FOLDER:-phoenix-code-backup}"
-# Those APKs are in no clone, so a clone alone would lose them.
-RELEASE_REPOS="${CODE_BACKUP_RELEASE_REPOS:-hmdm-android}"
+# Those APKs are in no clone, so a clone alone would lose them. Each is <owner>/<repository>.
+RELEASE_REPOS="${CODE_BACKUP_RELEASE_REPOS:-Omar-3-xx/hmdm-android}"
 KEEP_DAILY=7
 KEEP_WEEKLY=4
 
@@ -63,21 +66,43 @@ printf 'repository\ttag\tfile\tbytes\n' > "$RELEASE_MANIFEST"
 repos=()
 page=1
 while :; do
-  names="$(github "https://api.github.com/user/repos?per_page=100&page=$page" | jq -r --arg o "$OWNER" '.[] | select(.owner.login == $o) | .name')"
-  [ -n "$names" ] || break
-  while IFS= read -r name; do repos+=("$name"); done <<< "$names"
+  # One owner/name per line, for every owner listed. An empty page ends the listing.
+  listing="$(github "https://api.github.com/user/repos?per_page=100&page=$page")"
+  [ "$(jq 'length' <<< "$listing")" -gt 0 ] || break
+  slugs="$(jq -r --arg o "$OWNERS" '($o | split(" ") | map(select(length > 0) | ascii_downcase)) as $owners | .[] | select((.owner.login | ascii_downcase) as $l | $owners | index($l)) | .full_name' <<< "$listing")"
+  if [ -n "$slugs" ]; then
+    while IFS= read -r slug; do repos+=("$slug"); done <<< "$slugs"
+  fi
   page=$((page + 1))
 done
 echo "repositories visible: ${#repos[@]}"
+# An owner the token cannot see would otherwise drop out of the night without a word.
+for owner in $OWNERS; do
+  seen=0
+  for slug in "${repos[@]}"; do
+    if [[ "${slug,,}" == "${owner,,}/"* ]]; then seen=1; break; fi
+  done
+  if [ "$seen" -eq 0 ]; then
+    echo "refused: the token sees no repository of $owner" >&2
+    exit 1
+  fi
+done
 # A token that lost access would otherwise back up less and less, in silence.
 if [ "${#repos[@]}" -lt "$CODE_BACKUP_MIN_REPOS" ]; then
   echo "refused: the token sees ${#repos[@]} repositories, fewer than the $CODE_BACKUP_MIN_REPOS expected" >&2
   exit 1
 fi
 
-for name in "${repos[@]}"; do
+for slug in "${repos[@]}"; do
+  name="${slug#*/}"
   mirror="$WORK/$name.git"
-  git clone --quiet --mirror "https://github.com/$OWNER/$name.git" "$mirror"
+  bundle="$OUT/bundles/$name.bundle"
+  # Two owners could hold the same name; one bundle must never overwrite the other.
+  if [ -e "$bundle" ]; then
+    echo "refused: two repositories are named $name ($slug and an earlier one)" >&2
+    exit 1
+  fi
+  git clone --quiet --mirror "https://github.com/$slug.git" "$mirror"
   refs="$(git -C "$mirror" for-each-ref | wc -l)"
   if [ "$refs" -eq 0 ]; then
     # An empty repository is recorded as empty, never counted as backed up.
@@ -86,7 +111,6 @@ for name in "${repos[@]}"; do
     rm -rf "$mirror"
     continue
   fi
-  bundle="$OUT/bundles/$name.bundle"
   git -C "$mirror" bundle create --quiet "$bundle" --all
   git -C "$mirror" bundle verify --quiet "$bundle"
   printf '%s\t%s\t%s\tOK\n' "$name" "$refs" "$(stat -c %s "$bundle")" >> "$MANIFEST"
@@ -94,10 +118,11 @@ for name in "${repos[@]}"; do
   rm -rf "$mirror"
 done
 
-for name in $RELEASE_REPOS; do
+for slug in $RELEASE_REPOS; do
+  name="${slug#*/}"
   dir="$OUT/releases/$name"
   mkdir -p "$dir"
-  github "https://api.github.com/repos/$OWNER/$name/releases?per_page=100" \
+  github "https://api.github.com/repos/$slug/releases?per_page=100" \
     | jq -r '.[] | .tag_name as $t | .assets[] | [$t, .name, .url, .size] | @tsv' \
     | while IFS=$'\t' read -r tag asset url expected; do
         mkdir -p "$dir/$tag"

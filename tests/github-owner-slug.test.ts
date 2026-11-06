@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GITHUB_OWNER } from "../scripts/required-check-names.mjs";
+import { GITHUB_OWNER, PERSONAL_OWNER } from "../scripts/required-check-names.mjs";
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,6 +14,10 @@ import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/sour
 //
 // So the code, CI, scripts, hooks and tests must name the CURRENT owner, `GITHUB_OWNER` in
 // scripts/required-check-names.mjs, which the scripts import. Docs and memory may tell the history.
+//
+// Since 6 Nov 2026 the repositories sit on TWO owners: this one moved to the organization `sato-pharma`
+// (his "migrate the project to the trail enterprise"), the others stayed on his personal account,
+// `PERSONAL_OWNER`. Each repository below names the owner it lives on, and a reference must match it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -22,9 +26,11 @@ const SELF = "tests/github-owner-slug.test.ts";
 /** Accounts that owned these repositories before. Assembled, so this file never names one itself. */
 const RETIRED_OWNERS = [["Gawish", "1997"].join("-"), ["it", "gawish", "hr"].join("-"), ["gawish", "theit"].join("")];
 
-/** Every repository the owner account holds. A reference to one of these must name the current owner. */
-const OWN_REPOSITORIES = [
-  "phoenix-people-workforce",
+/** This repository, on the organization. A reference to it must name `GITHUB_OWNER`. */
+const ORG_REPOSITORIES = ["phoenix-people-workforce"];
+
+/** Every repository the personal account holds. A reference to one of these must name `PERSONAL_OWNER`. */
+const PERSONAL_REPOSITORIES = [
   "hmdm-android",
   "sato-anti-infective-releases",
   "sato-anti-infective-app",
@@ -61,21 +67,28 @@ function rootFiles(): string[] {
   return cachedReaddir(ROOT).filter((name) => SWEPT_FILE.test(name) && !cachedIsDirectory(path.join(ROOT, name)));
 }
 
+const OWN_REPOSITORIES = [...ORG_REPOSITORIES, ...PERSONAL_REPOSITORIES];
+
+/** The owner a repository of ours lives on. */
+export function expectedOwner(repo: string, org = GITHUB_OWNER, personal = PERSONAL_OWNER): string {
+  return ORG_REPOSITORIES.some((name) => name.toLowerCase() === repo.toLowerCase()) ? org : personal;
+}
+
 /** Each written `<owner>/<one of our repositories>` that the code points at, with the owner it names. */
-export function ownerReferences(files: { code: string; file: string }[]): { file: string; owner: string; ghcr: boolean }[] {
+export function ownerReferences(files: { code: string; file: string }[]): { file: string; owner: string; repo: string; ghcr: boolean }[] {
   const repos = OWN_REPOSITORIES.map((repo) => repo.replace(/[-.]/g, "\\$&")).join("|");
-  const pattern = new RegExp(`(github\\.com[/:]|ghcr\\.io/|\\brepos/|["'\`(])([A-Za-z0-9_-]+)/(?:${repos})\\b`, "gi");
-  const found: { file: string; owner: string; ghcr: boolean }[] = [];
+  const pattern = new RegExp(`(github\\.com[/:]|ghcr\\.io/|\\brepos/|["'\`(])([A-Za-z0-9_-]+)/(${repos})\\b`, "gi");
+  const found: { file: string; owner: string; repo: string; ghcr: boolean }[] = [];
   for (const { code, file } of files) {
     for (const match of code.matchAll(pattern)) {
       if (NOT_THE_OWNER.has(match[2].toLowerCase())) continue;
-      found.push({ file, owner: match[2], ghcr: match[1].toLowerCase() === "ghcr.io/" });
+      found.push({ file, owner: match[2], repo: match[3], ghcr: match[1].toLowerCase() === "ghcr.io/" });
     }
   }
   return found;
 }
 
-export function findOwnerSlugBreaches(files: { code: string; file: string }[], owner: string): string[] {
+export function findOwnerSlugBreaches(files: { code: string; file: string }[], org: string, personal = PERSONAL_OWNER): string[] {
   const breaches: string[] = [];
   for (const { code, file } of files) {
     for (const retired of RETIRED_OWNERS) {
@@ -83,7 +96,8 @@ export function findOwnerSlugBreaches(files: { code: string; file: string }[], o
     }
   }
   for (const ref of ownerReferences(files)) {
-    if (ref.owner.toLowerCase() !== owner.toLowerCase()) breaches.push(`${ref.file}: points at ${ref.owner}, not ${owner}`);
+    const owner = expectedOwner(ref.repo, org, personal);
+    if (ref.owner.toLowerCase() !== owner.toLowerCase()) breaches.push(`${ref.file}: points at ${ref.owner}/${ref.repo}, not ${owner}`);
     else if (ref.ghcr && ref.owner !== owner.toLowerCase()) breaches.push(`${ref.file}: a GHCR path must be lowercase (${ref.owner})`);
   }
   return breaches;
@@ -105,7 +119,7 @@ export async function runGithubOwnerSlugTests() {
   }
 
   const breaches = findOwnerSlugBreaches(files, GITHUB_OWNER);
-  assert.deepEqual(breaches, [], `every reference must name the current GitHub owner, ${GITHUB_OWNER}:\n  ${breaches.join("\n  ")}`);
+  assert.deepEqual(breaches, [], `every reference must name its repository's owner (${GITHUB_OWNER} or ${PERSONAL_OWNER}):\n  ${breaches.join("\n  ")}`);
 
   // The checker itself: an old name, a third name and an upper-case GHCR path are each refused.
   const old = RETIRED_OWNERS[0];
@@ -113,4 +127,8 @@ export async function runGithubOwnerSlugTests() {
   assert.equal(findOwnerSlugBreaches([{ file: "b.yml", code: "url: https://github.com/someone-else/hmdm-android/releases" }], GITHUB_OWNER).length, 1);
   assert.equal(findOwnerSlugBreaches([{ file: "c.yml", code: `IMAGE: ghcr.io/${GITHUB_OWNER.toUpperCase()}X/phoenix-people-workforce` }], GITHUB_OWNER).length, 1);
   assert.deepEqual(findOwnerSlugBreaches([{ file: "d.ts", code: `repos/${GITHUB_OWNER}/phoenix-people-workforce` }], GITHUB_OWNER), []);
+  // Each repository is held to its own owner: this one to the organization, the launcher to the personal account.
+  assert.equal(findOwnerSlugBreaches([{ file: "e.ts", code: `repos/${PERSONAL_OWNER}/phoenix-people-workforce` }], GITHUB_OWNER).length, 1, "this repository named on the personal account is refused");
+  assert.deepEqual(findOwnerSlugBreaches([{ file: "f.sh", code: `https://github.com/${PERSONAL_OWNER}/hmdm-android/releases` }], GITHUB_OWNER), [], "the launcher stays on the personal account");
+  assert.equal(findOwnerSlugBreaches([{ file: "g.sh", code: `https://github.com/${GITHUB_OWNER}/hmdm-android/releases` }], GITHUB_OWNER).length, 1, "the launcher named on the organization is refused");
 }

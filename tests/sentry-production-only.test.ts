@@ -347,7 +347,7 @@ function wiringTests() {
   }
   assert.match(nextConfigSource(), /telemetry: false/);
   assert.match(nextConfigSource(), /deploy: \{ env: "production" \}/, "each release is marked as a production deploy");
-  assert.match(nextConfigSource(), /setCommits: \{ repo: "Omar-3-xx\/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true \}/, "commits are named explicitly and a missing integration is tolerated");
+  assert.match(nextConfigSource(), /setCommits: \{ repo: "sato-pharma\/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true \}/, "commits are named explicitly and a missing integration is tolerated");
   // 2026-11-04: `ignoreMissing` is a no-op on plugin 11, so a missing GitHub integration threw out of setCommits and
   // skipped finalize AND the deploy — every release read deployCount 0. Only `shouldNotThrowOnFailure` is honoured,
   // and the INSTALLED plugin must still read that name, or a rename would bring the silent skip back.

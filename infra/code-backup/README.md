@@ -7,7 +7,7 @@ Its watch pattern, `infra/code-backup/**`, means only a change in this folder re
 shows as skipped. A rebuild does not start a backup.
 
 Each night it makes one file on the app's Drive, `phoenix-code-backup/daily/code-backup-YYYY-MM-DD.tar.age`:
-a verified `git bundle` of every repository the token can see, the `hmdm-android` release files, and a
+a verified `git bundle` of every repository the token can see on the two owners (`sato-pharma`, which holds Phoenix since 6 Nov 2026, and the personal account `Omar-3-xx`, which holds the launcher and the website), the `hmdm-android` release files, and a
 `manifest.tsv` listing each repository's refs and size, with `releases.tsv` listing each release file and its size. It keeps 7 daily and 4 weekly files.
 `phoenix-code-backup/frozen-2026-10-26/` is never pruned: the repositories that had no copy off this disk.
 
@@ -23,6 +23,7 @@ newest file is over 36 hours old, too small, or Drive cannot be read. A run that
 | `GITHUB_BACKUP_TOKEN` | Read-only GitHub token covering every repository |
 | `CODE_BACKUP_AGE_RECIPIENT` | The PUBLIC age key. The private key is never on Railway |
 | `CODE_BACKUP_MIN_REPOS` | Refuses the night if the token sees fewer repositories than this |
+| `CODE_BACKUP_OWNERS` | Optional. The owners backed up, space-separated; default `sato-pharma Omar-3-xx`. The night is refused if the token sees no repository of one of them |
 | `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` | Railway references to the app's own, so a rotation reaches them |
 
 ## Restoring
