@@ -2,7 +2,7 @@ import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { isCrmDoubleVisitRow, queryOwnVisitsOfDepartedAgents, queryVisitsLimited } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { getKpisBoard, kpiMonthOptions } from "@/lib/crm/kpis-board";
+import { getKpisBoard, kpiMonthOptions, type KpisBoard } from "@/lib/crm/kpis-board";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
@@ -1043,11 +1043,24 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string, month: strin
   // his row and the board's four targets and nothing else, and the two per-rep KPI reports are a
   // whole further read the board makes AFTER its main batch, whose answer is dropped right here.
   // They never touch a row (see getKpisBoard), so every figure on the tile is the one it was.
-  const board = await getKpisBoard({ access, includeReports: false, month, todayIso });
-  const wanted = hrId.toLowerCase();
-  const row =
-    board.reps.find((r) => (r.agentHrId ?? "").toLowerCase() === wanted) ??
-    (board.reps.length === 1 ? board.reps[0] : null);
+  const rowOf = (found: KpisBoard, rowHrId: string) =>
+    found.reps.find((r) => (r.agentHrId ?? "").toLowerCase() === rowHrId.toLowerCase()) ??
+    (found.reps.length === 1 ? found.reps[0] : null);
+  let board = await getKpisBoard({ access, includeReports: false, month, todayIso });
+  let row = rowOf(board, hrId);
+  // A re-hired rep's month from before this record began is scored on her earlier record
+  // (continuous-service.ts, owner 2026-11-05: field work carries over, sales never). Omayma's October
+  // read blank on PD-0039 while AI-0009 held it: 72 planned, 31 seen. Only a month with NO row of her
+  // own falls back, and the earlier board is her own one-person panel, so nothing wider is opened.
+  for (const earlierHrId of row ? [] : earlierRecordHrIds(hrId)) {
+    const earlierBoard = await getKpisBoard({ access: { ...access, hrId: earlierHrId }, includeReports: false, month, todayIso });
+    const earlierRow = rowOf(earlierBoard, earlierHrId);
+    if (earlierRow) {
+      board = earlierBoard;
+      row = earlierRow;
+      break;
+    }
+  }
   if (!row) return null;
   return {
     monthLabel: board.monthLabel,
