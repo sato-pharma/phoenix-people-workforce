@@ -9,6 +9,7 @@ import {
   Inbox,
   Loader2,
   MapPin,
+  MessageSquareText,
   PencilLine,
   RotateCcw,
   ChevronDown,
@@ -1267,6 +1268,7 @@ export function ExpenseApprovalsWorkspace({
                             {record.tripId} · {record.location || record.to || "—"}
                           </p>
                           <p className="mt-0.5 text-phx-xs text-slate-400">{formatDateValue(record.date)}</p>
+                          <EmployeeNote note={record.employeeNote} />
                           <DuplicateTripFlag copies={duplicateFlags.get(record.tripId)} />
                         </div>
                         <div className="shrink-0 text-right">
@@ -1679,6 +1681,32 @@ function SystemNoteRewriteControl({
 }
 
 /** "Same trip as OUTSTATION-292" — flat, square, amber; never a decision. */
+/**
+ * The employee's own note on the claim (`employeeNote`), in their words and their script — `dir="auto"`
+ * so an Arabic note reads right to left — and wrapped in full, never cut. Nothing when they wrote none.
+ */
+function EmployeeNote({ note, wide = false }: { note?: string | null; wide?: boolean }) {
+  if (!note) return null;
+  if (!wide) {
+    return (
+      <p className="mt-1 flex items-start gap-1 text-phx-xs text-slate-600">
+        <MessageSquareText aria-hidden className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+        <span className="sr-only">Employee&apos;s note: </span>
+        <span className="min-w-0 whitespace-pre-wrap break-words" dir="auto">{note}</span>
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Employee&apos;s note</p>
+      <p className="mt-1 flex items-start gap-1.5 text-sm font-semibold text-slate-900">
+        <MessageSquareText aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
+        <span className="min-w-0 whitespace-pre-wrap break-words" dir="auto">{note}</span>
+      </p>
+    </>
+  );
+}
+
 function DuplicateTripFlag({ copies, wide = false }: { copies?: string[]; wide?: boolean }) {
   if (!copies || copies.length === 0) return null;
   return (
@@ -1835,6 +1863,13 @@ function ExpenseDecisionPanel({
                 <Fact label="Area" value={record.capturedLocation.areaLabel} />
                 <Fact label="Region" value={record.capturedLocation.regionLabel} />
               </div>
+            </div>
+          ) : null}
+          {/* What the employee wrote when submitting. Read-only, and apart from "Reason / comment"
+              below, which is HR's own decision box and opens holding the system's sentence. */}
+          {record.employeeNote ? (
+            <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
+              <EmployeeNote note={record.employeeNote} wide />
             </div>
           ) : null}
           <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">

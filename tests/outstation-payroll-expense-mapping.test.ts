@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   mapOutstationRequestRowToPayrollApproval,
@@ -72,7 +73,30 @@ export function runOutstationPayrollExpenseMappingTests() {
     });
     assert.equal(decided.hr, expected, `a ${rawStatus} request reads ${expected} under HR Status`);
     assert.equal(decided.hr, decided.status, "HR Status agrees with the row's Status");
+    assert.equal(decided.employeeNote, null, "no note typed reads as no note, never the description's placeholder");
   }
+
+  // The employee's own note reaches Expense Approvals as itself (owner, 2026-11-06: a rep's
+  // "استلام نسخة العقد" never showed — the screen drew no field that carried it).
+  assert.equal(mapped.employeeNote, "Manual correction", "the claim's notes are the employee's note");
+  const arabic = mapOutstationRequestRowToPayrollApproval({
+    approval_reason: "Medical rep manual traveling expense submitted without manager outstation distance rules.",
+    id: 341,
+    notes: "  استلام نسخة العقد ",
+    status: "submitted",
+    trip_start_date: "2026-09-02T00:00:00.000Z",
+  });
+  assert.equal(arabic.employeeNote, "استلام نسخة العقد", "an Arabic note arrives whole, trimmed");
+  assert.notEqual(arabic.employeeNote, arabic.hrComment, "the employee's note is never HR's decision box");
+  const workspace = readFileSync(
+    new URL("../src/components/outstation/expense-approvals-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.equal(
+    workspace.match(/<EmployeeNote note=\{record\.employeeNote\}/g)?.length,
+    2,
+    "Expense Approvals draws the employee's note on the queue row AND on the trip under review",
+  );
   assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
   assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
   // The stay/duration label, unchanged — the approvals report renders it under "Travel Stay
