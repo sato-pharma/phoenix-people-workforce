@@ -77,6 +77,9 @@ const BOTH = {
   evidenceGateStatus: "complete" as const,
 };
 
+const notTakenPosition = () =>
+  approverTripPhotos({ ...BOTH, departureEvidenceImagePath: null, departureEvidenceImageUrl: null, departureEvidenceMetadata: null })[1];
+
 export function runOutstationApproverTripPhotosTests() {
   // ── 1. The headline: the departure photo reaches the approver ──────────────
   const [arrival, departure] = approverTripPhotos(BOTH);
@@ -92,6 +95,11 @@ export function runOutstationApproverTripPhotosTests() {
   assert.equal(arrival.missingNote, null);
   assert.equal(departure.missingNote, null);
   assert.equal(arrival.sourceNote, null);
+  // The captured position travels with the photo (2026-11-07: the trip page pins both photos on
+  // its one map and prints the GPS under each card).
+  assert.deepEqual([arrival.latitude, arrival.longitude], [31.203317, 29.903411], "the arrival photo carries its captured GPS");
+  assert.deepEqual([departure.latitude, departure.longitude], [31.2, 29.9], "and so does the departure photo");
+  assert.equal(notTakenPosition().latitude, null, "no photo, no position");
 
   // ── 2. A flag is carried, and it is a look, never a block ──────────────────
   const flagged = approverTripPhotos({

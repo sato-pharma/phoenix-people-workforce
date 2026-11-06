@@ -41,7 +41,14 @@ export type ApproverTripPhoto = {
   isFlagged: boolean;
   kind: ApproverTripPhotoKind;
   label: "Arrival photo" | "Departure photo";
+  /**
+   * Where the photo was taken, from the stored metadata — so the approver's map can pin it beside
+   * the trip's check-ins (owner, 2026-11-07). Null when the photo has no usable position (the
+   * 0,0 marker counts as none, captured-coordinates.ts) or there is no photo.
+   */
+  latitude: number | null;
   locationLabel: string | null;
+  longitude: number | null;
   /** Why no picture is shown, in words: never taken, or on file but not openable right now. */
   missingNote: string | null;
   /**
@@ -121,6 +128,12 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
     at: refusal.at,
     text: noGpsLocationText(refusal.reason),
   }));
+  // A position only travels with a photo that exists: metadata left behind by a deleted file
+  // must not put a pin on the map for a picture nobody can see.
+  const arrivalPosition = arrivalPath ? usablePosition(arrivalMeta?.capturedLatitude, arrivalMeta?.capturedLongitude) : null;
+  const departurePosition = departurePath
+    ? usablePosition(departureMeta?.capturedLatitude, departureMeta?.capturedLongitude)
+    : null;
 
   return [
     {
@@ -129,7 +142,9 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       isFlagged: false,
       kind: "arrival",
       label: "Arrival photo",
+      latitude: arrivalPosition?.latitude ?? null,
       locationLabel: text(arrivalMeta?.capturedLocationLabel),
+      longitude: arrivalPosition?.longitude ?? null,
       missingNote: missingNote("Arrival photo", arrivalPath, arrivalUrl, notOwed),
       refusedTries: [],
       retakeCount: 0,
@@ -143,8 +158,10 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       isFlagged: departureFlags.length > 0,
       kind: "departure",
       label: "Departure photo",
+      latitude: departurePosition?.latitude ?? null,
       // "Location unavailable" beside the reason would say the same thing twice, less well.
       locationLabel: departureGpsMissingReason ? null : text(departureMeta?.capturedLocationLabel),
+      longitude: departurePosition?.longitude ?? null,
       missingNote: missingNote("Departure photo", departurePath, departureUrl, notOwed),
       refusedTries,
       retakeCount: Number.isFinite(version) ? Math.max(0, Math.trunc(version) - 1) : 0,

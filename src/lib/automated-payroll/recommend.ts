@@ -233,6 +233,7 @@ function buildSalarySource(employee: EmployeeDirectoryRow, period: PayrollPeriod
     hasAnyRawCompensationFigure,
     netSalary: baseSalary === null ? null : moneyOrNull(fixedSalary.netSalary),
     paymentMode: normalizePayrollPaymentMode(employee.salaryPaymentMode),
+    paymentModeOnRecord: employee.salaryPaymentModeOnRecord !== false,
     socialInsurance,
   };
 }

@@ -168,7 +168,7 @@ export function runDeductionsSourceScopedSelfClaimTests(): void {
 
     assert.match(
       code,
-      /\.select\(\s*"employee_hr_id_compact,\s*dates,\s*locked_at,\s*source_system"\s*\)/,
+      /\.select\(\s*"(?:id,\s*)?employee_hr_id_compact,\s*dates,\s*locked_at,\s*source_system"\s*\)/,
       `${file}: the ledger read must select "locked_at" AND "source_system". Dropping locked_at is ` +
         "silent and inverts the exception — the predicate reads undefined, Boolean(undefined) is " +
         "false, and a PUBLISHED row stops claiming its day, so the connector re-charges money " +

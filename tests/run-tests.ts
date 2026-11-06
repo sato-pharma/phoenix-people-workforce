@@ -2575,6 +2575,7 @@ import { runDisputeCenterParticipantsTests } from "./dispute-center-participants
 import { runDisputeCenterAssistAccuracyTests } from "./dispute-center-assist-accuracy.test.ts";
 import { runDisputeCenterDigestRevisionTests } from "./dispute-center-digest-revision.test.ts";
 import { runDisputeCenterRefundsTests } from "./dispute-center-refunds.test.ts";
+import { runDisputeModuleScreensDecideTests } from "./dispute-module-screens-decide.test.ts";
 import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
@@ -9846,6 +9847,10 @@ await runTest(
 await runTest(
   "a deduction overturned after its month was paid is refunded through the next payroll's Other Additions as a recommendation HR confirms — a published month is never rewritten, a cancelled refund is never due, and a dispute picture's storage key never carries its file name",
   runDisputeCenterRefundsTests,
+);
+await runTest(
+  "the deductions Disputes tab and the calendar inbox decide a dispute on the card — accept, reduce or reject through the Dispute Center's one rule, never a reply box alone",
+  runDisputeModuleScreensDecideTests,
 );
 await runTest(
   "a Google Calendar outage is not 'no holidays' (every pay-affecting reader refuses while calendarReachable is false; display surfaces say so)",

@@ -130,7 +130,12 @@ export function auditPayrollDataQuality(input: {
     // Read the RAW field, not the normalized one: normalizePayrollPaymentMode's
     // whole job is to turn a null into "two_parts", so asking it would always
     // answer "fine" and hide the very gap being looked for.
-    if (!String(source?.paymentMode ?? "").trim()) issues.push("missing_payment_mode");
+    // `paymentModeOnRecord` is the raw answer when the payroll builder supplied it — its
+    // `paymentMode` is already normalised, so asking that alone always said "fine" (owner,
+    // 2026-11-07: 17 of 142 active employees had none, and none was ever flagged).
+    if (source?.paymentModeOnRecord === false || !String(source?.paymentMode ?? "").trim()) {
+      issues.push("missing_payment_mode");
+    }
 
     if (input.part1Confirmed && draftByCompact.get(member.compact)?.firstPartFrozen == null) {
       issues.push("joined_after_part1");

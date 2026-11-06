@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { financeDownloadScope } from "../src/lib/automated-payroll/finance-links.ts";
 import { showsAwaitingFinanceMonth } from "../src/lib/direct-orders/types.ts";
 import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests/invoice-obligation.ts";
 import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
@@ -420,6 +421,39 @@ function testLandingAndNavAgree() {
   );
 }
 
+
+/**
+ * 6. EACH DOWNLOAD IN ITS OWN WORDS. The finance sheet reads `part1 | full`; the FAB and CIB routes
+ *    read `part1 | part2` and turn anything else into `part1`. One shared `scope=full` handed
+ *    finance the PART 1 bank files under "Ready to pay" once Part 2 was confirmed (10 Aug – Nov 2026):
+ *    every First Part paid a second time, never checked against the Part 2 stamp.
+ */
+function testReadyToPayBankFilesAskForPartTwo() {
+  assert.equal(financeDownloadScope("fab", true), "part2", "HEADLINE: a Part-2-confirmed month's FAB file is the Part 2 file");
+  assert.equal(financeDownloadScope("cib", true), "part2", "and so is its CIB file");
+  assert.equal(financeDownloadScope("finance", true), "full", "the finance sheet keeps its own word for the whole month");
+  for (const kind of ["finance", "fab", "cib"] as const) {
+    assert.equal(financeDownloadScope(kind, false), "part1", `before Part 2 is confirmed ${kind} offers Part 1`);
+  }
+  for (const route of ["fab-download", "cib-download"]) {
+    const source = stripComments(readFileSync(`app/api/automated-payroll/finance/${route}/route.ts`, "utf8"));
+    assert.match(source, /searchParams\.get\("scope"\) === "part2" \? "part2" : "part1"/, `${route} still reads part1 | part2`);
+  }
+  const dashboard = stripComments(readFileSync("src/components/admin/finance-command-center.tsx", "utf8"));
+  assert.match(dashboard, /financeDownloadScope\(sheet\.key, part2Confirmed\)/, "every command-center link asks the shared rule for its scope");
+  assert.doesNotMatch(dashboard, /&scope=\$\{scope\}/, "and no single scope is shared across the three downloads again");
+
+  // A cancelled run pays nobody, so no finance file is ever built from one (audit 2026-11-07).
+  const runService = readFileSync("src/lib/automated-payroll/run-service.ts", "utf8");
+  const lookup = runService.slice(runService.indexOf("async function findFinanceRun("), runService.indexOf("/** Finance locked sheet"));
+  assert.match(lookup, /findPublishedRun\(period\.month, period\.year\)/, "a published month is preferred over a newer cancelled one");
+  assert.match(lookup, /run\.phase === "cancelled"/, "and a cancelled run is refused");
+  for (const builder of ["buildFinanceSheet(", "buildFabSheet(", "buildCibSheet("]) {
+    const at = runService.indexOf(`export async function ${builder}`);
+    assert.match(runService.slice(at, at + 600), /await findFinanceRun\(period\)/, `${builder} finds its run through findFinanceRun`);
+  }
+}
+
 export function runFinanceCommandCenterTests() {
   testDeductionsComeFromCommittedPayrollOnly();
   testSingleRoundTripBudget();
@@ -430,4 +464,5 @@ export function runFinanceCommandCenterTests() {
   testCommittedTrendIsOneRowPerMonth();
   testPageIsRoleGatedNotPermissionGated();
   testLandingAndNavAgree();
+  testReadyToPayBankFilesAskForPartTwo();
 }

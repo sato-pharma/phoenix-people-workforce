@@ -22,6 +22,7 @@
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { isFieldWorkforceFridayOnlyTitle } from "@/lib/field-workforce-compliance/weekend-policy";
@@ -31,8 +32,10 @@ import { compactDeductionsHrId } from "../candidate-key.ts";
 import {
   collectClaimedLedgerDays,
   ledgerRowStillClaimsItsDaysBySource,
+  ledgerReadErrorText,
   type LedgerClaimRow,
 } from "../conflict.ts";
+import { buildHalfDayIdentity, resolveSlot } from "../half-day-rule.ts";
 import { loadProvenWorkedDays } from "../proven-worked-days.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { getHolidayBridgeDaysForMonth } from "../service.ts";
@@ -73,16 +76,26 @@ const HOLIDAY_BRIDGE_SOURCE_SYSTEMS: readonly string[] = [HOLIDAY_BRIDGE_SOURCE_
  * published money, so that row is still live afterwards and re-charging its day double-books it.
  */
 async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates, locked_at, source_system")
-    .in("month_key", ledgerClaimMonthKeys(monthKey))
-    .is("superseded_at", null);
-  if (error) throw new Error(`Failed to load already-deducted days: ${error.message}`);
+  // Paged: PostgREST stops a response at 1,000 rows, and a short ledger read would re-charge a day
+  // that is already charged. An error never ends the walk early — it throws (fail closed).
+  let data: LedgerClaimRow[];
+  try {
+    data = await fetchAllRows<LedgerClaimRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("deductions_candidates")
+          .select("id, employee_hr_id_compact, dates, locked_at, source_system")
+          .in("month_key", ledgerClaimMonthKeys(monthKey))
+          .is("superseded_at", null),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(`Failed to load already-deducted days: ${ledgerReadErrorText(error)}`);
+  }
   // Skips a manual_hr placeholder row — its date is `${monthKey}-01`, not a detected day, so treating
   // it as claimed would drop a genuine bridge deduction that lands on the real 1st (conflict.ts) —
   // and this run's own replaceable rows, per the note above.
-  return collectClaimedLedgerDays((data ?? []) as LedgerClaimRow[], (row) =>
+  return collectClaimedLedgerDays(data, (row) =>
     ledgerRowStillClaimsItsDaysBySource(
       { sourceSystem: row.source_system ?? null, lockedAt: row.locked_at ?? null },
       HOLIDAY_BRIDGE_SOURCE_SYSTEMS,
@@ -189,14 +202,27 @@ async function loadNoRecordOnBridgeDays(input: {
   // door, so the loop below gives the day to the partner and to nobody who has left.
   const rows = await scanVisitsForRangeCreditingPartners<{
     agent_hr_id: string | null;
+    agent_crm_id: string | null;
     double_hr_id: string | null;
+    double_crm_id: string | null;
     double2_hr_id: string | null;
+    double2_crm_id: string | null;
     visit_date: string | null;
   }>({
     dateFrom: first,
     dateTo: last,
-    columns: "agent_hr_id, double_hr_id, double2_hr_id, visit_date",
+    columns: "agent_hr_id, agent_crm_id, double_hr_id, double_crm_id, double2_hr_id, double2_crm_id, visit_date",
   });
+  // A slot can carry only the CRM login, never the HR id, while its HR mapping backfills — the DSM
+  // connector met exactly that and charged worked days. Resolved through the SAME `resolveSlot` the
+  // DSM and Half Day connectors use, with the identity learned from the feed's own rows (never from
+  // `employees.crm_id`). An ambiguous login credits every claimant: a day here can only REMOVE a
+  // charge, so not charging is the safe direction to be wrong in.
+  const identity = buildHalfDayIdentity([
+    ...rows.map((row) => ({ hrId: row.agent_hr_id, crmId: row.agent_crm_id })),
+    ...rows.map((row) => ({ hrId: row.double_hr_id, crmId: row.double_crm_id })),
+    ...rows.map((row) => ({ hrId: row.double2_hr_id, crmId: row.double2_crm_id })),
+  ]);
   for (const row of rows) {
     const date = String(row.visit_date ?? "").slice(0, 10);
     if (!date) continue;
@@ -208,14 +234,20 @@ async function loadNoRecordOnBridgeDays(input: {
     // absent every single day: the first dry run flagged 18 DSMs on all four
     // bridge days for exactly this reason. Same fix visit-workload.ts already
     // applies company-wide.
-    const agent = compactDeductionsHrId(String(row.agent_hr_id ?? ""));
-    if (agent) withActivity.add(`${agent}:${date}`);
-    const double = compactDeductionsHrId(String(row.double_hr_id ?? ""));
-    if (double) withActivity.add(`${double}:${date}`);
     // And the chain's SECOND manager, who is just as present and would otherwise be charged for a
     // day he spent in the field.
-    const double2 = compactDeductionsHrId(String(row.double2_hr_id ?? ""));
-    if (double2) withActivity.add(`${double2}:${date}`);
+    for (const slot of [
+      { hr: row.agent_hr_id, crm: row.agent_crm_id },
+      { hr: row.double_hr_id, crm: row.double_crm_id },
+      { hr: row.double2_hr_id, crm: row.double2_crm_id },
+    ]) {
+      const resolved = resolveSlot(slot.hr, slot.crm, identity);
+      if (resolved.ambiguous) {
+        for (const claimant of resolved.claimants) withActivity.add(`${claimant}:${date}`);
+        continue;
+      }
+      if (resolved.compact) withActivity.add(`${resolved.compact}:${date}`);
+    }
   }
 
   // Anyone who produced CRM signal at some point this month. Zero signal for a
