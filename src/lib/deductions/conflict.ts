@@ -125,6 +125,13 @@ export function detectCrossCategoryConflict(a: ConflictCandidate, b: ConflictCan
 export const MANUAL_ENTRY_SOURCE_SYSTEM = "manual_hr";
 
 /** One live ledger row, as the connector reads it back to work out which days are already claimed. */
+/** A failed read's own words — a PostgREST error is a plain object, not an `Error`. */
+export function ledgerReadErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  const message = (error as { message?: unknown } | null)?.message;
+  return typeof message === "string" ? message : String(error);
+}
+
 export type LedgerClaimRow = {
   employee_hr_id_compact?: string | null;
   dates: unknown;

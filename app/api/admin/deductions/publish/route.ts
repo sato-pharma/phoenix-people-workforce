@@ -5,6 +5,7 @@ import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listPublicationsForMonth, publishMonth } from "@/lib/deductions/publish.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +47,13 @@ export async function GET(request: Request) {
       throw new Error("Validation: monthKey query parameter is required (YYYY-MM).");
     }
 
-    const publications = await listPublicationsForMonth(monthKey);
+    const stored = await listPublicationsForMonth(monthKey);
+    // The publisher by NAME — publishedBy is an HR id (or a login), which never reaches a screen.
+    const names = await namesByHrId(stored.map((publication) => publication.publishedBy));
+    const publications = stored.map((publication) => ({
+      ...publication,
+      publishedByName: names.get(publication.publishedBy) ?? null,
+    }));
     return NextResponse.json({ success: true, publications });
   } catch (error) {
     return jsonError(error, "Failed to load publications for this month.");

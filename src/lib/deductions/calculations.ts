@@ -1,6 +1,7 @@
 // Unified Deductions module: pure calculation helpers. No DB I/O.
 // Ported from deductions-governance/calculations.ts.
 
+import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { calendarDaysInMonth } from "@/lib/payroll/copilot/proration.ts";
 import { deductionsCalculationStatuses, deductionsUnits } from "./types.ts";
 import type {
@@ -413,6 +414,53 @@ export function scaleDeductionAmountToDays(input: {
 }
 
 /**
+ * The amount a SUBSET of a candidate's dates charges — the one door every narrowing goes through:
+ * a reviewer unticking days, a carried decision, the office-cycle clip and the daily range clip.
+ *
+ * A CRM row's money was priced by its connector on what its dates WEIGH (a Thursday is half a day,
+ * owner rule 2026-08-02), while its `rawValue` stays the plain count of flagged dates. Scaling by the
+ * count therefore shares the money out evenly across the dates and loses the weights: base 15,000 in
+ * a 31-day October, Mon 19 + Thu 22 = 1.5 days = 725.81; keep only the Thursday and the count says
+ * half the money, 362.91, where the Thursday is worth 241.94. So a count-based CRM row (rawValue ===
+ * its dates) is scaled by the kept dates' weight over the detected dates' weight.
+ *
+ * Every other candidate keeps the caller's own `appliedDays` (its dates do not all weigh the same
+ * for a reason this helper cannot see — see `daysForTickedDates`). When nothing was narrowed the
+ * estimate passes through to the piaster, exactly as `scaleDeductionAmountToDays` does.
+ */
+export function scaleDeductionAmountToKeptDates(input: {
+  appliedDays: number;
+  category: string;
+  detectedDates: readonly string[];
+  estimatedAmount: number | null | undefined;
+  keptDates: readonly string[];
+  rawValue: number;
+}): number | null {
+  const detected = [...new Set(input.detectedDates)];
+  const detectedSet = new Set(detected);
+  const kept = [...new Set(input.keptDates)].filter((date) => detectedSet.has(date));
+  const rawValue = Number(input.rawValue);
+  if (input.category === "crm" && detected.length > 0 && rawValue === detected.length) {
+    const detectedWeight = sumDetectedDeductionDayWeights(detected);
+    if (detectedWeight > 0) {
+      if (kept.length === detected.length) {
+        return scaleDeductionAmountToDays({ estimatedAmount: input.estimatedAmount, rawValue, appliedDays: rawValue });
+      }
+      return scaleDeductionAmountToDays({
+        estimatedAmount: input.estimatedAmount,
+        rawValue: detectedWeight,
+        appliedDays: sumDetectedDeductionDayWeights(kept),
+      });
+    }
+  }
+  return scaleDeductionAmountToDays({
+    estimatedAmount: input.estimatedAmount,
+    rawValue,
+    appliedDays: input.appliedDays,
+  });
+}
+
+/**
  * The `applied_value` / `applied_amount` a carried decision must write onto its REPLACEMENT
  * candidate when a re-collect supersedes a decided one.
  *
@@ -441,6 +489,8 @@ export function carriedAppliedFigures(input: {
   replacementDates: readonly string[];
   replacementEstimatedAmount: number | null | undefined;
   replacementRawValue: number;
+  /** The candidate's category — a CRM row's kept dates are priced on their weight (Thursday half). */
+  category?: string;
 }): { appliedValue: number | null; appliedAmount: number | null } {
   if (input.appliedDates == null) return { appliedValue: null, appliedAmount: null };
   const retainedDates = input.appliedDates.length;
@@ -458,10 +508,13 @@ export function carriedAppliedFigures(input: {
   const totalDates = input.replacementDates.length;
   const appliedValue =
     totalDates > 0 ? (input.replacementRawValue * retainedDates) / totalDates : input.replacementRawValue;
-  const appliedAmount = scaleDeductionAmountToDays({
-    estimatedAmount: input.replacementEstimatedAmount,
-    rawValue: input.replacementRawValue,
+  const appliedAmount = scaleDeductionAmountToKeptDates({
     appliedDays: appliedValue,
+    category: input.category ?? "",
+    detectedDates: input.replacementDates,
+    estimatedAmount: input.replacementEstimatedAmount,
+    keptDates: input.appliedDates,
+    rawValue: input.replacementRawValue,
   });
   return { appliedValue, appliedAmount };
 }

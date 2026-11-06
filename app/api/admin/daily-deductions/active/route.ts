@@ -21,12 +21,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, publication: null, lines: [] });
     }
     const storedLines = await getDailyPublicationLines(publication.id);
-    const names = await namesByHrId(storedLines.map((line) => line.employeeHrId));
+    const names = await namesByHrId([...storedLines.map((line) => line.employeeHrId), publication.publishedBy]);
     const lines = storedLines.map((line) => ({
       ...line,
       employeeName: names.get(line.employeeHrId) ?? line.employeeName,
     }));
-    return NextResponse.json({ success: true, publication, lines });
+    // The releaser by NAME — publishedBy is an HR id (or a login), which never reaches a screen.
+    const publishedByName = names.get(publication.publishedBy) ?? null;
+    return NextResponse.json({ success: true, publication: { ...publication, publishedByName }, lines });
   } catch (error) {
     return jsonError(error, "Failed to load the active daily deductions tally.");
   }

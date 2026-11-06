@@ -134,7 +134,7 @@ export function runDeductionsVacationSelfRetireTests(): void {
 
   assert.match(
     code,
-    /\.select\(\s*"employee_hr_id_compact,\s*dates,\s*category,\s*locked_at,\s*source_system"\s*\)/,
+    /\.select\(\s*"(?:id,\s*)?employee_hr_id_compact,\s*dates,\s*category,\s*locked_at,\s*source_system"\s*\)/,
     'The ledger read must select "category", "locked_at" AND "source_system". Dropping category or ' +
       "locked_at is silent and inverts a decision: with no locked_at the predicate reads undefined, " +
       "Boolean(undefined) is false, and a PUBLISHED row stops claiming its day — so the connector " +

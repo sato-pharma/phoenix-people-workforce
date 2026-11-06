@@ -102,7 +102,7 @@ export async function runConnectorForRange(input: {
     const shown = aggregated.amountUnknownEmployees.slice(0, 8).join(", ");
     const more = aggregated.amountUnknownEmployees.length > 8 ? `, …and ${aggregated.amountUnknownEmployees.length - 8} more` : "";
     warnings.push(
-      `${label}: ${aggregated.amountUnknownEmployees.length} employee(s) have counted days but no computable amount (usually a missing base salary) — days are counted, the amount shows 0 until the salary is on file: ${shown}${more}.`,
+      `${label}: ${aggregated.amountUnknownEmployees.length} employee(s) have counted days but no computable amount (usually a missing base salary) — days are counted, but the line is held back from release until the salary is on file: ${shown}${more}.`,
     );
   }
   if (resolved.truncated) {
