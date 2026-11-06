@@ -348,6 +348,18 @@ export function runAutomatedPayrollAssembleTests() {
   // Omitting the map entirely (e.g. the Part-1 freeze pass) recovers nothing.
   assert.equal(rows[0]!.carriedForwardApplied, 0, "no carry-forward map means nothing is recovered");
 
+  // A HELD row recovers nothing: its withheld Second Part is paid later as recorded, and publish
+  // leaves the ledger open for a held row, so a debt taken here was taken twice (audit 2026-11-07).
+  const heldWithDebt = assembleRows({
+    members: [member(hrId)],
+    sources: sourceMap(hrId, "two_parts"),
+    period: JUNE,
+    draftRows: [draft(hrId, { onHold: true, holdReason: "pending investigation", manualOtherDeductions: 70 })],
+    carryForwardByCompact: new Map([[member(hrId).compact, 500]]),
+  });
+  assert.equal(heldWithDebt[0]!.carriedForwardApplied, 0, "HEADLINE: a held row must not recover a debt the ledger keeps open");
+  assert.equal(heldWithDebt[0]!.row.otherDeductions, 70, "and its withheld pay carries only its own deductions");
+
   // A negative/corrupt ledger value can never become a stealth ADDITION.
   const negativeLedger = assembleRows({
     members: [member(hrId)],

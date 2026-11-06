@@ -514,10 +514,15 @@ export function assembleRows(input: {
     // deduction exactly once, like every other component (see the
     // deduction-counted-once test), and is clamped so it can never turn into a
     // negative "addition" if the ledger ever holds a bad value.
-    const carriedForwardApplied = Math.max(
-      0,
-      roundCurrency(input.carryForwardByCompact?.get(member.compact) ?? 0),
-    );
+    //
+    // A HELD row recovers nothing (audit 2026-11-07), the same rule as the held release below. Its
+    // withheld Second Part is recorded at publish and paid later as recorded, so a debt taken off it
+    // was collected — yet publish marks the ledger applied only for rows it paid, so the same debt
+    // stayed open and the next month took it AGAIN. Left on the ledger, it is recovered once, from
+    // the first month that actually pays them.
+    const carriedForwardApplied = draft?.onHold
+      ? 0
+      : Math.max(0, roundCurrency(input.carryForwardByCompact?.get(member.compact) ?? 0));
     // The loan is shown in the Loans column, so it must not also be counted inside Other
     // Deductions — `totalDeductions` adds both, and counting it twice would overstate every
     // affected row's deductions. The freeze (freezeWithPart1Adjustments) still takes it from

@@ -3290,6 +3290,23 @@ async function assertFileMatchesPart2Confirm(
   });
 }
 
+/**
+ * The run a finance download is built from: the one in progress, else the PUBLISHED one, else the
+ * newest. A month cancelled and started again could otherwise hand finance a cancelled run's bank
+ * file — a run that pays nobody — because "newest" alone does not ask (audit 2026-11-07).
+ */
+async function findFinanceRun(period: PayrollPeriod): Promise<MonthlySalaryRun> {
+  const run =
+    (await findActiveRun(period.month, period.year)) ??
+    (await findPublishedRun(period.month, period.year)) ??
+    (await findLatestRun(period.month, period.year));
+  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+  if (run.phase === "cancelled") {
+    throw new Error("Conflict: this month's run was cancelled — it pays nobody, so there is no file to download.");
+  }
+  return run;
+}
+
 /** Finance locked sheet for a period (CEO / Financial Advisor / Finance Manager / Super Admin). */
 export async function buildFinanceSheet(
   access: AccessContext,
@@ -3297,8 +3314,7 @@ export async function buildFinanceSheet(
   scope: "part1" | "full",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage[]; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
-  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
-  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+  const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
     throw new Error("Conflict: Part 1 has not been confirmed yet for this period.");
@@ -3359,8 +3375,7 @@ export async function previewAssembledRowsForPeriod(
   period: PayrollPeriod,
 ): Promise<AssembledRow[]> {
   assertAutomatedPayrollFinanceActor(access);
-  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
-  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+  const run = await findFinanceRun(period);
   const { rows } = await assembleForRun(run);
   return rows;
 }
@@ -3380,8 +3395,7 @@ export async function buildFabSheet(
   valueDateIso?: string,
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
-  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
-  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+  const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
     throw new Error("Conflict: Part 1 has not been confirmed yet for this period.");
@@ -3432,8 +3446,7 @@ export async function buildCibSheet(
   scope: "part1" | "part2",
 ): Promise<{ buffer: Buffer; coverage: BankCoverage; fileName: string }> {
   assertAutomatedPayrollFinanceActor(access);
-  const run = (await findActiveRun(period.month, period.year)) ?? (await findLatestRun(period.month, period.year));
-  if (!run) throw new Error("Not found: no Automated Payroll run for this period.");
+  const run = await findFinanceRun(period);
 
   if (scope === "part1" && !run.part1ConfirmedAt) {
     throw new Error("Conflict: Part 1 has not been confirmed yet for this period.");
