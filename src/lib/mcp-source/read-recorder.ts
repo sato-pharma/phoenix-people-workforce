@@ -119,8 +119,8 @@ export function installReadRecorder(): void {
       throw error;
     }
   }) as typeof fetch;
-  // Names the fetch it wraps, so the test-account fence can still prove it is in the chain
-  // (testDryRunFenceIsLive, src/lib/auth/test-dry-run.ts) — otherwise its saves would be refused.
+  // Names the fetch it wraps. The test-account fence no longer reads this — it proves itself by a
+  // probe through the whole chain (testDryRunFenceIsLive, src/lib/auth/test-dry-run.ts).
   (wrapper as unknown as Record<string, unknown>).__phoenixWrappedFetch = original;
   globalThis.fetch = wrapper;
 }

@@ -183,15 +183,26 @@ async function theGuardNeedsTheLiveFence() {
   const original = globalThis.fetch;
   try {
     globalThis.fetch = (async () => new Response("{}")) as typeof fetch;
-    assert.equal(testDryRunFenceIsLive(), false);
-    assert.equal(grantTestDryRun(headers), false, "HEADLINE: with no fence in the fetch chain, a test account's save is refused, never run unfenced");
+    assert.equal(await testDryRunFenceIsLive(), false);
+    assert.equal(await grantTestDryRun(headers), false, "HEADLINE: with no fence in the fetch chain, a test account's save is refused, never run unfenced");
     assert.equal(installTestDryRunFetchFence(), true);
-    assert.equal(testDryRunFenceIsLive(), true);
-    assert.equal(grantTestDryRun(headers), true, "with the fence live, the marked save runs");
-    const wrapper = Object.assign((async () => new Response("{}")) as typeof fetch, { _nextOriginalFetch: globalThis.fetch });
-    globalThis.fetch = wrapper;
-    assert.equal(testDryRunFenceIsLive(), true, "Next.js's own wrapper around the fence still counts");
-    assert.equal(grantTestDryRun(bag({ cookie: cookieFor("TEST-AYA") })), false, "an unmarked request is not granted");
+    assert.equal(await testDryRunFenceIsLive(), true);
+    assert.equal(await grantTestDryRun(headers), true, "with the fence live, the marked save runs");
+    // Production, 2026-11-06 19:23 Cairo: Next.js 16 wraps fetch as patched → dedupeFetch → fence, and
+    // dedupeFetch keeps NO handle on what it wraps — the old wrapper walk lost the fence there and
+    // refused the Make It Happen export. A forwarding layer with no handle must still count.
+    const fenced = globalThis.fetch;
+    const dedupe = (async (input: RequestInfo | URL, init?: RequestInit) => fenced(input, init)) as typeof fetch;
+    globalThis.fetch = Object.assign((async (input: RequestInfo | URL, init?: RequestInit) => dedupe(input, init)) as typeof fetch, {
+      _nextOriginalFetch: dedupe,
+    });
+    assert.equal(await testDryRunFenceIsLive(), true, "HEADLINE: Next.js's patched → dedupe wrappers around the fence still count");
+    assert.equal(await grantTestDryRun(headers), true, "and the marked save runs through them");
+    // A wrapper that NAMES the fence but does not call it cuts the fence out: it must not count.
+    globalThis.fetch = Object.assign((async () => new Response("{}")) as typeof fetch, { _nextOriginalFetch: fenced });
+    assert.equal(await testDryRunFenceIsLive(), false, "a wrapper that names the fence but bypasses it is not live");
+    globalThis.fetch = fenced;
+    assert.equal(await grantTestDryRun(bag({ cookie: cookieFor("TEST-AYA") })), false, "an unmarked request is not granted");
   } finally {
     globalThis.fetch = original;
   }
@@ -200,8 +211,8 @@ async function theGuardNeedsTheLiveFence() {
 function wiredWhereItMustBe() {
   const read = (path: string) => readFileSync(join(root, path), "utf8");
   const server = read("src/lib/auth/server.ts");
-  assert.match(server, /if \(!\(access\.testPersona && grantTestDryRun\(request\.headers\)\)\) assertTestAccountMayRun\(access, request\);/, "the API guard grants the dry run or refuses as before");
-  assert.match(server, /next-action"\) && !grantTestDryRun\(await headers\(\)\)\) \{\s*assertNotTestAccount\(access\);/, "a server action does the same");
+  assert.match(server, /if \(!\(access\.testPersona && \(await grantTestDryRun\(request\.headers\)\)\)\) assertTestAccountMayRun\(access, request\);/, "the API guard grants the dry run or refuses as before");
+  assert.match(server, /next-action"\) && !\(await grantTestDryRun\(await headers\(\)\)\)\) \{\s*assertNotTestAccount\(access\);/, "a server action does the same");
   const proxy = read("proxy.ts");
   assert.match(proxy, /headers\.delete\(TEST_DRY_RUN_HEADER\);\s*const testDryRun = proxyMarksTestDryRun\(/, "the proxy drops any mark the browser sent before setting its own");
   const boot = read("instrumentation.ts");

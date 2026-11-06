@@ -30,7 +30,7 @@ export async function register() {
     try {
       const { installTestDryRunFetchFence, testDryRunFenceIsLive } = await import("@/lib/auth/test-dry-run");
       installTestDryRunFetchFence();
-      console.log(`[test-dry-run] fence ${testDryRunFenceIsLive() ? "installed" : "NOT installed — test accounts' saves stay refused"}`);
+      console.log(`[test-dry-run] fence ${(await testDryRunFenceIsLive()) ? "installed" : "NOT installed — test accounts' saves stay refused"}`);
     } catch (error) {
       console.error("[test-dry-run] failed to install:", error);
     }
