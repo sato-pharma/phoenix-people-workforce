@@ -151,7 +151,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@node-projects/excelforge": "3.8.0",
-    "@sentry/nextjs": "^11.7.0",
+    "@sentry/nextjs": "^11.10.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^14.0.2",
     "@supabase/supabase-js": "^2.112.4",
