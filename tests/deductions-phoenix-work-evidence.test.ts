@@ -415,7 +415,26 @@ function everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter(): void {
   assert.match(evidence, /addSeen\(seen, canonicalHrIdForDisplay\(day\.hrId\), day\.date, describeManagerOwnVisitDay\(day\)\)/, "and names the day by what it was");
 }
 
+// PostgREST stops every read at 1,000 rows. October 2026 holds 8,146 Phoenix visits (production, read 7 Nov), so
+// the unpaged loader saw only the first 1,000 visit rows and left every day past them open to a charge.
+function everyEvidenceReadPagesPastAThousandRows(): void {
+  const loader = stripComments(readFileSync("src/lib/crm/phoenix-work-evidence.ts", "utf8"));
+  assert.ok(
+    loader.includes('fetchAllRowsKeyset<T>(buildQuery, { cursorColumn: "id", cursorOf: (row) => row.id })'),
+    "the loader walks every page by id",
+  );
+  for (const table of ["PHOENIX_CRM_VISITS_TABLE", "PHOENIX_CRM_DAY_ACTIVITIES_TABLE", "PHOENIX_CRM_DAY_STARTS_TABLE"]) {
+    assert.match(
+      loader,
+      new RegExp(String.raw`everyRow<[^>]+>\("[a-z ]+", \(\) =>\s+supabase\s+\.from\(${table}\)\s+\.select\("id,`),
+      `${table} is read through the pager, with the id it seeks on`,
+    );
+  }
+  assert.equal(loader.split(".from(PHOENIX_CRM_").length - 1, 3, "and no read of these tables skips it");
+}
+
 export function runDeductionsPhoenixWorkEvidenceTests(): void {
+  everyEvidenceReadPagesPastAThousandRows();
   aManagersOwnSingleVisitsSuppressHisDay();
   everyReaderOfHisOwnVisitsGoesThroughTheOneAdapter();
   evidenceFoldCreditsEveryoneOnTheVisit();

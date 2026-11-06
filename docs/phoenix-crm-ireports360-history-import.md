@@ -278,6 +278,15 @@ Every row a run writes carries that run's own `imported_from_ireports360_at`, an
 names it. To remove only this copy, change the rollback below to
 `imported_from_ireports360_at >= '<that run's start>'`.
 
+**Run on production, 7 Nov 2026 at 00:27 Cairo** (`applied-2026-11-07-00-27-40.json`):
+
+- **Written:** 23 seats, 3,067 visits of 3,067 planned, dated 10 Oct to 4 Nov. Also 15 Archive doctors and
+  1 campaign holder. No seat was stopped.
+- **Unchanged, read before and after:** `crm_visits_unified` for September, October and November (row
+  counts and row hashes), the entry-days cache (1,241 days, same hash), `phoenix_crm_countable_visits`
+  (10,736) and the notification outbox (5,153).
+- **Its rows are** `imported_from_ireports360_at >= '2026-11-06 22:00+00'`.
+
 ## Rollback
 
 Production has no PITR. The copy is removed by its marks, never by a restore:
