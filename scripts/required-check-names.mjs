@@ -23,8 +23,15 @@ export const RETIRED_CHECK_NAMES = ['lint', 'typecheck', 'test'];
  * The GitHub account that owns this repository, and the repository itself — the ONE place the scripts
  * read them from (moved to a new account on 2026-10-26). `tests/github-owner-slug.test.ts` refuses any
  * other account name in code, CI, scripts, hooks and tests.
+ *
+ * Since 2026-11-06 the owner is the ORGANIZATION `sato-pharma` (moved on his word "migrate the project
+ * to the trail enterprise"). Only this repository moved: the tablet launcher (`hmdm-android`) and the
+ * website stayed on his personal account, `PERSONAL_OWNER`. An organization's billing is read under
+ * `organizations/`, never `users/`, hence `GITHUB_OWNER_IS_ORG`.
  */
-export const GITHUB_OWNER = 'Omar-3-xx';
+export const GITHUB_OWNER = 'sato-pharma';
+export const GITHUB_OWNER_IS_ORG = true;
+export const PERSONAL_OWNER = 'Omar-3-xx';
 export const REPO = `${GITHUB_OWNER}/phoenix-people-workforce`;
 
 /**

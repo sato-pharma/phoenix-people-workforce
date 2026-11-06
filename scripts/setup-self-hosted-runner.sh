@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Provision a Linux machine as the self-hosted GitHub Actions runner for
-# Omar-3-xx/phoenix-people-workforce. Two supported hosts:
+# sato-pharma/phoenix-people-workforce. Two supported hosts:
 #
 #   - the owner's spare laptop: WSL2 Ubuntu 24.04 on Windows, x86_64, 8 GB RAM (the current target);
 #   - an Oracle Cloud "Always Free" Ampere A1 VM: Ubuntu 24.04, aarch64, 24 GB (the alternative).
@@ -16,7 +16,7 @@
 #
 # RUN IT AS YOUR NORMAL LINUX USER (never root):
 #
-#    bash setup-self-hosted-runner.sh https://github.com/Omar-3-xx/phoenix-people-workforce [token]
+#    bash setup-self-hosted-runner.sh https://github.com/sato-pharma/phoenix-people-workforce [token]
 #
 # THE REGISTRATION TOKEN, in this order:
 #   1. the second argument, or the RUNNER_TOKEN environment variable (it then sits in shell history);
@@ -36,7 +36,7 @@
 # tests/ci-runner-switch.test.ts).
 #
 # NOTHING MOVES UNTIL THE VARIABLE IS SET. After the runner shows "Idle" on
-#   https://github.com/Omar-3-xx/phoenix-people-workforce/settings/actions/runners
+#   https://github.com/sato-pharma/phoenix-people-workforce/settings/actions/runners
 # set the repository variable CI_RUNNER_LABEL to `phoenix-ci` (the closing banner prints the command).
 #
 # 🔴 PRIVATE REPOSITORIES ONLY. A self-hosted runner executes whatever a workflow tells it to. On a
@@ -97,7 +97,7 @@ wslconf_set() {
 
 # ── Preconditions ──────────────────────────────────────────────────────────────────────────
 [ -n "$REPO_URL" ] || die "usage: bash setup-self-hosted-runner.sh <repo-url> [registration-token]
-  e.g. bash setup-self-hosted-runner.sh https://github.com/Omar-3-xx/phoenix-people-workforce"
+  e.g. bash setup-self-hosted-runner.sh https://github.com/sato-pharma/phoenix-people-workforce"
 [[ "$REPO_URL" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "the repo URL must look like https://github.com/<owner>/<repo>"
 OWNER_REPO="${REPO_URL#https://github.com/}"
 [ "$(id -u)" -ne 0 ] || die "do not run as root — the runner refuses to configure as root. Use your normal Linux user."

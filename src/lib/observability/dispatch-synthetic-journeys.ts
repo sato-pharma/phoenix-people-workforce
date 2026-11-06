@@ -30,7 +30,7 @@ import {
 // waiting would risk the false `Failed (timeout)` that phoenix-notify-daily logs every morning.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const OWNER = "Omar-3-xx";
+const OWNER = "sato-pharma";
 const REPO = "phoenix-people-workforce";
 
 /**
