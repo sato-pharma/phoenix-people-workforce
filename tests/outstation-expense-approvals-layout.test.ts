@@ -105,7 +105,11 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.match(review, /<TripWorkloadEvidencePanel\b[^>]*\balwaysOpen\b/, "HEADLINE: every trip day is open, no folding");
   assert.match(review, /renderDayMap=\{\(day, firstCheckinNumber\) => \(\s*<DayMap\b/, "HEADLINE: every day block gets its own map (if 3 days then 3 maps)");
   assert.match(workload, /map=\{renderDayMap\?\.\(day, firstCheckinNumber\)\}/, "and the always-open day block draws the map it is handed");
-  assert.match(workload, /\) : null\}\s*\{map\}\s*<\/li>/, "under its visits and check-ins, inside the day's own box");
+  assert.match(
+    workload,
+    /\{map\}\s*\{visits\.length > 0 \|\| checkins\.length > 0 \? \(\s*<div[^>]*>\s*<DayDetail\b/,
+    "HEADLINE: the map comes first and the day's visits and check-ins are listed UNDER it, inside the day's own box",
+  );
   const dayMapAt = review.indexOf("function DayMap(");
   const mapTag = review.indexOf("<FieldWorkforceRouteMap", dayMapAt);
   assert.ok(dayMapAt > 0 && mapTag > dayMapAt, "HEADLINE: the day map is drawn by DayMap");

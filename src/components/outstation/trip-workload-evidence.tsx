@@ -396,12 +396,14 @@ function TripDayOpen({
           </span>
         </span>
       </div>
+      {/* The map first, the day's visits and check-ins listed UNDER it (owner, 2026-11-07:
+          "and every day's visits is listed under the map"). */}
+      {map}
       {visits.length > 0 || checkins.length > 0 ? (
-        <div className="px-3 py-3">
+        <div className="border-t border-slate-200 px-3 py-3">
           <DayDetail checkins={checkins} firstCheckinNumber={firstCheckinNumber} visits={visits} />
         </div>
       ) : null}
-      {map}
     </li>
   );
 }
