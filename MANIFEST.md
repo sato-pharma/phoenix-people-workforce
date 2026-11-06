@@ -79,6 +79,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/phx-live-sync.mjs` | 13020 | `4f3f50f7c2caf95a` |
 | `scripts/phx-live.ps1` | 13199 | `ccd2f526fde22fcd` |
 | `scripts/phx-memory-health.ps1` | 9252 | `42a06c3eb1d87266` |
+| `scripts/portal-home-speed/measure.mjs` | 4373 | `839f2fbb28046402` |
 | `scripts/prune-claude-json.mjs` | 4263 | `5a193870fb9b0bf3` |
 | `scripts/ram-guard.ps1` | 22023 | `1a6290775e77a4bf` |
 | `scripts/ram-reclaim.ps1` | 6687 | `2eee200363e45ed4` |
