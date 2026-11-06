@@ -14,12 +14,13 @@ import {
   Route,
   ShieldCheck,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { adminPanelHeaderClassName } from "@/components/admin/admin-design-tokens";
 import {
   FieldWorkforceRouteMap,
   type RouteCheckin,
+  type RouteDestination,
   type RouteMarker,
 } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { CostBreakdownFact, Fact, RouteFact } from "@/components/outstation/approval-detail-primitives";
@@ -183,6 +184,20 @@ export function TripReview({
   }, [attachments, firstDay, lastDay]);
   const legendFor = (dayKey: string) => legendByDay.get(dayKey) ?? EMPTY_LEGEND;
   const pinsLoading = validationRequestId !== null && attachments === undefined;
+  // Where the employee was when he submitted the request — the same point the claim checks
+  // compare against — drawn as a hollow pin on EVERY day's map, so a check-in or photo far from
+  // it reads at a glance without opening the checks.
+  const submittedAt = useMemo<RouteDestination | null>(
+    () =>
+      typeof record.capturedLatitude === "number" && typeof record.capturedLongitude === "number"
+        ? {
+            lat: record.capturedLatitude,
+            lon: record.capturedLongitude,
+            title: `Submitted from${record.capturedLocation?.label ? ` · ${record.capturedLocation.label}` : ""}`,
+          }
+        : null,
+    [record.capturedLatitude, record.capturedLongitude, record.capturedLocation],
+  );
 
   // ── The three verdicts ──────────────────────────────────────────────────────────────────────
   const fieldWorkSignal = ((): Signal => {
@@ -412,6 +427,7 @@ export function TripReview({
                   firstCheckinNumber={firstCheckinNumber}
                   legend={legendFor(day.date)}
                   loading={pinsLoading}
+                  submittedAt={submittedAt}
                 />
               )}
               tripEndDate={record.toDate || record.date}
@@ -432,7 +448,14 @@ export function TripReview({
                       <span className="text-sm font-bold text-slate-900">{formatDateValue(dayKey, null, { weekday: "short" })}</span>
                       <span className="text-xs font-semibold text-slate-500">No CRM activity to draw — the photos and stops only.</span>
                     </div>
-                    <DayMap checkins={EMPTY_CHECKINS} dayKey={dayKey} firstCheckinNumber={1} legend={legendFor(dayKey)} loading={pinsLoading} />
+                    <DayMap
+                      checkins={EMPTY_CHECKINS}
+                      dayKey={dayKey}
+                      firstCheckinNumber={1}
+                      legend={legendFor(dayKey)}
+                      loading={pinsLoading}
+                      submittedAt={submittedAt}
+                    />
                   </li>
                 ))}
               </ol>
@@ -488,9 +511,53 @@ const DAY_MAP_COPY = {
 };
 
 /**
+ * True once the element has scrolled within `margin` of the viewport — and stays true. A latch,
+ * never a fold: nothing is behind a click, the map simply draws as the reviewer reaches it.
+ */
+function useSeenOnce<T extends HTMLElement>(margin = "320px") {
+  const ref = useRef<T | null>(null);
+  // No observer (an old browser, a test renderer): draw at once rather than never.
+  const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || seen) return;
+    const px = Number.parseInt(margin, 10) || 0;
+    // The observer is the cheap path. The scroll listener is the fallback for a browser that
+    // throttles observers (a background or embedded tab never got a callback), so a reviewer who
+    // scrolls always gets the map; nothing here can ever set it back to false.
+    const check = () => {
+      // Within reach of the viewport's bottom, OR already scrolled past (a jump to the foot of the
+      // page went through it): either way the reviewer has reached this day.
+      if (element.getBoundingClientRect().top < window.innerHeight + px) setSeen(true);
+    };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setSeen(true);
+      },
+      { rootMargin: margin },
+    );
+    observer.observe(element);
+    const frame = window.requestAnimationFrame(check);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+  }, [margin, seen]);
+  return { ref, seen };
+}
+
+/**
  * One trip day on its own map (owner: "if 3 days then I should have 3 maps"): the day's check-ins
- * numbered as in the list beside them, the arrival or departure photo if it falls on this day,
- * and the stops captured on it — with a legend naming every pin, so the map reads without hovering.
+ * numbered as in the list under it, the arrival or departure photo if it falls on this day, the
+ * stops captured on it, and the point the request was submitted from as a hollow pin — with a
+ * legend naming every pin, so the map reads without hovering.
+ *
+ * A six-day trip is six Google maps; each one is created only when its day scrolls into view
+ * (useSeenOnce), so opening a trip costs one map, not six, and Google bills one load.
  */
 function DayMap({
   checkins,
@@ -498,13 +565,16 @@ function DayMap({
   firstCheckinNumber,
   legend,
   loading,
+  submittedAt,
 }: {
   checkins: WorkloadCheckinDetail[];
   dayKey: string;
   firstCheckinNumber: number;
   legend: DayLegendItem[];
   loading: boolean;
+  submittedAt: RouteDestination | null;
 }) {
+  const { ref, seen } = useSeenOnce<HTMLDivElement>();
   // Stable references: FieldWorkforceRouteMap re-creates its Google map when these change identity,
   // and a fresh array per render left it at a blank wrapper (trip-workload-evidence.tsx).
   const mapped = useMemo<RouteCheckin[]>(
@@ -522,7 +592,7 @@ function DayMap({
   const markers = useMemo<RouteMarker[]>(() => legend.flatMap((item) => (item.marker ? [item.marker] : [])), [legend]);
   const pinned = markers.length + mapped.filter((checkin) => checkin.lat !== null && checkin.lon !== null).length;
   return (
-    <div className="border-t border-slate-200 px-3 py-3" data-day-map={dayKey}>
+    <div className="border-t border-slate-200 px-3 py-3" data-day-map={dayKey} data-map-drawn={seen ? "yes" : "no"} ref={ref}>
       <p className="mb-2 flex flex-wrap items-center gap-x-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
         <MapPin className="h-3.5 w-3.5" />
         This day on a map
@@ -530,8 +600,32 @@ function DayMap({
           {loading ? "loading the pins…" : `${formatNumberValue(pinned)} ${pinned === 1 ? "pin" : "pins"}`}
         </span>
       </p>
-      <FieldWorkforceRouteMap checkins={mapped} copy={DAY_MAP_COPY} frame="bare" markers={markers} route={null} />
+      {seen ? (
+        <FieldWorkforceRouteMap
+          checkins={mapped}
+          copy={DAY_MAP_COPY}
+          destination={submittedAt}
+          frame="bare"
+          markers={markers}
+          route={null}
+        />
+      ) : (
+        // The map's own box size, so the page does not jump when the map replaces it.
+        <div aria-hidden className="h-[360px] border border-slate-200 bg-slate-50 sm:h-[420px]" />
+      )}
       <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 [&>*]:min-w-0" data-map-legend>
+        {submittedAt ? (
+          <li className="flex items-start gap-2">
+            <PinBadge label="○" tone="submitted" />
+            <span className="min-w-0 break-words text-slate-700">
+              <span className="font-bold text-slate-900">Submitted from</span>
+              <span className="font-mono text-slate-500">
+                {" "}· {submittedAt.lat.toFixed(5)}, {submittedAt.lon.toFixed(5)}
+              </span>
+              {submittedAt.title.includes(" · ") ? <span dir="auto"> · {submittedAt.title.slice(submittedAt.title.indexOf(" · ") + 3)}</span> : null}
+            </span>
+          </li>
+        ) : null}
         {legend.map((item) => (
           <li className="flex items-start gap-2" key={item.label}>
             <PinBadge label={item.label} tone="photo" />
@@ -621,12 +715,16 @@ function SectionHead({ summary, title, tone = "neutral" }: { summary?: string; t
 }
 
 /** The pin's label as it appears on the map, so the legend and the map read the same. */
-function PinBadge({ label, tone }: { label: string; tone: "checkin" | "photo" }) {
+function PinBadge({ label, tone }: { label: string; tone: "checkin" | "photo" | "submitted" }) {
   return (
     <span
       className={cn(
         "mt-px inline-flex h-4 min-w-5 shrink-0 items-center justify-center px-1 font-mono text-phx-3xs font-black",
-        tone === "photo" ? "bg-orange-100 text-orange-900 ring-1 ring-inset ring-orange-400" : "bg-orange-500 text-white",
+        tone === "photo"
+          ? "bg-orange-100 text-orange-900 ring-1 ring-inset ring-orange-400"
+          : tone === "submitted"
+            ? "bg-white text-slate-700 ring-1 ring-inset ring-slate-500"
+            : "bg-orange-500 text-white",
       )}
     >
       {label}

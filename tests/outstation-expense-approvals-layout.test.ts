@@ -113,7 +113,21 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   const dayMapAt = review.indexOf("function DayMap(");
   const mapTag = review.indexOf("<FieldWorkforceRouteMap", dayMapAt);
   assert.ok(dayMapAt > 0 && mapTag > dayMapAt, "HEADLINE: the day map is drawn by DayMap");
-  assert.doesNotMatch(review.slice(dayMapAt, mapTag), /\? \(|&& \(/, "and it is mounted unconditionally — never behind an open/closed state");
+  // The one condition in front of a day's map is "has it scrolled into view" — a latch set once by
+  // an IntersectionObserver and never cleared — so a six-day trip costs one Google map load at a
+  // time, and nothing is ever behind a click.
+  const beforeMap = review.slice(dayMapAt, mapTag);
+  assert.deepEqual(beforeMap.match(/\? \(|&& \(/g), ["? ("], "exactly one condition stands before the day map");
+  assert.match(beforeMap, /\{seen \? \($/m, "and it is the scrolled-into-view latch, never an open/closed state");
+  const latchAt = review.indexOf("function useSeenOnce");
+  const latch = review.slice(latchAt, dayMapAt);
+  assert.ok(latchAt > 0 && /new IntersectionObserver\(/.test(latch) && /setSeen\(true\)/.test(latch), "the latch is set by an IntersectionObserver");
+  assert.doesNotMatch(latch, /setSeen\(false\)/, "and never cleared — a drawn map stays drawn");
+  assert.match(review, /className="h-\[360px\] border border-slate-200 bg-slate-50 sm:h-\[420px\]"/, "the box before the map is the map's own size, so the page never jumps");
+  // The point the request was submitted from is a hollow pin on EVERY day's map.
+  assert.match(review, /typeof record\.capturedLatitude === "number" && typeof record\.capturedLongitude === "number"/, "the submission point is read from the record");
+  assert.match(review, /destination=\{submittedAt\}/, "HEADLINE: and drawn as the hollow pin on each day's map");
+  assert.equal((review.match(/submittedAt=\{submittedAt\}/g) ?? []).length, 2, "both the CRM day blocks and the no-CRM fallback days get it");
   assert.match(review, /frame="bare"/, "the map on the trip page is the bare square, the card frame stays for the compliance page");
   assert.match(review, /photo\.kind === "arrival" \? firstDay : lastDay/, "the arrival photo is pinned on the first day's map, the departure photo on the last");
   assert.match(review, /add\(cairoDayKey\(stop\.capturedAt\)/, "a journey stop is pinned on the day it was captured, read in Cairo");
