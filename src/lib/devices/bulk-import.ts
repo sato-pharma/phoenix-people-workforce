@@ -40,7 +40,7 @@ import {
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { createDevice, deviceErrorMessage, issueDevice, isDeviceCategory } from "./service";
+import { createDevice, deviceErrorMessage, issueDevice, isDeviceCategory, readAllRegisterRows } from "./service";
 import type { DeviceCategory } from "./types";
 
 /**
@@ -266,20 +266,22 @@ export function personPickerLabel(person: AssignablePerson): string {
 
 async function loadPeopleForPicker(): Promise<AssignablePerson[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,nickname,job_title,employment_status")
-    .order("full_name", { ascending: true })
-    .limit(1000);
-  if (error) throw new Error(deviceErrorMessage(error));
-
-  return ((data ?? []) as Array<{
+  const data = await readAllRegisterRows<{
     hr_id: string;
     full_name: string | null;
     nickname: string | null;
     job_title: string | null;
     employment_status: string | null;
-  }>)
+  }>(
+    () =>
+      supabase
+        .from("employees")
+        .select("hr_id,full_name,nickname,job_title,employment_status")
+        .order("full_name", { ascending: true }),
+    "hr_id",
+  );
+
+  return data
     .map((row) => ({
       hrId: String(row.hr_id),
       name: String(row.nickname || row.full_name || row.hr_id).trim(),
@@ -629,19 +631,15 @@ export type DirectoryEntry = { hrId: string; name: string; hasLeft: boolean };
 
 async function loadDirectory(): Promise<Map<string, DirectoryEntry>> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,nickname,employment_status")
-    .limit(2000);
-  if (error) throw new Error(deviceErrorMessage(error));
-
-  const byKey = new Map<string, DirectoryEntry>();
-  for (const row of (data ?? []) as Array<{
+  const data = await readAllRegisterRows<{
     hr_id: string;
     full_name: string | null;
     nickname: string | null;
     employment_status: string | null;
-  }>) {
+  }>(() => supabase.from("employees").select("hr_id,full_name,nickname,employment_status"), "hr_id");
+
+  const byKey = new Map<string, DirectoryEntry>();
+  for (const row of data) {
     const status = String(row.employment_status ?? "").trim().toLowerCase();
     // Keyed LOWERED. hr_id is mixed case in this database, and an import matching it exactly would
     // reject "b-155" for a directory holding "B-155" — a rejection the person filling in the sheet
@@ -658,20 +656,16 @@ async function loadDirectory(): Promise<Map<string, DirectoryEntry>> {
 /** What the register already holds, so the preview can name a collision before it happens. */
 async function loadExistingKeys(): Promise<{ tags: Set<string>; serials: Set<string>; imeis: Set<string> }> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("company_devices")
-    .select("asset_tag,serial_number,imei")
-    .limit(5000);
-  if (error) throw new Error(deviceErrorMessage(error));
+  const data = await readAllRegisterRows<{
+    asset_tag: string | null;
+    serial_number: string | null;
+    imei: string | null;
+  }>(() => supabase.from("company_devices").select("asset_tag,serial_number,imei"), "id");
 
   const tags = new Set<string>();
   const serials = new Set<string>();
   const imeis = new Set<string>();
-  for (const row of (data ?? []) as Array<{
-    asset_tag: string | null;
-    serial_number: string | null;
-    imei: string | null;
-  }>) {
+  for (const row of data) {
     if (row.asset_tag) tags.add(row.asset_tag.trim().toLowerCase());
     if (row.serial_number) serials.add(row.serial_number.trim().toLowerCase());
     if (row.imei) imeis.add(row.imei.trim().toLowerCase());

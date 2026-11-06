@@ -230,6 +230,7 @@ import {
   googleGeocodeAddress,
   googleReverseGeocode,
 } from "@/lib/google-maps/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   EmployeeResidenceLocation,
@@ -3223,18 +3224,23 @@ export async function attachMissingTicketsToOwnOutstationRequest(
 
 export async function listOutstationRequests(options?: { includeCarEvidenceSignedUrls?: boolean }) {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_expense_requests")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw new Error(error.message);
+  // Every request, page by page: this is the company-wide list behind the approvals queue, the
+  // expense command center and the heatmap totals, and a single read is cut at 1,000 rows by the API.
+  let rows: Array<Record<string, unknown>>;
+  try {
+    rows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("outstation_expense_requests")
+          .select("*")
+          .order("created_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : (error as { message?: string })?.message ?? String(error));
   }
 
-  const mapped = await withLiveRequestNames(
-    ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow),
-  );
+  const mapped = await withLiveRequestNames(rows.map(mapOutstationRequestRow));
   // Brick / area / region per row, so the admin detail can show a place name instead of the
   // raw coordinate pair. One cached centroid load for the whole page — see captured-location.ts.
   const requests = await attachOutstationCapturedLocations(mapped);
@@ -5297,11 +5303,17 @@ export async function runOutstationDeparturePhotoReminders(): Promise<{
   errors: number;
 }> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("outstation_expense_requests")
-    .select("*")
-    .neq("evidence_gate_status", "grandfathered");
-  if (error || !data) return { errors: error ? 1 : 0, processed: 0 };
+  // Every request, page by page: a read cut at 1,000 rows would skip the reminder for whichever
+  // trips fell past the cut, with nothing to say so.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () => supabase.from("outstation_expense_requests").select("*").neq("evidence_gate_status", "grandfathered"),
+      "id",
+    );
+  } catch {
+    return { errors: 1, processed: 0 };
+  }
 
   const today = cairoDateOnly(new Date());
   if (!today) return { errors: 1, processed: 0 };
@@ -5309,7 +5321,7 @@ export async function runOutstationDeparturePhotoReminders(): Promise<{
   let processed = 0;
   let errors = 0;
 
-  for (const row of (data as Array<Record<string, unknown>>).map(mapOutstationRequestRow)) {
+  for (const row of data.map(mapOutstationRequestRow)) {
     try {
       if (await sendOutstationDeparturePhotoReminder(row, today)) processed += 1;
     } catch (notifyError) {
@@ -7385,11 +7397,20 @@ export async function listHeldOutstationRequests(
 ): Promise<HeldOutstationRequest[]> {
   await assertOutstationAdminAccess(access, "read");
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("outstation_expense_requests")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error || !data) return [];
+  // Every request, page by page: a request held for repair past a 1,000-row cut would not be listed.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        getSupabaseAdmin()
+          .from("outstation_expense_requests")
+          .select("*")
+          .order("created_at", { ascending: false }),
+      "id",
+    );
+  } catch {
+    return [];
+  }
 
   // One reading of "today", not one per row: a list computed either side of Cairo midnight would
   // otherwise drop or keep a trip depending on where in the loop it happened to fall.
@@ -7397,7 +7418,7 @@ export async function listHeldOutstationRequests(
   // This list reads the rows itself, so it resolves the name an approver sees itself.
   const liveNames = await loadLiveOutstationEmployeeNames();
 
-  return (data as Array<Record<string, unknown>>)
+  return data
     .map(mapOutstationRequestRow)
     .map((request) => ({
       request,

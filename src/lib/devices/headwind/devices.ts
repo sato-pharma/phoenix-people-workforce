@@ -314,27 +314,59 @@ export function configurationNamesFromSearch(payload: unknown): Map<string, stri
   return names;
 }
 
+/** Device rows asked for in one search request. A full page is the signal that another may follow. */
+const SEARCH_PAGE_SIZE = 1000;
+
+/** The row's own id, else its device number, else its whole text: what makes a row "the same row" across pages. */
+function searchRowKey(record: RawRecord): string {
+  return pickString(record, ["id"]) ?? pickString(record, ["number", "deviceNumber"]) ?? JSON.stringify(record);
+}
+
+/**
+ * Every device row a search finds, page by page, with the configuration names the replies carry.
+ *
+ * 🔴 ONE PAGE IS NOT THE FLEET. Headwind's search is paged, and reading only the first page would quietly
+ * stop listing tablets once a page fills — a missing tablet on a custody console is worse than a slow one.
+ * The next page is asked for only while a FULL page came back, so a fleet or a match list under a page is
+ * still one request. A page that adds no row not already seen ends the walk, so a server that ignores
+ * `pageNum` can never loop it. Each reply's configuration map covers its own devices only, so they merge.
+ */
+export async function searchHeadwindDevices(
+  value: string,
+  fetchImpl: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<{ configurationNames: Map<string, string>; records: RawRecord[] }> {
+  const records: RawRecord[] = [];
+  const configurationNames = new Map<string, string>();
+  const seen = new Set<string>();
+  for (let pageNum = 1; ; pageNum += 1) {
+    const payload = await callHeadwind<SearchResponse>(
+      "/rest/private/devices/search",
+      { body: JSON.stringify({ pageNum, pageSize: SEARCH_PAGE_SIZE, value }), method: "POST" },
+      fetchImpl,
+      env,
+    );
+    for (const [key, name] of configurationNamesFromSearch(payload)) configurationNames.set(key, name);
+    const page = deviceRecordsFromSearch(payload);
+    const fresh = pageNum === 1 ? page : page.filter((record) => !seen.has(searchRowKey(record)));
+    for (const record of fresh) seen.add(searchRowKey(record));
+    records.push(...fresh);
+    if (page.length < SEARCH_PAGE_SIZE || fresh.length === 0) return { configurationNames, records };
+  }
+}
+
 /**
  * Every device the company's Headwind server manages, normalized.
  *
- * 🔴 THE PAGE SIZE IS DELIBERATELY LARGER THAN THE FLEET WILL EVER BE. Headwind's search is paged and
- * a page size left at its default would quietly stop listing tablets once the fleet outgrows it — a
- * missing tablet on a custody console is worse than a slow one. The owner expects about a hundred
- * tablets; a thousand leaves the ceiling far out of reach, and the page count is checked below so a
- * fleet that somehow exceeds it reports the truth rather than a short list.
+ * The owner expects about a hundred tablets, so this is normally one request; `searchHeadwindDevices`
+ * walks on to the next page whenever a page comes back full, so the fleet is never a short list.
  */
 export async function listHeadwindDevices(
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<HeadwindDevice[]> {
-  const payload = await callHeadwind<SearchResponse>(
-    "/rest/private/devices/search",
-    { body: JSON.stringify({ pageNum: 1, pageSize: 1000, value: "" }), method: "POST" },
-    fetchImpl,
-    env,
-  );
-  const configurationNames = configurationNamesFromSearch(payload);
-  return deviceRecordsFromSearch(payload)
+  const { configurationNames, records } = await searchHeadwindDevices("", fetchImpl, env);
+  return records
     .map((record) => normalizeDevice(record, configurationNames))
     .filter((device): device is HeadwindDevice => device !== null);
 }

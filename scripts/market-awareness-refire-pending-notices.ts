@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { notifyDecisionPending } from "@/lib/market-awareness/notifications";
 import { getActivity } from "@/lib/market-awareness/service";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -76,13 +77,13 @@ function adminClient() {
  * vacant" and would send this script away reporting nothing to do.
  */
 async function ceoHrIds(): Promise<string[]> {
-  const { data, error } = await adminClient()
-    .from("app_auth_users")
-    .select("hr_id, role, is_active")
-    .eq("is_active", true)
-    .limit(1000);
-  if (error) throw error;
-  return ((data as Array<{ hr_id?: string | null; role?: string | null }> | null) ?? [])
+  const client = adminClient();
+  // Paged: a single read stops silently at 1,000 rows and would drop a CEO seat holder past them.
+  const rows = await fetchAllRows<{ hr_id?: string | null; role?: string | null }>(
+    () => client.from("app_auth_users").select("hr_id, role, is_active").eq("is_active", true),
+    "login_id",
+  );
+  return rows
     .filter((row) => String(row.role ?? "").trim().toLowerCase() === "ceo")
     .map((row) => row.hr_id)
     .filter((hrId): hrId is string => Boolean(hrId?.trim()));

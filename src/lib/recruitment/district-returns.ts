@@ -17,6 +17,7 @@ import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { districtReturnSuppressionKey } from "@/lib/recruitment/district-manager-folders";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 const RETURNS_TABLE = "ats_candidate_district_returns";
 
@@ -123,13 +124,20 @@ export async function loadManagerReturnSuppressions(
   const key = canonicalHrIdForDisplay(managerHrId);
   if (!key) return EMPTY_SUPPRESSIONS;
 
-  const { data, error } = await recruitmentDb()
-    .from(RETURNS_TABLE)
-    .select("candidate_id")
-    .eq("manager_hr_id", key)
-    .in("status", SUPPRESSING_STATUSES);
-
-  if (error) {
+  let data: Array<{ candidate_id: string }>;
+  try {
+    // Every standing return of this manager, paged to a short page by the unique `id`: a return a
+    // response cap dropped would put that CV back in front of the manager who sent it back.
+    data = await fetchAllRows<{ candidate_id: string }>(
+      () =>
+        recruitmentDb()
+          .from(RETURNS_TABLE)
+          .select("candidate_id")
+          .eq("manager_hr_id", key)
+          .in("status", SUPPRESSING_STATUSES),
+      "id",
+    );
+  } catch (error) {
     if (!isMissingRelation(error)) {
       logError("District returns could not be read for the folder view", {
         error,
@@ -140,7 +148,7 @@ export async function loadManagerReturnSuppressions(
   }
 
   const set = new Set<string>();
-  for (const row of data ?? []) {
+  for (const row of data) {
     set.add(districtReturnSuppressionKey(managerHrId, String((row as { candidate_id: string }).candidate_id)));
   }
   return set;
@@ -258,18 +266,24 @@ async function loadCandidateNames(candidateIds: readonly string[]): Promise<Map<
  * better failure than a 500 on the page.
  */
 export async function listReturnedCvQueue(): Promise<ReturnedCvManagerGroup[]> {
-  const { data, error } = await recruitmentDb()
-    .from(RETURNS_TABLE)
-    .select("id,candidate_id,manager_hr_id,manager_name,seat_label,line_name,region_name,area_name,reason_code,reason_note,returned_at")
-    .eq("status", "open")
-    .order("returned_at", { ascending: false });
-
-  if (error) {
+  let rows: ReturnRow[];
+  try {
+    // Every open return, paged to a short page by the unique `id`: this is the whole queue the admin
+    // page shows, grouped by manager, so a row a response cap dropped would be a return nobody sees.
+    rows = await fetchAllRows<ReturnRow>(
+      () =>
+        recruitmentDb()
+          .from(RETURNS_TABLE)
+          .select("id,candidate_id,manager_hr_id,manager_name,seat_label,line_name,region_name,area_name,reason_code,reason_note,returned_at")
+          .eq("status", "open")
+          .order("returned_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
     if (isMissingRelation(error)) return [];
     throw error;
   }
 
-  const rows = (data ?? []) as ReturnRow[];
   if (rows.length === 0) return [];
 
   const candidateIds = [...new Set(rows.map((row) => String(row.candidate_id)))];

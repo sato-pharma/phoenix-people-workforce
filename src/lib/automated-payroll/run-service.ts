@@ -12,6 +12,7 @@ import {
 } from "@/lib/payroll/service";
 import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import { loadInsuranceWages } from "@/lib/payroll/statutory/insurance-wages.ts";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { assembleRows, computePart1Freeze, type AssembledRow } from "./assemble.ts";
@@ -2291,10 +2292,14 @@ async function previousMonthRoster(period: PayrollPeriod): Promise<PreviousRoste
  * punctuation stripped, because the ids are stored in mixed case and a raw `.eq` under-returns.
  */
 async function employeeNamesByCompactKey(): Promise<Map<string, string>> {
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name");
-  if (error) throw error;
+  // The whole master, page by page: a name cut off by a response ceiling would read as a blank in a
+  // payroll note about a held person.
+  const data = await fetchAllRows<{ hr_id: string | null; full_name: string | null }>(
+    () => getSupabaseAdmin().from("employees").select("hr_id,full_name"),
+    "hr_id",
+  );
   return new Map(
-    ((data ?? []) as Array<{ hr_id: string | null; full_name: string | null }>).map((row) => [
+    data.map((row) => [
       compactHrKey(row.hr_id ?? ""),
       row.full_name ?? "",
     ]),

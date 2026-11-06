@@ -47,6 +47,7 @@ import {
   resolveEmployeeLineName,
   type EmployeeLineFields,
 } from "@/lib/employees/employee-org-labels";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
@@ -289,13 +290,21 @@ async function loadHolidayDateSet(startDate: string, endDate: string): Promise<S
 /** Raw HR-side leave requests for the range — no employee lookup here (kept cacheable), that
  * happens once for both HR and CRM rows in getCompanyVacationReport. */
 async function loadHrVacationRequestsRaw(startDate: string, endDate: string): Promise<HrVacationRequestRow[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("v2_vacation_requests")
-    .select("id,employee_hr_id,employee_name,line_name,vacation_type,start_date,end_date,duration_days,status,balance_before_days,balance_after_days")
-    .lte("start_date", endDate)
-    .gte("end_date", startDate);
-  if (error) throw new Error(`Failed to load HR vacation requests: ${error.message}`);
-  return (data ?? []) as HrVacationRequestRow[];
+  // Paged: a year-wide report reads every request overlapping the range, and one response is cut
+  // at the API's row ceiling. A failed page still reads as this module's own message.
+  try {
+    return await fetchAllRows<HrVacationRequestRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("v2_vacation_requests")
+          .select("id,employee_hr_id,employee_name,line_name,vacation_type,start_date,end_date,duration_days,status,balance_before_days,balance_after_days")
+          .lte("start_date", endDate)
+          .gte("end_date", startDate),
+      "id",
+    );
+  } catch (error) {
+    throw new Error(`Failed to load HR vacation requests: ${(error as { message?: string } | null)?.message ?? String(error)}`);
+  }
 }
 
 const loadHrVacationRequestsRawCached = unstable_cache(loadHrVacationRequestsRaw, ["company-vacation-report-hr-requests"], {
@@ -360,11 +369,17 @@ async function loadAnnualVacationVisitsSplit(startDate: string, endDate: string)
 async function loadEmployeesRaw(): Promise<EmployeeRow[]> {
   // The line comes from the `line_id` LINK — `employees.line_name` is a denormalized copy nothing
   // writes (1 of 198 rows carry it). See employee-line.ts.
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    .select(`hr_id,full_name,job_title,nickname,${EMPLOYEE_LINE_SELECT}`);
-  if (error) throw new Error(`Failed to load employees: ${error.message}`);
-  return (data ?? []) as EmployeeRow[];
+  try {
+    return await fetchAllRows<EmployeeRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("employees")
+          .select(`hr_id,full_name,job_title,nickname,${EMPLOYEE_LINE_SELECT}`),
+      "hr_id",
+    );
+  } catch (error) {
+    throw new Error(`Failed to load employees: ${(error as { message?: string } | null)?.message ?? String(error)}`);
+  }
 }
 
 // Employee roster and device mappings aren't date-ranged — short revalidate (5 min) so a

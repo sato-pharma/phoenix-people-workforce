@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildRoiImportPreview,
@@ -101,33 +102,28 @@ async function loadLookups(): Promise<RoiImportLookups> {
     );
   }
 
-  const { data: employees, error: employeeError } = await supabase
-    .from("employees")
-    .select("hr_id");
-  if (employeeError) throw employeeError;
+  // Paged, ordered by the key: a single read of a growing table stops silently at 1,000 rows.
+  const employees = await fetchAllRows<{ hr_id: unknown }>(
+    () => supabase.from("employees").select("hr_id"),
+    "hr_id",
+  );
   const employeeHrIds = new Set<string>();
-  for (const employee of employees ?? []) {
-    const hrId = String((employee as { hr_id: unknown }).hr_id ?? "").trim().toUpperCase();
+  for (const employee of employees) {
+    const hrId = String(employee.hr_id ?? "").trim().toUpperCase();
     if (hrId) employeeHrIds.add(hrId);
   }
 
   // Page through the pharmacy code crosswalk (read-only) and strip leading zeros
   // so the keys line up with the sheet's normalizeCustomerCode match keys.
   const knownPharmacyCodes = new Set<string>();
-  const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("marketing_pharmacy_code_references")
-      .select("raw_pharmacy_code")
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    for (const ref of data) {
-      const raw = String((ref as { raw_pharmacy_code: unknown }).raw_pharmacy_code ?? "").trim();
-      const key = raw.replace(/^0+/, "") || raw;
-      if (key) knownPharmacyCodes.add(key);
-    }
-    if (data.length < pageSize) break;
+  const references = await fetchAllRows<{ raw_pharmacy_code: unknown }>(
+    () => supabase.from("marketing_pharmacy_code_references").select("raw_pharmacy_code"),
+    "id",
+  );
+  for (const ref of references) {
+    const raw = String(ref.raw_pharmacy_code ?? "").trim();
+    const key = raw.replace(/^0+/, "") || raw;
+    if (key) knownPharmacyCodes.add(key);
   }
 
   return { productByCode, productByName, requestTypeIdByCode, employeeHrIds, knownPharmacyCodes };

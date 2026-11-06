@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     const effectiveWeeks = weekNumbers;
     const periodFilterSet = cycleMonths.length > 0 || weekNumbers.length > 0;
     if (batchIds.length === 0 && !periodFilterSet) {
-      const validated = (await listWeeklyBatches(500)).filter((batch) => batch.status === "validated");
+      const validated = (await listWeeklyBatches()).filter((batch) => batch.status === "validated");
       const latest = latestUploadedPeriod(validated);
       // The MONTH, with every week in it — deliberately NOT latestUploadedPeriod's (month, week),
       // which is what the two sibling exports default to. This book's whole point is the weekly

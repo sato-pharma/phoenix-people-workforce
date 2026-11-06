@@ -61,6 +61,9 @@ export {
 /** Where a staged file waits between being chosen on the form and the employee existing. */
 const STAGING_PREFIX = "staging";
 
+/** Entries read per call when walking the staging folder; Storage never returns more than this at once. */
+const STAGING_LIST_PAGE = 1000;
+
 export type EmployeeCvRecord = {
   contentType: string;
   fileName: string;
@@ -604,17 +607,20 @@ export async function attachStagedEmployeeCv(input: {
 
 /** Drops staged files older than a day, so an abandoned add-employee form leaves nothing behind. */
 export async function purgeStaleStagedCvs(olderThanMs = 24 * 60 * 60 * 1000): Promise<number> {
-  const { data, error } = await getSupabaseAdmin()
-    .storage.from(EMPLOYEE_CVS_BUCKET)
-    .list(STAGING_PREFIX, { limit: 1000 });
-  if (error || !Array.isArray(data)) return 0;
   const cutoff = Date.now() - olderThanMs;
-  const stale = data
-    .filter((entry) => {
+  const stale: string[] = [];
+  // Storage answers at most one page per call, so the folder is walked by offset until a short page.
+  for (let offset = 0; ; offset += STAGING_LIST_PAGE) {
+    const { data, error } = await getSupabaseAdmin()
+      .storage.from(EMPLOYEE_CVS_BUCKET)
+      .list(STAGING_PREFIX, { limit: STAGING_LIST_PAGE, offset, sortBy: { column: "name", order: "asc" } });
+    if (error || !Array.isArray(data)) return 0;
+    for (const entry of data) {
       const at = Date.parse(String(entry.created_at ?? ""));
-      return Number.isFinite(at) && at < cutoff;
-    })
-    .map((entry) => `${STAGING_PREFIX}/${entry.name}`);
+      if (Number.isFinite(at) && at < cutoff) stale.push(`${STAGING_PREFIX}/${entry.name}`);
+    }
+    if (data.length < STAGING_LIST_PAGE) break;
+  }
   if (stale.length === 0) return 0;
   await removeObjects(stale);
   return stale.length;

@@ -18,7 +18,8 @@
 import { classifyCrmContactSpeciality, isHospitalSpeciality } from "@/lib/crm/contact-taxonomy";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
 import { boundingBox, haversineKm, isUsablePoint, roundKm, type Point } from "./geo";
 import { visibleDistributorRows } from "./source-visibility";
@@ -241,19 +242,27 @@ export async function findKnownHospitals(
 
   if (options.centre) {
     const box = boundingBox(options.centre, radiusKm);
-    const { data, error } = await supabase
-      .from("geo_locations")
-      .select("label, address_text, latitude, longitude")
-      .eq("source_type", "pharmacy_address")
-      .gte("latitude", box.minLatitude)
-      .lte("latitude", box.maxLatitude)
-      .gte("longitude", box.minLongitude)
-      .lte("longitude", box.maxLongitude)
-      .limit(500);
+    // Every geocoded address in the box, paged: the box holds every pharmacy in it, not only the
+    // hospitals, so in dense Cairo a fixed `.limit(500)` cut the list BEFORE the hospital filter ran.
+    let data: Array<Record<string, unknown>>;
+    try {
+      data = await fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("geo_locations")
+            .select("label, address_text, latitude, longitude")
+            .eq("source_type", "pharmacy_address")
+            .gte("latitude", box.minLatitude)
+            .lte("latitude", box.maxLatitude)
+            .gte("longitude", box.minLongitude)
+            .lte("longitude", box.maxLongitude),
+        "id",
+      );
+    } catch (error) {
+      throw new Error(`Nearby hospital lookup failed: ${toQueryError(error).message}`);
+    }
 
-    if (error) throw new Error(`Nearby hospital lookup failed: ${error.message}`);
-
-    for (const row of data ?? []) {
+    for (const row of data) {
       const label = String(row.label ?? "").trim();
       if (!looksLikeHospital(label)) continue;
       if (!isUsablePoint(row.latitude as number, row.longitude as number)) continue;
@@ -273,15 +282,25 @@ export async function findKnownHospitals(
     }
   }
 
-  if (options.brickId) {
-    const { data, error } = await visibleDistributorRows(
-      supabase.from("source_of_sales_customer_map").select("customer_name, address, brick_id").eq("brick_id", options.brickId),
-      options.viewer,
-    ).limit(1000);
+  const brickId = options.brickId;
+  if (brickId) {
+    // The whole brick, paged: a busy brick holds 2,006 customers on production, and a fixed
+    // 1,000-row limit cut the list before the hospital filter ran, so hospitals past the cut vanished.
+    let data: Array<Record<string, unknown>>;
+    try {
+      data = await fetchAllRows<Record<string, unknown>>(
+        () =>
+          visibleDistributorRows(
+            supabase.from("source_of_sales_customer_map").select("customer_name, address, brick_id").eq("brick_id", brickId),
+            options.viewer,
+          ),
+        "id",
+      );
+    } catch (error) {
+      throw new Error(`Brick hospital lookup failed: ${toQueryError(error).message}`);
+    }
 
-    if (error) throw new Error(`Brick hospital lookup failed: ${error.message}`);
-
-    for (const row of data ?? []) {
+    for (const row of data) {
       const name = String(row.customer_name ?? "").trim();
       if (!looksLikeHospital(name) || found.has(name)) continue;
       // No coordinates on the customer map — same brick is the only proximity claim we can make,

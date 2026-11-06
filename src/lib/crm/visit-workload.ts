@@ -24,6 +24,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
+import { isMeetingVisitType, tripWorkloadMatch } from "@/lib/crm/trip-day-meetings";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 import { addBucketToSplit, addVisitToSplit } from "@/lib/crm/visit-count-buckets";
 import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
@@ -38,8 +39,9 @@ export type RepVisitDetail = {
   contactKind: VisitContactKind;
   customer: string | null;
   /** "campaign" is the stored word for an UNPLANNED visit (isUnplannedFieldVisit) — the payload keeps it so
-   * every reader still parses; a screen prints "Unplanned" and "Planned". */
-  kind: "campaign" | "regular";
+   * every reader still parses; a screen prints "Unplanned" and "Planned". "meeting" is a recorded Meeting or
+   * Group Meeting (trip-day-meetings.ts): listed so the approver sees it, never counted as a visit. */
+  kind: "campaign" | "meeting" | "regular";
   /**
    * On a "partner" visit, the rep who LOGGED it — the person this one was in the field with (owner,
    * 2026-11-06: a manager's visits in Expense Approvals show the rep's name, even a rep who has
@@ -103,6 +105,9 @@ export type RepVisitWorkloadDay = {
    * remainder had no speciality). Campaign rows never classify — the vendor omits speciality. */
   doctor: number;
   institution: number;
+  /** Recorded meetings that day (Meeting, Group Meeting). Never a visit and never in `total` — it
+   * only makes the day a WORKED day (owner, 2026-11-07; trip-day-meetings.ts). Also inside `other`. */
+  meetings?: number;
   other: number;
   /** Of the day's field visits, a manager's own single visits (inside `total` and the split). */
   own?: number;
@@ -135,6 +140,8 @@ export type RepVisitWorkload = {
   managerOwnVisits?: number;
   matchStatus: "matched" | "no_activity" | "partial" | "unmapped";
   matchedDates: string[];
+  /** Trip days with a recorded meeting. Optional: the empty and unmapped reads carry none. */
+  meetingDays?: number;
   otherVisits: number;
   /** The trip's pharmacy visits — the third workload figure, kept out of AM and PM. */
   pharmacyWorkload: number;
@@ -340,6 +347,26 @@ export async function getRepTripVisitWorkload(input: {
     // counted apart (isUnplannedFieldVisit): Phoenix serves every visit as type 0 and says unplanned itself.
     if (row.visit_type !== 0 && row.visit_type !== -8) {
       entry.other += 1;
+      // A meeting is not a visit, but it IS the day's work (owner, 2026-11-07): counted apart so the
+      // day never reads idle, and listed so the approver sees what was recorded. Only the person's
+      // OWN meeting — a partner's row is never theirs to be credited with.
+      if (isMeetingVisitType(row.visit_type)) {
+        const ownerCrm = row.agent_crm_id == null ? null : Number(row.agent_crm_id);
+        const ownerKey = checkinAgentKey(ownerCrm != null && Number.isFinite(ownerCrm) ? ownerCrm : null, row.agent_hr_id);
+        if (ownerKey === selfKey) {
+          entry.meetings = (entry.meetings ?? 0) + 1;
+          entry.visits.push({
+            ampm: row.ampm ?? null,
+            contact: row.contact_name ?? null,
+            contactKind: "unclassified",
+            customer: row.customer_name || "Meeting",
+            kind: "meeting",
+            repName: null,
+            role: "agent",
+            submittedAt: row.crm_save_date ?? null,
+          });
+        }
+      }
       continue;
     }
     const isRegular = !isUnplannedFieldVisit(row);
@@ -502,10 +529,8 @@ export async function getRepTripVisitWorkload(input: {
   }
 
   const dateBreakdown = dates.map((date) => byDate.get(date)!);
-  const matchedDates = dateBreakdown.filter((day) => day.total > 0).map((day) => day.date);
-  const idleDates = dateBreakdown.filter((day) => day.total === 0).map((day) => day.date);
-  const matchStatus: RepVisitWorkload["matchStatus"] =
-    matchedDates.length === 0 ? "no_activity" : idleDates.length > 0 ? "partial" : "matched";
+  // A day with a field visit OR a recorded meeting is worked (trip-day-meetings.ts, owner 2026-11-07).
+  const { idleDates, matchStatus, matchedDates } = tripWorkloadMatch(dateBreakdown);
 
   return {
     amWorkload: dateBreakdown.reduce((sum, day) => sum + day.am, 0),
@@ -517,6 +542,7 @@ export async function getRepTripVisitWorkload(input: {
     ...(ownVisits === null ? {} : { managerOwnUnplannedVisits, managerOwnVisits }),
     matchStatus,
     matchedDates,
+    meetingDays: dateBreakdown.filter((day) => (day.meetings ?? 0) > 0).length,
     otherVisits: dateBreakdown.reduce((sum, day) => sum + day.other, 0),
     pharmacyWorkload: dateBreakdown.reduce((sum, day) => sum + day.pharmacies, 0),
     pharmacyVisits: dateBreakdown.reduce((sum, day) => sum + day.pharmacy, 0),

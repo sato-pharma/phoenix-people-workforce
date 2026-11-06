@@ -198,6 +198,7 @@ export async function queuedPayrollResyncsForPeriod(month: number, year: number)
       .from(PAYROLL_RESYNC_OUTBOX_TABLE)
       .select("payload, attempts, created_at")
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + QUEUE_READ_PAGE - 1);
     if (error) throw new Error(`The payroll decision queue could not be read: ${error.message}`);
     const rows = (data ?? []) as Array<{ payload: unknown; attempts: number | null; created_at: string }>;

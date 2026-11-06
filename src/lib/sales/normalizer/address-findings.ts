@@ -5,6 +5,7 @@ import { addressBrickFinding, type AddressFindingKind, type AddressMaps } from "
 import { addCustomerMapRow } from "@/lib/sales/normalizer/customer-map";
 import { normalizeCodeKey, numericCanonicalKey } from "@/lib/sales/normalizer/resolvers";
 import type { BrickRef } from "@/lib/sales/normalizer/types";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // THE WRONG-TOWN FINDER (owner, 2026-11-03). Lists the pharmacies whose address names another town
@@ -79,16 +80,27 @@ const sameCode = (a: string, b: string) => {
 };
 
 async function readSales(rows: MapRow[]): Promise<Map<number, { months: number; rows: number }> | null> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("source_of_sales_channel_customer_rollup")
-    .select("distributor_code,client_code,period,rows_all")
-    .in("distributor_code", [...new Set(rows.map((r) => r.distributor_code))])
-    .in("client_code", rows.flatMap((r) => codeForms(r.customer_code)))
-    .limit(10000);
-  if (error) return null;
+  const distributors = [...new Set(rows.map((r) => r.distributor_code))];
+  const clientCodes = rows.flatMap((r) => codeForms(r.customer_code));
+  type SalesRow = { client_code: unknown; distributor_code: unknown; id: number; period: unknown; rows_all: unknown };
+  let data: SalesRow[];
+  try {
+    // Keyset-paged: one read stops at a fixed row count with no error, and a short answer here reads as less sales.
+    data = await fetchAllRowsKeyset<SalesRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("source_of_sales_channel_customer_rollup")
+          .select("id,distributor_code,client_code,period,rows_all")
+          .in("distributor_code", distributors)
+          .in("client_code", clientCodes),
+      { cursorColumn: "id", cursorOf: (row) => row.id },
+    );
+  } catch {
+    return null;
+  }
   const out = new Map<number, { months: number; rows: number }>();
   for (const row of rows) {
-    const mine = (data ?? []).filter((s) => s.distributor_code === row.distributor_code && sameCode(String(s.client_code), row.customer_code));
+    const mine = data.filter((s) => s.distributor_code === row.distributor_code && sameCode(String(s.client_code), row.customer_code));
     out.set(row.id, {
       months: new Set(mine.map((s) => s.period)).size,
       rows: mine.reduce((sum, s) => sum + (Number(s.rows_all) || 0), 0),

@@ -303,6 +303,24 @@ async function rpcValue<T>(client: SupabaseClient, name: string): Promise<T> {
   return data as T;
 }
 
+// Reads every row RLS lets this role see. A single `.limit(n)` would stop silently at n, and the
+// "no other employee is visible" checks below must look at all of them. `orderColumn` must be unique.
+async function readAllRows(client: SupabaseClient, table: string, select: string, orderColumn: string) {
+  const pageSize = 1000;
+  const rows: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await client
+      .from(table)
+      .select(select)
+      .order(orderColumn, { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
 async function verifyRlsHelpers(client: SupabaseClient, role: PhoenixRole) {
   const expected = expectedByRole[role];
   assertEqual(await rpcValue<string>(client, "current_phoenix_role"), role, "current_phoenix_role()");
@@ -331,13 +349,9 @@ async function verifyOwnProfile(client: SupabaseClient, role: PhoenixRole, user:
 }
 
 async function verifyEmployeeScope(client: SupabaseClient, role: PhoenixRole, user: TestUser) {
-  const { data, error } = await client
-    .from("employees")
-    .select("hr_id, manager_hr_id")
-    .limit(1000);
-  if (error) throw error;
+  const data = await readAllRows(client, "employees", "hr_id, manager_hr_id", "hr_id");
 
-  const visibleHrIds = new Set((data ?? []).map((row) => String(row.hr_id ?? "").toLowerCase()).filter(Boolean));
+  const visibleHrIds = new Set(data.map((row) => String(row.hr_id ?? "").toLowerCase()).filter(Boolean));
   const ownHrId = user.hrId.toLowerCase();
   if (!visibleHrIds.has(ownHrId)) {
     throw new Error("own employee row is not visible through RLS");
@@ -351,7 +365,7 @@ async function verifyEmployeeScope(client: SupabaseClient, role: PhoenixRole, us
   }
 
   if (role === "District Manager") {
-    const outOfTeamRows = (data ?? []).filter((row) => {
+    const outOfTeamRows = data.filter((row) => {
       const rowHrId = String(row.hr_id ?? "").toLowerCase();
       const managerHrId = String(row.manager_hr_id ?? "").toLowerCase();
       return rowHrId !== ownHrId && managerHrId !== ownHrId;
@@ -439,11 +453,7 @@ async function verifyScopedPayrollRows(
   user: TestUser,
   visibleEmployeeHrIds: Set<string>,
 ) {
-  const { data, error } = await client
-    .from("salary_records")
-    .select("hr_id")
-    .limit(500);
-  if (error) throw error;
+  const data = await readAllRows(client, "salary_records", "hr_id", "id");
 
   // salary_records_select_access grants full, unconditional visibility through two disjuncts:
   // phx_can_manage_payroll() OR phx_has_company_access() (verified against pg_policy in both
@@ -457,7 +467,7 @@ async function verifyScopedPayrollRows(
   if (expectedByRole[role].canManagePayroll || expectedByRole[role].isCompanyReader) return;
 
   const allowed = new Set([...visibleEmployeeHrIds, user.hrId.toLowerCase()]);
-  const leakedRows = (data ?? []).filter((row) => {
+  const leakedRows = data.filter((row) => {
     const hrId = String(row.hr_id ?? "").toLowerCase();
     return hrId && !allowed.has(hrId);
   });

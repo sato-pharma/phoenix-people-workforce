@@ -65,6 +65,8 @@ async function fetchCandidates(supabase: ReturnType<typeof getSupabaseAdmin>): P
       .not("lat", "is", null)
       .not("lon", "is", null)
       .or("address.is.null,address.eq.")
+      // A unique order, so the walk across pages skips and repeats no check-in.
+      .order("id", { ascending: true })
       .range(from, from + fetchPageSize - 1);
     if (error) throw new Error(error.message);
     const page = (data ?? []) as CheckinRow[];

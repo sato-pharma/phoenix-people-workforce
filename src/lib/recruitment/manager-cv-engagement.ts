@@ -59,6 +59,7 @@ import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import { UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
 import { loadReferenceLines } from "@/lib/reference/reference-lists";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import { isUuid } from "@/lib/http/uuid";
@@ -414,12 +415,20 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   }
 
   // ── ROUTE 2: the send trail — a CV pushed to one or more managers (since 2026-08-30) ────────────
-  const sendsResult = await supabase
-    .from(MANAGER_SENDS_TABLE)
-    .select("candidate_id,manager_hr_id,manager_name,manager_job_title,manager_area,manager_region,sent_for_line")
-    .limit(5000);
-  if (sendsResult.error && !isMissingRelation(sendsResult.error)) throw sendsResult.error;
-  for (const raw of ((sendsResult.data ?? []) as Array<Record<string, unknown>>)) {
+  // Paged to the end: a fixed row ceiling would drop the newest sends from the report without a sound.
+  let sendRows: Array<Record<string, unknown>> = [];
+  try {
+    sendRows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from(MANAGER_SENDS_TABLE)
+          .select("id,candidate_id,manager_hr_id,manager_name,manager_job_title,manager_area,manager_region,sent_for_line"),
+      "id",
+    );
+  } catch (error) {
+    if (!isMissingRelation(error)) throw error;
+  }
+  for (const raw of sendRows) {
     const managerHrId = String(raw.manager_hr_id ?? "");
     if (!engagementHrKey(managerHrId) || !inScope(managerHrId)) continue;
     const candidateId = String(raw.candidate_id ?? "").trim();
@@ -434,13 +443,20 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   }
 
   // ── ROUTE 3: manager_notified_hr_id — the original single-push stamp on the candidate itself ────
-  const notifiedResult = await supabase
-    .from("ats_candidates")
-    .select("id,manager_notified_hr_id,manager_notified_name,manager_notified_job_title,manager_notified_area,manager_notified_region")
-    .not("manager_notified_hr_id", "is", null)
-    .limit(5000);
-  if (notifiedResult.error && !isMissingRelation(notifiedResult.error)) throw notifiedResult.error;
-  for (const raw of ((notifiedResult.data ?? []) as Array<Record<string, unknown>>)) {
+  let notifiedRows: Array<Record<string, unknown>> = [];
+  try {
+    notifiedRows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("ats_candidates")
+          .select("id,manager_notified_hr_id,manager_notified_name,manager_notified_job_title,manager_notified_area,manager_notified_region")
+          .not("manager_notified_hr_id", "is", null),
+      "id",
+    );
+  } catch (error) {
+    if (!isMissingRelation(error)) throw error;
+  }
+  for (const raw of notifiedRows) {
     const managerHrId = String(raw.manager_notified_hr_id ?? "");
     if (!engagementHrKey(managerHrId) || !inScope(managerHrId)) continue;
     const candidateId = String(raw.id ?? "").trim();
@@ -579,12 +595,24 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   // to the manager who let the CV sit.
   const openedKeys = new Set<string>();
   for (const batch of chunkIds(candidateIds)) {
-    const { data, error } = await supabase.from("ats_candidate_views").select("candidate_id,viewer_hr_id").in("candidate_id", batch);
-    if (error) {
+    // Each batch paged to a short page (ordered by candidate, then viewer: together they are the table's
+    // key), so a view a response cap dropped can never turn an opened CV into an unopened one.
+    let data: Array<Record<string, unknown>>;
+    try {
+      data = await fetchAllRows<Record<string, unknown>>(
+        () =>
+          supabase
+            .from("ats_candidate_views")
+            .select("candidate_id,viewer_hr_id")
+            .in("candidate_id", batch)
+            .order("candidate_id", { ascending: true }),
+        "viewer_hr_id",
+      );
+    } catch (error) {
       if (isMissingRelation(error)) break;
       throw error;
     }
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of data) {
       const candidateId = String(row.candidate_id ?? "").trim();
       const viewerKey = engagementHrKey(String(row.viewer_hr_id ?? ""));
       if (candidateId && viewerKey) openedKeys.add(`${viewerKey}::${candidateId}`);

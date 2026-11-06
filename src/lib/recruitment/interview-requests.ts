@@ -19,9 +19,11 @@ import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { afterResponse } from "@/lib/http/after-response";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { chunkIds } from "@/lib/recruitment/db-batch";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
 import { type FileDownload, getFileForDownload, listCandidateFilesByCandidate } from "@/lib/recruitment/files";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   assertCvsOpenTo,
   checkCvUpload,
@@ -147,12 +149,15 @@ async function loadCandidates(ids: Iterable<string>): Promise<Map<string, Candid
   const list = Array.from(new Set(Array.from(ids).filter(Boolean)));
   const out = new Map<string, CandidateNameRow>();
   if (list.length === 0) return out;
-  const { data, error } = await recruitmentDb()
-    .from("ats_candidates")
-    .select("id,full_name,applied_for_job_title")
-    .in("id", list);
-  if (error) throw error;
-  for (const row of (data ?? []) as CandidateNameRow[]) out.set(String(row.id), row);
+  // In batches of a hundred ids: a longer `.in()` overflows the request URL, and PostgREST answers
+  // that with no rows rather than an error, which would show every card without its candidate.
+  for (const batch of chunkIds(list)) {
+    const rows = await fetchAllRows<CandidateNameRow>(
+      () => recruitmentDb().from("ats_candidates").select("id,full_name,applied_for_job_title").in("id", batch),
+      "id",
+    );
+    for (const row of rows) out.set(String(row.id), row);
+  }
   return out;
 }
 
@@ -185,13 +190,23 @@ function pickCandidateCv(files: readonly RecruitmentFile[] | undefined): Recruit
 async function hydrateRequests(rows: readonly RequestRow[]): Promise<InterviewRequest[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((row) => row.id);
-  const { data: itemData, error } = await recruitmentDb()
-    .from(ITEMS)
-    .select(ITEM_COLUMNS)
-    .in("request_id", ids)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  const items = (itemData ?? []) as ItemRow[];
+  // Every item of every request, in batches of a hundred requests and paged to a short page within
+  // each: all of one request's items sit in one batch, so the per-request order is kept, and neither
+  // an over-long `.in()` nor a response cap can drop a CV from a card.
+  const items: ItemRow[] = [];
+  for (const batch of chunkIds(ids)) {
+    items.push(
+      ...(await fetchAllRows<ItemRow>(
+        () =>
+          recruitmentDb()
+            .from(ITEMS)
+            .select(ITEM_COLUMNS)
+            .in("request_id", batch)
+            .order("created_at", { ascending: true }),
+        "id",
+      )),
+    );
+  }
 
   const people = await loadPeople(rows.flatMap((row) => [row.requested_by_hr_id, row.interviewer_hr_id]));
   const candidateIds = items.map((item) => item.candidate_id).filter((id): id is string => Boolean(id));
@@ -451,11 +466,14 @@ export async function listInterviewRequestsInbox(
   options: { includeCancelled?: boolean } = {},
 ): Promise<InterviewRequest[]> {
   assertMayReadRequestInbox(caller);
-  let query = recruitmentDb().from(REQUESTS).select(REQUEST_COLUMNS);
-  if (!options.includeCancelled) query = query.neq("status", "cancelled");
-  const { data, error } = await query.order("requested_day", { ascending: true }).order("created_at", { ascending: true });
-  if (error) throw error;
-  return hydrateRequests((data ?? []) as RequestRow[]);
+  // Every request, paged to a short page by the unique `id`: the inbox is the whole waiting list, and
+  // a request a response cap dropped would be a CV nobody phones.
+  const data = await fetchAllRows<RequestRow>(() => {
+    let query = recruitmentDb().from(REQUESTS).select(REQUEST_COLUMNS);
+    if (!options.includeCancelled) query = query.neq("status", "cancelled");
+    return query.order("requested_day", { ascending: true }).order("created_at", { ascending: true });
+  }, "id");
+  return hydrateRequests(data);
 }
 
 /** A requester's own requests — the ones they asked for. */
@@ -463,14 +481,17 @@ export async function listMyInterviewRequests(caller: InterviewCalendarCaller): 
   if (!(await mayRequestInterviews(caller.access))) throw new Error(FORBIDDEN_REQUEST);
   const keys = hrIdLookupKeys(caller.access.hrId ?? "");
   if (keys.length === 0) return [];
-  const { data, error } = await recruitmentDb()
-    .from(REQUESTS)
-    .select(REQUEST_COLUMNS)
-    .in("requested_by_hr_id", keys)
-    .order("requested_day", { ascending: false })
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return hydrateRequests((data ?? []) as RequestRow[]);
+  const data = await fetchAllRows<RequestRow>(
+    () =>
+      recruitmentDb()
+        .from(REQUESTS)
+        .select(REQUEST_COLUMNS)
+        .in("requested_by_hr_id", keys)
+        .order("requested_day", { ascending: false })
+        .order("created_at", { ascending: false }),
+    "id",
+  );
+  return hydrateRequests(data);
 }
 
 // ── Schedule (step 2) ──────────────────────────────────────────────────────────────────────────────

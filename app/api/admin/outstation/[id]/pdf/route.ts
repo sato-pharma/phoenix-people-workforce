@@ -152,6 +152,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const freshness = resolveWorkloadFreshness({
           liveAmWorkload: live.amWorkload,
           liveMatchStatus: live.matchStatus,
+          liveMeetingDays: live.meetingDays ?? 0,
           livePharmacyWorkload: live.pharmacyWorkload ?? 0,
           livePmWorkload: live.pmWorkload,
           storedAmWorkload: outstation.amWorkload ?? 0,

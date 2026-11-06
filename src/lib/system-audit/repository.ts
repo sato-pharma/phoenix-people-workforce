@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { currentPersonNames, withCurrentPersonNames } from "@/lib/system-audit/person-names";
 import type {
@@ -331,16 +332,23 @@ export async function loadAlertDetails(issueIds: string[], override?: Client): P
   const details = new Map<string, AlertDetail>();
   if (issueIds.length === 0) return details;
   const supabase = client(override);
-  const { data, error } = await supabase
-    .from("system_audit_occurrences")
-    .select("issue_id, hr_key, employee_name, role_at_event, module_label, user_message, is_silent, technical_message")
-    .in("issue_id", issueIds)
-    .eq("is_test", false)
-    .is("triage_override", null)
-    .order("occurred_at", { ascending: false })
-    .limit(1000);
-  if (error) throw failure("alert detail read", error);
-  const rows = (data ?? []) as DetailRow[];
+  // Paged, newest first: every person who met an issue is named, not the first thousand occurrences' worth.
+  let rows: DetailRow[];
+  try {
+    rows = await fetchAllRows<DetailRow>(
+      () =>
+        supabase
+          .from("system_audit_occurrences")
+          .select("issue_id, hr_key, employee_name, role_at_event, module_label, user_message, is_silent, technical_message")
+          .in("issue_id", issueIds)
+          .eq("is_test", false)
+          .is("triage_override", null)
+          .order("occurred_at", { ascending: false }),
+      "id",
+    );
+  } catch (error) {
+    throw failure("alert detail read", error as { message?: string; code?: string });
+  }
   const names = await currentPersonNames(rows.map((row) => row.hr_key), supabase);
   for (const row of rows) {
     let detail = details.get(row.issue_id);

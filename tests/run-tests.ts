@@ -2915,6 +2915,7 @@ import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts"
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
+import { runOutstationTripDayMeetingsTests } from "./outstation-trip-day-meetings.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
@@ -2988,6 +2989,7 @@ import { runSpotlightChequesSeatFenceTests } from "./spotlight-cheques-seat-fenc
 import { runPhoenixCrmSeatAtBuildingTests } from "./phoenix-crm-seat-at-building.test.ts";
 import { runEmployeeNicknameReachesLoginTests } from "./employee-nickname-reaches-login.test.ts";
 import { runOfferEmailViaTurbifyTests } from "./offer-email-via-turbify.test.ts";
+import { runRowCapRatchetTests } from "./row-cap-ratchet.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 /**
@@ -11853,6 +11855,10 @@ await runTest(
   "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and applied only on a click, never over the reviewer's own reason",
   runOutstationExpenseApprovalsQueueTests,
 );
+await runTest(
+  "a recorded meeting makes its trip day worked, never \"no field activity\", and never a visit: the live read, the stamp, the morning re-read, the freshness warning, the review screen and the idle-day offer all read it through the one rule",
+  runOutstationTripDayMeetingsTests,
+);
 await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
 await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);
 
@@ -11888,6 +11894,7 @@ await runTest("Award Cheques refuses the Talent Acquisition seat on the page and
 await runTest("a rep seats a customer in a polyclinic only while standing in that building (3 Nov 2026): 3.9 km is refused at both doors before the timetable scan, no reading seats as before, a manager and the Super Admin's move are not asked, the building is filed for the SFE and the row keeps no reading", runPhoenixCrmSeatAtBuildingTests);
 await runTest("a saved nickname reaches the login's name, every HR id spelling, never a test account, and a failed login write never fails the save", runEmployeeNicknameReachesLoginTests);
 await runTest("job offers through the hr@ Turbify mailbox and no standing admin BCC (6 Nov 2026): set, an offer leaves from hr@ and never Resend, a failure never falls back, a lost Sent copy never resends; unset, Resend as before; no email carries the admin BCC and the Telegram mirror stays", runOfferEmailViaTurbifyTests);
+await runTest("no read stops silently at 1,000 rows (7 Nov 2026): a read cut at the ceiling is reported from its headers, and a new hard 1,000 in src or app is refused", runRowCapRatchetTests);
 const totalMs =testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

@@ -28,26 +28,29 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { compileArabicPlace } from "@/lib/geo/arabic-place-match";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 if (!url || !key) throw new Error("missing Supabase env — run with --env-file-if-exists=.env.local");
 const db = createClient(url, key, { auth: { persistSession: false } });
 
-const { data: areaRows, error: areaError } = await db.from("areas").select("code,name").eq("is_active", true);
-if (areaError) throw areaError;
+// Both reads page: one read stops silently at 1,000 rows, and a brick lost here is a place never suggested.
+const areaRows = await fetchAllRows<{ code?: string; name?: string }>(
+  () => db.from("areas").select("code,name").eq("is_active", true),
+  "id",
+);
 const areaNameByCode = new Map<string, string>();
-for (const row of areaRows ?? []) {
-  const code = String((row as { code?: string }).code ?? "").trim();
-  const name = String((row as { name?: string }).name ?? "").trim();
+for (const row of areaRows) {
+  const code = String(row.code ?? "").trim();
+  const name = String(row.name ?? "").trim();
   if (code && name) areaNameByCode.set(code, name);
 }
 
-const { data: brickRows, error: brickError } = await db
-  .from("source_of_sales_bricks")
-  .select("brick_name,area_code")
-  .eq("active", true);
-if (brickError) throw brickError;
+const brickRows = await fetchAllRows<{ brick_name?: string; area_code?: string }>(
+  () => db.from("source_of_sales_bricks").select("brick_name,area_code").eq("active", true),
+  "brick_id",
+);
 
 /**
  * Governorates, as the brick table spells them when it uses one to tell two places apart.

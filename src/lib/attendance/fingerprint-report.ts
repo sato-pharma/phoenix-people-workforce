@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import {
@@ -200,17 +201,20 @@ async function loadApprovedHalfDayVacationMap(
   if (employeeHrIds.length === 0) return map;
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("v2_vacation_requests")
-      .select("employee_hr_id,start_date,end_date,day_part")
-      .eq("status", "approved")
-      .in("day_part", ["am_only", "pm_only"])
-      .lte("start_date", dateTo)
-      .gte("end_date", dateFrom)
-      .limit(2000);
-    if (error) throw error;
+    // Paged: a fixed cap would drop later half-day vacations, and their days would be judged as full days.
+    const data = await fetchAllRows<HalfDayVacationDbRow>(
+      () =>
+        supabase
+          .from("v2_vacation_requests")
+          .select("employee_hr_id,start_date,end_date,day_part")
+          .eq("status", "approved")
+          .in("day_part", ["am_only", "pm_only"])
+          .lte("start_date", dateTo)
+          .gte("end_date", dateFrom),
+      "id",
+    );
 
-    for (const row of (data ?? []) as HalfDayVacationDbRow[]) {
+    for (const row of data) {
       const hrId = normalizeHrId(row.employee_hr_id);
       const part = row.day_part as HalfDayVacationPart;
       if (!hrId || (part !== "am_only" && part !== "pm_only")) continue;
@@ -535,7 +539,9 @@ function statusFromFlexibleHours(input: {
   };
 }
 
-const PUNCH_QUERY_LIMIT = 20000;
+// A page is PostgREST's own 1,000 rows: a larger page would end on a "short" page the moment a server
+// ceiling cut it, and the rest of the month would vanish without a word.
+const PUNCH_PAGE = 1000;
 
 export async function getFingerprintAttendanceReport(input: {
   dateFrom?: string;
@@ -706,16 +712,18 @@ export async function getFingerprintAttendanceReport(input: {
     if (filters.exactEmployeeHrId) {
       punchQuery = punchQuery.eq("employee_hr_id", filters.exactEmployeeHrId);
     }
+    // The id tiebreak keeps punches with the same time from being lost or repeated between pages.
     const { data: punchPage, error: punchError } = await punchQuery
       .order("punch_time", { ascending: true })
-      .range(pageOffset, pageOffset + PUNCH_QUERY_LIMIT - 1);
+      .order("id", { ascending: true })
+      .range(pageOffset, pageOffset + PUNCH_PAGE - 1);
 
     if (punchError) throw punchError;
 
     const page = (punchPage ?? []) as RawPunchRow[];
     punches.push(...page);
-    if (page.length < PUNCH_QUERY_LIMIT) break;
-    pageOffset += PUNCH_QUERY_LIMIT;
+    if (page.length < PUNCH_PAGE) break;
+    pageOffset += PUNCH_PAGE;
     if (punches.length >= MAX_PUNCHES) {
       truncated = true;
       break;

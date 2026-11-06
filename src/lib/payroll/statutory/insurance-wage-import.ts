@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { StatutoryConfig } from "./types.ts";
@@ -186,9 +187,12 @@ export type WagePreview = {
 export async function previewInsuranceWages(rows: ParsedWageRow[]): Promise<WagePreview> {
   const supabase = getSupabaseAdmin();
   const byKey = new Map<string, string>();
-  const { data, error } = await supabase.from("employees").select("hr_id");
-  if (error) throw error;
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+  // The WHOLE roster, page by page: a person cut off by a response ceiling would read as unmatched.
+  const employees = await fetchAllRows<Record<string, unknown>>(
+    () => supabase.from("employees").select("hr_id"),
+    "hr_id",
+  );
+  for (const row of employees) {
     const hrId = String(row.hr_id ?? "");
     const key = wageHrKey(hrId);
     if (key) byKey.set(key, hrId);

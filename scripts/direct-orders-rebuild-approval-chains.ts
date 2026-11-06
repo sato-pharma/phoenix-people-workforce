@@ -6,6 +6,7 @@ import {
 } from "@/lib/direct-orders/approval-flow";
 import { rebuildDirectOrderApprovalChain } from "@/lib/direct-orders/service";
 import { systemAccessContext } from "@/lib/auth/permissions";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -68,40 +69,51 @@ async function main() {
   console.log(`Supabase project ref: ${ref}${ref === PRODUCTION_REF ? " (PRODUCTION)" : ""}\n`);
 
   const supabase = client();
-  const { data: pendingData, error: pendingError } = await supabase
-    .from("direct_order_requests")
-    .select("id, product_name, requester_hr_id, requester_role, status, sales_value, pharmacy_id")
-    .eq("status", "pending_approval")
-    .order("created_at", { ascending: true });
-  if (pendingError) throw new Error(pendingError.message);
-  const pending = (pendingData ?? []) as Array<Record<string, unknown>>;
+  // The three reads are paged (one read stops silently at 1,000 rows, and an order it missed keeps the
+  // stale chain this script exists to repair), and the id lists are chunked (a long `in.()` answers ZERO rows).
+  const pending = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("direct_order_requests")
+        .select("id, product_name, requester_hr_id, requester_role, status, sales_value, pharmacy_id")
+        .eq("status", "pending_approval")
+        .order("created_at", { ascending: true }),
+    "id",
+  );
 
   // Whether each order's pharmacy is still awaiting review decides whether its chain should carry
   // the System Admin rung. Read from the pharmacy row, never inferred from the chain itself —
   // the chain is the thing being checked for correctness.
   const pharmacyIds = Array.from(new Set(pending.map((row) => String(row.pharmacy_id)).filter(Boolean)));
   const awaitingReview = new Set<string>();
-  if (pharmacyIds.length > 0) {
-    const { data: pharmacyData, error: pharmacyError } = await supabase
-      .from("direct_order_pharmacies")
-      .select("id, verification_status")
-      .in("id", pharmacyIds);
-    if (pharmacyError) throw new Error(pharmacyError.message);
-    for (const row of (pharmacyData ?? []) as Array<{ id: string; verification_status: string | null }>) {
+  for (let from = 0; from < pharmacyIds.length; from += 100) {
+    const chunk = pharmacyIds.slice(from, from + 100);
+    const pharmacyData = await fetchAllRows<{ id: string; verification_status: string | null }>(
+      () => supabase.from("direct_order_pharmacies").select("id, verification_status").in("id", chunk),
+      "id",
+    );
+    for (const row of pharmacyData) {
       if (String(row.verification_status ?? "verified") === "pending_review") awaitingReview.add(String(row.id));
     }
   }
 
-  const { data: stepData, error: stepError } = await supabase
-    .from("direct_order_approval_steps")
-    .select("request_id, step_order, label, status, decided_by_hr_id, decided_at")
-    .in("request_id", pending.map((row) => String(row.id)));
-  if (stepError) throw new Error(stepError.message);
+  const pendingIds = pending.map((row) => String(row.id));
   const stepsByRequest = new Map<string, StepRow[]>();
-  for (const row of (stepData ?? []) as StepRow[]) {
-    const bucket = stepsByRequest.get(row.request_id) ?? [];
-    bucket.push(row);
-    stepsByRequest.set(row.request_id, bucket);
+  for (let from = 0; from < pendingIds.length; from += 100) {
+    const chunk = pendingIds.slice(from, from + 100);
+    const stepData = await fetchAllRows<StepRow>(
+      () =>
+        supabase
+          .from("direct_order_approval_steps")
+          .select("request_id, step_order, label, status, decided_by_hr_id, decided_at")
+          .in("request_id", chunk),
+      "id",
+    );
+    for (const row of stepData) {
+      const bucket = stepsByRequest.get(row.request_id) ?? [];
+      bucket.push(row);
+      stepsByRequest.set(row.request_id, bucket);
+    }
   }
 
   const needsRebuild: Array<{

@@ -59,6 +59,7 @@ import {
   statusAfterResubmit,
 } from "@/lib/market-awareness/workflow";
 import { logError } from "@/lib/observability/log";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { quotedOrClause } from "@/lib/supabase/search-filter";
 import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 
@@ -143,6 +144,21 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
 }
 
 /**
+ * Every active row of the role directory, paged. A fixed row limit here would drop role holders
+ * past it with no error, which reads as "nobody holds that role".
+ */
+async function loadActiveRoleRows(): Promise<Array<{ hr_id?: string | null; role?: string | null }>> {
+  try {
+    return await fetchAllRows<{ hr_id?: string | null; role?: string | null }>(
+      () => getSupabaseAdmin().from("app_auth_users").select("hr_id, role, is_active").eq("is_active", true),
+      "login_id",
+    );
+  } catch (error) {
+    throw toQueryError(error);
+  }
+}
+
+/**
  * HR ids holding any of these roles, from `app_auth_users` — the role directory the marketing module
  * resolves its approvers through.
  *
@@ -152,15 +168,8 @@ async function loadEmployees(hrIds: Array<string | null | undefined>) {
  */
 async function loadRoleHolderHrIds(roles: string[]): Promise<string[]> {
   const wanted = new Set(roles.map((role) => role.trim().toLowerCase()));
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("app_auth_users")
-    .select("hr_id, role, is_active")
-    .eq("is_active", true)
-    .limit(1000);
-  if (error) throw toQueryError(error);
 
-  return ((data as Array<{ hr_id?: string | null; role?: string | null }> | null) ?? [])
+  return (await loadActiveRoleRows())
     .filter((row) => wanted.has(String(row.role ?? "").trim().toLowerCase()))
     .map((row) => row.hr_id)
     .filter((hrId): hrId is string => Boolean(hrId?.trim()));
@@ -177,15 +186,7 @@ async function loadRoleHolderHrIds(roles: string[]): Promise<string[]> {
  * role" and would route every activity to an empty group.
  */
 async function loadApproverDirectory(): Promise<ApproverDirectoryEntry[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("app_auth_users")
-    .select("hr_id, role, is_active")
-    .eq("is_active", true)
-    .limit(1000);
-  if (error) throw toQueryError(error);
-
-  const holders = ((data as Array<{ hr_id?: string | null; role?: string | null }> | null) ?? [])
+  const holders = (await loadActiveRoleRows())
     .map((row) => ({
       hrId: String(row.hr_id ?? "").trim(),
       role: String(row.role ?? "").trim().toLowerCase(),
@@ -475,27 +476,26 @@ export async function listActivities(
   if (visibility.kind === "none") return [];
 
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("market_awareness_activities")
-    .select("*")
-    .order("created_at", { ascending: false })
-    // Explicit bound: an unbounded select stops at 1000 with no marker, and a silently truncated
-    // list is indistinguishable from a short one.
-    .limit(500);
+  // Through the shared builder, which holds the casing rule AND the quoting in one place — this
+  // site carried a verbatim copy of the clause before (AGENTS.md MR-B04).
+  const ownFilter = visibility.kind === "own" ? ownActivityFilter(visibility) : null;
 
-  if (visibility.kind === "own") {
-    // Through the shared builder, which holds the casing rule AND the quoting in one place — this
-    // site carried a verbatim copy of the clause before (AGENTS.md MR-B04).
-    const ownFilter = ownActivityFilter(visibility);
-    if (ownFilter) query = query.or(ownFilter);
+  // Paged in full: a fixed `.limit(500)` stopped the list there with no marker, and a silently
+  // truncated list is indistinguishable from a short one.
+  let rows: ActivityRow[];
+  try {
+    rows = await fetchAllRows<ActivityRow>(() => {
+      let query = supabase.from("market_awareness_activities").select("*").order("created_at", { ascending: false });
+      if (ownFilter) query = query.or(ownFilter);
+      if (options.status) query = query.eq("status", options.status);
+      return query;
+    }, "id");
+  } catch (error) {
+    throw toQueryError(error);
   }
-  if (options.status) query = query.eq("status", options.status);
-
-  const { data, error } = await query;
-  if (error) throw toQueryError(error);
 
   const lines = await loadMarketAwarenessLines();
-  return hydrate((data as ActivityRow[] | null) ?? [], lines);
+  return hydrate(rows, lines);
 }
 
 /**
@@ -592,29 +592,42 @@ export async function listInbox(
   if (visibility.kind === "none") return [];
 
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("market_awareness_activities")
-    .select("*")
-    .in("status", scope === "history" ? HISTORY_STATUSES : OPEN_STATUSES)
-    // Newest first in history — what was answered most recently is what someone is looking for.
-    // Oldest first while open, because the longest wait is the one that needs a decision.
-    .order(scope === "history" ? "updated_at" : "submitted_at", { ascending: scope !== "history" })
-    // Explicit bound: an unbounded select stops at 1000 with no marker. History only grows (every
-    // answered activity stays in it), so it is held to the latest 200 — each row costs a hydrate.
-    .limit(scope === "history" ? INBOX_HISTORY_LIMIT : 500);
-
   const ownFilter = ownActivityFilter(visibility);
-  if (ownFilter) query = query.or(ownFilter);
+  const buildQuery = () => {
+    let query = supabase
+      .from("market_awareness_activities")
+      .select("*")
+      .in("status", scope === "history" ? HISTORY_STATUSES : OPEN_STATUSES)
+      // Newest first in history — what was answered most recently is what someone is looking for.
+      // Oldest first while open, because the longest wait is the one that needs a decision.
+      .order(scope === "history" ? "updated_at" : "submitted_at", { ascending: scope !== "history" });
+    if (ownFilter) query = query.or(ownFilter);
+    return query;
+  };
+  const readActivities = async (): Promise<ActivityRow[]> => {
+    if (scope === "history") {
+      // The one deliberate window: history only grows (every answered activity stays in it), so the
+      // History tab is held to the latest 200 on purpose — each row costs a hydrate.
+      const { data, error } = await buildQuery().limit(INBOX_HISTORY_LIMIT);
+      if (error) throw toQueryError(error);
+      return (data as ActivityRow[] | null) ?? [];
+    }
+    // Open work is read in full: a fixed cap would hide a waiting activity with no sign it was cut.
+    try {
+      return await fetchAllRows<ActivityRow>(buildQuery, "id");
+    } catch (error) {
+      throw toQueryError(error);
+    }
+  };
 
   // The three reads depend on nothing but the caller, so they run together, not one after another.
-  const [selected, lines, actorLineId] = await Promise.all([
-    query,
+  const [selectedRows, lines, actorLineId] = await Promise.all([
+    readActivities(),
     loadMarketAwarenessLines(),
     loadActorLineIdIfNeeded(access),
   ]);
-  if (selected.error) throw toQueryError(selected.error);
 
-  const activities = await hydrate((selected.data as ActivityRow[] | null) ?? [], lines);
+  const activities = await hydrate(selectedRows, lines);
 
   return activities.map((activity) => {
     const step = currentStep(activity.status);
@@ -689,31 +702,33 @@ export async function getMarketAwarenessDecisionBadge(
   if (visibility.kind === "none") return { count: 0, overdue: false };
 
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("market_awareness_activities")
-    // Who must decide, at which step, and since when. The approvers come back EMBEDDED rather than
-    // as a second query, because this is polled every thirty seconds by every open tab and a
-    // parallel step cannot be counted without them. Nothing here is displayed.
-    .select(
-      "status, manager_hr_id, step_opened_at, updated_at, market_awareness_activity_approvers(id, approver_role, line_id, assigned_hr_id, decision)",
-    )
-    .in("status", OPEN_STATUSES)
-    // Explicit bound, same as the list: an unbounded select stops at 1000 with no marker.
-    .limit(500);
   const ownFilter = ownActivityFilter(visibility);
-  if (ownFilter) query = query.or(ownFilter);
-
-  const { data, error } = await query;
-  if (error) throw toQueryError(error);
-
-  const rows =
-    (data as Array<{
-      manager_hr_id: string | null;
-      status: string;
-      step_opened_at: string | null;
-      updated_at: string | null;
-      market_awareness_activity_approvers?: Array<Record<string, unknown>> | null;
-    }> | null) ?? [];
+  // Paged in full, same as the list: a fixed `.limit(500)` would stop the count there with no marker.
+  type BadgeRow = {
+    manager_hr_id: string | null;
+    status: string;
+    step_opened_at: string | null;
+    updated_at: string | null;
+    market_awareness_activity_approvers?: Array<Record<string, unknown>> | null;
+  };
+  let rows: BadgeRow[];
+  try {
+    rows = await fetchAllRows<BadgeRow>(() => {
+      let query = supabase
+        .from("market_awareness_activities")
+        // Who must decide, at which step, and since when. The approvers come back EMBEDDED rather than
+        // as a second query, because this is polled every thirty seconds by every open tab and a
+        // parallel step cannot be counted without them. Nothing here is displayed.
+        .select(
+          "status, manager_hr_id, step_opened_at, updated_at, market_awareness_activity_approvers(id, approver_role, line_id, assigned_hr_id, decision)",
+        )
+        .in("status", OPEN_STATUSES);
+      if (ownFilter) query = query.or(ownFilter);
+      return query;
+    }, "id");
+  } catch (error) {
+    throw toQueryError(error);
+  }
   return summarizeMarketAwarenessDecisionBadge({
     access,
     actorLineId: await loadActorLineIdIfNeeded(access),
@@ -744,15 +759,21 @@ export async function listActivityComments(
   await getActivity(access, activityId);
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("market_awareness_comments")
-    .select("*")
-    .eq("activity_id", activityId)
-    .order("created_at", { ascending: true })
-    .limit(500);
-  if (error) throw toQueryError(error);
-
-  const rows = (data as Array<Record<string, unknown>> | null) ?? [];
+  // Paged in full: a fixed `.limit(500)` would cut a long thread with no marker.
+  let rows: Array<Record<string, unknown>>;
+  try {
+    rows = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("market_awareness_comments")
+          .select("*")
+          .eq("activity_id", activityId)
+          .order("created_at", { ascending: true }),
+      "id",
+    );
+  } catch (error) {
+    throw toQueryError(error);
+  }
   const people = await loadEmployees(rows.map((row) => row.author_hr_id as string | null));
 
   return rows.map((row) => {

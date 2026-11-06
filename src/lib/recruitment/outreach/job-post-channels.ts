@@ -11,6 +11,7 @@ import { deriveChannelCode, isValidChannelCode, normalizeChannelCode } from "@/l
 import { phoneDigitsTail, resolveForwarderChannelFromList } from "@/lib/recruitment/outreach/forwarder-match";
 import { normalizeWhatsAppNumber } from "@/lib/recruitment/outreach/job-advert";
 import { hrIdForStorage } from "@/lib/hr-id";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 
 export const JOB_POST_CHANNEL_KINDS = [
   "facebook_group",
@@ -317,26 +318,31 @@ export type ChannelAttribution = {
  * Counts DISTINCT candidates, not intake events: one applicant who sends a CV three times is one
  * candidate, and counting events would flatter whichever group attracts the most re-senders.
  *
- * Aggregated in JS rather than SQL deliberately — the whole intake log is ~1,100 rows and this
- * avoids adding an RPC and its grants for a number that is read a few times a week.
+ * Aggregated in JS rather than SQL deliberately — this avoids adding an RPC and its grants for a
+ * number that is read a few times a week. The intake log passed 1,000 rows long ago (about 5,000 on
+ * 2026-11-07), so EVERY row of the window is read, walked by id: a single read stops at one
+ * response's worth with no sign, and the newest channels would silently count fewer candidates.
  */
 export async function getChannelAttribution(sinceDays = 90): Promise<ChannelAttribution> {
   const supabase = recruitmentDb();
   const since = new Date(Date.now() - Math.max(1, sinceDays) * 24 * 60 * 60 * 1000).toISOString();
   const channels = await listJobPostChannels({ includeInactive: true });
 
-  const { data, error } = await supabase
-    .from("ats_cv_intake_events")
-    .select("source_channel_code,candidate_id,created_at,outcome")
-    .gte("created_at", since)
-    .in("outcome", ["candidate_created", "candidate_matched"]);
-  if (error) throw error;
+  const data = await fetchAllRowsKeyset<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("ats_cv_intake_events")
+        .select("id,source_channel_code,candidate_id,created_at,outcome")
+        .gte("created_at", since)
+        .in("outcome", ["candidate_created", "candidate_matched"]),
+    { cursorColumn: "id", cursorOf: (row) => (typeof row.id === "string" || typeof row.id === "number" ? row.id : null) },
+  );
 
   const seenPerCode = new Map<string, Set<string>>();
   const lastPerCode = new Map<string, string>();
   let untracked = 0;
 
-  for (const raw of data ?? []) {
+  for (const raw of data) {
     const row = raw as Record<string, unknown>;
     const code = normalizeChannelCode(textOrNull(row.source_channel_code));
     const candidateId = textOrNull(row.candidate_id);

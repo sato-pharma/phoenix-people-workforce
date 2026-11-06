@@ -290,7 +290,7 @@ export async function loadRepVisibleBuildingNotes(
         .not("shared_place_id", "is", null)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false }),
-    { maxRows: 1_000, whenFull: "stop", what: "The comments written about this territory's buildings", uniqueBy: (row) => String(row.id) },
+    { maxRows: 5_000, whenFull: "stop", what: "The comments written about this territory's buildings", uniqueBy: (row) => String(row.id) },
   );
   throwIfError(error);
   const byCustomer = new Map<string, RepPlaceNote[]>();

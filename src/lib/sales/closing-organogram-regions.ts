@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
@@ -568,19 +569,20 @@ export async function loadDirectSubmitters(
     if (batches.error || !batches.data || batches.data.length === 0) return [];
     const batchIds = batches.data.map((row) => (row as { id: unknown }).id);
 
-    const rows = await supabase
-      .from("source_of_sales_import_rows")
-      .select("region_code,product_code,value,raw_row")
-      .in("batch_id", batchIds)
-      .eq("is_direct", true)
-      .eq("official_line", line)
-      // Explicit ceiling, well above any real batch (largest observed ~87 rows), so a future
-      // spike fails loudly against this number instead of silently hitting PostgREST's
-      // unmarked default cap of 1000.
-      .limit(5000);
-    if (rows.error || !rows.data) return [];
+    // Paged in full: a single read stops at a fixed row count with no error, and a short list here
+    // would quietly skew the shares. A failed page throws into the catch below (the pro-rata fallback).
+    const rowData = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("source_of_sales_import_rows")
+          .select("region_code,product_code,value,raw_row")
+          .in("batch_id", batchIds)
+          .eq("is_direct", true)
+          .eq("official_line", line),
+      "id",
+    );
 
-    return (rows.data as Array<Record<string, unknown>>)
+    return rowData
       .map((row) => {
         const raw = (row.raw_row ?? {}) as Record<string, unknown>;
         return {

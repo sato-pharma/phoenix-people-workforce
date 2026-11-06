@@ -37,6 +37,7 @@ import type {
   ExpenseTripRecord,
   PayrollExpenseReport,
 } from "@/lib/payroll/types";
+import { isWorkedTripDay } from "@/lib/crm/trip-day-meetings";
 import { historicalUploadReports } from "@/lib/outstation/workflow-expense-report-guard";
 import { cn } from "@/lib/utils";
 
@@ -228,6 +229,8 @@ type WorkloadEvidenceDay = {
   am: number;
   campaign: number;
   date: string;
+  /** Recorded meetings that day — never a visit, but the day's work (trip-day-meetings.ts). */
+  meetings?: number;
   other: number;
   /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional so a payload from a
    * server built before the split still renders. */
@@ -837,10 +840,12 @@ export function ExpenseReport({
             items={data.dateBreakdown}
             renderCard={(day) => (
               <PortalRecordCard
-                accent={day.total === 0 ? "rose" : "sky"}
+                accent={!isWorkedTripDay(day) ? "rose" : "sky"}
                 status={
-                  day.total === 0 ? (
+                  !isWorkedTripDay(day) ? (
                     <span className="text-xs font-semibold text-rose-600">No activity</span>
+                  ) : day.total === 0 ? (
+                    <span className="text-xs font-semibold text-slate-700">Meeting recorded</span>
                   ) : (
                     <span className="text-xs text-emerald-700">{formatNumber(day.total)} field visits</span>
                   )
@@ -888,7 +893,7 @@ export function ExpenseReport({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.dateBreakdown.map((day) => (
-                <tr className={day.total === 0 ? "bg-rose-50/60" : undefined} key={day.date}>
+                <tr className={!isWorkedTripDay(day) ? "bg-rose-50/60" : undefined} key={day.date}>
                   <td className="break-words px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.am)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pm)}</td>
@@ -896,8 +901,10 @@ export function ExpenseReport({
                   <td className="px-3 py-2 text-right font-mono text-sky-700">{formatNumber(day.regular)}</td>
                   <td className="px-3 py-2 text-right font-mono text-violet-700">{formatNumber(day.campaign)}</td>
                   <td className="break-words px-3 py-2">
-                    {day.total === 0 ? (
+                    {!isWorkedTripDay(day) ? (
                       <span className="font-semibold text-rose-600">No activity</span>
+                    ) : day.total === 0 ? (
+                      <span className="font-semibold text-slate-700">Meeting recorded</span>
                     ) : (
                       <span className="text-emerald-700">{formatNumber(day.total)} field visits</span>
                     )}

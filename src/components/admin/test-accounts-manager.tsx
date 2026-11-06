@@ -130,7 +130,8 @@ export function TestAccountsManager({ initial, initialError }: Props) {
 
   function personPicker(id: string, value: string, onChange: (hrId: string) => void) {
     return (
-      <SearchableSelect className="w-full" id={id} maxResults={1000} onChange={(event) => onChange(event.target.value)} value={value}>
+      // maxResults is the whole list plus the placeholder row: the default 100 hides people, and a fixed number only moves the cliff.
+      <SearchableSelect className="w-full" id={id} maxResults={people.length + 1} onChange={(event) => onChange(event.target.value)} value={value}>
         <option value="">Choose a person…</option>
         {people.map((person) => (
           <option key={person.hrId} value={person.hrId}>

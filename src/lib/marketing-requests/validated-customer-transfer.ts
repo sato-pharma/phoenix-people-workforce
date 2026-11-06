@@ -11,6 +11,7 @@ import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/ser
 import { loadBrickCentroids, resolveBrickForPoint, type ResolvedBrickPoint } from "@/lib/crm/brick-geo";
 import { applyPhotoPinTerritory, type PinnedGeography } from "@/lib/marketing-requests/photo-pin-territory";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/http/uuid";
 import {
@@ -445,36 +446,50 @@ export async function suggestBrickForCapture(input: {
   if (!input.areaCode || input.latitude == null || input.longitude == null) return empty;
 
   const supabase = getSupabaseAdmin();
-  const { data: brickRows } = await supabase
-    .from("source_of_sales_bricks")
-    .select("brick_id, brick_name")
-    .eq("active", true)
-    .eq("area_code", input.areaCode)
-    .limit(300);
+  const areaCode = input.areaCode;
+  // Paged in full, never `.limit(300)` or a slice of the ids: a brick dropped by a fixed count could be the nearest one.
+  // Same soft failure as before: an unreadable brick list gives no suggestion.
+  let brickRows: Array<{ brick_id?: string | null; brick_name?: string | null }>;
+  try {
+    brickRows = await fetchAllRows<{ brick_id?: string | null; brick_name?: string | null }>(
+      () =>
+        supabase
+          .from("source_of_sales_bricks")
+          .select("brick_id, brick_name")
+          .eq("active", true)
+          .eq("area_code", areaCode),
+      "brick_id",
+    );
+  } catch {
+    return empty;
+  }
 
-  const bricks = ((brickRows ?? []) as Array<{ brick_id?: string | null; brick_name?: string | null }>)
+  const bricks = brickRows
     .filter((row) => row.brick_id)
     .map((row) => ({ id: String(row.brick_id), name: row.brick_name ? String(row.brick_name) : null }));
   if (bricks.length === 0) return empty;
 
-  const { data: centroidRows } = await supabase
-    .from("geo_locations")
-    .select("source_key, latitude, longitude")
-    .eq("source_type", "brick_centroid")
-    .eq("geocode_status", "success")
-    .in(
-      "source_key",
-      bricks.map((brick) => brick.id).slice(0, 200),
-    );
+  const centroidRows: Array<{
+    latitude?: number | null;
+    longitude?: number | null;
+    source_key?: string | null;
+  }> = [];
+  const brickIds = bricks.map((brick) => brick.id);
+  // 200 ids per `.in()`: a longer list overflows the request URL.
+  for (let at = 0; at < brickIds.length; at += 200) {
+    const { data: centroidPage } = await supabase
+      .from("geo_locations")
+      .select("source_key, latitude, longitude")
+      .eq("source_type", "brick_centroid")
+      .eq("geocode_status", "success")
+      .in("source_key", brickIds.slice(at, at + 200));
+    centroidRows.push(...((centroidPage ?? []) as typeof centroidRows));
+  }
 
   const byId = new Map(bricks.map((brick) => [brick.id, brick.name]));
   let best: { distanceKm: number; id: string; name: string | null } | null = null;
 
-  for (const row of (centroidRows ?? []) as Array<{
-    latitude?: number | null;
-    longitude?: number | null;
-    source_key?: string | null;
-  }>) {
+  for (const row of centroidRows) {
     if (row.latitude == null || row.longitude == null || !row.source_key) continue;
     const km = haversineKm(
       Number(input.latitude),
@@ -605,18 +620,20 @@ export async function listValidatedMarketingCustomers(
   assertValidatedCustomerRegisterAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const { data: customerData, error } = await supabase
-    .from("marketing_customers")
-    .select(
-      "id, customer_code, display_name, normalized_name, customer_type, validation_status, evidence_status, validated_at, validated_by_hr_id, created_at, owner_hr_id, manager_hr_id, area_id, line_id, extracted_governorate_name",
-    )
-    .in("validation_status", VALIDATED_STATUSES as unknown as string[])
-    .neq("active", false)
-    .order("created_at", { ascending: false })
-    .limit(1000);
-  if (error) throw error;
-
-  const customers = (customerData ?? []) as CustomerRow[];
+  // Paged: this register lists EVERY validated customer, and a fixed row limit would drop the
+  // oldest past it with no sign. A failed page throws.
+  const customers = await fetchAllRows<CustomerRow>(
+    () =>
+      supabase
+        .from("marketing_customers")
+        .select(
+          "id, customer_code, display_name, normalized_name, customer_type, validation_status, evidence_status, validated_at, validated_by_hr_id, created_at, owner_hr_id, manager_hr_id, area_id, line_id, extracted_governorate_name",
+        )
+        .in("validation_status", VALIDATED_STATUSES as unknown as string[])
+        .neq("active", false)
+        .order("created_at", { ascending: false }),
+    "id",
+  );
   if (customers.length === 0) {
     return { rows: [], summary: { owners: 0, total: 0, transferred: 0 } };
   }

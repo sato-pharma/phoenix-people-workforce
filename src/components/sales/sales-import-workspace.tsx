@@ -641,6 +641,9 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
             </CrmCard>
           ))}
         </CrmCardsOnPhone>
+        {failedIssues.length > 100 ? (
+          <p className="mt-3 text-xs text-phx-ink-soft">Showing the first 100 of {failedIssues.length} rows to fix.</p>
+        ) : null}
       </div>
     </AdminTableShell>
   );

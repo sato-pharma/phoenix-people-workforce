@@ -6,7 +6,8 @@ import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { aiSuggest, hasAiKey, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import { suggestProducts } from "@/lib/sales/normalizer/product-suggest";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin, toQueryError } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -38,16 +39,17 @@ export async function POST(request: Request) {
 
     if (kind === "product") {
       const distributorCode = String(body.distributorCode ?? "").trim();
-      const [refs, aliasResult] = await Promise.all([
+      // Paged: one read stops at a fixed row count with no error, and the mapping table only grows.
+      const [refs, aliasRows] = await Promise.all([
         loadSalesReferenceData({ includeCustomerBricks: false }),
-        getSupabaseAdmin()
-          .from("source_of_sales_product_aliases")
-          .select("alias,distributor_code,product_code")
-          .eq("active", true)
-          .limit(5000),
+        fetchAllRows<{ alias: string | null; distributor_code: string | null; product_code: string | null }>(
+          () => getSupabaseAdmin().from("source_of_sales_product_aliases").select("alias,distributor_code,product_code").eq("active", true),
+          "id",
+        ).catch((error: unknown) => {
+          throw new Error(`Could not read the product mappings: ${toQueryError(error).message}`);
+        }),
       ]);
-      if (aliasResult.error) throw new Error(`Could not read the product mappings: ${aliasResult.error.message}`);
-      const aliases = (aliasResult.data ?? []).map((row) => ({
+      const aliases = aliasRows.map((row) => ({
         alias: String(row.alias ?? ""),
         distributorCode: String(row.distributor_code ?? ""),
         productCode: String(row.product_code ?? ""),

@@ -80,11 +80,11 @@ import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { isUuid } from "@/lib/http/uuid";
 import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** How far back the page lists changes. */
 const HISTORY_DAYS = 60;
-const LIST_LIMIT = 200;
 const SEARCH_LIMIT = 25;
 const CATCH_ALL_CONTACT = 100000;
 const COLUMNS =
@@ -297,19 +297,24 @@ async function loadChange(changeId: string): Promise<ChangeRecord> {
 }
 
 async function fetchChanges(filter: "rep" | "manager" | "waiting", hrId: string, since: string): Promise<ChangeRecord[]> {
-  const base = getSupabaseAdmin().from(CRM_CONTACT_LIST_CHANGES_TABLE).select(COLUMNS);
-  const filtered =
-    filter === "rep"
+  // A fresh query per page: a PostgREST builder is used up once it is awaited.
+  const filtered = () => {
+    const base = getSupabaseAdmin().from(CRM_CONTACT_LIST_CHANGES_TABLE).select(COLUMNS);
+    return filter === "rep"
       ? base.in("rep_hr_id", hrIdLookupKeys(hrId)).gte("created_at", `${since}T00:00:00+02:00`)
       : filter === "manager"
         ? base.in("manager_hr_id", hrIdLookupKeys(hrId)).gte("created_at", `${since}T00:00:00+02:00`)
         : base.eq("status", "pending");
-  const { data, error } = await filtered.order("created_at", { ascending: false }).limit(LIST_LIMIT);
-  if (error) {
-    if (isMissingTable(error)) return [];
+  };
+  // Paged to the last change (newest first, the id as the tie-break): a waiting queue is every pending change.
+  let data: Array<Record<string, unknown>>;
+  try {
+    data = await fetchAllRows<Record<string, unknown>>(() => filtered().order("created_at", { ascending: false }), "id");
+  } catch (error) {
+    if (isMissingTable(error as { code?: string | null })) return [];
     throw error;
   }
-  return ((data ?? []) as Array<Record<string, unknown>>).map(toRecord);
+  return data.map(toRecord);
 }
 
 async function recordEvent(changeId: string, event: string, actorHrId: string | null, detail: Record<string, unknown>) {

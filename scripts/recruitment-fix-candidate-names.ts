@@ -4,6 +4,7 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { refuseUnknownFlags } from "./lib/refuse-arguments.mjs";
 
@@ -103,26 +104,36 @@ async function main(): Promise<void> {
   console.log(`Supabase project : ${requireEnv("NEXT_PUBLIC_SUPABASE_URL")}`);
   console.log(`Mode             : ${dryRun ? "DRY RUN — nothing is written" : "WRITING"}`);
 
-  const { data: extractionRows, error: extractionError } = await supabase
-    .from("ats_candidate_cv_extractions")
-    .select("candidate_id, extracted_fields, applied_fields, created_at")
-    .order("created_at", { ascending: true });
-  if (extractionError) throw extractionError;
+  // Both reads are paged: one read stops silently at 1,000 rows, and the latest-wins pass below
+  // would then name a candidate after an older extraction, or skip the newest candidates unseen.
+  type ExtractionRow = {
+    candidate_id: string;
+    extracted_fields: unknown;
+    applied_fields: unknown;
+    created_at: string;
+  };
+  const extractionRows = await fetchAllRows<ExtractionRow>(
+    () =>
+      supabase
+        .from("ats_candidate_cv_extractions")
+        .select("candidate_id, extracted_fields, applied_fields, created_at")
+        .order("created_at", { ascending: true }),
+    "id",
+  );
 
   // Latest extraction wins. Ascending order plus a plain set means the last one written stays.
-  const latest = new Map<string, (typeof extractionRows)[number]>();
-  for (const row of extractionRows ?? []) latest.set(String(row.candidate_id), row);
+  const latest = new Map<string, ExtractionRow>();
+  for (const row of extractionRows) latest.set(String(row.candidate_id), row);
 
-  const { data: candidates, error: candidateError } = await supabase
-    .from("ats_candidates")
-    .select("id, full_name, status")
-    .order("created_at", { ascending: true });
-  if (candidateError) throw candidateError;
+  const candidates = await fetchAllRows<{ id: string; full_name: string | null; status: string | null }>(
+    () => supabase.from("ats_candidates").select("id, full_name, status").order("created_at", { ascending: true }),
+    "id",
+  );
 
   const renames: Rename[] = [];
   const skips: Skip[] = [];
 
-  for (const candidate of candidates ?? []) {
+  for (const candidate of candidates) {
     const candidateId = String(candidate.id);
     const storedName = String(candidate.full_name ?? "");
     const extraction = latest.get(candidateId);
@@ -166,7 +177,7 @@ async function main(): Promise<void> {
     });
   }
 
-  console.log(`\nCandidates            : ${(candidates ?? []).length}`);
+  console.log(`\nCandidates            : ${candidates.length}`);
   console.log(`With an extraction    : ${latest.size}`);
   console.log(`WOULD RENAME          : ${renames.length}`);
   console.log(`Skipped               : ${skips.length}`);

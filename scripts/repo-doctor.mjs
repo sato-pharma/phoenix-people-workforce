@@ -1322,7 +1322,7 @@ if (!skipAuth) {
     // GoTrue caps per_page at 1000 and returns no total, so page until a short page arrives.
     const authUsers = [];
     let failure = null;
-    for (let page = 1; page <= 50; page++) {
+    for (let page = 1; ; page++) {
       const body = await getJson(baseUrl + "/auth/v1/admin/users?page=" + page + "&per_page=1000", headers);
       if (body instanceof Error) {
         failure = "could not list auth users — " + body.message;
@@ -1334,12 +1334,13 @@ if (!skipAuth) {
     }
 
     // PostgREST applies its own max-rows ceiling, so page this one too rather than trusting a
-    // single unbounded select. A short read here would invent orphans that do not exist.
+    // single unbounded select. A short read here would invent orphans that do not exist. The
+    // order is the table's key, so no account is skipped or read twice between pages.
     const accountHrIds = new Set();
     if (failure === null) {
-      for (let offset = 0; offset < 100000; offset += 1000) {
+      for (let offset = 0; ; offset += 1000) {
         const body = await getJson(
-          baseUrl + "/rest/v1/app_auth_users?select=hr_id&limit=1000&offset=" + offset,
+          baseUrl + "/rest/v1/app_auth_users?select=hr_id&order=login_id.asc&limit=1000&offset=" + offset,
           headers,
         );
         if (body instanceof Error) {

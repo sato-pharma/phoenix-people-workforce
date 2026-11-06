@@ -99,6 +99,9 @@ export function resolveWorkloadFreshness(input: {
   readonly livePmWorkload: number | null | undefined;
   /** The live read's own verdict, so an `unmapped` traveller is never judged. */
   readonly liveMatchStatus: string | null | undefined;
+  /** Trip days on which the live read found the traveller's own recorded meeting (trip-day-meetings.ts).
+   * Not visits — they never enter either total — but a day with one is a worked day. */
+  readonly liveMeetingDays?: number | null | undefined;
   readonly storedAmWorkload: number | null | undefined;
   /** When the stored verdict was stamped, ISO. Only used to date the headline. */
   readonly storedMatchedAt: string | null | undefined;
@@ -127,6 +130,19 @@ export function resolveWorkloadFreshness(input: {
   if (storedSaysNothingHappened && liveTotal > 0) {
     return {
       headline: `The stored verdict on this request is “no activity”${stampedOn(input.storedMatchedAt)}, but the CRM read above now finds ${plural(liveTotal, "visit")} in the same trip window. Visits reach the CRM during and after the trip, so a verdict stamped at submission can be out of date. The stored verdict is what the decision engine used — re-check before treating it as evidence the traveller did nothing.`,
+      liveTotal,
+      missedVisits,
+      storedTotal,
+      verdict: "stale",
+    };
+  }
+
+  // A meeting is not a visit, but it IS the day's work (owner, 2026-11-07, Weaam Gweed's 5 Oct trip:
+  // stamped at 13:09, her meeting saved at 13:54). "No activity" beside a recorded meeting is wrong.
+  const liveMeetingDays = count(input.liveMeetingDays);
+  if (storedSaysNothingHappened && liveMeetingDays > 0) {
+    return {
+      headline: `The stored verdict on this request is “no activity”${stampedOn(input.storedMatchedAt)}, but the CRM read above now finds a recorded meeting on ${plural(liveMeetingDays, "day")} of the trip. A meeting is not a field visit, but it is the day's work, so the trip is not a day with nothing done.`,
       liveTotal,
       missedVisits,
       storedTotal,

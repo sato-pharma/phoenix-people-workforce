@@ -98,7 +98,14 @@ export function runDeductionsDisputePicturesTests() {
     const comments = read("src/lib/deductions/comments.ts");
     assert.match(comments, /discardDisputeComment\(row\.id\)/, "a reply whose pictures failed to store is removed, never shown half-written");
     assert.match(comments, /return attachCommentAttachments\(await attachAuthorNames\(rows\.map\(mapCommentRow\)\)\)/, "the employee's own thread carries the pictures");
-    assert.match(comments, /attachCommentAttachments\(await attachAuthorNames\(\(\(data \?\? \[\]\) as CommentRow\[\]\)\.map\(mapCommentRow\)\)\)/, "the admin inbox carries the pictures");
+    // The admin inbox read pages through the whole history, so its rows are `rows`, not a one-shot `data`.
+    const inboxFrom = comments.indexOf("export async function listRecentDeductionsComments");
+    assert.ok(inboxFrom >= 0, "the admin inbox read exists");
+    const afterInbox = comments.slice(inboxFrom);
+    // The function ends at the first closing brace that starts a line AND is followed by a line break; the
+    // `}): Promise<…> {` that closes its parameter type also starts a line but is followed by text.
+    const inbox = afterInbox.slice(0, afterInbox.search(/\n\}\r?\n/));
+    assert.match(inbox, /attachCommentAttachments\(await attachAuthorNames\(rows\.map\(mapCommentRow\)\)\)/, "the admin inbox carries the pictures");
     assert.match(comments, /pictureCount > 0/, "the notification says pictures are attached, because an email cannot show them");
   }
 

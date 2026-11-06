@@ -759,33 +759,55 @@ async function loadAwareness(
   };
   const rows: Row[] = [];
   for (const part of chunks(areas)) {
-    const { data, error } = await db
-      .from("market_awareness_activities")
-      .select(
-        "id, title, status, activity_type_id, start_date, estimated_cost, amended_cost, actual_cost, " +
-          "expected_attendees, area_code, primary_line_id, rep_hr_id_at_approval",
-      )
-      .in("area_code", part)
-      // In the period, or still ahead of it: a review names what is already planned for the area.
-      .gte("start_date", bounds.from);
-    if (error) throw error;
+    // Paged, every activity of these areas: an area holds many, and a cut list drops cost from the pack.
     // The column list is two joined literals, which the client's select parser cannot read — so the
-    // rows are named here, once, against the columns the select above asks for.
-    rows.push(...((data ?? []) as unknown as Row[]));
+    // rows are named here, once, against the columns the select asks for.
+    const found = await fetchAllRows<Row>(
+      () =>
+        db
+          .from("market_awareness_activities")
+          .select(
+            "id, title, status, activity_type_id, start_date, estimated_cost, amended_cost, actual_cost, " +
+              "expected_attendees, area_code, primary_line_id, rep_hr_id_at_approval",
+          )
+          .in("area_code", part)
+          // In the period, or still ahead of it: a review names what is already planned for the area.
+          .gte("start_date", bounds.from),
+      "id",
+    );
+    rows.push(...found);
   }
   // A draft, a withdrawal or a refusal is nobody's activity.
   const live = rows.filter((row) => AWARENESS_COMMITTED.has(text(row.status)) || AWARENESS_PENDING.has(text(row.status)));
   if (live.length === 0) return [];
 
+  // The activities' bricks are read in chunks of ids and paged inside each chunk, so no list is cut.
+  // As before, a failed brick read leaves the bricks empty rather than failing the pack.
+  const loadActivityBricks = async (): Promise<{ activity_id: string; brick_id: string | null }[]> => {
+    const found: { activity_id: string; brick_id: string | null }[] = [];
+    try {
+      for (const part of chunks(live.map((row) => row.id))) {
+        found.push(
+          ...(await fetchAllRows<{ activity_id: string; brick_id: string | null }>(
+            () => db.from("market_awareness_activity_bricks").select("activity_id, brick_id").in("activity_id", part),
+            "id",
+          )),
+        );
+      }
+    } catch {
+      return [];
+    }
+    return found;
+  };
   const [lineRows, typeRows, brickRows] = await Promise.all([
     db.from("lines").select("id, name"),
     db.from("market_awareness_activity_types").select("id, name"),
-    db.from("market_awareness_activity_bricks").select("activity_id, brick_id").in("activity_id", live.map((row) => row.id)),
+    loadActivityBricks(),
   ]);
   const lineName = new Map(((lineRows.data ?? []) as { id: number; name: string | null }[]).map((r) => [Number(r.id), text(r.name)]));
   const typeName = new Map(((typeRows.data ?? []) as { id: number; name: string | null }[]).map((r) => [Number(r.id), text(r.name)]));
   const bricks = new Map<string, string[]>();
-  for (const row of (brickRows.data ?? []) as { activity_id: string; brick_id: string | null }[]) {
+  for (const row of brickRows) {
     const list = bricks.get(row.activity_id) ?? [];
     if (text(row.brick_id)) list.push(text(row.brick_id));
     bricks.set(row.activity_id, list);

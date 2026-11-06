@@ -17,6 +17,7 @@
 
 import { namesByHrId } from "@/lib/employees/names-by-hr-id";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 import { cleanPositionText } from "@/lib/recruitment/position-folder";
@@ -101,15 +102,25 @@ export function vacancyAreaName(row: Pick<VacancyRow, "areas" | "lines">): strin
  * every vacancy to fix one.
  */
 async function loadManagerSeatRows(): Promise<ManagerSeatRow[]> {
-  const { data, error } = await getSupabaseAdmin().from("au_v_org_tree").select(MANAGER_SEAT_COLUMNS);
-  if (error) {
+  try {
+    // Every seat, paged to a short page. The view holds one row per OCCUPANT (a handover seat has two),
+    // so the order is occupant then `seat_id`: together they are unique, which paging needs. A row a
+    // response cap dropped would leave its vacancy with no manager to stand in.
+    return await fetchAllRows<ManagerSeatRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("au_v_org_tree")
+          .select(MANAGER_SEAT_COLUMNS)
+          .order("occupant_hr_id", { ascending: true }),
+      "seat_id",
+    );
+  } catch (error) {
     logError("Vacancy manager escalation could not read the org tree", {
       error,
       labels: { event: "vacancy_manager_escalation_tree_read_failed" },
     });
     return [];
   }
-  return (data ?? []) as ManagerSeatRow[];
 }
 
 /**
@@ -177,11 +188,19 @@ async function withEscalatedManagers(
  * would produce one undifferentiated block and force the recruiter to read every row.
  */
 export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("position_vacancies")
-    .select("id,job_title,region_name,manager_hr_id,manager_name,seat_id,areas(name,code),lines(name,code)")
-    .eq("status", "open");
-  if (error) {
+  let rows: VacancyRow[];
+  try {
+    // Every open seat, paged to a short page by the unique `id`: the picker is the whole list, and a
+    // seat a response cap dropped could never be sent a CV.
+    rows = await fetchAllRows<VacancyRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("position_vacancies")
+          .select("id,job_title,region_name,manager_hr_id,manager_name,seat_id,areas(name,code),lines(name,code)")
+          .eq("status", "open"),
+      "id",
+    );
+  } catch (error) {
     // 42P01 = the table is absent. Not possible in production, but a preview database built from a
     // partial schema would otherwise take the whole screening page down over a picker — and a
     // screening page with no position picker is exactly what shipped yesterday and worked.
@@ -189,7 +208,6 @@ export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
     throw error;
   }
 
-  const rows = (data ?? []) as VacancyRow[];
   // Kept beside the options rather than on them. The seat id is how the organogram is entered, not
   // anything a recruiter reads, and putting a raw code on a type that crosses to the browser is how
   // one ends up rendered.
@@ -324,20 +342,25 @@ export async function resolveSentForPosition(input: {
  * stops being suggested once nothing is filed under it.
  */
 export async function listUsedPositionText(): Promise<{ jobTitles: string[]; areas: string[] }> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("ats_candidates")
-    .select("sent_for_job_title,sent_for_area")
-    .not("sent_for_job_title", "is", null);
-  if (error) {
+  const supabase = getSupabaseAdmin();
+  let data: Array<{ sent_for_job_title?: string | null; sent_for_area?: string | null }>;
+  try {
+    // Every send, paged to a short page by the unique `id`: a suggestion list read from the first
+    // response's worth would stop offering an existing spelling and invite a near-duplicate folder.
+    data = await fetchAllRows<{ sent_for_job_title?: string | null; sent_for_area?: string | null }>(
+      () => supabase.from("ats_candidates").select("sent_for_job_title,sent_for_area").not("sent_for_job_title", "is", null),
+      "id",
+    );
+  } catch (error) {
     // 42703 = the columns do not exist yet, which is the pre-migration state and not a fault of this
     // caller. No suggestions is a complete answer; a thrown error would take the picker down.
-    if ((error as { code?: string }).code === "42703") return { areas: [], jobTitles: [] };
+    if ((error as { code?: string } | null)?.code === "42703") return { areas: [], jobTitles: [] };
     throw error;
   }
 
   const jobTitles = new Set<string>();
   const areas = new Set<string>();
-  for (const row of (data ?? []) as Array<{ sent_for_job_title?: string | null; sent_for_area?: string | null }>) {
+  for (const row of data) {
     const title = String(row.sent_for_job_title ?? "").trim();
     const area = String(row.sent_for_area ?? "").trim();
     if (title) jobTitles.add(title);

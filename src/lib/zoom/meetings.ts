@@ -313,13 +313,15 @@ export function mergeZoomParticipants(rows: ReadonlyArray<Record<string, unknown
 async function pagedParticipants(config: ZoomConfig, path: string, fetchImpl: ZoomFetch): Promise<Array<Record<string, unknown>>> {
   const rows: Array<Record<string, unknown>> = [];
   let pageToken = "";
-  // An interview has a handful of rows; ten pages of 300 is a ceiling, not an expectation.
-  for (let page = 0; page < 10; page += 1) {
+  // Walks until Zoom sends no further token, with no page ceiling; a token it repeats would only loop, so that ends the walk.
+  const seenTokens = new Set<string>();
+  while (true) {
     const query = `?page_size=300${pageToken ? `&next_page_token=${encodeURIComponent(pageToken)}` : ""}`;
     const body = await zoomGetJson(config, `${path}${query}`, "Zoom did not give the attendance", fetchImpl);
     if (Array.isArray(body.participants)) rows.push(...(body.participants as Array<Record<string, unknown>>));
     pageToken = typeof body.next_page_token === "string" ? body.next_page_token : "";
-    if (!pageToken) break;
+    if (!pageToken || seenTokens.has(pageToken)) break;
+    seenTokens.add(pageToken);
   }
   return rows;
 }
