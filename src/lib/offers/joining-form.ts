@@ -353,6 +353,14 @@ export const JOINING_FORM_PHOTO_MAX_BYTES = 3 * 1024 * 1024;
 
 export const JOINING_FORM_PHOTO_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 
+/**
+ * What the page says when a phone hands it a photo it cannot open at all — not even after trying it as
+ * HEIC (6 Nov 2026: a candidate's gallery photo of the card's back reached the page as a broken tile
+ * and "Please choose a photo — a JPG, PNG or WEBP image", which told her nothing she could act on).
+ * The camera always gives the page a JPEG, so that is the way out it names.
+ */
+export const JOINING_FORM_PHOTO_UNREADABLE = "This photo could not be opened on this phone. Please take the photo again with the camera.";
+
 const PHOTO_MISSING: Record<JoiningFormPhotoField, string> = {
   idBack: "Please add a photo of the back of your national ID card.",
   idFront: "Please add a photo of the front of your national ID card.",

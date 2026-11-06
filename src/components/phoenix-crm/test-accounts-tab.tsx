@@ -16,7 +16,7 @@
 
 import { useId, useState } from "react";
 
-import { crmPost, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
+import { CrmRequestError, crmPost, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
 import {
   CrmButton,
   CrmCard,
@@ -62,7 +62,9 @@ export function TestApprovalsTab({ onChanged }: { onChanged?: () => void }) {
       {items.length > 0 ? (
         <ul className="grid min-w-0 gap-3 px-4 py-4 sm:px-5">
           {items.map((item) => (
-            <li className="min-w-0 border border-slate-200" key={item.key}>
+            // 🔴 Keyed by WHERE the entry is, not only which entry: one that moved on (another step, a new
+            // version) comes back as a fresh card, so no refusal from its old step is left printed on it.
+            <li className="min-w-0 border border-slate-200" key={cardKey(item)}>
               <TestApprovalCard
                 item={item}
                 onDecided={() => {
@@ -76,6 +78,11 @@ export function TestApprovalsTab({ onChanged }: { onChanged?: () => void }) {
       ) : null}
     </CrmPanel>
   );
+}
+
+/** Which entry, and the step and version it stands at — a card for an entry that moved on is a new card. */
+function cardKey(item: TestApprovalItem): string {
+  return [item.key, item.stage ?? "", item.version ?? "", item.requestedAt ?? ""].join("|");
 }
 
 function TestApprovalCard({ item, onDecided }: { item: TestApprovalItem; onDecided: () => void }) {
@@ -102,6 +109,12 @@ function TestApprovalCard({ item, onDecided }: { item: TestApprovalItem; onDecid
       setProblem("Choose the grade and the potential before approving.");
       return;
     }
+    // 🔴 A 409 means the entry moved on since this card was drawn — decided in another tab, or by an earlier
+    // press whose answer never came back (production, 4 Nov 2026: Rasha Sabry's week of 31 October was
+    // approved, the card stayed at the first step, and every later press was refused as "changed on
+    // another screen" with nothing on the page to reload). The list is read again at once, so the entry
+    // shows where it really is — at its next step, or gone — and is never decided again on old facts.
+    let movedOn = false;
     await action.run(
       label,
       () =>
@@ -120,9 +133,13 @@ function TestApprovalCard({ item, onDecided }: { item: TestApprovalItem; onDecid
             refusalReason: item.refusalReasons ? reason || null : undefined,
           },
           "decided",
-        ),
+        ).catch((error: unknown) => {
+          movedOn = error instanceof CrmRequestError && error.status === 409;
+          throw error;
+        }),
       () => onDecided(),
     );
+    if (movedOn) onDecided();
   }
 
   const busy = action.busy !== null;

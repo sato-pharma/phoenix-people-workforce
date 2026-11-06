@@ -444,6 +444,16 @@ async function run() {
   assert.match(pageSource, /"birthDate", \.\.\.JOINING_FORM_PHOTO_FIELDS, "mobileNumber"/, "the page requires both photos, in page order");
   assert.match(pageSource, /body\.append\("idFront", photos\.idFront\.file\)/, "and sends them");
   assert.ok(!/content-type/i.test(pageSource.slice(pageSource.indexOf("new FormData()"))), "with no content-type header, so the browser writes the boundary");
+  //    A HEIC photo is decoded on the phone (6 Nov 2026: a gallery photo of a card's back reached the page
+  //    as a broken tile and was refused) — by heic-to's CSP build, loaded only when a HEIC is picked.
+  assert.match(pageSource, /await import\("heic-to\/csp"\)/, "a HEIC photo is decoded by heic-to's CSP build");
+  assert.ok(!/from "heic-to/.test(pageSource), "loaded on the first HEIC alone, never with the page");
+  assert.match(pageSource, /const bitmap = await decodePhoto\(file\);\s*if \(!bitmap\) return \{ unreadable: true \};/, "a photo nothing opens is unreadable");
+  assert.match(
+    pageSource,
+    /const kept = "file" in prepared \? .+? : null;.+?\[field\]: kept \? undefined : JOINING_FORM_PHOTO_UNREADABLE/,
+    "and is never kept: the tile stays empty and names the camera",
+  );
 
   // 14. 🔴 EVERY MESSAGE THE CANDIDATE CAN READ HAS ITS ARABIC (owner, 2026-10-08: "change language
   //     between English and Arabic") — a new or reworded message cannot ship English-only.
@@ -454,6 +464,7 @@ async function run() {
   }
   for (const match of code("src/lib/offers/joining-form.ts").matchAll(/return "([^"]+\.)";/g)) said.add(match[1]);
   assert.ok(said.has("This photo is too large. Please take it again, or choose a smaller one."), "a returned message is swept too");
+  said.add(form.JOINING_FORM_PHOTO_UNREADABLE);
   for (const message of Object.values(form.JOINING_FORM_STATE_MESSAGE) as Array<{ body: string; title: string }>) {
     said.add(message.title);
     said.add(message.body);

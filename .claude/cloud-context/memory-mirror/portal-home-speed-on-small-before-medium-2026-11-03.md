@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: c898391b-8a9f-42ea-badf-0e6e8162c8ba
-  modified: 2026-11-03T12:19:28.887Z
+  modified: 2026-11-06T01:51:53.080Z
 ---
 
 Read from Railway's HTTP rows, 08:00 to 10:48 Cairo, the stretch with no release inside it on either day:
@@ -24,3 +24,9 @@ Tuesday 11:23 to 11:30 Cairo: 13 opens at median 8.2 s, worst 22 s, while the da
 **Why:** the next comparison needs these figures, and the raw rows are in a scratchpad that gets wiped.
 
 **How to apply:** count a real open as path `/employee-portals` with bytes of 30,000 or more, never by `rsc`, because Railway's path has no query string. Prove Medium first (`memTotalMb` about 4,000, [[db-host-sampler-postgres-started-at-moves-without-a-restart]]), compare the same clock hours on a working morning, and cut the window at the first release inside it.
+
+**Medium proven live, 6 Nov 2026 03:32 Cairo:** `memTotalMb` 3,864 (was 1,932), 2 cores, `pg_postmaster_start_time()` 03:27:24 Cairo, `shared_buffers` 1GB, `effective_cache_size` 3GB. The first working morning on Medium is **Saturday 7 Nov**, not Sunday: field work runs Saturday to Wednesday (visits by Cairo day: Sat 24 Oct 561, Sat 31 Oct 557; Thursdays 50 to 71; Fridays none but the 30 Oct import). Compare 08:00-10:48 against the figures above.
+
+**The script, re-measured 6 Nov:** `node "C:/Users/satoh/.claude/scripts/portal-home-speed/measure.mjs" 2026-11-07 2026-11-07@08:30` from the primary, backgrounded (it picks the serving release, cuts at the first release inside the window, 20-minute slices). It reproduced Monday exactly and Tuesday at median 2.67 s (2.69 above). Window 08:30-10:48, all Small: Mon 62 opens 3.14 s / tenth 6.34 s / 61% over 3 s; Tue 67, 2.61 s, 6.25 s, 36%; **Wed 4 Nov 70, 2.62 s, 5.48 s, 37%: the FAIREST baseline**, Small with the panel speedup already live, so Saturday against Wednesday is Medium's own effect (Wednesday 08:00-08:30 is lost to a docs-only release at 08:02). Controls Wed: pulse 366 ms, visits read 486 ms. The scheduled one-time run for Saturday 11:07 was REFUSED by the auto-mode classifier on 6 Nov; it runs when he sends the words.
+
+The restart itself, 6 Nov 03:27:20-03:27:24 Cairo: 3 server errors (a recruitment scheduled job, one sign-in check, one Monthly Closing open), 5 "Session verification is temporarily unavailable" rows in `app_error_events`, the app's own "production database restarted" alarm at 03:30, nothing after. Host 15 minutes later: 3,158 of 3,864 MB available, swap 0, CPU about 5%.

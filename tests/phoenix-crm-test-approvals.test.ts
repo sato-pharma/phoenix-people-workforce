@@ -259,6 +259,12 @@ export async function runPhoenixCrmTestApprovalTests(): Promise<void> {
     assert.match(tab, /useCrmGet<TestApprovalsView>\("\/api\/phoenix-crm\/test-approvals", "testApprovals"\)/);
     assert.doesNotMatch(tab, /<table/, "cards, never a table");
     assert.doesNotMatch(tab, /rounded-(?!none)/, "square corners");
+    // An entry that moved on (production, 4 Nov 2026: the 31 October week approved, the card left at its
+    // first step, every later press refused as "changed on another screen") is read again, never left stale.
+    assert.match(tab, /key=\{cardKey\(item\)\}/, "a card is keyed by where its entry stands, not only which entry");
+    assert.match(tab, /\[item\.key, item\.stage \?\? "", item\.version \?\? "", item\.requestedAt \?\? ""\]/, "the step and the version are in the key");
+    assert.match(tab, /movedOn = error instanceof CrmRequestError && error\.status === 409;/, "a 409 marks the entry as moved on");
+    assert.match(tab, /if \(movedOn\) onDecided\(\);/, "and the list is read again at once");
 
     const read = source("app/api/phoenix-crm/test-approvals/route.ts");
     assert.match(read, /assertPermission\(access, "phoenix_crm", "read"\)/);
