@@ -25,6 +25,8 @@ export async function POST(request: Request) {
   // (RESEND_API_KEY_2, _3 and _4, see src/lib/email/email-providers.ts) add RESEND_WEBHOOK_SECRET_2, _3 and _4,
   // and each per-module account (src/lib/email/module-sending-accounts.ts) adds RESEND_WEBHOOK_SECRET_<SUFFIX>
   // — without it that account's delivered/opened/clicked events would be rejected with a 401.
+  // Those accounts stopped SENDING on 2026-11-06 (one Resend, one Brevo — email-providers.ts); their
+  // secrets stay here so the late bounces and complaints of mail they already sent are still recorded.
   const secrets = [
     secret,
     process.env.RESEND_WEBHOOK_SECRET_2,

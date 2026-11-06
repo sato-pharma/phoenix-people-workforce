@@ -279,12 +279,11 @@ export async function runOfferReplyMailboxTests() {
         BREVO_API_KEY: "test-brevo-key",
         BREVO_EMAIL_FROM: notificationFrom,
         EMAIL_FAILOVER_ENABLED: undefined,
-        RESEND_API_KEY_2: "test-resend-key-2",
-        RESEND_EMAIL_FROM_2: "phoenix@send2.satopharma.com",
       },
       async () => {
         const providers = resolveEmailProviders();
-        for (const name of ["resend-2", "brevo"]) {
+        // The only backup since 2026-11-06 is Brevo (one Resend, one Brevo — email-providers.ts).
+        for (const name of ["brevo"]) {
           const provider = providers.find((candidate) => candidate.name === name);
           assert.ok(provider, `${name} must be in the chain for this assertion to mean anything`);
           const result = await provider.send(offerEmail(offerFrom));

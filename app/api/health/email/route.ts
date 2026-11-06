@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail } from "@/config/system-settings";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { callerMayReadEmailHealthDetail, publicEmailHealthBody } from "@/lib/email/email-health-access";
-import { moduleSendingAccountStatus, resolveEmailProviders } from "@/lib/email/email-providers";
+import { resolveEmailProviders } from "@/lib/email/email-providers";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -64,11 +64,9 @@ export async function GET(request: Request) {
   return NextResponse.json(
     {
       checks,
-      // The failover chain as production will walk it (names only, never a key) — shows at a glance
-      // whether the extra Resend and Brevo accounts are switched on.
+      // The failover chain as production will walk it (names only, never a key): "resend", then
+      // "brevo" when the fallback is switched on — the only two accounts since 2026-11-06.
       providerChain: resolveEmailProviders().map((provider) => provider.name),
-      // The dedicated per-module accounts (sales first) and whether each is switched on — names only.
-      moduleAccounts: moduleSendingAccountStatus(),
       deliveryMode,
       forceTesting,
       status,
