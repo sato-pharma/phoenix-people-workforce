@@ -8,12 +8,13 @@ import { cairoTodayIso, resolveDefaultRange } from "@/lib/daily-deductions/range
 
 export const dynamic = "force-dynamic";
 
-// WHO MAY OPEN THIS PAGE. The same set as the month-final Deductions page — the
-// two surfaces are two views of the same money — and NARROWER than the matrix on
-// purpose (the Finance Manager keeps deductions:read for payroll surfaces but is
-// revoked from this reporting screen; add a role by NAME or not at all). Only the
-// Super Admin may compute and release; CEO and HR Operations read.
-const VIEW_ROLES = new Set(["Super Admin", "CEO", "HR Operations"]);
+// WHO MAY OPEN THIS PAGE — a role by NAME or not at all, never canAccess(deductions:read), which
+// would also hand back the month Deductions screen the Finance Manager stays revoked from. Only the
+// Super Admin may compute and release; CEO, HR Operations and the Finance Manager READ (owner,
+// 2026-11-07, asked whether the Finance Manager should see this page: "Open the page read-only").
+// Read-only is enforced on the server — /compute asserts deductions:create plus Super Admin, and
+// /release, /withdraw, /supersede and POST /publish assert deductions:approve plus Super Admin.
+const VIEW_ROLES = new Set(["Super Admin", "CEO", "HR Operations", "Finance Manager"]);
 
 export default async function AdminDailyDeductionsPage() {
   const access = await resolveAccessContextFromPage();
