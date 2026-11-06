@@ -196,6 +196,7 @@ import { runOutstationDecisionTests } from "./outstation-decision.test.ts";
 import { runOutstationTerritoryFlagIsInvertedTests } from "./outstation-territory-flag-is-inverted.test.ts";
 import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
 import { runOutstationTripWorkloadPharmaciesTests } from "./outstation-trip-workload-pharmacies.test.ts";
+import { runOutstationPartnerRepNameTests } from "./outstation-partner-rep-name.test.ts";
 import { runExpenseReviewRowHeightTests } from "./expense-review-row-height.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
 import { runOutstationExpenseTemplatePharmaciesTests } from "./outstation-expense-template-pharmacies.test.ts";
@@ -9458,6 +9459,10 @@ await runTest("a stored outstation workload verdict that the CRM has since contr
 await runTest(
   "the outstation trip workload is AM · PM · Pharmacies: a pharmacy visit is never counted inside AM or PM (the trip counter buckets with addVisitToSplit, the rollup and the stored evidence carry the third figure apart), a pharmacy-only trip is a worked trip and never 'no activity', a pre-split row's NULL figure is never read as 0, and decision.ts stays pharmacy-blind",
   runOutstationTripWorkloadPharmaciesTests,
+);
+await runTest(
+  "a manager's joint visits in Expense Approvals name the rep he was with — a resigned rep by the row's own hr id, a handed-over account's earlier holder as 'Previous holder ( territory )', never the later holder; the borrowed check-in wears the same name",
+  runOutstationPartnerRepNameTests,
 );
 await runTest(
   "the expenses review row height comes from the HR DECISION column, not the person column (all five body cells py-2, the headers keep py-3, the fieldset gap is 1.5, and every approval control keeps its full size and unconditional reason field)",

@@ -18,6 +18,7 @@
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { checkinAgentKey } from "@/lib/crm/checkin-match";
+import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 import { addVisitToSplit } from "@/lib/crm/visit-count-buckets";
@@ -30,6 +31,15 @@ export type RepVisitDetail = {
   contactKind: VisitContactKind;
   customer: string | null;
   kind: "campaign" | "regular";
+  /**
+   * On a "partner" visit, the rep who LOGGED it — the person this one was in the field with (owner,
+   * 2026-11-06: a manager's visits in Expense Approvals show the rep's name, even a rep who has
+   * since resigned). Named by the row's own hr id, which the sync attributes inside the rep's tenure
+   * only; a row with no hr id whose label names only people hired later is a handed-over account's
+   * earlier holder and reads "Previous holder ( territory )", never the later holder's name. Null on
+   * the person's own visits, or when no name can be given honestly. Display only — never counted.
+   */
+  repName: string | null;
   role: "agent" | "partner";
   submittedAt: string | null;
 };
@@ -127,6 +137,9 @@ export type RepVisitWorkload = {
 type WorkloadVisitRow = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
+  /** The door's name for the logger: the Phoenix display name when the row has an hr id, else the
+   * vendor's label — which on a handed-over account names its LATER holder (see repName). */
+  agent_name: string | null;
   ampm: string | null;
   contact_name: string | null;
   crm_save_date: string | null;
@@ -139,6 +152,25 @@ type WorkloadVisitRow = {
   visit_date: string;
   visit_type: number | null;
 };
+
+/**
+ * The rep's name on a visit this person was the double-visit PARTNER on — the person who logged it,
+ * resigned or not. By the row's hr id (the sync attributes a row inside the rep's tenure only), through
+ * the directory's display name, else the door's own name for that hr id. Null on the person's own
+ * visits, and on a row with no hr id: its vendor label may name the account's LATER holder, so that
+ * one is decided against hire dates after the loop (isHandedOverLabel), never here. Pure, for the test.
+ */
+export function partnerRepName(input: {
+  agentHrId: string | null | undefined;
+  nameByHrKey: ReadonlyMap<string, string>;
+  role: RepVisitDetail["role"];
+  vendorLabel: string | null | undefined;
+}): string | null {
+  if (input.role !== "partner") return null;
+  const key = canonicalHrIdKey(input.agentHrId);
+  if (!key) return null;
+  return input.nameByHrKey.get(key) ?? (input.vendorLabel?.trim() || null);
+}
 
 function eachDateInclusive(startIso: string, endIso: string): string[] {
   const start = startIso.slice(0, 10);
@@ -222,7 +254,7 @@ export async function getRepTripVisitWorkload(input: {
   // so his outstation trip carried no workload evidence however many visits he logged.
   const data = await queryVisits<WorkloadVisitRow>({
     columns:
-      "agent_crm_id, agent_hr_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, source, speciality, visit_date, visit_type",
+      "agent_crm_id, agent_hr_id, agent_name, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, source, speciality, visit_date, visit_type",
     dateFrom: start,
     dateTo: end,
     includeResignedAgents: true,
@@ -249,6 +281,17 @@ export async function getRepTripVisitWorkload(input: {
   // rep(s) they were double with). `ownerIdentity` remembers which ids each key stands for.
   const checkinOwnersByDate = new Map<string, Set<string>>();
   const ownerIdentity = new Map<string, { crmId: number | null; hrId: string | null }>();
+
+  // The rep's name on a partner visit — resigned people included (the directory read above is
+  // includeInactive). `repNameByDayOwner` keeps the name per day and logger, so a borrowed check-in
+  // is labelled with the same person as the visit it came from, never the account's later holder.
+  const nameByHrKey = new Map<string, string>();
+  for (const emp of directory) {
+    const empHrKey = canonicalHrIdKey(emp.hrId);
+    if (empHrKey && emp.displayName && !nameByHrKey.has(empHrKey)) nameByHrKey.set(empHrKey, emp.displayName);
+  }
+  const repNameByDayOwner = new Map<string, string>();
+  const unattributedPartnerVisits: Array<{ crmId: number; day: string; label: string; ownerKey: string; visit: RepVisitDetail }> = [];
 
   for (const row of data) {
     const day = String(row.visit_date ?? "").slice(0, 10);
@@ -289,15 +332,44 @@ export async function getRepTripVisitWorkload(input: {
       }
     }
 
-    entry.visits.push({
+    const role: RepVisitDetail["role"] = submitterKey === selfKey ? "agent" : "partner";
+    const agentHrKey = canonicalHrIdKey(row.agent_hr_id);
+    const vendorLabel = row.agent_name?.trim() || null;
+    const repName = partnerRepName({ agentHrId: row.agent_hr_id, nameByHrKey, role, vendorLabel });
+    const visit: RepVisitDetail = {
       ampm: row.ampm ?? null,
       contact: row.contact_name ?? null,
       contactKind,
       customer: row.customer_name ?? null,
       kind: isRegular ? "regular" : "campaign",
-      role: submitterKey === selfKey ? "agent" : "partner",
+      repName,
+      role,
       submittedAt: row.crm_save_date ?? null,
-    });
+    };
+    entry.visits.push(visit);
+    if (repName && submitterKey != null) repNameByDayOwner.set(`${day}|${submitterKey}`, repName);
+    if (role === "partner" && !agentHrKey && vendorLabel && submitterCrm != null && Number.isFinite(submitterCrm) && submitterKey != null) {
+      unattributedPartnerVisits.push({ crmId: submitterCrm, day, label: vendorLabel, ownerKey: submitterKey, visit });
+    }
+  }
+
+  // A partner visit with no hr id carries only the vendor's label, and on a handed-over CRM account
+  // that label names the LATER holder. Phoenix's hire dates decide (identity.ts): a label naming only
+  // people not yet employed that day reads "Previous holder ( territory )"; any other label is the only
+  // name there is and is shown as the vendor sent it. Best-effort — if the maps cannot be read the
+  // visit names nobody rather than risk naming the wrong person.
+  if (unattributedPartnerVisits.length > 0) {
+    const identityMaps = await loadCrmIdentityMaps().catch(() => null);
+    if (identityMaps) {
+      for (const pending of unattributedPartnerVisits) {
+        const handedOver = isHandedOverLabel(
+          { crmId: pending.crmId, label: pending.label, visitDate: pending.day, visitType: null },
+          identityMaps,
+        );
+        pending.visit.repName = handedOver ? previousHolderLabel(pending.label) : pending.label;
+        repNameByDayOwner.set(`${pending.day}|${pending.ownerKey}`, pending.visit.repName);
+      }
+    }
   }
 
   // Best-effort: pull check-ins for every submitter this person shares a visit with (self + the
@@ -345,7 +417,7 @@ export async function getRepTripVisitWorkload(input: {
       contact: row.contact_name ?? null,
       lat: row.lat ?? null,
       lon: row.lon ?? null,
-      via: owner === selfKey ? null : nameByOwnerKey.get(owner) ?? `rep ${ownerLabel}`,
+      via: owner === selfKey ? null : repNameByDayOwner.get(`${day}|${owner}`) ?? nameByOwnerKey.get(owner) ?? `rep ${ownerLabel}`,
     });
   }
 
