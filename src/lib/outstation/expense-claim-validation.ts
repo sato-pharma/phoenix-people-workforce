@@ -209,7 +209,9 @@ export async function getOutstationClaimValidation(
 
     // The only vendor field with a real clock. `visit_date_time` is a midnight placeholder on
     // ~100% of rows and must never anchor a time comparison.
+    // A recorded meeting is listed among the day's rows but is never a visit (trip-day-meetings.ts).
     const firstVisitSavedAt = (day?.visits ?? [])
+      .filter((visit) => visit.kind !== "meeting")
       .map((visit) => visit.submittedAt ?? null)
       .filter((value): value is string => Boolean(value))
       .sort()[0] ?? null;

@@ -153,7 +153,7 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.match(workspace, /setFilters\(\(current\) => \(\{ \.\.\.NO_EXPENSE_APPROVAL_FILTERS, sort: current\.sort \}\)\)/, "Clear all keeps the order");
 
   // The idle-day offer: lifted from the field-work read, shown in the decision box, applied only on a click.
-  assert.match(review, /onIdleDays\(record\.tripId, \{ idleDays: days\.filter\(\(day\) => day\.total === 0\)\.length, tripDays: days\.length \}\)/, "HEADLINE: the review hands up the idle days its tile states");
+  assert.match(review, /onIdleDays\(record\.tripId, \{ idleDays: days\.filter\(\(day\) => !isWorkedTripDay\(day\)\)\.length, tripDays: days\.length \}\)/, "HEADLINE: the review hands up the idle days its tile states — a meeting day is worked, never idle (owner, 2026-11-07)");
   assert.match(review, /workload\.matchStatus === "unmapped"\) return;/, "no CRM identity is not an idle day");
   assert.match(workspace, /onIdleDays=\{recordIdleDays\}/);
   assert.match(workspace, /idle: selected \? \(idleByTrip\[selected\.tripId\] \?\? null\) : null,/);

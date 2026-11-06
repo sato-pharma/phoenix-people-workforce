@@ -2916,6 +2916,7 @@ import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts"
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
+import { runOutstationTripDayMeetingsTests } from "./outstation-trip-day-meetings.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
@@ -11855,6 +11856,10 @@ await runTest(
 await runTest(
   "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and applied only on a click, never over the reviewer's own reason",
   runOutstationExpenseApprovalsQueueTests,
+);
+await runTest(
+  "a recorded meeting makes its trip day worked, never \"no field activity\", and never a visit: the live read, the stamp, the morning re-read, the freshness warning, the review screen and the idle-day offer all read it through the one rule",
+  runOutstationTripDayMeetingsTests,
 );
 await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
 await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);

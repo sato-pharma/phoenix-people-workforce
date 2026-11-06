@@ -44,6 +44,8 @@ export type RolledUpWorkloadDay = {
   /** Everyone whose visits were counted into this day, root first. For the audit trail. */
   countedHrIds: string[];
   date: string;
+  /** The employee recorded a meeting that day (set by the capture, never by the rollup). */
+  meeting?: boolean;
   pharmacies: number;
   pm: number;
 };
@@ -62,9 +64,14 @@ export type RolledUpWorkload = {
  */
 export function capturedWorkloadMatchStatus(workload: {
   amWorkload: number;
+  /** The employee's own recorded meetings (trip-day-meetings.ts). Absent = none. */
+  meetingDates?: readonly string[];
   pharmacyWorkload: number;
   pmWorkload: number;
 }): "matched" | "no_activity" {
+  // A recorded meeting is the day's work, not a visit (owner, 2026-11-07): it never adds to the three
+  // figures, but a trip whose only entry was a meeting is never stamped "no activity".
+  if ((workload.meetingDates?.length ?? 0) > 0) return "matched";
   return workload.amWorkload + workload.pmWorkload + workload.pharmacyWorkload > 0 ? "matched" : "no_activity";
 }
 

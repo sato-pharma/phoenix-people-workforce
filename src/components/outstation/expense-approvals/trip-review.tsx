@@ -33,6 +33,7 @@ import {
   formatClock,
 } from "@/components/outstation/trip-workload-evidence";
 import { Badge } from "@/components/ui/badge";
+import { isWorkedTripDay } from "@/lib/crm/trip-day-meetings";
 import { formatDateTimeValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { isRejectedStatus } from "@/lib/outstation/approval-state";
 import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
@@ -113,7 +114,8 @@ export function TripReview({
     if (!onIdleDays || !workload || workload.matchStatus === "unmapped") return;
     const days = workload.dateBreakdown;
     if (days.length === 0) return;
-    onIdleDays(record.tripId, { idleDays: days.filter((day) => day.total === 0).length, tripDays: days.length });
+    // A meeting day is worked (trip-day-meetings.ts): no idle-day allowance share is offered for it.
+    onIdleDays(record.tripId, { idleDays: days.filter((day) => !isWorkedTripDay(day)).length, tripDays: days.length });
   }, [onIdleDays, record.tripId, workload]);
 
   const span = tripSpan(record.date, record.toDate);
@@ -221,13 +223,27 @@ export function TripReview({
     if (workload === undefined) return { line: "Reading the CRM…", tone: "loading" };
     if (workload === null) return { line: "The workload evidence could not be loaded.", tone: "warn" };
     const days = workload.dateBreakdown;
-    const idle = days.filter((day) => day.total === 0).length;
+    const idle = days.filter((day) => !isWorkedTripDay(day)).length;
     const total = days.reduce((sum, day) => sum + day.total, 0);
+    const meetingDays = days.filter((day) => day.total === 0 && isWorkedTripDay(day)).length;
     if (workload.matchStatus === "unmapped") return { line: "No CRM identity is mapped for this employee.", tone: "warn" };
     if (days.length > 0 && idle === days.length) {
       return { line: days.length > 1 ? `No field activity on any of the ${formatNumberValue(days.length)} days.` : "No field activity on this day.", tone: "danger" };
     }
     if (idle > 0) return { line: `${formatNumberValue(idle)} of ${formatNumberValue(days.length)} days with no field activity.`, tone: "warn" };
+    // A meeting is the day's work but not a field visit (owner, 2026-11-07): said plainly, never in rose.
+    if (meetingDays > 0) {
+      if (total === 0) {
+        return {
+          line: days.length > 1 ? "A meeting recorded on every day · no field visits." : "A meeting recorded on the day · no field visits.",
+          tone: "neutral",
+        };
+      }
+      return {
+        line: `Worked every day · ${formatNumberValue(total)} field visits, and a meeting on ${formatNumberValue(meetingDays)} day${meetingDays === 1 ? "" : "s"}.`,
+        tone: "ok",
+      };
+    }
     return {
       line: days.length > 1
         ? `Visits on every day · ${formatNumberValue(total)} field visits.`
