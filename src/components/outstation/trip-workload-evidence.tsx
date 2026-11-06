@@ -12,6 +12,7 @@ import {
   pharmacyTileFigure,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
+import { isWorkedTripDay } from "@/lib/crm/trip-day-meetings";
 import { humanizeCode } from "@/lib/format/code-label";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
@@ -43,6 +44,9 @@ export type WorkloadEvidenceDay = {
   campaign: number;
   checkins: WorkloadCheckinDetail[];
   date: string;
+  /** The traveller's own recorded meetings that day — never a visit, but the day's work
+   * (trip-day-meetings.ts). Optional so a payload from a server built before it still renders. */
+  meetings?: number;
   other: number;
   /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional only so a payload from
    * a server built before the split still renders (it reads 0 there). */
@@ -71,6 +75,8 @@ export type TripWorkloadEvidence = {
   idleDates: string[];
   matchStatus: string;
   matchedDates: string[];
+  /** Trip days with a recorded meeting (trip-day-meetings.ts). */
+  meetingDays?: number;
   otherVisits: number;
   pharmacyWorkload?: number;
   /** Of the trip's visits, how many are Phoenix CRM's own — display only, see evidenceSplit. */
@@ -131,7 +137,11 @@ function DayDetail({
                   <span
                     className={cn(
                       "shrink-0 px-1 py-0.5 text-phx-3xs font-bold uppercase",
-                      visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
+                      visit.kind === "campaign"
+                        ? "bg-violet-100 text-violet-700"
+                        : visit.kind === "meeting"
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-sky-100 text-sky-700",
                     )}
                   >
                     {visit.kind}
@@ -157,7 +167,7 @@ function DayDetail({
                     different clock from when he physically checked in. */}
                 <span className="flex shrink-0 flex-col items-end leading-tight">
                   <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                    Saved visit time
+                    {visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}
                   </span>
                   <span className="whitespace-nowrap font-mono text-slate-500">
                     {formatClock(visit.submittedAt)}
@@ -247,7 +257,9 @@ function TripDayRow({
   const visits = day.visits ?? [];
   const checkins = day.checkins ?? [];
   const hasDetail = visits.length > 0 || checkins.length > 0;
-  const idle = day.total === 0;
+  // A day whose only entry is a recorded meeting is worked, never idle (owner, 2026-11-07).
+  const idle = !isWorkedTripDay(day);
+  const meetingOnly = !idle && day.total === 0;
 
   const figures = (
     <span className="grid grid-cols-3 gap-x-3 font-mono text-xs text-slate-700 sm:flex sm:flex-wrap sm:gap-x-4">
@@ -290,6 +302,8 @@ function TripDayRow({
       <span className="flex items-center gap-2 justify-self-end">
         {idle ? (
           <span className="whitespace-nowrap text-xs font-black text-rose-600">No activity</span>
+        ) : meetingOnly ? (
+          <span className="whitespace-nowrap text-xs font-bold text-slate-700">Meeting recorded</span>
         ) : (
           <span className="whitespace-nowrap text-xs font-bold text-emerald-700">{fmt(day.total)} field visits</span>
         )}
@@ -351,13 +365,14 @@ function TripDayOpen({
 }) {
   const visits = day.visits ?? [];
   const checkins = day.checkins ?? [];
-  const idle = day.total === 0;
+  const idle = !isWorkedTripDay(day);
+  const meetingOnly = !idle && day.total === 0;
   return (
     <li className="border border-slate-200 bg-white">
       <div
         className={cn(
           "flex flex-wrap items-center gap-x-4 gap-y-1.5 border-l-[3px] px-3 py-2.5",
-          idle ? "border-l-rose-500 bg-rose-50" : "border-l-emerald-500 bg-slate-50",
+          idle ? "border-l-rose-500 bg-rose-50" : meetingOnly ? "border-l-slate-400 bg-slate-50" : "border-l-emerald-500 bg-slate-50",
         )}
       >
         <span className="min-w-0">
@@ -370,6 +385,8 @@ function TripDayOpen({
         </span>
         {idle ? (
           <span className="whitespace-nowrap text-xs font-black text-rose-600">No field activity</span>
+        ) : meetingOnly ? (
+          <span className="whitespace-nowrap text-xs font-bold text-slate-700">Meeting recorded · no field visits</span>
         ) : (
           <span className="whitespace-nowrap text-xs font-bold text-emerald-700">{fmt(day.total)} field visits</span>
         )}
@@ -574,13 +591,14 @@ export function TripWorkloadEvidencePanel({
   const declaredTotal = declaredAm + declaredPm + (declaredPharmacies ?? 0);
   const actualTotal = data.amWorkload + data.pmWorkload + actualPharmacies;
   const mismatch = declaredTotal !== actualTotal;
-  const idleDayCount = data.dateBreakdown.filter((day) => day.total === 0).length;
+  const idleDayCount = data.dateBreakdown.filter((day) => !isWorkedTripDay(day)).length;
   const tone = statusTone[data.matchStatus] ?? "neutral";
   // Both sides are in hand here — the stamped verdict as a prop, the live read just fetched — so
   // this is where a stored "no activity" that the CRM has since contradicted gets named.
   const freshness = resolveWorkloadFreshness({
     liveAmWorkload: data.amWorkload,
     liveMatchStatus: data.matchStatus,
+    liveMeetingDays: data.meetingDays ?? 0,
     livePharmacyWorkload: actualPharmacies,
     livePmWorkload: data.pmWorkload,
     storedAmWorkload: declaredAm,

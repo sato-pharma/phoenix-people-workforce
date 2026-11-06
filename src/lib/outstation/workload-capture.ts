@@ -30,6 +30,9 @@ export type OutstationWorkloadCapture =
       amWorkload: number;
       captured: true;
       days: RolledUpWorkloadDay[];
+      /** The employee's OWN recorded meetings, by date — not visits, but the day's work (owner,
+       * 2026-11-07, trip-day-meetings.ts). A partner's meeting is never counted here. */
+      meetingDates?: string[];
       /** Everyone whose visits contributed, across the whole trip. For the evidence snapshot. */
       contributingHrIds: string[];
       hops: number;
@@ -94,6 +97,7 @@ export async function captureOutstationTripWorkload(input: {
       for (const list of Object.values(byDate)) for (const partner of list) people.add(partner);
     }
 
+    const meetingDates = new Set<string>();
     const workloadByPerson: WorkloadByPerson = Object.fromEntries(
       await Promise.all(
         Array.from(people).map(async (hrId) => {
@@ -102,6 +106,9 @@ export async function captureOutstationTripWorkload(input: {
             tripEndDate: input.tripEndDate,
             tripStartDate: input.tripStartDate,
           });
+          if (hrId === employeeHrId) {
+            for (const day of workload.dateBreakdown) if ((day.meetings ?? 0) > 0) meetingDates.add(day.date);
+          }
           return [
             hrId,
             workload.dateBreakdown.map((day) => ({ am: day.am, date: day.date, pharmacies: day.pharmacies, pm: day.pm })),
@@ -126,8 +133,9 @@ export async function captureOutstationTripWorkload(input: {
       amWorkload: rolled.amWorkload,
       captured: true,
       contributingHrIds,
-      days: rolled.days,
+      days: rolled.days.map((day) => (meetingDates.has(day.date) ? { ...day, meeting: true } : day)),
       hops,
+      meetingDates: [...meetingDates].sort(),
       pharmacyWorkload: rolled.pharmacyWorkload,
       pmWorkload: rolled.pmWorkload,
       sourceLabel:
