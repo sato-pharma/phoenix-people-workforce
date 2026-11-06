@@ -170,7 +170,7 @@ function DayRow({ day, hrId }: { day: CompanyActivityDayRow; hrId: string }) {
             </span>
           ) : null}
           {day.hasNoSignal ? (
-            <span className="whitespace-nowrap text-phx-xs font-semibold text-amber-600">⚠ no device / no CRM id</span>
+            <span className="whitespace-nowrap text-phx-xs font-semibold text-amber-600">⚠ no device / no Phoenix CRM seat</span>
           ) : null}
         </div>
         {day.crmVisitCount > 0 ? (
@@ -257,7 +257,7 @@ export function EmployeeDayDetailView({
 
       {summary && (!summary.hasAttendanceChannel || !summary.hasCrmChannel) ? (
         <p className="rounded-sm border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-phx-xs font-medium leading-5 text-amber-900">
-          <strong className="font-bold">{employee.displayName} has {[!summary.hasAttendanceChannel && "no fingerprint device", !summary.hasCrmChannel && "no resolved CRM identity"].filter(Boolean).join(" and ")} on file.</strong>{" "}
+          <strong className="font-bold">{employee.displayName} has {[!summary.hasAttendanceChannel && "no fingerprint device", !summary.hasCrmChannel && "no Phoenix CRM seat"].filter(Boolean).join(" and ")} on file.</strong>{" "}
           Every day below marked &ldquo;No Signal Available&rdquo; reflects that gap in what the system can see — it is not evidence
           that nothing happened.
         </p>

@@ -406,20 +406,20 @@ const NOTES_COLUMNS: TableColumn[] = [
  * its table at row 4 directly, the same row monthly-closing-export.ts itself starts at. */
 function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport): ExcelJS.Worksheet {
   const rows: CellValue[][] = [
-    ["Campaign Visit", "A CRM visit logged with type \"Campaign/Prospection\" (iReports360 code -8) — the owner's specific ask, distinct from the broader set of non-desk CRM activity types (meetings, training, etc.) that also count as a CRM Field Visit day."],
+    ["Campaign Visit", "A CRM visit logged with type \"Campaign/Prospection\" (visit type code -8) — the owner's specific ask, distinct from the broader set of non-desk CRM activity types (meetings, training, etc.) that also count as a CRM Field Visit day."],
     ["Campaign Visits vs. Campaign Visit Days", "\"Campaign Visits\" sums every campaign visit in range; \"Campaign Visit Days\" counts the distinct days that had at least one. Read together, not as duplicates — e.g. 6 visits over 2 days (3/day, concentrated) reads very differently from 6 visits over 6 days (1/day, spread out), even though the visit total is identical. Cover states this comparison directly for the whole filtered roster."],
     ["CRM Field Visit", "A day with a real CRM-logged visit — either a Regular customer visit or one of the CP-type activities (Conference, Group Meeting, Campaign, Training, Meeting, Traveling, Health Day, and the vendor's undocumented-but-classified codes). Counted as proof of field work, the same rule the payroll digest engine uses."],
     ["CRM Leave (Annual Vacation)", "The CRM itself recorded an Annual Vacation entry that day, with no office punch and no CRM field visit — a CRM-confirmed leave signal, independent of whether a matching Phoenix leave request exists."],
     ["Office Present", "At least one fingerprint device punch was recorded for this employee on this day."],
     ["Leave Approved / Leave Pending", "From Phoenix's own leave requests (v2_vacation_requests), shown with their REAL status — Approved, Pending Manager, Pending HR, Submitted, or Needs Assignment — never collapsed to a payroll-style yes/no. A rejected or cancelled request is not shown as leave at all."],
     ["No Entry", "A working day (not weekly-off, not a holiday, not in the future) with no office punch, no CRM visit, no device outage, and no leave request on record."],
-    ["No Signal Available", "This employee has neither an active fingerprint device mapping nor a resolved CRM identity — the system has no way to observe them at all that day. Distinct from No Entry, which means the systems could see them and saw nothing."],
+    ["No Signal Available", "This employee has neither an active fingerprint device mapping nor a Phoenix CRM seat — the system has no way to observe them at all that day. Distinct from No Entry, which means the systems could see them and saw nothing."],
     ["Device Outage", "A company-wide fingerprint device/sync outage was detected for this date — no punch data is available for ANYONE that day, so an empty punch record here is not necessarily this employee's absence."],
     ["Conflict", "This day shows evidence of BOTH physical presence (an office punch or a real CRM field visit) AND a leave signal (CRM leave or a Phoenix leave request) covering the same date. Surfaced for review, never auto-resolved — this report exists to show what actually happened, not to make a payroll judgment."],
     ["Weekly Off / Holiday", "Not counted as a working day for the No Entry / No Signal tallies, but still listed in Daily Detail so the day-by-day picture is never missing a row."],
     ["No Longer Employed", "This employee's employment ended before this date (their own last working date falls before it). Not counted as a working day, a No Entry, or a No Signal day for this employee — a leaver does not get judged on whether they showed up somewhere they no longer work. Still listed in Daily Detail for every day in range, and any real punch/CRM/leave data actually recorded on the date (a rare late-sync edge case) is still shown in the row's own detail columns."],
     ["Severity banding (Summary)", "No Entry / No Signal / Conflict Days in the per-employee table are banded green (0), amber (1-2), or red (3+) — a per-employee scale. The same totals company-wide, on Cover, are not banded the same way: a company-wide sum banded on a per-employee threshold would read as red almost regardless of the real distribution."],
-    ["Data freshness", "The CRM (iReports360) mirror can lag live field activity by up to roughly two days — a just-elapsed date showing No Entry is not yet a confirmed gap."],
+    ["Data freshness", "A Phoenix CRM visit captured offline reaches this report only once it syncs, still dated the day it was captured — a just-elapsed date showing No Entry is not yet a confirmed gap."],
     ["Scope", "This report is NOT a payroll report. It exists for awareness and accuracy review only; it does not drive any deduction, incentive, or leave-balance calculation."],
     ["Public holidays", report.holidayCalendarReachable
       ? "Google's Egypt holiday calendar was read for every month in this range."
@@ -464,7 +464,7 @@ function buildCoverProvenance(report: CompanyActivityReport, rangeLabel: string)
     ],
     ["Leave days", `${total((s) => s.leaveApprovedDays).toLocaleString("en-US")} approved/CRM, ${total((s) => s.leavePendingDays).toLocaleString("en-US")} pending`],
     ["No entry days", `${total((s) => s.noEntryDays).toLocaleString("en-US")} (working days with nothing recorded at all)`],
-    ["No signal days", `${total((s) => s.noSignalDays).toLocaleString("en-US")} (no device mapping and no CRM identity)`],
+    ["No signal days", `${total((s) => s.noSignalDays).toLocaleString("en-US")} (no device mapping and no Phoenix CRM seat)`],
     ["Conflict days", `${total((s) => s.conflictDays).toLocaleString("en-US")} (presence evidence AND a leave signal on the same date — review, never auto-resolved)`],
   ];
   if (report.unmappedCrmVisitCount != null && report.unmappedCrmVisitCount > 0) {

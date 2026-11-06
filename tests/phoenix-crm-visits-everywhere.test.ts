@@ -1751,8 +1751,10 @@ const INTEGRITY_COLUMNS = [
 const CHECKIN_COLUMNS_CARRIED = new Set(["captured_at", "created_at", "customer_id", "id", "is_test", "lat", "lon", "manager_hr_id", "rep_hr_id", "seat_id", "visit_date"]);
 
 /** Readers that may ask for Phoenix check-ins: each is a screen no rep can reach (phoenix-team-starts.ts). */
+// The CRM Integrity page's service (src/lib/crm-integrity/service.ts) was the first reader here; it was
+// deleted with that page on 2026-11-07, once iReports360 was retired and there was no vendor visit left
+// to match against a check-in.
 const PHOENIX_CHECKIN_READERS = [
-  "src/lib/crm-integrity/service.ts",
   "src/lib/crm/brick-coverage.ts",
   "src/lib/crm/master.ts",
   "src/lib/crm/rep-day.ts",
@@ -2407,4 +2409,34 @@ export function runPhoenixCrmVisitsEverywhereTests(): void {
   runHygieneTests(code);
   runContactIdAcrossDoorsTests();
   runPortalKeepsNoneOfTheFieldSetTests();
+  runScreensNameTheSourceTests();
+}
+
+/**
+ * THE SCREENS NAME THE SOURCE THEY READ (7 Nov 2026). iReports360 was retired on 6 Nov and every field-visit
+ * screen reads Phoenix CRM, with the iReports360 archive before each team's start. A screen that still says
+ * "Live iReports360 mirror", "auto-synced 3x daily" or "pulled live from iReports360" tells the reader the
+ * figures come from a system nothing writes any more. Pinned on comment-stripped source.
+ */
+function runScreensNameTheSourceTests(): void {
+  const surfaces: Record<string, string> = {
+    "src/lib/outstation/review-document.ts": "Phoenix CRM visits &mdash; every field visit",
+    "src/lib/private-calendar/field-visits.ts": "Logged field visits from Phoenix CRM",
+    "src/lib/attendance/fingerprint-report-export.ts": "Phoenix CRM (the iReports360 archive before each team's start)",
+    "src/components/field-activity/field-activity-view.tsx": "with no separate GPS check-in to match",
+    "src/components/field-workforce-compliance/field-workforce-visits-view.tsx": "read live from Phoenix CRM",
+    "src/components/field-workforce-compliance/field-workforce-compliance-workspace.tsx": "Always computed live from Phoenix CRM visits",
+    "src/components/double-visit-analytics/double-visit-analytics-workspace.tsx": "Phoenix CRM, with the iReports360 archive before each team&apos;s start",
+    "src/components/vacation/company-vacation-report-table.tsx": "CRM (iReports360, before Phoenix CRM)",
+    "src/components/crm/crm-master-table.tsx": "up to its retirement on 6 Nov 2026",
+  };
+  const retired = [/Live iReports360/i, /auto-synced 3x daily/i, /pulled live from iReports360/i, /live iReports360 visit mirror/i, /iReports360 visits mirror/i, /no iReports360 check-in to match/i, /pulled from CRM\)/];
+  for (const [file, now] of Object.entries(surfaces)) {
+    const text = stripComments(readFileSync(file, "utf8"));
+    assert.ok(text.includes(now), `${file} names Phoenix CRM as its source`);
+    for (const stale of retired) assert.equal(stale.test(text), false, `${file} never says ${stale.source} — iReports360 was retired on 6 Nov 2026`);
+  }
+  const sidebar = readFileSync("src/lib/employee-portal/sidebar-rows.ts", "utf8");
+  assert.equal(sidebar.includes('"iReports 360"'), false, "the portal sidebar has no iReports 360 section");
+  assert.ok(sidebar.includes('section: "Field Work"'), "its rows sit under Field Work");
 }

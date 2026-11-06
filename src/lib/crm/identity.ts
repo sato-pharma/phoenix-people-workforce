@@ -469,9 +469,9 @@ function peopleNamedByLabel(row: UnmappedSlotRow, maps: CrmIdentityMaps): string
  *   - the resolver credits somebody today but the stored row still says nobody. It is waiting to be
  *     stamped, and the Map button stamps it.
  *
- * Shared by the list (getUnmappedCrmIdentities), reconciliation check 9, and the sync's block
- * counters (countBlockedAttributions). The list, the check it is compared against, and the alarm
- * that sends a human to the list therefore can never disagree about which rows count.
+ * Shared by the list (getUnmappedCrmIdentities) and whatever reads the same slots beside it, so the
+ * two can never disagree about which rows count. Reconciliation check 9 and the sync's block counters
+ * were its other two readers until both were retired with iReports360 (6-7 Nov 2026).
  */
 export function isSettledUnmappedRow(row: UnmappedSlotRow, maps: CrmIdentityMaps): boolean {
   if (row.crmId == null) return false;

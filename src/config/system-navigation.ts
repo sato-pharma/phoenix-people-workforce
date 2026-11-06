@@ -1261,7 +1261,7 @@ export const adminNavigationSectionSeeds = [
   // fieldCoachingPageItems below) — same pattern as the other consolidated
   // sections above. permissions is the union of every card's own gate (coaching
   // read/create, double_visit_analytics:read); the Super-Admin-only cards
-  // (Double Visit Data Integrity, Visits Report, CRM Integrity) still gate
+  // (Double Visit Data Integrity, Visits Report) still gate
   // themselves via their own roles field on the hub.
   {
     id: "field-coaching",
@@ -1349,7 +1349,8 @@ export const adminNavigationSectionSeeds = [
   //                                       — Doctor List and that tab strip were retired 2026-08-31;
   //                                       /admin/reps-list replaced the first and Plan Verification
   //                                       now stands on its own.
-  //   /admin/crm-integrity                CRM Integrity
+  //   /admin/crm-integrity                CRM Integrity — retired with iReports360 on 2026-11-07;
+  //                                       the route is now a pointer to Phoenix CRM's integrity screens.
   //   /admin/brick-coverage               Brick Coverage
   //   /admin/double-visit-analytics       Double Visit Analytics
   //   /admin/double-visit-data-integrity  Double Visit Integrity — the label is shortened from
@@ -4482,7 +4483,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/field-workforce-compliance",
     icon: ClipboardCheck,
     label: "Field Compliance",
-    description: "Field activity compliance against the working-day calendar, from the CRM visit mirror.",
+    description: "Field activity compliance against the working-day calendar, from Phoenix CRM visits and approved leave.",
     permissions: [{ resource: "hr_calendar" }],
   },
   {
@@ -4502,13 +4503,13 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "One person's field days end to end: every stop, its GPS, the door clock against the log clock, and the outstation claim behind them.",
     permissions: [{ resource: "double_visit_analytics", action: "read" }],
   },
-  {
-    href: "/admin/crm-integrity",
-    icon: MapPinned,
-    label: "CRM Integrity",
-    description: "Correlate visits with GPS check-ins; flag save-lag and impossible travel.",
-    roles: ["Super Admin", "SFE Manager"],
-  },
+  // ── CRM INTEGRITY RETIRED 2026-11-07, WITH iREPORTS360 ──────────────────────────────────────
+  // "CRM Integrity" (/admin/crm-integrity) matched each iReports360 visit against the vendor's own
+  // GPS check-ins and flagged save-lag and impossible travel. iReports360 was retired on 6 Nov 2026
+  // (crm_cutover.vendor_sync_retired_at), so that comparison could only ever read a frozen archive.
+  // Phoenix CRM judges every visit's own position as it is saved — Location Integrity below. The
+  // card and its hub band row are gone; the route stays as a short pointer to Phoenix CRM's own
+  // integrity screens, for a bookmark (tests/crm-switch-off-safety.test.ts pins both halves).
   {
     href: "/admin/double-visit-data-integrity",
     icon: TriangleAlert,
@@ -4659,8 +4660,9 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     //
     // Location integrity (the owner, 2026-09-25): the captures whose GPS the server could not
     // believe — a mock-location app the phone admitted to, a coordinate used before, a trip nobody
-    // could have made. Nothing to confuse with /admin/crm-integrity above, which is the iReports360
-    // vendor feed's data quality; this one is about whether a rep was where he said he was.
+    // could have made. Not the retired /admin/crm-integrity (the iReports360 vendor feed's data
+    // quality, gone with the vendor on 2026-11-07); this one is about whether a rep was where he
+    // said he was, and it is where that old route now points.
     //
     // THE SUPER ADMIN'S AND THE SFE MANAGER'S (owner, 2026-09-26, Golden Rule #1: "every violation
     // is then recorded in the admin and the SFE account"). The narrow role list is still the point
@@ -5448,7 +5450,6 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         heading: "CRM Data Quality",
         sectionId: "crm-integrity",
         hrefs: [
-          "/admin/crm-integrity",
           "/admin/double-visit-analytics",
           "/admin/double-visit-data-integrity",
           "/admin/brick-coverage",

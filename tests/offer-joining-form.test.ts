@@ -271,13 +271,18 @@ async function run() {
   assert.match(registry, /tokenApi\(\{ authMode: "public-token", methods: \["POST"\], pattern: "\/api\/public\/offer-acceptance\/:token"/, "registered as a public-token POST");
 
   // 7. 🔴 THE HIRE GOES THROUGH HR'S OWN CHAIN, IN ITS ORDER — so a joiner lands exactly where HR's
-  //    Add Employee would have put him (HR ID, seat, vacancy closed, login, CRM, mailbox).
+  //    Add Employee would have put him (HR ID, seat, vacancy closed, login, mailbox). The iReports360
+  //    account-setup notice that sat before the mailbox was retired on 2026-11-07 with the vendor CRM,
+  //    and NEITHER door may bring it back.
   const service = code("src/lib/offers/joining-form-service.ts");
   const hr = code("app/api/employees/route.ts");
-  const chain = ["upsertEmployee(", "provisionNewHireAccess(", "openAndAnnounceCrmAccountSetup(", "openAndAnnounceNewHireMailboxes("];
+  const chain = ["upsertEmployee(", "provisionNewHireAccess(", "openAndAnnounceNewHireMailboxes("];
   for (const call of chain) {
     assert.ok(hr.includes(call), `HR's Add Employee still calls ${call}`);
     assert.ok(service.includes(call), `the joining form calls ${call} too`);
+  }
+  for (const [label, text] of [["HR's Add Employee", hr], ["the joining form", service]] as const) {
+    assert.ok(!text.includes("openAndAnnounceCrmAccountSetup("), `${label} must not announce a new hire for an iReports360 account`);
   }
   const at = chain.map((call) => service.indexOf(call));
   assert.deepEqual([...at].sort((a, b) => a - b), at, "in the same order");

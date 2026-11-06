@@ -102,8 +102,8 @@
  * integrity column at all (no accuracy, flag, distance, skew, photo, dwell, capture source or offline
  * time — those stay on the integrity board). The app reads those rows ONLY where it asks
  * (`queryCheckins` `includePhoenixVisits`), and only a reader no rep can reach asks:
- *   - the CRM Master (its Check-ins tab reads the view direct; its visits' nearest check-in asks) and
- *     the CRM integrity page — the Super Admin's;
+ *   - the CRM Master (its Check-ins tab reads the view direct; its visits' nearest check-in asks) — the
+ *     Super Admin's (the CRM integrity page asked too, until it was retired with iReports360 on 7 Nov 2026);
  *   - GPS brick coverage — an admin-shell board (Super Admin, CEO, SFE Manager);
  *   - the SFE and CEO overview's field analytics, whose start-time table reads the day's first Phoenix
  *     visit through `phoenixFirstVisitStarts` (sfe-field-analytics.ts) — the helper Early Birds reads;

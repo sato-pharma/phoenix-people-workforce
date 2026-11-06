@@ -1,46 +1,36 @@
 /**
- * New-hire CRM account setup — every word the feature says, and nothing that reads or writes.
+ * New-hire CRM account setup — the words the New Hire CRM Setup tab shows, and nothing that reads
+ * or writes.
+ *
+ * 🔴 THE NOTICE AND ITS DAILY REMINDER ARE RETIRED (2026-11-07). They asked somebody to give each new
+ * field hire an iReports360 account; the vendor CRM was retired on 6 Nov 2026
+ * (crm_cutover.vendor_sync_retired_at) and Phoenix CRM is the only source of field work, so nobody
+ * can be given one any more. Their sender (account-setup-notify.ts), their reminder
+ * (account-setup-reminder.ts), their `crm_account_setup_alert` audience and every word only the notice
+ * used (title, body, email summary, button, channels, deep link) left together. Never re-wire them.
  *
  * Split from ./account-setup.ts on the same reasoning as retention-risk/messages.ts: this file
- * imports nothing but a type, so the assertions that matter most — that the notice carries all
- * seven facts the owner asked for, that a missing one prints as "Not recorded" rather than
- * vanishing, and that nothing is ever truncated with an ellipsis — run for real in a plain node
- * test instead of by reading the source.
+ * imports nothing, so the assertions that matter most — that a missing fact prints as "Not
+ * recorded" rather than vanishing, and that nothing is ever truncated with an ellipsis — run for
+ * real in a plain node test instead of by reading the source.
  */
-
-import type { SystemNotificationChannel } from "@/lib/notifications/system";
-
-/** The admin-editable audience key (see role-recipients.ts). */
-export const CRM_ACCOUNT_SETUP_AUDIENCE = "crm_account_setup_alert" as const;
-export const CRM_ACCOUNT_SETUP_MODULE = "crm_account_setup" as const;
-export const CRM_ACCOUNT_SETUP_EVENT_TYPE = "employee_added" as const;
 
 /**
- * Email AND in-app, and only those — the owner asked for both by name on 2026-09-07 ("make sure it
- * sends an in-app email and an in-app notification and the email").
- *
- * Telegram and push are deliberately absent. He did not ask for them, and this notice carries a
- * named new hire's mobile number and work email: push would put those on a lock screen, and the
- * house already draws that line for anything naming an individual.
+ * The module and event type the retired notice was written under. Nothing sends under them any more;
+ * they stay because they name the HISTORY rows already in notification_events
+ * (`crm_account_setup` / `employee_added`), and because the new-hire mailbox notice still uses the
+ * same event type (src/lib/notifications/operator-watch-channel-guard.ts keys on the type alone).
  */
-export const CRM_ACCOUNT_SETUP_CHANNELS: readonly SystemNotificationChannel[] = ["in_app", "email"];
-
-/** Where the notice sends the reader — the CRM workspace tab that asks for the two values. */
-export const CRM_ACCOUNT_SETUP_VIEW = "account_setup" as const;
-
-export function crmAccountSetupHref(hrId?: string | null): string {
-  const trimmed = String(hrId ?? "").trim();
-  const base = `/admin/crm?view=${CRM_ACCOUNT_SETUP_VIEW}`;
-  return trimmed ? `${base}&hrId=${encodeURIComponent(trimmed)}` : base;
-}
+export const CRM_ACCOUNT_SETUP_MODULE = "crm_account_setup" as const;
+export const CRM_ACCOUNT_SETUP_EVENT_TYPE = "employee_added" as const;
 
 /**
  * Where the CV downloads from — the same-origin route, gated on the session rather than on a token
  * in the link (src/lib/employees/employee-cv.ts).
  *
  * Spelled out here rather than imported from employee-cv.ts on purpose: this file deliberately
- * imports nothing but a type, so every assertion about what the notice says runs for real in a
- * plain node test instead of by reading the source. The two are pinned to each other by
+ * imports nothing, so every assertion about what the tab says runs for real in a plain node test
+ * instead of by reading the source. The two are pinned to each other by
  * tests/employee-cv.test.ts rather than by a shared import.
  */
 export function crmAccountSetupCvHref(hrId?: string | null): string {
@@ -77,7 +67,7 @@ export type CrmAccountSetupSubject = {
   workEmail: string | null;
 };
 
-/** Whether this notice has a CV to offer. */
+/** Whether this person has a CV to offer. */
 export function hasCvOnFile(subject: CrmAccountSetupSubject): boolean {
   return String(subject.cvFileName ?? "").trim().length > 0;
 }
@@ -110,36 +100,14 @@ export function formatHireDate(value: string | null | undefined): string {
     .format(new Date(`${text}T00:00:00Z`));
 }
 
-/** The label a person is known by in this notice: their name and the code they are filed under. */
+/** The label a person is known by on the tab: their name and the code they are filed under. */
 export function subjectLabel(subject: CrmAccountSetupSubject): string {
   return `${subject.displayName} (${subject.hrId})`;
 }
 
-export function crmAccountSetupTitle(subject: CrmAccountSetupSubject): string {
-  return `New employee — CRM account needed: ${subject.displayName}`;
-}
-
 /**
- * The one-line body. It says what happened, who it is about, and what is being asked for — in that
- * order, because it is read on a phone where the second sentence may not be read at all.
- *
- * THE CV IS NAMED HERE, NOT ONLY IN THE DETAIL ROWS, AND THAT IS NOT DUPLICATION. The in-app
- * renderer caps a notification at its FIRST EIGHT detail rows (notificationDetails in
- * communication/metrics.ts). This notice already carries nine, so the CV row — which goes last —
- * never reaches the bell menu at all. The email shows every row and gets a download button; in-app
- * this sentence is the only thing that tells the reader a CV exists, and the notice's own link
- * lands him on the screen the download button is on.
- */
-export function crmAccountSetupMessage(subject: CrmAccountSetupSubject): string {
-  const cv = hasCvOnFile(subject)
-    ? ` Their CV (${String(subject.cvFileName).trim()}) is on the record, and the same screen downloads it.`
-    : "";
-  return `${subjectLabel(subject)} has been added to the employee master. Open the New Hire CRM Setup tab to record the CRM username and CRM code for this person, or mark that no CRM account is needed.${cv}`;
-}
-
-/**
- * The detail rows, in the order the owner listed them. Used for the email's metric table and for
- * the in-app notification's metadata, so both carry the same facts and can never drift.
+ * The detail rows, in the order the owner listed them. The New Hire CRM Setup tab and the queue
+ * both build from this one function, so they can never drift.
  *
  * The CV row goes LAST and is always present — `Not attached` when there is none. A row that
  * disappeared when empty would make "this hire has no CV" indistinguishable from "this notice
@@ -159,13 +127,3 @@ export function crmAccountSetupDetails(subject: CrmAccountSetupSubject): Array<{
     { label: "CV", value: hasCvOnFile(subject) ? String(subject.cvFileName).trim() : NO_CV_ON_FILE },
   ];
 }
-
-/** The email's opening paragraph — the same facts as the body, addressed to a reader with time. */
-export function crmAccountSetupEmailSummary(subject: CrmAccountSetupSubject): string {
-  const cv = hasCvOnFile(subject)
-    ? ` Their CV is attached to the employee record as ${String(subject.cvFileName).trim()}, and the second button below downloads it.`
-    : "";
-  return `${subjectLabel(subject)} has just been added to the employee master and has no iReports360 (CRM) account recorded yet. Until the CRM username and CRM code are entered against this employee, their visits and check-ins cannot be matched to them and their field work will read as nothing at all.${cv} The details below are everything on the employee record as it stands now.`;
-}
-
-export const CRM_ACCOUNT_SETUP_CTA_LABEL = "Enter the CRM username and code" as const;

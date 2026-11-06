@@ -35,7 +35,8 @@ export const notificationRoleKeys = [
   "marketing_invoice_overdue_alert",
   "distributor_upload_overdue_alert",
   "retention_risk_alert",
-  "crm_account_setup_alert",
+  // `crm_account_setup_alert` (the new-hire iReports360 account notice and its daily reminder) was
+  // RETIRED 2026-11-07 with the vendor CRM — nobody can be given an iReports360 account any more.
   "new_hire_mailbox_alert",
   "service_milestone_notice",
   "activity_inactivity_digest",
@@ -200,14 +201,6 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told when a MEDICAL REP reaches three consecutive working days of recorded leave, or three consecutive working days with no CRM entry of any kind, and has not been seen since (owner, 2026-09-07: medical reps only, three days, still away). Defaults to HR Operations, Super Admin and SFE Manager — the owner picked these with the HR Business Partner on 2026-09-06, and that seat was retired on 2026-10-08. The person's own line manager is added per alert by the sweep itself and is deliberately NOT a role here: it is one named manager per subject, not everyone holding a manager role.",
     roles: ["HR Operations", "Super Admin", "SFE Manager"],
-    enabled: true,
-  },
-  crm_account_setup_alert: {
-    key: "crm_account_setup_alert",
-    label: "New hire CRM account setup",
-    description:
-      "Who is told when an employee is added to the employee master, so that person can be given an iReports360 (CRM) account. The notice carries the new hire's line, hiring date, region, area, manager, work email and mobile, and links to the New Hire CRM Setup tab where the CRM username and CRM code are entered. Defaults to the SFE Manager and HR Operations — the owner's instruction, 2026-09-07, extended 2026-09-29 to copy HR Operations so the same email reaches HR alongside the SFE Manager.",
-    roles: ["SFE Manager", "HR Operations"],
     enabled: true,
   },
   new_hire_mailbox_alert: {

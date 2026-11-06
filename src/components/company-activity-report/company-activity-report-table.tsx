@@ -177,7 +177,7 @@ function CountBadge({ tone, value }: { tone: "accent" | "danger" | "neutral" | "
  * system cannot see this person at all". */
 function NoSignalNote({ row }: { row: CompanyActivityEmployeeSummary }) {
   if (row.hasAttendanceChannel && row.hasCrmChannel) return null;
-  const missing = [!row.hasAttendanceChannel && "no device", !row.hasCrmChannel && "no CRM id"].filter(Boolean).join(", ");
+  const missing = [!row.hasAttendanceChannel && "no device", !row.hasCrmChannel && "no Phoenix CRM seat"].filter(Boolean).join(", ");
   return <p className="mt-0.5 text-phx-2xs font-bold text-amber-600">⚠ {missing}</p>;
 }
 

@@ -1,5 +1,6 @@
 /**
- * CRM (iReports360) visit detail for the Company Activity Report — per employee, per day, every
+ * CRM visit detail for the Company Activity Report — Phoenix CRM visits through the unified read doors
+ * (iReports360 rows only from before a team started on Phoenix CRM) — per employee, per day, every
  * visit with its display label and campaign flag, plus the same "regular > CP > AV" field/leave
  * classification the payroll digest engine uses (crmDayVisitTypeStatus), reused rather than
  * re-derived so this report can never disagree with it about what a given visit type means.

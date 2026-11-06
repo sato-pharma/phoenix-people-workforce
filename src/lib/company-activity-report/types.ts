@@ -107,8 +107,8 @@ export type CompanyActivityDayRow = {
   firstPunchMinutes: number | null;
   lastPunchMinutes: number | null;
   leave: CompanyActivityLeaveDetail | null;
-  /** True when this employee has neither an active fingerprint device mapping nor a resolved
-   * CRM identity — "no signal available" is a distinct state from "nothing happened", never
+  /** True when this employee has neither an active fingerprint device mapping nor a Phoenix
+   * CRM seat — "no signal available" is a distinct state from "nothing happened", never
    * silently merged into no_entry. */
   hasNoSignal: boolean;
   /** True when this day shows evidence of BOTH physical presence (office punch or a real CRM

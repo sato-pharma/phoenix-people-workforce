@@ -1,7 +1,6 @@
 import { createHmac } from "node:crypto";
 
 import { systemAccessContext } from "@/lib/auth/permissions";
-import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import {
   getEmployeeDirectoryRows,
@@ -55,10 +54,10 @@ import { todayInCairo } from "@/lib/date-only";
  *
  * ── THE HIRE GOES THROUGH THE SAME CHAIN AS HR'S ADD EMPLOYEE, in the same order ──
  * `app/api/employees/route.ts` POST: `upsertEmployee` (HR ID, seat trigger, vacancy close,
- * replacement ownership) → `provisionNewHireAccess` → `openAndAnnounceCrmAccountSetup` →
- * `openAndAnnounceNewHireMailboxes`. A joiner who filled the form is the same hire HR would have
- * typed, so he must land in exactly the same state; `tests/offer-joining-form.test.ts` pins that
- * both doors call all four. The money is the hire bridge's (`buildOfferHireDraft` hands over the
+ * replacement ownership) → `provisionNewHireAccess` → `openAndAnnounceNewHireMailboxes`. A joiner
+ * who filled the form is the same hire HR would have typed, so he must land in exactly the same
+ * state; `tests/offer-joining-form.test.ts` pins that both doors call all three. (The iReports360
+ * account-setup notice that sat third in this chain was retired on 2026-11-07 with the vendor CRM.) The money is the hire bridge's (`buildOfferHireDraft` hands over the
  * NET) run through `deriveSalaryFromNet`, the Employee Master's own chain — nothing here derives a
  * salary of its own, and `src/lib/payroll/policy.ts` is untouched.
  *
@@ -740,7 +739,6 @@ export async function submitJoiningForm(
       labels: { event: "offer_joining_form_access_failed" },
     });
   }
-  await openAndAnnounceCrmAccountSetup({ actorId: "joining-form", hrIds: [hrId], source: "manual_add" });
   await openAndAnnounceNewHireMailboxes({ actorId: "joining-form", hrIds: [hrId], source: "manual_add" });
 
   logInfo("Offer accepted through the joining form", {
