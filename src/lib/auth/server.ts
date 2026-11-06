@@ -771,7 +771,7 @@ export async function resolveAccessContext(request: Request): Promise<AccessCont
   // but run as a DRY RUN: proxy.ts marked the request and the fetch fence answers every write it makes
   // (src/lib/auth/test-dry-run.ts). Only a marked request with the fence proven live is let through —
   // anything else is still refused here, exactly as before.
-  if (!(access.testPersona && grantTestDryRun(request.headers))) assertTestAccountMayRun(access, request);
+  if (!(access.testPersona && (await grantTestDryRun(request.headers)))) assertTestAccountMayRun(access, request);
   // THE SEAT VIEW WRITE GUARD — the same choke point for the Super Admin's read-only View as Seat:
   // every write is refused except leaving the view, and so are reads that would leave a row behind.
   assertSeatViewMayRun(access, request);
@@ -836,7 +836,7 @@ export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   // A server action arrives as a POST to a PAGE, which the API guard above never sees. Next marks
   // it with the `next-action` header; a test account never runs one.
   // Since 2026-11-06 it runs as a dry run when proxy.ts marked it and the fence is live (see above).
-  if (access.testPersona && (await headers()).get("next-action") && !grantTestDryRun(await headers())) {
+  if (access.testPersona && (await headers()).get("next-action") && !(await grantTestDryRun(await headers()))) {
     assertNotTestAccount(access);
   }
   // A seat view refuses a server action AND a form posted before the page's script loaded — the same

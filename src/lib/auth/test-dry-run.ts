@@ -20,8 +20,8 @@
  *     providers, Google routes/places/maps, the Google token exchange, Sentry.
  *
  * 🔴 FAIL-CLOSED: resolveAccessContext lets a test account's write run only when `testDryRunFenceIsLive()`
- * proves this wrapper is the fetch actually in use. If anything replaced it, the save is refused as it
- * always was — it is never run unfenced.
+ * proves — by a probe sent through the fetch in use — that every call still reaches this wrapper. If
+ * anything cut it out, the save is refused as it always was — it is never run unfenced.
  */
 
 import { randomUUID } from "node:crypto";
@@ -221,6 +221,8 @@ export async function testDryRunFetch(
   real: FetchFn,
   isDryRun: () => Promise<boolean> = isTestDryRunRequest,
 ): Promise<Response> {
+  const probe = probeAnswer(input, init);
+  if (probe) return probe;
   const method = methodOf(input, init);
   if (READ_METHODS.has(method)) return real(input, init);
   if (!(await isDryRun())) return real(input, init);
@@ -264,7 +266,7 @@ export async function isTestDryRunRequest(): Promise<boolean> {
 /** Wrap `globalThis.fetch` once. Called first thing in instrumentation.ts `register()`. */
 export function installTestDryRunFetchFence(): boolean {
   const current = globalThis.fetch as FetchFn & Record<string | symbol, unknown>;
-  if (!current || testDryRunFenceIsLive()) return false;
+  if (!current || current[FENCE_MARK] === true) return false;
   const fenced = (async (input: RequestInfo | URL, init?: RequestInit) => testDryRunFetch(input, init, current)) as FetchFn &
     Record<string | symbol, unknown>;
   fenced[FENCE_MARK] = true;
@@ -273,23 +275,60 @@ export function installTestDryRunFetchFence(): boolean {
 }
 
 /**
- * True when the fetch in use is the fence, or a wrapper around it that names what it wraps — Next.js's
- * (`_nextOriginalFetch`) or our own (`__phoenixWrappedFetch`, src/lib/mcp-source/read-recorder.ts).
- * resolveAccessContext refuses a test account's save when this is false — the fail-closed half.
+ * THE LIVENESS PROBE. Next.js wraps the server's fetch in two layers, and the inner one (its request
+ * dedupe) keeps no handle on what it wraps — so the fence cannot be FOUND by walking wrappers. It is
+ * proven by being REACHED instead: a probe goes out through `globalThis.fetch` as every write would,
+ * and only the fence answers it. Without the fence the probe goes nowhere (`.invalid` never resolves)
+ * and the answer is no. Asked once per fetch in use, so a replaced fetch is probed again.
  */
-export function testDryRunFenceIsLive(): boolean {
-  let fn = globalThis.fetch as unknown as Record<string | symbol, unknown> | undefined;
-  for (let depth = 0; fn && depth < 5; depth += 1) {
-    if (fn[FENCE_MARK] === true) return true;
-    fn = (fn._nextOriginalFetch ?? fn.__phoenixWrappedFetch) as Record<string | symbol, unknown> | undefined;
+const PROBE_URL = "http://test-dry-run-fence.phoenix.invalid/probe";
+const PROBE_HEADER = "x-phoenix-test-dry-run-probe";
+const probedFetches = new WeakMap<object, Promise<boolean>>();
+
+function probeAnswer(input: RequestInfo | URL, init?: RequestInit): Response | null {
+  if (urlOf(input)?.hostname !== "test-dry-run-fence.phoenix.invalid") return null;
+  const nonce = headersOf(input, init).get(PROBE_HEADER) ?? "";
+  return new Response(null, { status: 204, headers: { [PROBE_HEADER]: nonce } });
+}
+
+async function probeFence(fetchInUse: FetchFn): Promise<boolean> {
+  const nonce = randomUUID();
+  try {
+    const response = await fetchInUse(PROBE_URL, {
+      method: "POST",
+      headers: { [PROBE_HEADER]: nonce },
+      cache: "no-store",
+      signal: AbortSignal.timeout(2000),
+    });
+    return response.headers.get(PROBE_HEADER) === nonce;
+  } catch {
+    return false;
   }
-  return false;
+}
+
+/**
+ * True when the fetch in use reaches the fence — proven by the probe above, never assumed from how
+ * the wrappers look. resolveAccessContext refuses a test account's save when this is false — the
+ * fail-closed half.
+ */
+export async function testDryRunFenceIsLive(): Promise<boolean> {
+  const fetchInUse = globalThis.fetch as FetchFn | undefined;
+  if (!fetchInUse) return false;
+  let answer = probedFetches.get(fetchInUse);
+  if (!answer) {
+    answer = probeFence(fetchInUse);
+    probedFetches.set(fetchInUse, answer);
+  }
+  return answer;
 }
 
 /** resolveAccessContext's question: may this test-account write run as a dry run? Records the grant. */
-export function grantTestDryRun(requestHeaders: { get(name: string): string | null } | null | undefined): boolean {
+export async function grantTestDryRun(requestHeaders: { get(name: string): string | null } | null | undefined): Promise<boolean> {
   if (!requestIsTestDryRun(requestHeaders)) return false;
-  if (!testDryRunFenceIsLive()) return false;
+  if (!(await testDryRunFenceIsLive())) {
+    console.warn("[test-dry-run] a marked test-account save was refused: the fetch in use does not reach the fence");
+    return false;
+  }
   noteTestDryRunSeen();
   return true;
 }
@@ -300,7 +339,7 @@ export function grantTestDryRun(requestHeaders: { get(name: string): string | nu
  */
 export async function assertTestAccountWriteIsDryRun(access: { testPersona?: unknown } | null | undefined): Promise<void> {
   if (!access?.testPersona) return;
-  if (testDryRunFenceIsLive() && (await isTestDryRunRequest())) return;
+  if ((await isTestDryRunRequest()) && (await testDryRunFenceIsLive())) return;
   const { assertNotTestAccount } = await import("./test-persona.ts");
   assertNotTestAccount(access as Parameters<typeof assertNotTestAccount>[0]);
 }
