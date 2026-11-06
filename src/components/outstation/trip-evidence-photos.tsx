@@ -85,10 +85,26 @@ function TripEvidencePhoto({
                   <span className="min-w-0">{blankFrame.headline}</span>
                 </p>
               ) : null}
-              {capturedAt ? <p className="text-xs font-semibold text-slate-900">{capturedAt}</p> : null}
+              {/* Everything the photo carries, each fact labelled (owner, 2026-11-07: "photo
+                  captured time at arrival and departure … any information or data you have"). */}
+              {capturedAt ? (
+                <p className="text-xs font-semibold text-slate-900">
+                  <span className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">Captured </span>
+                  {capturedAt}
+                </p>
+              ) : null}
+              {photo.url && !photo.sourceNote ? (
+                <p className="text-xs text-slate-600">Captured with the live camera.</p>
+              ) : null}
               {photo.locationLabel ? (
                 <p className="break-words text-xs text-slate-600" dir="auto">
                   {photo.locationLabel}
+                </p>
+              ) : null}
+              {photo.latitude !== null && photo.longitude !== null ? (
+                <p className="font-mono text-xs text-slate-500">
+                  <span className="font-sans text-phx-3xs font-black uppercase tracking-wide text-slate-400">GPS </span>
+                  {photo.latitude.toFixed(5)}, {photo.longitude.toFixed(5)}
                 </p>
               ) : null}
               {photo.gpsMissingReason ? (
