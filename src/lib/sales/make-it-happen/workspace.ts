@@ -42,6 +42,8 @@ import {
   periodMonths,
   readTrend,
   shiftMonth,
+  sortBricks,
+  type BrickPlanRow,
   type ConcentrationPlanRow,
   type GradableRow,
   type LinePlanGroup,
@@ -50,6 +52,7 @@ import {
   type RepPlanSummary,
   type SavedPlanSummary,
 } from "@/lib/sales/make-it-happen/engine";
+import { brickReadNarrowing, loadBrickUnitsInBound, type BrickUnitsRow } from "@/lib/sales/make-it-happen/brick-history";
 import { listPlansForOwners, type StoredPlan } from "@/lib/sales/make-it-happen/plan-store";
 import {
   applyMakeItHappenBound,
@@ -144,6 +147,7 @@ export async function buildMakeItHappenWorkspace(
     viewingRep: null,
     canSave: false,
     plansAvailable: true,
+    bricksAvailable: true,
     lines: [],
     totals: { targetValue: null, gradedValue: 0, actualValue: 0 },
     reps: [],
@@ -167,7 +171,8 @@ export async function buildMakeItHappenWorkspace(
   const personName = (hrId: string | null | undefined) =>
     namesByKey.get(canonicalHrIdKey(hrId) ?? "") ?? "Unnamed employee";
 
-  let rows = applyMakeItHappenBound(applyAchievementAreaMerges(rawRows), bound);
+  const mergedRows = applyAchievementAreaMerges(rawRows);
+  let rows = applyMakeItHappenBound(mergedRows, bound);
   const team = isTeamBound(bound);
 
   let viewingRep: MakeItHappenWorkspace["viewingRep"] = null;
@@ -193,6 +198,26 @@ export async function buildMakeItHappenWorkspace(
     historyMonthsByLine.set(line.code, list);
   }
 
+  // engine.ts rule 9 — each brick's own closed months, read for the rows this page shows and no
+  // others. The read is narrowed to the lines and areas those rows touch (the RAW codes, so a merged
+  // area still reaches the SQL), then bound exactly in brick-history.ts.
+  const shownRows = new Set(rows);
+  const scopedRaw = rawRows.filter((_, index) => shownRows.has(mergedRows[index]));
+  const brickMonths = [...new Set([...historyMonthsByLine.values()].flat())].sort();
+  // A failed brick read must not blank the planner: the products still plan, and the screen says the
+  // bricks could not be read rather than showing a product as if it sold on no brick.
+  let bricksAvailable = true;
+  const brickRows = await loadBrickUnitsInBound({
+    months: brickMonths,
+    bound,
+    narrowing: brickReadNarrowing(scopedRaw, bound.rows.kind === "company"),
+    repKey: viewingRep ? repKey : null,
+  }).catch((error: unknown) => {
+    console.error("[make-it-happen] brick read failed", error);
+    bricksAvailable = false;
+    return [] as BrickUnitsRow[];
+  });
+
   const monthSet = new Set(months);
   // Quarters and months sit inside one semester, and a semester is itself — so the first month names it.
   const periodSemester = resolveSemesterKey(months[0]);
@@ -214,7 +239,38 @@ export async function buildMakeItHappenWorkspace(
     targetValue: row.targetValue,
   });
 
-  const buildLines = (scopeRows: AchievementRow[]): LinePlanGroup[] => {
+  /** One product's bricks on one line, each read from its own closed months (rule 9). */
+  const bricksOf = (
+    lineBricks: Map<string, BrickUnitsRow[]>,
+    code: string,
+    historyMonths: string[],
+    openMonths: number,
+  ): BrickPlanRow[] => {
+    const byBrick = new Map<string, { name: string; units: Map<string, number> }>();
+    for (const row of lineBricks.get(code) ?? []) {
+      const entry = byBrick.get(row.brickId) ?? { name: row.brickName, units: new Map<string, number>() };
+      if (!entry.name && row.brickName) entry.name = row.brickName;
+      entry.units.set(row.period, (entry.units.get(row.period) ?? 0) + row.units);
+      byBrick.set(row.brickId, entry);
+    }
+    const bricks: BrickPlanRow[] = [];
+    for (const [brickId, entry] of byBrick) {
+      // A closed month with no row is a month the brick sold nothing — 0, never skipped.
+      const history = historyMonths.map((month) => entry.units.get(month) ?? 0);
+      // A brick that only ever booked returns sold nothing to plan on.
+      if (!history.some((units) => units > 0)) continue;
+      const trend = readTrend(history, openMonths);
+      bricks.push({
+        brickId,
+        name: entry.name || "Unnamed brick",
+        expectedUnits: trend.expectedUnits,
+        realisticMaxUnits: trend.realisticMaxUnits,
+      });
+    }
+    return sortBricks(bricks);
+  };
+
+  const buildLines = (scopeRows: AchievementRow[], bricks: readonly BrickUnitsRow[] = []): LinePlanGroup[] => {
     const groups: LinePlanGroup[] = [];
     for (const line of SALES_LINES) {
       const lineRows = scopeRows.filter((row) => row.lineCode === line.code);
@@ -227,6 +283,14 @@ export async function buildMakeItHappenWorkspace(
       // engine.ts rule 6: the forecast fills only the open months this scope carries a target in.
       const targetedMonths = new Set(periodRows.filter((row) => (row.targetValue ?? 0) > 0).map((row) => row.period));
       const { forecast: openMonths, untargeted } = forecastMonthsOf(months, isClosed, (month) => targetedMonths.has(month));
+
+      const lineBricks = new Map<string, BrickUnitsRow[]>();
+      for (const row of bricks) {
+        if (row.lineCode !== line.code || !historySet.has(row.period)) continue;
+        const bucket = lineBricks.get(row.productCode) ?? [];
+        bucket.push(row);
+        lineBricks.set(row.productCode, bucket);
+      }
 
       const byCode = new Map<string, AchievementRow[]>();
       for (const row of lineRows) {
@@ -272,6 +336,7 @@ export async function buildMakeItHappenWorkspace(
             history.map((point) => point.units),
             openMonths.length,
           ),
+          bricks: bricksOf(lineBricks, code, historyMonths, openMonths.length),
         });
       }
       if (concentrations.length === 0) continue;
@@ -315,7 +380,8 @@ export async function buildMakeItHappenWorkspace(
     return groups;
   };
 
-  const lines = buildLines(rows);
+  // Bricks on the planner's own lines only: the per-rep list below reads each rep's pace, never his bricks.
+  const lines = buildLines(rows, brickRows);
   const overall = gradeRows(rows.filter((row) => monthSet.has(row.period)).map(toGradable));
 
   const reps: RepPlanSummary[] = [];
@@ -374,6 +440,7 @@ export async function buildMakeItHappenWorkspace(
     isEmptyScope: lines.length === 0,
     viewingRep,
     plansAvailable,
+    bricksAvailable,
     canSave: plansAvailable && !viewingRep && Boolean(ownerKey) && lines.some((group) => group.remainingMonths > 0),
     lines,
     totals: {

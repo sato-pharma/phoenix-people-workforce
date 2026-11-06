@@ -19,6 +19,7 @@ import {
   requestedGoalPct,
   requestedRep,
   validatedUnits,
+  validatedBricks,
   workspaceFor,
 } from "@/lib/sales/make-it-happen/plans";
 import { parsePlannerFilters } from "@/lib/sales/make-it-happen/scenarios";
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
     const model = buildForecastExportModel({
       workspace,
       units,
+      bricks: validatedBricks(workspace, units, body.bricks),
       goalPct,
       filters: parsePlannerFilters(body.filters),
       now: new Date(),

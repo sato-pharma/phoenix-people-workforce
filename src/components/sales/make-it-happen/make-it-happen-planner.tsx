@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
@@ -52,7 +52,10 @@ import {
 import {
   PERIOD_KINDS,
   achievementOf,
+  brickUnitsFor,
   parseForecastUnits,
+  splitAcrossBricks,
+  type BrickPlanRow,
   type ConcentrationPlanRow,
   type LinePlanGroup,
   type MakeItHappenWorkspace,
@@ -188,6 +191,46 @@ function unitsFingerprint(units: Record<string, string>): string {
   );
 }
 
+type BrickTyping = Record<string, Record<string, string>>;
+
+/**
+ * Each planned product's units per brick (engine.ts rule 9): the bricks as typed when the user typed
+ * any, else the product split by its bricks' own pace. Only products with bricks and units appear.
+ */
+function resolveBricks(
+  rowsByCode: ReadonlyMap<string, ConcentrationPlanRow>,
+  units: Record<string, string>,
+  typed: BrickTyping,
+): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const [code, raw] of Object.entries(units)) {
+    const row = rowsByCode.get(code);
+    const total = parseForecastUnits(raw) ?? 0;
+    if (!row || row.bricks.length === 0 || total <= 0) continue;
+    const given = typed[code]
+      ? Object.fromEntries(Object.entries(typed[code]).map(([brickId, value]) => [brickId, parseForecastUnits(value) ?? 0]))
+      : null;
+    out[code] = brickUnitsFor(row.bricks, total, given);
+  }
+  return out;
+}
+
+/** "Not saved yet" means the numbers changed — a product's units or how they sit on its bricks. */
+function planFingerprint(
+  rowsByCode: ReadonlyMap<string, ConcentrationPlanRow>,
+  units: Record<string, string>,
+  typed: BrickTyping,
+): string {
+  const bricks = Object.entries(resolveBricks(rowsByCode, units, typed))
+    .flatMap(([code, split]) =>
+      Object.entries(split)
+        .filter(([, value]) => value > 0)
+        .map(([brickId, value]) => `${code}|${brickId}|${value}`),
+    )
+    .sort();
+  return `${unitsFingerprint(units)}${bricks.length > 0 ? JSON.stringify(bricks) : ""}`;
+}
+
 function teamBucket(value: number | null): Exclude<TeamBucket, "all"> {
   if (value == null) return "none";
   if (value >= 1) return "ahead";
@@ -210,6 +253,8 @@ export function MakeItHappenPlanner({
   const router = useRouter();
   const planNameRef = useRef<HTMLInputElement>(null);
   const [units, setUnits] = useState<Record<string, string>>({});
+  // Bricks the user typed, per product. A product missing here is split by its bricks' pace (rule 9).
+  const [brickUnits, setBrickUnits] = useState<BrickTyping>({});
   const [baseline, setBaseline] = useState(EMPTY_FINGERPRINT);
   const [coach, setCoach] = useState<Coach | null>(null);
   const [busy, setBusy] = useState<"suggest" | "save" | "xlsx" | "pdf" | null>(null);
@@ -230,7 +275,49 @@ export function MakeItHappenPlanner({
   };
 
   const unitsOf = (code: string) => parseForecastUnits(units[code]) ?? 0;
-  const isInvalid = (code: string) => units[code] != null && parseForecastUnits(units[code]) == null;
+  const brickInvalid = (code: string, brickId: string) => {
+    const raw = brickUnits[code]?.[brickId];
+    return raw != null && parseForecastUnits(raw) == null;
+  };
+  const isInvalid = (code: string) =>
+    (units[code] != null && parseForecastUnits(units[code]) == null) ||
+    Object.keys(brickUnits[code] ?? {}).some((brickId) => brickInvalid(code, brickId));
+
+  const rowsByCode = useMemo(() => {
+    const map = new Map<string, ConcentrationPlanRow>();
+    for (const line of data.lines) for (const row of line.rows) map.set(row.productCode, row);
+    return map;
+  }, [data.lines]);
+  const resolvedBricks = useMemo(() => resolveBricks(rowsByCode, units, brickUnits), [rowsByCode, units, brickUnits]);
+
+  /** What each brick box shows: the typed text, else the product's pace split. */
+  const brickTextOf = (row: ConcentrationPlanRow): Record<string, string> => {
+    const typed = brickUnits[row.productCode];
+    if (typed) return typed;
+    const split = splitAcrossBricks(unitsOf(row.productCode), row.bricks);
+    const text: Record<string, string> = {};
+    for (const brick of row.bricks) text[brick.brickId] = split[brick.brickId] ? String(split[brick.brickId]) : "";
+    return text;
+  };
+
+  /** Typing the product re-splits it over its bricks by pace. */
+  const setProductUnits = (code: string, raw: string) => {
+    setUnits((current) => ({ ...current, [code]: raw }));
+    setBrickUnits((current) => {
+      if (!(code in current)) return current;
+      const next = { ...current };
+      delete next[code];
+      return next;
+    });
+  };
+
+  /** Typing a brick makes the product the sum of its bricks. */
+  const setBrick = (row: ConcentrationPlanRow, brickId: string, raw: string) => {
+    const next = { ...brickTextOf(row), [brickId]: raw };
+    const sum = Object.values(next).reduce((total, value) => total + (parseForecastUnits(value) ?? 0), 0);
+    setBrickUnits((current) => ({ ...current, [row.productCode]: next }));
+    setUnits((current) => ({ ...current, [row.productCode]: sum > 0 ? String(sum) : "" }));
+  };
 
   const lineForecasts = useMemo(() => {
     const byLine = new Map<string, number>();
@@ -249,10 +336,10 @@ export function MakeItHappenPlanner({
   const forecastTotal = [...lineForecasts.values()].reduce((sum, value) => sum + value, 0);
   const overallPct = achievementOf(data.totals.gradedValue, forecastTotal, data.totals.targetValue);
   const monthsLeft = data.lines.reduce((max, line) => Math.max(max, line.remainingMonths), 0);
-  const hasInvalid = Object.keys(units).some(isInvalid);
+  const hasInvalid = [...new Set([...Object.keys(units), ...Object.keys(brickUnits)])].some(isInvalid);
   const openForForecast = monthsLeft > 0;
-  const fingerprint = unitsFingerprint(units);
-  const hasUnits = fingerprint !== EMPTY_FINGERPRINT;
+  const fingerprint = planFingerprint(rowsByCode, units, brickUnits);
+  const hasUnits = unitsFingerprint(units) !== EMPTY_FINGERPRINT;
   const isDirty = fingerprint !== baseline;
   // What is still missing once sales so far and the typed forecast are both counted.
   const gapValue =
@@ -311,6 +398,7 @@ export function MakeItHappenPlanner({
         next[code] = String(value);
       }
       setUnits(next);
+      setBrickUnits({});
       setCoach({ message: String(payload.suggestion.message ?? ""), reachable: payload.suggestion.reachable ?? null });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Phoenix could not build a plan right now.");
@@ -348,6 +436,7 @@ export function MakeItHappenPlanner({
           periodKey: data.periodKey,
           name,
           units: planUnits,
+          bricks: resolvedBricks,
           planId: asNew ? null : activePlanId,
         }),
       });
@@ -369,8 +458,18 @@ export function MakeItHappenPlanner({
   function openPlan(plan: SavedPlanSummary) {
     const next: Record<string, string> = {};
     for (const [code, value] of Object.entries(plan.units)) next[code] = String(value);
+    const nextBricks: BrickTyping = {};
+    for (const [code, split] of Object.entries(plan.bricks ?? {})) {
+      const row = rowsByCode.get(code);
+      if (!row || row.bricks.length === 0) continue;
+      const resolved = brickUnitsFor(row.bricks, plan.units[code] ?? 0, split);
+      nextBricks[code] = Object.fromEntries(
+        row.bricks.map((brick) => [brick.brickId, resolved[brick.brickId] ? String(resolved[brick.brickId]) : ""]),
+      );
+    }
     setUnits(next);
-    setBaseline(unitsFingerprint(next));
+    setBrickUnits(nextBricks);
+    setBaseline(planFingerprint(rowsByCode, next, nextBricks));
     setPlanName(plan.name);
     setActivePlanId(data.canSave ? plan.id : null);
     setCoach(null);
@@ -380,6 +479,7 @@ export function MakeItHappenPlanner({
 
   function clearForecast() {
     setUnits({});
+    setBrickUnits({});
     setBaseline(EMPTY_FINGERPRINT);
     setCoach(null);
     setActivePlanId(null);
@@ -392,7 +492,8 @@ export function MakeItHappenPlanner({
     if (!hasUnits) return false;
     const asText: Record<string, string> = {};
     for (const [code, value] of Object.entries(scenario.units)) asText[code] = String(value);
-    return unitsFingerprint(asText) === fingerprint;
+    // A scenario is split by pace, so typed bricks make the forecast your own, not the card's.
+    return Object.keys(brickUnits).length === 0 && unitsFingerprint(asText) === unitsFingerprint(units);
   }
 
   function applyScenario(scenario: PlanScenario) {
@@ -401,6 +502,7 @@ export function MakeItHappenPlanner({
       if (value > 0) next[code] = String(value);
     }
     setUnits(next);
+    setBrickUnits({});
     setCoach(null);
     setError(null);
     setNotice(`Scenario ${scenario.number} is now your forecast below. Change any product before you save.`);
@@ -426,6 +528,7 @@ export function MakeItHappenPlanner({
           periodKey: data.periodKey,
           rep: data.viewingRep?.key ?? null,
           units: typedUnits,
+          bricks: resolvedBricks,
           goalPct,
           filters,
           format,
@@ -790,6 +893,12 @@ export function MakeItHappenPlanner({
             />
           ) : null}
 
+          {!data.bricksAvailable ? (
+            <p className={cn(SURFACE_CLASS, "border-l-4 border-l-amber-500 px-4 py-3 text-sm text-amber-800")}>
+              The bricks could not be read right now, so each product is planned on its own. Reload the page to try again.
+            </p>
+          ) : null}
+
           <FilterBar
             surface={surface}
             busy={busy}
@@ -824,7 +933,11 @@ export function MakeItHappenPlanner({
                   forecastValue={lineForecasts.get(entry.line.lineCode) ?? 0}
                   invalid={isInvalid}
                   line={entry.line}
-                  onUnits={(code, raw) => setUnits((current) => ({ ...current, [code]: raw }))}
+                  onUnits={setProductUnits}
+                  bricksOpenAtFirst={data.reps.length === 0}
+                  brickText={brickTextOf}
+                  brickInvalid={brickInvalid}
+                  onBrick={setBrick}
                   rows={entry.rows}
                   totalRows={entry.totalRows}
                   units={units}
@@ -1405,6 +1518,109 @@ function UnitsHint({
   );
 }
 
+/**
+ * A product's bricks and their forecast (engine.ts rule 9). Each brick's share comes from its own
+ * sales of the product; its history is never shown. Open at first for one person's plan, folded on a
+ * team plan, where one product can sell on dozens of bricks.
+ */
+function BrickList({
+  productName,
+  bricks,
+  price,
+  text,
+  invalid,
+  onBrick,
+  openAtFirst,
+}: {
+  productName: string;
+  bricks: BrickPlanRow[];
+  price: number;
+  text: Record<string, string>;
+  invalid: (brickId: string) => boolean;
+  onBrick: (brickId: string, raw: string) => void;
+  openAtFirst: boolean;
+}) {
+  const [open, setOpen] = useState(openAtFirst);
+  const held = bricks.filter((brick) => (parseForecastUnits(text[brick.brickId]) ?? 0) > 0).length;
+  return (
+    <div className="border border-slate-200 bg-white">
+      <button
+        aria-expanded={open}
+        className={cn(
+          "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-orange-50",
+          FOCUS_RING,
+        )}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className="min-w-0 break-words">
+          By brick · {bricks.length} brick{bricks.length === 1 ? "" : "s"}
+          {held > 0 ? <span className="font-normal text-slate-500"> · {held} planned</span> : null}
+        </span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <>
+          <p className="border-t border-slate-100 px-3 py-1.5 text-phx-2xs text-slate-500">
+            Each brick&apos;s share comes from its own sales of {productName}. Change any brick and the product total follows.
+          </p>
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[50%]" />
+              <col className="w-[25%]" />
+              <col className="w-[25%]" />
+            </colgroup>
+            <thead className={TABLE_HEAD_CLASS}>
+              <tr>
+                <th className="px-3 py-1.5 text-left">Brick</th>
+                <th className="px-3 py-1.5 text-right">Forecast units</th>
+                <th className="px-3 py-1.5 text-right">Forecast value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bricks.map((brick) => {
+                const units = parseForecastUnits(text[brick.brickId]) ?? 0;
+                const bad = invalid(brick.brickId);
+                return (
+                  <tr key={brick.brickId} className="border-t border-slate-100 align-top">
+                    <td className="px-3 py-1.5">
+                      <p className="break-words text-left font-bold text-slate-800" dir="auto">
+                        {brick.name}
+                      </p>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        aria-label={`Forecast units for ${productName} in ${brick.name}`}
+                        className={cn(
+                          FIELD,
+                          "w-full text-right tabular-nums",
+                          bad && "border-red-500 text-red-700 hover:border-red-500",
+                        )}
+                        enterKeyHint="next"
+                        inputMode="numeric"
+                        onChange={(event) => onBrick(brick.brickId, event.target.value)}
+                        onFocus={(event) => event.currentTarget.select()}
+                        placeholder="0"
+                        value={text[brick.brickId] ?? ""}
+                      />
+                      {bad ? <p className="mt-1 text-right text-phx-2xs font-bold text-red-600">Whole units only</p> : null}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      <p className={cn("break-words font-bold", units > 0 ? "text-orange-700" : "text-slate-500")}>
+                        {formatEgpFull(units * price)}
+                      </p>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function LineSection({
   surface,
   line,
@@ -1414,6 +1630,10 @@ function LineSection({
   forecastValue,
   invalid,
   onUnits,
+  bricksOpenAtFirst,
+  brickText,
+  brickInvalid,
+  onBrick,
 }: {
   surface: "sales" | "portal";
   line: LinePlanGroup;
@@ -1423,6 +1643,10 @@ function LineSection({
   forecastValue: number;
   invalid: (code: string) => boolean;
   onUnits: (code: string, raw: string) => void;
+  bricksOpenAtFirst: boolean;
+  brickText: (row: ConcentrationPlanRow) => Record<string, string>;
+  brickInvalid: (code: string, brickId: string) => boolean;
+  onBrick: (row: ConcentrationPlanRow, brickId: string, raw: string) => void;
 }) {
   const open = line.remainingMonths > 0;
   const linePct = achievementOf(line.gradedValue, forecastValue, line.targetValue);
@@ -1455,6 +1679,19 @@ function LineSection({
       value={units[row.productCode] ?? ""}
     />
   );
+
+  const brickList = (row: ConcentrationPlanRow) =>
+    open && row.bricks.length > 0 ? (
+      <BrickList
+        bricks={row.bricks}
+        invalid={(brickId) => brickInvalid(row.productCode, brickId)}
+        onBrick={(brickId, raw) => onBrick(row, brickId, raw)}
+        openAtFirst={bricksOpenAtFirst}
+        price={row.price}
+        productName={row.name}
+        text={brickText(row)}
+      />
+    ) : null;
 
   const detailText = (row: ConcentrationPlanRow) =>
     [
@@ -1512,8 +1749,10 @@ function LineSection({
           <tbody>
             {rows.map(({ row, figures }) => {
               const planned = figures.typedUnits > 0;
+              const bricks = brickList(row);
               return (
-                <tr key={row.productCode} className={cn(TABLE_ROW_CLASS, "align-top", planned && "bg-orange-50/50")}>
+                <Fragment key={row.productCode}>
+                <tr className={cn(TABLE_ROW_CLASS, "align-top", planned && "bg-orange-50/50")}>
                   <td className={cn("px-3 py-2.5", planned && "shadow-[inset_3px_0_0_#F97316]")}>
                     <p className="break-words font-bold text-slate-900">{row.name}</p>
                     <p className="break-words text-phx-xs text-slate-500">
@@ -1563,6 +1802,14 @@ function LineSection({
                     <GapToTarget gap={figures.gapValue} units={figures.gapUnits} />
                   </td>
                 </tr>
+                {bricks ? (
+                  <tr className={cn("border-b border-slate-100", planned && "bg-orange-50/50")}>
+                    <td className="px-3 pb-3 pl-8 pt-0" colSpan={7}>
+                      {bricks}
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>
@@ -1656,6 +1903,7 @@ function LineSection({
               {detailText(row) ? (
                 <p className="break-words text-phx-2xs tabular-nums text-slate-500">{detailText(row)}</p>
               ) : null}
+              {brickList(row)}
             </div>
           );
         })}
