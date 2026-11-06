@@ -143,6 +143,11 @@ const variables = [
     { railway: "HEALTHCHECKS_PING_KEY", github: ["HEALTHCHECKS_PING_KEY"], required: false },
     { railway: "HR_NOTIFICATION_EMAILS", github: ["HR_NOTIFICATION_EMAILS"], required: false },
     { railway: "JOB_OFFER_EMAIL_FROM", github: ["JOB_OFFER_EMAIL_FROM"], required: false },
+    // The app password of the hr@satopharma.com Turbify mailbox (owner, 2026-11-06). Set, every job
+    // offer leaves through Turbify's own SMTP as hr@ and is filed in its Sent folder, never Resend
+    // (src/lib/email/job-offer-smtp.ts). Optional: unset keeps the ordinary provider chain, and an
+    // empty GitHub secret is skipped, so a sync never erases a value set on Railway by hand.
+    { railway: "JOB_OFFER_SMTP_APP_PASSWORD", github: ["JOB_OFFER_SMTP_APP_PASSWORD"], required: false },
     { railway: "MARKETING_SHEET_REFRESH_WEBHOOK_SECRET", github: ["MARKETING_SHEET_REFRESH_WEBHOOK_SECRET"], required: false },
     { railway: "MARKETING_SHEET_REFRESH_WEBHOOK_URL", github: ["MARKETING_SHEET_REFRESH_WEBHOOK_URL"], required: false },
     { railway: "NOTIFICATION_EMAIL_FROM", github: ["NOTIFICATION_EMAIL_FROM"], required: true },

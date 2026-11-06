@@ -199,10 +199,10 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // "What needs you" — the owner's own board of decisions waiting on him.
   //
   // The default is in-app and Telegram, which is the DAILY digest (owner, 2026-09-28: Telegram daily,
-  // email weekly). Email is deliberately NOT in this default: one email to B-10 is already three
-  // deliveries, because send-phoenix-email.ts always BCCs his standing address and mirrors a preview
-  // to his Telegram — so asking for both channels on one message means four notifications a morning
-  // about one board. The weekly send passes `channels` explicitly at its own call site.
+  // email weekly). Email is deliberately NOT in this default: one email to B-10 is already two
+  // deliveries, because send-phoenix-email.ts mirrors a preview of every email to his Telegram (it
+  // also BCC'd his standing address until the owner stopped that on 2026-11-06) — so asking for both
+  // channels on one message means three notifications a morning about one board. The weekly send passes `channels` explicitly at its own call site.
   //
   // 🔴 Email being absent here is the INTENT, never the guarantee. It re-enters from an explicit
   // call-site `channels`, from resolveBasePolicyChannels' own defaults, and from the Telegram-failure

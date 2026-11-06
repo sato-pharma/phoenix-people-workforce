@@ -29,8 +29,7 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [CI runs on the SPARE LAPTOP until money returns](ci-runs-on-the-spare-laptop-until-money-returns.md) - temporary bridge (2026-11-05); money back → delete `CI_RUNNER_LABEL`; never the Enterprise trial or an org move for minutes.
-- 🔒 [Product and medical knowledge belong to the PRODUCT MANAGER, never the Training Manager](product-and-medical-knowledge-belong-to-the-product-manager.md) - golden rule, said many times; the trainer owns selling skills only.
+- [satopharma.com junk: auth PASSES, cause is Phoenix volume](satopharma-dmarc-relaxed-to-none-2026-11-06.md) — 2026-11-06 company-wide junk; DMARC relaxed then restored to reject; never "fix" it with DNS
 
 
 

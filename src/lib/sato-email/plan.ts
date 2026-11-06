@@ -4,8 +4,8 @@ import crypto from "crypto";
  * The pure half of a Sato composer send: who it reaches, and how it is cut into emails.
  *
  * Resend refuses a message carrying more than 50 recipients, and every send also picks up the
- * standing admin Bcc and the neutral To that `fanoutToBcc` leaves behind — so anything under ~48
- * clears the provider.
+ * neutral To that `fanoutToBcc` leaves behind (and, until 2026-11-06, the standing admin Bcc) — so
+ * anything under ~48 clears the provider.
  *
  * 25 is the figure because it is what the rest of this system ALREADY enforces on a hand-written
  * email: validateManualEmailRecipientPolicy caps a manual send at PHOENIX_HR_EMAIL_MAX_RECIPIENTS,
