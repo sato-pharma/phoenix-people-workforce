@@ -5,8 +5,9 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 10451 | `8c6c3c6f148f8d87` |
+| `CLAUDE.md` | 10980 | `b67d78cef264d2eb` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
+| `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
 | `hooks/dev-server-reaper.mjs` | 44955 | `8c3d38d30cd80ad6` |
 | `hooks/dispatch.json` | 3039 | `c4af358124679cf5` |
@@ -46,6 +47,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/claude-config-review.mjs` | 86368 | `92cfb3a54e026106` |
 | `scripts/claude-hygiene.mjs` | 13788 | `cfc044922652ab37` |
 | `scripts/claude-idle-shell-reaper.ps1` | 6241 | `07ddce2e1204fee6` |
+| `scripts/claude-leftover-reaper.ps1` | 3261 | `8991f3078e0a5b54` |
 | `scripts/claude-scripts-backup-watch.ps1` | 2823 | `442646c56d7c04e9` |
 | `scripts/claude-scripts-backup.mjs` | 27633 | `2ff22a52047d1cfe` |
 | `scripts/cloud-mirror-run.mjs` | 6337 | `a89f3cb0fded2524` |
@@ -118,4 +120,4 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/xlsx-snapshot-watch.ps1` | 14496 | `5ad89fa2d06b8a4b` |
 | `scripts/xlsx-snapshot.cmd` | 3542 | `e5634c4dda32d8a9` |
 | `scripts/xlsx-tripwire.ps1` | 25606 | `2e060f5e3887bc24` |
-| `settings.json` | 19469 | `cd8ba36ed26f10d1` |
+| `settings.json` | 19686 | `af0739bf7aedb85b` |

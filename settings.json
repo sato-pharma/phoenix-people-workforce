@@ -253,6 +253,14 @@
             "args": [
               "C:/Users/satoh/.claude/hooks/effort-advisor.mjs"
             ]
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "C:/Users/satoh/.claude/hooks/cloud-first-router.mjs"
+            ],
+            "timeout": 5
           }
         ]
       }
