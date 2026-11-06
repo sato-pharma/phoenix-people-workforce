@@ -325,7 +325,7 @@ function sectionRailIcon(title: string): typeof Activity {
   if (title === "Performance") return Trophy;
   if (title === "Forecast & Target") return Target;
   if (title === "Recruitment") return BriefcaseBusiness;
-  if (title === "iReports 360") return MapPinned;
+  if (title === "Field Work") return MapPinned;
   if (title === "KPIs") return TrendingUp;
   if (title === "Marketing & ROI") return Megaphone;
   if (title === "Payroll") return WalletCards;
@@ -421,7 +421,7 @@ function buildEmployeePortalSections({
 }: EmployeePortalNavVisibility): EmployeePortalNavSection[] {
   // THE OWNER'S ARRANGEMENT (2026-09-29, his sheet "emp sidebar.xlsx" plus the follow-up placement
   // sheet). Headers, in his order: My Workspace · Approvals Hub · Sales Data · Performance ·
-  // Forecast & Target · Recruitment · iReports 360 · KPIs · Marketing & ROI · Payroll · Outstation Expenses
+  // Forecast & Target · Recruitment · Field Work · KPIs · Marketing & ROI · Payroll · Outstation Expenses
   // · Leaves Management · Other. Training Manager keeps its own section, ahead of the rest, for TMs
   // only. Five rows he moved to "Remove from sidebar" — My Coaching Reports, Team Coaching Reports
   // (both /coaching), Double-Visit Analytics, Coaching Analytics and Visual Aids — are GONE from the
@@ -606,7 +606,9 @@ function buildEmployeePortalSections({
       ],
     },
     {
-      title: "iReports 360",
+      // "iReports 360" on the owner's sheet; Field Work since 7 Nov 2026 — iReports360 was retired on 6 Nov
+      // and every row here reads Phoenix CRM (the archive before each team's start included).
+      title: "Field Work",
       items: [
         // Every portal role sees their own CRM visits.
         ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
@@ -626,7 +628,7 @@ function buildEmployeePortalSections({
         // reachable for the five field seats that hold it.
         //
         // It arrived on main (#4700) AFTER the owner filled in his sidebar-placement sheet, so the
-        // sheet has no answer for it — it keeps the place main gave it, here under iReports 360.
+        // sheet has no answer for it — it keeps the place main gave it, here under Field Work.
         ...(showFieldActivityTab ? [{ href: "/employee-portals/field-activity", label: "Field Activity", icon: MapPinned }] : []),
         // Coaching Analytics is NOT restored here: this branch took it off the sidebar on the
         // owner's own sheet, and main's ruling the same day set its flag to false anyway.
@@ -639,7 +641,7 @@ function buildEmployeePortalSections({
     {
       // KPIs is a heading of its own since 2026-10-14 (owner: "KPIs to be a title in the sidebar and
       // under it a report called frequency, another called coverage, and another called call rate").
-      // The row that used to sit in iReports 360 is the Summary here — the consolidated page — and the
+      // The row that used to sit in Field Work is the Summary here — the consolidated page — and the
       // three measures each have a page of their own beneath it. One flag gates all four, the same
       // `showKpisTab` the single row carried, so no seat gains or loses a door.
       title: "KPIs",
