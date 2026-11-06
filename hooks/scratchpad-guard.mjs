@@ -313,7 +313,8 @@ if (mode === 'pre') {
     // never stop him removing a worktree; a document that exists in one place in the world must
     // never be taken by a command that was not even about that document.
     if (wipes && repos.size) {
-      const held = verify({ only: [...repos.values()], quiet: true });
+      // afterSweep: the index and file lists the sweep above just read, not a second read of both.
+      const held = verify({ only: [...repos.values()], quiet: true, afterSweep: true });
       if (held.lost.length > 0) {
         const names = held.lost.slice(0, 8).map((l) => l.file);
         logLine(`WIPE DENIED in ${input.cwd ?? '?'}: ${held.lost.length} unarchived document(s) ` +

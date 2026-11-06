@@ -158,6 +158,14 @@ function loadIndex() {
   return ix;
 }
 
+/**
+ * Marks an index the sweep changed. A symbol key, so JSON.stringify never writes it. The index is
+ * ~13.5 MB: parsing it is ~190 ms and writing it back ~170 ms (measured 2026-11-06), and the guard
+ * pays both before every worktree removal — so a sweep that found every document unchanged, the
+ * normal case, no longer writes back the same bytes it read.
+ */
+const DIRTY = Symbol('index changed');
+
 function saveIndex(ix) {
   const tmp = `${INDEX}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(ix));
@@ -210,6 +218,7 @@ function acquireLock() {
 function sweepTree(r, ix, counts) {
   const files = [];
   walkRepo(r.dir, files);
+  if (!ix.shas[r.label]) ix[DIRTY] = true;
   const shas = (ix.shas[r.label] ??= {});
   for (const src of files) {
     counts.seen++;
@@ -230,12 +239,13 @@ function sweepTree(r, ix, counts) {
         const recorded = prev.sha && shas[prev.sha];
         if (prev.sha && (!recorded || !fs.existsSync(recorded))) {
           const own = ownPath();
-          if (fs.existsSync(own)) { shas[prev.sha] = own; counts.repointed++; }
+          if (fs.existsSync(own)) { shas[prev.sha] = own; counts.repointed++; ix[DIRTY] = true; }
         }
         continue;
       }
       const sha = hash(fs.readFileSync(src));
       ix.files[key] = { size: st.size, mtimeMs: st.mtimeMs, sha };
+      ix[DIRTY] = true;
       // A recorded destination is only worth something if it is still THERE. Trusting the mapping
       // without that check is the same blindness one level up: it reported the content held while
       // the path named nothing, and the fall-through below re-records or re-copies it instead.
@@ -255,6 +265,7 @@ function sweepTree(r, ix, counts) {
       logLine(`FAILED ${src}: ${e.message}`);
     }
   }
+  return files;
 }
 
 /** Every protected file git history shows was deleted, at its content just before the deleting commit. */
@@ -322,6 +333,7 @@ function recoverDeleted(r, ix, counts) {
  * `history`: also recover files deleted in git history (one pass per main repository).
  */
 export function sweepRepos({ only = null, history = false, refresh = false } = {}) {
+  lastSweep = null; // a skipped or failed sweep leaves nothing for verify to reuse
   fs.mkdirSync(ARCHIVE, { recursive: true });
   if (!acquireLock()) { say('another repository sweep is running — skipped'); return null; }
   resetArchiveCache(); // a sweep must not answer "held nowhere" from a map built before it started
@@ -329,13 +341,15 @@ export function sweepRepos({ only = null, history = false, refresh = false } = {
   try {
     const ix = loadIndex();
     const repos = only ?? loadRepos(refresh);
-    for (const r of repos) { counts.repos++; sweepTree(r, ix, counts); }
+    const walked = new Map();
+    for (const r of repos) { counts.repos++; walked.set(r.dir.toLowerCase(), sweepTree(r, ix, counts)); }
     if (history) {
       const mains = new Map();
       for (const r of repos) if (!mains.has(r.label)) mains.set(r.label, fs.existsSync(path.join(r.main, '.git')) ? { ...r, dir: r.main } : r);
       for (const r of mains.values()) recoverDeleted(r, ix, counts);
     }
-    saveIndex(ix);
+    if (history || ix[DIRTY]) saveIndex(ix);
+    lastSweep = { ix, walked };
     if (counts.copied || counts.recovered || counts.failed || counts.repointed) logLine(JSON.stringify(counts));
     return counts;
   } finally {
@@ -414,8 +428,18 @@ function archiveBySize() {
  *   unswept  — appeared since the last sweep; the next sweep copies it
  *   LOST     — the sweep believed it was handled and no copy of that content exists anywhere
  */
-export function verify({ only = null, json = false, quiet = false } = {}) {
-  const ix = loadIndex();
+/**
+ * What the last sweepRepos in THIS process read: the index as it left it and each tree's file list.
+ * The delete guard sweeps and then verifies the same trees a moment apart, so `verify({ afterSweep })`
+ * takes both from here instead of parsing the 13.5 MB index and walking the tree a second time.
+ * This changes no answer: a document the reused index cannot place still falls to pass two, which
+ * searches the archive by CONTENT, and a tree the sweep did not walk is walked as before.
+ */
+let lastSweep = null;
+
+export function verify({ only = null, json = false, quiet = false, afterSweep = false } = {}) {
+  const reuse = afterSweep ? lastSweep : null;
+  const ix = reuse?.ix ?? loadIndex();
   const out = { archiveFiles: null, live: 0, held: 0, elsewhere: 0, unswept: 0, lost: [] };
 
   // PASS ONE reads no archive at all: a document whose copy is at its own path needs no searching.
@@ -424,8 +448,8 @@ export function verify({ only = null, json = false, quiet = false } = {}) {
   const suspects = [];
   const ownPathFixes = [];
   for (const r of (only ?? loadRepos(false))) {
-    const files = [];
-    walkRepo(r.dir, files);
+    let files = reuse?.walked.get(r.dir.toLowerCase());
+    if (!files) { files = []; walkRepo(r.dir, files); }
     for (const src of files) {
       out.live++;
       let st; try { st = fs.statSync(src); } catch { continue; }

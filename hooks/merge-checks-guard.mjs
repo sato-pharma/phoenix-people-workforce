@@ -32,7 +32,7 @@
  * STAND-DOWN, for the owner's own words only:  PHX_RED_MERGE_OK=1 <the same command>
  *                                               ($env:PHX_RED_MERGE_OK=1; … in PowerShell)
  */
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -183,10 +183,14 @@ if (mode !== 'selftest') {
     const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1] ?? null;
     const named = repoFlag(after);
     const cwd = input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd();
+    // Each read is ~0.75 s of network. One after another, a merge waited 5–17 s (measured 2026-11-06), so
+    // the reads that do not depend on each other go out together: two rounds instead of five.
     const gh = (args) =>
-      String(
-        execFileSync('gh', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000, shell: process.platform === 'win32' }),
-      ).trim();
+      new Promise((done, fail) =>
+        execFile('gh', args, { cwd, encoding: 'utf8', timeout: 20000, windowsHide: true, shell: process.platform === 'win32' }, (err, out) =>
+          err ? fail(err) : done(String(out).trim()),
+        ),
+      );
     const standDown = String(input.tool_name).toLowerCase().includes('powershell')
       ? '$env:PHX_RED_MERGE_OK=1; <the same command>'
       : 'PHX_RED_MERGE_OK=1 <the same command>';
@@ -196,22 +200,35 @@ if (mode !== 'selftest') {
     let verdict = null;
     let why = '';
     try {
-      repo = named ?? gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).toLowerCase();
+      // Round 1: the repository and the PR. Unnamed, `gh pr view` reads the same repository `gh repo view` does.
+      if (named && !/^[\w.-]+\/[\w.-]+$/.test(named)) throw new Error(`a repository name this guard will not pass to gh: ${named}`);
+      const prArgs = ['pr', 'view', ...(prNumber ? [prNumber] : []), '--json', 'headRefOid,baseRefName', ...(named ? ['--repo', named] : [])];
+      const [repoName, prJson] = await Promise.all([
+        named ?? gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']),
+        gh(prArgs),
+      ]);
+      repo = String(repoName).toLowerCase();
       if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error(`a repository name this guard will not pass to gh: ${repo}`);
-      const pr = JSON.parse(gh(['pr', 'view', ...(prNumber ? [prNumber] : []), '--json', 'headRefOid,baseRefName', '--repo', repo]) || '{}');
+      const pr = JSON.parse(prJson || '{}');
       const sha = String(pr.headRefOid ?? '');
       const base = String(pr.baseRefName ?? '');
       if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error('no head commit came back for the PR');
+      // Round 2: protection (unreadable on the free plan — that is not a failure), check runs and statuses.
+      const [contexts, runsJson, statusesJson] = await Promise.all([
+        /^[\w./-]+$/.test(base)
+          ? gh(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts']).catch(() => null)
+          : null,
+        gh(['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']),
+        gh(['api', `repos/${repo}/commits/${sha}/status`, '--jq', '.statuses']),
+      ]);
       let required = null;
-      if (/^[\w./-]+$/.test(base)) {
-        try {
-          const contexts = JSON.parse(gh(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts']) || '[]');
-          if (Array.isArray(contexts) && contexts.length > 0) required = contexts.map(String);
-        } catch {}
-      }
+      try {
+        const names = JSON.parse(contexts || '[]');
+        if (Array.isArray(names) && names.length > 0) required = names.map(String);
+      } catch {}
       if (!required && repo === PHOENIX_REPO) required = PHOENIX_REQUIRED;
-      const runs = JSON.parse(gh(['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`, '--jq', '.check_runs']) || '[]');
-      const statuses = JSON.parse(gh(['api', `repos/${repo}/commits/${sha}/status`, '--jq', '.statuses']) || '[]');
+      const runs = JSON.parse(runsJson || '[]');
+      const statuses = JSON.parse(statusesJson || '[]');
       verdict = mergeChecksVerdict({ required, runs, statuses });
     } catch (e) {
       if (e?.[Symbol.for('phx.hook-exit')]) throw e;
@@ -320,6 +337,11 @@ if (mode === 'selftest') {
   ok('live protection names win: a required check never reported is refused', d.decision === 'deny' && /not reported.*build/.test(d.reason), d.reason.slice(0, 120));
   d = decide('gh pr merge 9 --squash', shim([]));
   ok('an unreadable read FAILS CLOSED', d.decision === 'deny' && /could not read/.test(d.reason), d.reason.slice(0, 120));
+  // The reads run side by side; only the protection read may fail quietly. A lost check-runs or status read denies.
+  for (const lost of ['check-runs', `commits/${SHA}/status`]) {
+    d = decide('gh pr merge 9 --squash', shim(answers(PX, green).map(([k, v]) => [k, k === lost ? null : v])));
+    ok(`an unreadable ${lost.split('/').pop()} read FAILS CLOSED`, d.decision === 'deny' && /could not read/.test(d.reason), d.reason.slice(0, 120));
+  }
   d = decide('gh pr merge 18', shim(answers(PX, [r('validate', 'completed', 'failure')])), 'PowerShell');
   ok('PowerShell gets its own stand-down spelling', /\$env:PHX_RED_MERGE_OK=1; /.test(d.reason));
   for (const c of ['PHX_RED_MERGE_OK=1 gh pr merge 18', '$env:PHX_RED_MERGE_OK=1; gh pr merge 18', 'gh pr merge --help', 'gh pr view 18', 'gh pr checks 18', 'git merge origin/main']) {

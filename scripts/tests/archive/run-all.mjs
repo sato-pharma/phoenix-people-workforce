@@ -19,11 +19,14 @@
 //                      alone: a dead pointer asks the archive by CONTENT, so a document held
 //                      nowhere is written back while a de-duplicated one is only repointed —
 //                      break A leaves the lost document lost, break B resurrects the duplicate
+//   test-sweep-reuse    the guard's sweep-then-verify speed-up (2026-11-06): an unchanged sweep
+//                      does not rewrite the index, a copy is still written down, verify on the
+//                      reused state still finds a LOST document, and a skipped sweep is never reused
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
-const SUITES = ["test-lock.mjs", "test-lock-window.mjs", "test-verify.mjs", "test-scan.mjs", "test-sibling-lock.mjs", "test-guard-verify.mjs", "test-ownpath-repair.mjs", "test-prune-pointers.mjs", "test-history-guard.mjs"];
+const SUITES = ["test-lock.mjs", "test-lock-window.mjs", "test-verify.mjs", "test-scan.mjs", "test-sibling-lock.mjs", "test-guard-verify.mjs", "test-ownpath-repair.mjs", "test-prune-pointers.mjs", "test-history-guard.mjs", "test-sweep-reuse.mjs"];
 
 let failed = 0, skipped = 0;
 for (const s of SUITES) {

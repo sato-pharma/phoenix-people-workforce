@@ -14,7 +14,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/hook-dispatch-worker.mjs` | 1362 | `6524ba3dcd6cb8c6` |
 | `hooks/hook-dispatch.mjs` | 18788 | `1f67b0f35764e7a5` |
 | `hooks/memory-guard.mjs` | 25589 | `17623bfedd6aa98f` |
-| `hooks/merge-checks-guard.mjs` | 19649 | `9f3ac0eb1692a8fd` |
+| `hooks/merge-checks-guard.mjs` | 21021 | `2594a2d2eaaa2cfc` |
 | `hooks/needs-you-refresh.mjs` | 5091 | `0b998d5b05d63dc4` |
 | `hooks/needs-you-status.mjs` | 6955 | `e5a4ca9b178fccf0` |
 | `hooks/next-step-capture.mjs` | 74222 | `7a3bc29b84b84d70` |
@@ -26,7 +26,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `hooks/relay-inject.mjs` | 5771 | `a01a736105be6c61` |
 | `hooks/relay-lib.mjs` | 23237 | `74acdb292a728a2d` |
 | `hooks/risky-allow-guard.mjs` | 9320 | `fac0a156d3459fcf` |
-| `hooks/scratchpad-guard.mjs` | 26921 | `1d118aeb397c1f93` |
+| `hooks/scratchpad-guard.mjs` | 27039 | `25ccbc44b3bc90c1` |
 | `hooks/session-census.mjs` | 13231 | `255cc0191545ab46` |
 | `hooks/session-start-dispatch.mjs` | 9978 | `6d86871ab731ae53` |
 | `hooks/spawn-probe.mjs` | 2523 | `8201ad53322df322` |
@@ -85,7 +85,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/ram-reclaim.ps1` | 6687 | `2eee200363e45ed4` |
 | `scripts/refresh-whatsapp-apk.sh` | 3650 | `985d05e4b240040e` |
 | `scripts/remove-ftp-github-mcp.mjs` | 6296 | `6686a6d89b0236e7` |
-| `scripts/repo-archive.mjs` | 34729 | `c2c9263bb1f1b249` |
+| `scripts/repo-archive.mjs` | 36108 | `a03655431875c748` |
 | `scripts/rotate-openai-key.ps1` | 4222 | `9126a3202ed90ad8` |
 | `scripts/rotate-phoenix-db-password.mjs` | 8892 | `71f3392166c6c37f` |
 | `scripts/scratchpad-archive.mjs` | 12703 | `b7614225719bc105` |
@@ -97,7 +97,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/slowness-sentinel-watch.ps1` | 2519 | `4523c5301ee076e8` |
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
-| `scripts/tests/archive/run-all.mjs` | 3158 | `1479a2163b73726d` |
+| `scripts/tests/archive/run-all.mjs` | 3477 | `ac5dd34ee5770199` |
 | `scripts/tests/archive/test-guard-verify.mjs` | 7376 | `d47d8de03a96eb06` |
 | `scripts/tests/archive/test-history-guard.mjs` | 8628 | `f75284d35191807d` |
 | `scripts/tests/archive/test-lock-window.mjs` | 4076 | `7280bdad9063a15e` |
@@ -106,6 +106,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/tests/archive/test-prune-pointers.mjs` | 11093 | `905f0ef3471fc765` |
 | `scripts/tests/archive/test-scan.mjs` | 4983 | `6e42156ffe5a40eb` |
 | `scripts/tests/archive/test-sibling-lock.mjs` | 2989 | `5ea5d3a8277a4dab` |
+| `scripts/tests/archive/test-sweep-reuse.mjs` | 6854 | `37e12dc70f3529a4` |
 | `scripts/tests/archive/test-verify.mjs` | 5585 | `e16c151eb7ce39c1` |
 | `scripts/tests/archive/window-racer.mjs` | 1897 | `30f7bb33449b0110` |
 | `scripts/worktree-snapshot-watch.ps1` | 18336 | `32c3cfdb5c0c74e2` |
