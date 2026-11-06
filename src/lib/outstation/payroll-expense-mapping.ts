@@ -349,6 +349,9 @@ export function mapOutstationRequestRowToPayrollApproval(
     capturedLatitude: toNumber(row.captured_latitude),
     capturedLongitude: toNumber(row.captured_longitude),
     date: tripStartDate,
+    // Read-side only, for the Expense Approvals rail's "Needs a look" filter: whether the departure
+    // photo's stored metadata carries any flag. Never read by a pay rule.
+    departurePhotoFlagged: departurePhotoFlagged(row.departure_evidence_metadata),
     description: toText(row.notes) || "Outstation expense request",
     // The employee's own words, with no placeholder — Expense Approvals shows them on the card.
     employeeNote: toText(row.notes) || null,
@@ -375,6 +378,8 @@ export function mapOutstationRequestRowToPayrollApproval(
     sourceFileName: "Outstation Requests",
     specialist: toText(row.employee_name),
     status,
+    // When the claim was submitted — the queue's "awaiting N days" and "Oldest first".
+    submittedAt: toText(row.created_at) || undefined,
     to: destination,
     toDate: tripEndDate,
     total,
@@ -382,5 +387,14 @@ export function mapOutstationRequestRowToPayrollApproval(
     travelCost,
     tripId: outstationPayrollTripId(requestId),
     tripType: normalizeExpenseType(tripType),
+    // The same "manual" fallback the request read uses (service.ts) for a row stamped before the column.
+    workloadMatchStatus: toText(row.workload_match_status) || "manual",
   };
+}
+
+/** True only when the stored departure-photo metadata holds at least one flag. */
+function departurePhotoFlagged(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object") return false;
+  const flags = (metadata as { flags?: unknown }).flags;
+  return Array.isArray(flags) && flags.length > 0;
 }
