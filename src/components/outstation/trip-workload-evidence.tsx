@@ -22,6 +22,9 @@ type WorkloadVisitDetail = {
   contact: string | null;
   customer: string | null;
   kind: string;
+  /** On a partner visit, the rep who logged it — resigned or not (visit-workload.ts). Optional so a
+   * payload from a server built before it still renders the bare "double". */
+  repName?: string | null;
   role: string;
   submittedAt: string | null;
 };
@@ -221,7 +224,16 @@ function TripDayRow({
                         </span>
                         <span className="break-words text-slate-700">
                           {visit.contact || visit.customer || "—"}
-                          {visit.role === "partner" ? " · double" : ""}
+                          {visit.role === "partner" ? (
+                            visit.repName ? (
+                              <>
+                                {" · double with "}
+                                <span className="font-semibold text-slate-900">{visit.repName}</span>
+                              </>
+                            ) : (
+                              " · double"
+                            )
+                          ) : null}
                         </span>
                       </span>
                       {/* Each timing says what it IS: when the rep SAVED the CRM record is a
