@@ -18,6 +18,8 @@ import {
   JOINING_FORM_GOVERNORATES,
   JOINING_FORM_OTHER_AREA,
   JOINING_FORM_PHOTO_FIELDS,
+  JOINING_FORM_PHOTO_TYPES,
+  JOINING_FORM_PHOTO_UNREADABLE,
   readEgyptianNationalId,
   validateJoiningFacePhoto,
   validateJoiningForm,
@@ -680,27 +682,69 @@ function IdPhotoTile({
 }
 
 /**
+ * HEIC/HEIF by its first bytes, its type or its name. A phone set to save "high efficiency" pictures
+ * (Samsung's own setting, an iPhone's default) puts HEIC files in the gallery, and Chrome on Android
+ * cannot open one — so the page decodes it itself (6 Nov 2026: the back of a candidate's card arrived
+ * as a broken tile and was refused).
+ */
+async function looksLikeHeic(file: File): Promise<boolean> {
+  if (/^image\/hei[cf](-sequence)?$/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return true;
+  try {
+    const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const text = String.fromCharCode(...head.subarray(4, 12));
+    return /^ftyp(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(text);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The photo as a picture the page can draw: the browser's own decoder first, then — only for a HEIC
+ * file — `heic-to`, loaded on that first HEIC alone (it is about 3 MB). Its `csp` build, because the
+ * page policy has no 'unsafe-eval'. Null when neither can open it.
+ */
+async function decodePhoto(file: File): Promise<ImageBitmap | null> {
+  try {
+    return await createImageBitmap(file);
+  } catch {
+    // Not a picture this browser opens — try HEIC below.
+  }
+  if (!(await looksLikeHeic(file))) return null;
+  try {
+    const { heicTo } = await import("heic-to/csp");
+    return await heicTo({ blob: file, type: "bitmap" });
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Shrink a phone photo before it is sent: the long side to 2,000px, re-encoded as JPEG. A 12MP photo
  * becomes well under a megabyte, the two fit the proxy's 10 MB body limit with room to spare, the
- * upload survives mobile data — and re-encoding drops the photo's location metadata. A file the
- * browser cannot decode (a PDF, or HEIC on a desktop) is sent as it is, and the check names it.
+ * upload survives mobile data — and re-encoding drops the photo's location metadata. A HEIC photo is
+ * decoded on the phone and leaves as the same JPEG. A file that is not a picture (a PDF) is kept as it
+ * is, and the check names it; a picture nothing can open is `unreadable`, and the page keeps nothing.
  */
-async function preparePhoto(file: File, name: string): Promise<File> {
-  if (!file.type.startsWith("image/")) return file;
+async function preparePhoto(file: File, name: string): Promise<{ file: File } | { unreadable: true }> {
+  if (file.type && !file.type.startsWith("image/") && !(await looksLikeHeic(file))) return { file };
+  const bitmap = await decodePhoto(file);
+  if (!bitmap) return { unreadable: true };
+  // The shrink failed on a picture that did open: send it as it is when the check takes its type.
+  const asItIs = () => (JOINING_FORM_PHOTO_TYPES.includes(file.type) ? { file } : { unreadable: true as const });
   try {
-    const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const context = canvas.getContext("2d");
-    if (!context) return file;
+    if (!context) return asItIs();
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
-    return blob ? new File([blob], `${name}.jpg`, { type: "image/jpeg" }) : file;
+    return blob ? { file: new File([blob], `${name}.jpg`, { type: "image/jpeg" }) } : asItIs();
   } catch {
-    return file;
+    return asItIs();
+  } finally {
+    bitmap.close();
   }
 }
 
@@ -981,14 +1025,15 @@ function JoiningForm({ token, view }: { token: string; view: OpenView }) {
   async function pickPhoto(field: JoiningFormUploadField, file: File) {
     setPreparing((current) => ({ ...current, [field]: true }));
     const prepared = await preparePhoto(file, field === "idFront" ? "national-id-front" : field === "idBack" ? "national-id-back" : "photo");
-    const url = URL.createObjectURL(prepared);
+    // A photo nothing could open is never kept: no broken tile, and the message names the camera.
+    const kept = "file" in prepared ? { file: prepared.file, url: URL.createObjectURL(prepared.file) } : null;
     setPhotos((current) => {
       const previous = current[field];
       if (previous) URL.revokeObjectURL(previous.url);
-      return { ...current, [field]: { file: prepared, url } };
+      return { ...current, [field]: kept };
     });
     setPreparing((current) => ({ ...current, [field]: false }));
-    setServerErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+    setServerErrors((current) => ({ ...current, [field]: kept ? undefined : JOINING_FORM_PHOTO_UNREADABLE }));
     leave(field);
   }
 
