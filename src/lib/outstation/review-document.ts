@@ -284,7 +284,7 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
     : "";
 
   return `<p class="chipline"><span class="chip" style="${workloadChipStyle(workload.matchStatus)}">${escapeHtml(words(workload.matchStatus))}</span>
-      <span class="thin">Live iReports360 Visits Report (admin/CRM &mdash; every field visit, agent or double-visit partner).</span></p>
+      <span class="thin">Phoenix CRM visits &mdash; every field visit, own or with a rep (the iReports360 archive before the team&rsquo;s start).</span></p>
     ${workload.freshnessHeadline ? `<div class="amber"><p class="amber__k">Stored verdict is out of date</p><p class="amber__v">${escapeHtml(workload.freshnessHeadline)}</p></div>` : ""}
     <div class="boxes boxes--3">
       <div class="box"><p class="box__k">Declared (sheet)</p><p class="box__v">${declared}</p></div>

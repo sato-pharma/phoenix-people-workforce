@@ -2492,8 +2492,8 @@ export function FieldWorkforceComplianceWorkspace({ showPayrollRecommendations =
         />
 
         <AdminTableShell
-          description="Always computed live from the iReports360 visits mirror — every month, including past ones, reflects the mirror as it stands right now. Nothing is cached or pre-saved. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
-          title="Live View (Visits Mirror)"
+          description="Always computed live from Phoenix CRM visits, with the iReports360 archive before each team's start — every month, including past ones, reflects the record as it stands right now. Nothing is cached or pre-saved. Recommendations for a live month can still be reviewed and decided under the Recommendations tab below."
+          title="Live View (Field Visits)"
         >
           <div className="flex flex-wrap items-end gap-3 p-4">
             {recentMonths.length > 0 ? (
