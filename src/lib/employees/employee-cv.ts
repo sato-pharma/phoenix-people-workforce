@@ -96,20 +96,26 @@ function sourceOf(value: string | null | undefined): EmployeeCvSource {
  * other along.
  */
 // HR Advisory (the HR Business Partner) left when the owner retired the HR Business Partner seat on 2026-10-08.
+//
+// HR Administration (shown as HR Operations Specialist) joined on 2026-11-06, the owner's answer to
+// her 403: her people_master function holds `employees:update`, so she was already attaching,
+// replacing and removing CVs — including the directory's bulk upload — and could not open the file
+// she had just filed, nor see on the details panel whether one was on file at all.
 export const employeeCvReaderRoles = [
   "Super Admin",
   "SFE Manager",
   "HR Operations",
+  "HR Administration",
 ] as const satisfies readonly PhoenixRole[];
 
 const employeeCvReaderRoleSet = new Set<PhoenixRole>(employeeCvReaderRoles);
 
 /**
  * READING ONLY. Attaching, replacing and removing a CV is an edit to the employee master record,
- * so it rides `employees:update` — Super Admin and HR Operations today — and the routes assert it
- * with assertPermission rather than through this predicate. So the SFE Manager and the HR Business
- * Partner can read a CV and cannot change one, which is the same split the CRM setup screen
- * already makes: he records two CRM fields and nothing else.
+ * so it rides `employees:update` — Super Admin, HR Operations and HR Administration today — and the
+ * routes assert it with assertPermission rather than through this predicate. So the SFE Manager can
+ * read a CV and cannot change one, which is the same split the CRM setup screen already makes: he
+ * records two CRM fields and nothing else.
  */
 export function canDownloadEmployeeCv(access: Pick<AccessContext, "role" | "scope" | "source">): boolean {
   // An unauthenticated caller resolves to role "Employee" with source "guest" rather than to null

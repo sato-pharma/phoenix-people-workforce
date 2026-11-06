@@ -31,7 +31,7 @@ export const maxDuration = 60;
  * the file with a Content-Disposition, so following it from an email is a saved file and nothing
  * else, and there is no token in the URL: the session is the authorization.
  *
- * READ AND WRITE ARE DELIBERATELY DIFFERENT SETS. Reading is canDownloadEmployeeCv — the four
+ * READ AND WRITE ARE DELIBERATELY DIFFERENT SETS. Reading is canDownloadEmployeeCv — the
  * seats the owner named, of which the SFE Manager holds no `employees` grant at all. Writing is
  * `employees:update`, because attaching or removing a CV is an edit to the employee master
  * record. The reasoning for the split lives with the predicate, in employee-cv.ts.
@@ -39,7 +39,7 @@ export const maxDuration = 60;
  * NOT to be confused with the CANDIDATE CV routes under /api/recruitment/**. Those serve a person
  * being considered for a job, and the hiring-manager one deliberately refuses to hand over a file
  * at all (owner, 2026-09-09). This one serves a document on the record of somebody already hired,
- * to the four seats that administer that record.
+ * to the seats that administer that record.
  */
 
 function errorStatus(error: unknown): { message: string; status: number } {
@@ -79,10 +79,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // `?candidates=<who>` — the recruitment candidates who have a CV and could be this employee.
     //
     // GATED ON assertCanManage, NOT on the download gate below, and the difference is the whole
-    // reason it is handled before anything else in this handler. Reading a CV is the four-role
+    // reason it is handled before anything else in this handler. Reading a CV is the
     // employeeCvReaderRoles set (it exists so the SFE Manager can open one); searching the
     // CANDIDATE database is not that privilege, and it must not ride in on it. Only somebody who
-    // could actually attach the result — employees:update, so Super Admin and HR Operations —
+    // could actually attach the result — employees:update, so Super Admin and the two HR seats —
     // may ask. HR Operations holds no candidates:read of its own, which is exactly why this lives
     // here rather than reusing /api/recruitment/candidates: that route would 403 the one person
     // whose job this is.

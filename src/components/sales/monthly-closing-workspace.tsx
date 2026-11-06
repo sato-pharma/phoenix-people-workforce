@@ -212,6 +212,10 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
       try {
         const query = new URLSearchParams({ line: selectedLine, period: selectedPeriod });
         const response = await fetch(`/api/sales/monthly-closing/lock?${query.toString()}`, { cache: "no-store" });
+        // A refused or failed read is UNKNOWN, never "not locked" — 2026-11-06 a database outage
+        // answered this read with an error body, Boolean(undefined) turned it into "open", and the
+        // screen offered "Lock month" on a month locked since 4 Nov.
+        if (!response.ok) throw new Error(`Lock state could not be read (${response.status}).`);
         const payload = (await response.json()) as { locked?: boolean; lock?: { lockedAt?: string } | null };
         if (!cancelled) {
           setLocked(Boolean(payload.locked));
@@ -247,8 +251,17 @@ export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPubl
         method: unlocking ? "DELETE" : "POST",
       });
       if (!response.ok) {
+        // The route answers { error }, so the sentence is shown, never the raw JSON around it.
         const text = await response.text();
-        throw new Error(text || "Failed to update lock state.");
+        let message = text;
+        try {
+          message = String((JSON.parse(text) as { error?: unknown }).error ?? "") || text;
+        } catch {
+          message = text;
+        }
+        // The press failed, so what the button showed may be wrong too: read the lock again.
+        setLockReadVersion((version) => version + 1);
+        throw new Error(message || "Failed to update lock state.");
       }
       const payload = (await response.json()) as {
         alreadyLocked?: boolean;

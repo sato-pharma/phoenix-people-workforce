@@ -67,16 +67,26 @@ function accessFor(role: PhoenixRole, overrides: Partial<AccessContext> = {}) {
  *      second later, the download button is absent, and nothing errors anywhere.
  */
 export function runEmployeeCvTests() {
-  // ── 1. the four seats the owner named, and nobody else ────────────────────────────────────
+  // ── 1. the seats the owner named, and nobody else ─────────────────────────────────────────
   assert.deepEqual(
     [...employeeCvReaderRoles].sort(),
-    ["HR Operations", "SFE Manager", "Super Admin"],
-    "the owner named Super Admin, SFE Manager, the HR Business Partner and HR Operations; the HR Business Partner seat was retired on 2026-10-08",
+    ["HR Administration", "HR Operations", "SFE Manager", "Super Admin"],
+    "the owner named Super Admin, SFE Manager, the HR Business Partner and HR Operations; the HR Business Partner seat was retired on 2026-10-08, and the HR Operations Specialist (HR Administration) joined on 2026-11-06",
   );
 
   for (const role of employeeCvReaderRoles) {
     assert.equal(canDownloadEmployeeCv(accessFor(role)), true, `${role} must be able to download an employee CV`);
   }
+
+  // THE HR OPERATIONS SPECIALIST FILES CVs, SO SHE MUST BE ABLE TO OPEN ONE (owner, 2026-11-06).
+  // Her people_master function holds `employees:update`, which is the write gate on this route —
+  // left off this set, she attached a CV through the bulk upload and then met a 403 on the details
+  // panel's "is one on file" read for the very person she had just filed it for.
+  assert.equal(
+    canDownloadEmployeeCv(accessFor("HR Administration")),
+    true,
+    "the HR Operations Specialist attaches and removes CVs; refusing her the read leaves her filing documents she cannot see",
+  );
 
   // THE SFE MANAGER IS THE ASSERTION THIS FILE EXISTS FOR. He receives the notice and owns the
   // screen it lands on, and he holds no employee-master grant at all — so any gate written in

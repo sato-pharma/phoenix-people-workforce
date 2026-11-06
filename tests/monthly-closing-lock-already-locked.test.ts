@@ -102,4 +102,25 @@ export function runMonthlyClosingLockAlreadyLockedTests() {
     /fetch\(`\/api\/sales\/monthly-closing\/lock\?[\s\S]*?\}, \[canPublish, selectedLine, selectedPeriod, lockReadVersion\]\);/,
     "the lock read must re-run when lockReadVersion moves",
   );
+
+  // ── 6. A database outage (2026-11-06 03:27 Cairo) ─────────────────────────
+  // The sign-in check met Cloudflare 521, the lock read's error body became "not locked", the
+  // screen offered "Lock month" on a month locked since 4 Nov, and the press printed raw JSON.
+  const mapError = route.slice(route.indexOf("function mapError("), route.indexOf("export async function GET("));
+  const outage = mapError.indexOf("if (isSessionVerificationUnavailable(error)) {");
+  assert.ok(outage > 0, "a sign-in check the database could not answer must be recognised");
+  assert.ok(outage < mapError.indexOf('"Lock request failed."'), "the outage is answered before the generic 500");
+  assert.match(mapError.slice(outage), /DATABASE_UNREACHABLE_MESSAGE \}, \{ status: 503 \}/, "an outage is a 503 with a sentence, never a masked 500");
+  assert.match(route, /nothing was changed/, "the outage sentence says the month was not changed");
+
+  const lockRead = screen.slice(
+    screen.indexOf("fetch(`/api/sales/monthly-closing/lock?"),
+    screen.indexOf("[canPublish, selectedLine, selectedPeriod, lockReadVersion]"),
+  );
+  const okCheck = lockRead.indexOf("if (!response.ok) throw");
+  assert.ok(okCheck > 0 && okCheck < lockRead.indexOf("setLocked(Boolean(payload.locked))"), "a failed lock read is UNKNOWN, never read as 'not locked'");
+
+  const failed = toggle.slice(toggle.indexOf("if (!response.ok) {"), toggle.indexOf("const payload ="));
+  assert.match(failed, /JSON\.parse\(text\) as \{ error\?: unknown \}\)\.error/, "a failed press shows the route's sentence, never the raw JSON");
+  assert.match(failed, /setLockReadVersion\(/, "a failed press reads the lock again so the button tells the truth");
 }

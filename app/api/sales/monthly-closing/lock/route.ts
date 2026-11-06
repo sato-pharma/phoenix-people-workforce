@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { isSessionVerificationUnavailable } from "@/lib/auth/session-lifecycle";
 import { getClosingLock, lockClosing, unlockClosing } from "@/lib/sales/monthly-closing-lock";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -28,7 +29,17 @@ function forbidNonAdmin(access: Awaited<ReturnType<typeof resolveAccessContext>>
   return null;
 }
 
+// The sentence for a database that did not answer. 2026-11-06 03:27 Cairo: the hosted database
+// answered Cloudflare 521 to the owner's sign-in check on this page, the route masked it as a 500
+// "Lock request failed.", and the month — locked since its publication on 4 Nov — read as unlocked.
+// A 503 says what happened and that nothing was changed, so a retry is the obvious next press.
+const DATABASE_UNREACHABLE_MESSAGE =
+  "Phoenix could not reach the database just now, so nothing was changed. Try again in a minute.";
+
 function mapError(error: unknown) {
+  if (isSessionVerificationUnavailable(error)) {
+    return NextResponse.json({ success: false, error: DATABASE_UNREACHABLE_MESSAGE }, { status: 503 });
+  }
   if (isForbiddenError(error)) {
     return NextResponse.json(
       { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
