@@ -119,6 +119,11 @@ export type ExpenseTripRecord = {
    * present only for Phoenix-submitted outstation requests whose workload snapshot recorded it
    * (post pharmacy-split change). Excel-imported historical rows never carry these. */
   doctorVisits?: number;
+  /** What the EMPLOYEE typed in the claim's notes box at submission (`outstation_expense_requests.notes`)
+   * — present only on Phoenix-submitted requests, null when they typed nothing. Display-only: never
+   * `description`, which falls back to a placeholder or the system's approval reason, and never
+   * `hrComment`, which is HR's decision box. */
+  employeeNote?: string | null;
   hrId?: string | null;
   from: string;
   hr: string;
