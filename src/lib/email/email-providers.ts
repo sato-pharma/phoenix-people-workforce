@@ -14,33 +14,27 @@
 // The layer is INERT until the backup is configured (BREVO_API_KEY): with only Resend present it
 // behaves exactly as before — a 429 becomes a RetryableEmailError the outbox retries later.
 //
-// EXTRA ACCOUNTS (owner, 2026-10-08 — Resend's daily quota runs out every day; a fourth Resend
-// account added 2026-10-11): a second, third and fourth Resend account and a second Brevo account
-// join the chain the moment their key is set, in this order:
+// 🔴 ONE RESEND ACCOUNT, ONE BREVO ACCOUNT — NOTHING ELSE (owner, 2026-11-06: "keep a free Resend
+// account as the primary, and one Brevo account in case needed as a fallback"). The chain is
 //
-//   resend → resend-2 (RESEND_API_KEY_2) → resend-3 (RESEND_API_KEY_3) → resend-4 (RESEND_API_KEY_4)
-//     → brevo (BREVO_API_KEY) → brevo-2 (BREVO_API_KEY_2)
+//   resend (RESEND_API_KEY) → brevo (BREVO_API_KEY)
 //
-// Each extra account may send from its own verified address (RESEND_EMAIL_FROM_<n> /
-// BREVO_EMAIL_FROM_2), because one sending domain can be verified in only one Resend account. Every
-// hand-off between them obeys the same duplicate-safe rules above — a quota refusal or an
-// accepted-then-failed message moves on, an ambiguous failure never does.
+// for EVERY email, whatever its module or sender. The second, third and fourth Resend accounts
+// (send2/send3/send4.satopharma.com), the per-module Sales and People accounts
+// (sales./people.satopharma.com) and the second Brevo account are RETIRED: their keys may still be
+// set on Railway, and this file never reads them. Why: the company's own mail was landing in junk,
+// and Phoenix spreading ~245 emails a day across seven sending addresses on six domains was the
+// cause found (2026-11-06). Capacity is 100 a day on Resend's free plan plus 300 on Brevo's; the
+// busiest day of the month before was 310. Never add an account back without his word.
 //
-// PER-MODULE ACCOUNTS (owner, 2026-10-13 — sales first): a module's own Resend account, named by a
-// suffix such as RESEND_API_KEY_SALES rather than a number, is tried FIRST for that module's mail
-// and is never part of the pool above, so only that module can spend its quota. The registry is
-// `module-sending-accounts.ts`; `resolveEmailProviders` puts the account in front of the chain.
-//
-// ONE message type is exempt from that sender override: a JOB OFFER, which by the owner's rule of
-// 2026-10-13 fires from `HR@satopharma.com` or `hr@send.satopharma.com` and from nothing else. An
-// account that would have to rewrite its From declines the offer instead of re-branding it, so the
-// letter waits for the account that can send it as HR (`senderOverrideRefusal`).
+// Brevo may still put its own verified sender on a message (BREVO_EMAIL_FROM). ONE message type is
+// exempt: a JOB OFFER, which by the owner's rule of 2026-10-13 fires from `HR@satopharma.com` or
+// `hr@send.satopharma.com` and from nothing else. Brevo declines the offer instead of re-branding
+// it, so the letter waits for Resend (`senderOverrideRefusal`).
 
 import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
 import { splitAddressList } from "@/lib/email/receivable-address";
 import { JOB_OFFER_SENDER_ADDRESSES, isJobOfferSender } from "@/lib/email/job-offer-sender";
-import { isSatoIdentitySender } from "@/lib/email/sato-identity-senders";
-import { moduleSendingAccountFor, moduleSendingAccounts, type ModuleSendingAccount } from "@/lib/email/module-sending-accounts";
 
 export type PreparedEmailAttachment = {
   content: string;
@@ -62,8 +56,8 @@ export type PreparedEmail = {
   idempotencyKey: string;
   /**
    * The module this email belongs to (`origin.module`: "sales", a template category such as "Sales").
-   * It only picks a dedicated sending account (`module-sending-accounts.ts`); unset or unknown
-   * keeps the ordinary chain, byte for byte.
+   * Carried for the record only: since 2026-11-06 every module rides the same one-Resend, one-Brevo
+   * chain, so it picks nothing.
    */
   module?: string | null;
   replyTo: string;
@@ -231,17 +225,12 @@ export async function checkResendAccepted(
   return { state: "pending" };
 }
 
-/** The env name for one account: the bare name for the first account, `<NAME>_<n>` for the others. */
-function accountEnvName(base: string, suffix: string | undefined) {
-  return suffix ? `${base}_${suffix}` : base;
-}
-
 function readEnv(name: string) {
   return process.env[name]?.trim() || "";
 }
 
 /**
- * An extra account's sender override. A full `Name <address>` is used as written; a bare address
+ * Brevo's sender override. A full `Name <address>` is used as written; a bare address
  * keeps the display name of the message's own From, so a job offer still reads as HR and a
  * notification still reads as Phoenix — only the verified address underneath changes.
  */
@@ -257,16 +246,16 @@ export function applySenderOverride(from: string, override: string | undefined):
  * The one message whose From an account may NOT rewrite: a job offer.
  *
  * Owner rule, 2026-10-13 — an offer fires from `HR@satopharma.com` or `hr@send.satopharma.com`,
- * and from nothing else (`job-offer-sender.ts`). Every override above exists because a sending
- * domain is verified in only ONE account, so a backup must put its own address on the envelope;
+ * and from nothing else (`job-offer-sender.ts`). The override above exists because a sending
+ * domain is verified in only ONE account, so the backup must put its own address on the envelope;
  * for an offer that is exactly the thing the rule forbids. Measured on production 2026-10-13, the
  * backups would have sent `Sato Pharma HR <phoenix@send2.satopharma.com>` and — on Brevo, which
  * overrides the whole header — `Phoenix Workforce <phoenix@send.satopharma.com>`.
  *
  * So the account declines the message instead of rewriting it: `failover`, which is the chain's
  * "deterministically not sent" signal, so the next account is tried and, if none can send as HR,
- * `sendPreparedEmailWithFailover` raises a RETRYABLE error. The offer is delayed until Resend's
- * first account (the only one holding both Sato domains) can take it — never re-branded.
+ * `sendPreparedEmailWithFailover` raises a RETRYABLE error. The offer is delayed until Resend (the
+ * account holding both Sato domains) can take it — never re-branded.
  */
 export function senderOverrideRefusal(
   email: PreparedEmail,
@@ -282,38 +271,22 @@ export function senderOverrideRefusal(
   };
 }
 
-/** Extra accounts beyond the first, by env suffix: RESEND_API_KEY_2, _3 and _4, BREVO_API_KEY_2. */
-export const extraResendAccountSuffixes = ["2", "3", "4"] as const;
-export const extraBrevoAccountSuffixes = ["2"] as const;
-
 type AccountLabel = { keyEnv: string; label: string };
 
-function createResendProvider(suffix?: string, moduleAccount?: ModuleSendingAccount): EmailProvider {
-  const keyEnv = accountEnvName("RESEND_API_KEY", suffix);
-  // The first account keeps the message's own From, exactly as before; an extra account may send
-  // from its own verified address.
-  const fromEnv = suffix ? accountEnvName("RESEND_EMAIL_FROM", suffix) : null;
-  const label = moduleAccount ? `Resend ${moduleAccount.label} account` : suffix ? `Resend account ${suffix}` : "Resend";
+function createResendProvider(): EmailProvider {
+  const keyEnv = "RESEND_API_KEY";
+  const label = "Resend";
   return {
-    name: moduleAccount ? `resend-${moduleAccount.suffix.toLowerCase()}` : suffix ? `resend-${suffix}` : "resend",
+    name: "resend",
     isConfigured() {
-      // A module account is switched on by its key AND its sender together. Without the sender it
-      // would send as the message's own From, an address its domain does not hold, and Resend
-      // would refuse every message — so it stays out of the chain instead of failing each send.
-      if (moduleAccount) return Boolean(readEnv(keyEnv) && fromEnv && readEnv(fromEnv));
       return Boolean(readEnv(keyEnv));
     },
     checkAccepted(id) {
       return checkResendAccepted(id, { apiKey: readEnv(keyEnv) });
     },
     send(email) {
-      const override = fromEnv ? readEnv(fromEnv) : "";
-      // A job offer is never re-branded onto this account's own address — it waits for the one
-      // that can send as HR (`senderOverrideRefusal`).
-      const refusal = senderOverrideRefusal(email, override, label);
-      if (refusal) return Promise.resolve(refusal);
-      const from = applySenderOverride(email.from, override);
-      return sendViaResend(email, { apiKey: readEnv(keyEnv), from, keyEnv, label });
+      // Resend sends every message under its own From — it holds both Sato domains.
+      return sendViaResend(email, { apiKey: readEnv(keyEnv), from: email.from, keyEnv, label });
     },
   };
 }
@@ -379,22 +352,20 @@ async function sendViaResend(
 
 export const resendProvider: EmailProvider = createResendProvider();
 
-function createBrevoProvider(suffix?: string): EmailProvider {
-  const keyEnv = accountEnvName("BREVO_API_KEY", suffix);
-  const fromEnv = accountEnvName("BREVO_EMAIL_FROM", suffix);
-  const label = suffix ? `Brevo account ${suffix}` : "Brevo";
+function createBrevoProvider(): EmailProvider {
+  const keyEnv = "BREVO_API_KEY";
+  const label = "Brevo";
   return {
-    name: suffix ? `brevo-${suffix}` : "brevo",
+    name: "brevo",
     isConfigured() {
       return Boolean(readEnv(keyEnv));
     },
     send(email) {
-      // Brevo's sender must be a verified sender/domain on THAT Brevo account. The first account
-      // reads BREVO_EMAIL_FROM, else the message's own From — unchanged. An extra account reads its
-      // own BREVO_EMAIL_FROM_<n>, then the first account's, then the message's own From.
-      const override = readEnv(fromEnv) || (suffix ? readEnv("BREVO_EMAIL_FROM") : "");
-      // A job offer is never re-branded onto a Brevo sender — this account's override is the one
-      // that would have put *Phoenix Workforce* on an offer of employment.
+      // Brevo's sender must be a verified sender/domain on the Brevo account: BREVO_EMAIL_FROM, else
+      // the message's own From.
+      const override = readEnv("BREVO_EMAIL_FROM");
+      // A job offer is never re-branded onto a Brevo sender — this override is the one that would
+      // have put *Phoenix Workforce* on an offer of employment.
       const refusal = senderOverrideRefusal(email, override, label);
       if (refusal) return Promise.resolve(refusal);
       return sendViaBrevo(email, { apiKey: readEnv(keyEnv), keyEnv, label, sender: parseSender(override || email.from) });
@@ -468,62 +439,18 @@ async function sendViaBrevo(
 
 export const brevoProvider: EmailProvider = createBrevoProvider();
 
-const extraResendProviders = extraResendAccountSuffixes.map((suffix) => createResendProvider(suffix));
-const extraBrevoProviders = extraBrevoAccountSuffixes.map((suffix) => createBrevoProvider(suffix));
-
-// The dedicated per-module accounts, by module-account suffix. Never part of the failover pool above.
-const moduleResendProviders = new Map(
-  moduleSendingAccounts.map((account) => [account.suffix, createResendProvider(account.suffix, account)] as const),
-);
-
-/** Every module account with whether it is switched on (names only, never a key) — for the health read-out. */
-export function moduleSendingAccountStatus() {
-  return moduleSendingAccounts.map((account) => ({
-    configured: moduleResendProviders.get(account.suffix)?.isConfigured() ?? false,
-    label: account.label,
-    modules: [...account.modules],
-    provider: moduleResendProviders.get(account.suffix)?.name ?? "",
-  }));
-}
-
-// Ordered provider list: Resend primary, then every configured backup — the other Resend accounts
-// first, then the Brevo accounts. A backup is skipped unless it is configured AND failover is not
-// explicitly disabled — so with no backup env set this returns just [resend] and behaviour is
-// unchanged.
+// The whole chain: Resend first, then Brevo when its key is set and failover is not switched off
+// (EMAIL_FAILOVER_ENABLED=false). With no Brevo key this returns just [resend].
 //
-// 🔴 THE FIRST ACCOUNT IS DEDICATED (owner, 2026-10-13: "make it and hrbp dedicated only for job
-// offers + sato email composer"). It is the only account that can send as `hr@`, `hrbp@` or `ceo@`,
-// and automated notification traffic was spending its ~100/day quota by lunchtime — 404 Resend
-// messages on 11 Oct — which is why 30 of the last 63 offers were sent by a backup account and 18
-// went out as *Phoenix Workforce*. So an ordinary Phoenix email is given the chain WITHOUT it, and
-// mail from a Sato human identity keeps it (`sato-identity-senders.ts`). Passing no `email` returns
-// the whole chain, which is what a "is any provider configured at all" check wants.
-//
-// 🔒 A MODULE ACCOUNT GOES IN FRONT (owner, 2026-10-13: one Resend account per module, sales first).
-// An email whose `module` has a configured dedicated account tries it FIRST and then falls through
-// to the ordinary chain, so a refused or capped module account never stops the mail. The module
-// account is never in the ordinary chain, so no other module's mail can spend its quota. A Sato
-// human identity (`hr@`, `hrbp@`, `ceo@`) is exempt: it keeps the first account whatever its module.
-export function resolveEmailProviders(email?: Pick<PreparedEmail, "from"> & { module?: string | null }): EmailProvider[] {
+// 🔴 The SAME chain for every email (owner, 2026-11-06). It used to vary: Resend's first account was
+// kept for mail from hr@, hrbp@ and ceo@ (2026-10-13), and Sales and People mail tried their own
+// account first. Those accounts are retired (see the header), so there is nothing left to choose.
+export function resolveEmailProviders(): EmailProvider[] {
   const providers: EmailProvider[] = [resendProvider];
   const failoverDisabled = String(process.env.EMAIL_FAILOVER_ENABLED ?? "").trim().toLowerCase() === "false";
   if (failoverDisabled) return providers;
-  for (const backup of [...extraResendProviders, brevoProvider, ...extraBrevoProviders]) {
-    if (backup.isConfigured()) providers.push(backup);
-  }
-
-  if (email && isSatoIdentitySender(email.from)) return providers;
-
-  // Ordinary automated mail hands the dedicated account back — but only while something else can
-  // carry it. With no backup configured (a local run, staging, a lapsed key) the chain stays as it
-  // was: an email that cannot be sent at all is worse than one that spends the reserved quota.
-  const ordinary = email && providers.length > 1 ? providers.slice(1) : providers;
-
-  const moduleAccount = email ? moduleSendingAccountFor(email.module) : null;
-  const moduleProvider = moduleAccount ? moduleResendProviders.get(moduleAccount.suffix) : undefined;
-  if (moduleProvider?.isConfigured()) return [moduleProvider, ...ordinary];
-
-  return ordinary;
+  if (brevoProvider.isConfigured()) providers.push(brevoProvider);
+  return providers;
 }
 
 export type FailoverSendResult = { id: string; provider: string };
@@ -541,7 +468,7 @@ export type EmailDispatch = (email: PreparedEmail) => Promise<FailoverSendResult
  */
 export async function sendPreparedEmailWithFailover(
   email: PreparedEmail,
-  providers: EmailProvider[] = resolveEmailProviders(email),
+  providers: EmailProvider[] = resolveEmailProviders(),
 ): Promise<FailoverSendResult> {
   let lastFailover: { reason: string; retryAfterMs?: number } | null = null;
 
