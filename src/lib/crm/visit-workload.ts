@@ -140,10 +140,10 @@ export type RepVisitWorkload = {
   pharmacyWorkload: number;
   pharmacyVisits: number;
   /**
-   * Of the trip's AM · PM · Pharmacies visits, how many are Phoenix CRM's own. Phoenix CRM logs no
-   * pharmacy visit, so `pharmacyWorkload` counts the iReports360 visits alone and a display words it
-   * through the golden-rule helper ("not recorded in Phoenix", never 0). Display only — never stored,
-   * never compared, never a verdict. Optional: a payload from before it existed reads as none.
+   * Of the trip's AM · PM · Pharmacies visits, how many are Phoenix CRM's own. Phoenix CRM records its
+   * own pharmacy calls (owner, 2026-10-03), so `pharmacyWorkload` is the whole count from both sources
+   * (visit-count-buckets.ts). Display only — never stored, never compared, never a verdict. Optional: a
+   * payload from before it existed reads as none.
    */
   phoenixWorkload?: number;
   pmWorkload: number;

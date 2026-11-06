@@ -65,22 +65,22 @@ export type ReviewDocumentWorkloadDay = {
   campaign: number;
   date: string;
   pharmacies: number;
-  /** Of the day's visits, how many are Phoenix CRM's own — it logs no pharmacy visit. */
+  /** Of the day's visits, how many are Phoenix CRM's own. */
   phoenix?: number;
   pm: number;
   regular: number;
 };
 
 /**
- * The live figures as the golden-rule split (src/lib/crm/visit-count-buckets.ts): a trip or day logged
- * in Phoenix CRM, which records no pharmacy visit, reads "not recorded in Phoenix" — never 0. The
+ * The live figures as the golden-rule split (src/lib/crm/visit-count-buckets.ts). Phoenix CRM records its
+ * own pharmacy calls (owner, 2026-10-03), so every split's pharmacy figure is the whole count. The
  * declared figure keeps its own wording ("not counted separately").
  */
 function liveSplit(figures: { am: number; pm: number; pharmacies: number; phoenix?: number }): VisitCountSplit {
   return { am: figures.am, pm: figures.pm, pharmacies: figures.pharmacies, ...(figures.phoenix ? { phoenix: figures.phoenix } : {}) };
 }
 
-/** One day's pharmacy cell: "2", "Not recorded" or "2 (iReports360 only)". */
+/** One day's pharmacy cell — the plain count since pharmacyRecordingOf answers "recorded" for every split. */
 function livePharmacyCell(day: ReviewDocumentWorkloadDay): string {
   const split = liveSplit(day);
   return pharmacyRecordingOf(split) === "not-recorded" ? pharmacyTileFigure(split).value : pharmacyFigureText(split);
