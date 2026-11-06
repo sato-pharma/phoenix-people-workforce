@@ -11,6 +11,7 @@ import {
   getVacationBalancePeriod,
   isWithinFirstSixMonths,
 } from "../src/lib/vacation/calculations.ts";
+import { resolveEmployeeLifecycleJourney } from "../src/lib/lifecycle-risk/metrics.ts";
 
 /**
  * One person, two HR records (owner, 2026-11-05): Omayma Wael El Habashy resigned as AI-0009 on
@@ -84,6 +85,25 @@ export function runContinuousServiceTests() {
   const portal = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   assert.match(portal, /async function fetchPortalPayslips\(hrId: string\)[\s\S]*?ownAndEarlierRecordHrIds\(hrId\)/, "the payslip list reads her earlier record too");
   assert.match(portal, /hireDate: continuousServiceStartDate\(employee\.hrId, employee\.hireDate\)/, "the portal's Hire date is her service start");
+  // Her overview read "Employment duration 0 months" beside a Hire date of 17 Aug (6 Nov 2026): the
+  // duration was counted from the new record's 7 Nov. It counts from her service start now; probation
+  // and renewal stay on the new contract.
+  assert.match(
+    portal,
+    /function computeEmploymentJourney\(employee: EmployeeDirectoryRow\)[\s\S]{0,700}continuousServiceStartDate\(employee\.hrId, employee\.hireDate\)[\s\S]{0,200}serviceDurationDays: resolveEmployeeLifecycleJourney\(\{ hireDate: serviceStart \}\)\.serviceDurationDays/,
+    "HEADLINE: the portal's Employment duration counts from her service start, not the new record's hire date",
+  );
+  const onSixNov = new Date("2026-11-06T10:00:00Z");
+  assert.equal(
+    resolveEmployeeLifecycleJourney({ hireDate: continuousServiceStartDate("PD-0039", "2026-11-07") }, onSixNov).serviceDurationDays,
+    81,
+    "on 6 Nov she has served 81 days since 17 Aug",
+  );
+  assert.equal(
+    resolveEmployeeLifecycleJourney({ hireDate: "2026-11-07" }, onSixNov).serviceDurationDays,
+    0,
+    "control: counted from the new record she reads 0, the defect he saw",
+  );
   const payroll = readFileSync("src/lib/payroll/service.ts", "utf8");
   assert.match(payroll, /payrollScope === "SELF"[\s\S]{0,400}ownAndEarlierRecordHrIds\(currentHrId\)/, "she may open a payslip paid under her earlier record");
   const vacation = readFileSync("src/lib/vacation/service.ts", "utf8");

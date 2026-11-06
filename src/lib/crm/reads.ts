@@ -23,7 +23,6 @@ import { IREPORTS360_VISIT_SOURCE, isPhoenixNativeVisitRow } from "@/lib/crm/pho
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
@@ -1886,11 +1885,9 @@ export async function getVisitsReportData(
   const dateTo = input.dateTo || today;
   const page = Math.max(1, input.page ?? 1);
   const pageSize = Math.min(500, Math.max(10, input.pageSize ?? 100));
-  const configured = isIReports360Configured();
 
   if (!(await isCrmVisitsSchemaReady())) {
     return {
-      configured,
       dateFrom,
       dateTo,
       filters: { agents: [], visitTypes: [] },
@@ -1927,7 +1924,6 @@ export async function getVisitsReportData(
   const rows = await attachNearestCheckins(rawRows, dateFrom, dateTo);
 
   return {
-    configured,
     dateFrom,
     dateTo,
     filters: { agents, visitTypes: VISITS_REPORT_TYPE_OPTIONS },

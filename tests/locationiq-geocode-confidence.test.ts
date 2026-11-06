@@ -148,11 +148,4 @@ export function runLocationIqGeocodeConfidenceTests() {
     /const googleGeo = await googleGeocodeComponents\(searchText\);\s*\n\s*if \(googleGeo && centroidPassesRegionGate\(googleGeo\.governorate, brickRegionCode\)\)/,
     "when LocationIQ fails the region gate, Google must be retried and checked against the same gate",
   );
-
-  const syncSource = readFileSync("src/lib/crm/sync.ts", "utf8");
-  assert.match(
-    syncSource,
-    /if \(!hasLocationIqKey\(\) && !hasGoogleServerKey\(\)\) return;/,
-    "the CRM check-in backfill must only no-op when NEITHER provider is configured",
-  );
 }

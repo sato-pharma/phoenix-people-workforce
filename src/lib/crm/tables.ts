@@ -17,7 +17,7 @@ export const CRM_CHECKINS_TABLE = "ireports360_checkins";
 export const CRM_SYNC_RUNS_TABLE = "ireports360_visits_sync_runs";
 
 /** One row per 30-day history window, holding the LATEST parity verification of that window against
- * the CRM (see `src/lib/crm/parity.ts`). Keyed on the window's start date, so it is a running state
+ * the CRM (written by the parity sweep, retired with the vendor on 6 November 2026). Keyed on the window's start date, so it is a running state
  * table rather than a log — what each check actually did is recorded in CRM_SYNC_RUNS_TABLE. */
 export const CRM_PARITY_WINDOWS_TABLE = "ireports360_parity_windows";
 
@@ -42,7 +42,8 @@ export const CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_customer_br
 /** Each agent's ASSIGNED contact list (PM / AM / Pharmacy), one row per (agent, contact, list).
  * The only table here NOT built from activity: it is scraped from the CRM's web app, because the
  * Reporting API has no contacts endpoint, and it is therefore the only place in Phoenix a doctor
- * who has never been planned or visited exists. See src/lib/crm/contacts-web-client.ts. */
+ * who has never been planned or visited exists. The scraper that filled it was retired with the
+ * vendor on 6 November 2026; the stored lists stay. List names: src/lib/crm/list-types.ts. */
 export const CRM_CONTACTS_TABLE = "ireports360_contacts";
 
 /** Synced PLAN entries — the rep's assigned doctor list (one row per planned call, keyed on

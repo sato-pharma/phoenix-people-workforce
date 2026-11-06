@@ -22,12 +22,3 @@ export function canUseAdminCrmWorkspace(access: Pick<AccessContext, "role" | "sc
   if (access.scope === "system") return true;
   return ADMIN_CRM_WORKSPACE_ROLES.has(access.role);
 }
-
-/**
- * Deliberately NOT covered by the grant above: triggering a visits BACKFILL
- * (app/api/admin/visits-report/backfill). That re-pulls from the iReports360 vendor API and
- * rewrites the mirror in bulk — a platform operation, not a CRM analysis one — so it stays
- * Super-Admin-only. Kept here as a note so the distinction is visible from the same file that
- * defines the grant, rather than being rediscovered from an inline check later.
- */
-export const CRM_BACKFILL_STAYS_SUPER_ADMIN_ONLY = true;

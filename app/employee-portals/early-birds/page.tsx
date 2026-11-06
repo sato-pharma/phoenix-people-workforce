@@ -20,7 +20,6 @@ import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
 import { EarlyBirdsControls } from "@/components/early-birds/early-birds-controls";
 import { formatShownScopeLabel } from "@/components/early-birds/early-birds-format";
 import { EarlyBirdsRepHistoryPanel } from "@/components/early-birds/early-birds-rep-history-panel";
-import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEarlyBirdsRepHistory } from "@/lib/early-birds/history";
@@ -38,9 +37,6 @@ export const dynamic = "force-dynamic";
 const BASE_PATH = "/employee-portals/early-birds";
 
 type PageProps = { searchParams?: Promise<{ district?: string; period?: string; rep?: string }> };
-
-/** Mirrors the role gate in app/api/crm/early-birds/sync/route.ts. */
-const SYNC_ROLES = new Set(["District Manager", "Regional Manager", "National Sales Manager"]);
 
 export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) {
   const access = await resolveAuthenticatedPageAccess();
@@ -111,10 +107,6 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
   // One extra round trip, and only when a rep is actually open.
   const history = rep ? await getEarlyBirdsRepHistory({ hrId: rep.hrId }) : null;
 
-  // Only the roles that may spend a vendor login see the button. A Medical Rep reads the board;
-  // the route rejects him anyway, but offering a button that always fails is worse than no button.
-  const canSync = SYNC_ROLES.has(access.role) || access.scope === "system";
-
   return shell(
     <div className="space-y-3">
       <EarlyBirdsControls
@@ -153,7 +145,6 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
       ) : null}
 
       <EarlyBirdsBoard
-        action={canSync ? <EarlyBirdsSyncAction /> : undefined}
         data={data}
         openRepHrIdKey={rep?.hrIdKey ?? null}
         repLink={{ basePath: BASE_PATH, district: district.hrId, period: period.periodKey }}

@@ -463,9 +463,9 @@ closure was 2026-08-01, so the Cloud Run service, its secrets and the scheduler 
 be recreated first.
 
 `scripts/setup-gcp-cron.sh` was deliberately KEPT. It stopped being the schedule source of truth
-when GCP died, but five live files still cite it for where a scheduling window originally came from
-— including `src/lib/crm/dates.ts` and `tests/crm-live-sync-window.test.ts`, where the in-code gate
-is what actually decides a firing. Deleting it would strand those citations.
+when GCP died, but live files still cite it for where a scheduling window originally came from.
+Deleting it would strand those citations. (The iReports360 live-sync window in `src/lib/crm/dates.ts`
+and its test were two of them until the vendor was retired and its code removed, 6 November 2026.)
 
 Do not run `gcloud` to verify anything.
 
@@ -575,10 +575,12 @@ Two things `pull` confirmed that are worth knowing on their own:
 - **`phoenix-people-workforce`'s source carried `checkSuites: true`** on 10 Oct (it reads `false` since the
   release gate went live, 19 Oct). That was the Wait-for-CI deploy gate of "The deploy gate" above, visible in
   configuration rather than inferred from behaviour.
-- 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires nine production routes on a
+- 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires five production routes on a
   time-of-day schedule — `notifications/process`, `cron/inbound-intake`,
-  `cron/recruitment-email-intake`, the three iReports360 syncs, `notifications/daily`,
-  `cron/background-jobs` — with `restartPolicyType: NEVER`, i.e. a one-shot container. An audit on
+  `cron/recruitment-email-intake`, `notifications/daily`, `cron/background-jobs` — with
+  `restartPolicyType: NEVER`, i.e. a one-shot container. (It fired the three iReports360 syncs too,
+  until they were removed from `.railway/railway.ts` with the vendor on 6 November 2026; the live
+  service keeps the old command until the next `railway config apply`.) An audit on
   2026-09-30 listed it as a leftover to delete; that was wrong, and deleting it would remove a
   production cron path. cron-job.org is the scheduler of record (§ Cron Jobs), so establish which of
   the two is actually firing each route before touching either.
@@ -1121,8 +1123,9 @@ Railway could not deploy, so every scheduler had stopped at about 02:35 Cairo.
 
 - **The app** is `phoenix-worker-standby` (Frankfurt, one `shared-cpu-2x` machine, 2 GB). Its config is
   `infra/fly-standby/fly-worker.toml`: `PHOENIX_PROCESS_ROLE=worker`, `PHOENIX_LIVE_CRM_POLL=true`,
-  `PHOENIX_HOST=fly-worker`, and **`RAILWAY_ENVIRONMENT_NAME=production` on purpose**: it is the CRM poller's host
-  pin (`resolveInProcessHostRefusal` in `src/lib/crm/live-poller.ts`). It also makes the release gate **required**
+  `PHOENIX_HOST=fly-worker`, and **`RAILWAY_ENVIRONMENT_NAME=production` on purpose**: it is the in-process timers' host
+  pin (`resolveInProcessHostRefusal` in `src/lib/platform/in-process-host.ts`; the CRM poller it once guarded was
+  retired with iReports360, 6 November 2026). It also makes the release gate **required**
   there: the image carries `RAILWAY_GIT_COMMIT_SHA` (built in by `fallback-image.yml`), so `/api/readyz` reads that
   commit's recorded gate — read live on 22 Oct: `required: true, passed: true, reason: "recorded"`. Until 22 Oct the
   file lived only in a Temp folder, which Windows empties.
@@ -1331,7 +1334,8 @@ switching them back on:
 | `phoenix-ireports360-live-sync` | :01/:16/:31/:46, 8 AM–12 PM | Superseded by the poller's 20–30 s ticks. ⚠️ Its route is still wired to the `phoenix-ireports360-live-sync` dead-man's-switch and **nothing else pings that slug**, so that check has been red since 2026-08-16 for no real reason — delete the check (see [observability.md](observability.md)) |
 | `phoenix-inbound-intake (Copy)` | every 2 min | An accidental duplicate of the live intake job. Harmless while off; **never enable it** — it would double every intake run |
 
-All four iReports360 jobs being off is expected and is **not** an outage: PR #1631 moved that work
+All four iReports360 jobs being off is expected and is **not** an outage. (Historical: iReports360 was
+retired on 6 November 2026 and the poller below was removed with it.) PR #1631 moved that work
 into a continuous in-process poller (`src/lib/crm/live-poller.ts`, started from `instrumentation.ts`,
 gated on `PHOENIX_LIVE_CRM_POLL=true`, which is set on the service). It probes a 2-day window every
 20 s in the 08:00–12:30 Cairo compliance window, 30 s daytime and 120 s overnight, and runs the

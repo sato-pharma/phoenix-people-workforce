@@ -583,13 +583,8 @@ export function runCeoCommandCenterTests() {
       `${file} must not keep an inline Super-Admin check alongside the shared predicate — that is how the grant half-lands`,
     );
   }
-  // A visits BACKFILL re-pulls from the vendor and rewrites the mirror in bulk. It is a platform
-  // operation, not CRM analysis, and was deliberately left out of the grant.
-  assert.match(
-    readFileSync("app/api/admin/visits-report/backfill/route.ts", "utf8"),
-    /access\.role !== "Super Admin"/,
-    "the visits backfill must stay Super-Admin-only — it was excluded from the SFE CRM grant on purpose",
-  );
+  // The visits BACKFILL that was deliberately left out of this grant was removed with the retired
+  // vendor (2026-11-06) — crm-cutover.test.ts pins that it stays gone.
 
   for (const hrHref of ['"/attendance"', '"/admin/approvals/vacation"']) {
     assert.ok(

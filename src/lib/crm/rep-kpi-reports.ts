@@ -109,7 +109,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { CATCH_ALL_CONTACT_CRM_ID, isCallRateWorkingDay, type CallRateHolidays } from "@/lib/crm/call-rate";
-import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
+import { LIST_TYPES, type CrmListType } from "@/lib/crm/list-types";
 import type { DoctorCoverageGradeTier } from "@/lib/crm/doctor-coverage-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 

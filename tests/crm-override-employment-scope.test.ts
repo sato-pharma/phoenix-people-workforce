@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 
 import { buildCrmIdentityMaps, resolveEmployeeAttribution, resolveEmployeeHrId } from "../src/lib/crm/identity.ts";
-import { isSilentAttribution } from "../src/lib/crm/sync.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { CrmResolutionRow } from "../src/lib/crm/types.ts";
 
@@ -110,7 +109,6 @@ export function runCrmOverrideEmploymentScopeTests() {
   const gap = resolveEmployeeAttribution(1391, LABEL, maps, "2026-06-10");
   assert.equal(gap.hrId, null, "nobody was employed on that date — the override must NOT rescue it");
   assert.equal(gap.blockedHrId, "AI-0003", "the refusal is reported, so the sync counts and alerts on it");
-  assert.equal(isSilentAttribution(gap), false, "a gap date is a decision, not an absence of information");
 
   // ── (C) With NOTHING to yield to, the override is REFUSED — it does not credit anyway ───────
   //
@@ -129,7 +127,6 @@ export function runCrmOverrideEmploymentScopeTests() {
   // Reported, not discarded — the difference between refusing a decision and losing it. A silent
   // null lets preserveResolvedIdentities restore the stale hr id this mapping exists to correct.
   assert.equal(orphaned.blockedHrId, "B-85", "the refusal names the person it refused");
-  assert.equal(isSilentAttribution(orphaned), false, "a refusal is a decision, not an absence of information");
   assert.equal(
     orphaned.blockedByOverride,
     true,

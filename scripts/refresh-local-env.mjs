@@ -40,8 +40,8 @@ const RAILWAY_PLATFORM_PREFIX = /^RAILWAY_/;
 
 // Never copy these locally, even though Railway has them.
 const EXCLUDE = new Set([
-  // src/lib/crm/live-poller.ts: this must never be set in a local env file — it would let a
-  // dev machine start a SECOND writer against production's CRM sync.
+  // src/lib/platform/in-process-host.ts: this must never be set in a local env file — it would let a
+  // dev machine start a SECOND writer of the in-process schedulers against production.
   "PHOENIX_LIVE_CRM_POLL",
   // A production-specific CORS allow-list; copying it locally risks confusing CORS behavior
   // for a local dev server that isn't running on any of those origins anyway.

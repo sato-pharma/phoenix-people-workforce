@@ -26,7 +26,7 @@ import {
  * A FAILED row is a window of field visits that did not arrive when it should have. A row still
  * RUNNING two hours after it started is worse: the process was killed or hung mid-pull and never
  * wrote an end, which is exactly how the 5 July 2026 reconcile sat "running" for seventeen hours
- * (src/lib/crm/sync.ts). No pull is meant to take more than the route's 300 s ceiling, so two hours
+ * (in the sync engine, since retired). No pull is meant to take more than the route's 300 s ceiling, so two hours
  * is not a slow run — it is a dead one.
  *
  * Both are SYSTEM rows: a sync failure belongs to no employee, it belongs to the pipeline. One issue

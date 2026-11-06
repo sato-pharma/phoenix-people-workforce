@@ -5,8 +5,8 @@ import type { BackgroundJobRunOutcome } from "@/lib/background-jobs/worker";
 
 // Notifies Super Admins over Telegram/in-app every time the weekly background-jobs worker
 // fires — success or failure — since the worker itself now only runs once a week (see
-// app/api/cron/background-jobs/route.ts) instead of draining continuously. Mirrors
-// ireports360-sync-digest.ts's recipient + delivery pattern.
+// app/api/cron/background-jobs/route.ts) instead of draining continuously. It took its recipient +
+// delivery pattern from the iReports360 sync digest, retired with that vendor on 6 November 2026.
 
 const NOTIFY_AUDIENCE_ROLES = ["Super Admin"] as const;
 
@@ -134,7 +134,7 @@ export async function notifyBackgroundJobsRun(input: BackgroundJobsRunNotifyInpu
               : { errorMessage: input.errorMessage }),
           },
           // module: "system" is the module actually enabled in notification_module_channel_policies
-          // for Telegram — see the identical note in ireports360-sync-digest.ts. The literal string
+          // for Telegram, and held-notification-alert.ts uses it for the same reason. The literal string
           // "telegram" has no governance policy row and fails closed via resolveTelegramGovernance's
           // unknown-module fail-safe.
           module: "system",

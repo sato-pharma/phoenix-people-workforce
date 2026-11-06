@@ -343,22 +343,18 @@ export async function runDeadMansSwitchTests() {
       }
     }
 
-    // The three long jobs actually ask for it, at the point they run. Source-level because the
+    // The long jobs actually ask for it, at the point they run. Source-level because the
     // routes cannot be executed here; comment-stripped so the explanation cannot satisfy the check.
     {
       const read = (path: string) => stripComments(readFileSync(new URL(path, import.meta.url), "utf8"));
       const sweep = read("../app/api/cron/phoenix-crm-integrity-sweep/route.ts");
-      const sync = read("../app/api/cron/ireports360-visits-sync/route.ts");
       const daily = read("../app/api/notifications/daily/route.ts");
-      const poller = read("../src/lib/crm/live-poller.ts");
       assert.match(sweep, /withDeadMansSwitch\(\s*"phoenix-crm-integrity-sweep"[\s\S]*?signalStart:\s*true/, "integrity sweep must signal start");
-      assert.match(sync, /withDeadMansSwitch\("phoenix-ireports360-sync"[\s\S]*?signalStart:\s*true/, "iReports360 sync route must signal start");
       assert.match(daily, /signalDeadMansSwitchStart\("phoenix-notify-daily"\)/, "notify-daily must signal start");
       assert.ok(
         daily.indexOf('signalDeadMansSwitchStart("phoenix-notify-daily")') < daily.indexOf("await runDailyNotifications(request)"),
         "and before the run, not after it",
       );
-      assert.match(poller, /if \(!isReconcile\) await signalDeadMansSwitchStart\(slug\)/, "the in-process rolling sync must signal start");
     }
   } finally {
     for (const [k, v] of Object.entries(saved)) {

@@ -50,15 +50,12 @@ const otherMirrorRef: RegExp[] = [
 export const CRM_VISITS_MIRROR_ALLOW_LIST: Readonly<Record<string, string>> = {
   "src/lib/crm/tables.ts": "defines the table-name constants",
   "src/lib/crm/reads.ts": "THE read door itself",
-  "src/lib/crm/sync.ts": "the vendor → mirror sync writer (upsert, delete-reconcile, re-stamp)",
-  "src/lib/crm/parity.ts": "vendor-vs-mirror parity sweep; must see history before the resigned exclusion",
   "src/lib/crm/schema.ts": "schema-readiness probes",
   "src/lib/crm/admin.ts": "sync-run ledger and the unmapped-identity punch-list behind identity resolution",
   "src/lib/crm/customer-brick.ts": "distinct contact scan feeding the customer→brick resolution table",
   "src/lib/crm/region-brick.ts": "distinct CRM region scan feeding the region→brick resolution table",
-  "src/lib/crm/contacts-sync.ts": "resolves contact-list sync targets (hr id → agent crm id)",
   "src/lib/crm/master.ts": "CRM Master raw-mirror browser (Super Admin exact-mirror tabs)",
-  "src/lib/crm/rep-day.ts": "rep-day drill-down: live-first before the CRM cutover, the unified visits view as its fallback and its only source after it",
+  "src/lib/crm/rep-day.ts": "rep-day drill-down: the unified visits view and the stored check-ins (its live vendor path left with iReports360, 6 November 2026)",
   // 🔴 THE DOOR CANNOT ANSWER THIS ONE. `queryVisits` selects from `crm_visits_unified`, and from a
   // team rep's day that Phoenix also holds, that view ANTI-JOINS his iReports360 rows out — the owner's
   // rule of 2026-10-02, narrowed to "Phoenix wins the day" on 2026-10-16, and never to be weakened. So
@@ -75,13 +72,9 @@ export const CRM_VISITS_MIRROR_ALLOW_LIST: Readonly<Record<string, string>> = {
 export const CRM_OTHER_MIRROR_ALLOW_LIST: readonly string[] = [
   "src/lib/crm/tables.ts",
   "src/lib/crm/reads.ts",
-  "src/lib/crm/sync.ts",
   "src/lib/crm/schema.ts",
   "src/lib/crm/admin.ts",
   "src/lib/crm/identity.ts",
-  "src/lib/crm/live-poller.ts",
-  "src/lib/crm/plan-sync.ts",
-  "src/lib/crm/contacts-sync.ts",
   "src/lib/crm/master.ts",
   // Consumer reads of plan entries / check-ins not yet behind a door (known debt, not visits):
   // Reads the reference weekly PLANS to answer "when is this doctor usually planned" on Phoenix
@@ -89,7 +82,6 @@ export const CRM_OTHER_MIRROR_ALLOW_LIST: readonly string[] = [
   // and src/lib/crm IS the door for it; its visits read goes through reads.ts, not from here.
   "src/lib/crm/plan-board.ts",
   "src/lib/crm/shared-customers.ts",
-  "src/lib/crm/plan-verification-service.ts",
   "src/lib/crm/rep-doctor-lists.ts",
   "src/lib/crm/reps-list.ts",
 ];
@@ -185,7 +177,7 @@ export function runCrmSingleSourceTests() {
   const probe = crmModuleMirrorViolations([
     { rel: "src/lib/crm/some-new-consumer.ts", source: 'supabase.from(CRM_VISITS_TABLE).select("id")' },
     { rel: "src/lib/crm/another-consumer.ts", source: 'supabase.from("ireports360_visits").select("id")' },
-    { rel: "src/lib/crm/sync.ts", source: "supabase.from(visitsTable).upsert(rows)" },
+    { rel: "src/lib/crm/reads.ts", source: "supabase.from(visitsTable).select(\"id\")" },
   ]);
   assert.deepEqual(probe.visitsViolations, ["src/lib/crm/some-new-consumer.ts", "src/lib/crm/another-consumer.ts"]);
 

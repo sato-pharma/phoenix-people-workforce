@@ -454,8 +454,8 @@ export async function runRepsWeeklyPlansTests() {
         `${page.what} must gate the plans tab on the PLAN role list and crm_plans:read — Reps List admits National Sales Manager and SFE Manager, and plan verification deliberately admits neither`,
       );
       assert.ok(
-        source.includes('canAccess(access, "crm_plans", "approve")'),
-        `${page.what} must read approve separately from read: more seats may read a plan than may sign one`,
+        source.includes('canAccess(access, "phoenix_crm", "approve")'),
+        `${page.what} must read Phoenix CRM's approve separately from read: more seats may read a plan than may approve one, and the decide route asks that same grant`,
       );
       assert.ok(
         source.includes("getPlanVerificationScope(access)"),
@@ -540,75 +540,39 @@ export async function runRepsWeeklyPlansTests() {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // 11. UNVERIFY REACHES THE CRM, AND THE REP HEARS ABOUT IT
+  // 11. THE BUTTON APPROVES A PHOENIX WEEK, AND AN OLD-CRM PLAN IS READ-ONLY
   //
-  // The owner, 2026-09-01: "I want to be able to verify and unverify from Phoenix." The decision
-  // itself is pinned in tests/crm-plan-verification.test.ts; what is pinned HERE is that the
-  // decision is actually reachable end to end — because the two ways this feature can be shipped
-  // broken are both silent. A local-only unverify leaves the CRM reading "verified" to everyone who
-  // matters, and a stale idempotency key makes the SECOND verify of a plan deliver nothing at all.
+  // iReports360 was retired on 6 November 2026, and the Verify and Unverify that wrote into it went
+  // with it (owner: "phx crm replaced the old crm so any module was wired with old crm must wire with
+  // phx crm"). A plan filed in Phoenix CRM is approved through Phoenix CRM's own decide route, the one
+  // the Team tab posts to; an old-CRM plan shows the status the old CRM last held, and nothing to press.
   // ---------------------------------------------------------------------------------------------
   {
-    const service = readFileSync("src/lib/crm/plan-verification-service.ts", "utf8");
-    assert.ok(
-      service.includes("export async function setPlanVerification("),
-      "the service takes the DIRECTION as a parameter — a function still called verifyPlan that also unverifies is a name that will eventually be believed over the code",
-    );
-    assert.ok(
-      service.includes("decidePlanVerification({ action, currentStatus: plan.status })"),
-      "and asks the pure rule in the direction the manager pressed, against a FRESH read of the status",
-    );
-    assert.ok(
-      service.includes("iReports360SetPlanStatus"),
-      "an unverify is a CRM WRITE, not a local edit of Phoenix's own copy: the CRM is where the rep and every other manager look, so a verification taken back only here would leave the plan reading 'verified' to all of them",
-    );
-    assert.ok(
-      !/There is no code path here that lowers a status/.test(service),
-      "the comment claiming this file cannot lower a status had to GO, not be softened — a comment asserting an invariant the code no longer holds is worse than no comment",
-    );
-
-    const route = readFileSync("app/api/crm/plan-verification/verify/route.ts", "utf8");
-    assert.ok(
-      route.includes("isPlanVerificationAction(action)"),
-      "the route VALIDATES the action rather than falling back: a typo'd action quietly becoming 'verify' would write a signature into the customer's CRM that nobody asked for",
-    );
-    assert.ok(
-      /body\?\.action === undefined \? "verify"/.test(route),
-      "an ABSENT action still means verify — that is the shape every caller sent before unverify existed, and the safe default if the field is lost in transit",
-    );
-    assert.ok(
-      route.includes('await assertPermission(access, "crm_plans", "approve")'),
-      "and unverify passes the SAME permission gate as verify — it is the same write to the same CRM, not a lesser action",
-    );
-
     const button = readFileSync("src/components/crm/plan-verify-button.tsx", "utf8");
     assert.ok(
-      button.includes("PLAN_STATUS_SUPERVISOR_VERIFIED") && button.includes('"unverify"'),
-      "the button offers Unverify on a plan this feature verified",
+      button.includes('fetch("/api/phoenix-crm/plans/decide"') &&
+        button.includes('JSON.stringify({ action: "approve", expectedVersion: plan.phoenixVersion, planId: plan.phoenixPlanId })'),
+      "the button posts Phoenix CRM's own approve, with the plan's own id and the version it was read at",
     );
     assert.ok(
-      /if \(action === null \|\| !canVerify\)/.test(button),
-      "and offers NEITHER verb on a plan an area manager signed — Phoenix never wrote that signature, so it is not Phoenix's to take back",
+      !button.includes("/api/crm/plan-verification") && !button.includes('"unverify"') && !button.includes('"return"'),
+      "nothing writes into the old CRM, and a return (a note and a day) is made on the Team tab",
     );
     assert.ok(
-      button.includes("armed") && /armed \? words\.armed : words\.idle/.test(button),
-      "unverify is armed exactly as heavily as verify: same write, same CRM, same email to the rep, and on a board where the plan under the cursor changes with every click of the rep picker",
-    );
-
-    const notifications = readFileSync("src/lib/crm/plan-notifications.ts", "utf8");
-    assert.ok(
-      notifications.includes("export async function notifyRepPlanStatusChanged("),
-      "the rep is told about BOTH directions — an unverify he is never told about is the worse half of the pair, because his plan is now waiting on HIM and nothing else he can see would say so",
+      /canApprove &&\s*phoenixStatus === "submitted"/.test(button) && button.includes("const phoenixPlan = plan.crmPlanId < 0;"),
+      "only a sent Phoenix week, for a viewer holding phoenix_crm:approve, offers Approve — an old-CRM plan (positive id) never does",
     );
     assert.ok(
-      /idempotencyKey: `crm_plan_\$\{undone \? "unverified" : "verified"\}:\$\{input\.crmPlanId\}:\$\{input\.repHrId\}:\$\{changeMinute\(input\.changedAt\)\}`/.test(
-        notifications,
-      ),
-      "the idempotency key carries the DIRECTION and the MINUTE. Without them the sequence verify -> unverify -> verify meets a key already spent on the first verify, and the rep simply never hears that his plan was signed — no error, and a delivery audit showing a send from days earlier as though it covered this one",
+      /armed \? "Confirm — approves the week in Phoenix" : "Approve"/.test(button),
+      "the approve is armed: the first click arms, the second commits, on a board where the plan under the cursor changes with every click of the rep picker",
     );
     assert.ok(
-      service.includes("const changedAt = new Date().toISOString();") && service.includes("changedAt,"),
-      "and the service stamps that minute ONCE, so the mirror row and the notification agree about when the change happened",
+      button.includes("setError(payload.message ??") && button.includes("startTransition(() => router.refresh())"),
+      "a refusal shows the route's own words, and the board is re-read so the status beside them is the plan's current one",
+    );
+    assert.ok(
+      button.includes('approved: { className: "text-emerald-700", words: "Approved in Phoenix" }'),
+      "an approved week says where it was approved",
     );
   }
 
