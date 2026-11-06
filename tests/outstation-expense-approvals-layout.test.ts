@@ -75,6 +75,28 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   );
   assert.match(workspace, /<ExpenseClaimValidationPanel collapsible requestId=/, "the claim checks fold, verdict in the header");
 
+  // The premium pass (owner, 2026-11-06: "do a heavy big premium polish").
+  assert.doesNotMatch(
+    workspace,
+    /overflow-x-auto|\bw-max\b/,
+    "HEADLINE: nothing on the approvals screen scrolls sideways — the By employee trips were a w-max strip in an overflow-x-auto box",
+  );
+  assert.match(
+    workspace,
+    /<table className="hidden w-full table-fixed border border-slate-200 bg-white text-xs md:table">\s*<colgroup>/,
+    "a person's trips are a fitted table on a desktop (AGENTS.md §4), with cards on a phone",
+  );
+  assert.match(
+    workspace,
+    /Trip \{formatNumberValue\(position\.index\)\} of \{formatNumberValue\(position\.total\)\}/,
+    "the panel says where the trip sits in the list and walks it with Previous / Next",
+  );
+  assert.match(
+    workspace,
+    /window\.matchMedia\("\(max-width: 1023px\)"\)\.matches[\s\S]{0,200}panelRef\.current\?\.scrollIntoView/,
+    "HEADLINE: on a phone, opening a trip brings its panel into view instead of leaving it under the list",
+  );
+
   // Each trip day is ONE row, and a day's map is drawn only once that day is opened.
   assert.match(workload, /<TripDayRow\b/, "HEADLINE: the days render as one row each");
   assert.match(

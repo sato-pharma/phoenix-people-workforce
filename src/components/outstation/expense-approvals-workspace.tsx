@@ -10,7 +10,7 @@ import {
   Loader2,
   MapPin,
   RotateCcw,
-  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Search,
@@ -285,6 +285,7 @@ export function ExpenseApprovalsWorkspace({
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(() => new Set());
   const [restoredDraftCount, setRestoredDraftCount] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   // Guards BOTH draft effects below: nothing may be persisted before the stored draft has been
   // read, or the empty initial state would erase the very work being recovered.
   const draftRestoredRef = useRef(false);
@@ -511,6 +512,16 @@ export function ExpenseApprovalsWorkspace({
     () => records.find((record) => record.tripId === effectiveSelectedId) ?? null,
     [records, effectiveSelectedId],
   );
+  // Where the open trip sits in the list, for the panel's "Trip 4 of 37" and its Previous / Next.
+  const selectedIndex = activeList.findIndex((record) => record.tripId === effectiveSelectedId);
+  // On a phone the panel sits UNDER a 70vh list, so a tapped trip opened out of sight and the
+  // reviewer had to scroll down to find it. Bring the panel into view there; a desktop already
+  // shows the two side by side.
+  const openTrip = useCallback((tripId: string) => {
+    setSelectedId(tripId);
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches) return;
+    window.requestAnimationFrame(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
 
   // Counts alone don't answer the question this queue exists to answer — "how much money is
   // waiting on me". These follow the filters, so the strip always describes what is on screen.
@@ -549,6 +560,7 @@ export function ExpenseApprovalsWorkspace({
             pmWorkload: record.pmWorkload,
             specialist: record.specialist,
             state: expenseApprovalState(decision),
+            toDate: record.toDate,
             tripId: record.tripId,
           };
         }),
@@ -1137,10 +1149,31 @@ export function ExpenseApprovalsWorkspace({
       <div className="grid gap-4 lg:grid-cols-[minmax(300px,380px)_1fr] lg:items-start [&>*]:min-w-0">
         {/* Left: the queue */}
         <div className={cn(PANEL_CLASS, "min-w-0")}>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 bg-slate-900 px-4 py-2.5">
+            <span className="flex items-center gap-2">
+              <span aria-hidden className="h-4 w-1 bg-orange-500" />
+              <span className="text-phx-xs font-black uppercase tracking-wide text-white">Trips</span>
+            </span>
+            {loading ? null : (
+              <span className="text-phx-xs font-bold text-slate-300">
+                {formatNumberValue(pending.length)} awaiting · {formatNumberValue(activeList.length)} shown
+              </span>
+            )}
+          </div>
           {loading ? (
-            <p className="flex items-center gap-2 px-4 py-8 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading trips…
-            </p>
+            <div aria-busy="true" className="divide-y divide-slate-200">
+              <p className="sr-only">Loading trips…</p>
+              {[0, 1, 2, 3, 4, 5].map((index) => (
+                <div className="flex items-start justify-between gap-3 px-4 py-3" key={index}>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-3.5 w-2/3 animate-pulse bg-slate-200" />
+                    <div className="h-3 w-1/2 animate-pulse bg-slate-100" />
+                    <div className="h-2.5 w-1/3 animate-pulse bg-slate-100" />
+                  </div>
+                  <div className="h-3.5 w-20 animate-pulse bg-slate-200" />
+                </div>
+              ))}
+            </div>
           ) : loadError ? (
             // An expired session gets a sign-in, not a Retry — retrying just fails again, and
             // calling it a permissions problem sends the reviewer hunting through roles.
@@ -1238,8 +1271,9 @@ export function ExpenseApprovalsWorkspace({
                         </label>
                       ) : null}
                       <button
-                        className="flex min-w-0 flex-1 items-start justify-between gap-3 py-3 pl-3 pr-4 text-left"
-                        onClick={() => setSelectedId(record.tripId)}
+                        aria-current={isSelected ? "true" : undefined}
+                        className="flex min-w-0 flex-1 items-start justify-between gap-3 py-3 pl-3 pr-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-orange-500"
+                        onClick={() => openTrip(record.tripId)}
                         type="button"
                       >
                         {/* Wraps, never an ellipsis (AGENTS.md §4). The trip's length sits beside
@@ -1264,7 +1298,7 @@ export function ExpenseApprovalsWorkspace({
                           <DuplicateTripFlag copies={duplicateFlags.get(record.tripId)} />
                         </div>
                         <div className="shrink-0 text-right">
-                          <p className="font-mono text-sm font-bold text-slate-900">{egp(decision.approvedAmount)}</p>
+                          <p className="font-mono text-sm font-bold tabular-nums text-slate-900">{egp(decision.approvedAmount)}</p>
                           {adjusted ? (
                             <p className="font-mono text-phx-2xs text-orange-600 line-through">{egp(record.total)}</p>
                           ) : null}
@@ -1295,7 +1329,10 @@ export function ExpenseApprovalsWorkspace({
         {/* Right: the decision panel. On a desktop it is pinned beside the queue at the height of
             the window — its header and its decision bar stay put and only the evidence between
             them scrolls — leaving room at the bottom for the Save bar. */}
-        <div className={cn(PANEL_CLASS, "min-h-[300px] lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:flex-col")}>
+        <div
+          className={cn(PANEL_CLASS, "min-h-[300px] scroll-mt-4 lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:flex-col")}
+          ref={panelRef}
+        >
           {!selected ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 py-16 text-center text-slate-400">
               <Inbox className="h-8 w-8" />
@@ -1321,6 +1358,13 @@ export function ExpenseApprovalsWorkspace({
               onUnapprove={() => setDecision(selected, { hrApproved: false, status: "" })}
               onUnreject={() => setDecision(selected, { hrApproved: false, status: "" })}
               canDecide={canDecide}
+              onNext={
+                selectedIndex >= 0 && selectedIndex < activeList.length - 1
+                  ? () => setSelectedId(activeList[selectedIndex + 1].tripId)
+                  : undefined
+              }
+              onPrevious={selectedIndex > 0 ? () => setSelectedId(activeList[selectedIndex - 1].tripId) : undefined}
+              position={selectedIndex >= 0 ? { index: selectedIndex + 1, total: activeList.length } : null}
               record={selected}
               valuesOnly={isImportedHistoryTrip(selected.date)}
             />
@@ -1373,7 +1417,7 @@ function EmployeeSummaryPanel({
 }) {
   if (summaries.length === 0) {
     return (
-      <p className={cn(PANEL_CLASS, "px-4 py-8 text-center text-sm text-slate-500")}>
+      <p className={cn(PANEL_CLASS, "px-4 py-10 text-center text-sm text-slate-500")}>
         {narrowed ? "No trips match these filters." : "No outstation trips to summarise yet."}
       </p>
     );
@@ -1390,8 +1434,7 @@ function EmployeeSummaryPanel({
         </div>
         {/* Both money figures, never one. `claimed` spans every trip on screen; `approved` spans
             only the approved ones — so a single total here reads as whichever the viewer assumed,
-            and the two are not comparable (their difference is not the trim). Each chip is
-            whitespace-nowrap so a label never breaks mid-phrase; the row itself may wrap. */}
+            and the two are not comparable (their difference is not the trim). */}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-phx-xs font-bold">
           <span className="whitespace-nowrap text-slate-300">{egp(totals.claimedTotal)} claimed</span>
           <span className="whitespace-nowrap text-amber-300">
@@ -1406,18 +1449,82 @@ function EmployeeSummaryPanel({
         </div>
       </div>
 
-      {/* Column captions belong to the desktop layout only — on a phone each figure carries its own
-          inline label instead, so a stacked card never leaves a bare number unexplained. */}
-      <div className="hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400 sm:flex">
-        <span className="w-4 shrink-0" />
-        <span className="min-w-0 flex-1">Employee</span>
-        <span className="w-20 shrink-0 text-right">Pending</span>
-        <span className="w-24 shrink-0 text-right">Approved</span>
-        <span className="w-28 shrink-0 text-right">Approved EGP</span>
-        <span className="w-20 shrink-0 text-right">Rejected</span>
-      </div>
+      {/* Desktop: one fitted table (AGENTS.md §4 — `w-full table-fixed` + `<colgroup>`, nothing
+          scrolls sideways). The old layout put each person's trips in a `w-max` strip inside an
+          `overflow-x-auto` box, which is exactly the sideways scroll the golden rule forbids. */}
+      <table className="hidden w-full table-fixed md:table">
+        <colgroup>
+          <col className="w-10" />
+          <col />
+          <col className="w-24" />
+          <col className="w-24" />
+          <col className="w-36" />
+          <col className="w-24" />
+        </colgroup>
+        <thead className="border-b border-slate-200 bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+          <tr>
+            <th className="px-3 py-2" scope="col">
+              <span className="sr-only">Open</span>
+            </th>
+            <th className="px-3 py-2 text-left" scope="col">Employee</th>
+            <th className="px-3 py-2 text-right" scope="col">Pending</th>
+            <th className="px-3 py-2 text-right" scope="col">Approved</th>
+            <th className="px-3 py-2 text-right" scope="col">Approved pay</th>
+            <th className="px-3 py-2 text-right" scope="col">Rejected</th>
+          </tr>
+        </thead>
+        {summaries.map((summary) => {
+          const isOpen = expanded.has(summary.employeeKey);
+          return (
+            <tbody className="border-b border-slate-200 last:border-b-0" key={summary.employeeKey}>
+              <tr className={cn("transition-colors", isOpen ? "bg-orange-50" : "hover:bg-slate-50")}>
+                <td className="px-3 py-3 align-top">
+                  <ChevronRight
+                    aria-hidden
+                    className={cn("mt-0.5 h-4 w-4 transition-transform", isOpen ? "rotate-90 text-orange-500" : "text-slate-400")}
+                  />
+                </td>
+                <td className="min-w-0 p-0">
+                  <button
+                    aria-expanded={isOpen}
+                    className="block w-full px-3 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-orange-500"
+                    onClick={() => onToggle(summary.employeeKey)}
+                    type="button"
+                  >
+                    <span className="block break-words text-sm font-bold text-slate-900">{summary.employeeLabel}</span>
+                    <span className="block text-phx-xs text-slate-500">
+                      {formatNumberValue(summary.totalCount)} trip{summary.totalCount === 1 ? "" : "s"} ·{" "}
+                      {egp(summary.claimedTotal)} claimed
+                    </span>
+                  </button>
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-amber-600">
+                  {formatNumberValue(summary.pendingCount)}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-emerald-600">
+                  {formatNumberValue(summary.approvedCount)}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-slate-900">
+                  {egp(summary.approvedValue)}
+                </td>
+                <td className="px-3 py-3 text-right font-mono text-sm font-bold tabular-nums text-rose-600">
+                  {formatNumberValue(summary.rejectedCount)}
+                </td>
+              </tr>
+              {isOpen ? (
+                <tr>
+                  <td className="border-t border-slate-200 bg-slate-50 px-3 py-3" colSpan={6}>
+                    <EmployeeTripsTable onUndo={onUndo} trips={summary.trips} />
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          );
+        })}
+      </table>
 
-      <div className="divide-y divide-slate-200">
+      {/* Phone: the same people as cards, each figure carrying its own label. */}
+      <div className="divide-y divide-slate-200 md:hidden">
         {summaries.map((summary) => {
           const isOpen = expanded.has(summary.employeeKey);
           return (
@@ -1425,157 +1532,43 @@ function EmployeeSummaryPanel({
               <button
                 aria-expanded={isOpen}
                 className={cn(
-                  "flex w-full flex-col gap-2 px-4 py-3 text-left transition-colors sm:flex-row sm:items-center sm:gap-3",
-                  isOpen ? "bg-orange-50/60" : "hover:bg-orange-50/30",
+                  "flex w-full items-start gap-2 px-4 py-3 text-left transition-colors",
+                  isOpen ? "bg-orange-50" : "hover:bg-slate-50",
                 )}
                 onClick={() => onToggle(summary.employeeKey)}
                 type="button"
               >
-                <span className="flex items-center gap-2 sm:contents">
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-orange-500" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                <ChevronRight
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0 transition-transform",
+                    isOpen ? "rotate-90 text-orange-500" : "text-slate-400",
                   )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block whitespace-nowrap text-sm font-bold text-slate-900">
-                      {summary.employeeLabel}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-sm font-bold text-slate-900">{summary.employeeLabel}</span>
+                  <span className="block text-phx-xs text-slate-500">
+                    {formatNumberValue(summary.totalCount)} trip{summary.totalCount === 1 ? "" : "s"} ·{" "}
+                    {egp(summary.claimedTotal)} claimed
+                  </span>
+                  <span className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs font-bold">
+                    <span className="text-amber-600">
+                      <span className="text-phx-2xs font-black uppercase text-slate-400">Pending </span>
+                      {formatNumberValue(summary.pendingCount)}
                     </span>
-                    <span className="block text-phx-xs text-slate-400">
-                      {formatNumberValue(summary.totalCount)} trips · {egp(summary.claimedTotal)} claimed
+                    <span className="text-rose-600">
+                      <span className="text-phx-2xs font-black uppercase text-slate-400">Rejected </span>
+                      {formatNumberValue(summary.rejectedCount)}
                     </span>
-                  </span>
-                </span>
-                <span className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-6 sm:contents sm:pl-0">
-                  <span className="w-20 shrink-0 font-mono text-sm font-bold text-amber-600 sm:text-right">
-                    <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">Pending </span>
-                    {formatNumberValue(summary.pendingCount)}
-                  </span>
-                  <span className="w-24 shrink-0 font-mono text-sm font-bold text-emerald-600 sm:text-right">
-                    <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">Approved </span>
-                    {formatNumberValue(summary.approvedCount)}
-                  </span>
-                  <span className="w-28 shrink-0 font-mono text-sm font-bold text-slate-900 sm:text-right">
-                    {egp(summary.approvedValue)}
-                  </span>
-                  <span className="w-20 shrink-0 font-mono text-sm font-bold text-rose-600 sm:text-right">
-                    <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">Rejected </span>
-                    {formatNumberValue(summary.rejectedCount)}
+                    <span className="col-span-2 text-emerald-700">
+                      <span className="text-phx-2xs font-black uppercase text-slate-400">Approved </span>
+                      {formatNumberValue(summary.approvedCount)} · {egp(summary.approvedValue)}
+                    </span>
                   </span>
                 </span>
               </button>
-
               {isOpen ? (
-                <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3">
-                  <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
-                    Trips · distance and declared workload, AM · PM · Pharmacies
-                  </p>
-                  {/* Wide content scrolls inside its own box — a long destination must never move
-                      the page (see the route line in the decision panel). */}
-                  <div className="-mx-1 overflow-x-auto px-1">
-                    <div className="w-max min-w-full space-y-1.5">
-                      {summary.trips.map((row) => (
-                        <div
-                          className="flex items-stretch border border-slate-200 bg-white"
-                          key={row.tripId}
-                        >
-                          <span
-                            aria-hidden
-                            className={cn(
-                              "w-1 shrink-0",
-                              row.state === "approved"
-                                ? "bg-emerald-500"
-                                : row.state === "rejected"
-                                  ? "bg-rose-500"
-                                  : "bg-amber-400",
-                            )}
-                          />
-                          {/* Stacks into a card below `sm` and lays out as columns above it, so the
-                              action button is never stranded off the side of a scrolling row. */}
-                          <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-4">
-                            <span className="w-24 shrink-0 whitespace-nowrap text-phx-xs text-slate-500">
-                              {formatDateValue(row.date)}
-                            </span>
-                            <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs text-slate-600">
-                              {row.tripId}
-                            </span>
-                            <span className="min-w-[9rem] flex-1 whitespace-nowrap text-xs text-slate-700">
-                              {row.destination || "—"}
-                            </span>
-                            <span className="w-32 shrink-0 whitespace-nowrap font-mono text-xs sm:text-right">
-                              <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">
-                                Distance{" "}
-                              </span>
-                              {row.km ? (
-                                (() => {
-                                  const flag = distanceFlag(row.km);
-                                  return (
-                                    <span
-                                      className={cn(
-                                        "inline-flex items-center gap-1 px-1.5 py-0.5",
-                                        DISTANCE_TONE_CLASS[flag.tone],
-                                      )}
-                                      title={flag.label || undefined}
-                                    >
-                                      {flag.tone === "fail" ? <AlertTriangle className="h-3 w-3" /> : null}
-                                      {formatNumberValue(row.km)} km
-                                    </span>
-                                  );
-                                })()
-                              ) : (
-                                <span className="text-slate-400">—</span>
-                              )}
-                            </span>
-                            {/* Declared on the expense sheet — NOT the CRM evidence figure, which is
-                                a per-trip lookup and would be one request per row here. */}
-                            <span className="w-32 shrink-0 whitespace-nowrap font-mono text-xs text-slate-700 sm:text-right">
-                              <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">
-                                Declared{" "}
-                              </span>
-                              AM {formatNumberValue(row.amWorkload)} · PM {formatNumberValue(row.pmWorkload)}
-                              {/* The third figure on its own line, so the fixed-width cell never
-                                  widens. Absent on a pre-split trip, whose pharmacies sit in AM/PM. */}
-                              {row.pharmacyWorkload === null || row.pharmacyWorkload === undefined ? null : (
-                                <span className="block">Pharmacies {formatNumberValue(row.pharmacyWorkload)}</span>
-                              )}
-                            </span>
-                            <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs font-bold text-slate-900 sm:text-right">
-                              {egp(row.approvedAmount)}
-                            </span>
-                            <span className="w-24 shrink-0 whitespace-nowrap font-mono text-phx-xs text-slate-400 sm:text-right">
-                              {isAdjustedAmount(row.approvedAmount, row.claimedTotal)
-                                ? `of ${egp(row.claimedTotal)}`
-                                : ""}
-                            </span>
-                            <span
-                              className={cn(
-                                "w-20 shrink-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-wide sm:text-right",
-                                row.state === "approved"
-                                  ? "text-emerald-600"
-                                  : row.state === "rejected"
-                                    ? "text-rose-600"
-                                    : "text-amber-600",
-                              )}
-                            >
-                              {row.state}
-                            </span>
-                            <span className="w-32 shrink-0 sm:text-right">
-                              {row.state === "pending" ? null : (
-                                <button
-                                  className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
-                                  onClick={() => onUndo(row.tripId)}
-                                  type="button"
-                                >
-                                  <Undo2 className="h-3 w-3" />
-                                  {row.state === "approved" ? "Unapprove" : "Undo rejection"}
-                                </button>
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+                  <EmployeeTripsTable onUndo={onUndo} trips={summary.trips} />
                 </div>
               ) : null}
             </div>
@@ -1583,6 +1576,187 @@ function EmployeeSummaryPanel({
         })}
       </div>
     </div>
+  );
+}
+
+const SUMMARY_STATE_TONE: Record<ExpenseApprovalEmployeeSummary["trips"][number]["state"], { spine: string; text: string }> = {
+  approved: { spine: "bg-emerald-500", text: "text-emerald-700" },
+  pending: { spine: "bg-amber-400", text: "text-amber-700" },
+  rejected: { spine: "bg-rose-500", text: "text-rose-700" },
+};
+
+/** "Unapprove" / "Undo rejection" straight from the summary — local only, Save still commits. */
+function SummaryUndoButton({ onUndo, row }: { onUndo: (tripId: string) => void; row: ExpenseApprovalEmployeeSummary["trips"][number] }) {
+  if (row.state === "pending") return null;
+  return (
+    <button
+      className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2 py-1 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-400 hover:text-orange-700"
+      onClick={() => onUndo(row.tripId)}
+      type="button"
+    >
+      <Undo2 className="h-3 w-3" />
+      {row.state === "approved" ? "Unapprove" : "Undo rejection"}
+    </button>
+  );
+}
+
+/** One "km" cell, flagged against the outstation distance floor exactly like the decision panel. */
+function SummaryDistance({ km }: { km: number }) {
+  if (!km) return <span className="text-slate-400">—</span>;
+  const flag = distanceFlag(km);
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5", DISTANCE_TONE_CLASS[flag.tone])}
+      title={flag.label || undefined}
+    >
+      {flag.tone === "fail" ? <AlertTriangle className="h-3 w-3" /> : null}
+      {formatNumberValue(km)} km
+    </span>
+  );
+}
+
+/** "AM 3 · PM 9" with the pharmacies on their own line — declared on the sheet, not CRM evidence. */
+function SummaryDeclared({ row }: { row: ExpenseApprovalEmployeeSummary["trips"][number] }) {
+  return (
+    <>
+      AM {formatNumberValue(row.amWorkload)} · PM {formatNumberValue(row.pmWorkload)}
+      {/* Absent on a pre-split trip, whose pharmacies sit inside AM/PM. */}
+      {row.pharmacyWorkload === null || row.pharmacyWorkload === undefined ? null : (
+        <span className="block">Pharmacies {formatNumberValue(row.pharmacyWorkload)}</span>
+      )}
+    </>
+  );
+}
+
+/** A trip's dates, with its length when it ran over more than one day. */
+function SummaryTripDates({ row }: { row: ExpenseApprovalEmployeeSummary["trips"][number] }) {
+  const span = tripSpan(row.date, row.toDate);
+  return (
+    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+      <span className="whitespace-nowrap">
+        {formatDateValue(row.date, null, { year: undefined })}
+        {span.multiDay ? ` → ${formatDateValue(row.toDate, null, { year: undefined })}` : ""}
+      </span>
+      {span.multiDay ? (
+        <span className="whitespace-nowrap border border-orange-300 bg-white px-1 text-phx-2xs font-black uppercase tracking-wide text-orange-700">
+          {formatNumberValue(span.days)} days
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * One person's trips. Desktop: a fitted table whose columns MERGE (dates with the trip ID, the
+ * payable with the claim it came from, the decision with its undo) so it fits the page width.
+ * Phone: the same trips as cards.
+ */
+function EmployeeTripsTable({
+  onUndo,
+  trips,
+}: {
+  onUndo: (tripId: string) => void;
+  trips: ExpenseApprovalEmployeeSummary["trips"];
+}) {
+  return (
+    <>
+      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+        Trips · distance and declared workload, AM · PM · Pharmacies
+      </p>
+      <table className="hidden w-full table-fixed border border-slate-200 bg-white text-xs md:table">
+        <colgroup>
+          <col className="w-1" />
+          <col className="w-[22%]" />
+          <col />
+          <col className="w-[11%]" />
+          <col className="w-[15%]" />
+          <col className="w-[14%]" />
+          <col className="w-[16%]" />
+        </colgroup>
+        <thead className="border-b border-slate-200 bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">
+          <tr>
+            <th aria-hidden className="p-0" />
+            <th className="px-3 py-2 text-left" scope="col">Trip</th>
+            <th className="px-3 py-2 text-left" scope="col">Destination</th>
+            <th className="px-3 py-2 text-right" scope="col">Distance</th>
+            <th className="px-3 py-2 text-right" scope="col">Declared</th>
+            <th className="px-3 py-2 text-right" scope="col">Payable</th>
+            <th className="px-3 py-2 text-right" scope="col">Decision</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {trips.map((row) => {
+            const tone = SUMMARY_STATE_TONE[row.state];
+            return (
+              <tr key={row.tripId}>
+                <td aria-hidden className={cn("p-0", tone.spine)} />
+                <td className="px-3 py-2 align-top text-slate-600">
+                  <SummaryTripDates row={row} />
+                  <span className="block font-mono text-phx-2xs text-slate-400">{row.tripId}</span>
+                </td>
+                <td className="break-words px-3 py-2 align-top text-slate-800" dir="auto">
+                  {row.destination || "—"}
+                </td>
+                <td className="px-3 py-2 text-right align-top font-mono">
+                  <SummaryDistance km={row.km} />
+                </td>
+                <td className="px-3 py-2 text-right align-top font-mono text-slate-700">
+                  <SummaryDeclared row={row} />
+                </td>
+                <td className="px-3 py-2 text-right align-top font-mono">
+                  <span className="block font-bold text-slate-900">{egp(row.approvedAmount)}</span>
+                  {isAdjustedAmount(row.approvedAmount, row.claimedTotal) ? (
+                    <span className="block text-phx-2xs text-slate-400">of {egp(row.claimedTotal)}</span>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2 text-right align-top">
+                  <span className={cn("block text-phx-2xs font-black uppercase tracking-wide", tone.text)}>{row.state}</span>
+                  <span className="mt-1 block">
+                    <SummaryUndoButton onUndo={onUndo} row={row} />
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className="space-y-2 md:hidden">
+        {trips.map((row) => {
+          const tone = SUMMARY_STATE_TONE[row.state];
+          return (
+            <div className="flex items-stretch border border-slate-200 bg-white" key={row.tripId}>
+              <span aria-hidden className={cn("w-1 shrink-0", tone.spine)} />
+              <div className="min-w-0 flex-1 space-y-1.5 px-3 py-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="min-w-0 text-slate-600">
+                    <SummaryTripDates row={row} />
+                    <span className="block font-mono text-phx-2xs text-slate-400">{row.tripId}</span>
+                  </span>
+                  <span className="shrink-0 text-right font-mono">
+                    <span className="block font-bold text-slate-900">{egp(row.approvedAmount)}</span>
+                    {isAdjustedAmount(row.approvedAmount, row.claimedTotal) ? (
+                      <span className="block text-phx-2xs text-slate-400">of {egp(row.claimedTotal)}</span>
+                    ) : null}
+                  </span>
+                </div>
+                <p className="break-words text-slate-800" dir="auto">{row.destination || "—"}</p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
+                  <SummaryDistance km={row.km} />
+                  <span className="text-slate-700">
+                    <SummaryDeclared row={row} />
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={cn("text-phx-2xs font-black uppercase tracking-wide", tone.text)}>{row.state}</span>
+                  <SummaryUndoButton onUndo={onUndo} row={row} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -1720,6 +1894,9 @@ function ExpenseDecisionPanel({
   onUnreject,
   onChangeAmount,
   onChangeReason,
+  onNext,
+  onPrevious,
+  position,
   valuesOnly,
 }: {
   canDecide: boolean;
@@ -1732,6 +1909,11 @@ function ExpenseDecisionPanel({
   onReject: () => void;
   onUnapprove: () => void;
   onUnreject: () => void;
+  /** Absent at either end of the list. */
+  onNext?: () => void;
+  onPrevious?: () => void;
+  /** "Trip 4 of 37" — where this trip sits in the list as filtered. */
+  position: { index: number; total: number } | null;
   record: LoadedRecord;
   /** Imported history (trips before July 2026): shown, never decided. See imported-history.ts. */
   valuesOnly: boolean;
@@ -1755,6 +1937,31 @@ function ExpenseDecisionPanel({
     <div className="flex min-h-0 flex-col lg:h-full">
       {/* ── 1. Who and what ─────────────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-slate-200">
+        {/* Walk the list without leaving the panel — the same order as the queue, so it agrees
+            with the ↑ ↓ keys. */}
+        {position ? (
+          <div className="flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-950 px-3 py-1.5">
+            <button
+              className="inline-flex items-center gap-1 px-2 py-1 text-phx-xs font-bold text-slate-300 transition-colors hover:text-white disabled:cursor-default disabled:text-slate-600"
+              disabled={!onPrevious}
+              onClick={onPrevious}
+              type="button"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Previous
+            </button>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">
+              Trip {formatNumberValue(position.index)} of {formatNumberValue(position.total)}
+            </span>
+            <button
+              className="inline-flex items-center gap-1 px-2 py-1 text-phx-xs font-bold text-slate-300 transition-colors hover:text-white disabled:cursor-default disabled:text-slate-600"
+              disabled={!onNext}
+              onClick={onNext}
+              type="button"
+            >
+              Next <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3 border-t-[3px] border-orange-500 bg-slate-900 px-5 py-4">
           <div className="min-w-0">
             <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">
@@ -1766,14 +1973,18 @@ function ExpenseDecisionPanel({
             <p className="mt-0.5 font-mono text-xs text-slate-400">{record.tripId}</p>
             <DuplicateTripFlag copies={duplicateOf} wide />
           </div>
-          {/* A rejected trip used to read "Pending" here — the badge only knew about approval. */}
-          {decision.hrApproved ? (
-            <Badge variant="success">Approved</Badge>
-          ) : isRejected ? (
-            <Badge variant="danger">Rejected</Badge>
-          ) : (
-            <Badge variant="warning">Pending</Badge>
-          )}
+          <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
+            {/* A rejected trip used to read "Pending" here — the badge only knew about approval. */}
+            {decision.hrApproved ? (
+              <Badge variant="success">Approved</Badge>
+            ) : isRejected ? (
+              <Badge variant="danger">Rejected</Badge>
+            ) : (
+              <Badge variant="warning">Pending</Badge>
+            )}
+            <p className="font-mono text-xl font-black tabular-nums text-white">{egp(record.total)}</p>
+            <p className="-mt-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">Claimed</p>
+          </div>
         </div>
 
         {/* The trip's length is the first thing read, in words, beside both dates — a multi-day trip
