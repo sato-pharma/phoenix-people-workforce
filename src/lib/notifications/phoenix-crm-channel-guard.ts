@@ -22,17 +22,15 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 const PHOENIX_CRM_MODULE = "phoenix_crm";
 
 /**
- * Event types that may email. Phoenix CRM emailed nothing from 2026-10-13 (owner), and exactly one notice
- * has been given its email back, by his own word:
+ * Event types that may email: NONE, and it stays empty (owner, 2026-11-06, his rule: "cut all phoenix crm
+ * emails never sent a single email once again it only sends telegram and push and in app"). That ended the
+ * module's last exception, the Administrator's decision on a recorded visit (given its email 2026-10-17),
+ * which now reaches the rep and his managers in-app, by Telegram and on the phone like every other notice.
  *
- *   recorded_visit_decided — owner, 2026-10-17: the Administrator's approval or refusal of a recorded
- *   visit, with his comment, "goes email and telegram to the rep and his manager and his manager of
- *   manager". It rides beside in-app, Telegram and the phone, as every notice here does.
- *
- * A further exception is a deliberate one-line change here, the policy row, and the pinned list in
- * `tests/phoenix-crm-email-block.test.ts` — with his word.
+ * Kept as an exported, pinned EMPTY constant so that any future email is a visible change with a red test
+ * (`tests/phoenix-crm-email-block.test.ts`) — never a quiet new branch. Do not add to it.
  */
-export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = ["recorded_visit_decided"];
+export const PHOENIX_CRM_EMAIL_EVENT_TYPES: readonly string[] = [];
 
 /**
  * The notices the owner has said are "in-app and Telegram ONLY", which on this module means they are
@@ -102,8 +100,8 @@ function pushBlocked(eventType: string | null | undefined): boolean {
 }
 
 /**
- * The channels a Phoenix CRM notice asks for: in-app, Telegram and the phone, and email only for the
- * five above. Push since 2026-10-02 (owner): 16 of 74 reps had allowed Phoenix on their phone, and
+ * The channels a Phoenix CRM notice asks for: in-app, Telegram and the phone — never email (the list
+ * above is empty). Push since 2026-10-02 (owner): 16 of 74 reps had allowed Phoenix on their phone, and
  * Telegram reached none of them.
  *
  * A notice on the push-blocked list asks for in-app and Telegram and nothing else, so his "only" is

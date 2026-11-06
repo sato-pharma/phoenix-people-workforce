@@ -132,7 +132,7 @@ Files: `supabase/migrations/20261016161248_phoenix_crm_recorded_visit_waits_for_
 `app/api/phoenix-crm/recording/admin/review/route.ts`, plus the changes in `visit-recordings.ts`,
 `visits.ts`, `unplanned.ts`, `unplanned-rules.ts`, `needs-you.ts` and `visit-recording-admin.tsx`.
 
-## His decision carries a comment, and it is told by email and Telegram
+## His decision carries a comment, and it is told by Telegram, in-app and the phone (email ended 2026-11-06)
 
 Added 2026-10-17, his words:
 
@@ -151,9 +151,9 @@ What changed:
   CEO, nobody is named twice, and the decider is not told his own decision. Where the second seat is the
   national manager (a line with no regional manager) he is told as the manager's manager; where there is
   a regional manager, the national manager above that is not.
-- **How.** In-app, Telegram, the phone, and **email**. Email is the module's one exception to his
-  2026-10-13 ban: `recorded_visit_decided` is the only entry of `PHOENIX_CRM_EMAIL_EVENT_TYPES`, with its
-  own `phoenix_crm.recorded_visit_decided` policy row. Every other Phoenix CRM notice stays email-free.
+- **How.** In-app, Telegram and the phone. It also went by email from 2026-10-17 until 2026-11-06, when the
+  owner cut every Phoenix CRM email ("never sent a single email once again, it only sends telegram and push
+  and in app"): `PHOENIX_CRM_EMAIL_EVENT_TYPES` is empty and its policy row asks for no email.
 - **Golden Rule #1.** The rep reads "The Administrator approved / did not approve your visit to …" and the
   comment — a decision and a role, never that it was recorded, listened to or checked. His list already
   showed the decision; this adds the comment.

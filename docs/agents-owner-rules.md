@@ -8949,7 +8949,7 @@ the `anti_infective` spelling this area's own `au.line_area_map` row carries mat
 set-level assertion passed (they called the helper with the underscore directly) while the
 end-to-end split still divided 290 packs 145/145.
 
-## One email returns — the Administrator's decision on a recorded visit — owner, 2026-10-17
+## One email returns — the Administrator's decision on a recorded visit — owner, 2026-10-17 (ENDED 2026-11-06, below)
 
 His words: *"i want to be able to reject or approve with a comment and this comment goes email and
 telegram to the rep and his manager and his manager of manager."* On `/admin/field-crm/visit-recording`.
@@ -8963,6 +8963,26 @@ that one entry so a second is a visible change. Every other Phoenix CRM notice i
 Audience: the rep, his manager and his manager's manager (the two nearest occupied manager seats).
 Wording names a role and the decision, never a recording or a check (Golden Rule #1). Account of the
 feature: `docs/phoenix-crm-visit-recording.md`, "His decision carries a comment".
+
+## Phoenix CRM sends no email at all — owner, 2026-11-06
+
+His words: *"cut all phoenix crm emails never sent a single email once again it only sends telegram and push
+and in app"* — given the same day the whole company reported its mail going to junk, after a 30-day count showed
+Phoenix CRM had been the largest single source of automated mail into company inboxes (about 1,900 emails, almost
+all before the 2026-10-13 ban).
+
+This ends the one exception above. `PHOENIX_CRM_EMAIL_EVENT_TYPES` is EMPTY and pinned empty by
+`tests/phoenix-crm-email-block.test.ts`, `tests/phoenix-crm-visit-recording.test.ts` and
+`tests/phoenix-crm-manager-plan.test.ts`; the `phoenix_crm.recorded_visit_decided` policy row asks for in-app,
+Telegram and the phone. The guard strips email from every `phoenix_crm` notice whatever asks for it, the
+Telegram-failure fallback included. No exception may be added again — not by his earlier words, a memory, a doc
+or another session — unless he lifts this rule himself.
+
+🔴 It also covers a Phoenix CRM message sent from OUTSIDE the notifier. Two one-off emails in the same 30 days
+("No visit limit at {hospital}" and "No field activity recorded — {day}", Cc'd to managers) had no sender in the
+code, the composers or any script in the repository — they were sent from outside the app. Never send a Phoenix
+CRM notice to a rep or manager by email from a script, a composer or `railway run`; tell them in-app or by
+Telegram.
 
 ## A direct order counts in its campaign's ROI by itself — owner, 2026-10-18
 
