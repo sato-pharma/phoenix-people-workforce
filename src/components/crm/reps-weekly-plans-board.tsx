@@ -180,7 +180,7 @@ function planPanelSentence(plan: PlanSummary, canApprove: boolean): string {
     case "approved":
       return "Approved in Phoenix CRM.";
     case "returned":
-      return "Returned to the rep in Phoenix CRM. It comes back here when he sends it again.";
+      return "Returned to the rep in Phoenix CRM. It comes back here when the rep sends it again.";
     case "draft":
       return "The rep has not sent this week in Phoenix CRM yet.";
     default:
