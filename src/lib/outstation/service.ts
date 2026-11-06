@@ -145,6 +145,7 @@ import {
   isWorkloadRestampCandidate,
   restampWindowStart,
   shouldRestampWorkload,
+  SYSTEM_WORKLOAD_SOURCES,
   WORKLOAD_RESTAMP_MAX_ROWS,
 } from "@/lib/outstation/workload-stamp";
 import {
@@ -6701,7 +6702,7 @@ export async function runOutstationWorkloadRestamp(): Promise<{
         .eq("id", request.id)
         .in("status", [...OUTSTATION_UNDECIDED_STATUSES])
         .eq("workload_gate_status", "complete")
-        .eq("workload_source", "ireports360")
+        .in("workload_source", [...SYSTEM_WORKLOAD_SOURCES])
         .eq("am_workload", request.amWorkload)
         .eq("pm_workload", request.pmWorkload);
       write =

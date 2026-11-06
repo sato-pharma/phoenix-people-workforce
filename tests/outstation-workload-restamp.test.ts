@@ -10,6 +10,8 @@ import {
   SYSTEM_WORKLOAD_SOURCE,
   WORKLOAD_RESTAMP_WINDOW_DAYS,
 } from "../src/lib/outstation/workload-stamp.ts";
+import { outstationWorkloadSourceLabel } from "../src/lib/outstation/workload-source-label.ts";
+import { readFileSync } from "node:fs";
 import { stripComments } from "./support/comment-strip.ts";
 import { cachedReadFile } from "./support/source-corpus.ts";
 
@@ -56,6 +58,24 @@ function stamped(overrides: Record<string, unknown> = {}) {
 }
 
 export function runOutstationWorkloadRestampTests() {
+  // -- the stamp names Phoenix CRM since iReports360 was retired (6 Nov 2026) ----------------------
+  assert.equal(SYSTEM_WORKLOAD_SOURCE, "phoenix_crm", "a new stamp names the source the figures came from");
+  assert.equal(
+    isWorkloadRestampCandidate(stamped({ workloadSource: "ireports360" }), TODAY),
+    true,
+    "a claim stamped before the retirement is still the system's own, so the morning re-read still owns it",
+  );
+  assert.equal(isWorkloadRestampCandidate(stamped({ workloadSource: "override" }), TODAY), false, "a figure an administrator typed is never re-read");
+  assert.equal(outstationWorkloadSourceLabel("phoenix_crm"), "Phoenix CRM");
+  assert.equal(outstationWorkloadSourceLabel("ireports360"), "iReports360 (before Phoenix CRM)");
+  assert.equal(outstationWorkloadSourceLabel(null), "Manual", "no stamp reads as manual, never blank");
+  assert.ok(
+    readFileSync("supabase/migrations/20261107010725_outstation_workload_source_phoenix_crm.sql", "utf8").includes(
+      "array['manual'::text, 'double_visit_import'::text, 'ireports360'::text, 'phoenix_crm'::text, 'override'::text]",
+    ),
+    "the column's check accepts the new stamp and keeps every old one",
+  );
+
   // -- who is re-read ------------------------------------------------------------------------------
   assert.equal(
     isWorkloadRestampCandidate(stamped(), TODAY),
@@ -166,7 +186,7 @@ export function runOutstationWorkloadRestampTests() {
   assert.match(job, /shouldRestampWorkload\(request, capture\)/, "and writes only an upward read");
   assert.match(job, /\.in\("status", \[\.\.\.OUTSTATION_UNDECIDED_STATUSES\]\)[\s\S]*\.in\("status", \[\.\.\.OUTSTATION_UNDECIDED_STATUSES\]\)/, "the read AND the write are pinned to undecided claims");
   assert.match(job, /\.eq\("am_workload", request\.amWorkload\)/, "the write is pinned to the figures that were read");
-  assert.match(job, /\.eq\("workload_source", "ireports360"\)/, "a figure typed by hand in between is never overwritten");
+  assert.match(job, /\.in\("workload_source", \[\.\.\.SYSTEM_WORKLOAD_SOURCES\]\)/, "a figure typed by hand in between is never overwritten");
   assert.doesNotMatch(job, /updated_at/, "the approval revision belongs to money — a refresh never bumps it");
   assert.doesNotMatch(job, /workload_gate_status:/, "the gate status is never rewritten");
   assert.match(job, /writeRequiredAuditLog\(/, "every refresh leaves an audit row");

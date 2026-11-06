@@ -42,6 +42,7 @@ import {
 import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
 import { PHOTO_FRAME_INDEX_ATTRIBUTE } from "@/lib/outstation/photo-frame";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { outstationWorkloadSourceLabel } from "@/lib/outstation/workload-source-label";
 
 /** The light-mode Phoenix tokens, pinned. See the header: dark mode must never reach paper. */
 const P = {
@@ -207,7 +208,7 @@ function factsBlock(request: OutstationExpenseRequest): string {
     ${fact("AM visits", escapeHtml(String(request.amWorkload ?? 0)))}
     ${fact("PM visits", escapeHtml(String(request.pmWorkload ?? 0)))}
     ${fact("Pharmacy visits", escapeHtml(pharmacies))}
-    ${fact("Workload source", escapeHtml(words(request.workloadSource ?? "manual")))}
+    ${fact("Workload source", escapeHtml(outstationWorkloadSourceLabel(request.workloadSource)))}
     ${fact("Workload match (at submission)", escapeHtml(words(request.workloadMatchStatus)))}
   </div>`;
 }
