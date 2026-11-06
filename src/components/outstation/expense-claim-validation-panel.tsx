@@ -3,7 +3,7 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { PanelSection } from "@/components/outstation/approval-detail-primitives";
+import { CollapsibleSection, PanelSection } from "@/components/outstation/approval-detail-primitives";
 import type {
   FraudCheckResult,
   FraudVerdict,
@@ -64,7 +64,15 @@ function VerdictIcon({ verdict }: { verdict: FraudVerdict }) {
   return <HelpCircle className="h-4 w-4 text-slate-400" />;
 }
 
-export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }) {
+export function ExpenseClaimValidationPanel({
+  collapsible = false,
+  requestId,
+}: {
+  /** Expense Approvals folds this section, with the verdict in its header, and opens it on its own
+   * only when something needs a look (2026-11-06). The held-request drawer keeps it open. */
+  collapsible?: boolean;
+  requestId: number;
+}) {
   const [state, setState] = useState<
     { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: ValidationResponse }
   >({ kind: "loading" });
@@ -102,8 +110,9 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
     };
   }, [load]);
 
-  return (
-    <PanelSection title="Claim validation">
+  const headline = state.kind === "ready" && state.data.available ? state.data.headline : null;
+  const body = (
+    <>
       {state.kind === "loading" ? (
         <p className="flex items-center gap-2 text-phx-md text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -129,7 +138,7 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-phx-2xs font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 text-phx-2xs font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
               {VERDICT_STYLE[state.data.headline].label}
@@ -142,14 +151,14 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
           <div className="space-y-2">
             {state.data.checks.map((check) => (
               <div
-                className={`rounded-md border p-3 ${VERDICT_STYLE[check.verdict].card}`}
+                className={`border p-3 ${VERDICT_STYLE[check.verdict].card}`}
                 key={check.id}
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <VerdictIcon verdict={check.verdict} />
                   <p className="text-phx-md font-bold text-slate-900">{check.title}</p>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-phx-3xs font-bold uppercase tracking-wider ${VERDICT_STYLE[check.verdict].chip}`}
+                    className={`px-1.5 py-0.5 text-phx-3xs font-bold uppercase tracking-wider ${VERDICT_STYLE[check.verdict].chip}`}
                   >
                     {VERDICT_STYLE[check.verdict].label}
                   </span>
@@ -178,6 +187,24 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
           </p>
         </div>
       ) : null}
-    </PanelSection>
+    </>
+  );
+
+  if (!collapsible) return <PanelSection title="Claim validation">{body}</PanelSection>;
+  return (
+    <CollapsibleSection
+      defaultOpen={headline === "review"}
+      summary={
+        state.kind === "loading"
+          ? "Checking…"
+          : headline
+            ? VERDICT_STYLE[headline].label
+            : "Could not verify"
+      }
+      title="Claim checks"
+      tone={headline === "review" ? "danger" : headline === "clean" ? "success" : "neutral"}
+    >
+      {body}
+    </CollapsibleSection>
   );
 }

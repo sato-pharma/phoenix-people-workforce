@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
@@ -16,12 +16,6 @@ import { humanizeCode } from "@/lib/format/code-label";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
 import { cn } from "@/lib/utils";
-import {
-  PortalDesktopTable,
-  PortalRecordCard,
-  PortalRecordFields,
-  PortalResponsiveDataList,
-} from "@/components/employee-portal/portal-primitives";
 
 type WorkloadVisitDetail = {
   ampm: string | null;
@@ -122,6 +116,185 @@ function TripDayRouteMap({ checkins }: { checkins: WorkloadCheckinDetail[] }) {
     [checkins],
   );
   return <FieldWorkforceRouteMap checkins={mapped} route={null} />;
+}
+
+/**
+ * One trip day: its figures and verdict on the row, its visits, check-ins and route map behind a
+ * click. The map mounts only once the day is opened — a Google map per day, all drawn at once, was
+ * most of what made a long trip unreadable.
+ */
+function TripDayRow({
+  day,
+  dayCount,
+  dayNumber,
+  pharmacyText,
+}: {
+  day: WorkloadEvidenceDay;
+  dayCount: number;
+  dayNumber: number;
+  pharmacyText: string;
+}) {
+  const [opened, setOpened] = useState(false);
+  const visits = day.visits ?? [];
+  const checkins = day.checkins ?? [];
+  const hasDetail = visits.length > 0 || checkins.length > 0;
+  const idle = day.total === 0;
+
+  const figures = (
+    <span className="grid grid-cols-3 gap-x-3 font-mono text-xs text-slate-700 sm:flex sm:flex-wrap sm:gap-x-4">
+      <span>
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">AM </span>
+        {fmt(day.am)}
+      </span>
+      <span>
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">PM </span>
+        {fmt(day.pm)}
+      </span>
+      <span className="break-words">
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Pharmacies </span>
+        {pharmacyText}
+      </span>
+      <span className="text-sky-700">
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Regular </span>
+        {fmt(day.regular)}
+      </span>
+      <span className="text-violet-700">
+        <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Campaign </span>
+        {fmt(day.campaign)}
+      </span>
+    </span>
+  );
+
+  const head = (
+    <span className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-center">
+      <span className="min-w-0">
+        {dayCount > 1 ? (
+          <span className="block text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+            Day {fmt(dayNumber)} of {fmt(dayCount)}
+          </span>
+        ) : null}
+        <span className="block text-xs font-bold text-slate-900">
+          {formatDateValue(day.date, null, { weekday: "short" })}
+        </span>
+      </span>
+      <span className="order-3 col-span-2 min-w-0 sm:order-none sm:col-span-1">{figures}</span>
+      <span className="flex items-center gap-2 justify-self-end">
+        {idle ? (
+          <span className="whitespace-nowrap text-xs font-black text-rose-600">No activity</span>
+        ) : (
+          <span className="whitespace-nowrap text-xs font-bold text-emerald-700">{fmt(day.total)} field visits</span>
+        )}
+        {hasDetail ? (
+          <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90" />
+        ) : null}
+      </span>
+    </span>
+  );
+
+  if (!hasDetail) {
+    return <li className={cn("px-3 py-2.5", idle ? "bg-rose-50" : undefined)}>{head}</li>;
+  }
+
+  return (
+    <li className={idle ? "bg-rose-50" : undefined}>
+      <details className="group" onToggle={(event) => setOpened(event.currentTarget.open)}>
+        <summary className="cursor-pointer list-none px-3 py-2.5 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+          {head}
+        </summary>
+        <div className="space-y-3 border-t border-slate-100 bg-slate-50 px-3 py-3">
+          {/* `[&>*]:min-w-0`: below `md` this is one column, and a grid item defaults to
+              `min-width: auto`, so the longest visit line would size the column (measured 283 vs 436). */}
+          <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
+            <div>
+              <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Visits</p>
+              {visits.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-400">—</p>
+              ) : (
+                <ul className="mt-1 space-y-1">
+                  {visits.map((visit, index) => (
+                    <li className="flex items-center justify-between gap-2 text-xs" key={index}>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "shrink-0 px-1 py-0.5 text-phx-3xs font-bold uppercase",
+                            visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
+                          )}
+                        >
+                          {visit.kind}
+                        </span>
+                        <span className="break-words text-slate-700">
+                          {visit.contact || visit.customer || "—"}
+                          {visit.role === "partner" ? (
+                            visit.repName ? (
+                              <>
+                                {" · double with "}
+                                <span className="font-semibold text-slate-900">{visit.repName}</span>
+                              </>
+                            ) : (
+                              " · double"
+                            )
+                          ) : null}
+                        </span>
+                      </span>
+                      {/* Each timing says what it IS: when the rep SAVED the CRM record is a
+                          different clock from when he physically checked in. */}
+                      <span className="flex shrink-0 flex-col items-end leading-tight">
+                        <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
+                          Saved visit time
+                        </span>
+                        <span className="whitespace-nowrap font-mono text-slate-500">
+                          {formatClock(visit.submittedAt)}
+                          {visit.ampm ? ` · ${visit.ampm}` : ""}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Check-ins</p>
+              {checkins.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
+              ) : (
+                <ol className="mt-1 space-y-1">
+                  {checkins.map((checkin, index) => (
+                    <li className="flex items-center justify-between gap-2 text-xs" key={index}>
+                      <span className="break-words text-slate-700">
+                        {index + 1}.{" "}
+                        {checkin.contact ||
+                          checkin.address ||
+                          (checkin.lat != null && checkin.lon != null
+                            ? `${checkin.lat.toFixed(4)}, ${checkin.lon.toFixed(4)}`
+                            : "—")}
+                        {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end leading-tight">
+                        <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
+                          Check-in time
+                        </span>
+                        <span className="whitespace-nowrap font-mono text-slate-500">{formatClock(checkin.at)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </div>
+          {opened && checkins.length > 0 ? (
+            <div className="min-w-0">
+              <p className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">Route map</p>
+              {/* overflow-hidden is load-bearing: Google Maps draws absolutely-positioned internals
+                  wider than their box (measured at 375px: 247 vs 486), which pushed the page sideways. */}
+              <div className="min-w-0 overflow-hidden">
+                <TripDayRouteMap checkins={checkins} />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </details>
+    </li>
+  );
 }
 
 /**
@@ -261,6 +434,7 @@ export function TripWorkloadEvidencePanel({
   const declaredTotal = declaredAm + declaredPm + (declaredPharmacies ?? 0);
   const actualTotal = data.amWorkload + data.pmWorkload + actualPharmacies;
   const mismatch = declaredTotal !== actualTotal;
+  const idleDayCount = data.dateBreakdown.filter((day) => day.total === 0).length;
   const tone = statusTone[data.matchStatus] ?? "neutral";
   // Both sides are in hand here — the stamped verdict as a prop, the live read just fetched — so
   // this is where a stored "no activity" that the CRM has since contradicted gets named.
@@ -282,9 +456,18 @@ export function TripWorkloadEvidencePanel({
         <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Verified workload</span>
         <Badge variant={tone}>{humanizeCode(data.matchStatus)}</Badge>
         <span className="text-phx-xs text-slate-500">{data.sourceLabel}</span>
+        {/* The one line a long trip needs first: how many of its days carry no field work. Counted
+            from the same rows listed below, so the two can never disagree. */}
+        {idleDayCount > 0 ? (
+          <span className="text-phx-xs font-black text-rose-600">
+            {data.dateBreakdown.length > 1
+              ? `${fmt(idleDayCount)} of ${fmt(data.dateBreakdown.length)} days with no field activity`
+              : "No field activity on this day"}
+          </span>
+        ) : null}
       </div>
       {freshness.verdict === "stale" && freshness.headline ? (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+        <div className="flex items-start gap-2 border border-amber-300 bg-amber-50 p-3">
           <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0">
             <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">
@@ -295,14 +478,14 @@ export function TripWorkloadEvidencePanel({
         </div>
       ) : null}
       <div className="grid gap-2 sm:grid-cols-3">
-        <div className="rounded-xl border border-phx-line bg-white p-3">
+        <div className="border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             AM {fmt(declaredAm)} · PM {fmt(declaredPm)} · Pharmacies{" "}
             {declaredPharmacies === null ? "not counted separately" : fmt(declaredPharmacies)}
           </p>
         </div>
-        <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
+        <div className={cn("border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)} ·{" "}
@@ -314,210 +497,35 @@ export function TripWorkloadEvidencePanel({
             </p>
           ) : null}
         </div>
-        <div className="rounded-xl border border-phx-line bg-white p-3">
+        <div className="border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             Regular {fmt(data.regularVisits)} · Campaign {fmt(data.campaignVisits)}
           </p>
         </div>
       </div>
-      {/* Seven columns with nowrap dates never fitted a phone. This used to be a bare
-          `overflow-x-auto` — chosen over `overflow-hidden` because hidden CLIPPED the later
-          columns with no way to reach them — but a sideways-scrolling table is not what the phone
-          is supposed to get at all (AGENTS.md §4). The table is now desktop-only and the same days
-          render as cards below `md`, so nothing scrolls sideways and nothing is clipped. */}
-      <div className="overflow-hidden rounded-xl border border-phx-line">
-        <PortalResponsiveDataList
-          empty={<p className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</p>}
-          getKey={(day) => day.date}
-          items={data.dateBreakdown}
-          renderCard={(day) => (
-            <PortalRecordCard
-              accent={day.total === 0 ? "rose" : "sky"}
-              status={
-                day.total === 0 ? (
-                  <span className="text-xs font-bold text-rose-600">No activity</span>
-                ) : (
-                  <span className="text-xs font-semibold text-emerald-700">{fmt(day.total)} field visits</span>
-                )
-              }
-              title={formatDateValue(day.date)}
-            >
-              <PortalRecordFields
-                fields={[
-                  { label: "AM", value: fmt(day.am) },
-                  { label: "PM", value: fmt(day.pm) },
-                  { label: "Pharmacies", value: pharmacyCellText(day) },
-                  { label: "Regular", value: fmt(day.regular) },
-                  { label: "Campaign", value: fmt(day.campaign) },
-                ]}
-              />
-            </PortalRecordCard>
-          )}
-          renderTable={() => (
-            <PortalDesktopTable
-              className="text-xs"
-              cols={
-                <colgroup>
-                  <col className="w-[20%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[16%]" />
-                </colgroup>
-              }
-            >
-          <thead className="bg-slate-50 text-phx-2xs uppercase tracking-[0.1em] text-slate-500">
-            <tr>
-              <th className="px-3 py-2 font-bold">Day</th>
-              <th className="px-3 py-2 text-right font-bold">AM</th>
-              <th className="px-3 py-2 text-right font-bold">PM</th>
-              {/* Pharmacies takes the old Total column's place: the Status cell already prints the
-                  day's total ("N field visits"), so the table keeps its seven columns. */}
-              <th className="px-3 py-2 text-right font-bold">Pharmacies</th>
-              <th className="px-3 py-2 text-right font-bold">Regular</th>
-              <th className="px-3 py-2 text-right font-bold">Campaign</th>
-              <th className="px-3 py-2 font-bold">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {data.dateBreakdown.map((day) => (
-              <tr className={day.total === 0 ? "bg-rose-50/60" : undefined} key={day.date}>
-                <td className="break-words px-3 py-2 font-medium text-slate-900">{formatDateValue(day.date)}</td>
-                <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.am)}</td>
-                <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.pm)}</td>
-                <td className="px-3 py-2 text-right font-mono text-slate-900">{pharmacyCellText(day)}</td>
-                <td className="px-3 py-2 text-right font-mono text-sky-700">{fmt(day.regular)}</td>
-                <td className="px-3 py-2 text-right font-mono text-violet-700">{fmt(day.campaign)}</td>
-                <td className="break-words px-3 py-2">
-                  {day.total === 0 ? (
-                    <span className="font-bold text-rose-600">No activity</span>
-                  ) : (
-                    <span className="font-semibold text-emerald-700">{fmt(day.total)} field visits</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-            </PortalDesktopTable>
-          )}
-        />
-      </div>
-
-      {/* Inline visit + route detail: the actual visits and GPS check-ins with submission time
-          vs check-in time, ordered by time = the day's route. */}
-      {data.dateBreakdown.some((day) => (day.visits?.length ?? 0) > 0 || (day.checkins?.length ?? 0) > 0) ? (
-        <div className="space-y-2">
-          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Visits &amp; route detail</p>
-          {data.dateBreakdown
-            .filter((day) => (day.visits?.length ?? 0) > 0 || (day.checkins?.length ?? 0) > 0)
-            .map((day) => (
-              <div className="rounded-xl border border-phx-line bg-white p-3" key={`detail-${day.date}`}>
-                <p className="text-xs font-bold text-slate-900">{formatDateValue(day.date)}</p>
-                <div className="mt-2 space-y-3">
-                  {/* `[&>*]:min-w-0` for the same reason as the workspace grid: below `md` this is a
-                      single column, and grid items default to `min-width: auto`, so the visit and
-                      check-in lists sized the column to their longest line (measured 283 vs 436). */}
-                  <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
-                    <div>
-                      <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Visits</p>
-                      {!day.visits?.length ? (
-                        <p className="mt-1 text-xs text-slate-400">—</p>
-                      ) : (
-                        <ul className="mt-1 space-y-1">
-                          {day.visits.map((visit, index) => (
-                            <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <span
-                                  className={cn(
-                                    "shrink-0 rounded px-1 py-0.5 text-phx-3xs font-bold uppercase",
-                                    visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
-                                  )}
-                                >
-                                  {visit.kind}
-                                </span>
-                                <span className="break-words text-slate-700">
-                                  {visit.contact || visit.customer || "—"}
-                                  {visit.role === "partner" ? (
-                                    visit.repName ? (
-                                      <>
-                                        {" · double with "}
-                                        <span className="font-semibold text-slate-900">{visit.repName}</span>
-                                      </>
-                                    ) : (
-                                      " · double"
-                                    )
-                                  ) : null}
-                                </span>
-                              </span>
-                              {/* Each timing says what it IS. The two columns carry different
-                                  clocks — when the rep SAVED the CRM record vs when he physically
-                                  checked in — and reading a saved-at as a check-in time is exactly
-                                  the mistake that makes a trip look wrongly claimed. */}
-                              <span className="flex shrink-0 flex-col items-end leading-tight">
-                                <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                                  Saved visit time
-                                </span>
-                                <span className="whitespace-nowrap font-mono text-slate-500">
-                                  {formatClock(visit.submittedAt)}
-                                  {visit.ampm ? ` · ${visit.ampm}` : ""}
-                                </span>
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Check-ins</p>
-                      {!day.checkins?.length ? (
-                        <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
-                      ) : (
-                        <ol className="mt-1 space-y-1">
-                          {day.checkins.map((checkin, index) => (
-                            <li className="flex items-center justify-between gap-2 text-xs" key={index}>
-                              <span className="break-words text-slate-700">
-                                {index + 1}.{" "}
-                                {checkin.contact ||
-                                  checkin.address ||
-                                  (checkin.lat != null && checkin.lon != null
-                                    ? `${checkin.lat.toFixed(4)}, ${checkin.lon.toFixed(4)}`
-                                    : "—")}
-                                {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
-                              </span>
-                              <span className="flex shrink-0 flex-col items-end leading-tight">
-                                <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
-                                  Check-in time
-                                </span>
-                                <span className="whitespace-nowrap font-mono text-slate-500">{formatClock(checkin.at)}</span>
-                              </span>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </div>
-                  </div>
-                  {day.checkins?.length ? (
-                    <div className="min-w-0">
-                      <p className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">Route map</p>
-                      {/* overflow-hidden is load-bearing: Google Maps renders absolutely-positioned
-                          internals (and, when the Maps key is rejected, a fixed-width "can't load
-                          Google Maps" overlay) that are WIDER than their container. Measured at
-                          375px: `.gm-style` reported clientWidth 247 vs scrollWidth 486, and that
-                          239px pushed the whole page sideways. Clipping it here keeps the map's
-                          internals from escaping. */}
-                      <div className="min-w-0 overflow-hidden">
-                        <TripDayRouteMap checkins={day.checkins} />
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-        </div>
-      ) : null}
+      {/* DAY BY DAY (owner, 2026-11-06: "so confusing … specially when the trip is more than 1 day").
+          This used to be a seven-column table, then — further down — a second, always-open list of
+          the same days with every visit, every check-in and a Google map EACH, so a three-day trip
+          put three maps between the reviewer and the decision. Now each trip day is ONE row: its
+          figures and verdict in the row itself, and its visits, check-ins and route behind a click.
+          The map is only drawn for a day that is opened. A list, not a table, so a phone gets the
+          same rows with nothing scrolling sideways. */}
+      <ol className="divide-y divide-slate-200 border border-phx-line bg-white">
+        {data.dateBreakdown.length === 0 ? (
+          <li className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</li>
+        ) : (
+          data.dateBreakdown.map((day, index) => (
+            <TripDayRow
+              day={day}
+              dayCount={data.dateBreakdown.length}
+              dayNumber={index + 1}
+              key={day.date}
+              pharmacyText={pharmacyCellText(day)}
+            />
+          ))
+        )}
+      </ol>
     </div>
   );
 }
