@@ -942,7 +942,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   } catch (error) {
     managerOwnVisitWarning = {
       code: "manager_own_visits_unavailable",
-      message: `A manager's own Phoenix CRM visits could not be read this month: ${error instanceof Error ? error.message : "read failed"}. A no-activity day may be a day he visited on his own.`,
+      message: `A manager's own Phoenix CRM visits could not be read this month: ${error instanceof Error ? error.message : "read failed"}. A no-activity day may be a day of the manager's own visits.`,
       severity: "warning",
     };
   }

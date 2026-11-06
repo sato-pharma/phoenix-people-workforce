@@ -239,7 +239,7 @@ function TripDayRow({
                               " · double"
                             )
                           ) : visit.role === "own" ? (
-                            " · on his own"
+                            " · own visit"
                           ) : null}
                         </span>
                       </span>
@@ -512,7 +512,7 @@ export function TripWorkloadEvidencePanel({
           {/* A manager's visits count to him both ways (owner, 6 Nov 2026): with a rep, and on his own. */}
           {data.managerOwnVisits ? (
             <p className="mt-0.5 font-mono text-phx-2xs font-bold text-slate-600">
-              With a rep {fmt(data.regularVisits + data.campaignVisits - data.managerOwnVisits)} · On his own{" "}
+              With a rep {fmt(data.regularVisits + data.campaignVisits - data.managerOwnVisits)} · Own visits{" "}
               {fmt(data.managerOwnVisits)}
             </p>
           ) : null}

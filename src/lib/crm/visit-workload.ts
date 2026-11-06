@@ -254,7 +254,7 @@ export async function getRepTripVisitWorkload(input: {
   const end = input.tripEndDate.slice(0, 10);
   const dates = eachDateInclusive(start, end);
   let sourceLabel =
-    "Phoenix CRM visits — every field visit, his own or with a rep (iReports360 only before his team's start).";
+    "Phoenix CRM visits — every field visit, own or with a rep (iReports360 only before the team's start).";
 
   const hrId = String(input.hrId ?? "").trim();
   if (!hrId || dates.length === 0) {
@@ -299,7 +299,7 @@ export async function getRepTripVisitWorkload(input: {
     ownVisits = await loadManagerOwnVisitRows({ end, managerHrIds: [hrId], start });
   } catch {
     ownVisits = null;
-    sourceLabel += " His own Phoenix CRM visits could not be read, so they are not counted here.";
+    sourceLabel += " The manager's own Phoenix CRM visits could not be read, so they are not counted here.";
   }
   if (crmId == null && data.length === 0 && (ownVisits?.length ?? 0) === 0) {
     return emptyWorkload(dates, "This person has no CRM id and no visits under their HR ID, so their visits can't be matched.", "unmapped");

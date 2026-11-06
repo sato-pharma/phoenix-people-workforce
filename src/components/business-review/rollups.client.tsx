@@ -302,8 +302,8 @@ export function RoleActivityTable({ roles, scopeNote }: { roles: ReviewRoleRow[]
             </div>
             <dl className="mt-2 grid grid-cols-3 gap-2">
               <Field label="Field visits" tone="text-slate-950" value={num(r.fieldVisits)} />
-              <Field label="Regular" value={num(r.regularVisits)} />
-              <Field label="Campaign" value={num(r.campaignVisits)} />
+              <Field label="Planned" value={num(r.regularVisits)} />
+              <Field label="Unplanned" value={num(r.campaignVisits)} />
               <Field label="Rides led" value={num(r.ridesLed)} />
               <Field label="Reps coached" value={num(r.repsCoached)} />
               <Field label="Customers" value={num(r.customersReached)} />
@@ -341,8 +341,8 @@ export function RoleActivityTable({ roles, scopeNote }: { roles: ReviewRoleRow[]
                 <th className={THR}>Headcount</th>
                 <th className={THR}>Active</th>
                 <th className={THR}>Field visits</th>
-                <th className={THR}>Regular</th>
-                <th className={THR}>Campaign</th>
+                <th className={THR}>Planned</th>
+                <th className={THR}>Unplanned</th>
                 <th className={THR}>Rides led</th>
                 <th className={THR}>Reps coached</th>
                 <th className={THR}>AM · PM · Pharmacies</th>

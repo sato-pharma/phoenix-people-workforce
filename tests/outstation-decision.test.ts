@@ -350,7 +350,7 @@ export function runOutstationDecisionTests() {
     totalDvVisits: 0,
   });
   assert.equal(emptyTrip?.kind, "reject", "a measured empty trip is still rejected once the window has closed");
-  assert.match(emptyTrip?.reason ?? "", /none of his own/, "the refusal says both parts were empty");
+  assert.match(emptyTrip?.reason ?? "", /no own visit/, "the refusal says both parts were empty");
 
   // The submit path feeds both parts: his own visits join the total and the unplanned count, and an
   // unread own count is passed as unmeasured.

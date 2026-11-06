@@ -637,6 +637,19 @@ function runPhoenixPharmacyFigureTests() {
     assert.doesNotMatch(exporter, /split\.am, split\.pm, split\.pharmacies\]/);
     assert.match(src("src/lib/business-review/sources/visits.ts"), /addBucketToSplit\(agent\.visitSplit, countBucket, 1, fromPhoenix\)/);
     assert.match(src("src/lib/business-review/sources/visits.ts"), /addBucketToSplit\(manager\.rideSplit, countBucket, 1, fromPhoenix\)/);
+    // Planned and unplanned, apart (owner, 6 Nov 2026: "replace campagin with unplanned visist"). Phoenix serves
+    // every visit as type 0, so the review reads its is_unplanned mark; an archive day's campaign code (-8)
+    // still counts as unplanned, and an archive month's planned figure is type 0 exactly, as before.
+    const reviewVisits = src("src/lib/business-review/sources/visits.ts");
+    assert.ok(reviewVisits.includes("double2_name, is_unplanned, speciality, visit_date, visit_type"), "the review reads the unplanned mark");
+    assert.ok(
+      reviewVisits.includes("const isUnplanned = isUnplannedFieldVisit({ is_unplanned: row.is_unplanned, visit_type: row.visit_type });") &&
+        reviewVisits.includes("if (isRegular && !isUnplanned) agent.regularVisits += 1;") &&
+        reviewVisits.includes("if (isUnplanned) agent.campaignVisits += 1;"),
+      "planned is type 0 that is not unplanned; unplanned is the mark or the archived campaign code",
+    );
+    assert.ok(src("src/lib/business-review/pack/model.ts").includes('"Pharmacies", "Planned", "Unplanned"]'), "the pack prints Planned and Unplanned");
+    assert.ok(!/label="Campaign"|>Campaign</.test(src("src/components/business-review/rollups.client.tsx")), "and the roll-up no longer says Campaign");
     assert.match(src("src/lib/business-review/sources/field-link.ts"), /addBucketToSplit\(entry\.fact\.split, countBucket, 1, fromPhoenix\)/);
     assert.match(src("src/lib/crm/sfe-field-analytics.ts"), /isPhoenixNativeVisitRow\(visit\)\) phoenixVisits\+\+/);
     assert.match(src("src/components/admin/ceo-phase-b.tsx"), /AM \{n\(data\.amVisits\)\} · PM \{n\(data\.pmVisits\)\} · \{pharmacyFigure\}/);

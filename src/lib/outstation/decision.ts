@@ -157,7 +157,7 @@ export function outstationCampaignRuleOutcome(input: {
       ? {
           kind: "reject",
           reason:
-            "No field visits were recorded for this trip — no double visit with a rep and none of his own; a traveling expense for this role requires field visits.",
+            "No field visits were recorded for this trip — no double visit with a rep and no own visit; a traveling expense for this role requires field visits.",
         }
       : { kind: "hold", reason: DV_EVIDENCE_PENDING_HOLD_REASON };
   }
