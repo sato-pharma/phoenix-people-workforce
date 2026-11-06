@@ -12,6 +12,7 @@
 // which took every unpaid_duration_days > 0 row with no reason filter at all.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { calculatePaymentForRequest } from "@/lib/vacation/service.ts";
@@ -19,7 +20,7 @@ import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { assertBaseSalaryMapLoaded, assertSourceScanned } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
-import { collectClaimedLedgerDays, type LedgerClaimRow } from "../conflict.ts";
+import { collectClaimedLedgerDays, ledgerReadErrorText, type LedgerClaimRow } from "../conflict.ts";
 import { ledgerClaimMonthKeys } from "../cycle.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 
@@ -302,17 +303,27 @@ async function loadAlreadyDeductedDays(input: {
   monthKey: string;
   reconciledCategory: DeductionsCategory;
 }): Promise<Set<string>> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("deductions_candidates")
-    .select("employee_hr_id_compact, dates, category, locked_at, source_system")
-    .in("month_key", ledgerClaimMonthKeys(input.monthKey))
-    .is("superseded_at", null);
-  // Fail closed. An unreadable ledger is not an empty one, and continuing would
-  // recreate exactly the duplicates this guard exists to stop.
-  if (error) throw new Error(`Vacation connector: failed to load already-deducted days: ${error.message}`);
+  // Paged: PostgREST stops a response at 1,000 rows, and a short ledger read would re-charge a day
+  // that is already charged. An error never ends the walk early — it throws (fail closed).
+  let data: LedgerClaimRow[];
+  try {
+    data = await fetchAllRows<LedgerClaimRow>(
+      () =>
+        getSupabaseAdmin()
+          .from("deductions_candidates")
+          .select("id, employee_hr_id_compact, dates, category, locked_at, source_system")
+          .in("month_key", ledgerClaimMonthKeys(input.monthKey))
+          .is("superseded_at", null),
+      "id",
+    );
+  } catch (error) {
+    // Fail closed. An unreadable ledger is not an empty one, and continuing would
+    // recreate exactly the duplicates this guard exists to stop.
+    throw new Error(`Vacation connector: failed to load already-deducted days: ${ledgerReadErrorText(error)}`);
+  }
   // Skips a manual_hr placeholder row (its date is `${monthKey}-01`, not a detected day) and this
   // run's OWN category unless locked — see collectClaimedLedgerDays / ledgerRowStillClaimsItsDays.
-  return collectClaimedLedgerDays((data ?? []) as LedgerClaimRow[], (row) =>
+  return collectClaimedLedgerDays(data, (row) =>
     ledgerRowStillClaimsItsDays({ category: row.category ?? null, lockedAt: row.locked_at ?? null }, input.reconciledCategory),
   );
 }

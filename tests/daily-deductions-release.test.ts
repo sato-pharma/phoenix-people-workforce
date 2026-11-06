@@ -71,6 +71,33 @@ export function runDailyDeductionsReleaseTests() {
       "a bulk release sends the unreleased and the changed, never the already-released",
     );
     assert.deepEqual(linesToRelease([], released), [], "an empty selection sends nothing");
+
+    // A line the tally could not price (no base salary on file) reads 0.00 only because nothing could
+    // be priced. Released, it emailed the employee "EGP 0.00 · N days" (audit, 2026-11-07).
+    assert.deepEqual(
+      linesToRelease([line({ employeeHrIdCompact: "M104", amount: 0, amountUnknown: true })], released),
+      [],
+      "REGRESSION: a line with no computable amount is never sent to release",
+    );
+    assert.throws(
+      () =>
+        normalizeDailyLine(
+          {
+            amount: 0,
+            amountUnknown: true,
+            category: "fingerprint",
+            daysCount: 1,
+            dates: ["2026-09-05"],
+            employeeHrId: "M-104",
+            employeeName: "Test Person",
+            rawDaysCount: 1,
+            sourceSystem: "fingerprint",
+          },
+          0,
+        ),
+      /has no computable amount/,
+      "and the server refuses one that is sent anyway",
+    );
   }
 
   // ── the key is employee x category, shared by the client and the server ──

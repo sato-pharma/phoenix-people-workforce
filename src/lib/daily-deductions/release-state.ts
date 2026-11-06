@@ -19,6 +19,8 @@ export type ComparableLine = KeyedLine & {
   daysCount: number;
   amount: number;
   dates: string[];
+  /** No computable amount — never sent to release (see DailyDeductionTallyLine.amountUnknown). */
+  amountUnknown?: boolean;
 };
 
 export function releaseLineKey(line: KeyedLine): string {
@@ -53,10 +55,14 @@ export function releaseStateOf(tally: ComparableLine, released: ReadonlyMap<stri
   return sameFigures(tally, match) ? "released" : "changed";
 }
 
-/** The lines a "Release" click should send: everything in the selection that is not already released as-is. */
+/**
+ * The lines a "Release" click should send: everything in the selection that is not already released
+ * as-is, and that has an amount. A line with no computable amount stays back until the salary is on
+ * file — releasing it would email the employee "EGP 0.00", or a total missing the unpriced part.
+ */
 export function linesToRelease<T extends ComparableLine>(
   selected: readonly T[],
   released: ReadonlyMap<string, ComparableLine>,
 ): T[] {
-  return selected.filter((line) => releaseStateOf(line, released) !== "released");
+  return selected.filter((line) => line.amountUnknown !== true && releaseStateOf(line, released) !== "released");
 }
