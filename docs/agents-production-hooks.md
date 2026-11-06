@@ -166,7 +166,7 @@ production-ops guidance. They stay in the index.
   secret="$(printf '%s' "$raw" | jq -r '.CRON_SECRET' | tr -d '\r\n')"   # strip CR/LF
   [ "${#secret}" -eq 64 ] || { echo 'refusing: unexpected length'; exit 1; }
   printf '%s' "Bearer ${secret}" | sha256sum | cut -c1-16           # must equal the live fleet fp
-  printf '%s' "$secret" | gh secret set CRON_SECRET --repo Omar-3-xx/phoenix-people-workforce
+  printf '%s' "$secret" | gh secret set CRON_SECRET --repo sato-pharma/phoenix-people-workforce
   ```
 
   `updated_at` moving proves the write landed; the pre-pipe fingerprint proves *what* landed. A

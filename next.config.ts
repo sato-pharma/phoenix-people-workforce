@@ -717,7 +717,7 @@ function withOptionalSentry(config: NextConfig): NextConfig {
           release: {
             name: release,
             deploy: { env: "production" },
-            setCommits: { repo: "Omar-3-xx/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true },
+            setCommits: { repo: "sato-pharma/phoenix-people-workforce", commit: release, shouldNotThrowOnFailure: true },
           },
         }
       : {}),
