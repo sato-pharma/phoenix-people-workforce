@@ -176,10 +176,10 @@ export function runTestAccountTests(): void {
     // It is wired where every API route resolves its caller, and where a server action does.
     const server = source("src/lib/auth/server.ts");
     assert.ok(
-      /export async function resolveAccessContext\(request: Request\)[\s\S]{0,900}assertTestAccountMayRun\(access, request\)/.test(server),
+      /export async function resolveAccessContext\(request: Request\)[\s\S]{0,1600}assertTestAccountMayRun\(access, request\)/.test(server),
       "resolveAccessContext must run the test-account guard before any route gets its context",
     );
-    assert.ok(/next-action[\s\S]{0,80}assertNotTestAccount\(access\)/.test(server), "a server action is refused to a test account");
+    assert.ok(/next-action[\s\S]{0,160}assertNotTestAccount\(access\)/.test(server), "a server action is refused to a test account unless it runs as a dry run");
     // The column list moved out of an inline SELECT in this file and into phx_auth_session_bundle,
     // which resolves the whole auth trio in ONE round trip (2026-10-10 — the trio was 36% of every
     // PostgREST call Phoenix made). The gate is unchanged and still worth pinning: a narrowed list

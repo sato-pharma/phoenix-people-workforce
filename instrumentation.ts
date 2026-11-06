@@ -23,7 +23,19 @@ import { sentryServerStatus } from "@/lib/observability/sentry-policy";
 // started here was removed with the vendor, retired on 6 November 2026.)
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    // FIRST, before anything can make an outbound call: hold the sockets to Supabase open.
+    // THE TEST-ACCOUNT FENCE, before any call can leave: a test account's save outside Phoenix CRM runs
+    // every check and saves nothing (owner, 2026-11-06) because this wrapper answers each write it makes
+    // (src/lib/auth/test-dry-run.ts). If it fails to install, resolveAccessContext refuses those saves
+    // as before (testDryRunFenceIsLive) — so a failure here costs the dry run, never a real write.
+    try {
+      const { installTestDryRunFetchFence, testDryRunFenceIsLive } = await import("@/lib/auth/test-dry-run");
+      installTestDryRunFetchFence();
+      console.log(`[test-dry-run] fence ${testDryRunFenceIsLive() ? "installed" : "NOT installed — test accounts' saves stay refused"}`);
+    } catch (error) {
+      console.error("[test-dry-run] failed to install:", error);
+    }
+
+    // Then, before anything can make an outbound call: hold the sockets to Supabase open.
     // Node closes an idle fetch socket after 4s, and a fresh connection to Frankfurt costs
     // ~3.2 x RTT against ~1.1 x for a reused one — paid on each of the ~8 PostgREST round
     // trips a request makes. Dynamic import for the same edge-safety reason as the rest of
