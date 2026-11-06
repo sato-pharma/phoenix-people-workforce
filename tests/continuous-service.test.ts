@@ -153,6 +153,11 @@ export function runContinuousServiceTests() {
     "the overview's sales tile stays on her current record only",
   );
   assert.match(home, /withEarlierRecordDoubleVisits\(hrId,/, "the overview's double-visit pulse includes her earlier record's");
+  assert.match(
+    home,
+    /async function loadMrFieldKpis[\s\S]{0,2000}for \(const earlierHrId of row \? \[\] : earlierRecordHrIds\(hrId\)\)[\s\S]{0,300}getKpisBoard\(\{ access: \{ \.\.\.access, hrId: earlierHrId \}, includeReports: false,/,
+    "HEADLINE: a month with no row of her own scores her coverage on her earlier record — October read blank on PD-0039",
+  );
   for (const page of [
     "app/employee-portals/employee-360/page.tsx",
     "app/employee-portals/employee-360/[hrId]/page.tsx",
