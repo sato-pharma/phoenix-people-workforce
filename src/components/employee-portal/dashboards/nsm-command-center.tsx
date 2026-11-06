@@ -38,7 +38,6 @@ import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
 import { ManagerCvFoldersRow } from "@/components/employee-portal/dashboards/manager-cv-folders-row";
-import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { StreamedDoubleVisitFocus } from "@/components/employee-portal/dashboards/double-visit-focus-stream";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
@@ -236,7 +235,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <Suspense fallback={<MmSectionSkeleton title="CRM First Visit" />}>
         <AwaitRoleExtras extras={extras}>
-          {({ nsmBoard }) => <CrmFirstVisitBoard action={<EarlyBirdsSyncAction />} crm={nsmBoard?.crm ?? null} />}
+          {({ nsmBoard }) => <CrmFirstVisitBoard crm={nsmBoard?.crm ?? null} />}
         </AwaitRoleExtras>
       </Suspense>
 

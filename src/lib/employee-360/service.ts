@@ -22,7 +22,7 @@ import { isCallRateWorkingDay, normalizeSession, type CallRateHolidays } from "@
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
-import type { CrmListType } from "@/lib/crm/contacts-web-client";
+import type { CrmListType } from "@/lib/crm/list-types";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
 import { PHOENIX_VISIT_DETAIL_COLUMNS, type PhoenixVisitDetailRow } from "@/lib/crm/phoenix-visit-detail";
 import {

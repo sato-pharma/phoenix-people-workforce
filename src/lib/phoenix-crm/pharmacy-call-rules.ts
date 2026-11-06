@@ -17,7 +17,8 @@ import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matc
  * ── 1. A PHARMACY IS A THIRD LIST, NEVER A ROW INSIDE AM OR PM ────────────────────────────────────
  * The AM · PM · Pharmacies golden rule (owner, 2026-09-21) is structural here rather than derived:
  * the customer's own `list_type` carries `Pharmacy`, the vendor's own spelling (`LIST_TYPES` in
- * `src/lib/crm/contacts-web-client.ts`), which is also where each rep's pharmacies are imported from.
+ * `src/lib/crm/list-types.ts`), the spelling the retired iReports360 scraper imported each rep's
+ * pharmacies under.
  *
  * 🔴 EVERY READER OF `list_type` WAS A BINARY — `row.list_type === "AM" ? "AM" : "PM"` — and there
  * were **26 of them across 17 files** when the pharmacies were imported (25 inside

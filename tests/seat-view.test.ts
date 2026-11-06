@@ -98,7 +98,6 @@ const WRITE_MARKER = /\.(insert|upsert|update|delete)\(|writeAuditLog|writeRequi
  * either refused in SEAT_VIEW_REFUSED_READS or named here.
  */
 const HARMLESS_WRITING_READS: Record<string, string> = {
-  "/api/cron/crm-contact-lists": "a cron job: it answers only the scheduler's secret, never a browser session",
   "/api/cron/job-heartbeat-sweep": "a cron job: it answers only the scheduler's secret, never a browser session",
   "/api/share/direct-orders/x/file": "a public share link opened by its own token, the same for every visitor; it records no viewer",
   "/api/share/marketing-requests/x/file": "a public share link opened by its own token, the same for every visitor; it records no viewer",

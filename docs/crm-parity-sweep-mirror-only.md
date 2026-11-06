@@ -1,5 +1,9 @@
 # The parity sweep compares the vendor against the mirror table, not the unified view
 
+> **Retired, 6 November 2026.** iReports360 was retired on the owner's word and the parity sweep, its code and
+> the tests named below were removed with it. The last sweep, 28 October to 6 November, read 318 = 318. This
+> file stays as the account (`docs/crm-cutover-runbook.md`, "Done — iReports360 retired").
+
 Account for the rule in `.claude/rules/crm-sync.md`. Measured on production
 (`ozucdzovmcqvepbozvqf`) on 23 October 2026, from the owner's "look into the CRM parity window the
 sweep refused at 06:08".

@@ -9,9 +9,9 @@
 //   * probation_dv_ingest_issues: identity-less rows, ON CONFLICT (crm_visit_id, reason) DO NOTHING.
 //   * probation_cases.last_crm_sync_at bumped for touched cases (sync-health, P3-T10).
 //
-// Called for a date window after every CRM deep run: by the in-process poller (live-poller.ts
-// runProbationDvCapture — the live path since 2026-09-13) and by the ireports360 visit
-// sync/reconcile cron routes, which are switched-off backstops.
+// Called for a date window by the CRM housekeeping timer (crm/housekeeping-scheduler.ts) and by the
+// probation backfill route. The iReports360 poller and its sync/reconcile routes, which also called it,
+// were retired with the vendor on 6 November 2026.
 
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { isProbationSchemaMissing } from "@/lib/probation/service";

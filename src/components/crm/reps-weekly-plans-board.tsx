@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { PlanStatusPicker } from "@/components/crm/plan-status-picker";
 import { PlanWeekPicker } from "@/components/crm/plan-week-picker";
-import { VerifyButton } from "@/components/crm/plan-verify-button";
+import { PlanApproveButton } from "@/components/crm/plan-verify-button";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import { RepsListFilters } from "@/components/crm/reps-list-filters";
 import { PlanDoctorsTable } from "@/components/crm/reps-list-tables";
@@ -11,7 +11,6 @@ import type { PlanStatusFilter } from "@/lib/crm/plan-status-filter";
 import {
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
-  PLAN_STATUS_SUPERVISOR_VERIFIED,
   planStatusClass,
   planStatusLabel,
 } from "@/lib/crm/plan-verification";
@@ -33,7 +32,7 @@ import type { RepsWeeklyPlanRep, RepsWeeklyPlansBoard } from "@/lib/crm/reps-wee
 // one of them. See `PlanDoctorsTable` there for what differs — days instead of bricks, and the shift.
 //
 // EVERYTHING ELSE HERE IS A SERVER COMPONENT. The four client pieces are the ones that must be: the
-// cascade, the week picker, the Verify/Unverify button and that doctors table. Choosing a rep swaps
+// cascade, the week picker, the Approve button and that doctors table. Choosing a rep swaps
 // the whole board, exactly as tab one does, so the doctors always land at the top of the page — the
 // reason the period board needs a scroll-into-view effect does not exist on this one.
 
@@ -104,7 +103,7 @@ const STATUS_COPY: Record<
     heading: "Medical reps",
   },
   awaiting: {
-    description: "The reps whose plans are filed and waiting on your signature. Pick one to read it and verify it.",
+    description: "The reps whose plans are filed and waiting on your signature. Pick one to read it and approve it.",
     emptyDetail:
       "Every rep in your reach who filed a plan this week has been verified. Reps who filed nothing are counted separately — check the No plan filed tile before calling the week done.",
     emptyTitle: "Nothing is waiting on you this week.",
@@ -163,16 +162,42 @@ function RepCard({ href, rep, weekIsFuture }: { href: string; rep: RepsWeeklyPla
   );
 }
 
+/**
+ * The sentence beside the button. iReports360 was retired on 6 November 2026, so an old-CRM plan
+ * (positive id) is read-only and says so; a plan filed in Phoenix CRM is spoken of by its own status.
+ */
+function planPanelSentence(plan: PlanSummary, canApprove: boolean): string {
+  if (plan.crmPlanId > 0) {
+    return plan.status === PLAN_STATUS_AREA_MANAGER_VERIFIED
+      ? "Verified by an area manager in the old CRM, which closed on 6 November 2026. It is read-only here."
+      : "Filed in the old CRM, which closed on 6 November 2026. Its status is the one the old CRM last held, read-only here.";
+  }
+  switch (plan.phoenixStatus) {
+    case "submitted":
+      return canApprove
+        ? "Sent in Phoenix CRM. Approving here approves the week exactly as the Team tab does; a return is made there."
+        : "This week is waiting for the rep's district or regional manager to approve it in Phoenix CRM.";
+    case "approved":
+      return "Approved in Phoenix CRM.";
+    case "returned":
+      return "Returned to the rep in Phoenix CRM. It comes back here when he sends it again.";
+    case "draft":
+      return "The rep has not sent this week in Phoenix CRM yet.";
+    default:
+      return "Filed in Phoenix CRM. Its review is on the Team tab.";
+  }
+}
+
 function PlanPanel({
   basePath,
   board,
-  canVerify,
+  canApprove,
   plan,
   selected,
 }: {
   basePath: string;
   board: RepsWeeklyPlansBoard;
-  canVerify: boolean;
+  canApprove: boolean;
   plan: PlanSummary;
   selected: RepsWeeklyPlanRep;
 }) {
@@ -180,9 +205,6 @@ function PlanPanel({
   // A plan whose rows carry no date at all still has a block on screen, but it is not a day he
   // planned to work — so it is excluded here rather than counted as one.
   const days = board.days.filter((day) => day.date != null).length;
-  // Only a signature THIS feature wrote can be taken back. An area manager's cannot — see
-  // `decidePlanVerification` — so the sentence below must not promise it.
-  const undoable = plan.status === PLAN_STATUS_SUPERVISOR_VERIFIED;
 
   return (
     <>
@@ -207,20 +229,12 @@ function PlanPanel({
             {board.week.label}
           </p>
           <p className="mt-0.5 text-phx-2xs text-slate-500">
-            {/* Said in words rather than left to the button's absence. A manager who cannot verify
-                is told why here; the route refuses the write independently, which is the boundary. */}
-            {pending
-              ? canVerify
-                ? "Verifying writes the status into the CRM itself and emails the rep. You can take it back afterwards from this same button."
-                : "This plan is waiting for the rep's district or regional manager to verify it."
-              : undoable
-                ? canVerify
-                  ? "Verified in the CRM. Unverifying writes that back too and tells the rep their plan is waiting for them again — the plan itself is not changed."
-                  : "Verified in the CRM by the rep's district or regional manager."
-                : "An area manager verified this plan. Phoenix never wrote that signature, so it cannot take it back either."}
+            {/* Said in words rather than left to the button's absence. A manager who cannot approve
+                is told why here; the decide route refuses the write independently, which is the boundary. */}
+            {planPanelSentence(plan, canApprove)}
           </p>
         </div>
-        <VerifyButton canVerify={canVerify} plan={plan} />
+        <PlanApproveButton canApprove={canApprove} plan={plan} />
       </div>
 
       {/* Two plans for one rep in one week is rare and worth seeing rather than silently picking
@@ -266,12 +280,12 @@ function PlanPanel({
 export function RepsWeeklyPlansBoardView({
   basePath,
   board,
-  canVerify,
+  canApprove,
 }: {
   basePath: string;
   board: RepsWeeklyPlansBoard;
-  /** Whether this viewer holds `crm_plans:approve`. UX only — the route re-checks it server-side. */
-  canVerify: boolean;
+  /** Whether this viewer holds `phoenix_crm:approve`. UX only — the decide route re-checks it server-side. */
+  canApprove: boolean;
 }) {
   const { counts, options, reps, scopeLabel, scopeReason, selected, selectedPlan, selection, statusFilter, syncedAt, week, weeks } =
     board;
@@ -285,7 +299,7 @@ export function RepsWeeklyPlansBoardView({
           <div className="px-5 py-6">
             <p className="text-sm font-semibold text-slate-700">{scopeReason}</p>
             <p className="mt-1 text-phx-xs text-slate-500">
-              This tab shows the weekly plans of the reps who report to you, and lets you verify them. Verifying a
+              This tab shows the weekly plans of the reps who report to you, and lets you approve them. Approving a
               plan is a district or regional manager&apos;s decision, so it follows the organogram rather than the
               wider reach the contact list uses.
             </p>
@@ -296,8 +310,8 @@ export function RepsWeeklyPlansBoardView({
   }
 
   const description = [
-    "Pick a rep and a week, then read the plan they filed and verify it",
-    "verifying writes the status into the CRM itself",
+    "Pick a rep and a week, then read the plan they filed and approve it",
+    "a week sent in Phoenix CRM is approved here, exactly as on the Team tab",
     `your reach: ${scopeLabel}`,
     syncedAt ? `last refreshed ${cairoStamp(syncedAt)} Cairo` : "never refreshed",
   ].join(" · ");
@@ -377,7 +391,7 @@ export function RepsWeeklyPlansBoardView({
             <PlanPanel
               basePath={basePath}
               board={board}
-              canVerify={canVerify}
+              canApprove={canApprove}
               plan={selectedPlan}
               selected={selected}
             />

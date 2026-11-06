@@ -244,9 +244,6 @@ const ROUTE_GATES: RouteGate[] = [
   post("plans", "create"),
   post("plans/submit", "create"),
   post("plans/decide", "approve"),
-  // The week a rep filed in the OLD CRM, approved from the Team tab (owner, 2026-10-17); the service adds the
-  // admin board's own `crm_plans:approve` grant and the viewer's reach against the plan's rep.
-  post("plans/old-crm/decide", "approve"),
   // A sent week is changed through a request (owner, 2026-10-01): the rep asks (`create`); the district
   // manager, SFE and HR take their steps (`approve`, narrowed again in the service to the one person
   // whose STEP it is — read from the row, never the body).

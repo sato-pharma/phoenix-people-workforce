@@ -159,7 +159,6 @@ async function testDetector() {
     readHeartbeats: async () => {
       throw new Error("heartbeats down");
     },
-    standDown: async () => null,
     readBackgroundJobs: async () => {
       throw new Error("queue down");
     },
@@ -174,7 +173,6 @@ async function testDetector() {
     readHeartbeats: async () => {
       throw new Error("heartbeats down");
     },
-    standDown: async () => null,
     readBackgroundJobs: async () => [queued()],
     people: { lookup: async () => new Map([["b-77", { hrIdDisplay: "B-77", name: "Mona Adel", role: "Medical Rep" }]]) },
   });
@@ -186,7 +184,7 @@ async function testDetector() {
   assert.deepEqual(cron.writes[0].batch.cursor, { scannedUntil: NOW_ISO });
   assert.match(String(partial.report?.coverage), /keeps only each job's last outcome/, "Every run says what the register cannot show");
 
-  const quiet = createJobFailuresDetector({ readHeartbeats: async () => [], standDown: async () => null, readBackgroundJobs: async () => [] });
+  const quiet = createJobFailuresDetector({ readHeartbeats: async () => [], readBackgroundJobs: async () => [] });
   const historical = recordingSink();
   const clean = await quiet.run({ mode: "historical", deadline: now() + 60_000, sink: historical.sink, runId: null, now, window: { from: "2026-10-01", to: "2026-10-02" } });
   assert.equal(clean.status, "ok");

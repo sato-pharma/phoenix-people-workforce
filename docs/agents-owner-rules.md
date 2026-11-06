@@ -4990,7 +4990,7 @@ wording must change for days from its start — the figure stops being absent an
 ### 1. A third list, and the binary that would swallow it
 
 The customer's own `list_type` carries `Pharmacy`, the vendor's own spelling in `LIST_TYPES`
-(`src/lib/crm/contacts-web-client.ts`), which is also where each rep's pharmacies are imported from.
+(`src/lib/crm/list-types.ts`), the spelling the retired iReports360 scraper imported each rep's pharmacies under.
 
 🔴 **Every reader of `list_type` in the module today is a binary** — `row.list_type === "AM" ? "AM" :
 "PM"`, in `server/doctors.ts`, `server/customer-timeline.ts`, `plan-review-rules.ts` and

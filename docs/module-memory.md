@@ -105,7 +105,7 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `phoenix-crm-visit-report` — Phoenix CRM — the Visit Report generator | `src/lib/phoenix-crm/{visit-report-*,server/visit-report*}.ts` and 4 more |
 | `phoenix-crm-refused-readings` — Phoenix CRM — the refusals a capture leaves behind | `src/lib/phoenix-crm/refused-readings-rules.ts` and 6 more |
 | `phoenix-crm-requests` — Phoenix CRM — how a request answers the screen | `src/components/phoenix-crm/api.ts` and 10 more |
-| `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 12 more |
+| `phoenix-crm-manager-plan` — Phoenix CRM — the district manager's weekly plan | `src/lib/phoenix-crm/manager-plan-rules.ts` and 11 more |
 | `phoenix-crm-manager-customer-marks` — Phoenix CRM — the marks on each customer of a manager's plan board | `src/lib/phoenix-crm/manager-customer-marks-rules.ts` and 9 more |
 | `phoenix-crm-manager-ride-alongs` — Phoenix CRM — a manager's half-day with another manager | `src/lib/phoenix-crm/manager-plan-rules.ts` and 12 more |
 | `phoenix-crm-manager-plan-conversation` — Phoenix CRM — the conversation on a manager's week | `src/lib/phoenix-crm/server/manager-plan-conversation.ts` and 4 more |
@@ -123,8 +123,8 @@ about the system, not a dependency of it. §2.2 keeps the pointer and the module
 | `crm-kpis` — KPIs — the board, its three reports and the manager rows | `src/lib/crm/kpis*` and 3 more |
 | `rep-ranks` — Phoenix Ranks — the rep board, its pillars and the certificate | `src/lib/rep-ranks/**` and 6 more |
 | `weekly-planning` — Weekly and Monthly Plan — the Plans tab form | `src/lib/weekly-planning/**` and 2 more |
-| `crm-doctor-lists` — Doctor lists — the contact master, its refresh and the list changes | `src/lib/crm/contact-lists/**` and 9 more |
-| `crm-sync` — Field CRM sync — the iReports360 live poller, its scheduled jobs and their restart markers | `src/lib/crm/{live-poller,sync,sync-run-groups,parity,plan-sync,cutover,housekeeping-scheduler}.ts` and 2 more |
+| `crm-doctor-lists` — Doctor lists — the contact master, its refresh and the list changes | `src/lib/crm/contact-lists/**` and 8 more |
+| `crm-sync` — Field CRM sync — the retired iReports360 sync's record, the cutover switch and the housekeeping timer | `src/lib/crm/{sync-run-groups,cutover,housekeeping-scheduler,vendor-row-types}.ts` and 2 more |
 | `marketing` — Marketing requests, venues, pharmacies and ROI | `src/lib/{marketing-requests,venues,pharmacy-master,pharmacy-search,customer-pharmacy-mapping,verified-captures,market-awareness,sales-marketing-intelligence,evidence}/**` and 4 more |
 | `marketing-pharmacy-codes` — Marketing pharmacy codes — the resolver, not-found codes and the nightly sync | `src/lib/marketing-requests/sales-code-sync*` and 3 more |
 | `marketing-roi` — Marketing ROI — the fact rebuild, the verdict, the Tracker, the Coverage Report and the Scorecard | `src/lib/marketing-requests/{roi,coverage-report,manager-scorecard}*` and 4 more |

@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 
-import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { readJobHeartbeats } from "@/lib/observability/job-heartbeat";
 import {
@@ -8,7 +7,7 @@ import {
   type JobHeartbeatProblem,
   type JobHeartbeatRow,
 } from "@/lib/observability/job-heartbeat-assess";
-import { JOB_SCHEDULES, watchedJobSchedules } from "@/lib/observability/job-schedule";
+import { JOB_SCHEDULES } from "@/lib/observability/job-schedule";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { scanBounds } from "@/lib/system-audit/detectors/sync-runs";
@@ -249,7 +248,6 @@ export function buildJobFailureFindings(input: {
 
 export type JobFailuresDetectorDeps = {
   readHeartbeats?: () => Promise<JobHeartbeatRow[]>;
-  standDown?: () => Promise<string | null>;
   readBackgroundJobs?: (bounds: { fromIso: string; toIso: string | null }) => Promise<BackgroundJobRow[]>;
   people?: PersonDirectory;
 };
@@ -265,7 +263,6 @@ function defaultLabel(route: string | null, jobName: string) {
 
 export function createJobFailuresDetector(deps: JobFailuresDetectorDeps = {}): AuditDetector {
   const readHeartbeats = deps.readHeartbeats ?? readJobHeartbeats;
-  const standDown = deps.standDown ?? resolveVendorSyncStandDown;
   const readBackgroundJobs =
     deps.readBackgroundJobs ??
     (async ({ fromIso, toIso }) => {
@@ -298,8 +295,7 @@ export function createJobFailuresDetector(deps: JobFailuresDetectorDeps = {}): A
       let verdict: ReturnType<typeof assessJobHeartbeats> | null = null;
       try {
         heartbeats = await readHeartbeats();
-        const declarations = watchedJobSchedules(JOB_SCHEDULES, await standDown());
-        verdict = assessJobHeartbeats({ declarations, now, rows: heartbeats });
+        verdict = assessJobHeartbeats({ declarations: JOB_SCHEDULES, now, rows: heartbeats });
       } catch (error) {
         result.unreadableSources.push("job_heartbeats");
         result.error = `The job heartbeat register could not be read: ${error instanceof Error ? error.message : String(error)}`;

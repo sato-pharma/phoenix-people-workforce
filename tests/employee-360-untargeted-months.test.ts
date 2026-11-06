@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import { aggregateSalesRows, describeSalesMonths, type SalesRow } from "../src/lib/employee-360/deep-service.ts";
-import type { CrmListType } from "../src/lib/crm/contacts-web-client.ts";
+import type { CrmListType } from "../src/lib/crm/list-types.ts";
 import { customerLaneOf, summarizeVisits, TOP_CUSTOMERS_PER_LANE, type VisitRow } from "../src/lib/employee-360/service.ts";
 
 // Employee 360, owner 2026-09-21.

@@ -30,10 +30,10 @@
 // reconcileDay — the day is then judged on device-punch timing alone. The
 // Field Workforce Compliance matrix uses the lenient lookup and calls such a
 // code CP. That is deliberate — silently cancelling a deduction for a code
-// nobody has classified is the riskier default. It is not SILENT: the CRM sync
-// raises an alert the first time an unclassified code appears, via
-// CRM_DAY_CLASSIFIED_VISIT_TYPES below and crm/unrecognized-visit-type-alert.ts.
-// (crm/unmapped-alert.ts is a different tripwire — it covers unmapped AGENTS.)
+// nobody has classified is the riskier default. While the iReports360 sync ran it
+// raised an alert the first time an unclassified vendor code appeared, against
+// CRM_DAY_CLASSIFIED_VISIT_TYPES below; the vendor was retired on 6 November 2026,
+// so no new vendor code can arrive.
 // If a new code ever appears, classify it in visit-type-meaning.ts, deliberately.
 
 import { queryOwnVisitsOfDepartedAgents, queryVisits, scanVisitsForRangeCreditingPartners } from "@/lib/crm/reads";
@@ -79,8 +79,8 @@ export function crmDayVisitTypeStatus(visitType: number): "AV" | "CP" | undefine
  * Every visit type this module knows how to classify — the shared table's codes plus the
  * regular-visit code.
  *
- * Exists so the CRM sync can raise an alert when iReports360 sends a code the table does not list
- * (see selectUnrecognizedVisitTypeAlerts in crm/unrecognized-visit-type-alert.ts). Such a code
+ * Existed so the CRM sync could raise an alert when iReports360 sent a code the table did not list
+ * (that alert was retired with the vendor, 6 November 2026). Such a code
  * falls through the classification loop to `continue`, setting no flag, so `reconcileDay` never
  * sees a cancel and the day is judged on device-punch timing alone.
  *

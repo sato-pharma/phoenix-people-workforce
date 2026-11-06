@@ -7,7 +7,6 @@ import {
   phoenixCompanyJobTitles,
 } from "../src/lib/auth/permissions.ts";
 import { isAttendanceTrackingEligible } from "../src/lib/attendance/eligibility.ts";
-import { CONTACT_LIST_JOB_TITLES } from "../src/lib/crm/contacts-sync.ts";
 import { isFieldWorkforceComplianceEligibleTitle } from "../src/lib/field-workforce-compliance/eligibility.ts";
 import { isFieldWorkforceWeeklyOff } from "../src/lib/field-workforce-compliance/weekend-policy.ts";
 import { isExpenseAnalysisRole, resolveJobFunctionRole } from "../src/lib/employees/job-function.ts";
@@ -78,13 +77,6 @@ export function runSeniorDistrictManagerTitleTests() {
     "Saturday is a working day for the district, whatever grade sits on the seat",
   );
   assert.equal(isFieldWorkforceWeeklyOff({ dateIso: "2026-10-02", title: SENIOR }), true);
-
-  // --- 5. The CRM contact-list sweep hands this list straight to a PostgREST .in(), so the
-  // spelling has to match `employees.job_title` exactly. -------------------------------------
-  assert.ok(
-    (CONTACT_LIST_JOB_TITLES as readonly string[]).includes(SENIOR),
-    "a title missing here is a district manager whose contact list silently stops being mirrored",
-  );
 
   // --- 6. The HR Business Partner's boundary. His pay was visible to her the day before the
   // promotion, and the owner's 2026-09-01 sentence named the seat, not the spelling. -----------

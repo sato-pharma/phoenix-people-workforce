@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { assertPageOpenForRole } from "@/lib/auth/seat-page-fences";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { IReports360ApiError } from "@/lib/crm/client";
 import { getIReports360RepDayVisits } from "@/lib/crm/rep-day";
 import { loadSingleEmployeeDayPunchSummary } from "@/lib/attendance/punch-minutes";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -41,13 +40,6 @@ export async function GET(request: Request) {
         message: "You do not have access to Field Workforce Compliance visits.",
         success: false,
       }, { status: 403 });
-    }
-    if (error instanceof IReports360ApiError) {
-      return NextResponse.json({
-        error: "ireports360_request_failed",
-        message: error.message,
-        success: false,
-      }, { status: error.status });
     }
     return NextResponse.json({
       error: "field_workforce_visits_failed",

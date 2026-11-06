@@ -96,14 +96,7 @@ import {
   parseManagerVisitDetail,
 } from "../src/lib/phoenix-crm/manager-visit-detail-rules.ts";
 import { isVacantTerritory, managerAreaChoices } from "../src/lib/phoenix-crm/server/manager-customers.ts";
-import {
-  isOldCrmPlanAction,
-  oldCrmActionToVerification,
-  oldCrmApprovalOptions,
-  oldCrmHalfOf,
-  oldCrmPlanOf,
-  oldCrmStatusLabel,
-} from "../src/lib/phoenix-crm/old-crm-plan-rules.ts";
+import { oldCrmHalfOf, oldCrmPlanOf } from "../src/lib/phoenix-crm/old-crm-plan-rules.ts";
 import { buildOrgIndex, heldManagerSeats, ownTerritories, personKey, territoriesInScope, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 import type { PhoenixCrmViewer } from "../src/lib/phoenix-crm/server/access.ts";
 import { accessRegistry } from "../src/lib/security/access-registry.ts";
@@ -1634,7 +1627,9 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.match(reportSource, /gone: row\.gone,/, "a customer who left the list is handed to it as gone");
   assert.match(reportSource, /name: row\.name,\s+own: row\.managerCustomerId !== null,/, "while every row is still listed");
 
-  // ── A rep still in the OLD CRM: his plan on the board, and his week approved (owner, 2026-10-17) ───
+  // ── A rep still in the OLD CRM: his plan on the board (owner, 2026-10-17) ─────────────────────────
+  // iReports360 was retired on 6 November 2026: the Team tab's approval of that week (a write into the
+  // vendor) went with it, and its pins with it. The stored week still shows on the board.
 
   // The old plan names a day and no morning or afternoon, so a contact goes where his LIST puts him.
   assert.equal(oldCrmHalfOf({ matched: true, listType: "AM", speciality: "Cardiology" }), "AM", "an AM-list customer is the morning");
@@ -1654,19 +1649,6 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.deepEqual(oldPlan?.entries.map((entry) => entry.id), ["b", "c"], "only its own rows");
   assert.equal(oldPlan?.status, 0, "a half-approved plan reads as waiting, never as signed");
   assert.equal(oldCrmPlanOf([]), null, "no rows, no plan");
-
-  // What may be pressed is the vendor's own rule, so this screen and the admin board never disagree.
-  assert.deepEqual(oldCrmApprovalOptions(0), { canApprove: true, canTakeBack: false }, "waiting: approve");
-  assert.deepEqual(oldCrmApprovalOptions(1), { canApprove: false, canTakeBack: true }, "approved by the district manager: take it back");
-  assert.deepEqual(oldCrmApprovalOptions(2), { canApprove: false, canTakeBack: false }, "an area manager's signature is never overwritten or cleared");
-  assert.deepEqual(oldCrmApprovalOptions(null), { canApprove: false, canTakeBack: false }, "no status, nothing to press");
-  assert.equal(oldCrmActionToVerification("approve"), "verify");
-  assert.equal(oldCrmActionToVerification("take_back"), "unverify");
-  assert.equal(isOldCrmPlanAction("approve") && isOldCrmPlanAction("take_back"), true);
-  assert.equal(isOldCrmPlanAction("verify") || isOldCrmPlanAction("return") || isOldCrmPlanAction(undefined), false, "a typo is refused, never promoted into a write");
-  for (const status of [0, 1, 2, null]) {
-    assert.equal(/\b(he|his|him|doctors?|accounts?|verified|pending)\b/i.test(oldCrmStatusLabel(status)), false, `the label for ${status} is in Phoenix's words`);
-  }
 
   const boardServer = source("src/lib/phoenix-crm/server/manager-plans.ts");
   const loadRepWeeksBody = functionBody(boardServer, "export async function loadRepWeeks(");
@@ -1688,25 +1670,10 @@ export async function runPhoenixCrmManagerPlanTests(): Promise<void> {
   assert.equal(weekEntriesBody.includes("CRM_PLAN_ENTRIES_UNIFIED_VIEW"), false, "never through the counting view — it drops every rep of a started team");
   assert.equal(weekEntriesBody.includes('"source"'), false, "the raw table has no source column and holds no Phoenix plan");
 
-  const approval = source("src/lib/phoenix-crm/server/old-crm-plan-approval.ts");
-  const decideBody = functionBody(approval, "export async function decideOldCrmPlan(");
-  assert.match(decideBody, /viewer\.isSuperAdmin\) \{\s*throw forbiddenError/, "the Super Admin approves no rep's week");
-  assert.match(decideBody, /canAccessPlanVerification\(viewer\.access\)[\s\S]*assertPermission\(viewer\.access, "crm_plans", "approve"\)/, "the admin board's role list and its crm_plans grant");
-  assert.match(decideBody, /resolveVendorSyncStandDown\(\)/, "nothing is written into a retired vendor");
-  assert.match(decideBody, /scope = await getPlanVerificationScope\(viewer\.access\)/, "the reach is resolved from the live access, never from the body");
-  assert.match(decideBody, /action: oldCrmActionToVerification\(action\)/, "the one write is the vendor's own supervisor approval");
-  assert.equal(/status:\s*1\b/.test(approval), false, "the status number is the vendor rule's to choose, never written here");
-  assert.match(functionBody(source("src/lib/phoenix-crm/server/plans.ts"), "export async function loadPlanReviews("), /oldCrm: plan \? null : \(oldCrmPlans\.get\(seat\.seatId\) \?\? null\)/, "a rep's Phoenix week is never replaced by his old one");
-  assert.match(source("src/lib/security/access-registry.ts"), /pattern: "\/api\/phoenix-crm\/plans\/old-crm\/decide"[^\n]*csrfRequired: true/, "the new route is declared, with CSRF");
-  assert.match(source("app/api/phoenix-crm/plans/old-crm/decide/route.ts"), /assertSameOriginMutation\(request\)[\s\S]*assertPermission\(access, "phoenix_crm", "approve"\)/, "same-origin and the module grant first");
-  const teamTab = source("src/components/phoenix-crm/team-tab.tsx");
-  assert.match(teamTab, /if \(!row\.plan && row\.oldCrm\) \{\s*return <OldCrmActions/, "his old week is approved here, not opened as an empty Phoenix plan");
   const boardScreen = source("src/components/phoenix-crm/manager-plan-board.tsx");
   assert.match(boardScreen, /Not on the rep&apos;s Phoenix list/, "an unmatched customer says why it cannot be ticked");
-  for (const text of [teamTab, boardScreen, approval]) {
-    const oldCrmLines = text.split("\n").filter((line) => /old CRM/i.test(line));
-    assert.equal(oldCrmLines.some((line) => /\bdoctors?\b/i.test(line)), false, "the old-CRM words say customers, never doctors");
-  }
+  const oldCrmLines = boardScreen.split("\n").filter((line) => /old CRM/i.test(line));
+  assert.equal(oldCrmLines.some((line) => /\bdoctors?\b/i.test(line)), false, "the old-CRM words say customers, never doctors");
 
   // ── The words on his screens ─────────────────────────────────────────────────────────────────
 

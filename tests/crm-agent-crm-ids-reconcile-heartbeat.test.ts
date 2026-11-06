@@ -166,7 +166,6 @@ export async function runCrmAgentCrmIdsReconcileHeartbeatTests(): Promise<void> 
       (declared.graceSeconds ?? 0) > 60 * 60,
       "the grace is longer than the hour between runs, or every on-time run would already read late",
     );
-    assert.equal(declared.vendorSync, undefined, "it reads Phoenix's own tables, so the CRM cutover must never stand it down");
     assert.equal(declared.watchingSince, undefined, "a new declaration carries no watchingSince");
 
     const doc = read(DOC);

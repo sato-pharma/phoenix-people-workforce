@@ -152,9 +152,9 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   }
 
   if (tab === "plans") {
-    // Hiding the button is UX. POST /api/crm/plan-verification/verify re-runs this check and
-    // re-resolves the scope server-side, which is the boundary.
-    const canVerify = await canAccess(access, "crm_plans", "approve");
+    // Hiding the button is UX. POST /api/phoenix-crm/plans/decide re-runs this check and checks the
+    // viewer reviews the plan's territory, server-side, which is the boundary.
+    const canApprove = await canAccess(access, "phoenix_crm", "approve");
 
     let plansBoard: Awaited<ReturnType<typeof getRepsWeeklyPlansBoard>> | null = null;
     try {
@@ -183,7 +183,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
     return (
       <EmployeePortalPageShell
         badge="CRM"
-        description="Pick one of your reps and a week to read the plan they filed, and verify it. Verifying writes the status into the CRM itself."
+        description="Pick one of your reps and a week to read the plan they filed, and approve a week sent in Phoenix CRM."
         title="Reps List"
       >
         <RepsListTabs
@@ -193,7 +193,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
           selection={plansBoard.selection}
           week={plansBoard.week.key}
         />
-        <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canVerify={canVerify} />
+        <RepsWeeklyPlansBoardView basePath={BASE_PATH} board={plansBoard} canApprove={canApprove} />
       </EmployeePortalPageShell>
     );
   }

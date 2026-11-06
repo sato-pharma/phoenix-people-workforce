@@ -200,7 +200,6 @@ export async function runPgCronHeartbeatsTests(): Promise<void> {
     assert.equal(declared.kind, "cron");
     assert.equal(declared.schedule, job.schedule, `${job.slug} is declared on its pg_cron cadence, read as Cairo`);
     assert.equal(declared.graceSeconds, job.graceSeconds, `${job.slug}'s grace`);
-    assert.equal(declared.vendorSync, undefined, `${job.slug} reads Phoenix's own tables; the CRM cutover must never stand it down`);
     assert.equal(declared.watchingSince, undefined, `${job.slug} is a new declaration and carries no watchingSince`);
     assert.equal(
       docChecks.get(job.slug)?.externalSync,

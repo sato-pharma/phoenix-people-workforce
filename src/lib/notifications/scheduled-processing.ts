@@ -11,7 +11,6 @@ import { createStepBudget, runStep, summarizeTimings, type StepTiming } from "@/
 import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
-import { reapStaleIReports360SyncRuns } from "@/lib/crm/sync";
 import { logError, logInfo } from "@/lib/observability/log";
 
 // This cron runs many steps serially under the route's `maxDuration = 300`. Each step is
@@ -60,9 +59,6 @@ async function runNotificationProcessingSteps(limit: number) {
   try {
     // Never throws; internally catches and returns 0 on failure (see the function's own try/catch).
     const reaped = await runStep("reap-outbox", () => reapStaleProcessingOutboxRows(), budget);
-    // Never throws; internally catches. Rides this cron because it's the most frequent one — see the
-    // 2026-07-05 ireports360-visits-reconcile incident this reaper exists to catch promptly.
-    const reapedVisitsSyncRuns = await runStep("reap-visits-sync", () => reapStaleIReports360SyncRuns(), budget);
     const probationReminders = await runStep(
       "probation-reminders",
       () =>
@@ -183,7 +179,6 @@ async function runNotificationProcessingSteps(limit: number) {
       probationReminders,
       push,
       reaped,
-      reapedVisitsSyncRuns,
       staleSosBatches,
       telegram,
       timings,

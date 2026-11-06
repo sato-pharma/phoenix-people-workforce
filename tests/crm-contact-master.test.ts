@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
 import {
-  contactMasterRefreshIncludesActivity,
   describeContactMasterError,
   isContactMasterMissingError,
   parseContactMasterRefreshResult,
@@ -27,8 +26,6 @@ import { stripSqlComments } from "./support/comment-strip.ts";
 //     stays the one authority.
 //   · THE MIRROR STAYS READ-ONLY (owner decision 19).
 //   · THE PICKER READS THE MASTER, falls back to the mirror ONLY on a missing table, and is not widened.
-//   · THE ACTIVITY PASS RUNS ONCE PER DAILY SWEEP — a full visit/plan scan on all twelve slices
-//     would add seconds to every tick under a 30-second scheduler cap.
 //   · THE REFRESH READS `phoenix_crm_customers` IN EXACTLY ONE STATEMENT. Two reads are two
 //     READ COMMITTED snapshots, so a doctor a rep adds mid-run reaches the fifth pass without
 //     reaching the name-row pass that creates his `crm_contacts` row, and the foreign key takes the
@@ -39,24 +36,7 @@ export function runCrmContactMasterTests() {
   const read = (relativePath: string) => readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
   const migration = stripSqlComments(read("supabase/migrations/20260913150000_crm_contact_master.sql"));
   const options = read("src/lib/direct-orders/venue-contact-options.ts");
-  const route = read("app/api/cron/crm-contact-lists/route.ts");
   const master = read("src/lib/crm/contact-master.ts");
-
-  // ── 1. The activity pass runs on exactly one slice of the daily sweep ─────
-  const slicesWithActivity = Array.from({ length: 12 }, (_unused, slice) => slice).filter((slice) =>
-    contactMasterRefreshIncludesActivity({ slice, sliceOf: 12 }),
-  );
-  assert.deepEqual(
-    slicesWithActivity,
-    [11],
-    "the visit/plan pass must run on the LAST slice only — after every agent's list is fresh, and once " +
-      "rather than twelve times a day under the 30-second scheduler cap",
-  );
-  assert.equal(
-    contactMasterRefreshIncludesActivity({ slice: 0, sliceOf: 1 }),
-    true,
-    "a by-hand ?all=1 sweep is one slice of one and must include the activity pass",
-  );
 
   // ── 2. Only a missing FUNCTION reads as "not provisioned" ─────────────────
   assert.equal(isContactMasterMissingError({ code: "PGRST202", message: "x" }), true);
@@ -235,32 +215,7 @@ export function runCrmContactMasterTests() {
     "Phoenix CRM's address and brick come first, the contact master's only when Phoenix has none",
   );
 
-  // ── 7. The cron rebuilds the master after the slice, and never fails the sync over it ─
-  const syncAt = route.indexOf("await syncCrmContactLists(");
-  const refreshAt = route.indexOf("await refreshCrmContactMaster(");
-  const auditAt = route.indexOf("await writeAuditLog(");
-  assert.ok(
-    syncAt > -1 && refreshAt > syncAt && auditAt > refreshAt,
-    "the master refresh must run after the slice is written and before the audit row that reports it",
-  );
-  assert.match(route, /includeActivity: contactMasterRefreshIncludesActivity\(\{ slice, sliceOf \}\)/);
-  // The first disjunct was `result.agents === 0` until 2026-09-21. `agents` counts ATTEMPTED
-  // agents — a per-agent fetch that throws still lands in `outcomes` — so a tick where the vendor
-  // session rejected every single agent pinged SUCCESS, which is the exact shape this route's own
-  // doc comment says it fails on. `contactSyncSliceRefreshedNothing` is the shared predicate with
-  // the in-process poller; the `contactMaster.status` half below is unchanged and is what this
-  // assertion has always been about.
-  assert.match(
-    route,
-    /contactSyncSliceRefreshedNothing\(result\) \|\| contactMaster\.status === "failed" \? "fail" : "success"/,
-    "a failed master refresh must fail the dead-man ping — the venue picker reads the master, and a refresh failing " +
-      "every day would otherwise leave it serving a frozen list with nobody told",
-  );
-  assert.doesNotMatch(
-    route,
-    /result\.agents === 0/,
-    "`result.agents === 0` counts attempted agents and cannot see a slice where every agent failed",
-  );
+  // ── 7. A failed master refresh never throws into its caller ─────────────
   {
     const start = master.indexOf("export async function refreshCrmContactMaster");
     assert.ok(start > -1, "refreshCrmContactMaster must be findable");

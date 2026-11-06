@@ -49,7 +49,7 @@ import type {
   FieldWorkforceLoggingTimingSummary,
   FieldWorkforcePreviewResult,
 } from "@/lib/field-workforce-compliance/types";
-import type { IReports360Visit } from "@/lib/crm/client";
+import type { IReports360Visit } from "@/lib/crm/vendor-row-types";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { buildFieldWorkforceAttendanceCrossCheck } from "@/lib/field-workforce-compliance/attendance-cross-check";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";

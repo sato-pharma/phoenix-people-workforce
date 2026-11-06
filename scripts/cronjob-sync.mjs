@@ -101,7 +101,9 @@ const JOB_FILTER = (() => {
  * script reports each one (OK, DRIFT, MISSING) and NEVER creates or patches it, even with `--apply`,
  * and `cron-autoarm.yml` arming a newly added row therefore writes nothing for them. `enabled: false`
  * on an adopted row means "switched off on purpose", so a disabled job is not drift.
- * To take over an adopted job, remove `adopted` in its own PR.
+ * To take over an adopted job, remove `adopted` in its own PR. Four remain: the fifth, the CRM
+ * contact lists job `8344730`, left with the iReports360 vendor on 6 November 2026 (switched off in
+ * the account that day; its route is deleted).
  *
  * `hours` / `minutes` are Africa/Cairo. `-1` means "every", which is cron-job.org's wildcard.
  */
@@ -535,14 +537,6 @@ const JOBS = {
     title: "Phoenix — recruitment email intake",
     path: "/api/cron/recruitment-email-intake",
     schedule: { hours: [-1], minutes: [4, 14, 24, 34, 44, 54], mdays: [-1], months: [-1], wdays: [-1] },
-    requestTimeout: 300,
-  },
-  "crm-contact-lists": {
-    adopted: { jobId: 8344730 },
-    base: WORKER,
-    title: "Phoenix — CRM contact lists",
-    path: "/api/cron/crm-contact-lists",
-    schedule: { hours: [5], minutes: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55], mdays: [-1], months: [-1], wdays: [-1] },
     requestTimeout: 300,
   },
   "background-jobs": {

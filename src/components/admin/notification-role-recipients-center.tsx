@@ -30,7 +30,6 @@ const ROLE_OPTIONS = phoenixRoles.map((role) => ({ code: role, label: role }));
 // DB row, since it's informational, not configuration. Only entries worth calling out (fires
 // from more than one job, or from the 5-minute processor instead of the daily cron) get a hint.
 const TRIGGERED_BY: Partial<Record<NotificationRoleKey, string>> = {
-  ireports360_sync_notify: "The 3x/day sync job and the weekly reconcile job — both fire this.",
   attendance_ingestion_alert: "The 5-minute notification outbox processor, not the daily cron.",
 };
 

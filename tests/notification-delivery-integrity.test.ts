@@ -124,17 +124,19 @@ export function runNotificationDeliveryIntegrityTests() {
     "a blank HR_ID is not a person and must never become a recipient",
   );
 
-  // The cron path must actually use it — a shared resolver nobody calls fixes nothing.
-  const syncDigest = source("src/lib/notifications/ireports360-sync-digest.ts");
+  // The cron path must actually use it — a shared resolver nobody calls fixes nothing. The iReports360
+  // sync digest that delivered twice went with the vendor on 6 November 2026; the stranded-job alert,
+  // sent from the heartbeat sweep, is the cron path that holds the rule now.
+  const strandedAlert = source("src/lib/observability/job-heartbeat-alert.ts");
   assert.match(
-    syncDigest,
-    /resolveNotificationPersonRecipients\("ireports360_sync_notify", "Sync-notify recipients"\)/,
-    "the sync digest must resolve recipients per person through the shared resolver",
+    strandedAlert,
+    /resolveNotificationPersonRecipients\(\s*AUDIENCE_KEY,\s*"Stranded-job alert recipients",?\s*\)/,
+    "the stranded-job alert must resolve recipients per person through the shared resolver",
   );
   assert.doesNotMatch(
-    syncDigest,
+    strandedAlert,
     /\.from\("app_auth_users"\)/,
-    "enumerating auth accounts in the digest is what delivered it twice — it must not query them again",
+    "enumerating auth accounts is what delivered the old sync digest twice — a cron alert must not query them",
   );
 
   // ── Bell allowlist covers what the code actually emits ───────────────────────────

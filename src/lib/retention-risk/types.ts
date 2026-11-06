@@ -53,8 +53,8 @@ export type RetentionRiskSubject = {
    *
    * A null subject is skipped by the CRM-silence rule entirely: "never logged anything" cannot be
    * told apart from "has no CRM account yet", and a new joiner whose account is still being set up
-   * must not be reported as having disappeared. Unmapped CRM accounts are a different problem with
-   * its own tripwire — see src/lib/crm/unmapped-alert.ts.
+   * must not be reported as having disappeared. Unmapped CRM accounts are a different problem (the
+   * iReports360 unmapped-agent alert covered it until the vendor was retired, 6 November 2026).
    */
   firstCrmActivityDate: string | null;
   hireDate: string | null;

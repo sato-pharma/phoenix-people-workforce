@@ -6,7 +6,6 @@ import {
 import type { CrmIntegrityData, CrmIntegrityFilterInput, CrmIntegrityRow } from "@/lib/crm-integrity/types";
 import { getVisitAgentNames, queryCheckins, queryVisitsPage } from "@/lib/crm/reads";
 import { isCrmCheckinsSchemaReady } from "@/lib/crm/schema";
-import { isIReports360Configured } from "@/lib/crm/config";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -88,11 +87,9 @@ export async function getCrmIntegrityData(
   const dateTo = input.dateTo || today;
   const page = Math.max(1, input.page ?? 1);
   const pageSize = Math.min(500, Math.max(10, input.pageSize ?? 100));
-  const configured = isIReports360Configured();
 
   if (!(await isCrmCheckinsSchemaReady())) {
     return {
-      configured,
       dateFrom,
       dateTo,
       filters: { agents: [] },
@@ -124,7 +121,6 @@ export async function getCrmIntegrityData(
   ]);
   if (visitRows.length === 0) {
     return {
-      configured,
       dateFrom,
       dateTo,
       filters: { agents },
@@ -188,7 +184,6 @@ export async function getCrmIntegrityData(
   });
 
   return {
-    configured,
     dateFrom,
     dateTo,
     filters: { agents },
