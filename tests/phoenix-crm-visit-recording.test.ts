@@ -413,13 +413,14 @@ export function runPhoenixCrmVisitRecordingTests(): void {
     assert.equal(everyone.filter((hrId) => hrId === "B-1").length, 1, "nobody is named twice, the rep least of all");
   }
 
-  // The notice EMAILS — the one Phoenix CRM notice that does — beside in-app, Telegram and the phone.
-  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES], ["recorded_visit_decided"], "his word, 2026-10-17: the single email exception");
-  assert.deepEqual(phoenixCrmChannels("recorded_visit_decided"), ["in_app", "email", "telegram", "push"]);
+  // The notice goes in-app, by Telegram and to the phone — NEVER email. It emailed from 2026-10-17 until the owner
+  // cut every Phoenix CRM email on 2026-11-06 ("never sent a single email once again").
+  assert.deepEqual([...PHOENIX_CRM_EMAIL_EVENT_TYPES], [], "his rule, 2026-11-06: Phoenix CRM sends no email at all");
+  assert.deepEqual(phoenixCrmChannels("recorded_visit_decided"), ["in_app", "telegram", "push"]);
   assert.deepEqual(phoenixCrmChannels("recorded_visit_decided", true), ["in_app"], "a test entry stays in the app");
   assert.deepEqual(
     resolveNotificationPolicy({ module: "phoenix_crm", eventType: "recorded_visit_decided" }).channels,
-    ["in_app", "email", "telegram", "push"],
+    ["in_app", "telegram", "push"],
     "the policy row is the intent and agrees with the guard",
   );
 
