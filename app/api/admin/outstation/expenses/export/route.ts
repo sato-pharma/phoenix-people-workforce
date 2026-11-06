@@ -10,6 +10,7 @@ import {
   expenseApprovalExportFilename,
   expenseApprovalExportSubtitle,
 } from "@/lib/outstation/expense-approval-export";
+import { parseExpenseTripTriageFilter } from "@/lib/outstation/expense-approval-filters";
 import { listUnifiedOutstationExpenses } from "@/lib/outstation/expenses";
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -82,6 +83,8 @@ export async function GET(request: Request) {
     const filters = {
       employee: url.searchParams.get("employee") ?? "",
       month: url.searchParams.get("month") ?? "",
+      // The rail's "Needs a look" / "Clean", so the file holds exactly the trips on screen.
+      triage: parseExpenseTripTriageFilter(url.searchParams.get("triage")),
     };
     const search = url.searchParams.get("search") ?? "";
 

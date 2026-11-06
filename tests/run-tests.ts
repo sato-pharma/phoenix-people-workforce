@@ -2915,6 +2915,7 @@ import { runRecruitmentNamesByHrIdFoldTests } from "./recruitment-names-by-hr-id
 import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts";
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
+import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
 import { runAccessHelperExecuteGrantLockTests } from "./access-helper-execute-grant-lock.test.ts";
 import { runClosingRepRankingTests } from "./closing-rep-ranking.test.ts";
@@ -11849,6 +11850,10 @@ await runTest(
 await runTest(
   "Expense Approvals reads a multi-day trip as one: the trip length (3 days · 2 nights) is one helper shown on the queue row and the decision panel, each trip day is one folding row whose map is drawn only when opened, nothing is cut off with an ellipsis, and Approve is the panel's pinned last part below the scrolling evidence",
   runOutstationExpenseApprovalsLayoutTests,
+);
+await runTest(
+  "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and applied only on a click, never over the reviewer's own reason",
+  runOutstationExpenseApprovalsQueueTests,
 );
 await runTest("same pharmacy, same person in a direct order and a marketing request is flagged to every approver", runSamePharmacyCrossUseFlagTests);
 await runTest("a sick leave waiting on HR is in HR's approvals list, badge and detail page from the day it is filed", runSickLeaveReachesHrApprovalsTests);
