@@ -301,5 +301,28 @@ export function runPhoenixCrmVisitCompanyTests(): void {
     assert.match(sets[0], /kind = v_new_kind,[\s\S]*manager_hr_id = v_new_manager,[\s\S]*senior_hr_id = v_new_senior,[\s\S]*product_manager_hr_id = v_new_product_manager,[\s\S]*products = v_products,[\s\S]*comment = v_comment/);
   }
 
+  {
+    // 🔴 A CORRECTION THAT PUTS THE REVIEWING MANAGER ON AN OFF-PLAN VISIT SENDS ITS APPROVAL TO THE SFE
+    // (production, 31 Oct 2026: a single corrected to a double with the district manager sat at her step,
+    // her Approve was refused as "you were on this visit", and the SFE could not reach it).
+    const migration = stripSqlComments(read("supabase/migrations/20261106064623_phoenix_crm_admin_edit_reroutes_offplan_past_reviewer.sql"));
+    const flat = migration.replace(/\s+/g, " ");
+    const editStart = flat.indexOf("create or replace function public.phoenix_crm_admin_edit_visit(p jsonb)");
+    assert.notEqual(editStart, -1, "the correction is redefined here");
+    const edit = flat.slice(editStart);
+    assert.match(
+      edit,
+      /if v_change_who then perform public\.phoenix_crm_set_visit_companions\(v_id, p -> 'companions'\); perform public\.phoenix_crm_unplanned_route_past_a_reviewer_on_the_visit\(v_id\); end if;/,
+      "the waiting approval is re-routed right after who went is rewritten",
+    );
+    const route = flat.slice(flat.indexOf("create or replace function public.phoenix_crm_unplanned_route_past_a_reviewer_on_the_visit"), editStart);
+    assert.match(route, /set status = case when u\.status = 'manager_pending' then 'sfe_pending'/, "the manager's step moves to the SFE");
+    assert.match(route, /after_admin_status = case when u\.status = 'admin_pending' then 'sfe_pending'/, "a visit still with the Administrator is bound for the SFE after him");
+    assert.match(route, /upper\(btrim\(u\.manager_hr_id\)\) = any \(v_on\)/, "only when the reviewer is on the visit");
+    assert.match(route, /version = u\.version \+ 1/, "an open card's decision sees the move");
+    assert.match(migration, /revoke execute on function public\.phoenix_crm_unplanned_route_past_a_reviewer_on_the_visit\(uuid\) from public, anon, authenticated;/);
+    assert.match(migration, /revoke execute on function public\.phoenix_crm_admin_edit_visit\(jsonb\) from public, anon, authenticated;/);
+  }
+
   console.log("phoenix-crm visit company and admin edit: OK");
 }
