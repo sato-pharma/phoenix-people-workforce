@@ -542,7 +542,7 @@ export async function runMakeItHappenTests() {
   // The workspace applies the filter to the PER-PERSON loop only: lines, overall and the pace stay on every row.
   const workspaceSource = readFileSync(path.join(process.cwd(), "src/lib/sales/make-it-happen/workspace.ts"), "utf8");
   assert.ok(workspaceSource.includes("isListedOnTeam({"), "the per-person loop asks isListedOnTeam");
-  assert.ok(workspaceSource.includes("const lines = buildLines(rows);"), "the lines still read every row, trend months included");
+  assert.ok(workspaceSource.includes("const lines = buildLines(rows, brickRows);"), "the lines still read every row, trend months included");
   assert.ok(
     workspaceSource.includes("const overall = gradeRows(rows.filter((row) => monthSet.has(row.period))"),
     "the overall total still reads the selected period's rows without any employment filter",
