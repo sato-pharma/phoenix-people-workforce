@@ -3740,12 +3740,10 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Daily Deductions",
     description: "Count deductions day by day over any date range and publish a running tally on demand — for the payroll sheet finalized before month-end. A reviewed reporting snapshot; it feeds no salary run.",
     permissions: [{ resource: "deductions", action: "read" }],
-    // Gate copied verbatim from the month Deductions card above — the two are two views of the same
-    // money and admit the same audience. The page enforces the same {Super Admin, CEO, HR Operations}
-    // VIEW_ROLES set, so this card's audience and the page's gate agree (the drift the note above
-    // warns about is exactly what this mirrors to avoid). Finance Manager excluded by name for the
-    // same reason: deductions:read admits him but the owner revoked the reporting screens.
-    excludedRoles: ["Finance Manager"],
+    // The audience is the page's VIEW_ROLES set {Super Admin, CEO, HR Operations, Finance Manager},
+    // so this card and the page's gate agree (the drift the note above warns about). The Finance
+    // Manager reads this page (owner, 2026-11-07: "Open the page read-only") but stays excluded from
+    // the month Deductions card above.
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

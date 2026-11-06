@@ -467,8 +467,14 @@ export async function runDeductionsCycleTests(): Promise<void> {
       "a collection run must bump the data version when it ends, or the panels keep the pre-run numbers",
     );
     assert.ok(workspace.includes("const panelKey = `${monthKey}:${dataVersion}`;"), "the panel key must carry the data version");
+    // Every panel carries the version AND its own name: they are siblings, and siblings sharing one key
+    // leave a stale copy behind on each re-read (November 2026: the leaver banner showed two and three times).
+    const keys: string[] = [];
     for (const panel of ["MasterExportBar", "OverviewTab", "ByEmployeeTab", "CategoryTab", "LeaverSettlementPanel"]) {
-      assert.ok(workspace.includes(`<${panel} key={panelKey}`), `${panel} must remount after a collection run`);
+      const match = workspace.match(new RegExp("<" + panel + " key=\\{`([a-z-]+):\\$\\{panelKey\\}`\\}"));
+      assert.ok(match, `${panel} must be keyed on its own name plus panelKey, or it never remounts after a collection run`);
+      keys.push(match[1]);
     }
+    assert.equal(new Set(keys).size, keys.length, `two sibling panels share a key prefix (${keys.join(", ")}) — React leaves duplicates behind`);
   }
 }

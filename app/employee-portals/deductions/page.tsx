@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { DailyDeductionsPortalSection } from "@/components/employee-portal/daily-deductions-section";
 import { DeductionsPortalWorkspace } from "@/components/employee-portal/deductions-workspace";
 import {
   EmployeePortalEmptyState,
@@ -12,6 +13,8 @@ import {
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { getPortalDeductionLedger } from "@/lib/deductions/portal.ts";
+import { getPortalDailyDeductions } from "@/lib/daily-deductions/portal.ts";
+import type { DailyDeductionsPortalLine } from "@/lib/daily-deductions/types";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +37,20 @@ export default async function DeductionsPortalPage() {
 
   await assertPermission(access, "employee_profile", "read");
 
+  // The released DAILY lines are read beside the ledger and fail on their own: a failed daily read
+  // says so in its own section, and never takes the month ledger down with it (owner, 2026-11-07:
+  // "Show daily lines", so the release email's "Open your Deductions page" shows what it promised).
+  const dailyRead = getPortalDailyDeductions({ access }).then(
+    (result) => ({ lines: result.lines, unavailable: false }),
+    (error: unknown) => {
+      logPortalFailure(
+        { route: "/employee-portals/deductions", module: "daily-deductions", role: access.role, hrId: access.hrId },
+        error,
+      );
+      return { lines: [] as DailyDeductionsPortalLine[], unavailable: true };
+    },
+  );
+
   let data: Awaited<ReturnType<typeof getPortalDeductionLedger>>;
   try {
     data = await getPortalDeductionLedger({ access });
@@ -54,14 +71,19 @@ export default async function DeductionsPortalPage() {
     );
   }
 
+  const daily = await dailyRead;
+
   return (
     <EmployeePortalPageShell badge={PAGE_BADGE} description={PAGE_DESCRIPTION} title={PAGE_TITLE}>
-      <DeductionsPortalWorkspace
-        comments={data.comments}
-        firstMonthKey={data.firstMonthKey}
-        ownCompactHrId={compactDeductionsHrId(access.hrId ?? access.loginId)}
-        rows={data.rows}
-      />
+      <div className="space-y-4">
+        <DailyDeductionsPortalSection lines={daily.lines} unavailable={daily.unavailable} />
+        <DeductionsPortalWorkspace
+          comments={data.comments}
+          firstMonthKey={data.firstMonthKey}
+          ownCompactHrId={compactDeductionsHrId(access.hrId ?? access.loginId)}
+          rows={data.rows}
+        />
+      </div>
     </EmployeePortalPageShell>
   );
 }

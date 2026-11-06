@@ -695,12 +695,19 @@ export function DailyDeductionsWorkspace({
               )}
             </>
           ) : (
-            <p className="text-sm text-slate-500">Nothing is released yet. Compute a range below, then release the deductions you choose — one at a time or together.</p>
+            <p className="text-sm text-slate-500">
+              {canPublish
+                ? "Nothing is released yet. Compute a range below, then release the deductions you choose — one at a time or together."
+                : "Nothing is released yet."}
+            </p>
           )}
         </div>
       </section>
 
       {/* ── The range picker + compute ──────────────────────────────────── */}
+      {/* Super Admin only: /compute refuses every other role, so a reader never sees a button that
+          can only fail. A reader's page is the released snapshot above. */}
+      {canPublish ? (
       <section className={PANEL}>
         <div className={cn("px-4 py-3", adminPanelHeaderClassName)}>
           <h2 className={PANEL_TITLE}>Count a date range</h2>
@@ -805,6 +812,7 @@ export function DailyDeductionsWorkspace({
           ) : null}
         </div>
       </section>
+      ) : null}
 
       {message ? (
         <p

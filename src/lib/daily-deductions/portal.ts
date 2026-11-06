@@ -1,10 +1,9 @@
 // Daily Deductions module: employee-portal read path (self-only).
 //
-// LATENT SURFACE. The RLS self-read policy exists and this reader is written and
-// tested, but the daily tally is an admin/finance aid and is NOT wired to an
-// employee-portal page yet — showing an employee a running, non-final figure that
-// can move every time the owner refreshes the tally is a product decision the
-// owner has not made. When he does, this is the reader that surface calls.
+// WIRED to the employee's Deductions page (app/employee-portals/deductions/page.tsx) since
+// 2026-11-07 — owner, asked whether the release email's "Open your Deductions page" should lead to
+// the released lines: "Show daily lines". Only RELEASED lines reach it (the active snapshot; a
+// withdrawn line is deleted from it), never the running tally the Super Admin computes.
 //
 // SELF-ONLY FOR EVERY ROLE, exactly as the month module's getPortalDeductions
 // (owner, 2026-08-06: "everyone can only see his deductions only"). A deduction

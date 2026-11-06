@@ -3026,6 +3026,8 @@ export function DeductionsWorkspace({
   // October Head Office run had written 28). Bumping this after every run re-keys the panels, and each
   // one remounts and re-reads what the run just wrote.
   const [dataVersion, setDataVersion] = useState(0);
+  // Each panel prefixes its own name: these are SIBLINGS, and two siblings sharing one key leave a stale
+  // copy behind on every re-read (the leaver banner was showing two or three times).
   const panelKey = `${monthKey}:${dataVersion}`;
 
   // `isCollectableMonth` on the server is the real enforcement and stays that way — this is only the
@@ -3196,7 +3198,7 @@ export function DeductionsWorkspace({
           detail sheet (Line, Region and Direct Manager), narrowable to one line
           and/or one region. Sits BESIDE the per-category "Download XLSX" on each
           tab, never replacing it. */}
-      <MasterExportBar key={panelKey} monthKey={monthKey} />
+      <MasterExportBar key={`master:${panelKey}`} monthKey={monthKey} />
 
       {canDecide && !windowHasFinished && officeWindow ? (
         <div className="flex items-start gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
@@ -3220,7 +3222,7 @@ export function DeductionsWorkspace({
         </div>
       ) : null}
 
-      {canDecide && !monthHasFinished ? <LeaverSettlementPanel key={panelKey} monthKey={monthKey} /> : null}
+      {canDecide && !monthHasFinished ? <LeaverSettlementPanel key={`leaver:${panelKey}`} monthKey={monthKey} /> : null}
 
       {collectMessage ? (
         <div
@@ -3298,12 +3300,12 @@ export function DeductionsWorkspace({
       </div>
 
       {activeTab === "overview" ? (
-        <OverviewTab key={panelKey} canDecide={canDecide} monthKey={monthKey} onOpenCategory={setActiveTab} />
+        <OverviewTab key={`overview:${panelKey}`} canDecide={canDecide} monthKey={monthKey} onOpenCategory={setActiveTab} />
       ) : null}
-      {activeTab === "by_employee" ? <ByEmployeeTab key={panelKey} monthKey={monthKey} /> : null}
+      {activeTab === "by_employee" ? <ByEmployeeTab key={`by-employee:${panelKey}`} monthKey={monthKey} /> : null}
       {activeTab === "disputes" ? <DisputesTab canReply={canDecide} highlightCandidateId={highlightCandidateId} /> : null}
       {activeTab !== "overview" && activeTab !== "by_employee" && activeTab !== "disputes" ? (
-        <CategoryTab key={panelKey} canDecide={canDecide} category={activeTab} monthKey={monthKey} />
+        <CategoryTab key={`category:${panelKey}`} canDecide={canDecide} category={activeTab} monthKey={monthKey} />
       ) : null}
     </section>
   );
