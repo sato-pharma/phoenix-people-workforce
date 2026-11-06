@@ -372,6 +372,8 @@ export const AR_MESSAGES: Record<string, string> = {
   "Please add a photo of the back of your national ID card.": "يُرجى إضافة صورة لظهر بطاقة الرقم القومي.",
   "Please choose a photo — a JPG, PNG or WEBP image.": "يُرجى اختيار صورة بصيغة JPG أو PNG أو WEBP.",
   "This photo is too large. Please take it again, or choose a smaller one.": "حجم الصورة كبير. يُرجى التقاطها مرة أخرى أو اختيار صورة أصغر.",
+  "This photo could not be opened on this phone. Please take the photo again with the camera.":
+    "تعذّر فتح هذه الصورة على هذا الهاتف. يُرجى التقاط الصورة مرة أخرى بالكاميرا.",
   // The page's states — JOINING_FORM_STATE_MESSAGE, and the invalid link in app/join/[token]/page.tsx
   "This offer was declined": "تم الاعتذار عن هذا العرض",
   "This offer was recorded as declined. If that is not right, please reply to the offer email and our HR team will help.":
