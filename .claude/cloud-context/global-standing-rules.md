@@ -71,8 +71,13 @@ the primary by absolute path with no error. Never send parallel subagents into o
 
 - **16 GB RAM; available RAM under ~1.8 GB freezes it** (no dump, sessions lost). Never start a dev server, build,
   typecheck or test run while saturated. A sudden throttle: read the charger state first (Kernel-Power 105 `AcOnline`).
-- **Run LEAN until the 32 GB upgrade** — heavy or independent work goes to a CLOUD session; never a local full
-  validation. The heavy-job gate is gone (2026-09-17) — never rebuild it.
+- **Run LEAN — the laptop STAYS at 16 GB** (owner, 2026-11-07: "my laptop is only 16"; never propose the 32 GB kit
+  again) — heavy or independent work goes to a CLOUD session; never a local full validation. The heavy-job gate is
+  gone (2026-09-17) — never rebuild it.
+- 🔴 **CLOUD-FIRST WHEN THE LAPTOP IS FULL** (owner, 2026-11-07, "Both") — `hooks/cloud-first-router.mjs` tells a NEW
+  session at 6+ local sessions or under 2.5 GB free to `move_to_cloud` unless the task needs a browser, local files,
+  a merge/deploy or the database; `scripts/claude-leftover-reaper.ps1` stops idle git watchers hourly. 🔴 Never
+  close, stop or archive an open session to free RAM ("donot touch any fucken session").
 - 🔴 **NEVER run a typecheck locally** — bash-guard C8 refuses it; the PR's CI answers. `PHX_TYPECHECK_OK=1 <cmd>`
   stands it down for one watched command.
 - A dev server dies with the session that started it (`dev-server-reaper.mjs`). Stop only one YOUR session started,
