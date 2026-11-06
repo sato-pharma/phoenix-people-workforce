@@ -20,6 +20,7 @@ import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-cent
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
+import { financeDownloadScope } from "@/lib/automated-payroll/finance-links";
 import type {
   FinanceCommandCenterData,
   FinanceCommandCenterView,
@@ -477,6 +478,12 @@ const SHEET_LINKS = [
   { key: "fab", label: "FAB bank file", href: "/api/automated-payroll/finance/fab-download" },
 ] as const;
 
+/** "FAB bank file · Part 2" — the part a bank file pays is said on the button, not only in its name. */
+function financeSheetLabel(sheet: (typeof SHEET_LINKS)[number], part2Confirmed: boolean): string {
+  if (sheet.key === "finance") return part2Confirmed ? "Finance sheet · full month" : "Finance sheet · Part 1";
+  return `${sheet.label} · ${part2Confirmed ? "Part 2" : "Part 1"}`;
+}
+
 function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
   const { data, sheets } = view;
   const runs = data.payroll.runs;
@@ -500,9 +507,10 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
   // Keying the buttons to the current month hid them exactly when they mattered.
   const sheetRun = readyToPay ?? runs.find((run) => run.part1_confirmed && !run.published) ?? null;
   const canDownloadSheets = sheets !== null && sheetRun !== null;
-  const scope = sheetRun?.part2_confirmed ? "full" : "part1";
+  const part2Confirmed = sheetRun?.part2_confirmed === true;
   const [sheetYear, sheetMonth] = (sheetRun?.month_key ?? "").split("-");
-  const sheetQuery = sheetRun ? `?month=${Number(sheetMonth)}&year=${Number(sheetYear)}&scope=${scope}` : "";
+  const sheetHref = (sheet: (typeof SHEET_LINKS)[number]) =>
+    `${sheet.href}?month=${Number(sheetMonth)}&year=${Number(sheetYear)}&scope=${financeDownloadScope(sheet.key, part2Confirmed)}`;
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr] lg:divide-x lg:divide-slate-200">
@@ -549,11 +557,11 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
             {SHEET_LINKS.map((sheet) => (
               <a
                 className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-800 transition-colors hover:border-orange-300 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                href={`${sheet.href}${sheetQuery}`}
+                href={sheetHref(sheet)}
                 key={sheet.key}
               >
                 <Download aria-hidden="true" className="h-3.5 w-3.5 text-orange-600" />
-                {sheet.label}
+                {financeSheetLabel(sheet, part2Confirmed)}
               </a>
             ))}
           </div>

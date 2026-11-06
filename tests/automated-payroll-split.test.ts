@@ -407,6 +407,32 @@ export function runAutomatedPayrollSplitTests() {
   assert.equal(overpaid.overpaidResidual, 14500);
   assert.equal(overpaid.monthSalary, 21000);
 
+  // ---- deductions larger than the WHOLE month are carried, not lost (audit 2026-11-07) ----
+  // totalPayable floors at 0, so the 350 beyond it used to disappear: 31500 − 31850 = −350.
+  const beyondMonth = assembleParts({
+    effective: regular,
+    paymentMode: "two_parts",
+    firstPartFrozen: BASIC,
+    additions: { ...noAdditions },
+    deductions: { ...noDeductions, unpaidVacations: 31500, medicalInsurance: 350 },
+  });
+  assert.equal(beyondMonth.totalPayable, 0, "the locked engine still floors the month at zero");
+  assert.equal(beyondMonth.secondPart, 0);
+  assert.equal(
+    beyondMonth.overpaidResidual,
+    21350,
+    "HEADLINE: the residual is the 21000 already paid plus the 350 the floor hid",
+  );
+  // Nothing paid yet and deductions beyond the month: the excess is still owed.
+  const nothingPaid = assembleParts({
+    effective: regular,
+    paymentMode: "two_parts",
+    firstPartFrozen: 0,
+    additions: { ...noAdditions },
+    deductions: { ...noDeductions, otherDeductions: 32000 },
+  });
+  assert.equal(nothingPaid.overpaidResidual, 500, "500 beyond a month nobody was paid for is carried");
+
   // ---- owner rule 2026-07-24: one-part medical insurance comes out of Part 1 -
   // (they have no Second Part to net it against). Two-part employees are unaffected
   // — medical insurance stays netted against Second Part only, exactly as before.

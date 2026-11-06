@@ -33,9 +33,11 @@ import type {
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
+import { AdminCallout } from "@/components/admin/admin-design-system";
 import { CardSection, SectionHeading } from "./section-shell";
 import { CellHistorySection } from "./cell-history";
-import { phxSelectClassName } from "@/components/ui/form-tokens";
+import { formatPayrollDay, formatPayrollMoney, isPlaceholderReason, peopleCount } from "./format";
+import { phxFieldClassName, phxSelectClassName } from "@/components/ui/form-tokens";
 
 type Props = {
   runId: string;
@@ -49,8 +51,39 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
 };
 
-function money(value: number): string {
-  return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const money = formatPayrollMoney;
+const CAIRO_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit" });
+
+/**
+ * The quick filters over a step's cards. Search was the only way to narrow a hundred cards, and
+ * the questions HR actually asks of a step are these: who carries a figure, whom did a person
+ * change, who is held, where is a double charge, whom did somebody add by hand.
+ */
+type RowFilter = "all" | "figure" | "edited" | "held" | "conflict" | "manual";
+
+const ROW_FILTER_LABELS: Record<RowFilter, string> = {
+  all: "Everyone",
+  figure: "Has a figure",
+  edited: "Changed from the recommendation",
+  held: "Held",
+  conflict: "Already settled elsewhere",
+  manual: "Added by hand",
+};
+
+/** A money or days box on this row differs from what the system recommended. */
+function rowEdited(definition: StepDefinition, row: StepRow): boolean {
+  return definition.fields.some(
+    (field) =>
+      (field.kind === "money" || field.kind === "days") &&
+      Math.abs((row.values[field.key] ?? 0) - (row.recommended?.[field.key] ?? 0)) > 0.004,
+  );
+}
+
+/** Any money or days box on this row is not zero. */
+function rowHasFigure(definition: StepDefinition, row: StepRow): boolean {
+  return definition.fields.some(
+    (field) => (field.kind === "money" || field.kind === "days") && Math.abs(row.values[field.key] ?? 0) > 0.004,
+  );
 }
 
 /** One line of the four-figure settlement block. */
@@ -135,8 +168,12 @@ function SettlementSummaryBlock({ definition, row }: { definition: StepDefinitio
   );
 }
 
-/** Shared premium field recipe (see [[premium-design-language]]) — orange focus ring, dense height. */
-const fieldClassName = cn(phxSelectClassName, "h-9");
+/**
+ * The form kit's own field recipe, dense height. Text and number boxes wear the FIELD token; only a
+ * real <select> wears the select token, whose pointer cursor on a text box read as a dropdown.
+ */
+const fieldClassName = cn(phxFieldClassName, "h-9");
+const selectClassName = cn(phxSelectClassName, "h-9");
 
 /**
  * "Add employee" for a step that `allowsManualRows` — outstation expenses today
@@ -334,7 +371,14 @@ export function RecommendationStep({
   const [rows, setRows] = useState<StepRow[]>([]);
   const [period, setPeriod] = useState<PayrollPeriod | null>(null);
   const [loading, setLoading] = useState(true);
+  /** The step could not be read at all — said as such, never shown as "no employees". */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Which action is busy, so the button that is working is the one that says so. */
+  const [busyAction, setBusyAction] = useState<"save" | "confirm" | "upload" | null>(null);
+  /** When the last save landed — the action bar's "Saved" note. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [filter, setFilter] = useState<RowFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [preview, setPreview] = useState<StepImportPreview | null>(null);
@@ -361,6 +405,7 @@ export function RecommendationStep({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadFailed(false);
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/steps/${stepKey}`);
@@ -375,6 +420,7 @@ export function RecommendationStep({
       );
       setDirty(false);
     } catch (loadError) {
+      setLoadFailed(true);
       setError(loadError instanceof Error ? loadError.message : "Failed to load step.");
     } finally {
       setLoading(false);
@@ -614,8 +660,15 @@ export function RecommendationStep({
     setDirty(true);
   };
 
-  const save = async () => {
+  /**
+   * Resolves TRUE only when the edits landed. The answer matters to `confirm` below: it used to
+   * call this, ignore a refused save (a hold with no reason answers 400) and confirm anyway — so
+   * the step locked on the figures saved BEFORE the edits, the wizard moved to the next step, and
+   * the edits on screen were thrown away with nothing saying so.
+   */
+  const save = async (): Promise<boolean> => {
     setBusy(true);
+    setBusyAction("save");
     setError(null);
     try {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/steps/${stepKey}`, {
@@ -628,18 +681,25 @@ export function RecommendationStep({
       setDirty(false);
       // The zeros have landed; re-sending them on the next save is pointless.
       setRemovedManual([]);
+      setSavedAt(Date.now());
+      return true;
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save.");
+      return false;
     } finally {
       setBusy(false);
+      setBusyAction(null);
     }
   };
 
   const confirm = async () => {
-    setBusy(true);
     setError(null);
+    // A refused save stops the confirm here, with its own error on screen and every edit still in
+    // the boxes — never a confirm of the older saved figures.
+    if (dirty && !(await save())) return;
+    setBusy(true);
+    setBusyAction("confirm");
     try {
-      if (dirty) await save();
       const res = await fetch(`/api/automated-payroll/runs/${runId}/steps/${stepKey}/confirm`, {
         method: "POST",
       });
@@ -650,11 +710,13 @@ export function RecommendationStep({
       setError(confirmError instanceof Error ? confirmError.message : "Failed to confirm.");
     } finally {
       setBusy(false);
+      setBusyAction(null);
     }
   };
 
   const onUpload = async (file: File, commit: boolean) => {
     setBusy(true);
+    setBusyAction("upload");
     setError(null);
     try {
       const form = new FormData();
@@ -676,8 +738,28 @@ export function RecommendationStep({
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
       setBusy(false);
+      setBusyAction(null);
     }
   };
+
+  // Ctrl/Cmd+S saves the open step — a hundred cards down, the Save button is a long scroll away.
+  // Read through a ref so the listener is registered once and still calls today's `save`.
+  const saveShortcutRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    saveShortcutRef.current = () => {
+      if (!locked && !busy && dirty) void save();
+    };
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveShortcutRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Double-deduction guard — rule lives in lib/automated-payroll/conflicts.ts so it is
   // unit-tested rather than only eyeballed here.
@@ -689,10 +771,15 @@ export function RecommendationStep({
 
   const conflictRows = useMemo(() => rows.filter(hasConflict), [rows, hasConflict]);
 
+  /** The step's headline column, summed — and NAMED, so the footer never shows a bare total. */
   const totalPrimary = useMemo(() => {
-    const field = (definition.fields.find((f) => f.kind === "money") ?? definition.fields[0])?.key;
-    if (!field) return null;
-    return rows.reduce((sum, row) => sum + (row.values[field] ?? 0), 0);
+    const field = definition.fields.find((f) => f.kind === "money") ?? definition.fields[0];
+    if (!field || field.kind === "text" || field.kind === "select") return null;
+    return {
+      label: field.label,
+      isMoney: field.kind === "money",
+      total: rows.reduce((sum, row) => sum + (row.values[field.key] ?? 0), 0),
+    };
   }, [rows, definition.fields]);
 
   const windowLabel = useMemo(
@@ -721,13 +808,49 @@ export function RecommendationStep({
 
   /** Search/filter by HR_ID or name — client-side over the already-loaded rows, so it
    * never touches the server and works instantly even on a large population. */
+  const matchesFilter = useCallback(
+    (row: StepRow, which: RowFilter): boolean => {
+      switch (which) {
+        case "figure":
+          return rowHasFigure(definition, row);
+        case "edited":
+          return !row.readOnly && rowEdited(definition, row);
+        case "held":
+          return row.onHold;
+        case "conflict":
+          return hasConflict(row);
+        case "manual":
+          return row.manual === true;
+        default:
+          return true;
+      }
+    },
+    [definition, hasConflict],
+  );
+
+  /** How many cards each quick filter would show — a filter that would show nobody is not offered. */
+  const filterCounts = useMemo(() => {
+    const counts = {} as Record<RowFilter, number>;
+    for (const key of Object.keys(ROW_FILTER_LABELS) as RowFilter[]) {
+      counts[key] = rows.filter((row) => matchesFilter(row, key)).length;
+    }
+    return counts;
+  }, [rows, matchesFilter]);
+
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return rows;
     return rows.filter(
-      (row) => row.hrId.toLowerCase().includes(query) || row.fullName.toLowerCase().includes(query),
+      (row) =>
+        matchesFilter(row, filter) &&
+        (!query || row.hrId.toLowerCase().includes(query) || row.fullName.toLowerCase().includes(query)),
     );
-  }, [rows, search]);
+  }, [rows, search, filter, matchesFilter]);
+
+  /** What a confirm is about to freeze, said beside the button that freezes it. */
+  const editedCount = useMemo(
+    () => rows.filter((row) => !row.readOnly && rowEdited(definition, row)).length,
+    [rows, definition],
+  );
 
   /** Same precedence for the grid row tint and the mobile card border. */
   const rowTone = (row: StepRow): "hold" | "conflict" | "manual" | "leaver" | "notice" | null => {
@@ -750,7 +873,29 @@ export function RecommendationStep({
   const isRowLocked = (row: StepRow) => locked || row.readOnly === true;
 
   if (loading) {
-    return <div className="p-6 text-sm text-slate-500">Loading {definition.title}…</div>;
+    return (
+      <div role="status" className="border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+        Loading {definition.title} — reading this month&rsquo;s figures…
+      </div>
+    );
+  }
+
+  // A step that never loaded has nothing to edit: an empty grid under an error reads as
+  // "nobody is owed anything this month", which is the one thing it must never say.
+  if (loadFailed && rows.length === 0) {
+    return (
+      <AdminCallout tone="danger">
+        <div className="flex flex-1 flex-col gap-2">
+          <span className="font-semibold">{definition.title} could not be loaded.</span>
+          <span className="break-words">{error ?? "The server did not answer."}</span>
+          <div>
+            <Button size="sm" variant="outline" onClick={() => void load()}>
+              Try again
+            </Button>
+          </div>
+        </div>
+      </AdminCallout>
+    );
   }
 
   return (
@@ -808,14 +953,14 @@ export function RecommendationStep({
       </div>
 
       {error ? (
-        <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div>
+        <div role="alert" className="break-words border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div>
       ) : null}
 
       {conflictRows.length > 0 && conflictKey ? (
         <div className="border-l-4 border-orange-400 bg-orange-50 px-4 py-3 text-sm text-orange-900">
           <div className="font-black">
             Careful — this would be deducted twice for{" "}
-            {conflictRows.length === 1 ? "1 employee" : `${conflictRows.length} employees`}.
+            {peopleCount(conflictRows.length)}.
           </div>
           <p className="mt-1 text-xs">
             The amount below is <strong>already settled on the Resignations step</strong>. Anything entered
@@ -837,15 +982,42 @@ export function RecommendationStep({
       {preview ? (
         <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">
-            Upload preview — {preview.changed} changed, {preview.invalid} invalid of {preview.totalRows} rows.
+            Upload preview — {preview.changed} changed, {preview.invalid} not usable, of {preview.totalRows} rows
+            in the file. Nothing is saved until you apply it.
           </div>
-          <div className="mt-1 max-h-40 overflow-auto text-xs">
-            {preview.diffs.slice(0, 40).map((diff, index) => (
-              <div key={`${diff.hrId}-${diff.field}-${index}`} className={diff.status === "invalid" ? "text-rose-700" : diff.status === "changed" ? "text-amber-800" : "text-slate-500"}>
-                {diff.hrId} · {diff.field}: {String(diff.from)} → {String(diff.to)} ({diff.status})
-              </div>
-            ))}
-          </div>
+          {(() => {
+            // Unchanged lines say nothing; the refused ones go first, then the ones that move money.
+            const worth = preview.diffs
+              .filter((diff) => diff.status !== "unchanged")
+              .sort((a, b) => Number(b.status === "invalid") - Number(a.status === "invalid"));
+            const shown = worth.slice(0, 40);
+            const show = (value: number | string | null) =>
+              typeof value === "number" ? money(value) : value === null || value === "" ? "—" : String(value);
+            return (
+              <ul className="mt-2 flex max-h-56 flex-col gap-1 overflow-y-auto text-xs">
+                {shown.map((diff, index) => (
+                  <li
+                    key={`${diff.hrId}-${diff.field}-${index}`}
+                    className={cn("break-words", diff.status === "invalid" ? "text-rose-700" : "text-amber-900")}
+                  >
+                    <span className="font-semibold">{diff.fullName || diff.hrId}</span> ·{" "}
+                    {fieldSpecOf(definition, diff.field)?.label ?? diff.field}:{" "}
+                    <span className="tabular-nums">{show(diff.from)}</span> →{" "}
+                    <span className="tabular-nums">{show(diff.to)}</span>
+                    {diff.status === "invalid"
+                      ? ` — not usable${diff.message ? `: ${diff.message}` : ""}`
+                      : diff.status === "added"
+                        ? " (new row)"
+                        : ""}
+                  </li>
+                ))}
+                {worth.length > shown.length ? (
+                  <li className="text-amber-800">and {worth.length - shown.length} more</li>
+                ) : null}
+                {worth.length === 0 ? <li className="text-slate-600">The file changes nothing on this step.</li> : null}
+              </ul>
+            );
+          })()}
           <div className="mt-2 flex gap-2">
             <Button
               size="sm"
@@ -888,12 +1060,35 @@ export function RecommendationStep({
       ) : null}
 
       {rows.length > 0 ? (
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by HR_ID or name…"
-          className={cn(fieldClassName, "max-w-xs")}
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by HR_ID or name…"
+            aria-label="Search employees on this step"
+            className={cn(fieldClassName, "w-full sm:max-w-xs")}
+          />
+          <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5">
+            {(Object.keys(ROW_FILTER_LABELS) as RowFilter[])
+              .filter((key) => key === "all" || filterCounts[key] > 0 || filter === key)
+              .map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={filter === key}
+                  onClick={() => setFilter(key)}
+                  className={cn(
+                    "border px-2.5 py-1 text-xs font-semibold transition-colors",
+                    filter === key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-400",
+                  )}
+                >
+                  {ROW_FILTER_LABELS[key]} <span className="tabular-nums opacity-70">{filterCounts[key]}</span>
+                </button>
+              ))}
+          </div>
+        </div>
       ) : null}
 
       {rows.length === 0 ? (
@@ -902,7 +1097,11 @@ export function RecommendationStep({
         </div>
       ) : filteredRows.length === 0 ? (
         <div className="border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-          No employees match &ldquo;{search}&rdquo;.
+          {search.trim() ? (
+            <>No employees match &ldquo;{search}&rdquo;{filter !== "all" ? ` under “${ROW_FILTER_LABELS[filter]}”` : ""}.</>
+          ) : (
+            <>No employees under &ldquo;{ROW_FILTER_LABELS[filter]}&rdquo;.</>
+          )}
         </div>
       ) : (
         <>
@@ -920,9 +1119,8 @@ export function RecommendationStep({
                 <article
                   key={row.hrId}
                   className={cn(
-                    // Shadow + hover lift: at three cards across, a flat hairline grid
-                    // gives the eye nothing to separate one person from the next.
-                    "border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md",
+                    // Flat and square; the dark name band below separates one person from the next.
+                    "border border-slate-200 bg-white transition-colors hover:border-slate-400",
                     tone === "hold" && "border-rose-300 bg-rose-50",
                     tone === "conflict" && "border-l-4 border-l-orange-400 bg-orange-50",
                     tone === "notice" && "border-l-4 border-l-sky-400 bg-sky-50/70",
@@ -947,18 +1145,15 @@ export function RecommendationStep({
                       tone === "hold" && "bg-rose-900",
                     )}
                   >
-                    <div className="w-full min-w-0 overflow-hidden sm:w-auto">
-                      <div
-                        title={row.fullName}
-                        className="overflow-hidden whitespace-nowrap text-[13px] font-black tracking-tight text-white sm:text-sm"
-                      >
+                    <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+                      <div className="break-words text-[13px] font-black tracking-tight text-white sm:text-sm">
                         {row.fullName}
                       </div>
-                      <div className="flex items-center gap-x-1.5 overflow-hidden whitespace-nowrap font-mono text-[11px] text-slate-400">
+                      <div className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11px] text-slate-400">
                         <span>{row.hrId}</span>
                         {hireDateColumn ? (
                           <span className="font-sans">
-                            · Hired {String(row.context[hireDateColumn.key] ?? "—")}
+                            · Hired {formatPayrollDay(row.context[hireDateColumn.key])}
                           </span>
                         ) : null}
                       </div>
@@ -1075,7 +1270,7 @@ export function RecommendationStep({
                               value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
                               disabled={isRowLocked(row)}
                               onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
-                              className={cn(fieldClassName, "cursor-pointer px-2")}
+                              className={cn(selectClassName, "px-2")}
                             >
                               {field.options?.map((option) => (
                                 <option key={option.value} value={option.value}>
@@ -1112,6 +1307,10 @@ export function RecommendationStep({
                           // still something to type it into.
                           const reasonMissing =
                             definition.isHoldStep && row.onHold && !(row.reason ?? "").trim();
+                          // "-" is accepted (the confirm gate allows it on purpose), but it tells
+                          // nobody later why this person was not paid — flag it, never block it.
+                          const reasonPlaceholder =
+                            definition.isHoldStep && row.onHold && isPlaceholderReason(row.reason);
                           return (
                             <label className="flex flex-col gap-1 text-sm">
                               <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">
@@ -1129,8 +1328,15 @@ export function RecommendationStep({
                                 className={cn(
                                   fieldClassName,
                                   reasonMissing && "border-rose-400 bg-rose-50/60",
+                                  reasonPlaceholder && "border-amber-400 bg-amber-50/60",
                                 )}
                               />
+                              {reasonPlaceholder ? (
+                                <span className="break-words text-[11px] font-semibold text-amber-800">
+                                  &ldquo;{(row.reason ?? "").trim()}&rdquo; is not a reason. Write why — it is the
+                                  only record of why this person was not paid by this run.
+                                </span>
+                              ) : null}
                               {row.reasonCarriedForward ? (
                                 <span className="break-words text-[11px] font-semibold text-amber-800">
                                   Carried over from the previous month, not written for this one — check it
@@ -1255,16 +1461,35 @@ export function RecommendationStep({
         </>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-slate-500">
-          {filteredRows.length === rows.length
-            ? `${rows.length} employees`
-            : `${filteredRows.length} of ${rows.length} employees shown`}
-          {totalPrimary != null ? ` · total ${money(totalPrimary)}` : ""}
+      {/* Sticky so Save and Confirm never sit a hundred cards below the figure just typed. */}
+      <div className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-slate-200 bg-white py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-0.5 text-sm text-slate-600">
+          <span>
+            {filteredRows.length === rows.length
+              ? peopleCount(rows.length)
+              : `${filteredRows.length} of ${peopleCount(rows.length)} shown`}
+            {totalPrimary ? (
+              <>
+                {" · "}
+                {totalPrimary.label}{" "}
+                <span className="font-semibold tabular-nums text-slate-900">
+                  {totalPrimary.isMoney ? `${money(totalPrimary.total)} EGP` : totalPrimary.total}
+                </span>
+              </>
+            ) : null}
+          </span>
+          <span className="text-xs text-slate-500" aria-live="polite">
+            {dirty
+              ? "Unsaved changes — Ctrl+S saves."
+              : savedAt
+                ? `Saved at ${CAIRO_TIME.format(savedAt)}.`
+                : null}
+            {editedCount > 0 ? ` ${peopleCount(editedCount)} with a figure changed by hand.` : ""}
+          </span>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" disabled={locked || busy || !dirty} onClick={() => void save()}>
-            Save
+            {busyAction === "save" ? "Saving…" : "Save"}
           </Button>
           <Button
             disabled={locked || busy}
@@ -1274,7 +1499,13 @@ export function RecommendationStep({
             {/* A greyed button with unchanged text reads as broken. Confirming
                 the Vacation step also re-settles leave balances, so it can sit
                 busy for a while — say so rather than look dead. */}
-            {busy ? "Confirming…" : confirmed ? "Re-confirm & continue" : "Confirm & continue"}
+            {busyAction === "confirm"
+              ? dirty
+                ? "Saving, then confirming…"
+                : "Confirming…"
+              : confirmed
+                ? "Re-confirm & continue"
+                : "Confirm & continue"}
           </Button>
         </div>
       </div>

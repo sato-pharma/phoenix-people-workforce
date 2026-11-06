@@ -3,6 +3,7 @@ import {
   calculateBasicSalary,
   calculatePayrollParts,
   normalizePayrollPaymentMode,
+  resolveFixedSalaryAmounts,
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import {
@@ -358,7 +359,7 @@ export function assembleParts(input: {
   );
 
   // totalPayable via the locked engine (its own First/Second split is discarded).
-  const parts = calculatePayrollParts({
+  const engineInput = {
     additions: sumAdditions,
     baseSalary: input.effective.base,
     deductions: sumDeductions,
@@ -368,15 +369,25 @@ export function assembleParts(input: {
     paymentMode: mode,
     previousExpenses: 0,
     secondPartAdditions: input.additions.expenses + input.additions.incentive,
-  });
+  };
+  const parts = calculatePayrollParts(engineInput);
   const totalPayable = parts.totalPayable;
+  // The locked engine floors totalPayable at zero, so deductions larger than the whole month
+  // vanished: the residual below was measured from the floor, and anything under it was carried
+  // nowhere (audit 2026-11-07, owner: fix it). The same sum, unfloored, on the engine's own net —
+  // computed here so the protected policy file is not touched.
+  const uncappedPayable = roundCurrency(
+    resolveFixedSalaryAmounts(engineInput).netSalary + sumAdditions - sumDeductions,
+  );
+  const owedBeyondMonth = totalPayable > 0 ? 0 : roundCurrency(Math.max(0, -uncappedPayable));
 
   const firstPart = roundCurrency(Math.max(0, input.firstPartFrozen));
   let secondPart = roundCurrency(Math.max(0, totalPayable - firstPart));
   let overpaidResidual = 0;
-  if (totalPayable + 0.001 < firstPart) {
-    // Part-2 deductions exceeded the already-paid first installment.
-    overpaidResidual = roundCurrency(firstPart - totalPayable);
+  if (totalPayable + 0.001 < firstPart || owedBeyondMonth > 0) {
+    // Part-2 deductions exceeded the already-paid first installment — and, when they exceeded the
+    // whole month, by the part the floor hid as well.
+    overpaidResidual = roundCurrency(Math.max(0, firstPart - totalPayable) + owedBeyondMonth);
     secondPart = 0;
   }
 
