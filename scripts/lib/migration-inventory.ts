@@ -2187,6 +2187,26 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // anon and authenticated, true for service_role; brick_units present with default '{}'::jsonb.
   // Re-applying is a no-op (`drop function if exists` of the draft, `create or replace`, `add column if not exists`).
   "20261106161841_make_it_happen_brick_forecast.sql",
+  // 2026-11-06/07, written by the session that applied both. supabase-staging's apply_migration answered
+  // {"status":"declined"} (both files drop and recreate), so both went in by the standing route,
+  // `node scripts/apply-sql-file.mjs <file> staging|production` (production with
+  // PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com), which writes no ledger row: neither version
+  // has one on ozucdzovmcqvepbozvqf or cifwmndunmlxjhyjugxa. Proven by digest on BOTH databases, read straight
+  // after and equal on both. The doors file: md5(pg_proc.prosrc) of phoenix_crm_counted_seat_windows =
+  // a1157ace25ba69b58055b74c263a4e75 and of phoenix_crm_counted_day_activity_windows =
+  // 05b22a7e5b06761d8bfd89d209c746eb, each equal to the md5 of this file's own LF body between the $function$
+  // markers; both prosecdef, EXECUTE for postgres and service_role
+  // only; md5(pg_get_viewdef) of crm_visits_unified = a37a62cc39b0a7f7f88904cee1e19bc0 and of
+  // crm_checkins_unified = ea6310341189f6c75e4697e480135569, both security_invoker=true. Every month's rows on
+  // both views hashed the same before and after on production (0 rows moved). Re-applying is a no-op
+  // (`create or replace`, the views dropped and recreated with the same body).
+  "20261106235920_crm_doors_count_every_seat_from_vendor_retirement.sql",
+  // The import file: one overload only, phoenix_crm_import_ireports360_history(text, boolean, boolean);
+  // md5(pg_proc.prosrc) = b4ea4ab633c5a663bb2c95dd1e49e2a0, equal to the md5 of this file's own LF body between
+  // the $function$ markers; prosecdef true; EXECUTE for postgres and service_role only. The file writes no row
+  // (the copy is the runner's --apply). Re-applying is a no-op (`drop function if exists` of the two-argument
+  // one, `create or replace`).
+  "20261107001714_phoenix_crm_import_history_after_the_start.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
