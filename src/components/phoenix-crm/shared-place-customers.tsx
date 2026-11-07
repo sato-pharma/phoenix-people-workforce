@@ -35,6 +35,7 @@ import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, crmTextareaClassName } from "@/components/phoenix-crm/ui";
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnTimetable } from "@/lib/phoenix-crm/place-check-advice";
+import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import type { SeatedCustomer, SeatedTimetable } from "@/lib/phoenix-crm/shared-place-groups";
 import { VALIDATION_NOTE_LABEL, VALIDATION_REASON_REQUIRED, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
@@ -311,7 +312,9 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(customer);
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState<ValidationRefusalReason | "">(evidenceReason(customer, noTimetable));
+  // A clinic customer with one or two names is never approved — sent back for all three (owner, 2026-11-07).
+  const shortName = approvalNeedsFullName(customer);
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(shortName ? "short_name" : evidenceReason(customer, noTimetable));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -352,13 +355,14 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
       />
       <RefusalNoteHint />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-        <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
+        <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : "Approve"}
         </CrmButton>
         <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
           {saving === "reject" ? "Rejecting…" : "Reject"}
         </CrmButton>
       </div>
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
@@ -368,6 +372,8 @@ function WaitingDecision({ customer, noTimetable, scope }: { customer: SeatedCus
 /** Taking a rejection back — the mirror of the reject, through the review restore route. */
 function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: string }) {
   const done = usePlaceCheckDone();
+  // Bringing them back validates them again, so the short-name rule holds here as on Approve.
+  const shortName = approvalNeedsFullName(customer);
   const { saved, markSaved } = useSavedOutcome(customer);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -405,9 +411,10 @@ function RestoreSeated({ customer, scope }: { customer: SeatedCustomer; scope: s
         rows={2}
         value={note}
       />
-      <CrmButton busy={saving} disabled={saving} onClick={() => void restore()} variant="primary">
+      <CrmButton busy={saving} disabled={saving || shortName} onClick={() => void restore()} variant="primary">
         {saving ? "Bringing them back" : "Approve it after all"}
       </CrmButton>
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </div>
   );

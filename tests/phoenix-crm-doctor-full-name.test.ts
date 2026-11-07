@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  approvalNeedsFullName,
   boardNamesOf,
   doctorFullNameProblem,
   doctorNamePartProblem,
@@ -12,7 +13,10 @@ import {
   joinDoctorName,
   parseDoctorFullName,
   splitDoctorName,
+  VALIDATION_FULL_NAME_CODE,
+  validationNeedsFullName,
 } from "@/lib/phoenix-crm/pm-name-rules";
+import { reasonsFor } from "@/lib/phoenix-crm/validation-feedback";
 import { parseNewCustomer, parseOutsideCustomer } from "@/lib/phoenix-crm/entry-rules";
 import { buildDayCopyPlacements } from "@/lib/phoenix-crm/plan-copy";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
@@ -148,7 +152,97 @@ function checkACopyNeverPlacesABlockedDoctor(): void {
   );
 }
 
+/** One function body out of a source file, from its signature to the next top-level close. */
+function bodyOf(path: string, signature: string): string {
+  const source = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `${signature} is in ${path}`);
+  const end = source.indexOf("\n}\n", start);
+  assert.ok(end > start, `${signature} ends`);
+  return source.slice(start, end);
+}
+
+function checkTheThreeNamesAreAskedAtValidation(): void {
+  // Owner, 2026-11-07: "Don't accept from the beginning the two names. Must enter the three names."
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي فؤاد" }), true, "two names on a clinic customer are asked for three");
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي" }), true, "and one name too");
+  assert.equal(validationNeedsFullName({ listType: "pm", name: "Dr. Sami Fouad" }), true, "the title is not a name");
+  assert.equal(validationNeedsFullName({ listType: "PM", name: "سامي فؤاد منصور" }), false, "three names validate as before");
+  assert.equal(validationNeedsFullName({ listType: "AM", name: "مستشفى السلام" }), false, "an AM place is never asked");
+  assert.equal(validationNeedsFullName({ listType: "Pharmacy", name: "صيدلية" }), false, "nor a pharmacy");
+  assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد" }), true, "Place checks never approves a short name");
+  assert.equal(approvalNeedsFullName({ listType: "PM", customerName: "سامي فؤاد منصور" }), false);
+  assert.equal(approvalNeedsFullName({ listType: "AM", customerName: "عيادة" }), false);
+
+  // The server: a short-named listed doctor sent without the three names is refused before any check or
+  // write, with the code that returns the rep to the step holding the boxes.
+  const asked = bodyOf("src/lib/phoenix-crm/server/list.ts", "function fullNameAtValidation(");
+  assert.ok(asked.includes("validationNeedsFullName(subject)"), "asked only of a short-named clinic customer");
+  assert.match(asked, /if \(!body\.nameParts[^\n]*throw validationError\(VALIDATION_FULL_NAME_MISSING, VALIDATION_FULL_NAME_CODE\)/, "no three names, no validation");
+  assert.ok(asked.includes("parseDoctorFullName(body.nameParts, null)"), "each box is judged as a real name; a whole-name string never stands in");
+  const validate = bodyOf("src/lib/phoenix-crm/server/list.ts", "export async function validateCustomer(");
+  const askedAt = validate.indexOf("fullNameAtValidation(onListSubject, body)");
+  assert.ok(askedAt > 0, "validateCustomer asks it");
+  assert.ok(askedAt < validate.indexOf("refuseSeatingAwayFromBuilding("), "before the building distance is measured");
+  assert.ok(askedAt < validate.indexOf("placePayload("), "and before the place row is built");
+  // The full name is what the board is judged against, and it is saved with the validation, in one step.
+  assert.match(validate, /onListSubject && fullName\s*\? \{ \.\.\.onListSubject, name: fullName \}/, "the signboard and the timetable read the full name");
+  assert.ok(validate.includes("if (fullName) payload.full_name = fullName;"), "and the save carries it");
+
+  // The database renames him inside the same validation, through the one rename door.
+  const migration = readFileSync("supabase/migrations/20261107195700_phoenix_crm_three_names_at_validation.sql", "utf8");
+  const renameAt = migration.indexOf("perform public.phoenix_crm_rename_customer(");
+  assert.ok(renameAt > 0, "the validation renames through phoenix_crm_rename_customer");
+  assert.ok(migration.lastIndexOf("v_mode in ('reference', 'listed')", renameAt) > 0, "only a customer already on the list");
+  assert.ok(migration.slice(renameAt, renameAt + 600).includes("'allow_same_name', true"), "a namesake on the seat never refuses his own full name");
+
+  // The rep's screen: the three boxes on the first step, sent only when asked, and the refusal returns there.
+  const screen = readFileSync("src/components/phoenix-crm/list-screens.tsx", "utf8");
+  assert.ok(screen.includes(`idPrefix="phoenix-crm-validate-name"`), "the validation screen draws the three boxes");
+  assert.ok(screen.includes("const named = needsFullName ? { nameParts: fullParts } : {};"), "the three names travel only when asked");
+  assert.match(screen, /code === VALIDATION_FULL_NAME_CODE\) \{\s*(\/\/[^\n]*\n\s*)*goStep\(1\)/, "a refusal takes him back to the names");
+  assert.equal(VALIDATION_FULL_NAME_CODE, "phoenix_crm_full_name_needed");
+}
+
+function checkPlaceChecksSendsAShortNameBack(): void {
+  // Owner, 2026-11-07, about the validations already waiting: "Send them back to the rep".
+  assert.ok(reasonsFor("signboard").some((reason) => reason.key === "short_name"), "the refusal has a reason of its own");
+  // Every approve path asks the server first.
+  const decide = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "export async function decideValidationReview(");
+  assert.ok(decide.includes(`if (decision === "approve") await refuseApprovalOfShortName(await reviewCustomerId(reviewId));`), "a held review");
+  const restore = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "export async function restoreValidation(");
+  assert.ok(restore.includes("await refuseApprovalOfShortName(await reviewCustomerId("), "a rejection taken back");
+  const approve = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "export async function approveValidatedPlace(");
+  assert.ok(approve.includes("await refuseApprovalOfShortName(place.customer_id);"), "a place the system never questioned");
+  const gate = bodyOf("src/lib/phoenix-crm/server/validation-reviews.ts", "async function refuseApprovalOfShortName(");
+  assert.ok(gate.includes("approvalNeedsFullName({ listType: customer.list_type, customerName: customer.name })"), "on the customer's own row");
+  assert.ok(gate.includes("throw validationError(APPROVAL_NEEDS_FULL_NAME, VALIDATION_FULL_NAME_CODE)"), "the gate refuses");
+
+  // Every screen disables its Approve on the same rule, says why, and no bulk approve takes him.
+  // Counted, so one approve losing its gate on a screen that has two still fails: the queue's Decision and
+  // Restore, a seated customer's Decision and take-back, and the in-use place's Approve.
+  const approveButtons: ReadonlyArray<[string, number]> = [
+    ["src/components/phoenix-crm/validation-review-queue.tsx", 2],
+    ["src/components/phoenix-crm/shared-place-customers.tsx", 2],
+    ["src/components/phoenix-crm/validated-place-list.tsx", 1],
+  ];
+  for (const [path, count] of approveButtons) {
+    const source = readFileSync(path, "utf8");
+    assert.equal(source.split("= approvalNeedsFullName(").length - 1, count, `${path} asks the rule on each approve`);
+    assert.equal(source.split("|| shortName}").length - 1, count, `${path} disables each Approve`);
+    assert.equal(source.split("{APPROVAL_NEEDS_FULL_NAME}").length - 1, count, `${path} says why beside each`);
+  }
+  const queue = readFileSync("src/components/phoenix-crm/validation-review-queue.tsx", "utf8");
+  assert.ok(queue.includes(`takes: (row) => row.status === "pending" && !approvalNeedsFullName(row)`), "the waiting bulk approve skips him");
+  assert.ok(queue.includes("takes: (row) => row.restorable && !approvalNeedsFullName(row)"), "and so does the bulk take-back");
+  assert.ok(queue.includes(`shortName ? "short_name"`), "the refusal opens on the short-name reason");
+  const inUse = readFileSync("src/components/phoenix-crm/validated-place-list.tsx", "utf8");
+  assert.ok(inUse.includes("takes: (row) => !approvalNeedsFullName(row)"), "the in-use bulk approve skips him");
+}
+
 export function runPhoenixCrmDoctorFullNameTests(): void {
+  checkTheThreeNamesAreAskedAtValidation();
+  checkPlaceChecksSendsAShortNameBack();
   checkEachBoxIsARealName();
   checkTheServerTakesThreeNamesForAClinicDoctor();
   checkTheEditOpensOnWhatHeWrote();

@@ -389,6 +389,7 @@ function Decision({ row, scope }: { row: SharedPlaceBoardRow; scope: VenueScope 
       <RefusalReasonField
         disabled={saving !== null}
         id={`shared-place-reason-${scope}-${row.sharedPlaceId}`}
+        kind="building"
         onChange={setReason}
         value={reason}
       />
@@ -515,6 +516,7 @@ export function SharedPlaceList({
       {bulk ? (
         <BulkDecideBar
           actions={VENUE_ACTIONS}
+          kind="building"
           adviceOf={(row) => (row.restorable ? null : adviseOnBuilding(row).kind)}
           nameOf={(row) => row.name}
           picks={picks}

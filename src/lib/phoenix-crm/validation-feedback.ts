@@ -50,10 +50,19 @@
 export type ValidationPhotoKind = "signboard" | "schedule";
 
 /**
- * The six things the 643 photos actually failed on, as graded one by one — and the two the owner
- * added on 2026-10-09 for the timetable of a shared place.
+ * WHAT IS BEING REFUSED on a decision screen: a customer's own photo (one of the two kinds above), or
+ * the BUILDING of a shared place itself. A building is a signboard photo with no person behind it, so it
+ * is offered the six signboard reasons and never `short_name`, which is about a customer's name — and
+ * `phoenix_crm_shared_places`' own CHECK does not hold it.
+ */
+export type ValidationPickKind = ValidationPhotoKind | "building";
+
+/**
+ * The six things the 643 photos actually failed on, as graded one by one — the two the owner added on
+ * 2026-10-09 for the timetable of a shared place — and the ninth, `short_name`, by his word of
+ * 2026-11-07: a clinic customer still carrying one or two names is sent back for all three.
  *
- * CLOSED on purpose. A ninth needs the owner's word, because every one of these is a sentence that
+ * CLOSED on purpose. A tenth needs the owner's word, because every one of these is a sentence that
  * reaches a rep's phone, and a list anybody could extend is a list that will eventually tell him
  * something nobody approved. The counts behind the first six: 57 street shots with no building, 36
  * blank or featureless walls, 23 too dark to read, 20 taken from a vehicle, 14 photographs of paper.
@@ -66,26 +75,26 @@ export const VALIDATION_REFUSAL_REASONS = [
     key: "no_signboard",
     label: "No signboard in the photo",
     rep: "The photo does not show the clinic's signboard. Stand where the sign is readable, then take it again.",
-    kinds: ["signboard"],
+    kinds: ["signboard", "building"],
   },
   {
     key: "wrong_name",
     label: "The sign is not this customer",
     rep: "The name on the sign in this photo is not this customer's. Take the photo at this customer's own entrance.",
-    kinds: ["signboard"],
+    kinds: ["signboard", "building"],
   },
   {
     key: "too_dark",
     // The one reason both kinds share: a photograph can be unreadable whatever it is of.
     label: "Too dark or blurred to read",
     rep: "The photo is too dark or too blurred to read. Take it again with more light, and hold the phone still.",
-    kinds: ["signboard", "schedule"],
+    kinds: ["signboard", "schedule", "building"],
   },
   {
     key: "not_at_door",
     label: "Not taken at the entrance",
     rep: "This photo was not taken at the entrance — it looks taken from a distance or from a vehicle. Stand at the door and take it again.",
-    kinds: ["signboard"],
+    kinds: ["signboard", "building"],
   },
   {
     key: "photo_of_paper",
@@ -93,7 +102,7 @@ export const VALIDATION_REFUSAL_REASONS = [
     rep: "The photo shows paper or a screen rather than the clinic itself. Take a live photo of the building and its sign.",
     // 🔴 NEVER on a timetable. A timetable is paper, so this sentence would send a rep back to
     // photograph a building he was never asked for.
-    kinds: ["signboard"],
+    kinds: ["signboard", "building"],
   },
   {
     key: "point_off",
@@ -101,7 +110,7 @@ export const VALIDATION_REFUSAL_REASONS = [
     // The one reason that mentions his readings at all. It bends nothing new: PLACE_PRECISION_NOTE
     // already tells him the same thing before he starts, by the owner's own 2026-10-03 amendment.
     rep: "The location saved with this photo is not where the photo was taken. Turn precise location on, wait for it to settle, then take the photo and capture the location again.",
-    kinds: ["signboard"],
+    kinds: ["signboard", "building"],
   },
   {
     // The seventh (owner, 2026-10-09): the timetable is readable and this customer is not on it.
@@ -120,6 +129,16 @@ export const VALIDATION_REFUSAL_REASONS = [
     rep: "There is no timetable in this photo. Photograph the schedule on the wall showing who receives and at what hours.",
     kinds: ["schedule"],
   },
+  {
+    // The ninth (owner, 2026-11-07: "Must enter the three names"; for the validations already waiting
+    // with a short name, "Send them back to the rep"). About the customer's NAME, not the photograph, so
+    // it is offered on a customer's own signboard and on a seated customer's timetable — never on a
+    // building, which has no person's name (`phoenix_crm_shared_places`' CHECK does not hold it).
+    key: "short_name",
+    label: "Only one or two names — needs the full name",
+    rep: "Write this customer's first, middle and last name as the sign or the timetable shows them, then validate again.",
+    kinds: ["signboard", "schedule"],
+  },
 ] as const;
 
 export type ValidationRefusalReason = (typeof VALIDATION_REFUSAL_REASONS)[number]["key"];
@@ -129,16 +148,27 @@ export const VALIDATION_REFUSAL_REASON_KEYS: readonly ValidationRefusalReason[] 
   VALIDATION_REFUSAL_REASONS.map((reason) => reason.key);
 
 /**
- * The reasons that may be OFFERED about one kind of photo.
+ * The reasons that may be OFFERED about one kind of photo, or about a building.
  *
- * The parser below still accepts any of the eight, deliberately: the kind is a property of the
- * screen, and a decision already stored keeps rendering whatever reason it carries.
+ * The parser below still accepts any of the nine, deliberately: the kind is a property of the
+ * screen, and a decision already stored keeps rendering whatever reason it carries. A building's
+ * refusal is the one place that must refuse a key too — `buildingRefusalReason`.
  */
-export function reasonsFor(kind: ValidationPhotoKind): typeof VALIDATION_REFUSAL_REASONS[number][] {
+export function reasonsFor(kind: ValidationPickKind): typeof VALIDATION_REFUSAL_REASONS[number][] {
   return VALIDATION_REFUSAL_REASONS.filter((reason) => (reason.kinds as readonly string[]).includes(kind));
 }
 
-/** The one parser. A value off the wire is never trusted to be one of the eight. */
+/**
+ * The parser for a BUILDING's refusal: only a reason `reasonsFor("building")` offers. A key the
+ * venue's CHECK does not hold would otherwise reach the database as a constraint error.
+ */
+export function buildingRefusalReason(value: unknown): ValidationRefusalReason | null {
+  const key = parseValidationRefusalReason(value);
+  if (!key) return null;
+  return reasonsFor("building").some((reason) => reason.key === key) ? key : null;
+}
+
+/** The one parser. A value off the wire is never trusted to be one of the nine. */
 export function parseValidationRefusalReason(value: unknown): ValidationRefusalReason | null {
   const key = String(value ?? "").trim();
   return (
@@ -203,7 +233,7 @@ export const SHARED_PLACE_REFUSED_ACTION =
 
 /**
  * What a rep is told when the POLYCLINIC OR CENTRE his customer sits in was refused — rather than his
- * own capture of that customer, which is what the eight above are about.
+ * own capture of that customer, which is what the nine above are about.
  *
  * 🔴 NONE OF THE SIX SIGNBOARD SENTENCES MAY BE FORWARDED HERE. Every one of them is about THIS
  * CUSTOMER's own door — "take the photo at this customer's own entrance", "take a live photo of the
@@ -212,7 +242,7 @@ export const SHARED_PLACE_REFUSED_ACTION =
  * would order a rep to photograph an entrance that is not there. So the venue carries its own clause
  * per reason, about the VENUE's photo, ending in the one action that actually clears it.
  *
- * Worded under the same ban as the eight: no person, no role, no decision, no threshold, no pronoun —
+ * Worded under the same ban as the nine: no person, no role, no decision, no threshold, no pronoun —
  * and "polyclinic or centre", the phrase the rep's own screen uses, never a kind he did not capture.
  */
 const SHARED_PLACE_REFUSAL_CLAUSE: Partial<Record<ValidationRefusalReason, string>> = {

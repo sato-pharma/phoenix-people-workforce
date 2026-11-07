@@ -6,7 +6,7 @@
  * Owner, 2026-10-08: tell the rep why, from a fixed pick-list, worded about his own photo and never
  * naming a person. Both Super Admin decision screens use this one field — the queue of held places and
  * the list of validations the system never questioned — so the two can never offer different lists.
- * The reasons themselves live in `@/lib/phoenix-crm/validation-feedback`, closed at eight.
+ * The reasons themselves live in `@/lib/phoenix-crm/validation-feedback`, closed at nine.
  *
  * It is required to refuse and never asked to approve. The free-text note beside it stays the
  * record's, and the rep never reads it — which is why its label says so in words.
@@ -18,12 +18,12 @@ import {
   VALIDATION_NOTE_HINT,
   VALIDATION_REASON_LABEL,
   VALIDATION_REASON_PLACEHOLDER,
-  type ValidationPhotoKind,
+  type ValidationPickKind,
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
 
 /**
- * 🔴 WHICH OF THE EIGHT ARE OFFERED DEPENDS ON WHAT THE PHOTO IS (owner, 2026-10-09). A customer
+ * 🔴 WHICH OF THE NINE ARE OFFERED DEPENDS ON WHAT THE PHOTO IS (owner, 2026-10-09). A customer
  * seated in a polyclinic is photographed at his TIMETABLE, not at a signboard — so "a photo of paper,
  * not a building" is wrong by construction about him, and "the timetable does not name this customer"
  * is meaningless about a signboard. `reasonsFor` keeps the two lists apart; the default is `signboard`,
@@ -37,8 +37,8 @@ export function RefusalReasonField({
   value,
 }: {
   id: string;
-  /** What the photo is. `schedule` is a seated customer's timetable; everything else is a signboard. */
-  kind?: ValidationPhotoKind;
+  /** What the photo is. `schedule` is a seated customer's timetable, `building` a polyclinic's own door; everything else is a signboard. */
+  kind?: ValidationPickKind;
   value: ValidationRefusalReason | "";
   onChange: (next: ValidationRefusalReason | "") => void;
   disabled?: boolean;

@@ -586,7 +586,9 @@ export function runPhoenixCrmSharedPlaceTests(): void {
   //   2. the board's "Waiting to be captured again" read "A rep" and "No reason was chosen — refused
   //      before the reason list existed." for both, while `no_signboard` sat on the venue: it looked
   //      the reason up on a `phoenix_crm_validation_reviews` row, which a VENUE refusal never writes.
-  const venueReasons = reasonsFor("signboard");
+  // A building is offered the reasons true of a building (`reasonsFor("building")`): the six signboard ones,
+  // never `short_name`, which is about a customer's name.
+  const venueReasons = reasonsFor("building");
   const A_PERSON_OR_DECISION = /\b(admin|super admin|manager|reviewer|rejected|refused by|approved|sfe|owner|he |she |they )/i;
   for (const reason of venueReasons) {
     const told = sharedPlaceRefusalRepText(reason.key);
