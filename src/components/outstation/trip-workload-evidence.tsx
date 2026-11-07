@@ -199,7 +199,7 @@ function DayDetail({
                   <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
                     {visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}
                   </span>
-                  <span className="whitespace-nowrap font-mono text-slate-500">
+                  <span className="whitespace-nowrap tabular-nums text-slate-500">
                     {formatClock(visit.submittedAt)}
                   </span>
                 </span>
@@ -217,7 +217,7 @@ function DayDetail({
             {checkins.map((checkin, index) => (
               <li className="flex items-center justify-between gap-2 text-xs" key={index}>
                 <span className="flex min-w-0 items-start gap-1.5">
-                  <span className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center bg-orange-500 px-1 font-mono text-phx-3xs font-black text-white">
+                  <span className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center bg-orange-500 px-1 tabular-nums text-phx-3xs font-black text-white">
                     {firstCheckinNumber + index}
                   </span>
                   <span className="break-words text-slate-700">
@@ -239,7 +239,7 @@ function DayDetail({
                   <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
                     Check-in time
                   </span>
-                  <span className="whitespace-nowrap font-mono text-slate-500">{formatClock(checkin.at)}</span>
+                  <span className="whitespace-nowrap tabular-nums text-slate-500">{formatClock(checkin.at)}</span>
                 </span>
               </li>
             ))}
@@ -314,7 +314,7 @@ function TripDayRow({
   const meetingOnly = !idle && day.total === 0;
 
   const figures = (
-    <span className="grid grid-cols-3 gap-x-3 font-mono text-xs text-slate-700 sm:flex sm:flex-wrap sm:gap-x-4">
+    <span className="grid grid-cols-3 gap-x-3 tabular-nums text-xs text-slate-700 sm:flex sm:flex-wrap sm:gap-x-4">
       <span>
         <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">AM </span>
         {fmt(day.am)}
@@ -442,7 +442,7 @@ function TripDayOpen({
         ) : (
           <span className="whitespace-nowrap text-xs font-bold text-emerald-700">{fmt(day.total)} field visits</span>
         )}
-        <span className="grid grid-cols-3 gap-x-3 font-mono text-xs text-slate-700 sm:ml-auto sm:flex sm:flex-wrap sm:gap-x-4">
+        <span className="grid grid-cols-3 gap-x-3 tabular-nums text-xs text-slate-700 sm:ml-auto sm:flex sm:flex-wrap sm:gap-x-4">
           <span>
             <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">AM </span>
             {fmt(day.am)}
@@ -673,7 +673,7 @@ export function TripWorkloadEvidencePanel({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Verified workload</span>
-        <Badge variant={tone}>{humanizeCode(data.matchStatus)}</Badge>
+        <Badge className="rounded-none" variant={tone}>{humanizeCode(data.matchStatus)}</Badge>
         <span className="text-phx-xs text-slate-500">{data.sourceLabel}</span>
         {/* The one line a long trip needs first: how many of its days carry no field work. Counted
             from the same rows listed below, so the two can never disagree. */}
@@ -699,14 +699,14 @@ export function TripWorkloadEvidencePanel({
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
-          <p className="mt-1 font-mono text-sm font-bold text-slate-900">
+          <p className="mt-1 tabular-nums text-sm font-bold text-slate-900">
             AM {fmt(declaredAm)} · PM {fmt(declaredPm)} · Pharmacies{" "}
             {declaredPharmacies === null ? "not counted separately" : fmt(declaredPharmacies)}
           </p>
         </div>
         <div className={cn("border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
-          <p className="mt-1 font-mono text-sm font-bold text-slate-900">
+          <p className="mt-1 tabular-nums text-sm font-bold text-slate-900">
             AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)} ·{" "}
             {formatPharmacyFigure(evidenceSplit(data.amWorkload, data.pmWorkload, actualPharmacies, data.phoenixWorkload), { formatNumber: fmt })}
           </p>
@@ -718,12 +718,12 @@ export function TripWorkloadEvidencePanel({
         </div>
         <div className="border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
-          <p className="mt-1 font-mono text-sm font-bold text-slate-900">
+          <p className="mt-1 tabular-nums text-sm font-bold text-slate-900">
             Planned {fmt(data.regularVisits)} · Unplanned {fmt(data.campaignVisits)}
           </p>
           {/* A manager's visits count to him both ways (owner, 6 Nov 2026): with a rep, and on his own. */}
           {data.managerOwnVisits ? (
-            <p className="mt-0.5 font-mono text-phx-2xs font-bold text-slate-600">
+            <p className="mt-0.5 tabular-nums text-phx-2xs font-bold text-slate-600">
               With a rep {fmt(data.regularVisits + data.campaignVisits - data.managerOwnVisits)} · Own visits{" "}
               {fmt(data.managerOwnVisits)}
             </p>
