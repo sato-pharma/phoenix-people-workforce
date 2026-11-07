@@ -100,10 +100,17 @@ export function runRecruitmentMrHiringStageTests() {
   assert.ok(fresh.open && fresh.step === "screening" && fresh.state === "to_record" && fresh.action === "record_screening", "a new CV waits for HR screening");
   assert.equal(mrStageHeadline(fresh), "Step 1 of 9 · New CV · HR screening", "the headline numbers the step in the email's own words");
 
-  // New CVs only (owner, 7 Nov 2026): a CV received before 8 Nov 00:00 Cairo is not in the workflow at
-  // all — not on the page, no journey, nothing recorded or booked; it finishes in the workspace.
-  assert.equal(isInMrWorkflow("2026-11-07T22:00:00.000Z"), true, "a CV at midnight Cairo on 8 Nov is in the workflow");
-  assert.equal(isInMrWorkflow("2026-11-07T21:59:59.000Z"), false, "a CV from a second before is not");
+  // CVs from 7 Nov (owner, 7 Nov 2026: "all the cvs recieved starting from 7 nov"): a CV received before
+  // 7 Nov 00:00 Cairo is not in the workflow at all — not on the page, no journey, nothing recorded or
+  // booked; it finishes in the workspace.
+  assert.equal(isInMrWorkflow("2026-11-06T22:00:00.000Z"), true, "a CV at midnight Cairo on 7 Nov is in the workflow");
+  assert.equal(isInMrWorkflow("2026-11-06T21:59:59.000Z"), false, "a CV from a second before is not");
+  assert.equal(isInMrWorkflow("2026-11-07T08:40:00.000Z"), true, "a CV of the 7th is listed");
+  assert.equal(
+    isHeldOffChannel({ onOfficialLine: false, receivedAt: "2026-11-07T08:40:00.000Z" }),
+    false,
+    "but the one-channel hold starts with the workflow on the 8th: an email CV of the 7th is listed, never held",
+  );
   assert.equal(isInMrWorkflow(null), false, "a CV with no received date is left out, never guessed in");
   assert.equal(isInMrWorkflow("not a date"), false, "and so is one with an unreadable date");
   const factsDb = stripComments(readFileSync("src/lib/recruitment/mr-hiring/facts-db.ts", "utf8"));

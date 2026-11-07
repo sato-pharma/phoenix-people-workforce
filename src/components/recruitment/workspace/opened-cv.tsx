@@ -309,7 +309,7 @@ export function OpenedCv({
   viewingTab: WorkspaceTabKey | null;
 }) {
   const hr = mode === "hr";
-  /** A Medical Rep CV from 8 November 2026 on, opened by the recruitment team or the CEO — the step strip is drawn. */
+  /** A Medical Rep CV from 7 November 2026 on, opened by the recruitment team or the CEO — the step strip is drawn. */
   const showMrStep = hr && isInMrWorkflow(row.receivedAt) && row.placements.some((placement) => placement.tab === "medical_rep");
   /** The CEO: HR mode without the right to work it. Only the parts the workspace gave him are drawn. */
   const readOnly = hr && !canWork;
