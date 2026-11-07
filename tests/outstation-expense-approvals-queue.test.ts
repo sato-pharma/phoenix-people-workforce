@@ -183,7 +183,9 @@ export function runOutstationExpenseApprovalsQueueTests() {
   // The tabs carry the choice, each awaiting row its reasons and its wait.
   assert.match(model, /return expenseTripTriage\(record\)\?\.triage === tab;/, "HEADLINE: Needs a look and Clean are tabs, read from the one triage rule");
   assert.match(filtersBar, /Oldest first/);
-  assert.match(rail, /const awaiting = state === "pending" && !imported;/, "only an awaiting trip carries its reasons and its wait");
+  assert.match(rail, /const awaiting = state === "pending" && !imported;/, "only an awaiting trip carries its wait");
+  // Owner, 2026-11-07: "show the system's findings on decided rows too".
+  assert.match(rail, /const reading = imported \? null : expenseTripTriage\(record\);/, "HEADLINE: a decided row keeps what the system found — only history has none");
   assert.match(rail, /reading\?\.triage === "look"/);
   assert.match(rail, /expenseTripDaysAwaiting\(record\.submittedAt, actions\.now\)/, "HEADLINE: an awaiting row says how long it has waited");
   const workspaceFile = stripComments(readFileSync(`${dir}/expense-review-workspace.tsx`, "utf8"));
