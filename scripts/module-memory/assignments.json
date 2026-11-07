@@ -1063,6 +1063,7 @@
   "postgrest-neq-on-an-absent-jsonb-key-matches-nothing": "database",
   "postgrest-unbounded-select-silently-stops-at-1000-rows": "database",
   "powershell-get-process-silently-empty-cross-session": "sessions",
+  "pr-89-run-skill-rides-the-next-code-pr": "sessions",
   "pr24-supabase-bridge-prod-lockout": "history",
   "pre-hire-blocks-will-alarm-when-a-reconcile-reaches-january": "crm",
   "premium-closing-export-fills-the-xlsm-engine-never-rebuilds-it": "sales-closing",

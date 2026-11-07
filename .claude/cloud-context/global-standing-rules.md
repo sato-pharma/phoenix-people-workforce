@@ -82,7 +82,7 @@ the primary by absolute path with no error. Never send parallel subagents into o
   tests") — `localhost:3000` here IS the spare's dev server (scheduled task "Phoenix Spare Tunnel"); never start one on
   this laptop while it answers. It runs production's EXACT version on the production database ("POINT DEV TO
   PRODUCTION"; `spare-follow-production.ps1` every 10 min) — never move it to a branch. Tests: `& ~/.claude/scripts/spare-test.ps1 '<command>'` from the checkout (default the
-  whole suite); any other command: `~/.claude/scripts/spare.ps1`. Spare: `ssh phoenix-spare`, D:\Phoenix, 8 GB.
+  whole suite; runs queue one at a time, each in a fresh folder; never `pnpm` there, never a second test folder); any other command: `~/.claude/scripts/spare.ps1`. Spare: `ssh phoenix-spare`, D:\Phoenix, 8 GB.
 - 🔴 **NEVER run a typecheck locally** — bash-guard C8 refuses it; the PR's CI answers. `PHX_TYPECHECK_OK=1 <cmd>`
   stands it down for one watched command.
 - A dev server dies with the session that started it (`dev-server-reaper.mjs`). Stop only one YOUR session started,
