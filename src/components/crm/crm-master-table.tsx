@@ -1199,6 +1199,13 @@ export function CrmMasterTable({
         </div>
       </div>
 
+      {/* The Vacations tab is the iReports360 archive (visit type -4): nothing writes it after the retirement. */}
+      {data.dataset === "vacations" ? (
+        <p className="border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold leading-5 text-sky-800">
+          The annual-vacation days logged in iReports360, up to its retirement on 6 Nov 2026. From then on, leave is the approved vacation requests in Phoenix.
+        </p>
+      ) : null}
+
       {/* Master table with a synced top scrollbar + sticky header. Dims during a pending navigation. */}
       <div className={isPending ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
       {!data.schemaReady ? (

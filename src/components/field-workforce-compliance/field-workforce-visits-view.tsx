@@ -157,7 +157,7 @@ export function FieldWorkforceVisitsView({
       <Card className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="flex items-center gap-2 p-6 text-sm font-semibold text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading this day&apos;s visits from iReports360&hellip;
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading this day&apos;s visits from Phoenix CRM&hellip;
           </div>
         ) : error ? (
           <div className="p-6 text-sm font-semibold text-rose-700">{error}</div>
@@ -238,7 +238,7 @@ export function FieldWorkforceVisitsView({
       {!loading && !error ? <FieldWorkforceRouteMap checkins={checkins} route={route} /> : null}
 
       <p className="text-xs font-semibold text-slate-400">
-        {visits.length} visit(s) &middot; {checkins.length} GPS check-in(s) &middot; pulled live from iReports360 &middot; read-only.
+        {visits.length} visit(s) &middot; {checkins.length} GPS check-in(s) &middot; read live from Phoenix CRM (the iReports360 archive before the team&apos;s start) &middot; read-only.
       </p>
     </div>
   );

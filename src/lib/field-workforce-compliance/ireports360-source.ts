@@ -53,6 +53,8 @@ import type { IReports360Visit } from "@/lib/crm/vendor-row-types";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility";
 import { buildFieldWorkforceAttendanceCrossCheck } from "@/lib/field-workforce-compliance/attendance-cross-check";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { loadFieldLeaveDaysFromHr } from "@/lib/crm/hr-leave-days";
+import { loadManagerOwnVisitDays } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 
@@ -388,6 +390,10 @@ export function buildIReports360FieldWorkforceMatrix(input: {
    * title still get a row so their office attendance can be cross-checked against CRM
    * activity. Optional/defaults empty so existing callers are unaffected. */
   deviceMappedHrKeys?: Set<string>;
+  /** `${canonicalHrIdKey}|${YYYY-MM-DD}` days HR approved as leave, from the day iReports360 was retired
+   * (crm/hr-leave-days.ts). A day with no visit and no worked proof in this set is "AV", never "N". Optional,
+   * defaults empty, so the archive's own -4 alone answers before that day. */
+  hrLeaveKeys?: ReadonlySet<string>;
   month: number;
   /** `${canonicalHrIdKey}|${YYYY-MM-DD}` pairs Phoenix CRM proves worked. A day with no mirror
    * visit but in this set is "CP" (worked, non-numeric), never "N". Optional, defaults empty. */
@@ -411,6 +417,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   const deviceMappedHrKeys = input.deviceMappedHrKeys ?? new Set<string>();
   const todayIso = input.todayIso ?? null;
   const phoenixWorkedKeys = input.phoenixWorkedKeys ?? new Set<string>();
+  const hrLeaveKeys = input.hrLeaveKeys ?? new Set<string>();
   const monthPrefix = `${year}-${pad2(month)}`;
   const dayCount = daysInMonth(year, month);
   const dateIsos = Array.from({ length: dayCount }, (_, index) => `${monthPrefix}-${pad2(index + 1)}`);
@@ -591,6 +598,9 @@ export function buildIReports360FieldWorkforceMatrix(input: {
       // The mirror view hides Phoenix CRM work until the rep's team is started, so a day Phoenix
       // proves worked is a worked day, not a no-activity candidate.
       if (hrKey && phoenixWorkedKeys.has(`${hrKey}|${dateIso}`)) return "CP";
+      // Approved HR leave is the leave record once iReports360 stopped writing its -4 (6 Nov 2026): a leave
+      // day, never a no-activity candidate. Worked proof above still wins the day.
+      if (hrKey && hrLeaveKeys.has(`${hrKey}|${dateIso}`)) return "AV";
       // Today has not ended: a rep with nothing logged yet is not a no-activity day, so it stays
       // blank like a future day and is never judged (owner, 2026-10-26).
       if (todayIso && dateIso === todayIso) return null;
@@ -920,6 +930,47 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     };
   }
 
+  // A MANAGER'S OWN SINGLE VISITS are a worked day too (owner, 2026-10-19: "proof he worked the day"). They
+  // sit in phoenix_crm_manager_visits, outside the mirror and the work-evidence read. Best-effort, like the
+  // Phoenix read above: a failure says so and never empties the Phoenix days already read.
+  let managerOwnVisitWarning: { code: string; message: string; severity: "warning" } | null = null;
+  try {
+    for (const day of await loadManagerOwnVisitDays({ end: endDate, start: startDate })) {
+      const hrKey = day.visits > 0 ? canonicalHrIdKey(day.hrId) : null;
+      if (hrKey) phoenixWorkedKeys.add(`${hrKey}|${day.date}`);
+    }
+  } catch (error) {
+    managerOwnVisitWarning = {
+      code: "manager_own_visits_unavailable",
+      message: `A manager's own Phoenix CRM visits could not be read this month: ${error instanceof Error ? error.message : "read failed"}. A no-activity day may be a day of the manager's own visits.`,
+      severity: "warning",
+    };
+  }
+
+  // APPROVED HR LEAVE, from the day iReports360 was retired (crm/hr-leave-days.ts) — the leave record once
+  // nothing writes the -4 code. Read for the directory's people, so the read is batched.
+  let hrLeaveKeys = new Set<string>();
+  let hrLeaveWarning: { code: string; message: string; severity: "warning" } | null = null;
+  try {
+    const { days } = await loadFieldLeaveDaysFromHr({
+      employeeHrIds: directory.map((employee) => employee.hrId).filter((hrId): hrId is string => Boolean(hrId)),
+      end: endDate,
+      start: startDate,
+    });
+    hrLeaveKeys = new Set(
+      [...days].flatMap(([hrId, dates]) => {
+        const hrKey = canonicalHrIdKey(hrId);
+        return hrKey ? [...dates].map((date) => `${hrKey}|${date}`) : [];
+      }),
+    );
+  } catch (error) {
+    hrLeaveWarning = {
+      code: "hr_leave_unavailable",
+      message: `Approved HR leave could not be read this month: ${error instanceof Error ? error.message : "read failed"}. A no-activity day from 6 Nov 2026 may be an approved leave day.`,
+      severity: "warning",
+    };
+  }
+
   // Head Office / office-based staff earn a Team Calendar row via fingerprint device
   // enrollment rather than a field-eligible title (see the `eligible` filter comment in
   // buildIReports360FieldWorkforceMatrix). Best-effort: loadActiveDeviceMappedHrIds normalizes
@@ -944,6 +995,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   const { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, ownSplitByHrKeyAndDate, rideAlongSplitByHrKeyAndDate, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
     deviceMappedHrKeys,
     employees: directory,
+    hrLeaveKeys,
     month,
     phoenixWorkedKeys,
     todayIso: input.todayIso ?? null,
@@ -1023,6 +1075,8 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
   const warnings = [...preview.warnings];
   if (deviceMappedWarning) warnings.push(deviceMappedWarning);
   if (phoenixEvidenceWarning) warnings.push(phoenixEvidenceWarning);
+  if (managerOwnVisitWarning) warnings.push(managerOwnVisitWarning);
+  if (hrLeaveWarning) warnings.push(hrLeaveWarning);
   if (unresolvedHrIds.length > 0) {
     const sample = unresolvedHrIds.slice(0, 8).join(", ");
     warnings.push({

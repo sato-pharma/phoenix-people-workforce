@@ -109,10 +109,13 @@ export function runDeadTelegramLinkAlertTests(): void {
     );
     assert.ok(passes >= 29, "the daily job must not silently LOSE passes either");
     const destructure = daily.slice(daily.indexOf("  const ["), daily.indexOf("] = await Promise.all(["));
-    // Order, never "last": see the note in tests/crm-account-setup-reminder.test.ts.
+    // Order, never "last" — "last" is only true until the next sub-job lands. Anchored on the Needs
+    // You weekly email (position 27): the account-setup reminder that sat between them was retired on
+    // 2026-11-07, and an anchor that is no longer in the file reads as -1 and would pass for anything.
+    assert.ok(destructure.indexOf("needsYouWeeklyEmail") > 0, "the anchor must really be in the destructure");
     assert.ok(
-      destructure.indexOf("deadTelegramLinkAlert") > destructure.indexOf("crmAccountSetupReminder"),
-      "named AFTER position 28, so positions 1-28 keep their meaning",
+      destructure.indexOf("deadTelegramLinkAlert") > destructure.indexOf("needsYouWeeklyEmail"),
+      "named AFTER position 27, so positions 1-27 keep their meaning",
     );
   }
 }

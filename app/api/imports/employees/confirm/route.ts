@@ -4,7 +4,6 @@ import { isSalaryBlindRole } from "@/lib/auth/hr-functions";
 import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
-import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
@@ -1422,20 +1421,15 @@ export async function POST(request: Request) {
     // the finance landing kept the old headcount for up to their 300s TTL (cache audit, 2026-10-26).
     invalidateExecutiveDashboardCache("employee import confirmed", ["employees", "vacancies", "payroll"]);
 
-    // Every employee the sheet CREATED needs an iReports360 (CRM) account before their field work
-    // can be matched to them — owner instruction 2026-09-07. `rowsToInsert` is the same list access
-    // provisioning uses above, so the two can never disagree about who is new. Rows the import only
-    // UPDATED are deliberately excluded: those people already existed and were never announced.
+    // Each employee the sheet CREATED gets a company email (owner instruction 2026-09-18).
+    // `rowsToInsert` is the same list access provisioning uses above, so the two can never disagree
+    // about who is new. Rows the import only UPDATED are deliberately excluded: those people already
+    // existed and were never announced. The cache is cleared first, on purpose: the notice reads each
+    // new hire back out of the directory, and a stale read would send a notice full of blanks.
     //
-    // The cache is cleared first, on purpose: the notice reads each new hire's line, area, region
-    // and manager back out of the directory, and a stale read would send a notice full of blanks.
+    // The iReports360 account-setup notice that used to go out here is RETIRED (2026-11-07): the
+    // vendor CRM was retired on 6 Nov 2026 and Phoenix CRM is the only source of field work.
     if (dryRunResult.rowsToInsert.length > 0) {
-      await openAndAnnounceCrmAccountSetup({
-        actorId: access.loginId ?? access.hrId ?? access.role,
-        hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),
-        source: "employee_import",
-      });
-      // And each one's company email (owner instruction 2026-09-18), from the same list.
       await openAndAnnounceNewHireMailboxes({
         actorId: access.loginId ?? access.hrId ?? access.role,
         hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),

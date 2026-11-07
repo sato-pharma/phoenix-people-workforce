@@ -551,11 +551,12 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // Placed BEFORE the Phoenix CRM block for the reason stated two comments up — that block is pinned
   // as the chain's last line, and these two guard disjoint modules, so the order changes nothing.
   const needsYouOwnerOnly = enforceNeedsYouOwnerOnlyEmail(withoutOutstationRejectionEmail, input.module, input.recipientHrId);
-  // The TELEGRAM axis on the two routine "it worked" ops confirmations (owner rule 2026-10-15:
-  // "stop the routine sync-success alerts reaching my Telegram"). Keyed on the SUCCESS event types
-  // alone, so `ireports360_sync_failed` and `background_jobs_run_failed` keep every channel they
-  // had — a guard on the module or on the job would have silenced the failures along with the
-  // noise, which is the one outcome worse than the noise. Placed BEFORE the Phoenix CRM blocks for
+  // The TELEGRAM axis on the routine "it worked" ops confirmation (owner rule 2026-10-15:
+  // "stop the routine sync-success alerts reaching my Telegram"; the iReports360 one left with the
+  // vendor sync on 7 Nov 2026). Keyed on the SUCCESS event type alone, so
+  // `background_jobs_run_failed` keeps every channel it had — a guard on the module or on the job
+  // would have silenced the failures along with the noise, which is the one outcome worse than the
+  // noise. Placed BEFORE the Phoenix CRM blocks for
   // the reason stated two comments up: that push block is pinned as the chain's last line, and
   // these guard disjoint sets, so the order changes nothing. See ops-success-digest-channel-guard.ts.
   const withoutOpsSuccessTelegram = enforceOpsSuccessTelegramBlock(needsYouOwnerOnly, input.eventType);

@@ -1,138 +1,72 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
-import {
-  daysOpen,
-  overdueTasks,
-  reminderMessage,
-  REMINDER_AFTER_DAYS,
-} from "../src/lib/crm/account-setup-reminder.ts";
-import type { CrmAccountSetupTaskRow } from "../src/lib/crm/account-setup.ts";
+import { notificationRoleKeys } from "../src/lib/notifications/role-recipients.ts";
 
 /**
- * The reminder for a CRM account task nobody acted on.
+ * 🔴 THE iREPORTS360 ACCOUNT-SETUP NOTICE AND ITS DAILY REMINDER ARE RETIRED (2026-11-07).
  *
- * `account-setup-notify.ts` speaks ONCE, when the employee is added, and never again. Measured
- * 2026-09-28: seven tasks open, the oldest eight days, and five medical reps unable to use Phoenix
- * CRM at all because of them — no iReports360 account means no contacts to carry over, no customer
- * list, and so no way to plan or record a visit. Nothing was red anywhere; the one notice had
- * scrolled away days earlier.
+ * From 2026-09-07 every new field hire opened a task and told the SFE Manager and HR Operations, by
+ * email and in-app, to give that person an iReports360 account; from 2026-09-28 a daily reminder
+ * (in-app and Telegram, 06:36 Cairo) chased every task older than two days. The vendor CRM was retired
+ * on 6 Nov 2026 (crm_cutover.vendor_sync_retired_at) and Phoenix CRM is the only source of field work —
+ * the owner: "ANY SINGLE SOURCE OF FIELD WORK IS NOW THE PHOENIX CRM WIRE IT EVERY WHERE". Nobody can be
+ * given an iReports360 account any more, so the reminder was asking for something that cannot be done:
+ * on 7 Nov 2026 it had 38 people "waiting", the newest opened the evening before.
  *
- * What this pins, in the order a failure would cost most:
+ * What this pins — that it can never fire again from any door:
+ *   1. the sender and the reminder modules are gone;
+ *   2. the daily job neither imports nor runs the reminder, and still counts its passes truthfully;
+ *   3. none of the three employee-create doors announces a new hire for an iReports360 account;
+ *   4. the `crm_account_setup_alert` audience and the `crm_account_setup.*` policy row are gone, so the
+ *      recipients screen and the email control center no longer list it.
  *
- *   1. A CLEAN QUEUE TELLS NOBODY, and neither does a task opened today. A reminder that arrives
- *      every morning whatever the state is muted inside a week — the owner's own ruling on the 06:55
- *      CRM digest, and the reason that digest now waits for a territory's first real use.
- *   2. NEVER EMAIL. The first notice already emails; a second daily email about the same person is
- *      what gets the whole module filtered.
- *   3. NO SCHEDULE OF ITS OWN. A JOB_SCHEDULES declaration whose cron job does not exist reads to
- *      job-heartbeat-assess as a job that has STOPPED and Telegrams every Super Admin for ever.
+ * The bell category "crm" deliberately stays (src/lib/notifications/recipients.ts): the reminders
+ * already sent are history, and history is never hidden.
  */
 export function runCrmAccountSetupReminderTests(): void {
   const source = (path: string) => stripComments(readFileSync(path, "utf8"));
 
-  const task = (name: string, openedAt: string, area: string | null = "Minia 1", line: string | null = "Pedia"): CrmAccountSetupTaskRow =>
-    ({
-      crmId: null,
-      crmUsername: null,
-      employeeFound: true,
-      employmentStatus: "active",
-      id: name,
-      openedAt,
-      resolutionNote: null,
-      resolvedAt: null,
-      resolvedByHrId: null,
-      source: "manual_add",
-      status: "pending",
-      subject: {
-        areaName: area,
-        displayName: name,
-        hireDate: null,
-        hrId: `PD-${name.length}`,
-        jobTitle: "Medical Representative",
-        lineName: line,
-        managerName: null,
-        mobileNumber: null,
-        regionName: null,
-        workEmail: null,
-      },
-    }) as CrmAccountSetupTaskRow;
-
-  // ── 1. The age arithmetic ───────────────────────────────────────────────────────────────────────
+  // ── 1. The sender and the reminder are gone ───────────────────────────────────────────────────
   {
-    assert.equal(daysOpen("2026-09-20", "2026-09-28"), 8, "eight whole days");
-    assert.equal(daysOpen("2026-09-28", "2026-09-28"), 0, "opened today is nothing yet");
-    assert.equal(daysOpen("2026-09-28T23:45:00+00:00", "2026-09-28"), 0, "a timestamp is read by its DAY, not its clock");
-    assert.equal(daysOpen("2026-09-29", "2026-09-28"), 0, "clock skew never reads as a negative age");
-    assert.equal(daysOpen("", "2026-09-28"), 0, "an unparseable date is 0, never NaN on a manager's screen");
+    assert.equal(existsSync("src/lib/crm/account-setup-reminder.ts"), false, "the daily iReports360 reminder module must stay deleted");
+    assert.equal(existsSync("src/lib/crm/account-setup-notify.ts"), false, "the new-hire iReports360 notice module must stay deleted");
+    const words = source("src/lib/crm/account-setup-messages.ts");
+    for (const gone of ["CRM_ACCOUNT_SETUP_AUDIENCE", "CRM_ACCOUNT_SETUP_CHANNELS", "crmAccountSetupTitle", "crmAccountSetupMessage", "crmAccountSetupEmailSummary", "CRM_ACCOUNT_SETUP_CTA_LABEL"]) {
+      assert.ok(!words.includes(gone), `${gone} was only the retired notice's words — it must not come back`);
+    }
+    assert.ok(!/iReports360/i.test(words), "nothing the tab still shows may ask for an iReports360 account");
   }
 
-  // ── 2. 🔴 A clean queue, and a fresh task, tell NOBODY ───────────────────────────────────────────
+  // ── 2. The daily job no longer runs it, and its count stays truthful ──────────────────────────
   {
-    assert.equal(REMINDER_AFTER_DAYS, 2, "a task is late after two days, not on the day it opens");
-    assert.deepEqual(overdueTasks([], "2026-09-28"), [], "an empty queue is the good outcome and says nothing");
-    assert.deepEqual(
-      overdueTasks([task("Opened today", "2026-09-28"), task("Opened yesterday", "2026-09-27")], "2026-09-28"),
-      [],
-      "the first notice is still the freshest thing said — a reminder now would only teach him to ignore it",
-    );
-
-    const overdue = overdueTasks(
-      [task("Newest", "2026-09-26"), task("Oldest", "2026-09-20"), task("Today", "2026-09-28"), task("Middle", "2026-09-24")],
-      "2026-09-28",
-    );
-    assert.deepEqual(overdue.map((row) => row.subject.displayName), ["Oldest", "Middle", "Newest"], "oldest first, and today's is not there at all");
-  }
-
-  // ── 3. The words say the cost, not just the count ───────────────────────────────────────────────
-  {
-    const text = reminderMessage(overdueTasks([task("Jonia Wageh", "2026-09-20"), task("Merna Magdy", "2026-09-24", "Assuit 1")], "2026-09-28"), "2026-09-28");
-    assert.match(text, /2 new people are still waiting/, "the count opens it");
-    assert.match(text, /• Jonia Wageh — Minia 1 · Pedia — waiting 8 days/, "each person, where, and how long");
-    assert.match(text, /• Merna Magdy — Assuit 1 · Pedia — waiting 4 days/);
-    assert.ok(text.indexOf("Jonia Wageh") < text.indexOf("Merna Magdy"), "oldest first in the words too");
-    assert.match(text, /can neither plan a visit nor record one/, "WHY it matters, in a sentence a non-engineer acts on");
-    assert.match(text, /CRM username and code/, "and what to actually do");
-
-    const single = reminderMessage(overdueTasks([task("Solo", "2026-09-20")], "2026-09-28"), "2026-09-28");
-    assert.match(single, /1 new person is still waiting/, "one person reads as one person");
-    assert.match(single, /waiting 8 days/);
-    const oneDay = reminderMessage([task("Solo", "2026-09-26")], "2026-09-27");
-    assert.match(oneDay, /waiting 1 day\b/, "one day is not '1 days'");
-  }
-
-  // ── 4. Never email, and one send per day ────────────────────────────────────────────────────────
-  {
-    const reminder = source("src/lib/crm/account-setup-reminder.ts");
-    assert.ok(/channels: \["in_app", "telegram"\],/.test(reminder), "in-app and Telegram");
-    assert.ok(!/"email"/.test(reminder), "the reminder must never name the email channel — the first notice already emails");
-    assert.ok(
-      /idempotencyKey: `crm_account_setup:reminder:\$\{cairoToday\}`/.test(reminder),
-      "keyed per DAY, so a second run of the daily job cannot send it twice and tomorrow's is still new",
-    );
-    assert.ok(/resolveNotificationPersonRecipients\(CRM_ACCOUNT_SETUP_AUDIENCE/.test(reminder), "the audience is the admin-editable policy, never a hardcoded person");
-  }
-
-  // ── 5. It rides the daily job and declares no schedule ──────────────────────────────────────────
-  {
-    assert.ok(
-      !/crm[-_]account[-_]setup/i.test(source("src/lib/observability/job-schedule.ts")),
-      "NO JOB_SCHEDULES entry: a declaration with no cron job behind it reads as a STOPPED job and pages every Super Admin for ever",
-    );
     const daily = source("app/api/notifications/daily/route.ts");
-    assert.ok(/runCrmAccountSetupReminder\(\)\.catch\(/.test(daily), "it runs in the daily job, with its own catch like every other pass");
-    // The sub-job COUNT is checked mechanically in tests/dead-telegram-link-alert.test.ts, against
-    // the number of passes actually present. A literal here would break on every future sub-job,
-    // which teaches the next session to edit the number rather than read it.
-    // APPENDED, never inserted: the file records two real off-by-one incidents from doing otherwise.
-    const destructure = daily.slice(daily.indexOf("  const ["), daily.indexOf("] = await Promise.all(["));
-    // APPENDED, not inserted — asserted as ORDER rather than as "last", because "last" is only true
-    // until the next sub-job lands, and would then fail for a change that is perfectly correct.
+    assert.ok(!/account-setup-reminder/.test(daily), "the daily job must not import the retired reminder");
+    assert.ok(!/runCrmAccountSetupReminder|crmAccountSetupReminder|crm-account-setup-reminder/.test(daily), "the daily job must neither run nor name the retired reminder");
+    // The pass COUNT is checked against reality in tests/dead-telegram-link-alert.test.ts; here only
+    // that the retirement took its count with it, so the run summary does not claim a 30th job.
+    assert.equal(Number(/const totalJobs = (\d+);/.exec(daily)?.[1] ?? "0"), 29, "the reminder's retirement takes the daily count from 30 to 29");
+  }
+
+  // ── 3. No employee-create door announces a new hire for an iReports360 account ───────────────
+  {
+    for (const path of ["app/api/employees/route.ts", "app/api/imports/employees/confirm/route.ts", "src/lib/offers/joining-form-service.ts"]) {
+      const code = source(path);
+      assert.ok(!/openAndAnnounceCrmAccountSetup|account-setup-notify/.test(code), `${path} must not announce a new hire for an iReports360 account`);
+      assert.ok(!/openCrmAccountSetupTasks\(/.test(code), `${path} must not open a CRM account task on its own either`);
+      assert.ok(/openAndAnnounceNewHireMailboxes\(/.test(code), `${path} still runs the new-hire mailbox follow-up — only the iReports360 ask left`);
+    }
+  }
+
+  // ── 4. The audience and the policy row are gone ─────────────────────────────────────────────────
+  {
     assert.ok(
-      destructure.indexOf("crmAccountSetupReminder") > destructure.indexOf("needsYouWeeklyEmail"),
-      "named AFTER position 27, so positions 1-27 keep their meaning",
+      !(notificationRoleKeys as readonly string[]).includes("crm_account_setup_alert"),
+      "the crm_account_setup_alert audience must not be offered on the recipients screen any more",
     );
+    assert.ok(!/crm_account_setup_alert/.test(source("src/lib/notifications/email-control-center.ts")), "the email control center must not list the retired audience");
+    assert.ok(!/"crm_account_setup\.\*"/.test(source("src/lib/notifications/policy.ts")), "the crm_account_setup.* policy row must stay retired");
   }
 }

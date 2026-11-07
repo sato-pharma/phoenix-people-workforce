@@ -870,7 +870,7 @@ function visitsSplit({ people, visitsAvailable }: PackInput): PackSection | null
           }
         : null,
     align: ["left", "right", "right", "right", "right", "right", "right"],
-    columns: ["Person", "Field visits", "AM", "PM", "Pharmacies", "Regular", "Campaign"],
+    columns: ["Person", "Field visits", "AM", "PM", "Pharmacies", "Planned", "Unplanned"],
     metric: "visits-split",
     // The owner's golden rule, carried with the figures that obey it.
     note: withPharmacyNote(
@@ -908,10 +908,10 @@ function coverageFrequency({ people, visitsAvailable }: PackInput): PackSection 
   if (reached.length === 0) return null;
   return {
     align: ["left", "right", "right", "right", "right", "right", "right"],
-    columns: ["Person", "Customers reached", "AM", "PM", "Pharmacies", "Regular visits", "Visits per customer"],
+    columns: ["Person", "Customers reached", "AM", "PM", "Pharmacies", "Planned visits", "Planned visits per customer"],
     metric: "coverage-frequency",
     note: withPharmacyNote(
-      "From the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the regular visits each received on average. Coverage and frequency against each rep's PLAN are the CRM KPIs board's, in \"Coverage, frequency and call rate\". Customers are unions, so these rows are never totalled.",
+      "From the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the planned visits each received on average. Coverage and frequency against each rep's PLAN are the CRM KPIs board's, in \"Coverage, frequency and call rate\". Customers are unions, so these rows are never totalled.",
       reached.map((person) => [customerSplitOf(person), person.customerVisitSplit ?? person.visitSplit] as const),
     ),
     rows: reached.map((person) => [

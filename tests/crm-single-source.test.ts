@@ -50,7 +50,7 @@ const otherMirrorRef: RegExp[] = [
 export const CRM_VISITS_MIRROR_ALLOW_LIST: Readonly<Record<string, string>> = {
   "src/lib/crm/tables.ts": "defines the table-name constants",
   "src/lib/crm/reads.ts": "THE read door itself",
-  "src/lib/crm/schema.ts": "schema-readiness probes",
+  "src/lib/crm/schema.ts": "schema-readiness probes — they ask the unified visits door, never the vendor table (7 November 2026)",
   "src/lib/crm/admin.ts": "sync-run ledger and the unmapped-identity punch-list behind identity resolution",
   "src/lib/crm/customer-brick.ts": "distinct contact scan feeding the customer→brick resolution table",
   "src/lib/crm/region-brick.ts": "distinct CRM region scan feeding the region→brick resolution table",
@@ -72,7 +72,6 @@ export const CRM_VISITS_MIRROR_ALLOW_LIST: Readonly<Record<string, string>> = {
 export const CRM_OTHER_MIRROR_ALLOW_LIST: readonly string[] = [
   "src/lib/crm/tables.ts",
   "src/lib/crm/reads.ts",
-  "src/lib/crm/schema.ts",
   "src/lib/crm/admin.ts",
   "src/lib/crm/identity.ts",
   "src/lib/crm/master.ts",
@@ -129,6 +128,16 @@ export function crmModuleMirrorViolations(
 }
 
 export function runCrmSingleSourceTests() {
+  // The readiness probe asks the door every visits read goes through, never the retired vendor table
+  // (7 November 2026): a vendor table that answers says nothing about the door the screens read.
+  const schemaProbes = readFileSync("src/lib/crm/schema.ts", "utf8");
+  const readyBody = schemaProbes.slice(
+    schemaProbes.indexOf("export async function isCrmVisitsSchemaReady("),
+    schemaProbes.indexOf("export async function probeCrmVisitsUnifiedView("),
+  );
+  assert.match(readyBody, /\.from\(CRM_VISITS_UNIFIED_VIEW\)/, "the visits readiness probe asks the unified door");
+  assert.equal(/CRM_VISITS_TABLE|ireports360_visits/.test(readyBody), false, "never the vendor visits table");
+
   const files: string[] = [];
   walkTsFiles("src", files);
   walkTsFiles("app", files);

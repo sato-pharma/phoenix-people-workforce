@@ -798,7 +798,9 @@ const SFE_NAV_ITEMS = [
   { href: "/employee-360",                           icon: Users,        label: "Employee 360",       sub: "Field-force performance profile" },
   { href: "/sales/territory-management",             icon: Waypoints,    label: "Territory",          sub: "Bricks, areas & coverage" },
   { href: "/admin/crm",                              icon: MapPinned,    label: "CRM Workspace",      sub: "Visits, check-ins & contacts" },
-  { href: "/admin/crm-integrity",                    icon: ShieldCheck,  label: "CRM Integrity",      sub: "Check-in vs visit correlation" },
+  // Was CRM Integrity (/admin/crm-integrity), the iReports360 visit-against-check-in match, until the
+  // vendor was retired on 6 Nov 2026. Phoenix CRM's own position checks replace it, in the same slot.
+  { href: "/admin/phoenix-crm/integrity",            icon: ShieldCheck,  label: "Location Integrity", sub: "Visits that do not hold up" },
   { href: "/probation",                              icon: ClipboardCheck, label: "Probation",        sub: "SFE assessments & decisions" },
   { href: "/business-review",                     icon: LayoutDashboard, label: "Business Review", sub: "Live business review, any period" },
 ];

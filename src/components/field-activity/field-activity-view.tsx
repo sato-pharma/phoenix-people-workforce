@@ -384,7 +384,7 @@ function DayCard({ day, subjectName }: { day: Day; subjectName: string }) {
                 iReports360 GPS fix and every one of them lands in this list — under a heading that said
                 there was no GPS behind it, while Phoenix had measured the distance all along. The
                 heading now says what is actually true, and each row carries its own measurement. */}
-            Recorded on this day with no iReports360 check-in to match
+            Recorded on this day with no separate GPS check-in to match
           </h4>
           <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
             {day.unlocated.map((item, index) => (
