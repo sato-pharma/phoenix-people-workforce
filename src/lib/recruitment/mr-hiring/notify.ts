@@ -6,6 +6,12 @@
 // §8–§9: the NSM's recommendation is the HR Manager's cue for the final decision, so it reaches the
 // HR Manager the moment it is written.
 //
+// §3 → §4: when HR PASSES the 1st interview and confirms the area and the line, the manager of that
+// area on that line is told — the DSM, or the line's NSM where the area has no real DSM (owner,
+// 7 Nov 2026: "the manager of this area must receive in-app, telegram and email … the managers must
+// be informed in all ways", plus a banner on his portal home — area-notices.ts).
+//
+// THAT NOTICE IS THE ONE EMAIL HERE, BY THE OWNER'S WORD OF 7 NOV 2026. The two below stay
 // NEVER EMAIL, NEVER THE CANDIDATE. Both pass their channels explicitly and each has its own
 // `recruitment.<event>` row in src/lib/notifications/policy.ts, so the `recruitment.*` default (which
 // carries email) can never apply. A notice is best-effort: an interview still books, and a result
@@ -20,9 +26,12 @@ import { MR_ROUND_LABELS, type MrInterviewRound, type MrPlatform } from "@/lib/r
 /** The event types — `recruitment.<event>` in the notification policy. */
 export const MR_INTERVIEW_BOOKED_EVENT = "mr_interview_booked";
 export const MR_RECOMMENDATION_READY_EVENT = "mr_recommendation_ready";
+export const MR_CANDIDATE_FOR_YOUR_AREA_EVENT = "mr_candidate_for_your_area";
 
 /** The channels both notices use. Email is never one of them. */
 export const MR_NOTICE_CHANNELS = ["in_app", "push", "telegram"] as const;
+/** The area manager's notice goes every way there is (owner, 7 Nov 2026), email included. */
+export const MR_AREA_MANAGER_CHANNELS = ["in_app", "push", "telegram", "email"] as const;
 
 export const MR_PORTAL_INTERVIEWS_HREF = "/employee-portals/recruitment-candidates#mr-interviews";
 export const MR_HIRING_PAGE_HREF = "/recruitment/mr-hiring";
@@ -60,6 +69,8 @@ export function mrInterviewBookedMessage(input: {
 
 export async function notifyMrInterviewBooked(input: {
   bookingId: string;
+  /** Set when an interview was MOVED: its old start, so the notice says so and is a notice of its own. */
+  movedFrom?: string | null;
   candidateId: string;
   candidateName: string;
   round: MrInterviewRound;
@@ -87,13 +98,19 @@ export async function notifyMrInterviewBooked(input: {
           actionUrl: mrInterviewNoticeHref(seat, input.candidateId),
           channels: [...MR_NOTICE_CHANNELS],
           eventType: MR_INTERVIEW_BOOKED_EVENT,
-          message: mrInterviewBookedMessage(input),
+          message: input.movedFrom ? `Moved from ${cairoWhen(input.movedFrom)}. ${mrInterviewBookedMessage(input)}` : mrInterviewBookedMessage(input),
           // The seat is in the key: a group of ONE recipient keeps the key unsuffixed, so two groups
           // of one (the HR Manager and the NSM on a joint final) would otherwise land on one row.
-          metadata: { bookingId: input.bookingId, candidateId: input.candidateId, idempotencyKey: `mr-interview-booked:${input.bookingId}:${seat}` },
+          metadata: {
+            bookingId: input.bookingId,
+            candidateId: input.candidateId,
+            idempotencyKey: input.movedFrom
+              ? `mr-interview-moved:${input.bookingId}:${input.startsAt}:${seat}`
+              : `mr-interview-booked:${input.bookingId}:${seat}`,
+          },
           module: "recruitment",
           priority: "high",
-          title: `Interview booked: ${input.candidateName}`,
+          title: input.movedFrom ? `Interview moved: ${input.candidateName}` : `Interview booked: ${input.candidateName}`,
         },
         hrIds,
       ).catch(() => {}),
@@ -125,4 +142,56 @@ export async function notifyMrRecommendationReady(input: {
     },
     recipients,
   ).catch(() => {});
+}
+
+/** The area manager's notice — pure, so its wording is pinned by a test. Never the CV or the salary. */
+export function mrAreaCandidateMessage(input: { candidateName: string; areaName: string; lineLabel: string; seat: "dsm" | "nsm" }): string {
+  const whose = input.seat === "dsm" ? "your area" : "an area with no DSM on your line";
+  return `${input.candidateName} passed HR's 1st interview for ${whose}: ${input.areaName}, ${input.lineLabel} line. HR books the DSM interview next — you will be told when it is booked.`;
+}
+
+export async function notifyMrAreaManagers(input: {
+  candidateId: string;
+  candidateName: string;
+  areaName: string;
+  lineLabel: string;
+  resultId: string;
+  seat: "dsm" | "nsm";
+  hrIds: string[];
+}): Promise<void> {
+  const recipients = Array.from(new Set(input.hrIds.map((hrId) => String(hrId ?? "").trim().toUpperCase()).filter(Boolean)));
+  if (recipients.length === 0) return;
+  const message = mrAreaCandidateMessage(input);
+  const title = `New Medical Rep candidate for ${input.areaName}`;
+  await Promise.all(
+    recipients.map((hrId) =>
+      createSystemNotificationForRecipients(
+        {
+          actionUrl: MR_PORTAL_INTERVIEWS_HREF,
+          channels: [...MR_AREA_MANAGER_CHANNELS],
+          email: {
+            ctaHref: MR_PORTAL_INTERVIEWS_HREF,
+            ctaLabel: "Open My Medical Rep interviews",
+            employeeHrId: hrId,
+            metrics: [
+              { label: "Candidate", value: input.candidateName },
+              { label: "Area", value: input.areaName },
+              { label: "Line", value: input.lineLabel },
+            ],
+            recipientMode: "employee",
+            subject: title,
+            summary: message,
+            title,
+          },
+          eventType: MR_CANDIDATE_FOR_YOUR_AREA_EVENT,
+          message,
+          metadata: { candidateId: input.candidateId, idempotencyKey: `mr-area-candidate:${input.resultId}:${hrId}` },
+          module: "recruitment",
+          priority: "high",
+          title,
+        },
+        [hrId],
+      ).catch(() => {}),
+    ),
+  );
 }

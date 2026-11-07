@@ -1861,7 +1861,10 @@ export const accessRegistry = [
   // Talent Acquisition and the NSM who proposed it.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/result", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/recommendation", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/book", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "PATCH"], pattern: "/api/recruitment/mr-hiring/*/book", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // "Got it" on the portal home's banner (owner, 7 Nov 2026): a manager dismisses his own notice of a
+  // candidate HR passed for his area; the domain matches the row to his own HR id.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/area-notices/*/seen", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/mr-hiring/*/journey", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/recruitment/mr-hiring/*/cv", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/shares", permission: null, guard: "domain-helper", csrfRequired: true }),

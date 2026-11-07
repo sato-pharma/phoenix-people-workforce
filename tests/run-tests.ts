@@ -2640,6 +2640,7 @@ import { runInterviewRoleAndOutcomeTests } from "./interview-role-and-outcome.te
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
 import { runRecruitmentMrHiringAccessTests } from "./recruitment-mr-hiring-access.test.ts";
+import { runRecruitmentMrHiringAreaNoticeTests } from "./recruitment-mr-hiring-area-notice.test.ts";
 import { runRecruitmentMrHiringBookingTests } from "./recruitment-mr-hiring-booking.test.ts";
 import { runRecruitmentMrHiringStageTests } from "./recruitment-mr-hiring-stage.test.ts";
 import { runInterviewManagerShareTests } from "./interview-manager-share.test.ts";
@@ -10311,6 +10312,11 @@ await runTest(
 await runTest(
   "Medical Rep hiring follows the 8 November 2026 workflow step for step: a new CV waits for HR screening, a CV that reached no company WhatsApp after the start is held, each interview reads To book / Booked / Waiting for a named person, HR may decide without the DSM only once the DSM interview has ended, the joint final skips the 3rd interview, then the NSM recommendation, the HR Manager's decision and the offer (expired shown only)",
   runRecruitmentMrHiringStageTests,
+);
+
+await runTest(
+  "Medical Rep hiring, 7 November 2026: HR's pass at the 1st interview tells the area's DSM — or the line's NSM where the area has no real DSM — in-app, by push, Telegram and email and on a banner on his portal home he dismisses himself; and HR moves a booked interview, a missed phone call included, until its result is in",
+  runRecruitmentMrHiringAreaNoticeTests,
 );
 
 await runTest(

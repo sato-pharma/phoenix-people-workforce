@@ -47,7 +47,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type Journey = { row: MrRow; timeline: CandidateTimelineEvent[]; areaChoices: MrAreaChoice[] };
-type Mode = null | { kind: "result"; step: MrResultStep; withoutDsm: boolean } | { kind: "recommend" } | { kind: "book" };
+type Mode = null | { kind: "result"; step: MrResultStep; withoutDsm: boolean } | { kind: "recommend" } | { kind: "book" } | { kind: "reschedule" };
 
 const MONEY = new Intl.NumberFormat("en-EG", { maximumFractionDigits: 0 });
 
@@ -187,6 +187,11 @@ export function MrJourneyDrawer({
                           Book {MR_ROUND_LABELS[row.can.book[0]]}
                         </button>
                       ) : null}
+                      {row.can.reschedule ? (
+                        <button className={phxButtonPrimaryClassName} onClick={() => setMode({ kind: "reschedule" })} type="button">
+                          Change the time
+                        </button>
+                      ) : null}
                       {row.offerHref ? (
                         <a className={phxButtonAccentClassName} href={row.offerHref}>
                           Prepare offer
@@ -215,7 +220,12 @@ export function MrJourneyDrawer({
                       ) : mode.kind === "recommend" ? (
                         <MrRecommendationForm candidateId={row.candidateId} candidateName={row.name} onCancel={() => setMode(null)} onDone={() => done()} />
                       ) : (
-                        <MrBookingForm onCancel={() => setMode(null)} onDone={(message) => done(message)} row={row} />
+                        <MrBookingForm
+                          existing={mode.kind === "reschedule" ? row.can.reschedule : null}
+                          onCancel={() => setMode(null)}
+                          onDone={(message) => done(message)}
+                          row={row}
+                        />
                       )}
                     </div>
                   )}

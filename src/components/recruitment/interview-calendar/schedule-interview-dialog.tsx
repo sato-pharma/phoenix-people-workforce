@@ -17,7 +17,7 @@
 // account. The invitation goes only when the person presses send on the panel that follows — to the
 // candidate and the interviewer, each by WhatsApp or e-mail (invitation-panel.tsx).
 
-import { CalendarCheck2, Building2, Loader2, Video, X } from "lucide-react";
+import { CalendarCheck2, Building2, Loader2, Phone, Video, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -446,7 +446,18 @@ export function ScheduleInterviewDialog({
 
                   <div className="mt-4">
                     <StepLabel number={3}>Where</StepLabel>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={cn("grid gap-2", existing?.platform === "phone" ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2")}>
+                      {/* A phone call (the HR 1st interview's third way) keeps its way when moved —
+                          owner, 7 Nov 2026: "make me able to change this time". */}
+                      {existing?.platform === "phone" ? (
+                        <PlatformCard
+                          icon={<Phone className="h-5 w-5" />}
+                          label={PLATFORM_LABEL.phone}
+                          onSelect={() => setPlatform("phone")}
+                          selected={platform === "phone"}
+                          sub="No Zoom, no place"
+                        />
+                      ) : null}
                       <PlatformCard
                         icon={<Building2 className="h-5 w-5" />}
                         label={PLATFORM_LABEL.in_office}

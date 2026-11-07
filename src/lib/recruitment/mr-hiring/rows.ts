@@ -16,6 +16,7 @@ import { isCairoOrGiza } from "@/lib/recruitment/mr-hiring/inputs";
 import { firstOfficialArrival } from "@/lib/recruitment/mr-hiring/official-line";
 import {
   mrHiringStage,
+  mrReschedulableBooking,
   type MrBookingFact,
   type MrRecommendationFact,
   type MrStage,
@@ -34,6 +35,8 @@ export type MrRowActions = {
   recommend: boolean;
   /** The interview rounds this viewer may book now. */
   book: MrInterviewRound[];
+  /** The booked, not-yet-held interview this viewer may change (day, time, way, place), or null. */
+  reschedule: MrBookingFact | null;
 };
 
 export type MrRow = {
@@ -136,6 +139,7 @@ export function buildMrRow(viewer: MrViewer, record: MrCandidateRecord, now: Dat
   const recommend = mayRecommend(viewer, facts, now).ok;
   // The first round listed is the one the page's button books.
   const book = mayBookMrInterview(viewer) ? MR_INTERVIEW_ROUNDS.filter((round) => mrBookingRefusal(stage, round) === null) : [];
+  const reschedule = mayBookMrInterview(viewer) ? mrReschedulableBooking(stage) : null;
 
   // The salary leaves the server only for the HR Manager, Talent Acquisition and the NSM who wrote it.
   const visible = redactFactsFor(viewer, facts);
@@ -147,7 +151,7 @@ export function buildMrRow(viewer: MrViewer, record: MrCandidateRecord, now: Dat
     area: record.area,
     arrivedOn: firstOfficialArrival(record.intake)?.lineLabel ?? null,
     bookings: facts.bookings.filter((booking) => booking.round !== null).sort((left, right) => left.startsAt.localeCompare(right.startsAt)),
-    can: { book, decideWithoutDsm, recommend, record: record_ },
+    can: { book, decideWithoutDsm, recommend, record: record_, reschedule },
     candidateId: facts.candidateId,
     governorate: record.governorate,
     inCairoOrGiza: governorateKnown ? isCairoOrGiza(record.governorate) : null,
