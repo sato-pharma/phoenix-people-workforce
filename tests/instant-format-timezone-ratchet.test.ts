@@ -333,6 +333,7 @@ export function runInstantFormatTimezoneRatchetTests() {
       "app/api/admin/field-activity/pdf/route.ts",
       "the route map's `Own GPS` label — the LOADER converts that instant first (cairoWallClockIso), so the slice reads a Cairo wall clock",
     ],
+    ["src/components/recruitment/interview-calendar/time-of-day-input.tsx", "parseTimeOfDay — reads the HH:MM a browser time field typed, never a timestamp"],
     ["src/lib/crm/dates.ts", "hasRealVendorTime — inspects a vendor stamp's time-of-day to reject the midnight placeholder"],
     ["src/lib/crm/sfe-field-analytics.ts", "crmMinutesPastMidnight — vendor check_date/crm_save_date, read as written"],
     ["src/lib/double-visit-analytics/audit-export.ts", "the coaching sheet's check-in span — vendor check_date"],

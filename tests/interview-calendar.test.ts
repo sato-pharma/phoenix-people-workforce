@@ -298,11 +298,19 @@ function runWeekTests() {
   assert.equal(isBookableDay("2026-09-24"), true, "and every weekday");
   assert.equal(isDateKey("2026-02-30"), false, "a date that does not exist is refused, not rolled into March");
 
-  assert.equal(isBookableWindow(8 * 60 + 30, 30), false, "nothing before 9:00 AM");
+  // Any time of day — the owner, 7 Nov 2026: "make hr freely add any time".
+  assert.equal(isBookableWindow(8 * 60 + 30, 30), true, "an 8:30 AM interview is bookable");
   assert.equal(isBookableWindow(9 * 60, 30), true);
-  assert.equal(isBookableWindow(16 * 60 + 30, 30), true, "a 4:30 PM half hour ends at 5:00 PM exactly");
-  assert.equal(isBookableWindow(16 * 60 + 30, 45), false, "and nothing runs past 5:00 PM");
-  assert.equal(isBookableWindow(9 * 60 + 5, 30), false, "starts fall on a quarter hour");
+  assert.equal(isBookableWindow(19 * 60 + 5, 30), true, "so is 7:05 PM, to the minute");
+  assert.equal(isBookableWindow(23 * 60 + 30, 30), true, "an 11:30 PM half hour ends at midnight exactly");
+  assert.equal(isBookableWindow(23 * 60 + 45, 30), false, "and nothing runs past midnight");
+  assert.equal(isBookableWindow(-15, 30), false, "nor starts before it");
+  assert.equal(isBookableWindow(9 * 60 + 5, 20), false, "lengths stay whole quarter hours");
+  // The grid opens 9 to 5 and widens to reach an interview booked outside it.
+  const widened = slotStarts([{ durationMinutes: 30, startMinutes: 19 * 60 + 40 }, { durationMinutes: 60, startMinutes: 7 * 60 + 10 }]);
+  assert.equal(widened[0], 7 * 60, "an interview at 7:10 AM opens the grid at 7:00 AM");
+  assert.equal(widened[widened.length - 1], 20 * 60, "one at 7:40 PM to 8:10 PM keeps rows to 8:00 PM");
+  assert.deepEqual(slotStarts([{ durationMinutes: 30, startMinutes: 10 * 60 }]), starts, "one inside 9 to 5 leaves the sixteen rows alone");
 
   // THE CAIRO TRAP. The server runs in UTC; Cairo is two or three hours ahead. Just after midnight
   // on a Sunday in Cairo it is still Saturday in UTC, and a calendar keyed on the server's clock
@@ -536,13 +544,14 @@ function runValidationTests() {
   assert.equal(validateInterviewBookingInput({ ...good, notes: "   " }).notes, null, "a blank note is no note");
   assert.equal(validateInterviewBookingInput({ ...good, dateKey: "2026-09-18" }).dateKey, "2026-09-18", "a Friday is booked like any day");
   assert.equal(validateInterviewBookingInput({ ...good, dateKey: "2026-09-19" }).dateKey, "2026-09-19", "and a Saturday");
-  assert.throws(() => validateInterviewBookingInput({ ...good, startMinutes: 8 * 60 + 30 }), /9:00 AM or later/);
-  assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 60, startMinutes: 16 * 60 + 30 }), /ends by 5:00 PM/);
+  assert.equal(validateInterviewBookingInput({ ...good, startMinutes: 8 * 60 + 30 }).startMinutes, 8 * 60 + 30, "before 9:00 AM is booked");
+  assert.equal(validateInterviewBookingInput({ ...good, durationMinutes: 60, startMinutes: 19 * 60 + 5 }).startMinutes, 19 * 60 + 5, "and 7:05 PM");
+  assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 60, startMinutes: 23 * 60 + 30 }), /must end by midnight/);
   assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 20 }), /30 minutes up to the whole day/);
   // Long interviews, up to the whole day — the owner's answer "Both" (2026-09-18).
   assert.equal(validateInterviewBookingInput({ ...good, durationMinutes: 480, startMinutes: 9 * 60 }).durationMinutes, 480, "9 to 5 is one interview");
   assert.equal(validateInterviewBookingInput({ ...good, durationMinutes: 90, startMinutes: 11 * 60 }).durationMinutes, 90);
-  assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 480, startMinutes: 9 * 60 + 15 }), /ends by 5:00 PM/);
+  assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 480, startMinutes: 16 * 60 + 15 }), /must end by midnight/);
   assert.throws(() => validateInterviewBookingInput({ ...good, durationMinutes: 100 }), /30 minutes up to the whole day/, "only the lengths on offer");
   assert.equal(formatDuration(480), "8 h");
   assert.equal(formatDuration(90), "1 h 30 min");
@@ -578,7 +587,8 @@ function runSessionAndOutsideTests() {
   assert.throws(() => validateInterviewSessionInput({ ...session, slotMinutes: 20 }), /15, 30, 45 or 60/);
   assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 30, slotMinutes: 45 }), /shorter than one slot/);
   assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 25 }), /at least 30 minutes/);
-  assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 390 }), /ends by 5:00 PM/, "11:00 AM plus 6 h 30 min runs past five");
+  assert.equal(validateInterviewSessionInput({ ...session, durationMinutes: 390 }).durationMinutes, 390, "11:00 AM plus 6 h 30 min runs past five, and is fine");
+  assert.throws(() => validateInterviewSessionInput({ ...session, durationMinutes: 480, startMinutes: 17 * 60 }), /must end by midnight/, "5:00 PM plus 8 h runs past midnight");
   assert.equal(validateInterviewSessionInput({ ...session, dateKey: "2026-09-18" }).dateKey, "2026-09-18", "a session may be held on a Friday");
   assert.throws(() => validateInterviewSessionInput({ ...session, platform: "phone" }), /In office or Zoom/, "but never as a phone call — a session is one meeting for many");
   assert.throws(() => validateInterviewSessionInput({ ...session, platform: "teams" }), /In office or Zoom/);
@@ -829,7 +839,10 @@ async function runExportTests() {
     "two interviews in one half hour are both drawn, in time order — neither overwrites the other",
   );
   assert.deepEqual(model.slots[2].perDay[1].map((entry) => entry.id), [zoom.id], "Monday 10:00 AM");
-  assert.deepEqual(model.offGrid.map((entry) => entry.id), [late.id], "an interview outside 9 to 5 is set aside, never lost");
+  // Any time of day (owner, 7 Nov 2026): the grid widens to give a 5:00 PM interview its own row.
+  assert.equal(model.slots.length, 17, "a 5:00 PM interview adds a seventeenth row");
+  assert.deepEqual(model.slots[16].perDay[2].map((entry) => entry.id), [late.id], "Tuesday 5:00 PM holds it");
+  assert.deepEqual(model.offGrid, [], "so nothing is left off the grid");
   assert.equal(model.bookings.length, 4, "and the list under the grid still holds every interview");
 
   const link = bookingLink(model, zoom);

@@ -25,8 +25,9 @@ import { cn } from "@/lib/utils";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, PanelHeading, Segmented } from "./calendar-dialog";
-import { PlatformChoice, endChoices, startChoices } from "./cell-dialog";
+import { LATEST_START, PlatformChoice, endChoices } from "./cell-dialog";
 import { PersonPicker, initialPersonChoice, personProblem, submitBooking, type PersonChoice } from "./person-picker";
+import { TimeOfDayInput } from "./time-of-day-input";
 import { ZoomMeetingPanels } from "./zoom-panels";
 import {
   phxButtonDangerDenseClassName,
@@ -448,8 +449,9 @@ function EditSessionDialog({
   const [error, setError] = useState<string | null>(null);
   const shift = start - session.startMinutes;
 
-  function chooseStart(next: number) {
-    // Moving the start keeps the session's length, as long as it still ends by 5:00 PM.
+  function chooseStart(next: number | null) {
+    if (next === null || next > LATEST_START) return;
+    // Moving the start keeps the session's length, as long as it still ends by midnight.
     const length = end - start;
     setStart(next);
     const ends = endChoices(next);
@@ -515,17 +517,7 @@ function EditSessionDialog({
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
             <span className={phxLabelClassName}>Starts at</span>
-            <select
-              className={phxSelectClassName}
-              onChange={(event) => chooseStart(Number(event.target.value))}
-              value={start}
-            >
-              {startChoices().map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {formatTimeOfDay(minutes)}
-                </option>
-              ))}
-            </select>
+            <TimeOfDayInput ariaLabel="Session starts at" className={`${phxFieldClassName} block`} onChange={chooseStart} value={start} />
           </label>
           <label className="block">
             <span className={phxLabelClassName}>Ends at</span>

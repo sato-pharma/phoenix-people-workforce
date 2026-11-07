@@ -193,5 +193,12 @@ export const MR_COMMENT_LIMIT = 2000;
 /** The longest place an in-person interview may name — the column's own check. */
 export const MR_LOCATION_LIMIT = 300;
 
+/**
+ * How long a phone-call 1st interview holds on the calendar. HR is never asked (owner, 7 Nov 2026:
+ * "if the HR choose that the first interview will be a phone call, don't ask him to choose the length
+ * of the call"), so it takes the calendar's shortest booking, half an hour.
+ */
+export const MR_PHONE_CALL_MINUTES = 30;
+
 /** The longest area name HR may confirm — the `confirmed_area_name` column's own check. */
 export const MR_AREA_LIMIT = 120;

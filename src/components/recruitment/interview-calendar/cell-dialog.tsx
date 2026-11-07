@@ -30,8 +30,8 @@ import {
   DURATION_CHOICES,
   LONG_DURATION_CHOICES,
   SESSION_SLOT_CHOICES,
-  WORKDAY_END_MINUTES,
-  WORKDAY_START_MINUTES,
+  DAY_END_MINUTES,
+  MAX_DURATION_MINUTES,
   cairoDateKey,
   cairoMinutesOfDay,
   formatDayLong,
@@ -47,6 +47,7 @@ import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker"
 import { InterviewLocationField } from "./location-field";
 import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
+import { TimeOfDayInput } from "./time-of-day-input";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 import {
   phxFieldClassName,
@@ -59,22 +60,19 @@ import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tok
 const QUARTER = 15;
 const SHORTEST = 30;
 
-/** Every quarter hour a booking may start at: 9:00 AM up to half an hour before 5:00 PM. */
-export function startChoices(): number[] {
-  const starts: number[] = [];
-  for (let at = WORKDAY_START_MINUTES; at + SHORTEST <= WORKDAY_END_MINUTES; at += QUARTER) starts.push(at);
-  return starts;
-}
-
-/** Every quarter hour a session starting at `start` may end at: half an hour on, up to 5:00 PM. */
+/** Every quarter hour after `start` a session may end at: half an hour on, up to midnight or eight hours on. */
 export function endChoices(start: number): number[] {
   const ends: number[] = [];
-  for (let at = start + SHORTEST; at <= WORKDAY_END_MINUTES; at += QUARTER) ends.push(at);
+  const last = Math.min(DAY_END_MINUTES, start + MAX_DURATION_MINUTES);
+  for (let at = start + SHORTEST; at <= last; at += QUARTER) ends.push(at);
   return ends;
 }
 
+/** The latest a booking may start: half an hour before midnight. Any minute before it is free. */
+export const LATEST_START = DAY_END_MINUTES - SHORTEST;
+
 function fits(start: number, minutes: number): boolean {
-  return start + minutes <= WORKDAY_END_MINUTES;
+  return start + minutes <= DAY_END_MINUTES;
 }
 
 const selectClass  = phxSelectClassName;
@@ -159,7 +157,7 @@ export function CellDialog({
   const [now] = useState(() => new Date());
   const todayKey = cairoDateKey(now);
   const nowMinutes = cairoMinutesOfDay(now);
-  const firstStart = Math.min(Math.max(initialStart, WORKDAY_START_MINUTES), WORKDAY_END_MINUTES - SHORTEST);
+  const firstStart = Math.min(Math.max(initialStart, 0), LATEST_START);
 
   const [mode, setMode] = useState<"interview" | "session">("interview");
   const [person, setPerson] = useState<PersonChoice>(() => initialPersonChoice(canSearch, canAdd));
@@ -174,7 +172,7 @@ export function CellDialog({
   const [location, setLocation] = useState("");
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
-  const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, WORKDAY_END_MINUTES));
+  const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, DAY_END_MINUTES));
   const [slot, setSlot] = useState<number>(DEFAULT_SESSION_SLOT_MINUTES);
   const [sessionPlatform, setSessionPlatform] = useState<InterviewPlatform>("zoom");
   const [busy, setBusy] = useState(false);
@@ -207,10 +205,11 @@ export function CellDialog({
   const slots = useMemo(() => sessionSlotStarts({ durationMinutes: sessionMinutes, slotMinutes: slot, startMinutes: start }), [sessionMinutes, slot, start]);
   const leftover = sessionMinutes - slots.length * slot;
 
-  function chooseStart(next: number) {
+  function chooseStart(next: number | null) {
+    if (next === null || next > LATEST_START) return;
     setStart(next);
     if (!fits(next, duration)) setDuration(SHORTEST);
-    if (end < next + SHORTEST) setEnd(Math.min(next + 4 * 60, WORKDAY_END_MINUTES));
+    if (end < next + SHORTEST || end > next + MAX_DURATION_MINUTES) setEnd(Math.min(next + 4 * 60, DAY_END_MINUTES));
   }
 
   // Choosing the interviewer auto-fills the area & line from their own seat; both stay editable.
@@ -419,13 +418,7 @@ export function CellDialog({
             <section aria-label="When and where" className="flex flex-col gap-3">
               <label className="block">
                 <FieldLabel>Starts at</FieldLabel>
-                <select className={selectClass} onChange={(event) => chooseStart(Number(event.target.value))} value={start}>
-                  {startChoices().map((minutes) => (
-                    <option key={minutes} value={minutes}>
-                      {formatTimeOfDay(minutes)}
-                    </option>
-                  ))}
-                </select>
+                <TimeOfDayInput ariaLabel="Starts at" className={`${phxFieldClassName} block`} onChange={chooseStart} value={start} />
               </label>
               <div>
                 <FieldLabel>How long</FieldLabel>
@@ -503,13 +496,7 @@ export function CellDialog({
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <FieldLabel>Starts at</FieldLabel>
-                  <select className={selectClass} onChange={(event) => chooseStart(Number(event.target.value))} value={start}>
-                    {startChoices().map((minutes) => (
-                      <option key={minutes} value={minutes}>
-                        {formatTimeOfDay(minutes)}
-                      </option>
-                    ))}
-                  </select>
+                  <TimeOfDayInput ariaLabel="Session starts at" className={`${phxFieldClassName} block`} onChange={chooseStart} value={start} />
                 </label>
                 <label className="block">
                   <FieldLabel>Ends at</FieldLabel>

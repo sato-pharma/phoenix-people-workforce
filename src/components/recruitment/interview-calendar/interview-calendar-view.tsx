@@ -88,7 +88,7 @@ import {
 } from "@/components/recruitment/recruitment-premium";
 import {
   SLOT_MINUTES,
-  WORKDAY_END_MINUTES,
+  DAY_END_MINUTES,
   WORKDAY_START_MINUTES,
   addDays,
   cairoDateKey,
@@ -182,7 +182,8 @@ function nextQuarter(minutes: number): number {
   return Math.ceil(minutes / 15) * 15;
 }
 
-const LAST_START = WORKDAY_END_MINUTES - SLOT_MINUTES;
+// A booking may start in any row, up to the last half hour before midnight.
+const LAST_START = DAY_END_MINUTES - SLOT_MINUTES;
 
 type CellContent = {
   sessions: InterviewSession[];
@@ -453,6 +454,16 @@ export function InterviewCalendarView({
     }
   }
 
+  // The grid's rows: 9:00 AM to 5:00 PM, widened to reach anything booked earlier or later — and,
+  // on this week's grid after hours, to the next free half hour today, so an evening can be booked.
+  const rows = useMemo(() => {
+    const reach: Array<{ startMinutes: number; durationMinutes: number }> = [...bookings, ...sessions];
+    if (hydrated && days.includes(nowKey) && earliestToday >= WORKDAY_START_MINUTES && earliestToday <= LAST_START) {
+      reach.push({ durationMinutes: SLOT_MINUTES, startMinutes: earliestToday });
+    }
+    return slotStarts(reach);
+  }, [bookings, days, earliestToday, hydrated, nowKey, sessions]);
+
   // What each half hour of the grid holds.
   const cells = useMemo(() => {
     const map = new Map<string, CellContent>();
@@ -465,7 +476,6 @@ export function InterviewCalendarView({
       }
       return entry;
     };
-    const rows = slotStarts();
     const takenBySession = new Map<string, Set<number>>();
     for (const booking of bookings) {
       const first = slotFor(booking.startMinutes);
@@ -491,7 +501,7 @@ export function InterviewCalendarView({
       }
     }
     return map;
-  }, [bookings, sessions]);
+  }, [bookings, rows, sessions]);
 
   const bookedInSession = useMemo(() => {
     const counts = new Map<string, number>();
@@ -738,7 +748,7 @@ export function InterviewCalendarView({
             </tr>
           </thead>
           <tbody>
-            {slotStarts().map((minutes, rowIndex) => (
+            {rows.map((minutes, rowIndex) => (
               <tr className={cn("border-t border-slate-200", rowIndex % 2 === 1 && "bg-slate-50/70")} key={minutes}>
                 <th className="border-r border-slate-200 px-2 py-1.5 text-left align-top text-[12px] font-semibold tabular-nums text-slate-500" scope="row">
                   {formatTimeOfDay(minutes)}
