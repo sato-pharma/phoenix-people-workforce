@@ -5,9 +5,10 @@
  * Owner, 7 Nov 2026: every old regular visit with a check-in location becomes a Phoenix visit "as if submitted
  * on Phoenix" — the check-in's position is the visit's, measured against the customer's validated place today
  * (every active place, nearest first, the line `visit_far_meters`). A visit to a customer with a validated
- * place counts in visits and KPIs when its check-in lay within visit_far_meters of it; one that lay FARTHER is
- * archived as far, with its distance (the trigger phoenix_crm_visits_old_system_kpi does it on the write, and
- * again on any later restamp). One to a customer with no place is shown and not counted. Campaign visits
+ * place counts in visits and KPIs when its check-in lay within visit_far_meters of it; one that lay farther but
+ * within 500 m counts too, flagged far (owner, 7 Nov 2026: "visits upto 500 m move them to normal visits but
+ * flag them"); one beyond 500 m is archived as far, with its distance (the trigger
+ * phoenix_crm_visits_old_system_kpi does it on the write, and again on any later restamp). One to a customer with no place is shown and not counted. Campaign visits
  * are retired, and a visit with no check-in location is not a visit: both go to the visits archive
  * (phoenix_crm_visit_archive), and a copied row of either kind is marked archived — NEVER deleted.
  * The rules and the rollback: docs/phoenix-crm-ireports360-history-import.md, "The conversion".
@@ -162,7 +163,8 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ prepared }));
 
     // Step 2: every copied, not archived row, in id order.
-    // far = archived as far by the trigger on the write (owner, 7 Nov 2026): never counted, never a visit row again.
+    // far = flagged far; archivedFar = beyond 500 m, archived by the trigger on the write (owner, 7 Nov 2026):
+    // never counted, never a visit row again. A far one within 500 m is a counted visit, its flag kept.
     const tally = { rows: 0, noMatch: 0, unusableFix: 0, unchanged: 0, toWrite: 0, written: 0, ok: 0, far: 0, archivedFar: 0, noPlace: 0, counts: 0 };
     const beforeFile = path.join(FOLDER, `before-${STAMP}.jsonl`);
     if (APPLY) fs.writeFileSync(beforeFile, "", { flag: "wx" });
@@ -244,7 +246,7 @@ async function main(): Promise<void> {
       try {
         const written = (await sql.begin(async (tx) => {
           await tx.unsafe(TIMEOUT);
-          const [row] = await tx.unsafe("select public.phoenix_crm_apply_ireports360_conversion($1::jsonb) as written", [JSON.stringify(items)]);
+          const [row] = await tx.unsafe("select public.phoenix_crm_apply_ireports360_conversion($1::text::jsonb) as written", [JSON.stringify(items)]);
           const count = Number(row.written);
           // Thrown inside the transaction: a page that wrote a different number of rows is rolled back.
           if (count !== items.length) throw new PageMismatch(`sent ${items.length}, written ${count} — the page was rolled back`);
