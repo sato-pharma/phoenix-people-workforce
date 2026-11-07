@@ -49,7 +49,9 @@ export function DeckSubject({
           <h3 className="min-w-0 break-words text-xl font-black leading-tight text-slate-950" dir="auto">
             {record.specialist || "Unassigned"}
           </h3>
-          <p className="shrink-0 text-right">
+          {/* Left-aligned: under a long name this wraps to its own line, and a right-aligned label
+              then sat indented over the amount (live tour of d67cacc). */}
+          <p className="shrink-0 text-left" data-subject-claimed>
             <span className="block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Claimed</span>
             <span className="block text-2xl font-black leading-none tabular-nums text-slate-950">{egp(record.total)}</span>
           </p>

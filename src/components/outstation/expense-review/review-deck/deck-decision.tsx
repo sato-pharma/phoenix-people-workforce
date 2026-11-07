@@ -102,6 +102,9 @@ export function DeckAdjust({
   const { adjusted, deduction, isRejected, locked, reasonMissing, rejectReasonMissing, undecided } = readDecision(offer);
   const span = tripSpan(record.date, record.toDate);
   const { applySuggestion, preCut, suggestions, systemText } = idleOffer(offer);
+  // A one-day trip has one share, the whole allowance: the pre-cut already offers it, so the
+  // suggestion box would say the same thing twice (live tour of d67cacc).
+  const soleOffer = preCut !== null && suggestions.length === 1;
   const chips = locked ? [] : reasonChipsFor({ duplicateOf, idle, record });
   // An undecided trip's box holds the system's hold sentence until he types, so it is labelled as the
   // system's, never read as his.
@@ -213,10 +216,15 @@ export function DeckAdjust({
           <CrmButton data-keep-full onClick={keepFull} size="sm">
             Keep full claim
           </CrmButton>
+          {soleOffer ? (
+            <p className="basis-full text-phx-2xs text-orange-900">
+              Allowance {egp(record.allowance)} only · travel and tickets are never part of it.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
-      {suggestions.length > 0 && idle ? (
+      {suggestions.length > 0 && idle && !soleOffer ? (
         <div className="min-w-0 border-l-[3px] border-orange-500 bg-orange-50 px-3 py-2.5" data-idle-deduction>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700">
             Suggested deduction · {formatNumberValue(idle.idleDays)} of {formatNumberValue(idle.tripDays)} days with no field activity
