@@ -150,7 +150,7 @@ function checkAllowanceDisplay(): void {
   const picker = readFileSync("src/components/phoenix-crm/visit-customer-picker.tsx", "utf8");
   assert.ok(picker.includes("offPlanBlock(offPlan, customer.customerId)"), "the picker lists a doctor the allowance cannot take, but does not offer him");
   // A third visit before validation is listed and not offered too (System Audit, 31 Oct 2026).
-  assert.ok(picker.includes("disabled={customer.visitedToday || blocked !== null || customer.validateFirst}"), "disabled, not hidden");
+  assert.ok(picker.includes("disabled={customer.visitedToday || blocked !== null || customer.validateFirst || customer.needsFullName === true}"), "disabled, not hidden");
   assert.ok(picker.includes("<OffPlanAllowanceCard allowance={offPlan} className=\"mt-3\" compact"), "and the reason step reminds him, compactly");
   const component = readFileSync("src/components/phoenix-crm/offplan-allowance.tsx", "utf8");
   assert.ok(!/rounded-(?!none)/.test(component), "square edges");

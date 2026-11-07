@@ -70,6 +70,7 @@ import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
+import { fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
 import { UNVALIDATED_CUSTOMER_VISIT_REFUSED, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MANAGER_OWN_VISIT_ON_VACANT_SAVED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
@@ -888,6 +889,18 @@ function AddFlow({
       </CrmBlock>
     </CrmPanel>
   );
+  // Owner, 2026-11-07 (pm-name-rules.ts): a PM customer a rep added with one or two names is not visited
+  // until the full name is written — the save refuses it, so he reads the way out before the form.
+  const fullNameFirst = (customer: VisitCustomerOption) => (
+    <CrmPanel>
+      {back}
+      <CrmBlock>
+        <CrmNote title={customer.name} tone="warn">
+          {fullNameNeededSentence(customer.name)}
+        </CrmNote>
+      </CrmBlock>
+    </CrmPanel>
+  );
 
   // 🔴 A REP THE SUPER ADMIN SWITCHED ON RECORDS THE VISIT BEFORE ANY STEP OF LOGGING IT (owner,
   // 2026-10-16). The first screen stays reachable — it also carries the day's activity, which is not a
@@ -925,7 +938,9 @@ function AddFlow({
     const customer = find(step.customerId);
     if (!customer) return missing(step.customerName);
     if (customer.waitingToSend) return alreadyWaiting(customer);
+    // Owner, 2026-11-07: a doctor he added with one or two names is not visited until the full name is written.
     if (customer.validateFirst) return validateFirst(customer);
+    if (customer.needsFullName) return fullNameFirst(customer);
     current = routeFor(customer);
   }
 
@@ -1072,6 +1087,7 @@ function AddFlow({
       if (!customer) return missing(null);
       if (customer.waitingToSend) return alreadyWaiting(customer);
       if (customer.validateFirst) return validateFirst(customer);
+      if (customer.needsFullName) return fullNameFirst(customer);
       return shell(
         formStep,
         <VisitLogForm

@@ -80,7 +80,7 @@ export function runPhoenixCrmUnvalidatedVisitCapTests() {
   assert.match(countRead, /\.neq\("id", visitId\)/, "🔴 and never the visit being saved, so a retried save is not refused by itself");
   assert.match(
     saveVisit,
-    /\.from\("phoenix_crm_customers"\)\.select\("validated_at, list_type"\)\.eq\("id", visit\.customerId\)/,
+    /\.from\("phoenix_crm_customers"\)\s*\.select\("validated_at, list_type, origin, status, name, full_name_held"\)\s*\.eq\("id", visit\.customerId\)/,
     "the customer's own validation and list are read",
   );
 
@@ -119,7 +119,7 @@ export function runPhoenixCrmUnvalidatedVisitCapTests() {
   const picker = stripComments(read("src/components/phoenix-crm/visit-customer-picker.tsx"));
   assert.match(
     picker,
-    /disabled=\{customer\.visitedToday \|\| blocked !== null \|\| customer\.validateFirst\}/,
+    /disabled=\{customer\.visitedToday \|\| blocked !== null \|\| customer\.validateFirst( \|\| customer\.needsFullName === true)?\}/,
     "🔴 the picker never offers the visit the save would refuse",
   );
   assert.match(picker, /\{customer\.validateFirst \? <CrmPill tone="warn">\{VALIDATE_FIRST_PILL\}<\/CrmPill> : null\}/, "the row says why");

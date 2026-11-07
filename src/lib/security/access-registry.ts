@@ -1011,6 +1011,9 @@ export const accessRegistry = [
   // Approving or rejecting a place the Google Maps check could not confirm (owner, 2026-10-03; the SFE Manager too, 2026-10-19): the
   // Super Admin and the SFE Manager — `approve` at the route (both hold it; the SFE Manager holds no `update`), `canDecideValidationReviews` in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/validation-reviews", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // A doctor's full name waiting for a decision (owner, 2026-11-07, pm-name-rules.ts): gate two is
+  // `canDecideValidationReviews` in the service, the same people as the place checks above.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/full-names", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // A comment on a place check, and a manager's recommendation about it (owner, 2026-10-13). NEITHER
   // decides anything — the decision is still the Super Admin's alone, above.
   //

@@ -22,12 +22,14 @@ import { UserPlus } from "lucide-react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
+import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
 import { customerMetaText, listText } from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/captured-photo";
 import { useLocationWarmUp } from "@/components/phoenix-crm/location-receiver";
 import { emptyPlaceDraft, PlaceEditor, placeDraftProblem, placePayload, type PlaceDraftState } from "@/components/phoenix-crm/place-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmChoice, CrmField, CrmNote, CrmPanel, CrmPill, crmInputClassName } from "@/components/phoenix-crm/ui";
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
+import { doctorFullNameProblem, EMPTY_DOCTOR_NAME, joinDoctorName, type DoctorNameParts } from "@/lib/phoenix-crm/pm-name-rules";
 import { CUSTOMER_NAME_MAX, PLACE_PHOTO_NEEDED, parseCustomerPhone } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritoryListView, ValidateResult, VisitCustomerOption } from "@/lib/phoenix-crm/view-types";
@@ -96,6 +98,8 @@ export function OutOfListEntry({
   const [adding, setAdding] = useState(false);
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
+  // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
+  const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
   // Optional, saved with the validation, exactly as on the List's Validate (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
@@ -111,7 +115,8 @@ export function OutOfListEntry({
   useEffect(() => () => releaseCapturedPhoto(draft.photo), [draft.photo]);
 
   const waiting = customers.filter((customer) => customer.outside);
-  const cleanName = normalizedName(name);
+  const doctorName = listType === "PM";
+  const cleanName = doctorName ? normalizedName(joinDoctorName(nameParts)) : normalizedName(name);
 
   function close() {
     if (saving) return;
@@ -130,7 +135,10 @@ export function OutOfListEntry({
 
   function clientProblem(): string | null {
     if (!listType) return "Choose AM or PM.";
-    if (cleanName.length < 3) return "Write the customer's full name.";
+    if (doctorName) {
+      const nameProblem = doctorFullNameProblem(nameParts);
+      if (nameProblem) return nameProblem;
+    } else if (cleanName.length < 3) return "Write the customer's full name.";
     const phoneCheck = parseCustomerPhone(phone);
     if (!phoneCheck.ok) return phoneCheck.error;
     return placeDraftProblem(draft, { needsPhoto: true });
@@ -154,7 +162,7 @@ export function OutOfListEntry({
           seatId,
           test,
           mode: "outside",
-          customer: { listType, name: cleanName, speciality: normalizedName(speciality) || null },
+          customer: { listType, name: cleanName, ...(doctorName ? { nameParts } : {}), speciality: normalizedName(speciality) || null },
           allowSameName,
           phone: phone.trim() || null,
           // The List's own place body (place-editor.tsx): the pin, and the photo's own reading under
@@ -263,22 +271,35 @@ export function OutOfListEntry({
               value={listType}
             />
           </CrmField>
-          <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-outside-name" label="Full name">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
-              dir="auto"
+          {doctorName ? (
+            <DoctorNameFields
               disabled={saving}
-              id="phoenix-crm-outside-name"
-              maxLength={CUSTOMER_NAME_MAX}
-              onChange={(event) => {
-                setName(event.target.value);
+              idPrefix="phoenix-crm-outside-name"
+              onChange={(next) => {
+                setNameParts(next);
                 setSameName(false);
                 setProblem(null);
               }}
-              value={name}
+              value={nameParts}
             />
-          </CrmField>
+          ) : (
+            <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-outside-name" label="Full name">
+              <input
+                autoComplete="off"
+                className={crmInputClassName}
+                dir="auto"
+                disabled={saving}
+                id="phoenix-crm-outside-name"
+                maxLength={CUSTOMER_NAME_MAX}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setSameName(false);
+                  setProblem(null);
+                }}
+                value={name}
+              />
+            </CrmField>
+          )}
           <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-outside-speciality" label="Speciality">
             <input
               autoComplete="off"

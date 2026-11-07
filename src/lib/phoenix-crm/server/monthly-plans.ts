@@ -131,6 +131,7 @@ import {
   type TerritoryReadiness,
 } from "@/lib/phoenix-crm/server/plans";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import { doctorNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { effectiveListType, type PlannerCustomer, type PlannerInsight, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmPlanStatus, PhoenixCrmSettings } from "@/lib/phoenix-crm/types";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -681,6 +682,13 @@ export async function loadMonthlyPlanner(
       speciality: counted.speciality,
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: counted.pending,
+      needsFullName: doctorNeedsFullName({
+        listType: row.list_type,
+        origin: row.origin,
+        status: row.status,
+        name: row.name,
+        fullNameHeld: row.full_name_held,
+      }),
       reference: references.get(customerId) ?? null,
       insight: insights.get(customerId) ?? null,
       places,

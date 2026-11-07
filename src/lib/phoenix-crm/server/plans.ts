@@ -48,6 +48,7 @@ import {
   weeklyPlanDueOn,
 } from "@/lib/phoenix-crm/calendar";
 import { summarizeReadiness } from "@/lib/phoenix-crm/coverage";
+import { doctorNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { cleanText, parseGrade } from "@/lib/phoenix-crm/entry-rules";
 import { checkDaySpread } from "@/lib/phoenix-crm/geo";
 import { noDayStarts, parsePlanDayStarts, type PlanDayStarts } from "@/lib/phoenix-crm/plan-day-starts";
@@ -608,6 +609,13 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       pending: row.status === "pending",
+      needsFullName: doctorNeedsFullName({
+        listType: row.list_type,
+        origin: row.origin,
+        status: row.status,
+        name: row.name,
+        fullNameHeld: row.full_name_held,
+      }),
       reference: references.get(customerId) ?? null,
       insight: insights.get(customerId) ?? null,
       places,
@@ -798,6 +806,13 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown, keep?: { 
           name: String(row.name),
           listType,
           pending: row.status === "pending",
+          needsFullName: doctorNeedsFullName({
+            listType: row.list_type,
+            origin: row.origin,
+            status: row.status,
+            name: row.name,
+            fullNameHeld: row.full_name_held,
+          }),
           places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
             placeId: place.placeId,
             timings: place.timings,

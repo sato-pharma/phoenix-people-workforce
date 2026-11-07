@@ -3,11 +3,13 @@ import { Building2, CheckCircle2, EyeOff, Hourglass, MapPinCheck } from "lucide-
 
 import { AdminPageHero, AdminStatCard } from "@/components/admin/admin-design-system";
 import { PlaceChecksWithDeck } from "@/components/place-review-deck/place-checks-with-deck";
+import { FullNameChecks } from "@/components/phoenix-crm/full-name-checks";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { GOOGLE_MATCH_METERS, GOOGLE_STALE_PIN_METERS } from "@/lib/phoenix-crm/google-place-rules";
 import { decisionNoteIsAComment, placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadHeldFullNames } from "@/lib/phoenix-crm/server/full-name-reviews";
 import { loadPlaceCheckIntegrity } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadPlaceNoteIndex } from "@/lib/phoenix-crm/server/place-notes";
 import { loadSharedPlaceBoard } from "@/lib/phoenix-crm/server/shared-places";
@@ -52,13 +54,15 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
   // `loadSharedPlaceBoard` narrows by `placeChecksSeatScope`, which answers for exactly the viewers
   // `canDecideValidationReviews` above admits — so it cannot 403 a viewer this page has already
   // admitted, and it needs no second redirect.
-  const [reviews, validatedRead, reopenedRead, sharedRead] = await Promise.all([
+  const [reviews, validatedRead, reopenedRead, sharedRead, heldFullNames] = await Promise.all([
     // Every decision, so "Decided by" can answer for all of them; the cards and the board's default stay
     // on the recent ones (`recent`).
     loadValidationReviews(viewer, { everyDecision: true }),
     loadValidatedPlaces(viewer),
     loadReopenedCustomers(viewer),
     loadSharedPlaceBoard(viewer),
+    // Doctors' full names that matched their board only in part (owner, 2026-11-07).
+    loadHeldFullNames(viewer),
   ]);
   const validated = validatedRead.rows;
   const reopened = reopenedRead.rows;
@@ -158,6 +162,8 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
           size="compact"
         />
       </div>
+
+      <FullNameChecks rows={heldFullNames} />
 
       <PlaceChecksWithDeck
         capped={capped}

@@ -32,6 +32,7 @@ import { useRef, useState } from "react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
+import { DoctorNameFields } from "@/components/phoenix-crm/pm-name-fields";
 import { cairoStamp, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -92,6 +93,13 @@ import {
 import { useBrowserNamed } from "@/components/phoenix-crm/use-browser-name";
 import { useSilentFix, type SilentFix } from "@/components/phoenix-crm/use-silent-fix";
 import type { ReferenceState } from "@/lib/phoenix-crm/coverage";
+import {
+  doctorFullNameProblem,
+  EMPTY_DOCTOR_NAME,
+  joinDoctorName,
+  splitDoctorName,
+  type DoctorNameParts,
+} from "@/lib/phoenix-crm/pm-name-rules";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { LOCATION_CHECKING_TEXT, LOCATION_CHECKING_TITLE } from "@/lib/phoenix-crm/google-place-rules";
 import { SCHEDULE_RETAKE_CODE, scheduleHeldText, type ScheduleHeldBecause } from "@/lib/phoenix-crm/schedule-rules";
@@ -602,6 +610,8 @@ export function ValidateScreen({
   const [seated, setSeated] = useState<SeatedDraftState>(() => emptySeatedDraft(listed?.intake?.timings ?? [], seatedSessionOf(listed?.listType)));
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
+  // A clinic doctor is three names, first, middle and last (owner, 2026-11-07, pm-name-rules.ts).
+  const [nameParts, setNameParts] = useState<DoctorNameParts>(EMPTY_DOCTOR_NAME);
   const [speciality, setSpeciality] = useState("");
   // Optional, and saved with the validation itself (owner, 2026-09-30).
   const [phone, setPhone] = useState("");
@@ -651,7 +661,8 @@ export function ValidateScreen({
     return <ListGone backLabel={backLabel} message={gone} onBack={close} refreshing={refreshing} title={title} />;
   }
 
-  const cleanName = normalizedName(name);
+  const doctorName = listType === "PM";
+  const cleanName = doctorName ? normalizedName(joinDoctorName(nameParts)) : normalizedName(name);
   const customerName = subjectFacts?.name ?? cleanName;
   const specialityOptions = subject.mode === "new" ? knownSpecialities(view) : [];
   const canAskToDrop = Boolean(onAskToDrop && pendingCustomer && movesOf(pendingCustomer).includes("ask_to_drop"));
@@ -659,7 +670,10 @@ export function ValidateScreen({
   function clientProblem(): string | null {
     if (subject.mode === "new") {
       if (!listType) return "Choose AM or PM.";
-      if (cleanName.length < 3) return "Write the customer's full name.";
+      if (doctorName) {
+        const nameProblem = doctorFullNameProblem(nameParts);
+        if (nameProblem) return nameProblem;
+      } else if (cleanName.length < 3) return "Write the customer's full name.";
       if (!grade) return "Propose a grade (A, B or C).";
     }
     const phoneCheck = parseCustomerPhone(phone);
@@ -683,7 +697,13 @@ export function ValidateScreen({
       seatId,
       test,
       mode: "new",
-      customer: { listType, name: cleanName, speciality: normalizedName(speciality) || null, proposedGrade: grade },
+      customer: {
+        listType,
+        name: cleanName,
+        ...(doctorName ? { nameParts } : {}),
+        speciality: normalizedName(speciality) || null,
+        proposedGrade: grade,
+      },
       allowSameName,
       phone: phoneValue,
       ...at,
@@ -804,7 +824,10 @@ export function ValidateScreen({
     if (at === 1) {
       if (isNew) {
         if (!listType) return "Choose AM or PM.";
-        if (cleanName.length < 3) return "Write the customer's full name.";
+        if (doctorName) {
+          const nameProblem = doctorFullNameProblem(nameParts);
+          if (nameProblem) return nameProblem;
+        } else if (cleanName.length < 3) return "Write the customer's full name.";
         if (!grade) return "Propose a grade (A, B or C).";
       }
       const phoneCheck = parseCustomerPhone(phone);
@@ -941,21 +964,34 @@ export function ValidateScreen({
                     value={listType}
                   />
                 </CrmField>
-                <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-new-name" label="Full name">
-                  <input
-                    autoComplete="off"
-                    className={crmInputClassName}
+                {doctorName ? (
+                  <DoctorNameFields
                     disabled={saving}
-                    id="phoenix-crm-new-name"
-                    maxLength={CUSTOMER_NAME_MAX}
-                    onChange={(event) => {
-                      setName(event.target.value);
+                    idPrefix="phoenix-crm-new-name"
+                    onChange={(next) => {
+                      setNameParts(next);
                       setSameName(null);
                       setProblem(null);
                     }}
-                    value={name}
+                    value={nameParts}
                   />
-                </CrmField>
+                ) : (
+                  <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-new-name" label="Full name">
+                    <input
+                      autoComplete="off"
+                      className={crmInputClassName}
+                      disabled={saving}
+                      id="phoenix-crm-new-name"
+                      maxLength={CUSTOMER_NAME_MAX}
+                      onChange={(event) => {
+                        setName(event.target.value);
+                        setSameName(null);
+                        setProblem(null);
+                      }}
+                      value={name}
+                    />
+                  </CrmField>
+                )}
                 <CrmField hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-new-speciality" label="Speciality">
                   <input
                     autoComplete="off"
@@ -1666,6 +1702,8 @@ export function EditDetailsScreen({
 }) {
   const customer = view.customers.find((entry) => entry.customerId === customerId) ?? null;
   const [name, setName] = useState(customer?.name ?? "");
+  // A clinic doctor's name is three boxes, opened on what he already wrote (owner, 2026-11-07).
+  const [nameParts, setNameParts] = useState<DoctorNameParts>(() => splitDoctorName(customer?.name));
   const [speciality, setSpeciality] = useState(customer?.speciality ?? "");
   const [phone, setPhone] = useState(customer?.phone ?? "");
   const [sameName, setSameName] = useState(false);
@@ -1677,7 +1715,11 @@ export function EditDetailsScreen({
     return <ListGone backLabel="Customer" message={gone ?? NOT_ON_LIST} onBack={onBack} refreshing={refreshing} title="Change the details" />;
   }
 
-  const cleanName = normalizedName(name);
+  const doctorName = customer.listType === "PM";
+  // Boxes left as they opened keep his saved name untouched, so changing only the phone of a doctor
+  // whose saved name carries a title or two names never renames him or asks for his board.
+  const nameTouched = doctorName && joinDoctorName(nameParts) !== joinDoctorName(splitDoctorName(customer.name));
+  const cleanName = !doctorName ? normalizedName(name) : nameTouched ? normalizedName(joinDoctorName(nameParts)) : customer.name;
   const cleanSpeciality = normalizedName(speciality);
   // Compared the way it is saved, so "010 1234 5678" against a saved 01012345678 is no change at all.
   const phoneCheck = parseCustomerPhone(phone);
@@ -1689,8 +1731,9 @@ export function EditDetailsScreen({
 
   async function save(allowSameName: boolean) {
     if (saving || !customer) return;
-    if (cleanName.length < 3) {
-      setProblem("Write the customer's full name.");
+    const nameProblem = nameTouched ? doctorFullNameProblem(nameParts) : !doctorName && cleanName.length < 3 ? "Write the customer's full name." : null;
+    if (nameProblem) {
+      setProblem(nameProblem);
       return;
     }
     if (!phoneCheck.ok) {
@@ -1712,6 +1755,7 @@ export function EditDetailsScreen({
           test,
           customerId: customer.customerId,
           name: cleanName,
+          ...(nameTouched ? { nameParts } : {}),
           speciality: cleanSpeciality || null,
           // Always sent from here, so emptying the box clears the phone.
           phone: phoneCheck.value,
@@ -1743,21 +1787,34 @@ export function EditDetailsScreen({
       </CrmBlock>
       <CrmBlock className="border-t border-slate-100" title="Name, speciality and phone">
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-details-name" label="Full name">
-            <input
-              autoComplete="off"
-              className={crmInputClassName}
+          {doctorName ? (
+            <DoctorNameFields
               disabled={saving}
-              id="phoenix-crm-details-name"
-              maxLength={CUSTOMER_NAME_MAX}
-              onChange={(event) => {
-                setName(event.target.value);
+              idPrefix="phoenix-crm-details-name"
+              onChange={(next) => {
+                setNameParts(next);
                 setSameName(false);
                 setProblem(null);
               }}
-              value={name}
+              value={nameParts}
             />
-          </CrmField>
+          ) : (
+            <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-details-name" label="Full name">
+              <input
+                autoComplete="off"
+                className={crmInputClassName}
+                disabled={saving}
+                id="phoenix-crm-details-name"
+                maxLength={CUSTOMER_NAME_MAX}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setSameName(false);
+                  setProblem(null);
+                }}
+                value={name}
+              />
+            </CrmField>
+          )}
           <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-details-speciality" label="Speciality">
             <input
               autoComplete="off"
