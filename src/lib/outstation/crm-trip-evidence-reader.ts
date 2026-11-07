@@ -32,6 +32,7 @@ import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
 import { dayActivityLabel, isDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { heldManagerSeats, ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
+import { readDoubleVisitPlansForTrip } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { integritySourceLabel, loadIntegrityCasesForWindow } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadManagerDayPlans } from "@/lib/phoenix-crm/server/manager-plan-readers";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
@@ -90,6 +91,7 @@ async function loadTripVisits(hrId: string, start: string, end: string): Promise
         .from("phoenix_crm_visits")
         .select(columns)
         .eq("is_test", false)
+        .is("imported_from_ireports360_at", null)
         .eq(column, hrId)
         .gte("visit_date", start)
         .lte("visit_date", end),
@@ -155,23 +157,7 @@ export async function loadCrmTripEvidence(requestId: number): Promise<CrmTripEvi
     settle("visit partners", {} as Awaited<ReturnType<typeof getTripVisitPartnersByDate>>, () =>
       getTripVisitPartnersByDate({ hops: 1, rootHrIds: [hrId], tripEndDate: last, tripStartDate: start }),
     ),
-    settle("ride-along plans", [] as Row[], async () => {
-      const read = (column: "manager_hr_id" | "rep_hr_id") =>
-        rowsOf(
-          supabase
-            .from("phoenix_crm_double_visit_plans")
-            .select("id, plan_date, manager_hr_id, rep_hr_id")
-            .eq("is_test", false)
-            .eq(column, hrId)
-            .gte("plan_date", start)
-            .lte("plan_date", last),
-        );
-      const byId = new Map<string, Row>();
-      for (const rows of await Promise.all([read("manager_hr_id"), read("rep_hr_id")])) {
-        for (const row of rows) byId.set(String(row.id), row);
-      }
-      return [...byId.values()];
-    }),
+    settle("ride-along plans", [] as Row[], () => readDoubleVisitPlansForTrip(hrId, { from: start, to: last })),
   ]);
 
   // Places and customers named on the visits.
