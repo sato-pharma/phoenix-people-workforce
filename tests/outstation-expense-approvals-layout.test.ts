@@ -74,7 +74,20 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   // One stat line, the ONLY place the four figures render.
   assert.match(workspace, /<StatLine\b/, "HEADLINE: one compact stat line at the top");
   assert.match(statLine, /data-stat-line/, "the stat line is one strip");
-  assert.doesNotMatch(workspace, /awaiting decision|at stake|cleared to pay/, "the hero carries no chips and no stat cards repeating the stat line");
+  assert.doesNotMatch(workspace, /awaiting decision|at stake|cleared to pay/, "no chips and no stat cards repeating the stat line");
+
+  // ONE compact header (owner, 2026-11-07: "about half of the screen is wasted in the irrelevant
+  // place … make smart screen that helps me and shows me the real data easily"). The hero, the
+  // stat strip, the restored-drafts banner and the toolbar were four stacked blocks over the trips.
+  assert.doesNotMatch(workspace, /<AdminPageHero\b/, "HEADLINE: no page hero over the trips");
+  assert.match(
+    workspace,
+    /data-approvals-header>[\s\S]*?<h1\b[\s\S]*?<StatLine\b[\s\S]*?Export XLSX[\s\S]*?role="tablist"[\s\S]*?Filter by trip month[\s\S]*?Filter by employee[\s\S]*?Clear all/,
+    "HEADLINE: one panel — title, figures and Export on one line; views, search and filters on the next",
+  );
+  assert.match(workspace, /title=\{`Brought back /, "restored, unsaved decisions are a small chip carrying the full sentence");
+  assert.doesNotMatch(workspace, /<AdminCallout tone="warning">\s*<AlertTriangle[^>]*\/>\s*<span>\s*Brought back/, "never the full-width restored-drafts banner");
+  assert.doesNotMatch(statLine, /PANEL_CLASS|grid-cols-4/, "the stat line sits inline in the header, never a panel of its own");
 
   // The rail: narrow, sticky and window-high on a desktop; a fixed sheet on a phone, no portal.
   assert.match(rail, /lg:w-\[19rem\]/, "the list is the rail");

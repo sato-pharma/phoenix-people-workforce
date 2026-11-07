@@ -3,13 +3,14 @@
 import { formatNumberValue } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 
-import { PANEL_CLASS, egp } from "./shared";
+import { egp } from "./shared";
 
 /**
  * The queue in one line (owner, 2026-11-07: "one compact line … nothing repeated").
  *
  * Four cells — awaiting, approved, adjusted, rejected — each a count with the money beside it.
- * This is the ONLY place these four figures render: the hero carries no chips and the rail's
+ * This is the ONLY place these four figures render: it sits INLINE in the page's one compact
+ * header, beside the title (owner, 2026-11-07: "about half of the screen is wasted"), and the rail's
  * header repeats nothing. The numbers follow the filters, so the line always describes the trips
  * on screen.
  */
@@ -62,17 +63,13 @@ export function StatLine({
   ] as const;
 
   return (
-    <div className={cn(PANEL_CLASS, "grid grid-cols-2 sm:grid-cols-4 [&>*]:min-w-0")} data-stat-line>
-      {cells.map((cell, index) => (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1" data-stat-line>
+      {cells.map((cell) => (
         <div
-          className={cn(
-            "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-l-[3px] px-4 py-2.5",
-            cell.tone,
-            index < 2 ? "border-b border-b-slate-200 sm:border-b-0" : "",
-          )}
+          className={cn("flex min-w-0 flex-wrap items-baseline gap-x-1.5 border-l-[3px] pl-2", cell.tone)}
           key={cell.key}
         >
-          <span className="font-mono text-lg font-black tabular-nums text-slate-900">{formatNumberValue(cell.value)}</span>
+          <span className="font-mono text-base font-black tabular-nums text-slate-900">{formatNumberValue(cell.value)}</span>
           <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{cell.label}</span>
           {cell.money ? (
             <span className="min-w-0 break-words font-mono text-xs font-bold tabular-nums text-slate-600">

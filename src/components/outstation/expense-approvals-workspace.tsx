@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardList,
+  Download,
   Inbox,
   Search,
   Users,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
+import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { DecisionBar } from "@/components/outstation/expense-approvals/decision-bar";
 import { EmployeeSummaryPanel } from "@/components/outstation/expense-approvals/employee-summary";
@@ -44,7 +45,6 @@ import {
 } from "@/lib/outstation/expense-approval-filters";
 import { compareExpenseApprovalTrips, expenseTripTriage } from "@/lib/outstation/expense-approval-triage";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
-import { ExpenseExportButton } from "@/components/outstation/expense-shared/expense-export-button";
 import {
   buildExpenseApprovalEmployeeSummary,
   totalExpenseApprovalSummary,
@@ -830,41 +830,148 @@ export function ExpenseApprovalsWorkspace({
 
   return (
     <div className="space-y-4">
-      <AdminPageHero
-        actions={
-          <ExpenseExportButton disabled={loading || exportCount === 0} href={exportHref} />
-        }
-        description="Pick a trip on the left and decide it there. The whole right side is the trip — its map, its days, its photos and its checks."
-        eyebrow="Outstation expenses"
-        icon={<Wallet className="h-3.5 w-3.5" />}
-        title="Expense Approvals"
-      />
+      {/* ONE compact header (owner, 2026-11-07: "about half of the screen is wasted in the irrelevant
+          place"). Line 1: the title, the queue in figures, a chip when unsaved decisions were brought
+          back, and Export. Line 2: the two views and the narrowing. The trips start right under it. */}
+      <div className={cn(PANEL_CLASS, "divide-y divide-slate-200")} data-approvals-header>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
+          <h1 className="inline-flex shrink-0 items-center gap-2 text-sm font-black uppercase tracking-[0.12em] text-slate-900">
+            <Wallet className="h-4 w-4 text-orange-600" />
+            Expense Approvals
+          </h1>
+          {/* The ONLY place these four figures render. They follow the filters, so the line always
+              describes the trips on screen. */}
+          <StatLine
+            adjustedCount={totals.adjustedCount}
+            adjustedDelta={totals.adjustedDelta}
+            approvedCount={approved.length}
+            approvedValue={totals.approvedValue}
+            pendingCount={pending.length}
+            pendingValue={totals.pendingValue}
+            rejectedCount={rejected.length}
+          />
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* Work was recovered and is still NOT saved — the failure this guards is a reviewer
+                believing decisions were committed when they were not. Tied to `dirtyCount`, so it
+                goes the moment nothing is outstanding. */}
+            {restoredDraftCount > 0 && dirtyCount > 0 ? (
+              <span
+                className="inline-flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800"
+                role="status"
+                title={`Brought back ${formatNumberValue(restoredDraftCount)} decision${restoredDraftCount === 1 ? "" : "s"} you had not saved. They are on screen again and still unsaved — press Save to commit them.`}
+              >
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {formatNumberValue(restoredDraftCount)} restored · unsaved
+              </span>
+            ) : null}
+            {loading || exportCount === 0 ? (
+              <span className="inline-flex cursor-not-allowed items-center gap-1.5 border border-slate-200 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                <Download className="h-3.5 w-3.5" /> Export
+              </span>
+            ) : (
+              <a
+                className="inline-flex items-center gap-1.5 bg-phx-accent px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-phx-accent-hover"
+                href={exportHref}
+              >
+                <Download className="h-3.5 w-3.5" /> Export XLSX
+              </a>
+            )}
+          </div>
+        </div>
 
-      {/* The queue in one line, and the ONLY place these four figures render (owner, 2026-11-07).
-          They follow the filters, so the line always describes the trips on screen. */}
-      <StatLine
-        adjustedCount={totals.adjustedCount}
-        adjustedDelta={totals.adjustedDelta}
-        approvedCount={approved.length}
-        approvedValue={totals.approvedValue}
-        pendingCount={pending.length}
-        pendingValue={totals.pendingValue}
-        rejectedCount={rejected.length}
-      />
-
-      {/* Says plainly that work was recovered, and that it is still NOT saved — the whole failure
-          this replaces is a reviewer believing decisions were committed when they were not. Tied to
-          `dirtyCount` so it disappears the moment nothing is outstanding. */}
-      {restoredDraftCount > 0 && dirtyCount > 0 ? (
-        <AdminCallout tone="warning">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Brought back {formatNumberValue(restoredDraftCount)} decision
-            {restoredDraftCount === 1 ? "" : "s"} you had not saved. They are on screen again and
-            still unsaved — press Save to commit them.
-          </span>
-        </AdminCallout>
-      ) : null}
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          <div className="inline-flex shrink-0 border border-slate-300" role="tablist">
+            {([
+              { key: "queue", label: "Review queue", icon: ClipboardList },
+              { key: "employees", label: "By employee", icon: Users },
+            ] as const).map(({ key, label, icon: Icon }) => (
+              <button
+                aria-selected={view === key}
+                className={cn(
+                  "inline-flex h-10 items-center gap-2 whitespace-nowrap px-3 text-sm font-black transition-colors",
+                  view === key ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                )}
+                key={key}
+                onClick={() => setView(key)}
+                role="tab"
+                type="button"
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="block min-w-[14rem] flex-1">
+            <span className="sr-only">Search</span>
+            <span className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                className={cn(FIELD_CLASS, "pl-9")}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search employee, HR ID, trip, destination"
+                ref={searchRef}
+                title="Press / to search · ↑ ↓ to move through the queue"
+                value={search}
+              />
+            </span>
+          </label>
+          <label className="block w-full min-w-0 sm:w-44">
+            <span className="sr-only">Trip month</span>
+            <SearchableSelect
+              aria-label="Filter by trip month"
+              className={FILTER_CONTROL_CLASS}
+              noResultsText="No months in this queue"
+              onValueChange={(value) => setFilters((current) => ({ ...current, month: value }))}
+              value={filters.month}
+            >
+              <option value="">All months</option>
+              {filterOptions.months.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </SearchableSelect>
+          </label>
+          <label className="block w-full min-w-0 sm:w-60">
+            <span className="sr-only">Employee</span>
+            <SearchableSelect
+              aria-label="Filter by employee"
+              className={FILTER_CONTROL_CLASS}
+              noResultsText="No employees in this queue"
+              onValueChange={(value) => setFilters((current) => ({ ...current, employee: value }))}
+              value={filters.employee}
+            >
+              <option value="">All employees</option>
+              {filterOptions.employees.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </SearchableSelect>
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold tabular-nums text-slate-500">
+              {formatNumberValue(activeList.length)} of {formatNumberValue(records.length)} trips
+              {activeFilterCount > 0
+                ? ` · ${formatNumberValue(activeFilterCount)} filter${activeFilterCount === 1 ? "" : "s"}`
+                : ""}
+            </span>
+            {narrowed ? (
+              <button
+                className="inline-flex shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
+                onClick={() => {
+                  setSearch("");
+                  // The order is a preference, not a narrowing: Clear all keeps it.
+                  setFilters((current) => ({ ...NO_EXPENSE_APPROVAL_FILTERS, sort: current.sort }));
+                }}
+                type="button"
+              >
+                <X className="h-3 w-3" /> Clear all
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       {saveMessage ? (
         // A partial save is neither a success nor a failure, and must not wear a green tick: some
@@ -900,108 +1007,6 @@ export function ExpenseApprovalsWorkspace({
           </div>
         </AdminCallout>
       ) : null}
-
-      {/* ONE toolbar: the two ways to read the queue, then the narrowing — search, trip month,
-          employee. Both views obey the same filters. */}
-      <div className={cn(PANEL_CLASS, "p-3")}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex border border-slate-300" role="tablist">
-            {([
-              { key: "queue", label: "Review queue", icon: ClipboardList },
-              { key: "employees", label: "By employee", icon: Users },
-            ] as const).map(({ key, label, icon: Icon }) => (
-              <button
-                aria-selected={view === key}
-                className={cn(
-                  "inline-flex items-center gap-2 whitespace-nowrap px-3.5 py-2 text-sm font-black transition-colors",
-                  view === key ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-                )}
-                key={key}
-                onClick={() => setView(key)}
-                role="tab"
-                type="button"
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {activeFilterCount > 0 ? (
-              <span className="bg-orange-100 px-2 py-0.5 text-phx-xs font-black text-orange-700">
-                {formatNumberValue(activeFilterCount)} filter{activeFilterCount === 1 ? "" : "s"}
-              </span>
-            ) : null}
-            <span className="text-xs font-bold text-slate-500">
-              Showing {formatNumberValue(activeList.length)} of {formatNumberValue(records.length)} trips
-            </span>
-            {narrowed ? (
-              <button
-                className="inline-flex shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100"
-                onClick={() => {
-                  setSearch("");
-                  // The order is a preference, not a narrowing: Clear all keeps it.
-                  setFilters((current) => ({ ...NO_EXPENSE_APPROVAL_FILTERS, sort: current.sort }));
-                }}
-                type="button"
-              >
-                <X className="h-3 w-3" /> Clear all
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_200px_280px]">
-          <label className="block min-w-0">
-            <span className="sr-only">Search</span>
-            <span className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                className={cn(FIELD_CLASS, "pl-9")}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search employee, HR ID, trip, destination"
-                ref={searchRef}
-                title="Press / to search · ↑ ↓ to move through the queue"
-                value={search}
-              />
-            </span>
-          </label>
-          <label className="block min-w-0">
-            <span className="sr-only">Trip month</span>
-            <SearchableSelect
-              aria-label="Filter by trip month"
-              className={FILTER_CONTROL_CLASS}
-              noResultsText="No months in this queue"
-              onValueChange={(value) => setFilters((current) => ({ ...current, month: value }))}
-              value={filters.month}
-            >
-              <option value="">All months</option>
-              {filterOptions.months.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </SearchableSelect>
-          </label>
-          <label className="block min-w-0">
-            <span className="sr-only">Employee</span>
-            <SearchableSelect
-              aria-label="Filter by employee"
-              className={FILTER_CONTROL_CLASS}
-              noResultsText="No employees in this queue"
-              onValueChange={(value) => setFilters((current) => ({ ...current, employee: value }))}
-              value={filters.employee}
-            >
-              <option value="">All employees</option>
-              {filterOptions.employees.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </SearchableSelect>
-          </label>
-        </div>
-      </div>
 
       {bulkMessage ? (
         <AdminCallout tone={/^Nothing/.test(bulkMessage) ? "warning" : "success"}>
