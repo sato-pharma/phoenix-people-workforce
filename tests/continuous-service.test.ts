@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   continuousServiceStartDate,
@@ -69,15 +69,42 @@ export function runContinuousServiceTests() {
   assert.equal(priced.periodStart, "2026-08-17");
 
   // ---- Payroll never reads it ---------------------------------------------------------------------
-  for (const path of [
-    "src/lib/automated-payroll/recommend.ts",
-    "src/lib/automated-payroll/assemble.ts",
-    "src/lib/automated-payroll/split.ts",
-    "src/lib/automated-payroll/leaver-basis.ts",
-  ]) {
+  // Every file that pays, charges or puts a person in a payroll month, not four named ones: the list
+  // of four missed payroll/service.ts the day it began importing the link. That one file may use it,
+  // for the two id helpers only, and only to let her OPEN her earlier payslips — never to count her.
+  const PAYROLL_DIRS = ["src/lib/automated-payroll", "src/lib/payroll", "src/lib/deductions"];
+  const PAYROLL_SERVICE = "src/lib/payroll/service.ts";
+  const payrollFiles = PAYROLL_DIRS.flatMap((dir) =>
+    readdirSync(dir, { recursive: true })
+      .map((entry) => `${dir}/${String(entry).replace(/\\/g, "/")}`)
+      .filter((path) => /\.tsx?$/.test(path)),
+  );
+  assert.ok(payrollFiles.includes("src/lib/automated-payroll/recommend.ts"), "the walk reaches the population code");
+  assert.ok(payrollFiles.includes(PAYROLL_SERVICE), "the walk reaches the payroll service");
+  for (const path of payrollFiles) {
+    if (path === PAYROLL_SERVICE) continue;
     assert.ok(
       !readFileSync(path, "utf8").includes("continuous-service"),
       `HEADLINE: ${path} must not read continuous service — payroll puts a person in a month by employees.hire_date, and 17 Aug on PD-0039 paid her October twice`,
+    );
+  }
+  const payrollService = readFileSync(PAYROLL_SERVICE, "utf8");
+  const linkImport = payrollService.match(/import \{([^}]*)\} from "@\/lib\/employees\/continuous-service(?:\.ts)?";/);
+  assert.ok(linkImport, "the payroll service imports the link by name");
+  assert.deepEqual(
+    linkImport[1].split(",").map((name) => name.trim()).filter(Boolean).sort(),
+    ["earlierRecordHrIds", "ownAndEarlierRecordHrIds"],
+    "HEADLINE: the payroll service takes the two id helpers only — never continuousServiceStartDate",
+  );
+  const PAYROLL_ACCESS_FUNCTIONS = new Set(["resolvePayrollAccessFilter", "getSalaryBatchExport"]);
+  const linkCalls = [...payrollService.matchAll(/\b(?:earlierRecordHrIds|ownAndEarlierRecordHrIds)\(/g)];
+  assert.ok(linkCalls.length >= 2, "both access uses are found");
+  for (const call of linkCalls) {
+    const before = payrollService.slice(0, call.index);
+    const enclosing = [...before.matchAll(/\bfunction\s+(\w+)\s*\(/g)].at(-1)?.[1] ?? "(top level)";
+    assert.ok(
+      PAYROLL_ACCESS_FUNCTIONS.has(enclosing),
+      `HEADLINE: ${PAYROLL_SERVICE} uses the re-hire link inside ${enclosing} — only who may open a payslip may read it, never who is paid`,
     );
   }
 
