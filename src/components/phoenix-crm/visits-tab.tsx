@@ -889,7 +889,7 @@ function AddFlow({
       </CrmBlock>
     </CrmPanel>
   );
-  // Owner, 2026-11-07 (pm-name-rules.ts): a PM customer a rep added with one or two names is not visited
+  // Owner, 2026-11-07 (pm-name-rules.ts): any PM customer with one or two names is not visited
   // until the full name is written — the save refuses it, so he reads the way out before the form.
   const fullNameFirst = (customer: VisitCustomerOption) => (
     <CrmPanel>
