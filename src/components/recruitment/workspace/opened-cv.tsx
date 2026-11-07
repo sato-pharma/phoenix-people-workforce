@@ -60,6 +60,7 @@ import type { CandidateRating } from "@/lib/recruitment/candidate-rating";
 import { candidateStatusLabels } from "@/lib/recruitment/candidate-status";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import type { CvFolderNode } from "@/lib/recruitment/cv-folder-tree";
+import { isInMrWorkflow } from "@/lib/recruitment/mr-hiring/vocabulary";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 import type { WorkspaceRoleTab, WorkspaceTabKey } from "@/lib/recruitment/workspace/role-tabs";
 import type { WorkspaceAnswerChip, WorkspaceRow } from "@/lib/recruitment/workspace/types";
@@ -308,8 +309,8 @@ export function OpenedCv({
   viewingTab: WorkspaceTabKey | null;
 }) {
   const hr = mode === "hr";
-  /** A Medical Rep candidate opened by the recruitment team or the CEO — the step strip is drawn. */
-  const showMrStep = hr && row.placements.some((placement) => placement.tab === "medical_rep");
+  /** A Medical Rep CV from 8 November 2026 on, opened by the recruitment team or the CEO — the step strip is drawn. */
+  const showMrStep = hr && isInMrWorkflow(row.receivedAt) && row.placements.some((placement) => placement.tab === "medical_rep");
   /** The CEO: HR mode without the right to work it. Only the parts the workspace gave him are drawn. */
   const readOnly = hr && !canWork;
   const [section, setSection] = useState<Section>(readOnly ? "answers" : "cv");

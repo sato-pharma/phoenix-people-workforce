@@ -36,6 +36,11 @@ outcome sync and Mark as hired therefore move it without any second write that c
 
 ## Section by section
 
+- **New CVs only** (owner, 7 Nov 2026). The workflow holds only CVs received from Sunday 8 November 00:00
+  Cairo (`vocabulary.ts`, `isInMrWorkflow`). A candidate received before it is not on the page, has no journey
+  there and no step can be recorded or booked for them; the workspace draws no step line on them, and they
+  finish in the workspace as before. On the day it shipped, the page had listed 54 candidates the old flow had
+  already shortlisted or sent to a manager as "Screen the CV".
 - **§1–2 One channel.** Both company WhatsApp lines count as official (owner, 7 Nov 2026: 01159888247 and
   01098500699). A Medical Rep CV received from 8 November 00:00 Cairo by email, the website or by hand is
   **held** ("Held · not on a company WhatsApp") and not considered (`official-line.ts`, `isHeldOffChannel`).

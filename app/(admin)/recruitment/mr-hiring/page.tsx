@@ -55,7 +55,7 @@ export default async function MrHiringPage({ searchParams }: { searchParams: Pro
             <AdminInsightChip tone="slate">Medical Representative only</AdminInsightChip>
           </>
         }
-        description="One channel, one system, one process — from the WhatsApp CV to the offer. Every Medical Rep candidate, the step they are on, and the one thing to do next."
+        description="One channel, one system, one process — from the WhatsApp CV to the offer. Every Medical Rep CV received from Sunday 8 November 2026, the step it is on, and the one thing to do next. An earlier CV finishes in the workspace as before."
         icon={<Stethoscope aria-hidden="true" className="h-3.5 w-3.5" />}
         title="Medical Rep Hiring"
       />
