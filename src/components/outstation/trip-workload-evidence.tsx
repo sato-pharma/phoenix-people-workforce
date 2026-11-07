@@ -123,6 +123,14 @@ export function formatClock(value: string | null) {
   return match ? match[1] : "—";
 }
 
+/**
+ * How a trip day is laid out on Expense Approvals (owner, 2026-11-07: "another view … same concept
+ * as field activity but the data up and the map down, so I have 2 views"). "map-first" is the day
+ * map with its visits and check-ins under it; "data-first" is the Field Activity order — the day's
+ * facts, then its visits and check-ins, the map at the foot.
+ */
+export type DayOrder = "data-first" | "map-first";
+
 /** Google Maps at a GPS point, in a new tab. */
 export function mapsHref(lat: number, lon: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
@@ -530,6 +538,7 @@ function TripDayOpen({
   dayNumber,
   firstCheckinNumber,
   map,
+  order = "map-first",
   pharmacyText,
 }: {
   day: WorkloadEvidenceDay;
@@ -538,6 +547,7 @@ function TripDayOpen({
   firstCheckinNumber: number;
   /** The day's own map, drawn by the caller (Expense Approvals: one map for each trip day). */
   map?: ReactNode;
+  order?: DayOrder;
   pharmacyText: string;
 }) {
   const visits = day.visits ?? [];
@@ -590,21 +600,77 @@ function TripDayOpen({
           </span>
         </span>
       </div>
-      {/* The map first, the day's visits and check-ins listed UNDER it (owner, 2026-11-07:
-          "and every day's visits is listed under the map"). */}
-      {map}
-      {visits.length > 0 || checkins.length > 0 ? (
-        <div className="border-t border-slate-200 px-3 py-3">
-          <DayDetail
-            checkins={checkins}
-            firstCheckinNumber={firstCheckinNumber}
-            hiddenCheckins={day.hiddenCheckins}
-            ownVisitsWithoutGps={day.ownVisitsWithoutGps}
-            visits={visits}
-          />
-        </div>
-      ) : null}
+      {/* Map first: the map, the day's visits and check-ins listed UNDER it (owner, 2026-11-07: "and
+          every day's visits is listed under the map"). Data first: the day's facts and tables, the
+          map at the foot — the Field Activity order (owner, same day: "the data up and the map down"). */}
+      {order === "data-first" ? (
+        <>
+          <DayFacts checkins={checkins} visits={visits} />
+          {dayTables(visits, checkins, day, firstCheckinNumber)}
+          {map}
+        </>
+      ) : (
+        <>
+          {map}
+          {dayTables(visits, checkins, day, firstCheckinNumber)}
+        </>
+      )}
     </li>
+  );
+}
+
+function dayTables(visits: WorkloadVisitDetail[], checkins: WorkloadCheckinDetail[], day: WorkloadEvidenceDay, firstCheckinNumber: number) {
+  if (visits.length === 0 && checkins.length === 0) return null;
+  return (
+    <div className="border-t border-slate-200 px-3 py-3">
+      <DayDetail
+        checkins={checkins}
+        firstCheckinNumber={firstCheckinNumber}
+        hiddenCheckins={day.hiddenCheckins}
+        ownVisitsWithoutGps={day.ownVisitsWithoutGps}
+        visits={visits}
+      />
+    </div>
+  );
+}
+
+/** The earliest and latest of a day's clock readings, as "09:12 to 14:40" (one reading: just it). */
+export function clockWindow(values: ReadonlyArray<string | null | undefined>): string | null {
+  const instants = values
+    .map((value) => (value ? { ms: Date.parse(value), value } : null))
+    .filter((entry): entry is { ms: number; value: string } => entry !== null && Number.isFinite(entry.ms))
+    .sort((a, b) => a.ms - b.ms);
+  if (instants.length === 0) return null;
+  const first = formatClock(instants[0].value);
+  const last = formatClock(instants[instants.length - 1].value);
+  return first === last ? first : `${first} to ${last}`;
+}
+
+/**
+ * The day's facts as Field Activity prints them — a ruled grid of labelled figures above the tables,
+ * each one only when there is something to say.
+ */
+function DayFacts({ checkins, visits }: { checkins: WorkloadCheckinDetail[]; visits: WorkloadVisitDetail[] }) {
+  const gpsWindow = clockWindow(checkins.map((checkin) => checkin.at));
+  const savedWindow = clockWindow(visits.map((visit) => visit.submittedAt));
+  const located = checkins.filter((checkin) => hasPoint(checkin.lat, checkin.lon)).length;
+  const bricks = new Set(checkins.map((checkin) => checkin.place?.brick).filter((brick): brick is string => Boolean(brick)));
+  const facts: Array<[string, ReactNode]> = [
+    ["Visits", fmt(visits.length)],
+    ["Check-ins", located === checkins.length ? fmt(checkins.length) : `${fmt(checkins.length)} · ${fmt(located)} on the map`],
+    ...(gpsWindow ? [["GPS window", gpsWindow] as [string, ReactNode]] : []),
+    ...(savedWindow ? [["Visits saved", savedWindow] as [string, ReactNode]] : []),
+    ...(bricks.size > 0 ? [["Bricks", <bdi dir="auto" key="bricks">{[...bricks].join(" · ")}</bdi>] as [string, ReactNode]] : []),
+  ];
+  return (
+    <div className="grid grid-cols-2 border-t border-slate-200 lg:grid-cols-5" data-day-facts>
+      {facts.map(([label, value]) => (
+        <div className="min-w-0 border-b border-r border-slate-200 px-3 py-2 even:bg-slate-50 lg:even:bg-transparent" key={label}>
+          <p className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+          <p className="break-words text-sm font-bold tabular-nums text-slate-900">{value}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -616,6 +682,7 @@ function TripDayOpen({
  */
 export function TripWorkloadEvidencePanel({
   alwaysOpen = false,
+  dayOrder = "map-first",
   declaredAm,
   declaredPharmacies = null,
   declaredPm,
@@ -632,6 +699,8 @@ export function TripWorkloadEvidencePanel({
    * the request drawer keeps its folding rows, each with its own map when opened.
    */
   alwaysOpen?: boolean;
+  /** With `alwaysOpen`: the map above each day's tables, or under them (DayOrder). */
+  dayOrder?: DayOrder;
   declaredAm: number;
   /** The stored third figure. NULL = not counted separately: a request stamped before the
    * 2026-09-21 split (its pharmacies sit inside AM/PM), a hand-typed workload, or an import. */
@@ -882,6 +951,7 @@ export function TripWorkloadEvidencePanel({
                   firstCheckinNumber={firstCheckinNumber}
                   key={day.date}
                   map={renderDayMap?.(day, firstCheckinNumber)}
+                  order={dayOrder}
                   pharmacyText={pharmacyCellText(day)}
                 />
               );

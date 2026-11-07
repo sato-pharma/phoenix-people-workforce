@@ -11,9 +11,10 @@ import {
   type TripRouteLine,
 } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { EvidenceTable } from "@/components/outstation/evidence-table";
-import type { AttachmentsData } from "@/components/outstation/trip-attachments";
+import { type AttachmentsData, UploadedPictures } from "@/components/outstation/trip-attachments";
 import {
   CoordinatesLink,
+  type DayOrder,
   PlaceLink,
   type TripWorkloadEvidence,
   TripWorkloadEvidencePanel,
@@ -45,6 +46,7 @@ import type { LoadedRecord, TripIdleDays } from "../review-model";
  */
 export function DeckFieldWork({
   attachments,
+  dayOrder,
   onIdleDays,
   onLoaded,
   record,
@@ -52,6 +54,9 @@ export function DeckFieldWork({
 }: {
   /** The photos, stops and route, once the attachments read lands (undefined while it is on its way). */
   attachments: AttachmentsData | null | undefined;
+  /** Map first (each day's map, its visits and check-ins under it) or data first (the Field
+   * Activity order: the day's facts and tables, the map at the foot). */
+  dayOrder: DayOrder;
   onIdleDays: (tripId: string, idle: TripIdleDays) => void;
   onLoaded: (data: TripWorkloadEvidence | null) => void;
   record: LoadedRecord;
@@ -98,8 +103,16 @@ export function DeckFieldWork({
 
   return (
     <div className="min-w-0" data-deck-field-work>
+      {/* What the employee uploaded, on the view the reviewer opens on — a manager who owes no trip
+          photo still files pictures, and they must be seen without a second click (owner, 2026-11-07). */}
+      {attachments?.tickets?.length ? (
+        <div className="mb-3 border border-slate-200 bg-slate-50 p-3" data-field-uploads>
+          <UploadedPictures large={false} tickets={attachments.tickets} />
+        </div>
+      ) : null}
       <TripWorkloadEvidencePanel
         alwaysOpen
+        dayOrder={dayOrder}
         declaredAm={record.amWorkload}
         declaredPharmacies={record.pharmacyWorkload ?? null}
         declaredPm={record.pmWorkload}

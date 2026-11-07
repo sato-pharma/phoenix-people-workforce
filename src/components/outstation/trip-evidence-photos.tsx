@@ -104,8 +104,8 @@ function TripEvidencePhoto({
               ) : null}
               {/* The point itself, one click from Google Maps (owner's review, 2026-11-07). */}
               {photo.latitude !== null && photo.longitude !== null ? (
-                <p className="font-mono text-xs text-slate-500">
-                  <span className="font-sans text-phx-3xs font-black uppercase tracking-wide text-slate-400">GPS </span>
+                <p className="text-xs tabular-nums text-slate-500">
+                  <span className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">GPS </span>
                   <a
                     className="text-orange-700 underline-offset-2 hover:underline"
                     data-photo-gps-link

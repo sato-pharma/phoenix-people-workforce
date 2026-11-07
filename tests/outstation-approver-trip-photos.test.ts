@@ -200,6 +200,19 @@ export function runOutstationApproverTripPhotosTests() {
   assert.match(attachments, /Could not load — open the file/, "and offers the file");
   assert.match(attachments, /onLoad=\{\(event\) => setFrame\(measureImageFrame\(event\.currentTarget\)\)\}/, "the ticket frame is measured like the photos");
   assert.match(attachments, /classifyPhotoFrame\(frame\)\.verdict === "no-image"/, "HEADLINE: and a black frame reads Blank image");
-  assert.match(attachments, /label: ticketTileLabel\(index\)/, "the tile label is Ticket N");
+  assert.match(attachments, /label=\{ticketTileLabel\(index\)\}/, "the tile label is Ticket N");
+
+  // The pictures a manager uploads (owner, 2026-11-07: "in the expense approvals the photos uploaded
+  // from managers I cannot see the photos"). They were on file and signed; the screen buried them.
+  assert.match(attachments, /const notOwed = photos\.length > 0 && photos\.every\(\(photo\) => !photo\.url && Boolean\(photo\.missingNote\?\.startsWith\("Not required"\)\)\);/, "HEADLINE: a role that owes no photo gets one line, not two empty boxes");
+  assert.match(attachments, /\{anyLivePhoto \? null : uploads\}/, "HEADLINE: with no live photo on file, the uploads come first");
+  assert.match(attachments, /large \? "h-72 w-full bg-slate-900 object-contain" : "h-28 w-full object-cover"/, "HEADLINE: each upload shown whole, never a 112px crop");
+  assert.match(attachments, /const uploads = tickets\.length > 0 \? <UploadedPictures large tickets=\{tickets\} \/> : null;/);
+  const signals = code("src/components/outstation/expense-review/review-deck/deck-signals.ts");
+  assert.match(signals, /line: `No trip photos owed · \$\{uploaded\} to look at\.`/, "HEADLINE: the findings count the uploads, never hide them behind Not required");
+  assert.match(signals, /const withUploads = \(line: string\) =>/, "every photo sentence carries the upload count");
+  const fieldWork = code("src/components/outstation/expense-review/review-deck/deck-days.tsx");
+  assert.match(fieldWork, /<UploadedPictures large=\{false\} tickets=\{attachments\.tickets\} \/>/, "HEADLINE: and the view the reviewer opens on shows them too");
+  assert.doesNotMatch(component, /font-mono/, "no monospace on the photo card");
   assert.match(attachments, /title=\{title\}/, "the stored file name rides in the tooltip");
 }

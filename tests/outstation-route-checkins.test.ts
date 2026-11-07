@@ -141,4 +141,21 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(panel, /\{place\.km > 10 \? <span className="font-semibold text-amber-700">nearest brick \{fmt\(place\.km\)\} km away<\/span> : null\}/, "a far brick says so");
   assert.match(review, /<PlaceLink lat=\{checkins\[row\.index\]\?\.lat\} lon=\{checkins\[row\.index\]\?\.lon\}>/, "and the map legend's check-ins open theirs");
   assert.match(review, /<CoordinatesLink lat=\{photo\.latitude as number\} lon=\{photo\.longitude as number\} \/>/, "a photo's point is a link on its own line");
+
+  // 8. Two views of a trip day (owner, 2026-11-07: "another view … same concept as field activity but
+  //    the data up and the map down so I have 2 views").
+  const stage = source("../src/components/outstation/expense-review/review-deck/deck-stage.tsx");
+  const deck = source("../src/components/outstation/expense-review/review-deck/deck.tsx");
+  assert.match(panel, /export type DayOrder = "data-first" \| "map-first";/);
+  assert.match(panel, /\{order === "data-first" \? \(\s*<>\s*<DayFacts checkins=\{checkins\} visits=\{visits\} \/>\s*\{dayTables\(visits, checkins, day, firstCheckinNumber\)\}\s*\{map\}/, "HEADLINE: data first — the day's facts and tables, the map at the foot");
+  assert.match(panel, /\) : \(\s*<>\s*\{map\}\s*\{dayTables\(visits, checkins, day, firstCheckinNumber\)\}/, "HEADLINE: map first stays exactly as it was");
+  assert.match(panel, /order=\{dayOrder\}/, "the panel hands the choice to every day");
+  assert.match(panel, /\["GPS window", gpsWindow\]/, "the facts read like Field Activity's");
+  assert.match(panel, /return first === last \? first : `\$\{first\} to \$\{last\}`;/, "a window of one reading is just that reading");
+  assert.match(stage, /\{ hint: "[^"]+", icon: MapPin, key: "map-first", label: "Map first" \}/, "HEADLINE: the switch offers both views");
+  assert.match(stage, /\{ hint: "[^"]+", icon: List, key: "data-first", label: "Data first" \}/);
+  assert.match(stage, /aria-pressed=\{active\}/, "the chosen view is announced");
+  assert.match(stage, /<DeckFieldWork\s+attachments=\{attachments\}\s+dayOrder=\{dayOrder\}/);
+  assert.match(deck, /const \[dayOrder, setDayOrder\] = useState<DayOrder>\("map-first"\);/, "HEADLINE: chosen once, kept from trip to trip while the reviewer is open");
+  assert.doesNotMatch(stage, /localStorage/, "screen state only — nothing new is stored in the browser");
 }
