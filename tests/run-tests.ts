@@ -1983,6 +1983,7 @@ import { runOutstationStaleApprovalTests } from "./outstation-stale-approval.tes
 import { runOutstationExtraTicketAfterDecisionTests } from "./outstation-extra-ticket-after-decision.test.ts";
 import { runOutstationMissingTicketTests } from "./outstation-missing-ticket.test.ts";
 import { runOutstationTrainTicketScanTests } from "./outstation-train-ticket-scan.test.ts";
+import { runOutstationNoTicketTrainFareTests } from "./outstation-no-ticket-train-fare.test.ts";
 import { runOutstationWorkloadRestampTests } from "./outstation-workload-restamp.test.ts";
 import { runOutstationSubmitExpenseStepsTests } from "./outstation-submit-expense-steps.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -11722,6 +11723,10 @@ await runTest(
 await runTest(
   "a train ticket is read the moment it is attached and its travel date must be the arrival photo's Cairo day (or the day before, a night train) or the departure photo's day (the trip's last day until that photo exists) — an unreadable ticket is refused with why and what to change in the photo (zoom in or out, centre it, steady, light, glare, straight) and what the system needs, a reader outage never refuses an employee, the signed note of a read is honoured only for the same bytes, the same employee and one day, the server judges the date itself before the claim moves or any file is stored, an offline replay drops a refused ticket and lands held instead of being lost, and the employee never reads that a model did the reading",
   runOutstationTrainTicketScanTests,
+);
+await runTest(
+  "a No-ticket trip is paid the lowest second-class AC train fare between the stations nearest the home and the destination, there and back, set by the server and never typed — the nearest pair with a direct train is used when the nearest stations have none and the claim says so, a trip with no home on file or both ends at one station is refused with its reason as a 400, a typed travel cost never replaces the fare, both ticket amounts store the one-way fare and the claim keeps the stations, HR cannot record one by hand, and the employee chooses Fuel, Ticket or No ticket",
+  runOutstationNoTicketTrainFareTests,
 );
 await runTest(
   "a trip's CRM workload stamped before the day's visits were typed is refreshed the next morning — only an undecided, system-stamped claim whose trip ended in the last 45 days, only when the CRM now holds more work, never a figure typed by hand, never the gate status, the approval revision or any money, the write pinned to the figures it read, the replaced stamp recorded for the approver, one shared stamp shape with the first capture, and the job appended to the daily run",

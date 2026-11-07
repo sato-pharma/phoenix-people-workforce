@@ -18,6 +18,7 @@ export function normalizeTransportation(
   if (value === "train") return "Train";
   if (value === "bus") return "Bus";
   if (value === "other") return "Other";
+  if (value === "no_ticket") return "No ticket";
   return "";
 }
 

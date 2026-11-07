@@ -73,6 +73,7 @@ import type {
   OutstationCarEvidenceMetadata,
   OutstationCarEvidenceSource,
   OutstationExpenseType,
+  OutstationNoTicketFare,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
@@ -152,6 +153,40 @@ function buildDraftId() {
   return typeof crypto === "undefined" || typeof crypto.randomUUID !== "function"
     ? `car-evidence-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
     : crypto.randomUUID();
+}
+
+/**
+ * A "No ticket" trip's fare, read-only (owner, 2026-11-07: "he cannt edit on it"). The figure is the
+ * server's own calculation; before the destination is captured there is nothing to show yet.
+ */
+function NoTicketFarePanel({ fare }: { fare: OutstationNoTicketFare | null }) {
+  return (
+    <section aria-label="Train fare" className="grid gap-2 border border-slate-200 bg-slate-50 p-4" data-no-ticket-fare>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">Train fare · Fixed</p>
+      {fare ? (
+        <>
+          <p className="text-sm font-bold text-slate-900">
+            {egp(fare.totalFare)} <span className="font-semibold text-slate-600">there and back</span>
+          </p>
+          <p className="text-sm leading-6 text-slate-600" dir="auto">
+            {fare.fromStation} → {fare.toStation} · second-class AC · {egp(fare.oneWayFare)} each way
+          </p>
+          {fare.nearestHadNoTrain ? (
+            <p className="text-sm leading-6 text-slate-600">
+              No direct second-class AC train runs between your nearest stations, so the nearest stations that have one are used.
+            </p>
+          ) : null}
+          <p className="text-xs font-semibold text-slate-500">
+            Set by Phoenix from the railway fares. It cannot be changed, and no ticket is needed.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm leading-6 text-slate-600">
+          Phoenix works out the fare from your home and the place you captured: the lowest second-class AC train fare, there and back.
+        </p>
+      )}
+    </section>
+  );
 }
 
 function egp(value: number) {
@@ -563,9 +598,7 @@ export function MobileOutstationWizard({
   const arrivalPhotoHint =
     transportationType === "car"
       ? "Car requests require one in-app camera photo with GPS and app-generated timestamp."
-      : transportationType === "other"
-        ? "This trip requires one arrival photo. Take it live, or upload one — an uploaded photo is stamped as uploaded."
-        : `A ${transportationType} trip requires one arrival photo. Take it live, or upload one — an uploaded photo is stamped as uploaded.`;
+      : "This trip requires one arrival photo. Take it live, or upload one — an uploaded photo is stamped as uploaded.";
   const arrivalPhotoMissingMessage =
     transportationType === "car"
       ? "Capture the live car photo before submitting this car request."
@@ -706,7 +739,11 @@ export function MobileOutstationWizard({
     setMedicalTripHrId(restore.medicalTripHrId);
     setNotes(restore.notes);
     setReturnTicketAmount(restore.returnTicketAmount);
-    setTransportationType(restore.transportationType);
+    // A draft saved before Fuel / Ticket / No ticket may say bus or other: a bus trip is a Ticket, and an
+    // "other" trip is brought back as Fuel, the default, for the employee to choose again.
+    setTransportationType(
+      restore.transportationType === "bus" ? "train" : restore.transportationType === "other" ? "car" : restore.transportationType,
+    );
     setTripEndDate(restore.tripEndDate);
     setTripStartDate(restore.tripStartDate);
   }, [draftKey, employeeHrId]);
@@ -909,8 +946,8 @@ export function MobileOutstationWizard({
 
   function handleTransportationTypeChange(value: OutstationTransportationType) {
     setTransportationType(value);
-    // Only a train ticket is read, so a switch to or from train starts the tickets again.
-    if (value === "car" || value === "train" || transportationType === "train") {
+    // A ticket belongs to the Ticket choice alone, so any switch starts the tickets again.
+    if (value !== transportationType) {
       setPickedTicketFiles([]);
       setTrainTicketPicks([]);
       ticketPickSequenceRef.current += 1;
@@ -1452,7 +1489,7 @@ export function MobileOutstationWizard({
     }
     if (!tripStartDate) {
       setPickedTicketFiles([]);
-      setMessage("Choose the trip dates before attaching the train ticket, so its date can be checked.");
+      setMessage("Choose the trip dates before attaching the ticket, so its date can be checked.");
       return;
     }
     setIsReadingTickets(true);
@@ -1674,11 +1711,14 @@ export function MobileOutstationWizard({
     { label: "Meeting", value: "meeting" },
     { label: "Other", value: "other" },
   ];
+  // How the trip is paid (owner, 2026-11-07: "remove these options and you will make it by fuel, ticket,
+  // no ticket"). Fuel is priced exactly as a car trip, so it is stored as "car"; Ticket carries the read
+  // ticket and its typed price, stored as "train"; No ticket is paid the fixed train fare (train-fare.ts),
+  // which the server sets and nobody can change.
   const transportOptions: ReadonlyArray<{ label: string; value: OutstationTransportationType }> = [
-    { label: "Car", value: "car" },
-    { label: "Train", value: "train" },
-    { label: "Bus", value: "bus" },
-    { label: "Other", value: "other" },
+    { label: "Fuel", value: "car" },
+    { label: "Ticket", value: "train" },
+    { label: "No ticket", value: "no_ticket" },
   ];
 
   const tripBody = (
@@ -1729,7 +1769,7 @@ export function MobileOutstationWizard({
       {isNonTravel ? null : (
         <Field as="div" label="How you travelled">
           <ChoiceTiles
-            columns={4}
+            columns={3}
             label="Transportation type"
             onChange={(value) => handleTransportationTypeChange(value)}
             options={transportOptions}
@@ -2031,6 +2071,8 @@ export function MobileOutstationWizard({
             value={kilometerReading}
           />
         </Field>
+      ) : transportationType === "no_ticket" ? (
+        <NoTicketFarePanel fare={calculation?.noTicketFare ?? null} />
       ) : isTicketBased ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Go ticket amount (EGP)">
@@ -2187,7 +2229,11 @@ export function MobileOutstationWizard({
                   : "Not available"
               }
             />
-            <ReviewRow label={transportationType === "car" ? "Travel cost" : "Ticket cost"} value={egp(transportationType === "car" ? calculation.fuelAmount : calculation.ticketAmount)} />
+            <ReviewRow
+              label={transportationType === "car" ? "Fuel" : transportationType === "no_ticket" ? "Train fare (fixed)" : "Ticket cost"}
+              value={egp(transportationType === "car" ? calculation.fuelAmount : calculation.ticketAmount)}
+            />
+            {calculation.noTicketFare ? <ReviewRow label="Stations" value={calculation.noTicketFare.line} /> : null}
             <ReviewRow label="Allowance" value={egp(calculation.allowanceAmount)} />
           </>
         ) : null}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 
 import {
+  anchorYear,
   cairoDay,
   judgeTrainTicket,
   normalizeTicketScan,
@@ -97,6 +98,17 @@ function dateRules() {
   const withDeparture = { ...TRIP, departureAt: "2026-11-09T06:00:00.000Z" };
   assert.equal(judgeTrainTicket(read("2026-11-09"), withDeparture).accepted, true, "the departure photo's own day is the return day");
   assert.equal(judgeTrainTicket(read("2026-11-08"), withDeparture).accepted, false, "and once it exists, the planned last day no longer stands in");
+  assert.equal(judgeTrainTicket(read("2026-11-07"), withDeparture).accepted, false, "and a mid-trip day no longer stands in either");
+
+  // Claim 338 (owner, 2026-11-07: "the second photo is 3/11, which is the departure date"): arrival on Mon
+  // 2 Nov, no departure photo yet, the trip ends Wed 4 Nov, and the onward ticket is dated Tue 3 Nov.
+  const claim338 = { arrivalAt: "2026-11-02T19:52:00.000Z", departureAt: null, tripEndDate: "2026-11-04", tripStartDate: "2026-11-02" };
+  const onward = judgeTrainTicket(read("2026-11-03"), claim338);
+  assert.equal(onward.accepted && onward.matchedTo, "departure", "HEADLINE: before the departure photo, any day of the trip is a departure day");
+  assert.match(onward.accepted ? onward.line : "", /a day of this trip, before the trip's last day/);
+  assert.equal(judgeTrainTicket(read("2026-11-05"), claim338).accepted, false, "a day after the trip's last day is still refused");
+  const late = judgeTrainTicket(read("2026-11-06"), claim338);
+  assert.match(!late.accepted ? late.reason : "", /any day from Tue, 3 Nov 2026 to Wed, 4 Nov 2026/, "the refusal names the whole window");
 
   const noPhoto = { ...TRIP, arrivalAt: null };
   const firstDay = judgeTrainTicket(read("2026-11-06"), noPhoto);
@@ -117,7 +129,7 @@ function dateRules() {
   for (const problem of TICKET_SCAN_PROBLEMS) assert.ok(TICKET_SCAN_GUIDANCE[problem], `${problem} has its instruction`);
 
   const notTicket = judgeTrainTicket({ problems: ["not_a_ticket"], status: "unreadable" }, TRIP);
-  assert.match(!notTicket.accepted ? notTicket.reason : "", /not a train ticket/);
+  assert.match(!notTicket.accepted ? notTicket.reason : "", /not a ticket the system can read/);
 
   const outage = judgeTrainTicket({ status: "unavailable" }, TRIP);
   assert.equal(outage.accepted, true, "an employee is never refused for the reader's own outage");
@@ -131,7 +143,8 @@ function dateRules() {
 
   assert.equal(ticketScanApplies("train"), true);
   assert.equal(ticketScanApplies("Train"), true);
-  assert.equal(ticketScanApplies("bus"), false, "a bus ticket is not read — the owner named the train");
+  assert.equal(ticketScanApplies("bus"), true, "a bus ticket is read too — the owner chose \"Read every ticket\" (2026-11-07)");
+  assert.equal(ticketScanApplies("no_ticket"), false, "a No-ticket trip carries no ticket — it is paid the fixed fare");
   assert.equal(ticketScanApplies("car"), false);
 }
 
@@ -156,6 +169,26 @@ function normalizing() {
     normalizeTicketScan({ is_train_ticket: false, problems: ["dark"], travel_date: "2026-11-06" }),
     { problems: ["not_a_ticket", "dark"], status: "unreadable" },
     "what is not a train ticket is never read as one, whatever date is printed on it",
+  );
+
+  // A booking app's "Monday 27 July" prints no year (the 2026-11-07 sweep: real bus bookings refused for it).
+  const yearless = normalizeTicketScan({ is_train_ticket: true, problems: [], travel_date: "2000-07-27", year_printed: false });
+  assert.equal(yearless.status === "read" && yearless.yearPrinted, false, "a yearless read says so");
+  assert.equal(
+    "yearPrinted" in normalizeTicketScan({ is_train_ticket: true, problems: [], travel_date: "2026-07-27", year_printed: true }),
+    false,
+    "a printed year carries no flag",
+  );
+  const nightBus = judgeTrainTicket(yearless, { arrivalAt: null, departureAt: null, tripEndDate: "2026-07-29", tripStartDate: "2026-07-28" });
+  assert.ok(nightBus.accepted && nightBus.travelDate === "2026-07-27", "HEADLINE: a yearless ticket takes the trip's year, then is judged like any other");
+  assert.equal(anchorYear("2000-12-31", "2027-01-01"), "2026-12-31", "a late-December ticket on an early-January trip is last year's");
+  assert.equal(anchorYear("2000-01-01", "2026-12-31"), "2027-01-01");
+  assert.equal(anchorYear("2000-02-29", "2026-03-01"), "2028-02-29", "29 Feb lands only in a year that has one");
+  const printed = normalizeTicketScan({ is_train_ticket: true, problems: [], travel_date: "2025-07-27", year_printed: true });
+  assert.equal(
+    judgeTrainTicket(printed, { arrivalAt: null, departureAt: null, tripEndDate: "2026-07-29", tripStartDate: "2026-07-28" }).accepted,
+    false,
+    "a PRINTED year is never moved — last year's ticket stays last year's",
   );
 }
 
@@ -222,6 +255,11 @@ function wiring() {
   const server = code(SERVER);
   assert.match(server, /createOpenAiResponseText\(/, "the read goes through the one door");
   assert.match(server, /if \(!hasAiApiKey\(\)\) return \{ status: "unavailable" \}/);
+  // What the 2026-11-07 sweep of the 96 tickets on file taught the reader.
+  assert.match(server, /print the travel date twice/, "a railway ticket's two copies of the date: either clear copy is a read");
+  assert.match(server, /Read whichever copy is clear/);
+  assert.match(server, /'Issued' \(صادر\)[\s\S]{0,200}تاريخ إصدار الحجز/, "the issue or booking date is never the travel date");
+  assert.match(server, /required: \[[^\]]*"year_printed"/, "every read says whether the year was printed");
   assert.match(
     server,
     /readSignedTicketScan\(ticket\.scanToken, \{ bytes: ticket\.bytes, hrId: input\.hrId \}\) \?\? \(await readTrainTicket\(ticket\)\)/,
@@ -257,7 +295,7 @@ function wiring() {
     assert.match(code(file), /scanToken: typeof entry\.scanToken === "string" \? entry\.scanToken : undefined/, `${file} passes the note on`);
   }
   for (const file of [SUBMIT_ROUTE, TICKET_ROUTE]) {
-    assert.match(code(file), /error instanceof TrainTicketRefusedError\)\s*(\{\s*)?return 400/, `${file} answers a refusal 400 with its reason`);
+    assert.match(code(file), /error instanceof TrainTicketRefusedError( \|\| error instanceof NoTicketFareUnavailableError)?\)\s*(\{\s*)?return 400/, `${file} answers a refusal 400 with its reason`);
   }
 
   const wizard = code(WIZARD);

@@ -19,6 +19,7 @@ import type {
   ManagerExpenseAdminInput,
   ManagerExpenseDestination,
   OutstationExpenseRequest,
+  OutstationTransportationType,
   PlacesPrediction,
 } from "@/lib/outstation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -158,9 +159,9 @@ export function AdminManagerExpenseModal({
   const [expenseType, setExpenseType] = useState<"traveling" | "meeting" | "other">(
     request?.expenseType ?? "traveling",
   );
-  const [transportationType, setTransportationType] = useState<
-    "car" | "train" | "bus" | "other"
-  >(request?.transportationType ?? "car");
+  const [transportationType, setTransportationType] = useState<OutstationTransportationType>(
+    request?.transportationType ?? "car",
+  );
   const [notes, setNotes] = useState(request?.notes ?? "");
   // Records created before the ticket field existed carry the price only in
   // reportTravelCost, so fall back to it rather than showing an empty box.
@@ -931,9 +932,7 @@ export function AdminManagerExpenseModal({
                 <FieldLabel>Transportation</FieldLabel>
                 <SelectField
                   onChange={(e) =>
-                    setTransportationType(
-                      e.target.value as "car" | "train" | "bus" | "other",
-                    )
+                    setTransportationType(e.target.value as OutstationTransportationType)
                   }
                   value={transportationType}
                 >
@@ -941,6 +940,10 @@ export function AdminManagerExpenseModal({
                   <option value="train">Train</option>
                   <option value="bus">Bus</option>
                   <option value="other">Other</option>
+                  {/* Only an existing claim can be No ticket — the employee chose it and the system priced it. */}
+                  {request?.transportationType === "no_ticket" ? (
+                    <option value="no_ticket">No ticket (fixed train fare)</option>
+                  ) : null}
                 </SelectField>
               </div>
             )}
