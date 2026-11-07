@@ -1627,7 +1627,7 @@ export function validateInterviewTime(input: { dateKey?: unknown; startMinutes?:
     throw new Error("Choose how long the interview is: 30 minutes up to the whole day (8 hours).");
   }
   if (!isBookableWindow(startMinutes, durationMinutes)) {
-    throw new Error("An interview starts at 9:00 AM or later and ends by 5:00 PM.");
+    throw new Error("An interview must end by midnight — choose an earlier time or a shorter length.");
   }
   return { dateKey, durationMinutes, startMinutes };
 }
@@ -1693,10 +1693,10 @@ export function validateInterviewSessionInput(input: {
   const startMinutes = Number(input.startMinutes);
   const durationMinutes = Number(input.durationMinutes);
   if (!Number.isInteger(durationMinutes) || durationMinutes < 30 || durationMinutes > MAX_DURATION_MINUTES || durationMinutes % 15 !== 0) {
-    throw new Error("Choose when the session ends: at least 30 minutes after it starts, and by 5:00 PM.");
+    throw new Error("Choose when the session ends: at least 30 minutes after it starts, and by midnight.");
   }
   if (!isBookableWindow(startMinutes, durationMinutes)) {
-    throw new Error("A session starts at 9:00 AM or later and ends by 5:00 PM.");
+    throw new Error("A session must end by midnight — choose an earlier start or end.");
   }
   const slotMinutes = Number(input.slotMinutes);
   if (!(SESSION_SLOT_CHOICES as readonly number[]).includes(slotMinutes)) throw new Error("Choose the slot length: 15, 30, 45 or 60 minutes.");

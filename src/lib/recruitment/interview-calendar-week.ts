@@ -6,10 +6,12 @@
 // one — which is why the Cairo conversion below names "Africa/Cairo" itself rather than going
 // through src/lib/attendance/timezone.ts (that one reads the server's environment).
 //
-// THE WEEK IS THE OWNER'S: every day of it, Sunday first, 9:00 AM to 5:00 PM, one row every 30
-// minutes. An interview must start at 9:00 AM or later and END by 5:00 PM. It was Sunday to Thursday
-// from 2026-09-18 until the owner opened Friday and Saturday on 7 Nov 2026: "remove this Interviews
-// are booked Sunday to Thursday only. make able to schedule any day in the week".
+// THE WEEK IS THE OWNER'S: every day of it, Sunday first, one row every 30 minutes. The grid opens on
+// 9:00 AM to 5:00 PM and widens to reach any interview outside it. An interview starts at ANY minute
+// of the day and ends by midnight — the owner, 7 Nov 2026, quoting the old "An interview starts at
+// 9:00 AM or later and ends by 5:00 PM." and answering "make hr freely add any time". The week was
+// Sunday to Thursday from 2026-09-18 until he opened Friday and Saturday the same day: "remove this
+// Interviews are booked Sunday to Thursday only. make able to schedule any day in the week".
 //
 // A DAY IS A "DATE KEY" — "2026-09-20" — never a Date. A Date is an instant, and an instant is a
 // different calendar day in Cairo and in UTC for two or three hours of every night; carrying the
@@ -18,10 +20,12 @@
 
 export const CALENDAR_TIME_ZONE = "Africa/Cairo";
 
-/** 9:00 AM, in minutes after midnight. */
+/** 9:00 AM, in minutes after midnight — where the week grid opens. */
 export const WORKDAY_START_MINUTES = 9 * 60;
-/** 5:00 PM — the last interview must END by then. */
+/** 5:00 PM — where the week grid's usual rows end. Nothing is refused after it. */
 export const WORKDAY_END_MINUTES = 17 * 60;
+/** Midnight at the end of the day — an interview must END by then. */
+export const DAY_END_MINUTES = 24 * 60;
 export const SLOT_MINUTES = 30;
 
 /** Sunday = 0 … Saturday = 6 — every day of the week can hold an interview (owner, 7 Nov 2026). */
@@ -126,10 +130,20 @@ export function weekDays(weekStart: string): string[] {
   return CALENDAR_WEEKDAYS.map((offset) => addDays(sunday, offset));
 }
 
-/** Minutes after midnight of every row: 9:00 AM … 4:30 PM, sixteen rows. */
-export function slotStarts(): number[] {
+/**
+ * Minutes after midnight of every row: 9:00 AM … 4:30 PM, sixteen rows — widened to reach every
+ * interview or session passed in, so one booked at 7:40 PM still has its row.
+ */
+export function slotStarts(items: ReadonlyArray<{ startMinutes: number; durationMinutes: number }> = []): number[] {
+  let from = WORKDAY_START_MINUTES;
+  let to = WORKDAY_END_MINUTES;
+  for (const item of items) {
+    if (!Number.isFinite(item.startMinutes) || !Number.isFinite(item.durationMinutes)) continue;
+    from = Math.min(from, slotFor(Math.max(0, item.startMinutes)));
+    to = Math.max(to, Math.min(DAY_END_MINUTES, item.startMinutes + Math.max(item.durationMinutes, SLOT_MINUTES)));
+  }
   const starts: number[] = [];
-  for (let minutes = WORKDAY_START_MINUTES; minutes < WORKDAY_END_MINUTES; minutes += SLOT_MINUTES) {
+  for (let minutes = from; minutes < to; minutes += SLOT_MINUTES) {
     starts.push(minutes);
   }
   return starts;
@@ -158,12 +172,12 @@ export function isBookableDay(key: string): boolean {
   return isDateKey(key) && (CALENDAR_WEEKDAYS as readonly number[]).includes(weekdayOf(key));
 }
 
-/** Starts at 9:00 AM or later, on a quarter hour, and ends by 5:00 PM. */
+/** Starts at any minute of the day and ends by midnight (owner, 7 Nov 2026: "make hr freely add any time"). */
 export function isBookableWindow(startMinutes: number, durationMinutes: number): boolean {
   if (!Number.isInteger(startMinutes) || !Number.isInteger(durationMinutes)) return false;
-  if (startMinutes % 15 !== 0 || durationMinutes % 15 !== 0) return false;
+  if (durationMinutes % 15 !== 0) return false;
   if (durationMinutes < 15 || durationMinutes > MAX_DURATION_MINUTES) return false;
-  return startMinutes >= WORKDAY_START_MINUTES && startMinutes + durationMinutes <= WORKDAY_END_MINUTES;
+  return startMinutes >= 0 && startMinutes + durationMinutes <= DAY_END_MINUTES;
 }
 
 /** "Sunday". */

@@ -45,6 +45,7 @@ import {
   formatTimeOfDay,
   formatTimeRange,
   isBookableDay,
+  DAY_END_MINUTES,
   isBookableWindow,
   slotStarts,
   weekStartFor,
@@ -58,9 +59,11 @@ import { InvitationPanel } from "./invitation-panel";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
 import { InterviewLocationField } from "./location-field";
 import { OrgFields } from "./org-fields";
+import { TimeOfDayInput } from "./time-of-day-input";
 import { PanelPicker } from "./panel-picker";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import {
+  phxFieldClassName,
   phxLabelClassName,
   phxSelectClassName,
   phxTextareaClassName,
@@ -73,9 +76,8 @@ export type ScheduleCandidate = { id: string | null; name: string; jobTitle?: st
 /** The first day an interview can still go on: today if it is a working day with time left, else the next one. */
 function firstBookableDay(todayKey: string, nowMinutes: number): string {
   let key = todayKey;
-  const starts = slotStarts();
-  const lastStart = starts[starts.length - 1] ?? 0;
-  if (!isBookableDay(key) || nowMinutes >= lastStart) key = addDays(key, 1);
+  // Any time of day is bookable, so today counts until the last half hour before midnight.
+  if (!isBookableDay(key) || nowMinutes >= DAY_END_MINUTES - 30) key = addDays(key, 1);
   while (!isBookableDay(key)) key = addDays(key, 1);
   return key;
 }
@@ -423,6 +425,15 @@ export function ScheduleInterviewDialog({
                       );
                     })}
                   </div>
+                  <label className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={phxLabelClassName}>Another time</span>
+                    <TimeOfDayInput
+                      ariaLabel="Another time"
+                      className={`${phxFieldClassName} w-auto`}
+                      onChange={(minutes) => setStartMinutes(minutes !== null && isBookableWindow(minutes, durationMinutes) ? minutes : null)}
+                      value={startMinutes}
+                    />
+                  </label>
                   <p className="mt-1.5 min-h-[16px] text-[11px] tabular-nums text-slate-500" aria-live="polite">
                     {dayLoading
                       ? "Reading the day…"

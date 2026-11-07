@@ -108,7 +108,8 @@ export function buildInterviewCalendarExportModel(input: {
   const weekStart = weekStartFor(input.weekStart);
   const dayKeys = weekDays(weekStart);
   const bookings = [...input.bookings].sort(byTime);
-  const starts = slotStarts();
+  // 9 to 5, widened to reach any interview booked earlier or later.
+  const starts = slotStarts(bookings);
 
   const slots = starts.map((minutes) => ({
     label: formatTimeOfDay(minutes),

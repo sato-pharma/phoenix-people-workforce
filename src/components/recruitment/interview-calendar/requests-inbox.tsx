@@ -9,7 +9,7 @@
 // owners), and MY REQUESTS for a requester (a District Manager and above, or HR). The owner sees both.
 
 import { CalendarCheck2, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, Clock3, Inbox, Loader2, Trash2, UserRound, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { RecruitmentEmptyState, RecruitmentPanel, RecruitmentPill, type RecruitmentPillTone } from "@/components/recruitment/recruitment-premium";
@@ -22,17 +22,17 @@ import {
   type InterviewRequest,
   type InterviewRequestItem,
 } from "@/lib/recruitment/interview-calendar-types";
-import { formatDayLong, formatDuration, formatShortDate, formatTimeOfDay, requestDayHasPassed, slotStarts } from "@/lib/recruitment/interview-calendar-week";
+import { formatDayLong, formatDuration, formatShortDate, formatTimeOfDay, requestDayHasPassed } from "@/lib/recruitment/interview-calendar-week";
 import { cn } from "@/lib/utils";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
 import { useInterviewJobTitles } from "./org-fields";
+import { TimeOfDayInput } from "./time-of-day-input";
 import {
   phxButtonDangerDenseClassName,
   phxFieldClassName,
   phxLabelClassName,
-  phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
 import { adminRecessedDepthClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
@@ -68,7 +68,6 @@ function BookTimeDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const starts = useMemo(() => slotStarts(), []);
   const jobTitles = useInterviewJobTitles(api);
 
   async function book() {
@@ -121,19 +120,7 @@ function BookTimeDialog({
       <div className="flex flex-col gap-4">
         <div>
           <p className={phxLabelClassName}>Time</p>
-          <select
-            aria-label="Interview time"
-            className={`${phxSelectClassName} block`}
-            onChange={(event) => setStart(event.target.value === "" ? null : Number(event.target.value))}
-            value={start ?? ""}
-          >
-            <option value="">Choose a time…</option>
-            {starts.map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {formatTimeOfDay(minutes)}
-              </option>
-            ))}
-          </select>
+          <TimeOfDayInput ariaLabel="Interview time" className={`${phxFieldClassName} block`} onChange={setStart} value={start} />
         </div>
         <div>
           <p className={phxLabelClassName}>Role interviewed for (optional)</p>

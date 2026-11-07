@@ -54,7 +54,9 @@ outcome sync and Mark as hired therefore move it without any second write that c
 - **The 1st interview may also be a phone call** (owner, 7 Nov 2026: "only for hr first interview u will add a
   third option which is phone call"). HR picks it as the third tile beside In person and Zoom; it needs no
   Cairo-or-Giza answer, keeps no place and makes no Zoom meeting, and the notice and invitation say "by phone
-  call". No other interview may be a phone call — the Medical Rep page refuses it for every later round, and
+  call". **HR is never asked its length** (owner, 7 Nov 2026: "don't ask him to choose the length of the
+  call"): the Length question disappears and the call holds 30 minutes on the calendar (`MR_PHONE_CALL_MINUTES`),
+  whatever length a request sends. No other interview may be a phone call — the Medical Rep page refuses it for every later round, and
   the interview calendar's own booking and move routes refuse it too (`phoneCallRefusal`). A session (one
   meeting for many candidates) is never a phone call; the database allows `phone` on a booking only.
 - **The 1st interview's result confirms the area and the line** (owner, 7 Nov 2026: "make the HR able to
@@ -65,7 +67,11 @@ outcome sync and Mark as hired therefore move it without any second write that c
   every later interview booking.
 - **Interviews on any day.** The interview calendar opened Friday and Saturday on 7 Nov 2026 (owner: "remove
   this Interviews are booked Sunday to Thursday only. make able to schedule any day in the week"): every day,
-  9:00 AM to 5:00 PM Cairo, and the evening reminder looks to the very next day.
+  and the evening reminder looks to the very next day.
+- **Interviews at any time of day.** The same day the owner quoted the old refusal "An interview starts at
+  9:00 AM or later and ends by 5:00 PM." and answered "make hr freely add any time": an interview or session
+  starts at any minute and must end by midnight Cairo (`isBookableWindow`). HR types the time in a time field
+  (`TimeOfDayInput`); the week grid opens on 9:00 AM to 5:00 PM and widens to reach anything booked outside it.
 - **§4 The DSM receives the CV through Phoenix.** Booking the DSM round sends the CV to that DSM through the
   existing Send to manager door and notifies him (in-app, push and Telegram — never email).
 - **§5 Interview details.** Every interview carries its Zoom link, or its date, time and place. The interview

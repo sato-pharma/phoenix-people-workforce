@@ -50,6 +50,13 @@ export function runRecruitmentMrHiringBookingTests() {
   const phone = parseMrBookingInput({ ...base, location: "Head office", platform: "phone", round: "hr_first" });
   assert.equal(phone.platform, "phone", "HR may hold the 1st interview as a phone call");
   assert.equal(phone.location, null, "a phone call keeps no place");
+  // Its length is never asked (owner, 7 Nov 2026: "don't ask him to choose the length of the call").
+  assert.equal(phone.durationMinutes, 30, "a phone call holds half an hour");
+  assert.equal(parseMrBookingInput({ ...base, durationMinutes: 600, platform: "phone", round: "hr_first" }).durationMinutes, 30, "whatever length the request sent");
+  assert.equal(parseMrBookingInput({ ...base, durationMinutes: 60, inCairoOrGiza: false, round: "hr_first" }).durationMinutes, 60, "a Zoom 1st interview keeps the length HR chose");
+  const form = codeOnly("src/components/recruitment/mr-hiring/mr-forms.tsx");
+  assert.match(form, /\{byPhone \? null : \(\s*<FormField htmlFor="mr-duration" label="Length">/, "the booking form hides the Length question for a phone call");
+  assert.match(form, /durationMinutes: byPhone \? undefined : duration,/, "and sends no length for one");
   assert.equal(parseMrBookingInput({ ...base, inCairoOrGiza: true, platform: "phone", round: "hr_first" }).platform, "phone", "a phone call wins over the Cairo-or-Giza answer");
   assert.throws(() => parseMrBookingInput({ ...base, interviewerHrId: "D-1", platform: "phone", round: "dsm" }), /HR 1st interview only/, "the DSM's interview is never a phone call");
   assert.throws(() => parseMrBookingInput({ ...base, interviewerHrId: "R-1", platform: "phone", round: "rsm" }), /HR 1st interview only/, "nor the RSM's");

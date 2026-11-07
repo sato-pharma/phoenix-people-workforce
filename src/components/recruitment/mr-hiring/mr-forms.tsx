@@ -24,6 +24,7 @@ import {
   MR_LINE_LABELS,
   MR_LINES,
   MR_LOCATION_LIMIT,
+  MR_PHONE_CALL_MINUTES,
   MR_RECOMMENDATION_LABELS,
   MR_RESULT_STEP_LABELS,
   MR_RESULTS,
@@ -445,7 +446,8 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
     try {
       const data = await postJson(`/api/recruitment/mr-hiring/${encodeURIComponent(row.candidateId)}/book`, {
         dateKey,
-        durationMinutes: duration,
+        // A phone call's length is never asked — the server books it for MR_PHONE_CALL_MINUTES.
+        durationMinutes: byPhone ? undefined : duration,
         inCairoOrGiza: first && !byPhone ? firstWay === "in_office" : undefined,
         interviewerHrId: interviewer?.hrId ?? null,
         location: inPerson ? location : null,
@@ -492,18 +494,20 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
           <input className={phxFieldClassName} id="mr-day" min={today} onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
         </FormField>
         <FormField hint="Cairo time." htmlFor="mr-time" label="Time" required>
-          <input className={phxFieldClassName} id="mr-time" onChange={(event) => setTime(event.target.value)} step={900} type="time" value={time} />
+          <input className={phxFieldClassName} id="mr-time" onChange={(event) => setTime(event.target.value)} step={60} type="time" value={time} />
         </FormField>
       </div>
-      <FormField htmlFor="mr-duration" label="Length">
-        <select className={phxSelectClassName} id="mr-duration" onChange={(event) => setDuration(Number(event.target.value))} value={duration}>
-          {DURATIONS.map((minutes) => (
-            <option key={minutes} value={minutes}>
-              {minutes} minutes
-            </option>
-          ))}
-        </select>
-      </FormField>
+      {byPhone ? null : (
+        <FormField htmlFor="mr-duration" label="Length">
+          <select className={phxSelectClassName} id="mr-duration" onChange={(event) => setDuration(Number(event.target.value))} value={duration}>
+            {DURATIONS.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes} minutes
+              </option>
+            ))}
+          </select>
+        </FormField>
+      )}
       {first ? (
         <FormField
           hint={
@@ -550,7 +554,9 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
           />
         </FormField>
       ) : byPhone ? (
-        <p className="text-xs leading-5 text-slate-600">No Zoom meeting and no place — the interviewer calls the candidate at the booked time.</p>
+        <p className="text-xs leading-5 text-slate-600">
+          No Zoom meeting and no place — the interviewer calls the candidate at the booked time. The call holds {MR_PHONE_CALL_MINUTES} minutes on the calendar.
+        </p>
       ) : (
         <p className="text-xs leading-5 text-slate-600">The Zoom link is created from the official Sato Pharma Zoom account when the interview is booked.</p>
       )}
