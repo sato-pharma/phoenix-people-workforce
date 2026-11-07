@@ -162,7 +162,12 @@ export function TripReview({
             ) : photo.url ? (
               <span className="text-amber-700"> · no GPS position, not on the map</span>
             ) : null}
-            {photo.locationLabel ? <span dir="auto"> · {displayPlace(photo.locationLabel)}</span> : null}
+            {photo.locationLabel ? (
+              <>
+                {" · "}
+                <bdi dir="auto">{displayPlace(photo.locationLabel)}</bdi>
+              </>
+            ) : null}
           </>
         ),
         marker:
@@ -228,6 +233,7 @@ export function TripReview({
         : null,
     [record.capturedLatitude, record.capturedLongitude, record.capturedLocation],
   );
+  const submittedLabel = record.capturedLocation?.label ? displayPlace(record.capturedLocation.label) : null;
 
   // ── The three verdicts ──────────────────────────────────────────────────────────────────────
   const fieldWorkSignal = ((): Signal => {
@@ -398,6 +404,20 @@ export function TripReview({
         </div>
       </div>
 
+      {/* Why an allowance was not paid — the system's sentences, cut out of the employee's note
+          (payroll-expense-mapping.ts, `allowanceNotices`) so the note holds only the rep's words. */}
+      {record.allowanceNotices && record.allowanceNotices.length > 0 ? (
+        <div className="border-b border-slate-200 px-5 py-2 text-xs" data-allowance-notices>
+          {record.allowanceNotices.map((notice) => (
+            <p className="break-words text-amber-800" key={notice}>
+              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">Allowance</span>
+              {" · "}
+              {notice}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       {/* ── 3. Verdict strip — the "obvious at a glance" part ─────────────────────────────── */}
       <div className="grid border-b border-slate-200 sm:grid-cols-3 [&>*]:min-w-0" data-verdict-strip>
         <SignalTile href="#trip-field-work" icon={Route} signal={fieldWorkSignal} title="Field work" />
@@ -408,15 +428,10 @@ export function TripReview({
       <div className="space-y-5 px-5 py-4">
         {/* ── 4. Route, geography, the employee's note ──────────────────────────────────── */}
         <div className="grid gap-x-6 gap-y-3 sm:grid-cols-4 [&>*]:min-w-0">
-          {/* The place in words first (RouteFact keeps its own dir="auto" per end); the address as
-              Google stored it, plus code and all, sits under it in small type — kept, never leading. */}
-          <RouteFact from={record.from} to={displayPlace(destination)} />
-          {destination && displayPlace(destination) !== destination ? (
-            <p className="col-span-2 -mt-2 break-words text-phx-xs text-slate-500 sm:col-span-4" dir="auto">
-              <MapPin className="mr-1 inline h-3 w-3 text-slate-400" />
-              Stored address · {destination}
-            </p>
-          ) : null}
+          {/* The place in words at both ends (RouteFact keeps its own dir="auto" per end). The address
+              as Google stored it, plus code and all, is the To's tooltip — never a second line
+              (owner's review, 2026-11-07: "Stored address · 6W33+64C…" read as noise). */}
+          <RouteFact from={displayPlace(record.from)} to={displayPlace(destination)} toTitle={destination} />
           {/* Brick / area / region derived from the trip's captured GPS point (captured-location.ts)
               — absent, not "Not resolved", for an imported trip that never captured coordinates. */}
           {record.capturedLocation ? (
@@ -472,6 +487,7 @@ export function TripReview({
                   legend={legendFor(day.date)}
                   loading={pinsLoading}
                   submittedAt={submittedAt}
+                  submittedLabel={submittedLabel}
                   tripRoute={routeFor(day.date)}
                 />
               )}
@@ -500,6 +516,7 @@ export function TripReview({
                       legend={legendFor(dayKey)}
                       loading={pinsLoading}
                       submittedAt={submittedAt}
+                      submittedLabel={submittedLabel}
                       tripRoute={routeFor(dayKey)}
                     />
                   </li>
@@ -555,7 +572,7 @@ function cairoDayKey(iso: string): string {
 
 const DAY_MAP_COPY = {
   description: "",
-  empty: "Nothing with a GPS position was recorded on this day, so there is nothing to draw.",
+  empty: "No GPS points this day",
   title: "The day on a map",
 };
 
@@ -615,6 +632,7 @@ function DayMap({
   legend,
   loading,
   submittedAt,
+  submittedLabel,
   tripRoute = null,
 }: {
   checkins: WorkloadCheckinDetail[];
@@ -623,6 +641,7 @@ function DayMap({
   legend: DayLegendItem[];
   loading: boolean;
   submittedAt: RouteDestination | null;
+  submittedLabel: string | null;
   tripRoute?: DayRouteOverlay | null;
 }) {
   const { ref, seen } = useSeenOnce<HTMLDivElement>();
@@ -649,6 +668,9 @@ function DayMap({
     [home, legend],
   );
   const pinned = markers.length + mapped.filter((checkin) => checkin.lat !== null && checkin.lon !== null).length;
+  // Nothing of this day's own carries a position and no route is drawn on it: ONE line, never a
+  // 420px map holding only the submitted-from pin (owner's review, 2026-11-07).
+  const empty = !loading && pinned === 0 && !tripRoute;
   return (
     <div className="border-t border-slate-200 px-3 py-3" data-day-map={dayKey} data-map-drawn={seen ? "yes" : "no"} ref={ref}>
       <p className="mb-2 flex flex-wrap items-center gap-x-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
@@ -659,15 +681,21 @@ function DayMap({
         </span>
       </p>
       {seen ? (
-        <FieldWorkforceRouteMap
-          checkins={mapped}
-          copy={DAY_MAP_COPY}
-          destination={submittedAt}
-          frame="bare"
-          markers={markers}
-          route={null}
-          tripRoute={tripRoute?.line ?? null}
-        />
+        empty ? (
+          <DayMapEmpty />
+        ) : (
+          <FieldWorkforceRouteMap
+            checkins={mapped}
+            copy={DAY_MAP_COPY}
+            destination={submittedAt}
+            frame="bare"
+            markers={markers}
+            route={null}
+            tripRoute={tripRoute?.line ?? null}
+          />
+        )
+      ) : empty ? (
+        <DayMapEmpty />
       ) : (
         // The map's own box size, so the page does not jump when the map replaces it.
         <div aria-hidden className="h-[360px] border border-slate-200 bg-slate-50 sm:h-[420px]" />
@@ -687,14 +715,19 @@ function DayMap({
             <PinBadge label="H" tone="photo" />
             <span className="min-w-0 break-words text-slate-700">
               <span className="font-bold text-slate-900">Home</span>
-              {home.label ? <span dir="auto"> · {home.label}</span> : null}
+              {home.label ? (
+                <>
+                  {" · "}
+                  <bdi dir="auto">{displayPlace(home.label)}</bdi>
+                </>
+              ) : null}
               <span className="font-mono text-slate-500">
                 {" "}· {home.lat.toFixed(5)}, {home.lon.toFixed(5)}
               </span>
             </span>
           </li>
         ) : null}
-        {submittedAt ? (
+        {submittedAt && !empty ? (
           <li className="flex items-start gap-2">
             <PinBadge label="○" tone="submitted" />
             <span className="min-w-0 break-words text-slate-700">
@@ -702,7 +735,12 @@ function DayMap({
               <span className="font-mono text-slate-500">
                 {" "}· {submittedAt.lat.toFixed(5)}, {submittedAt.lon.toFixed(5)}
               </span>
-              {submittedAt.title.includes(" · ") ? <span dir="auto"> · {submittedAt.title.slice(submittedAt.title.indexOf(" · ") + 3)}</span> : null}
+              {submittedLabel ? (
+                <>
+                  {" · "}
+                  <bdi dir="auto">{submittedLabel}</bdi>
+                </>
+              ) : null}
             </span>
           </li>
         ) : null}
@@ -718,7 +756,12 @@ function DayMap({
             <span className="min-w-0 break-words text-slate-700">
               <span className="font-bold text-slate-900">{checkin.contactName ?? "Check-in"}</span>
               {` · ${formatClock(checkin.checkDate)}`}
-              {checkin.address ? <span dir="auto"> · {checkin.address}</span> : null}
+              {checkin.address ? (
+                <>
+                  {" · "}
+                  <bdi dir="auto">{displayPlace(checkin.address)}</bdi>
+                </>
+              ) : null}
               {checkin.lat === null || checkin.lon === null ? (
                 <span className="text-amber-700"> · no coordinates, not on the map</span>
               ) : null}
@@ -727,6 +770,14 @@ function DayMap({
         ))}
       </ul>
     </div>
+  );
+}
+
+function DayMapEmpty() {
+  return (
+    <p className="border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-500" data-day-map-empty>
+      {DAY_MAP_COPY.empty}
+    </p>
   );
 }
 

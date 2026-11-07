@@ -195,7 +195,10 @@ export function parseOutstationDescription(raw: string | null | undefined): Outs
   const evidence: OutstationEvidenceStamp[] = [];
 
   const lead = tidy(source.slice(0, markers[0]?.index ?? source.length));
-  if (lead && lead !== "-") noteParts.push(lead);
+  // A lead of punctuation only ("-", ".", "..") is what a rep types to get past an empty box, or
+  // what is left once the machine lines are cut away. It is not a note (owner's review of the live
+  // Expense Approvals page, 2026-11-07: a note box reading ".." over the system text).
+  if (lead && !/^[\s.\-–—·,;:]*$/.test(lead)) noteParts.push(lead);
 
   markers.forEach((marker, index) => {
     const bodyStart = (marker.index ?? 0) + marker[0].length;

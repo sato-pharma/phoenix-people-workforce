@@ -53,6 +53,12 @@ export const CONTACT_HR_DRAFT_KEY_BASE = "phoenix:contact-hr-draft:v2";
 /** The expense-approval decision draft — unsaved decisions, cleared at sign-out. */
 export const EXPENSE_DECISION_DRAFT_KEY_BASE = "phoenix.outstation.expense-approvals.draft.v2";
 /**
+ * How one reviewer last ordered the Expense Approvals rail ("value" or "oldest", owner's review
+ * 2026-11-07) — per person, so a shared office PC keeps each reviewer's own order. A preference,
+ * not a draft: sign-out leaves it, and an empty or unreadable store means "Biggest first".
+ */
+export const EXPENSE_APPROVAL_VIEW_KEY_BASE = "phoenix.outstation.expense-approvals.view.v1";
+/**
  * What this browser last reported to push_subscriptions for one person (onesignal-provider.tsx) —
  * per person, so a shared tablet registers again for whoever signs in next. Not a draft: it is not
  * cleared at sign-out, because the device's subscription is the same when the same person returns.

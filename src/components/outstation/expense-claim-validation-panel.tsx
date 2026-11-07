@@ -58,6 +58,19 @@ const VERDICT_STYLE: Record<FraudVerdict, { card: string; chip: string; label: s
   },
 };
 
+/**
+ * Problems first (owner's review, 2026-11-07): a flag, then what could not be verified, then what
+ * passed. Stable within each group, so the checks keep the engine's own order inside it.
+ */
+const VERDICT_ORDER: Record<FraudVerdict, number> = { review: 0, unverifiable: 1, clean: 2 };
+
+export function orderClaimChecks<T extends { verdict: FraudVerdict }>(checks: T[]): T[] {
+  return checks
+    .map((check, index) => ({ check, index }))
+    .sort((left, right) => VERDICT_ORDER[left.check.verdict] - VERDICT_ORDER[right.check.verdict] || left.index - right.index)
+    .map(({ check }) => check);
+}
+
 function VerdictIcon({ verdict }: { verdict: FraudVerdict }) {
   if (verdict === "clean") return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
   if (verdict === "review") return <AlertTriangle className="h-4 w-4 text-rose-600" />;
@@ -153,6 +166,8 @@ export function ExpenseClaimValidationPanel({
 
       {state.kind === "ready" && state.data.available ? (
         <div className="space-y-3">
+          {/* On the trip page (`bare`) the section header already says this sentence — never twice. */}
+          {bare ? null : (
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center gap-1.5 px-2 py-1 text-phx-2xs font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
@@ -162,11 +177,34 @@ export function ExpenseClaimValidationPanel({
             </span>
             <p className="text-phx-md leading-relaxed text-slate-700">{state.data.summary}</p>
           </div>
+          )}
 
           {/* Stacked cards, never a table. This panel renders inside a column that collapses on
               mobile, and a table here would force horizontal scrolling on a phone. */}
           <div className="space-y-2">
-            {state.data.checks.map((check) => (
+            {orderClaimChecks(state.data.checks).map((check) =>
+              // A passed check on the trip page is ONE line — title, chip, its facts; the sentence
+              // behind it is the line's tooltip. Nothing is folded: it is all still on the page.
+              bare && check.verdict === "clean" ? (
+                <div
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-1 border px-3 py-1.5 ${VERDICT_STYLE.clean.card}`}
+                  data-claim-check-line
+                  key={check.id}
+                  title={check.detail}
+                >
+                  <VerdictIcon verdict={check.verdict} />
+                  <p className="text-phx-md font-bold text-slate-900">{check.title}</p>
+                  <span className={`px-1.5 py-0.5 text-phx-3xs font-bold uppercase tracking-wider ${VERDICT_STYLE.clean.chip}`}>
+                    {VERDICT_STYLE.clean.label}
+                  </span>
+                  {check.facts.map((fact) => (
+                    <span className="flex items-baseline gap-1.5" key={`${check.id}-${fact.label}`}>
+                      <span className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">{fact.label}</span>
+                      <span className="text-xs font-semibold text-slate-800">{fact.value}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
               <div
                 className={`border p-3 ${VERDICT_STYLE[check.verdict].card}`}
                 key={check.id}
@@ -196,7 +234,8 @@ export function ExpenseClaimValidationPanel({
                   </dl>
                 ) : null}
               </div>
-            ))}
+              ),
+            )}
           </div>
 
           <p className="text-xs text-slate-500">

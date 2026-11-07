@@ -22,6 +22,7 @@ import { navigationHomePathByMode } from "@/config/system-navigation";
 import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
 import { ModuleLockProvider } from "@/components/layout/module-lock-context";
 import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
+import { ChromeHeightProbe } from "@/components/layout/chrome-height-probe";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
@@ -231,6 +232,9 @@ export async function AppShell({
             >
               <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
                 <div className="sticky top-0 z-30">
+                  {/* Publishes this block's height as --phx-chrome-h, for a page that pins something
+                      under it (the Expense Approvals rail). Renders nothing visible. */}
+                  <ChromeHeightProbe />
                   {/* VIEW AS SEAT (src/lib/auth/seat-view.ts): on every page of a view, above the
                       seat's own chrome, so a read-only view is never taken for the real seat. */}
                   {access.seatView ? (

@@ -6,14 +6,16 @@ import {
   expenseTripAwaitingLabel,
   expenseTripDaysAwaiting,
   expenseTripTriage,
+  liveWorkloadMatchStatus,
   matchesExpenseTripTriage,
+  withLiveWorkloadStatus,
 } from "../src/lib/outstation/expense-approval-triage.ts";
 import {
   countActiveExpenseApprovalFilters,
   matchesExpenseApprovalFilters,
   parseExpenseTripTriageFilter,
 } from "../src/lib/outstation/expense-approval-filters.ts";
-import { idleDayDeductionSuggestions } from "../src/lib/outstation/idle-day-deduction.ts";
+import { idleDayDeductionSuggestions, reasonAfterIdleDayPick } from "../src/lib/outstation/idle-day-deduction.ts";
 import { mapOutstationRequestRowToPayrollApproval } from "../src/lib/outstation/payroll-expense-mapping.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -47,6 +49,34 @@ export function runOutstationExpenseApprovalsQueueTests() {
     );
   }
   assert.equal(expenseTripTriage({}), null, "an imported row has no reading at all, never a quiet clean");
+  // Owner's review, 2026-11-07: the trip's own photo tile warned "No GPS location" while the rail
+  // filed the same trip as Clean. A departure photo with no position needs a look.
+  assert.deepEqual(
+    expenseTripTriage({ departurePhotoFlagged: false, departurePhotoNoGps: true, workloadMatchStatus: "matched" }),
+    { reasons: ["Departure photo has no GPS"], triage: "look" },
+    "HEADLINE: a departure photo with no GPS is never Clean",
+  );
+  assert.deepEqual(
+    expenseTripTriage({ departurePhotoFlagged: true, departurePhotoNoGps: true, workloadMatchStatus: "matched" })?.reasons,
+    ["Departure photo flagged"],
+    "a flagged photo names the flag once, not both",
+  );
+  // ...and an opened trip's live day-by-day read outranks the stored stamp: a conference day is
+  // worked (trip-day-meetings.ts), so the rail stops reading "No field activity" for it.
+  assert.equal(liveWorkloadMatchStatus({ idleDays: 0, tripDays: 2 }), "matched", "HEADLINE: no idle day reads as matched");
+  assert.equal(liveWorkloadMatchStatus({ idleDays: 1, tripDays: 2 }), "partial");
+  assert.equal(liveWorkloadMatchStatus({ idleDays: 2, tripDays: 2 }), "no_activity");
+  assert.equal(liveWorkloadMatchStatus(null), null, "no live read leaves the stored stamp");
+  assert.equal(liveWorkloadMatchStatus({ idleDays: 0, tripDays: 0 }), null, "an empty read leaves it too");
+  const stored = [
+    { tripId: "OUTSTATION-1", workloadMatchStatus: "no_activity" },
+    { tripId: "OUTSTATION-2", workloadMatchStatus: "no_activity" },
+  ];
+  const live = withLiveWorkloadStatus(stored, { "OUTSTATION-1": { idleDays: 0, tripDays: 1 } });
+  assert.equal(live[0].workloadMatchStatus, "matched", "HEADLINE: the opened trip takes its live answer");
+  assert.equal(expenseTripTriage(live[0])?.triage, "clean", "and leaves Needs a look");
+  assert.equal(live[1], stored[1], "an unopened trip keeps its stored row untouched");
+  assert.equal(withLiveWorkloadStatus(stored, {}), stored, "nothing opened, the same array — no re-render churn");
   assert.equal(matchesExpenseTripTriage({}, ""), true, "an imported row still shows under All");
   assert.equal(matchesExpenseTripTriage({}, "clean"), false);
   assert.equal(matchesExpenseTripTriage({}, "look"), false);
@@ -159,7 +189,29 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.match(workspace, /idle: selected \? \(idleByTrip\[selected\.tripId\] \?\? null\) : null,/);
   assert.match(bar, /!locked && undecided && idle\s*\? idleDayDeductionSuggestions\(/, "HEADLINE: offered only on an undecided trip a decider can change");
   assert.match(bar, /onClick=\{\(\) => applySuggestion\(suggestion\)\}/, "a share is applied only by his click");
-  assert.match(bar, /if \(!decision\.hrComment\.trim\(\)\) onChangeReason\(suggestion\.reason\);/, "HEADLINE: his own reason is never written over");
+  // The reason a share writes (owner's review, 2026-11-07): the box opens holding the system's hold
+  // sentence, so "fill an empty box only" meant the share's reason never landed.
+  const reasons = ["Allowance deducted for the idle days: 2.", "Allowance deducted in full: 2."];
+  const held = "Held: no field activity recorded.";
+  assert.equal(reasonAfterIdleDayPick({ current: "", picked: reasons[0], reasons, systemText: held }), reasons[0], "an empty box takes the reason");
+  assert.equal(
+    reasonAfterIdleDayPick({ current: held, picked: reasons[0], reasons, systemText: held }),
+    `${held}\n${reasons[0]}`,
+    "HEADLINE: the system's sentence gets the share's reason on a new line under it",
+  );
+  assert.equal(
+    reasonAfterIdleDayPick({ current: `${held}\n${reasons[0]}`, picked: reasons[1], reasons, systemText: held }),
+    `${held}\n${reasons[1]}`,
+    "picking the other share swaps the reason, never stacks two",
+  );
+  assert.equal(reasonAfterIdleDayPick({ current: reasons[0], picked: reasons[1], reasons, systemText: "" }), reasons[1]);
+  assert.equal(
+    reasonAfterIdleDayPick({ current: "Called him, he was at the clinic.", picked: reasons[0], reasons, systemText: held }),
+    null,
+    "HEADLINE: his own reason is never written over",
+  );
+  assert.match(bar, /const next = reasonAfterIdleDayPick\(\{/, "the decision box uses that one rule");
+  assert.match(bar, /if \(next !== null\) onChangeReason\(next\);/, "and leaves his words alone on null");
   // Owner, 2026-11-07, "FIX BUTTONS": in the 19rem rail, Approve and Reject read "Approv" and
   // "Reject" cut off beside "3 unsaved", because a `flex-1` pair shared one line with Save. The pair
   // takes the whole rail width and Save drops to its own line under it.

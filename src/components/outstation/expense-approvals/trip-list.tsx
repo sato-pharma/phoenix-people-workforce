@@ -97,8 +97,12 @@ export function TripList({
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
         <span className="text-phx-xs font-black uppercase tracking-wide text-white">Trips</span>
         {loading ? null : (
-          <span className="text-phx-xs font-bold text-slate-300">
-            {formatNumberValue(activeList.length)} of {formatNumberValue(totalCount)} shown
+          // "109 awaiting · 185 of 632 trips": the awaiting figure is the SAME list the chosen
+          // filter button counts, so the header and the buttons never show two different numbers
+          // side by side (it used to read "632 of 632 shown" beside "163 awaiting").
+          <span className="text-phx-xs font-bold text-slate-300" data-rail-count>
+            <span className="text-white">{formatNumberValue(pendingCount)} awaiting</span> ·{" "}
+            {formatNumberValue(activeList.length)} of {formatNumberValue(totalCount)} trips
           </span>
         )}
       </span>
@@ -161,7 +165,10 @@ export function TripList({
   );
 
   return (
-    <aside className="min-w-0 lg:w-[19rem] lg:shrink-0">
+    // `phx-expense-rail` (globals.css) pins the WHOLE aside under the frozen chrome on a desktop.
+    // It must sit here, not on the box inside: the row holding the aside is as tall as the trip,
+    // so the aside can travel; the box inside could not, the aside being exactly its height.
+    <aside className="phx-expense-rail min-w-0 lg:w-[19rem] lg:shrink-0">
       {/* Phone: the bar that opens the sheet. It names the chosen trip, so the reviewer knows
           which page he is on without opening the list. */}
       <button
@@ -187,7 +194,7 @@ export function TripList({
           // The phone sheet: fixed over the page, full height, no portal. At `lg` the same box is
           // the sticky rail; the sheet state is simply ignored.
           sheetOpen ? "fixed inset-0 z-40 flex" : "hidden",
-          "lg:sticky lg:top-4 lg:z-auto lg:flex lg:max-h-[calc(100dvh-5rem)]",
+          "phx-expense-rail-box lg:z-auto lg:flex",
         )}
       >
         {header}
@@ -246,7 +253,7 @@ export function TripList({
                 Select all {formatNumberValue(pendingCount)} awaiting
               </label>
             ) : null}
-            <div className="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto">
+            <div className="min-h-[6rem] flex-1 divide-y divide-slate-200 overflow-y-auto">
               {activeList.map((record) => {
                 const decision = decisionFor(record);
                 const adjusted = isAdjustedAmount(decision.approvedAmount, record.total);
@@ -373,7 +380,7 @@ export function TripList({
             </div>
           </>
         )}
-        {footer ? <div className="hidden shrink-0 lg:block">{footer}</div> : null}
+        {footer ? <div className="phx-expense-rail-footer hidden shrink-0 lg:block">{footer}</div> : null}
       </div>
     </aside>
   );

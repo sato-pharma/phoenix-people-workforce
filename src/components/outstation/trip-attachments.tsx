@@ -16,6 +16,8 @@ import {
 import { TripEvidencePhotos } from "@/components/outstation/trip-evidence-photos";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { classifyPhotoFrame, measureImageFrame } from "@/lib/outstation/photo-frame";
+import { type TicketTileKind, ticketTileKind, ticketTileLabel } from "@/lib/outstation/ticket-tile";
 import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 import type { ApproverTripRoute } from "@/lib/outstation/day-route-line";
 
@@ -280,8 +282,64 @@ function parseRequestId(tripId: string): string | null {
   return match ? match[1] : null;
 }
 
-function isPdf(ticket: Ticket): boolean {
-  return /pdf/i.test(ticket.contentType) || /\.pdf(\?|$)/i.test(ticket.url);
+/**
+ * One ticket or receipt. A thumbnail that fails to load says so and offers the file; a frame with
+ * no picture in it says "Blank image" (the same luminance read as the arrival and departure photos,
+ * photo-frame.ts); a file the browser cannot draw is a file tile (ticket-tile.ts).
+ */
+function TicketTile({ kind, label, name, url }: { kind: TicketTileKind; label: string; name: string; url: string }) {
+  const [failed, setFailed] = useState(false);
+  const [frame, setFrame] = useState<{ maxLuminance: number | null; meanLuminance: number | null }>({
+    maxLuminance: null,
+    meanLuminance: null,
+  });
+  const blank = classifyPhotoFrame(frame).verdict === "no-image";
+  const title = `${name || label} — open in a new tab`;
+  return (
+    <div className="group block w-40 overflow-hidden border border-phx-line bg-white transition-colors hover:border-orange-400" data-ticket-tile={kind}>
+      {kind === "image" && !failed ? (
+        // The tile crops the receipt to a 112px strip, so tapping the image opens the full photo
+        // rather than following a link — the amount on a receipt cannot be read at this size. The
+        // label beneath opens the file in a new tab.
+        <ZoomablePhoto
+          alt={label}
+          caption={name ? `${label} · ${name}` : label}
+          className="h-28 w-full object-cover"
+          onError={() => setFailed(true)}
+          onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
+          src={url}
+        />
+      ) : (
+        <a
+          className="flex h-28 flex-col items-center justify-center gap-1 bg-slate-50 px-2 text-center text-slate-500"
+          href={url}
+          rel="noopener noreferrer"
+          target="_blank"
+          title={title}
+        >
+          {failed ? <ImageOff className="h-7 w-7" /> : <FileText className="h-7 w-7" />}
+          <span className="text-phx-2xs font-bold uppercase tracking-wide">
+            {failed ? "Could not load — open the file" : kind === "pdf" ? "PDF" : "File · open it"}
+          </span>
+        </a>
+      )}
+      {blank && !failed ? (
+        <p className="flex items-center gap-1 border-t border-amber-200 bg-amber-50 px-2 py-1 text-phx-2xs font-bold text-amber-900" data-ticket-blank>
+          <ImageOff className="h-3 w-3 shrink-0" />
+          Blank image
+        </p>
+      ) : null}
+      <a
+        className="block break-words px-2 py-1.5 text-phx-xs font-semibold text-slate-700 group-hover:text-orange-700"
+        href={url}
+        rel="noopener noreferrer"
+        target="_blank"
+        title={title}
+      >
+        {label}
+      </a>
+    </div>
+  );
 }
 
 /**
@@ -379,9 +437,10 @@ export function TripAttachments({
 
   const photos = Array.isArray(data.photos) ? data.photos : [];
   const items = data.tickets.map((ticket, index) => ({
-    isPdf: isPdf(ticket),
     key: `ticket-${index}`,
-    label: ticket.name || `Ticket ${index + 1}`,
+    kind: ticketTileKind(ticket),
+    label: ticketTileLabel(index),
+    name: ticket.name,
     url: ticket.url,
   }));
 
@@ -409,29 +468,7 @@ export function TripAttachments({
           <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Tickets and receipts</p>
           <div className="flex flex-wrap gap-3">
             {items.map((item) => (
-              <a
-                className="group block w-40 overflow-hidden border border-phx-line bg-white transition-colors hover:border-orange-400"
-                href={item.url}
-                key={item.key}
-                rel="noopener noreferrer"
-                target="_blank"
-                title={`${item.label} — open in a new tab`}
-              >
-                {item.isPdf ? (
-                  <div className="flex h-28 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-500">
-                    <FileText className="h-7 w-7" />
-                    <span className="text-phx-2xs font-bold uppercase tracking-wide">PDF</span>
-                  </div>
-                ) : (
-                  // The tile crops the receipt to a 112px strip, so tapping the image opens the full
-                  // photo rather than following the anchor — the amount on a receipt cannot be read at
-                  // this size. The label beneath still opens the file in a new tab.
-                  <ZoomablePhoto alt={item.label} caption={item.label} className="h-28 w-full object-cover" src={item.url} />
-                )}
-                <p className="break-words px-2 py-1.5 text-phx-xs font-semibold text-slate-700 group-hover:text-orange-700">
-                  {item.label}
-                </p>
-              </a>
+              <TicketTile key={item.key} kind={item.kind} label={item.label} name={item.name} url={item.url} />
             ))}
           </div>
         </div>

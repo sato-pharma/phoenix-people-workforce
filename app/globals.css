@@ -1948,6 +1948,29 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
   .phx-zoom-surface .h-screen {
     height: calc(100vh / var(--phx-scale-applied, 1));
   }
+
+  /* EXPENSE APPROVALS' RAIL — pinned UNDER the frozen chrome, never behind it (owner, 2026-11-07:
+     Approve and Reject scrolled off the screen while he read a trip's photos). The sticky sits on
+     the rail's <aside>, whose parent is the tall trip row; on the inner box it could never move,
+     because a sticky box only travels inside its parent and the aside was exactly its height.
+     --phx-chrome-h is the chrome's real height (ChromeHeightProbe); the chrome is outside the zoom
+     and the rail inside it, so both the offset and the height divide by the applied scale. */
+  .phx-expense-rail {
+    position: sticky;
+    top: calc(var(--phx-chrome-h, 104px) / var(--phx-scale-applied, 1) + 1rem);
+    align-self: flex-start;
+  }
+
+  .phx-expense-rail-box {
+    max-height: calc((100dvh - var(--phx-chrome-h, 104px)) / var(--phx-scale-applied, 1) - 2rem);
+  }
+
+  /* The decision block takes at most a little over half the rail; an open Adjust panel scrolls
+     inside it, so it can neither push Approve off the screen nor squeeze the list to nothing. */
+  .phx-expense-rail-footer {
+    max-height: calc((100dvh - var(--phx-chrome-h, 104px)) / var(--phx-scale-applied, 1) * 0.58);
+    overflow-y: auto;
+  }
 }
 
 /* THE WIDTH CAP — the half that decides whether this change does anything at all.

@@ -106,6 +106,43 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(typed.employeeNote, "كارتة رايح جاي ٣٠", "HEADLINE: the employee's typed words stay, the stamp and the allowance line go");
   assert.match(typed.description, /Car live evidence:/, "the stored description is left as it is — other readers key on it");
   assert.notEqual(arabic.employeeNote, arabic.hrComment, "the employee's note is never HR's decision box");
+  // Owner's review, 2026-11-07: the note box printed the machine lines service.ts appends to
+  // `notes`. Only the rep's own words are the note; the allowance sentences travel on their own.
+  const polluted = mapOutstationRequestRowToPayrollApproval({
+    departure_evidence_image_path: "trips/9/departure.jpg",
+    departure_evidence_metadata: { capturedAt: "2026-10-01T05:00:00.000Z" },
+    id: 9,
+    notes: [
+      "زيارة عملاء الاسكندرية",
+      "Allowance guard: No allowance: a trip to Cairo from a regional base does not earn an outstation per-diem allowance.",
+      "Arrival photo evidence: source=camera hr_id=A16 captured_at=2026-10-01T09:00:00.000Z gps=31.2,29.9 draft_id=abc",
+    ].join("\n"),
+    status: "submitted",
+    trip_start_date: "2026-10-01T00:00:00.000Z",
+  });
+  assert.equal(polluted.employeeNote, "زيارة عملاء الاسكندرية", "HEADLINE: the note is the rep's words only");
+  assert.doesNotMatch(String(polluted.employeeNote), /source=|draft_id=|Allowance guard/, "no machine text in the note");
+  assert.equal(polluted.allowanceNotices?.length, 1, "the allowance sentence is carried on its own line");
+  assert.match(String(polluted.allowanceNotices?.[0]), /^No allowance — a trip to Cairo/, "and reads as a sentence");
+  const onlyMachine = mapOutstationRequestRowToPayrollApproval({
+    id: 10,
+    notes: "Arrival photo evidence: source=camera gps=31.2,29.9",
+    status: "submitted",
+    trip_start_date: "2026-10-01T00:00:00.000Z",
+  });
+  assert.equal(onlyMachine.employeeNote, null, "machine text alone is no note at all");
+  // A departure photo with no GPS is a rail reason (expense-approval-triage.ts), read from the
+  // same metadata the photo tile reads.
+  assert.equal(polluted.departurePhotoNoGps, true, "HEADLINE: a departure photo without a position is flagged as no-GPS");
+  const located = mapOutstationRequestRowToPayrollApproval({
+    departure_evidence_image_path: "trips/11/departure.jpg",
+    departure_evidence_metadata: { capturedLatitude: 31.2, capturedLongitude: 29.9 },
+    id: 11,
+    status: "submitted",
+    trip_start_date: "2026-10-01T00:00:00.000Z",
+  });
+  assert.equal(located.departurePhotoNoGps, false, "a located departure photo is not");
+  assert.equal(mapped.departurePhotoNoGps, false, "no departure photo at all is not a no-GPS photo");
   // Since the 2026-11-07 rebuild the queue row is the rail and the trip under review is its own page.
   const rail = readFileSync(
     new URL("../src/components/outstation/expense-approvals/trip-list.tsx", import.meta.url),

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { ticketTileKind, ticketTileLabel } from "../src/lib/outstation/ticket-tile.ts";
 import { approverTripPhotos } from "../src/lib/outstation/trip-evidence-photos.ts";
 import type { OutstationDepartureEvidenceMetadata } from "../src/lib/outstation/types.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -183,4 +184,22 @@ export function runOutstationApproverTripPhotosTests() {
     /departure-evidence|geo-validate/,
     "the client-side photo module must not pull the sales geo code into the browser bundle",
   );
+
+  // Tickets and receipts (owner's review, 2026-11-07, 5 of 10): a broken thumbnail, a black frame
+  // and a raw file name all read as a ticket with nothing to say why.
+  assert.equal(ticketTileKind({ contentType: "application/pdf", url: "https://x/t.pdf" }), "pdf");
+  assert.equal(ticketTileKind({ contentType: "image/jpeg", url: "https://x/a" }), "image");
+  assert.equal(ticketTileKind({ contentType: "", url: "https://x/receipt.PNG?token=1" }), "image");
+  assert.equal(ticketTileKind({ contentType: "image/heic", url: "https://x/IMG_0042.HEIC" }), "file", "HEADLINE: an iPhone HEIC is a file tile, never a broken <img>");
+  assert.equal(ticketTileKind({ contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", url: "https://x/a" }), "file");
+  assert.equal(ticketTileKind({ contentType: "", url: "https://x/scan.docx" }), "file");
+  assert.equal(ticketTileKind({ contentType: "", url: "https://x/opaque" }), "image", "unknown stays an image, as before — the load-failure tile catches the rest");
+  assert.equal(ticketTileLabel(0), "Ticket 1", "HEADLINE: tickets are numbered, the file name is the tooltip");
+  const attachments = code("src/components/outstation/trip-attachments.tsx");
+  assert.match(attachments, /onError=\{\(\) => setFailed\(true\)\}/, "HEADLINE: a thumbnail that fails to load says so");
+  assert.match(attachments, /Could not load — open the file/, "and offers the file");
+  assert.match(attachments, /onLoad=\{\(event\) => setFrame\(measureImageFrame\(event\.currentTarget\)\)\}/, "the ticket frame is measured like the photos");
+  assert.match(attachments, /classifyPhotoFrame\(frame\)\.verdict === "no-image"/, "HEADLINE: and a black frame reads Blank image");
+  assert.match(attachments, /label: ticketTileLabel\(index\)/, "the tile label is Ticket N");
+  assert.match(attachments, /title=\{title\}/, "the stored file name rides in the tooltip");
 }

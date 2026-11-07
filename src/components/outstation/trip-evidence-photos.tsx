@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { formatDateTimeValue } from "@/lib/i18n/format";
 import { classifyPhotoFrame, measureImageFrame } from "@/lib/outstation/photo-frame";
+import { displayPlace } from "@/lib/outstation/place-label";
 import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 
 /**
@@ -97,14 +98,23 @@ function TripEvidencePhoto({
                 <p className="text-xs text-slate-600">Captured with the live camera.</p>
               ) : null}
               {photo.locationLabel ? (
-                <p className="break-words text-xs text-slate-600" dir="auto">
-                  {photo.locationLabel}
+                <p className="break-words text-xs text-slate-600" dir="auto" title={photo.locationLabel}>
+                  {displayPlace(photo.locationLabel)}
                 </p>
               ) : null}
+              {/* The point itself, one click from Google Maps (owner's review, 2026-11-07). */}
               {photo.latitude !== null && photo.longitude !== null ? (
                 <p className="font-mono text-xs text-slate-500">
                   <span className="font-sans text-phx-3xs font-black uppercase tracking-wide text-slate-400">GPS </span>
-                  {photo.latitude.toFixed(5)}, {photo.longitude.toFixed(5)}
+                  <a
+                    className="text-orange-700 underline-offset-2 hover:underline"
+                    data-photo-gps-link
+                    href={`https://www.google.com/maps/search/?api=1&query=${photo.latitude.toFixed(6)},${photo.longitude.toFixed(6)}`}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {photo.latitude.toFixed(5)}, {photo.longitude.toFixed(5)}
+                  </a>
                 </p>
               ) : null}
               {photo.gpsMissingReason ? (
