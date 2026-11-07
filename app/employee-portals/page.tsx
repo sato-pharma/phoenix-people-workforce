@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
+import { MrAreaNoticeBanner } from "@/components/employee-portal/mr-area-notice-banner";
 import { PortalCommandCenter } from "@/components/employee-portal/portal-command-center";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -98,5 +100,14 @@ export default async function EmployeePortalsHomePage({ searchParams }: PageProp
     );
   }
 
-  return <PortalCommandCenter access={access} repTodayPlan={repTodayPlanPromise} snapshot={snapshot} />;
+  // A Medical Rep candidate HR passed for his area (owner, 7 Nov 2026): above everything, so he sees it
+  // the moment he signs in. Its own Suspense — the landing never waits on it.
+  return (
+    <>
+      <Suspense fallback={null}>
+        <MrAreaNoticeBanner hrId={access.hrId} />
+      </Suspense>
+      <PortalCommandCenter access={access} repTodayPlan={repTodayPlanPromise} snapshot={snapshot} />
+    </>
+  );
 }

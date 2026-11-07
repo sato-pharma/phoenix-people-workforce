@@ -19,10 +19,15 @@
 //     status rules refuse (a CV already sent to a manager is never walked back to shortlisted) is
 //     simply not made — the result still stands, and the step is read from the result.
 // NOTHING IS EVER SENT TO THE CANDIDATE. A rejection never notifies the applicant from here.
+//
+// A PASS AT THE 1ST INTERVIEW TELLS THE AREA'S MANAGER (owner, 7 Nov 2026) — the DSM of the area HR
+// confirmed on the line HR confirmed, or the line's NSM where the area has no real DSM: in-app,
+// Telegram, email and a banner on his portal home. After the reply, so the button never waits on it.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { afterResponse } from "@/lib/http/after-response";
 import { logError } from "@/lib/observability/log";
 import { updateCandidateStatus } from "@/lib/recruitment/candidates";
 import { statusChangeRefusal } from "@/lib/recruitment/candidate-status";
@@ -37,6 +42,7 @@ import {
   type MrRecommendationInput,
   type MrResultInput,
 } from "@/lib/recruitment/mr-hiring/inputs";
+import { tellMrAreaManagers } from "@/lib/recruitment/mr-hiring/area-notices";
 import { notifyMrRecommendationReady } from "@/lib/recruitment/mr-hiring/notify";
 import { mrHiringStage, type MrStage } from "@/lib/recruitment/mr-hiring/stage";
 import { bookingOutcomeForResult, MR_RESULT_STEP_LABELS, mrResultLabel } from "@/lib/recruitment/mr-hiring/vocabulary";
@@ -97,7 +103,7 @@ export async function recordMrStepResult(access: AccessContext, candidateId: str
 
   const actor = hrIdForStorage(access.hrId);
   if (!actor) throw forbiddenError("Sign in again to record a result.");
-  const { error } = await recruitmentDb()
+  const { data: inserted, error } = await recruitmentDb()
     .from("ats_mr_hiring_step_results")
     .insert({
       booking_id: check.booking?.id ?? null,
@@ -110,7 +116,9 @@ export async function recordMrStepResult(access: AccessContext, candidateId: str
       rating: input.rating,
       result: input.result,
       step: input.step,
-    });
+    })
+    .select("id")
+    .single();
   if (error) throw error;
 
   if (check.booking) {
@@ -126,6 +134,17 @@ export async function recordMrStepResult(access: AccessContext, candidateId: str
     }
   }
   await moveCandidateStatus(access, candidateId, record.facts.status, input);
+
+  if (input.step === "hr_first" && input.result === "pass" && input.confirmedArea && input.confirmedLine) {
+    const notice = {
+      areaName: input.confirmedArea,
+      candidateId,
+      candidateName: record.name,
+      line: input.confirmedLine,
+      resultId: String((inserted as { id: number | string }).id),
+    };
+    await afterResponse("mr-area-manager-notice", () => tellMrAreaManagers(notice));
+  }
 
   const after = await loadMrCandidate(candidateId);
   return { stage: mrHiringStage(after?.facts ?? record.facts) };
