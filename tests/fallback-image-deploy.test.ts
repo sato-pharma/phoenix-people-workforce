@@ -95,6 +95,9 @@ export function runFallbackImageDeployTests(): void {
     assert.match(imageJob, /cp scripts\/fallback-image-deploy\.mjs "\$\{RUNNER_TEMP\}\/fallback-tools\/fallback-image-deploy\.mjs"/, "the script is copied out of the tools checkout");
     assert.match(imageJob, /cp scripts\/lib\/refuse-arguments\.mjs "\$\{RUNNER_TEMP\}\/fallback-tools\/lib\/refuse-arguments\.mjs"/, "and so is the one helper it imports, beside it as in the repository");
     assert.match(script, /from "\.\/lib\/refuse-arguments\.mjs"/, "the helper the workflow copies is the one the script imports");
+    // The owner is read from the one place the scripts keep it, so that file travels with the copy too.
+    assert.match(script, /from "\.\/required-check-names\.mjs"/);
+    assert.match(imageJob, /cp scripts\/required-check-names\.mjs "\$\{RUNNER_TEMP\}\/fallback-tools\/required-check-names\.mjs"/, "🔴 the copied script would fail to import its owner");
     // A refused credential names its own kind and reach, so "Not Authorized" is never left to be guessed at.
     assert.match(script, /throw new Error\(`\$\{last\.message\} \(\$\{await diagnoseCredential\(\)\}\)`\)/, "a refusal from every header kind carries the credential check");
     assert.match(script, /\{ projectToken \{ projectId environmentId \} \}/, "the check asks which environment a project token is scoped to");

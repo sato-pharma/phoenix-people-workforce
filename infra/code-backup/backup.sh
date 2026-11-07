@@ -24,6 +24,18 @@ OWNERS="${CODE_BACKUP_OWNERS:-sato-pharma Omar-3-xx}"
 FOLDER="${CODE_BACKUP_DRIVE_FOLDER:-phoenix-code-backup}"
 # Those APKs are in no clone, so a clone alone would lose them. Each is <owner>/<repository>.
 RELEASE_REPOS="${CODE_BACKUP_RELEASE_REPOS:-Omar-3-xx/hmdm-android}"
+# The retired single-owner variable is IGNORED, loudly: refusing the night over a leftover variable would cost
+# more than a day of coverage (the alarm only reads Drive after 36 hours). Mapping its one owner onto
+# CODE_BACKUP_OWNERS would drop the other. The old bare release names are refused, since they would misread.
+if [ -n "${CODE_BACKUP_OWNER:-}" ]; then
+  echo "warning: CODE_BACKUP_OWNER is retired and ignored; the owners backed up are: $OWNERS (set CODE_BACKUP_OWNERS to change them)" >&2
+fi
+for slug in $RELEASE_REPOS; do
+  if [[ "$slug" != */* ]]; then
+    echo "refused: CODE_BACKUP_RELEASE_REPOS names $slug; each entry is <owner>/<repository>" >&2
+    exit 1
+  fi
+done
 KEEP_DAILY=7
 KEEP_WEEKLY=4
 
@@ -83,7 +95,7 @@ for owner in $OWNERS; do
     if [[ "${slug,,}" == "${owner,,}/"* ]]; then seen=1; break; fi
   done
   if [ "$seen" -eq 0 ]; then
-    echo "refused: the token sees no repository of $owner" >&2
+    echo "refused: the token sees no repository of $owner. A fine-grained token reaches one owner only, so GITHUB_BACKUP_TOKEN must be a classic token (repo scope) that sees every owner in: $OWNERS" >&2
     exit 1
   fi
 done
@@ -94,33 +106,28 @@ if [ "${#repos[@]}" -lt "$CODE_BACKUP_MIN_REPOS" ]; then
 fi
 
 for slug in "${repos[@]}"; do
-  name="${slug#*/}"
-  mirror="$WORK/$name.git"
-  bundle="$OUT/bundles/$name.bundle"
-  # Two owners could hold the same name; one bundle must never overwrite the other.
-  if [ -e "$bundle" ]; then
-    echo "refused: two repositories are named $name ($slug and an earlier one)" >&2
-    exit 1
-  fi
+  # Each bundle sits under its owner, so two owners' repositories of one name never meet.
+  mirror="$WORK/mirrors/$slug.git"
+  bundle="$OUT/bundles/$slug.bundle"
+  mkdir -p "$(dirname "$bundle")"
   git clone --quiet --mirror "https://github.com/$slug.git" "$mirror"
   refs="$(git -C "$mirror" for-each-ref | wc -l)"
   if [ "$refs" -eq 0 ]; then
     # An empty repository is recorded as empty, never counted as backed up.
-    echo "EMPTY: $name has no refs"
-    printf '%s\t0\t0\tEMPTY\n' "$name" >> "$MANIFEST"
+    echo "EMPTY: $slug has no refs"
+    printf '%s\t0\t0\tEMPTY\n' "$slug" >> "$MANIFEST"
     rm -rf "$mirror"
     continue
   fi
   git -C "$mirror" bundle create --quiet "$bundle" --all
   git -C "$mirror" bundle verify --quiet "$bundle"
-  printf '%s\t%s\t%s\tOK\n' "$name" "$refs" "$(stat -c %s "$bundle")" >> "$MANIFEST"
-  echo "bundled: $name refs=$refs"
+  printf '%s\t%s\t%s\tOK\n' "$slug" "$refs" "$(stat -c %s "$bundle")" >> "$MANIFEST"
+  echo "bundled: $slug refs=$refs"
   rm -rf "$mirror"
 done
 
 for slug in $RELEASE_REPOS; do
-  name="${slug#*/}"
-  dir="$OUT/releases/$name"
+  dir="$OUT/releases/$slug"
   mkdir -p "$dir"
   github "https://api.github.com/repos/$slug/releases?per_page=100" \
     | jq -r '.[] | .tag_name as $t | .assets[] | [$t, .name, .url, .size] | @tsv' \
@@ -129,10 +136,10 @@ for slug in $RELEASE_REPOS; do
         github_asset "$dir/$tag/$asset" "$url"
         bytes="$(stat -c %s "$dir/$tag/$asset")"
         if [ "$bytes" != "$expected" ]; then
-          echo "refused: $name $tag $asset is $bytes bytes where GitHub lists $expected" >&2
+          echo "refused: $slug $tag $asset is $bytes bytes where GitHub lists $expected" >&2
           exit 1
         fi
-        printf '%s\t%s\t%s\t%s\n' "$name" "$tag" "$asset" "$bytes" >> "$RELEASE_MANIFEST"
+        printf '%s\t%s\t%s\t%s\n' "$slug" "$tag" "$asset" "$bytes" >> "$RELEASE_MANIFEST"
       done
 done
 
