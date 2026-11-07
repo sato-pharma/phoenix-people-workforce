@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createOutstationEvidenceSignedUrls } from "@/lib/outstation/car-evidence-storage";
 import { getOutstationRequestById } from "@/lib/outstation/service";
+import { approverTripRoute } from "@/lib/outstation/day-route-line";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -50,6 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         journey: null,
         photos: [],
         tickets: [],
+        tripRoute: null,
       });
     }
 
@@ -134,6 +136,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       journey,
       photos: approverTripPhotos(requestRow),
       tickets,
+      // The trip's road route from home, so each end day's map draws it (owner, 2026-11-07).
+      tripRoute: approverTripRoute(requestRow),
     });
   } catch (error) {
     const message = clientSafeErrorMessage(error, "Unable to load attachments.");

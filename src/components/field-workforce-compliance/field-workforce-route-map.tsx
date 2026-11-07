@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import { utcTaggedWallClock } from "@/lib/format/cairo-zone";
+import { dayRouteLine } from "@/lib/outstation/day-route-line";
 import {
   importGoogleLibrary,
   loadGoogleMaps,
@@ -55,6 +56,9 @@ export type DayRoute = {
  * (owner, 2026-11-07: the whole trip on one map, every point the trip has).
  */
 export type RouteMarker = {
+  /** When the point was recorded (ISO). Given, the pin joins the day's line in time order
+   * (day-route-line.ts); absent, it is pinned and left off the line. */
+  at?: string | null;
   id: string;
   /** One or two characters, printed on the pin: "A", "D", "S2". */
   label: string;
@@ -63,6 +67,9 @@ export type RouteMarker = {
   /** The tooltip, e.g. "Arrival photo · Wed 15 Oct 22:21". */
   title: string;
 };
+
+/** The trip's own road route (home to destination), stored on the request when it was priced. */
+export type TripRouteLine = { encodedPolyline: string };
 
 /** The declared destination, drawn as a hollow circle so a pin far from it is seen at once. */
 export type RouteDestination = { lat: number; lon: number; title: string };
@@ -152,6 +159,7 @@ export function FieldWorkforceRouteMap({
   frame = "card",
   markers = NO_MARKERS,
   route,
+  tripRoute = null,
 }: {
   checkins: RouteCheckin[];
   copy?: RouteMapCopy;
@@ -164,6 +172,11 @@ export function FieldWorkforceRouteMap({
   frame?: "bare" | "card";
   markers?: RouteMarker[];
   route?: DayRoute | null;
+  /**
+   * The trip's road route, drawn in the house orange beneath every pin (owner, 2026-11-07: "only
+   * a dot appears but not the route"). Expense Approvals passes it on the trip's first and last day.
+   */
+  tripRoute?: TripRouteLine | null;
 }) {
   const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? "";
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -187,7 +200,7 @@ export function FieldWorkforceRouteMap({
   const totalMin = hasRoute ? legs.reduce((sum, leg) => sum + (leg.durationMinutes ?? 0), 0) : null;
   // Anything with a position is a reason to draw the map — a trip with photo pins and no check-in
   // is still a trip on a map.
-  const pinCount = points.length + markers.length + (destination ? 1 : 0);
+  const pinCount = points.length + markers.length + (destination ? 1 : 0) + (tripRoute?.encodedPolyline ? 1 : 0);
 
   useEffect(() => {
     if (!browserKey || pinCount === 0) return;
@@ -240,13 +253,17 @@ export function FieldWorkforceRouteMap({
         // straight connector showing check-in order only when routing is unavailable.
         const roadPath = route?.encodedPolyline ? decodePolyline(route.encodedPolyline) : null;
         const isRealRoute = Boolean(roadPath && roadPath.length > 1);
-        const linePath = isRealRoute ? roadPath! : path;
+        // A page whose photo and stop pins carry their time joins EVERY point of the day in the
+        // order it happened (day-route-line.ts); otherwise the check-ins alone, as before.
+        const itinerary = markers.some((marker) => marker.at) ? dayRouteLine(points, markers) : null;
+        const linePath = isRealRoute ? roadPath! : itinerary ?? path;
+        const tripPath = tripRoute?.encodedPolyline ? decodePolyline(tripRoute.encodedPolyline) : [];
         const extraPins = [
           ...markers.map((marker) => ({ lat: marker.lat, lng: marker.lon })),
           ...(destination ? [{ lat: destination.lat, lng: destination.lon }] : []),
         ];
         const map = new MapCtor(mapElement, {
-          center: path[0] ?? extraPins[0],
+          center: path[0] ?? extraPins[0] ?? tripPath[0],
           mapTypeControl: false,
           streetViewControl: false,
           zoom: 12,
@@ -290,13 +307,25 @@ export function FieldWorkforceRouteMap({
           }
         }
 
+        if (PolylineCtor && tripPath.length > 1) {
+          polylinesRef.current.push(new PolylineCtor({
+            map,
+            path: tripPath,
+            strokeColor: "#f97316",
+            strokeOpacity: 0.85,
+            strokeWeight: 4,
+            zIndex: 1,
+          }));
+        }
+
         if (PolylineCtor && linePath.length > 1) {
           polylinesRef.current.push(new PolylineCtor({
             map,
             path: linePath,
-            strokeColor: isRealRoute ? "#f97316" : "#94a3b8",
-            strokeOpacity: isRealRoute ? 0.9 : 0.5,
+            strokeColor: isRealRoute ? "#f97316" : itinerary ? "#334155" : "#94a3b8",
+            strokeOpacity: isRealRoute ? 0.9 : itinerary ? 0.85 : 0.5,
             strokeWeight: isRealRoute ? 4 : 3,
+            zIndex: 2,
           }));
         }
 
@@ -304,7 +333,8 @@ export function FieldWorkforceRouteMap({
         linePath.forEach((point) => bounds?.extend(point));
         path.forEach((point) => bounds?.extend(point));
         extraPins.forEach((point) => bounds?.extend(point));
-        if (bounds && linePath.length + path.length + extraPins.length > 1) map.fitBounds(bounds, 64);
+        tripPath.forEach((point) => bounds?.extend(point));
+        if (bounds && linePath.length + path.length + extraPins.length + tripPath.length > 1) map.fitBounds(bounds, 64);
         setError(null);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Google Maps could not render the route.");
@@ -315,7 +345,7 @@ export function FieldWorkforceRouteMap({
     return () => {
       cancelled = true;
     };
-  }, [destination, googleMaps, markers, pinCount, points, ready, route]);
+  }, [destination, googleMaps, markers, pinCount, points, ready, route, tripRoute]);
 
   if (frame === "bare") {
     // The box alone. Square, like everything on the admin shell; the words around it are the
