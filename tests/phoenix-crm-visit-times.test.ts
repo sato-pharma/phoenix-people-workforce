@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
 
+import { visitMomentText } from "../src/components/phoenix-crm/format.ts";
 import { buildPlannerInsights } from "../src/lib/phoenix-crm/plan-insight.ts";
 import { buildCustomerVisitTimes, compareMoments, momentOf, type LastVisitRow } from "../src/lib/phoenix-crm/visit-times-rules.ts";
 
@@ -95,4 +96,15 @@ export function runPhoenixCrmVisitTimesTests(): void {
   assert.match(toggle, /=== "1"/, "off unless he turned it on");
   const day = source("src/components/phoenix-crm/plan-day-panel.tsx");
   assert.match(day, /withTime: showTimes/, "the rep's day adds the time only while the switch is on");
+
+  // ── 5. The rep's time is the moment he SAVED the visit, and the board says so (owner, 2026-11-07) ──
+  // `captured_at` is the save, not the arrival (phoenix-crm-boards); a manager read "11:31 AM" as the door.
+  assert.equal(
+    visitMomentText({ date: "2026-11-03", at: "2026-11-03T09:31:00Z" }, "2026-11-07", { saved: true }),
+    "Tue 3 Nov, saved 11:31 AM",
+    "HEADLINE: the rep's last visit reads as the time he saved it",
+  );
+  assert.equal(visitMomentText({ date: "2026-11-03", at: "2026-11-03T09:31:00Z" }, "2026-11-07"), "Tue 3 Nov, 11:31 AM", "unchanged everywhere else");
+  assert.equal(visitMomentText({ date: "2026-11-03", at: null }, "2026-11-07", { saved: true }), "Tue 3 Nov · no time recorded", "a copy with no clock says no save time either");
+  assert.match(toggle, /Rep&apos;s last visit: <\/span>\s*\{times\.rep \? \(\s*<>\s*\{visitMomentText\(times\.rep, today, \{ saved: true \}\)\}/, "HEADLINE: the board's rep line asks for the saved label");
 }
