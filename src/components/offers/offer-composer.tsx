@@ -284,6 +284,9 @@ export function OfferComposer({
   const prefillCandidateId = searchParams?.get("candidate") ?? null;
   const prefillVacancyId = searchParams?.get("vacancy") ?? null;
   const prefillTitle = searchParams?.get("title") ?? null;
+  // The proposed joining date the NSM recommended (the Medical Rep hiring workflow's "Prepare offer").
+  // A DATE only — the pay is never carried in a link; it stays fixed by the title's template.
+  const prefillStart = /^\d{4}-\d{2}-\d{2}$/.test(searchParams?.get("start") ?? "") ? (searchParams?.get("start") ?? null) : null;
   const appliedPrefillRef = useRef<string | null>(null);
   // The candidate THIS form was filled for. Held in state, not re-read from the URL, so a second
   // letter typed into the same screen after the first was sent is never pointed at them.
@@ -534,7 +537,7 @@ export function OfferComposer({
 
   useEffect(() => {
     if (!prefillCandidateId) return;
-    const key = `${prefillCandidateId}|${prefillVacancyId ?? ""}|${prefillTitle ?? ""}`;
+    const key = `${prefillCandidateId}|${prefillVacancyId ?? ""}|${prefillTitle ?? ""}|${prefillStart ?? ""}`;
     if (appliedPrefillRef.current === key) return;
     appliedPrefillRef.current = key;
 
@@ -545,6 +548,7 @@ export function OfferComposer({
       if (prefillVacancyId && vacancies.some((option) => String(option.vacancyId) === prefillVacancyId)) {
         chooseVacancy(prefillVacancyId);
       }
+      if (prefillStart) setDraft((current) => ({ ...current, startDate: current.startDate || prefillStart }));
       setSavedId(null);
       linkedOfferRef.current = null;
       setLinkCandidateId(prefillCandidateId);
@@ -578,7 +582,7 @@ export function OfferComposer({
     // chooseTitle/chooseVacancy are declarations in this component body; the ref guard applies the
     // prefill once per link, and re-running on anything else would overwrite what was typed since.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillCandidateId, prefillVacancyId, prefillTitle]);
+  }, [prefillCandidateId, prefillVacancyId, prefillTitle, prefillStart]);
 
   /**
    * Point the candidate this form was filled for at the letter just saved — once per letter, best

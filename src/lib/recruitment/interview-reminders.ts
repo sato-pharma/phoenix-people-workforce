@@ -24,7 +24,7 @@ import { createHash } from "node:crypto";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { listInterviewsToRemindAbout, type ReminderInterview } from "@/lib/recruitment/interview-calendar";
-import { interviewCalendarHref, isDistrictManagerOrAbove } from "@/lib/recruitment/interview-calendar-types";
+import { interviewCalendarHref, mayConductInterview } from "@/lib/recruitment/interview-calendar-types";
 import { INTERVIEW_OUTCOME_WINDOW_DAYS } from "@/lib/recruitment/interview-outcome-window";
 import {
   addDays,
@@ -106,7 +106,9 @@ function fingerprint(list: readonly ReminderInterview[]): string {
 /** Everything that should be sent at `now`. Nothing is sent, read or written here. */
 export function planInterviewReminders(interviews: readonly ReminderInterview[], now: Date): InterviewReminder[] {
   const reminders: InterviewReminder[] = [];
-  const eligible = interviews.filter((interview) => isDistrictManagerOrAbove({ jobTitle: interview.interviewerJobTitle }));
+  // District Managers and above — and, for the Medical Rep workflow's 1st round only, the HR interviewer
+  // who conducts it (owner's email of 8 Nov 2026, §3), so the person holding the interview is reminded.
+  const eligible = interviews.filter((interview) => mayConductInterview({ jobTitle: interview.interviewerJobTitle }, interview.round ?? null));
   const nowMs = now.getTime();
 
   // One hour before, for each interview on its own.

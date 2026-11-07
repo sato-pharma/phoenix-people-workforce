@@ -81,12 +81,15 @@ export function offerComposerHref(
   vacancyId?: string | null,
   roleTab?: WorkspaceRoleTab | null,
   botRoleFamily?: string | null,
+  /** The proposed joining date (YYYY-MM-DD) — the Medical Rep workflow carries the NSM's. Never money. */
+  startDate?: string | null,
 ): string {
   const params = new URLSearchParams();
   params.set("candidate", candidateId);
   if (vacancyId) params.set("vacancy", vacancyId);
   const title = offerTitleForRoleTab(roleTab ?? null, botRoleFamily ?? null);
   if (title) params.set("title", title);
+  if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) params.set("start", startDate);
   return `/offers?${params.toString()}`;
 }
 
