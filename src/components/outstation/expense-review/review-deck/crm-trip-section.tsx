@@ -49,7 +49,7 @@ export function CrmTripSection({
 
   useEffect(() => {
     if (requestId === null) return;
-    // The section is keyed by the trip (trip-review.tsx), so a new trip mounts it empty.
+    // The section is keyed by the trip (the reviewer mounts one per trip, deck.tsx), so a new trip mounts it empty.
     let live = true;
     fetch(`/api/admin/outstation/${requestId}/crm-evidence`)
       .then(async (response) => {
@@ -209,7 +209,7 @@ function CrmDay({ day, dayCount, index }: { day: CrmDayReading; dayCount: number
             <ul className="space-y-0.5">
               {day.visits.map((visit, visitIndex) => (
                 <li className="break-words text-slate-800" key={`${visit.savedAt}-${visitIndex}`}>
-                  <span className="font-mono tabular-nums text-slate-500">{visit.savedAt ? formatPhoenixTime(visit.savedAt) : "—"}</span>{" "}
+                  <span className="tabular-nums text-slate-500">{visit.savedAt ? formatPhoenixTime(visit.savedAt) : "—"}</span>{" "}
                   <bdi dir="auto">{visit.customer ?? visit.place ?? "Visit"}</bdi>
                   {visit.place && visit.customer ? (
                     <>

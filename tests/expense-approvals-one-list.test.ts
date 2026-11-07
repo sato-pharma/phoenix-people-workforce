@@ -74,59 +74,46 @@ export function runExpenseApprovalsOneListTests() {
   );
 
   // ── 2. The screen ──────────────────────────────────────────────────────────────────────────
+  // Rebuilt from scratch in the Phoenix CRM identity on 2026-11-07 (expense-review/). The page has
+  // tabs again — Needs a look, Clean, Approved and the rest, as Place checks has — but the property
+  // the one list was built for still holds: a trip never leaves the list it is being decided in.
 
-  const workspace = readSource("../src/components/outstation/expense-approvals-workspace.tsx");
-
-  // The tabs are gone, state and all. A leftover `tab` state would mean a second, invisible filter
-  // sitting on top of the one list.
-  assert.doesNotMatch(
-    workspace,
-    /const \[tab, setTab\]/,
-    "the three-way decision tab state must be gone, not merely hidden",
-  );
-  assert.doesNotMatch(
-    workspace,
-    /tab === "pending"/,
-    "nothing on this screen may still branch on which decision tab is open",
-  );
+  const model = readSource("../src/components/outstation/expense-review/review-model.ts");
+  const hook = readSource("../src/components/outstation/expense-review/use-expense-review.ts");
 
   // THE NON-JUMPING PROPERTY, pinned where it is decided. `savedDecision` is the stored row;
-  // `decisionFor` is what is on screen. Ranking the latter re-sorts the list on every click.
-  const queue = workspace.match(/const activeList = useMemo\(\(\) => \{[\s\S]*?\}, \[records, filters, search\]\);/)?.[0];
-  assert.ok(queue, "the queue must still be built in one memo over the filtered records");
+  // `decisionFor` is what is on screen. Filing or ranking by the latter moves a row on every click.
+  const membership = model.match(/export function inReviewTab\([\s\S]*?\n\}/)?.[0];
+  assert.ok(membership, "a tab's membership must be decided in one function");
+  assert.match(membership, /const stored = savedDecision\(record\);/, "HEADLINE: a trip's tab is read from its STORED decision");
+  assert.doesNotMatch(membership, /decisionFor/, "and never from the live one — a row stays put the moment it is decided");
+  const ordering = model.match(/export function tabRows\([\s\S]*?\n\}/)?.[0];
+  assert.ok(ordering, "the tab's rows must be built in one function");
   assert.match(
-    queue,
+    ordering,
     /expenseApprovalQueueRank\(expenseApprovalState\(savedDecision\(record\)\)\)/,
-    "the queue must rank the STORED decision — ranking the live one makes a row jump the moment " +
-      "it is decided, which is the behaviour the tabs already had",
+    "HEADLINE: All trips ranks the STORED decision — ranking the live one makes a row jump the moment it is decided",
   );
-  assert.doesNotMatch(
-    queue,
-    /decisionFor/,
-    "and must not reach for the live decision at all while ordering",
-  );
+  assert.doesNotMatch(ordering, /decisionFor/, "and must not reach for the live decision at all while ordering");
+  // The reviewer walks a FROZEN list of ids, so a decided trip keeps its place and Back returns to it.
+  assert.match(hook, /export type DeckState = \{ ids: string\[\]; open: string \| null; tab: TripTab \| "employee" \};/, "the reviewer's walk is frozen when it opens");
 
-  // Select-all is scoped to what can actually be approved. Over one list of ~400 trips, ticking
-  // everything would hand planBulkApproval hundreds of already-decided rows, and it would answer
-  // "N were already decided" — a wall of noise standing in for a button that did nothing.
+  // Select-all is scoped to what can actually be approved, in the tab on screen. Ticking everything
+  // would hand planBulkApproval already-decided rows, and it would answer "N were already decided" —
+  // a wall of noise standing in for a button that did nothing.
   assert.match(
-    workspace,
-    /const allVisibleSelected =\s*\n?\s*pending\.length > 0 && pending\.every\(/,
-    "the header checkbox must reflect the pending rows only",
+    hook,
+    /const selectable = useMemo\(\s*\(\) => rows\.filter\(\(record\) => !isImportedHistoryTrip\(record\.date\) && expenseApprovalState\(decisionFor\(record\)\) === "pending"\),/,
+    "HEADLINE: only a trip still waiting, in the tab on screen, can be ticked",
   );
-  assert.match(
-    workspace,
-    /for \(const record of pending\) \{/,
-    "and select-all must tick the pending rows only",
-  );
+  assert.match(hook, /for \(const record of selectable\) \{/, "and select-all ticks those only");
 
   // A decided row carries no tick box — offering one invites a click that silently does nothing.
-  // The row itself lives in the rail since the 2026-11-07 rebuild.
-  const rail = readSource("../src/components/outstation/expense-approvals/trip-list.tsx");
+  const table = readSource("../src/components/outstation/expense-review/review-queue-table.tsx");
   assert.match(
-    rail,
+    table,
     // ...and neither does imported history, which is values only (imported-history.ts).
-    /\{state === "pending" && !isImportedHistoryTrip\(record\.date\) \? \(\s*\n\s*<label className="flex shrink-0 cursor-pointer items-center pl-3">/,
+    /if \(!actions\.canDecide \|\| isImportedHistoryTrip\(record\.date\) \|\| expenseApprovalState\(decision\) !== "pending"\) return null;/,
     "only an undecided row may show a checkbox",
   );
 }

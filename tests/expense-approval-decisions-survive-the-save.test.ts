@@ -132,12 +132,25 @@ export function runExpenseApprovalDecisionsSurviveTheSaveTests() {
 
   // ── 2. Both call sites use it ──────────────────────────────────────────────────────────────
 
-  const workspace = readSource("../src/components/outstation/expense-approvals-workspace.tsx");
+  // Rebuilt 2026-11-07 (expense-review/): the save loop is the hook's, the unsaved count and the
+  // draft restore are the model's. Every one of them must still ask the one shared predicate.
+  const hook = readSource("../src/components/outstation/expense-review/use-expense-review.ts");
+  const model = readSource("../src/components/outstation/expense-review/review-model.ts");
+  const workspace = hook + model;
 
   assert.ok(
-    (workspace.match(/expenseDecisionChanged\(/g) ?? []).length >= 3,
-    "the workspace must route the unsaved count, the save payload and the draft restore through " +
-      "the shared predicate",
+    (hook.match(/expenseDecisionChanged\(/g) ?? []).length >= 2,
+    "the save loop must decide both what to post and which rows ride along with the shared predicate",
+  );
+  assert.match(
+    model,
+    /export function countUnsaved[\s\S]{0,400}expenseDecisionChanged\(local, savedDecision\(record\)\)/,
+    "the Save N count asks the same predicate the save posts with",
+  );
+  assert.match(
+    model,
+    /export function restorableDraft[\s\S]{0,400}expenseDecisionChanged\(entry, savedDecision\(record\)\)/,
+    "a restored draft keeps only the entries that still differ from what is saved",
   );
 
   // The exact comparison the two call sites used to spell out by hand. If it comes back anywhere
@@ -150,7 +163,7 @@ export function runExpenseApprovalDecisionsSurviveTheSaveTests() {
 
   // `changedReportIds` decides what is POSTED. Nothing else in the save path can rescue a report
   // that never enters this set, so this is the assertion that pins bug 1 shut.
-  const changedReportIds = workspace.match(
+  const changedReportIds = hook.match(
     /const changedReportIds = new Set<string \| null>\(\);[\s\S]*?\n      \}/,
   )?.[0];
   assert.ok(changedReportIds, "save() must still build `changedReportIds` from the loaded records");

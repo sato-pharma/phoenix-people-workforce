@@ -105,7 +105,7 @@ export function runOutstationTripDayMeetingsTests() {
   assert.match(workload, /isMeetingVisitType\(row\.visit_type\)[\s\S]{0,400}ownerKey === selfKey/, "only the person's OWN meeting counts");
   assert.doesNotMatch(workload, /dateBreakdown\.filter\(\(day\) => day\.total === 0\)/, "no second idle definition in the live read");
 
-  const review = code("src/components/outstation/expense-approvals/trip-review.tsx");
+  const review = code("src/components/outstation/expense-review/review-deck/deck-days.tsx") + code("src/components/outstation/expense-review/review-deck/deck-signals.ts");
   assert.doesNotMatch(review, /day\.total === 0\)\.length/, "the review screen never counts a meeting day as idle");
   assert.match(review, /idleDays: days\.filter\(\(day\) => !isWorkedTripDay\(day\)\)\.length/, "no idle-day share is offered for a meeting day");
 

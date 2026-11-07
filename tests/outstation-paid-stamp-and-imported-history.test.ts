@@ -180,8 +180,15 @@ export function runOutstationPaidStampAndImportedHistoryTests() {
   assert.match(countLine, /isImportedHistoryTrip\(expense\.date\)/, "the portal's Expense actions pending never counts imported history");
   assert.doesNotMatch(countLine, /!expense\.hrApproved\)\.length/, "a rejected trip is not an action pending");
 
-  const workspace = readFileSync("src/components/outstation/expense-approvals-workspace.tsx", "utf8");
-  assert.match(workspace, /valuesOnly=\{isImportedHistoryTrip\(selected\.date\)\}/, "the decision panel is values only for imported history");
+  // Rebuilt 2026-11-07 (expense-review/): the reviewer decides, the hook counts.
+  const deck = readFileSync("src/components/outstation/expense-review/review-deck/deck.tsx", "utf8");
+  const workspace = readFileSync("src/components/outstation/expense-review/use-expense-review.ts", "utf8");
+  assert.match(deck, /const valuesOnly = isImportedHistoryTrip\(record\.date\);/, "the reviewer reads imported history as values only");
+  assert.equal(
+    deck.match(/valuesOnly=\{valuesOnly\}/g)?.length,
+    3,
+    "the subject, the reason section and the decision bar are all values only for imported history",
+  );
   assert.match(
     workspace,
     /pending: undecided\.filter\(\(record\) => !isImportedHistoryTrip\(record\.date\)\)/,

@@ -143,13 +143,14 @@ export function runOutstationPayrollExpenseMappingTests() {
   });
   assert.equal(located.departurePhotoNoGps, false, "a located departure photo is not");
   assert.equal(mapped.departurePhotoNoGps, false, "no departure photo at all is not a no-GPS photo");
-  // Since the 2026-11-07 rebuild the queue row is the rail and the trip under review is its own page.
+  // Since the 2026-11-07 rebuild the queue is a table and the trip under review is the one-by-one
+  // reviewer, whose findings section prints the note.
   const rail = readFileSync(
-    new URL("../src/components/outstation/expense-approvals/trip-list.tsx", import.meta.url),
+    new URL("../src/components/outstation/expense-review/review-queue-table.tsx", import.meta.url),
     "utf8",
   );
   const review = readFileSync(
-    new URL("../src/components/outstation/expense-approvals/trip-review.tsx", import.meta.url),
+    new URL("../src/components/outstation/expense-review/review-deck/deck-found.tsx", import.meta.url),
     "utf8",
   );
   // Owner, 2026-11-07, on a rail row holding a long note: "comment already written in the right
@@ -159,7 +160,7 @@ export function runOutstationPayrollExpenseMappingTests() {
     1,
     "Expense Approvals draws the employee's note on the trip under review",
   );
-  assert.doesNotMatch(rail, /EmployeeNote|employeeNote/, "the rail row never repeats the employee's note");
+  assert.doesNotMatch(rail, /EmployeeNote|employeeNote/, "a queue row never repeats the employee's note");
   assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
   assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
   // The stay/duration label, unchanged — the approvals report renders it under "Travel Stay

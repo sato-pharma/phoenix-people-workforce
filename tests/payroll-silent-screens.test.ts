@@ -150,7 +150,11 @@ export async function runPayrollSilentScreensTests() {
   );
 
   // ==== 47: a warning the server sent and the screen threw away ==================================
-  const workspace = stripComments(source("src/components/outstation/expense-approvals-workspace.tsx"));
+  // Rebuilt 2026-11-07: the save loop is the hook's, the banner is review-banners.tsx.
+  const workspace = stripComments(
+    source("src/components/outstation/expense-review/use-expense-review.ts") +
+      source("src/components/outstation/expense-review/review-banners.tsx"),
+  );
   assert.match(
     workspace,
     /const warnings = payload\?\.payrollWarnings;/,
