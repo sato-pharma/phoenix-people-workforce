@@ -22,6 +22,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { envWithPathFirst } from "./support/path-env.ts";
 
 const CI = ".github/workflows/ci.yml";
 const CACHE_PIN = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0";
@@ -105,8 +106,7 @@ function runLocate(script: string, fake: Fake): Record<string, string> {
     chmodSync(path.join(bin, "pnpm"), 0o755);
     chmodSync(path.join(bin, "node"), 0o755);
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+      ...envWithPathFirst(process.env, bin),
       GITHUB_OUTPUT: out, GITHUB_RUN_ID: "424242", GITHUB_RUN_ATTEMPT: "3",
       RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_TEMP: "/home/runner/work/_temp",
       FAKE_STORE: fake.store ?? "", FAKE_PNPM: fake.pnpm ?? "", FAKE_NODE: fake.node ?? "",

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { envWithPathFirst } from "./support/path-env.ts";
 
 import {
   RETIRED_FLAGS,
@@ -340,7 +341,7 @@ export async function runRemoteCheckTests(): Promise<void> {
         cwd: dir,
         encoding: "utf8",
         timeout: 60_000,
-        env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, RC_FIXTURE: fx, RC_LOG: log },
+        env: { ...envWithPathFirst(process.env, bin), RC_FIXTURE: fx, RC_LOG: log },
       });
       const record = path.join(dir, ".git", VERDICT_DIR_NAME, `${sha}.json`);
       return {

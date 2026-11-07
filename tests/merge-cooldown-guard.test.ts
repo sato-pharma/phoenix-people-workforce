@@ -32,9 +32,10 @@ import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { GITHUB_OWNER, REPO } from "../scripts/required-check-names.mjs";
+import { envWithPathFirst } from "./support/path-env.ts";
 
 const guardPath = resolve(".claude/hooks/bash-guard.mjs");
 
@@ -150,14 +151,13 @@ function runGuard(
   command: string,
   opts: { ghDir?: string; minFiles?: number; tool?: string } = {},
 ): Decision {
-  const env = { ...process.env };
+  const env = opts.ghDir ? envWithPathFirst(process.env, opts.ghDir) : { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_MERGE_OK;
   // C21 (a merge on red checks) runs first and has its own file, merge-checks-guard.test.ts; it is
   // stood down here so every answer below is C10's or C13's, judged against these shims alone.
   env.PHX_RED_MERGE_OK = "1";
   if (opts.minFiles !== undefined) env.PHX_MERGE_MIN_FILES = String(opts.minFiles);
-  if (opts.ghDir) env.PATH = opts.ghDir + delimiter + (env.PATH ?? "");
 
   const raw = execFileSync(process.execPath, [guardPath], {
     cwd,

@@ -18,10 +18,11 @@ import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describeVerdict, mergeChecksVerdict } from "../scripts/merge-checks-verdict.mjs";
 import { declaredRequiredChecks, REPO } from "../scripts/required-check-names.mjs";
+import { envWithPathFirst } from "./support/path-env.ts";
 
 const guardPath = resolve(".claude/hooks/bash-guard.mjs");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -82,15 +83,13 @@ function phoenixAnswers(runs: Run[], statuses: unknown[] = []): Array<[string, s
 }
 
 function runGuard(cwd: string, command: string, ghDir: string | null, tool = "Bash"): Decision {
-  const env = { ...process.env };
+  const env = envWithPathFirst(process.env, ghDir ?? mkdtempSync(join(cwd, "empty-")));
   delete env.CLAUDE_PROJECT_DIR;
   delete env.PHX_MERGE_OK;
   delete env.PHX_RED_MERGE_OK;
   // C10 and C13 come after C21 and ask their own questions; a large file count keeps C10 quiet so
   // every answer below is C21's.
   env.PHX_MERGE_MIN_FILES = "0";
-  if (ghDir) env.PATH = ghDir + delimiter + (env.PATH ?? "");
-  else env.PATH = mkdtempSync(join(cwd, "empty-")) + delimiter + (env.PATH ?? "");
   const raw = execFileSync(process.execPath, [guardPath], {
     cwd,
     input: JSON.stringify({ tool_name: tool, cwd, tool_input: { command } }),

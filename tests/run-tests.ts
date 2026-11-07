@@ -2963,6 +2963,7 @@ import { runNotificationEventKeyIncludesTheActorTests } from "./notification-eve
 import { createShardDeal } from "./shard-deal.ts";
 import { spareSkipRefusal, spareSkips } from "./spare-skip.ts";
 import { runSpareSkipTests } from "./spare-skip.test.ts";
+import { runPathEnvTests } from "./path-env.test.ts";
 import { runLoginBridgeRepairLogsOnlyWhenItFailsTests } from "./login-bridge-repair-logs-only-when-it-fails.test.ts";
 import { runWeakPasswordBridgeTests } from "./weak-password-bridge.test.ts";
 import { runLoginSuccessAuditBeforeReplyTests } from "./login-success-audit-before-reply.test.ts";
@@ -11594,6 +11595,10 @@ await runTest(
 await runTest(
   "the spare laptop's one skip leaves out the CV worker test and nothing else, only when its switch reads 1, is refused on CI, is never counted as ran, and prints its own skipped line beside the unchanged shard tally",
   runSpareSkipTests,
+);
+await runTest(
+  "a test that puts a shim first on the search path holds ONE PATH key and keeps the rest of the path, the Windows spelling Path included, and no test rewrites PATH by hand on a copy of the environment",
+  runPathEnvTests,
 );
 await runTest(
   "a manager's double visit with a rep who LATER resigned is still his working day — the exclusion is keyed on who LOGGED the row, so a resignation used to erase its partner's evidence retroactively and charge him a no-activity deduction (100 person-days, 18 active people, 11 of them charged and 2 approved for payroll, June-September 2026); the rescued row credits the partner only, keeps agent_crm_id so the duplicate collapse still works, and every money-deciding read goes through the new door",

@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { envWithPathFirst } from "./support/path-env.ts";
 
 const CI = ".github/workflows/ci.yml";
 const STEP_ID = "node-runtime";
@@ -79,7 +80,7 @@ function runStep(script: string, fake: { stdout?: string; exit?: number } | "rea
     writeFileSync(out, "");
     const scriptFile = path.join(dir, "step.sh");
     writeFileSync(scriptFile, script);
-    const env: NodeJS.ProcessEnv = { ...process.env, GITHUB_OUTPUT: out, GITHUB_RUN_ID: "424242", GITHUB_RUN_ATTEMPT: "3" };
+    let env: NodeJS.ProcessEnv = { ...process.env, GITHUB_OUTPUT: out, GITHUB_RUN_ID: "424242", GITHUB_RUN_ATTEMPT: "3" };
     if (fake !== "real") {
       const bin = path.join(dir, "bin");
       mkdirSync(bin, { recursive: true });
@@ -87,7 +88,7 @@ function runStep(script: string, fake: { stdout?: string; exit?: number } | "rea
       writeFileSync(node, `#!/bin/sh\nprintf '%s' "$FAKE_NODE_STDOUT"\nexit ${fake.exit ?? 0}\n`);
       chmodSync(node, 0o755);
       env.FAKE_NODE_STDOUT = fake.stdout ?? "";
-      env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ""}`;
+      env = envWithPathFirst(env, bin);
     }
     const r = spawnSync("bash", ["-e", scriptFile], { env, encoding: "utf8" });
     assert.equal(r.status, 0, `the runtime step must never fail the job; it exited ${r.status}: ${r.stderr}`);
