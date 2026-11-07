@@ -63,15 +63,19 @@ function TripEvidencePhoto({
   return (
           <figure className="m-0 flex min-w-0 flex-col border border-slate-200 bg-white">
             {photo.url ? (
-              <ZoomablePhoto
-                alt={subject ? `${photo.label} for ${subject}` : photo.label}
-                caption={caption}
-                className="block max-h-80 w-full bg-slate-900 object-contain"
-                // Measured once, when the browser has the pixels. A failure to read leaves the
-                // nulls in place, which classifies as "unknown" and says nothing.
-                onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
-                src={photo.url}
-              />
+              // ↺ ↻ turn a photo taken sideways, for the view only (owner, 2026-11-07). The stored photo is never changed.
+              <div className="relative h-80 w-full bg-slate-900" data-turnable-photo>
+                <ZoomablePhoto
+                  alt={subject ? `${photo.label} for ${subject}` : photo.label}
+                  caption={caption}
+                  className="block h-full w-full object-contain"
+                  // Measured once, when the browser has the pixels. A failure to read leaves the
+                  // nulls in place, which classifies as "unknown" and says nothing.
+                  onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
+                  rotatable
+                  src={photo.url}
+                />
+              </div>
             ) : (
               <div className="flex min-h-32 items-center justify-center gap-2 bg-slate-50 p-4 text-center text-xs font-semibold text-slate-500">
                 <ImageOff className="h-4 w-4 shrink-0" />

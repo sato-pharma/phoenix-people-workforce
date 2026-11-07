@@ -48,6 +48,10 @@ const PLACE_CHECKS = new Set([
   "src/components/phoenix-crm/customer-match-board.tsx",
   // The one-by-one review IS Place checks, shown one photo at a time (owner, 2026-10-18).
   "src/components/place-review-deck/deck-parts.tsx",
+  // Expense approvals: every ticket and trip photo the approver reads (owner, 2026-11-07, claim 338's
+  // sideways Ticket 2). Only HR and admin screens draw these two; an employee's own screens do not.
+  "src/components/outstation/trip-attachments.tsx",
+  "src/components/outstation/trip-evidence-photos.tsx",
 ]);
 
 function checkTurns() {
@@ -103,13 +107,14 @@ function checkWhereItIsOffered() {
   for (const file of [...tsxUnder("src/"), ...tsxUnder("app/")]) {
     if (PASS_THROUGH.has(file)) continue;
     const source = read(file);
-    if (/<(?:CrmPhotoThumb|ZoomablePhoto)\b[^>]*\brotatable\b/.test(source)) offered.add(file);
+    // `=>` is stepped over: a prop like onError={() => …} must not end the tag early.
+    if (/<(?:CrmPhotoThumb|ZoomablePhoto)\b(?:=>|[^>])*\brotatable\b/.test(source)) offered.add(file);
   }
   for (const file of PLACE_CHECKS) {
-    assert.ok(offered.has(file), `${file}: every photograph on Place checks can be turned`);
+    assert.ok(offered.has(file), `${file}: every photograph on Place checks and in expense approvals can be turned`);
   }
   for (const file of offered) {
-    assert.ok(PLACE_CHECKS.has(file), `🔴 ${file} turns a photo, but only Place checks asked for it — a rep's screens stay as they are`);
+    assert.ok(PLACE_CHECKS.has(file), `🔴 ${file} turns a photo, but only Place checks and expense approvals asked for it — a rep's screens stay as they are`);
   }
 }
 

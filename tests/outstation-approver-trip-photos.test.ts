@@ -206,7 +206,10 @@ export function runOutstationApproverTripPhotosTests() {
   // from managers I cannot see the photos"). They were on file and signed; the screen buried them.
   assert.match(attachments, /const notOwed = photos\.length > 0 && photos\.every\(\(photo\) => !photo\.url && Boolean\(photo\.missingNote\?\.startsWith\("Not required"\)\)\);/, "HEADLINE: a role that owes no photo gets one line, not two empty boxes");
   assert.match(attachments, /\{anyLivePhoto \? null : uploads\}/, "HEADLINE: with no live photo on file, the uploads come first");
-  assert.match(attachments, /large \? "h-72 w-full bg-slate-900 object-contain" : "h-28 w-full object-cover"/, "HEADLINE: each upload shown whole, never a 112px crop");
+  assert.match(attachments, /large \? "h-72 bg-slate-900" : "h-28 bg-slate-100"\)\} data-turnable-ticket>/, "HEADLINE: each upload shown whole, never a 112px crop");
+  assert.match(attachments, /<ZoomablePhoto\b(?:=>|[^>])*?\brotatable\b(?:=>|[^>])*?src=\{url\}/, "HEADLINE: a ticket photographed sideways can be turned upright");
+  const photosFile = code("src/components/outstation/trip-evidence-photos.tsx");
+  assert.match(photosFile, /<div className="relative h-80 w-full bg-slate-900" data-turnable-photo>\s*<ZoomablePhoto\b(?:=>|[^>])*?\brotatable\b/, "HEADLINE: and so can an arrival or departure photo");
   assert.match(attachments, /const uploads = tickets\.length > 0 \? <UploadedPictures large tickets=\{tickets\} \/> : null;/);
   const signals = code("src/components/outstation/expense-review/review-deck/deck-signals.ts");
   assert.match(signals, /line: `No trip photos owed · \$\{uploaded\} to look at\.`/, "HEADLINE: the findings count the uploads, never hide them behind Not required");
