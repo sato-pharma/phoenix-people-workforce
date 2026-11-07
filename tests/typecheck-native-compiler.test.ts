@@ -90,7 +90,14 @@ export function runTypecheckNativeCompilerTests() {
 
   // 4 — and the thing actually linked IS 7. This is the assertion the three above only approximate:
   // they read declarations, this one asks the binary that will run.
-  const version = execFileSync(resolve(ROOT, "node_modules/.bin/tsc"), ["-v"], { encoding: "utf8" }).trim();
+  // On Windows (the spare laptop) pnpm's `.bin/tsc` is a shell script that cannot be spawned (ENOENT); the
+  // same link is `tsc.CMD`, which Node runs only through a shell, quoted for a folder with a space in it.
+  const bin = resolve(ROOT, "node_modules/.bin/tsc");
+  const version = (
+    process.platform === "win32"
+      ? execFileSync(`"${bin}.CMD"`, ["-v"], { encoding: "utf8", shell: true })
+      : execFileSync(bin, ["-v"], { encoding: "utf8" })
+  ).trim();
   assert.match(
     version,
     /\b7\.\d+/,
