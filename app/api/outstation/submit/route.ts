@@ -5,6 +5,7 @@ import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
 import { submitOutstationRequest } from "@/lib/outstation/service";
+import { TrainTicketRefusedError } from "@/lib/outstation/ticket-scan";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -24,6 +25,9 @@ export const dynamic = "force-dynamic";
 function outstationSubmitStatus(error: unknown) {
   if (isForbiddenError(error)) {
     return 403;
+  }
+  if (error instanceof TrainTicketRefusedError) {
+    return 400;
   }
   if (isWorkflowRegistryTransitionError(error)) {
     return 409;
@@ -80,12 +84,14 @@ export async function POST(request: Request) {
     const rawTicketAttachments = Array.isArray(body.ticketAttachments)
       ? (body.ticketAttachments as Array<Record<string, unknown>>)
       : [];
-    const ticketAttachments = rawTicketAttachments.map((entry) =>
-      parseOutstationTicketAttachmentDataUrl({
+    const ticketAttachments = rawTicketAttachments.map((entry) => ({
+      ...parseOutstationTicketAttachmentDataUrl({
         dataUrl: String(entry.dataUrl ?? ""),
         fileName: String(entry.name ?? ""),
       }),
-    );
+      // The signed note of the read made when the file was picked; checked against these bytes.
+      scanToken: typeof entry.scanToken === "string" ? entry.scanToken : undefined,
+    }));
     const result = await submitOutstationRequest(
       access,
       {

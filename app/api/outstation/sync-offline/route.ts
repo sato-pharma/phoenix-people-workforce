@@ -83,12 +83,14 @@ export async function POST(request: Request) {
     const rawTicketAttachments = Array.isArray(body.ticketAttachments)
       ? (body.ticketAttachments as Array<Record<string, unknown>>)
       : [];
-    const ticketAttachments = rawTicketAttachments.map((entry) =>
-      parseOutstationTicketAttachmentDataUrl({
+    const ticketAttachments = rawTicketAttachments.map((entry) => ({
+      ...parseOutstationTicketAttachmentDataUrl({
         dataUrl: String(entry.dataUrl ?? ""),
         fileName: String(entry.name ?? ""),
       }),
-    );
+      // The signed note of the read made when the file was picked; checked against these bytes.
+      scanToken: typeof entry.scanToken === "string" ? entry.scanToken : undefined,
+    }));
     const result = await syncOfflineOutstationRequest(access, {
       // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix. The service holds a
       // claim with no accuracy for Super Admin review (owner, 2026-09-18).

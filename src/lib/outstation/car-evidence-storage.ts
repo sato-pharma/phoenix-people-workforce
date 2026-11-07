@@ -1,3 +1,4 @@
+import type { OutstationTicketScanRecord } from "@/lib/outstation/ticket-scan-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PRIVATE_FILE_CACHE_CONTROL_SECONDS } from "@/lib/uploads/private-file-cache";
 import type {
@@ -31,6 +32,10 @@ export type OutstationTicketAttachmentUpload = {
   employeeHrId: string;
   fileName: string;
   requestDraftId: string;
+  /** A train ticket's read, kept on its metadata row (ticket-scan.ts). */
+  scan?: OutstationTicketScanRecord;
+  /** The signed note of that read, sent back by the phone; never stored. */
+  scanToken?: string;
   size: number;
 };
 
@@ -301,6 +306,7 @@ export async function uploadOutstationTicketAttachments(
         contentType: attachment.contentType,
         name: attachment.fileName,
         path,
+        ...(attachment.scan ? { scan: attachment.scan } : {}),
         size: attachment.size,
         uploadedAt: new Date().toISOString(),
       });

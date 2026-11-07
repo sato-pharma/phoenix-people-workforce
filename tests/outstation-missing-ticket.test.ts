@@ -138,7 +138,7 @@ export function runOutstationMissingTicketTests() {
 
   const sync = code(SYNC_ROUTE);
   assert.match(sync, /syncOfflineOutstationRequest\([\s\S]*\{ ticketAttachments \}\)/, "the offline route passes the ticket it was sent");
-  assert.match(functionSlice(service, "export async function syncOfflineOutstationRequest("), /options,?\s*\)/, "and the service passes it on");
+  assert.match(functionSlice(service, "export async function syncOfflineOutstationRequest("), /\{ \.\.\.options, dropRefusedTrainTickets: true \}/, "and the service passes it on (a refused train ticket is dropped there, never the claim)");
 
   const submit = submit0();
   assert.doesNotMatch(

@@ -1,6 +1,7 @@
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import type { DepartureLocationRefusal } from "@/lib/outstation/departure-location-refusals";
 import type { ChainedJourneyPricing, OutstationJourneyStop } from "@/lib/outstation/chained-journey";
+import type { OutstationTicketScanRecord } from "@/lib/outstation/ticket-scan-rules";
 
 export type OutstationEligibilityStatus =
   | "eligible"
@@ -45,6 +46,8 @@ export type OutstationTicketAttachmentMetadata = {
   contentType: string;
   name: string;
   path: string;
+  /** A train ticket's read (ticket-scan-rules.ts, owner 2026-11-07); absent on every other file. */
+  scan?: OutstationTicketScanRecord;
   size: number;
   uploadedAt: string;
 };
