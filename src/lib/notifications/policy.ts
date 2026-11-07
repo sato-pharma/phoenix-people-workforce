@@ -356,6 +356,9 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // (src/lib/recruitment/mr-hiring/notify.ts); pinned by tests/recruitment-mr-hiring-booking.test.ts.
   "recruitment.mr_interview_booked": { channels: ["in_app", "telegram", "push"], permissionResource: "recruitment", priority: "high", recipientStrategy: ["cc"], telegramAllowed: true },
   "recruitment.mr_recommendation_ready": { channels: ["in_app", "telegram", "push"], permissionResource: "recruitment", priority: "high", recipientStrategy: ["cc"], telegramAllowed: true },
+  // Owner, 7 Nov 2026: the area's manager hears of a candidate HR passed for his area "in-app,
+  // telegram and email … in all ways". The one Medical Rep notice that carries email, by his word.
+  "recruitment.mr_candidate_for_your_area": { channels: ["in_app", "telegram", "push", "email"], permissionResource: "recruitment", priority: "high", recipientStrategy: ["cc"], telegramAllowed: true },
   "recruitment.*": { channels: ["in_app", "email", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   // Owner-set 2026-08-09: a resignation is told to Super Admin and Talent Acquisition ONLY —
   // deliberately not the CEO, and deliberately not the leaver's manager chain. The emitter

@@ -124,8 +124,20 @@ outcome sync and Mark as hired therefore move it without any second write that c
 - **A result writes the calendar's outcome too** (pass → shortlisted, backup → backup, do not pass →
   rejected), so the amber "Outcome?" flag, the daily nag and the automatic outcome settling agree with it.
   Nothing is ever sent to the candidate automatically.
-- **The notices never email anyone**, each has its own `recruitment.<event>` policy row so the recruitment
-  email default never applies, and the idempotency key carries the seat so two groups of one never collide.
+- **The interview notices never email anyone**, each has its own `recruitment.<event>` policy row so the
+  recruitment email default never applies, and the idempotency key carries the seat so two groups of one never
+  collide.
+- **The area's manager hears of a candidate HR passed** (owner, 7 Nov 2026: "the manager of this area must
+  receive in-app, telegram and email … the managers must be informed in all ways", plus "a small banner … in
+  their overview dashboard, so when they log in, they notice"). His answers: the area's DSM on the line HR
+  confirmed, or the line's NSM where the area has no real DSM (an "Others" bucket or a vacant seat); and only
+  when HR **passes** the candidate at the 1st interview. It goes to the bell, push, Telegram and email — the one
+  Medical Rep notice that emails, by his word — and stays on a banner at the top of his portal home until he
+  presses "Got it" (21 days at most). It names the candidate, the area and the line, never the CV or money.
+- **HR changes a booked interview's time** (owner, 7 Nov 2026: "make me able to change this time"). "Change
+  the time" on the hiring journey moves the day, the time, the length and the way or place of the interview the
+  current step is booked on, while no result is in — a phone call nobody answered is moved, not failed. The
+  interviewer and the round stay. Everyone on it is told "Interview moved" with the old and new time.
 
 ## Who sees what
 
@@ -145,10 +157,17 @@ outcome sync and Mark as hired therefore move it without any second write that c
   `confirmed_area_name` and `confirmed_line` on `ats_mr_hiring_step_results`, filled by the 1st interview's
   result only (a check refuses them on any other step).
 
-All three were applied to staging and production on 7 November 2026 and read back from the catalog.
+- `20261107202920_ats_mr_area_manager_notices.sql` — `ats_mr_area_manager_notices`, one row per manager told
+  of a candidate for his area, with `seen_at` when he dismisses the banner (service role only).
+
+The first three were applied to staging and production on 7 November 2026 and read back from the catalog.
+Until the fourth is applied, the banner shows nothing and the bell, push, Telegram and email still go — the
+read and the write each fail soft (`area-notices.ts`).
 
 ## Tests
 
 `tests/recruitment-mr-hiring-stage.test.ts` (every step and state, the hold, the RSM step),
 `tests/recruitment-mr-hiring-access.test.ts` (who records each step, the salary, who reads the journey) and
-`tests/recruitment-mr-hiring-booking.test.ts` (Cairo/Giza, the DSM's CV send, the notices).
+`tests/recruitment-mr-hiring-booking.test.ts` (Cairo/Giza, the DSM's CV send, the notices) and
+`tests/recruitment-mr-hiring-area-notice.test.ts` (who manages the area, every channel, the banner, moving an
+interview).

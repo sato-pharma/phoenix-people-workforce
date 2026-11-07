@@ -224,6 +224,18 @@ export function mrRsmApplies(facts: Pick<MrCandidateFacts, "results" | "bookings
   return facts.bookings.some((booking) => booking.round === "rsm") || facts.results.some((row) => row.step === "rsm");
 }
 
+/**
+ * The interview HR may still change — the one the candidate's current step is booked on and that has
+ * no result yet (owner, 7 Nov 2026: "make me able to change this time"). Still to come, or its time
+ * passed with nothing recorded — a phone call nobody answered is moved, not failed. Null for any
+ * other id, a step whose result is in, or a step with nothing booked.
+ */
+export function mrReschedulableBooking(stage: MrStage, bookingId?: string): (MrBookingFact & { round: MrInterviewRound }) | null {
+  if (!stage.open || (stage.state !== "booked" && stage.state !== "awaiting_result") || !stage.booking || !stage.booking.round) return null;
+  if (bookingId !== undefined && stage.booking.id !== bookingId) return null;
+  return stage.booking as MrBookingFact & { round: MrInterviewRound };
+}
+
 /** Whether an interview's time is over. */
 export function mrInterviewEnded(booking: Pick<MrBookingFact, "startsAt" | "durationMinutes">, now: Date): boolean {
   const start = new Date(booking.startsAt).getTime();

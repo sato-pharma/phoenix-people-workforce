@@ -18,14 +18,14 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { sendCandidatesToManager } from "@/lib/recruitment/candidates";
-import { createInterviewBooking, interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
+import { createInterviewBooking, interviewCalendarCaller, updateInterviewBooking } from "@/lib/recruitment/interview-calendar";
 import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
 import { mayBookMrInterview, mrViewer } from "@/lib/recruitment/mr-hiring/access";
 import { loadMrCandidate } from "@/lib/recruitment/mr-hiring/facts-db";
 import { parseMrBookingInput, type MrBookingInput } from "@/lib/recruitment/mr-hiring/inputs";
 import { notifyMrInterviewBooked } from "@/lib/recruitment/mr-hiring/notify";
 import { mrBookingRefusal } from "@/lib/recruitment/mr-hiring/rows";
-import { mrHiringStage, type MrStage } from "@/lib/recruitment/mr-hiring/stage";
+import { mrHiringStage, mrReschedulableBooking, type MrStage } from "@/lib/recruitment/mr-hiring/stage";
 import { MR_JOB_TITLE, MR_LINE_LABELS } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 export type MrBookingResult = { booking: InterviewBooking; notice: string | null; stage: MrStage };
@@ -92,4 +92,56 @@ export async function bookMrInterview(access: AccessContext, candidateId: string
 
   const after = await loadMrCandidate(candidateId);
   return { booking, notice: notices.join(" ") || null, stage: mrHiringStage(after?.facts ?? record.facts) };
+}
+
+/**
+ * Change the day, time, length, way or place of a Medical Rep interview that is booked and not yet
+ * held (owner, 7 Nov 2026: "I set up the time for the interview as a phone call. Make me able to
+ * change this time"). The round and the interviewer stay as booked; the calendar's own
+ * `updateInterviewBooking` applies every calendar rule (who may move it, the Zoom meeting, the change
+ * history, a phone call only on the 1st interview). Everyone on the interview is told the new time —
+ * never by email, never the candidate.
+ */
+export async function rescheduleMrInterview(access: AccessContext, candidateId: string, raw: unknown): Promise<MrBookingResult> {
+  const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const bookingId = typeof body.bookingId === "string" ? body.bookingId.trim() : "";
+  if (!bookingId) throw validationError("Choose the interview to change.");
+  const viewer = mrViewer(access);
+  if (!mayBookMrInterview(viewer)) throw forbiddenError("HR changes the Medical Rep interviews.");
+  const record = await loadMrCandidate(candidateId);
+  if (!record) throw notFoundError("This candidate is not in the Medical Rep hiring list.");
+  const existing = mrReschedulableBooking(mrHiringStage(record.facts), bookingId);
+  if (!existing) throw validationError("Only the interview booked and not yet held can be changed here.");
+
+  let input: MrBookingInput;
+  try {
+    input = parseMrBookingInput({ ...body, interviewerHrId: existing.interviewerHrId, round: existing.round });
+  } catch (error) {
+    throw validationError(error instanceof Error ? error.message : "Check the interview details and try again.");
+  }
+  const caller = await interviewCalendarCaller(access);
+  const booking = await updateInterviewBooking(caller, existing.id, {
+    dateKey: input.dateKey,
+    durationMinutes: input.durationMinutes,
+    location: input.location,
+    platform: input.platform,
+    startMinutes: input.startMinutes,
+  });
+
+  if (booking.startsAt !== existing.startsAt || booking.platform !== existing.platform || booking.location !== existing.location) {
+    await notifyMrInterviewBooked({
+      bookingId: booking.id,
+      candidateId,
+      candidateName: record.name,
+      location: booking.location,
+      movedFrom: existing.startsAt,
+      platform: booking.platform,
+      recipientHrIds: [booking.interviewerHrId, ...booking.panelists.map((member) => member.hrId)],
+      round: input.round,
+      startsAt: booking.startsAt,
+    });
+  }
+
+  const after = await loadMrCandidate(candidateId);
+  return { booking, notice: null, stage: mrHiringStage(after?.facts ?? record.facts) };
 }

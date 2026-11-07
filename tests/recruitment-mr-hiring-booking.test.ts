@@ -171,10 +171,19 @@ export function runRecruitmentMrHiringBookingTests() {
   assert.match(book, /mrBookingRefusal\(/, "a booking is refused when it is not the next step");
   const notify = codeOnly("src/lib/recruitment/mr-hiring/notify.ts");
   assert.doesNotMatch(notify, /proposedSalary/, "no notice carries the proposed salary");
-  assert.doesNotMatch(notify, /"email"/, "no notice names the email channel");
+  // The one exception, by the owner's word of 7 Nov 2026: the area manager's notice goes "in all ways",
+  // email included — and only through its own constant (tests/recruitment-mr-hiring-area-notice.test.ts).
+  const withoutAreaNotice = notify.replace(/export const MR_AREA_MANAGER_CHANNELS = \[[^\]]*\] as const;/, "");
+  assert.notEqual(withoutAreaNotice, notify, "the area manager's channels are one named constant");
+  assert.doesNotMatch(withoutAreaNotice, /"email"/, "no other notice names the email channel");
   assert.match(
     notify,
-    /idempotencyKey: `mr-interview-booked:\$\{input\.bookingId\}:\$\{seat\}`/,
+    /: `mr-interview-booked:\$\{input\.bookingId\}:\$\{seat\}`/,
     "each seat's notice has its own key — a group of one recipient is not suffixed per recipient, so two seats would collide",
+  );
+  assert.match(
+    notify,
+    /`mr-interview-moved:\$\{input\.bookingId\}:\$\{input\.startsAt\}:\$\{seat\}`/,
+    "a moved interview is a notice of its own — per new time and per seat, never swallowed by the booking's key",
   );
 }

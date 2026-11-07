@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 
-import { postJson, getJson } from "@/components/recruitment/recruitment-fetch";
+import { patchJson, postJson, getJson } from "@/components/recruitment/recruitment-fetch";
 import { adminRecessedDepthClassName } from "@/components/admin/admin-design-tokens";
 import { CheckTile, FormActions, FormError, FormField, RatingScale } from "@/components/ui/form-kit";
 import {
@@ -18,7 +18,9 @@ import {
   phxSelectClassName,
   phxTextareaClassName,
 } from "@/components/ui/form-tokens";
+import { cairoDateKey, cairoMinutesOfDay } from "@/lib/recruitment/interview-calendar-week";
 import type { MrRow } from "@/lib/recruitment/mr-hiring/rows";
+import type { MrBookingFact } from "@/lib/recruitment/mr-hiring/stage";
 import {
   MR_COMMENT_LIMIT,
   MR_LINE_LABELS,
@@ -412,19 +414,40 @@ function interviewerLabel(round: MrInterviewRound): string {
   return "Interviewer";
 }
 
-export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void; onDone: (notice: string | null) => void; row: MrRow }) {
-  const rounds = row.can.book;
+/** "09:05" for 545 minutes after midnight — the value a time field takes. */
+function timeValue(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Book the next interview — or, given `existing`, CHANGE the one booked and not yet held: its day,
+ * time, length, way and place, pre-filled as booked (owner, 7 Nov 2026: "I set up the time for the
+ * interview as a phone call. Make me able to change this time"). The round and the interviewer stay.
+ */
+export function MrBookingForm({
+  existing = null,
+  onCancel,
+  onDone,
+  row,
+}: {
+  existing?: MrBookingFact | null;
+  onCancel: () => void;
+  onDone: (notice: string | null) => void;
+  row: MrRow;
+}) {
+  const changing = existing !== null && existing.round !== null;
+  const rounds: MrInterviewRound[] = changing && existing.round ? [existing.round] : row.can.book;
   const [round, setRound] = useState<MrInterviewRound>(rounds[0] ?? "hr_first");
-  const [dateKey, setDateKey] = useState("");
-  const [time, setTime] = useState("");
-  const [duration, setDuration] = useState(30);
+  const [dateKey, setDateKey] = useState(() => (changing ? cairoDateKey(new Date(existing.startsAt)) : ""));
+  const [time, setTime] = useState(() => (changing ? timeValue(cairoMinutesOfDay(new Date(existing.startsAt))) : ""));
+  const [duration, setDuration] = useState(() => (changing ? existing.durationMinutes : 30));
   // The 1st interview's way: §3's answer pre-filled from the governorate, or a phone call (owner,
   // 7 Nov 2026: "only for hr first interview u will add a third option which is phone call").
-  const [firstWay, setFirstWay] = useState<"in_office" | "zoom" | "phone" | null>(
-    row.inCairoOrGiza === null ? null : row.inCairoOrGiza ? "in_office" : "zoom",
+  const [firstWay, setFirstWay] = useState<"in_office" | "zoom" | "phone" | null>(() =>
+    changing ? existing.platform : row.inCairoOrGiza === null ? null : row.inCairoOrGiza ? "in_office" : "zoom",
   );
-  const [platform, setPlatform] = useState<"zoom" | "in_office">("zoom");
-  const [location, setLocation] = useState("");
+  const [platform, setPlatform] = useState<"zoom" | "in_office">(() => (changing && existing.platform !== "phone" ? existing.platform : "zoom"));
+  const [location, setLocation] = useState(() => (changing ? (existing.location ?? "") : ""));
   const [interviewer, setInterviewer] = useState<Person | null>(null);
   const [nsm, setNsm] = useState<Person | null>(null);
   const [notes, setNotes] = useState("");
@@ -438,20 +461,23 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
   async function submit() {
     if (!dateKey || !time) return setError("Choose the interview day and time.");
     if (first && firstWay === null) return setError("Say whether the candidate is in Cairo or Giza, or choose a phone call.");
-    if (!first && !interviewer) return setError("Choose who conducts this interview.");
-    if (round === "joint_final" && !nsm) return setError("A joint final has the HR Manager and the NSM — choose both.");
+    if (!changing && !first && !interviewer) return setError("Choose who conducts this interview.");
+    if (!changing && round === "joint_final" && !nsm) return setError("A joint final has the HR Manager and the NSM — choose both.");
     const [hours, minutes] = time.split(":").map(Number);
     setBusy(true);
     setError(null);
     try {
-      const data = await postJson(`/api/recruitment/mr-hiring/${encodeURIComponent(row.candidateId)}/book`, {
+      const url = `/api/recruitment/mr-hiring/${encodeURIComponent(row.candidateId)}/book`;
+      const send = changing ? (body: unknown) => patchJson(url, body) : (body: unknown) => postJson(url, body);
+      const data = await send({
+        bookingId: changing ? existing.id : undefined,
         dateKey,
         // A phone call's length is never asked — the server books it for MR_PHONE_CALL_MINUTES.
         durationMinutes: byPhone ? undefined : duration,
         inCairoOrGiza: first && !byPhone ? firstWay === "in_office" : undefined,
         interviewerHrId: interviewer?.hrId ?? null,
         location: inPerson ? location : null,
-        notes,
+        notes: changing ? undefined : notes,
         panelistHrIds: round === "joint_final" && nsm ? [nsm.hrId] : [],
         platform: first ? (byPhone ? "phone" : undefined) : platform,
         round,
@@ -459,7 +485,7 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
       });
       onDone(typeof data.notice === "string" ? data.notice : null);
     } catch (caught) {
-      setError(errorText(caught, "Could not book the interview."));
+      setError(errorText(caught, changing ? "Could not change the interview." : "Could not book the interview."));
       setBusy(false);
     }
   }
@@ -473,7 +499,7 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
       }}
     >
       <div>
-        <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-600">Book the interview</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-600">{changing ? "Change the interview" : "Book the interview"}</p>
         <p className="mt-1 break-words text-sm font-bold text-slate-900">{row.name}</p>
       </div>
       {rounds.length > 1 ? (
@@ -491,7 +517,7 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
       )}
       <div className={phxFieldGridTwoClassName}>
         <FormField htmlFor="mr-day" label="Day" required>
-          <input className={phxFieldClassName} id="mr-day" min={today} onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
+          <input className={phxFieldClassName} id="mr-day" min={changing && dateKey && dateKey < today ? dateKey : today} onChange={(event) => setDateKey(event.target.value)} type="date" value={dateKey} />
         </FormField>
         <FormField hint="Cairo time." htmlFor="mr-time" label="Time" required>
           <input className={phxFieldClassName} id="mr-time" onChange={(event) => setTime(event.target.value)} step={60} type="time" value={time} />
@@ -500,7 +526,7 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
       {byPhone ? null : (
         <FormField htmlFor="mr-duration" label="Length">
           <select className={phxSelectClassName} id="mr-duration" onChange={(event) => setDuration(Number(event.target.value))} value={duration}>
-            {DURATIONS.map((minutes) => (
+            {(DURATIONS.includes(duration) ? DURATIONS : [...DURATIONS, duration].sort((left, right) => left - right)).map((minutes) => (
               <option key={minutes} value={minutes}>
                 {minutes} minutes
               </option>
@@ -560,13 +586,18 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
       ) : (
         <p className="text-xs leading-5 text-slate-600">The Zoom link is created from the official Sato Pharma Zoom account when the interview is booked.</p>
       )}
-      {first ? (
+      {changing ? (
+        <p className="text-xs leading-5 text-slate-600">
+          {existing.interviewerName ? `${existing.interviewerName} still conducts it. ` : ""}Everyone on the interview is told the new time in Phoenix and
+          on Telegram. Nothing is sent to the candidate.
+        </p>
+      ) : first ? (
         <PersonPicker id="mr-interviewer" label="Interviewer (you, if left empty)" onChange={setInterviewer} value={interviewer} />
       ) : (
         <PersonPicker id="mr-interviewer" label={interviewerLabel(round)} onChange={setInterviewer} required value={interviewer} />
       )}
-      {round === "joint_final" ? <PersonPicker id="mr-nsm" label="The NSM" onChange={setNsm} required value={nsm} /> : null}
-      {round === "dsm" ? (
+      {!changing && round === "joint_final" ? <PersonPicker id="mr-nsm" label="The NSM" onChange={setNsm} required value={nsm} /> : null}
+      {changing ? null : round === "dsm" ? (
         <p className="text-xs leading-5 text-slate-600">Booking sends the CV to the DSM through Phoenix and notifies the DSM.</p>
       ) : round === "rsm" ? (
         <p className="text-xs leading-5 text-slate-600">
@@ -574,9 +605,11 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
           submits the evaluation in Phoenix.
         </p>
       ) : null}
-      <FormField htmlFor="mr-notes" label="Notes for the interviewer">
-        <textarea className={phxTextareaClassName} id="mr-notes" onChange={(event) => setNotes(event.target.value)} rows={2} value={notes} />
-      </FormField>
+      {changing ? null : (
+        <FormField htmlFor="mr-notes" label="Notes for the interviewer">
+          <textarea className={phxTextareaClassName} id="mr-notes" onChange={(event) => setNotes(event.target.value)} rows={2} value={notes} />
+        </FormField>
+      )}
       <FormError>{error}</FormError>
       <FormActions
         left={
@@ -586,7 +619,7 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
         }
         right={
           <button className={phxButtonAccentClassName} disabled={busy} type="submit">
-            {busy ? "Booking…" : "Book the interview"}
+            {busy ? (changing ? "Saving…" : "Booking…") : changing ? "Save the new time" : "Book the interview"}
           </button>
         }
       />

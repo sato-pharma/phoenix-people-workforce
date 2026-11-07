@@ -2248,6 +2248,12 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // value they held before; production had 0 bookings carrying a round and 0 step results, so no row was
   // re-checked against anything new. Re-applying is a no-op (`drop … if exists`, then the same constraint).
   "20261107132746_ats_mr_hiring_rsm_round.sql",
+  // Applied 7 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler) after both
+  // MCP doors declined it, staging included (the file holds `drop policy if exists` and a `revoke`). One new
+  // table, no function. Read back on both: public.ats_mr_area_manager_notices with relrowsecurity true, one
+  // policy, grants for service_role only (none for anon or authenticated); production held 0 rows. Re-applying
+  // is a no-op (`if not exists`, `drop policy if exists` then create, the same revoke and grant).
+  "20261107202920_ats_mr_area_manager_notices.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
