@@ -1122,6 +1122,7 @@ export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: Rep
           // would read "no place saved" and its missing reading would plot at 0°N 0°E, so it is not a
           // row here. Every visit that remains carries a reading — phoenix_crm_visits_location_source
           // holds it.
+          // A copied old visit is an admin row too, so this leaves out every one — converted or archived — as well.
           .neq("capture_source", "admin")
           // Nor the pharmacy visit a doctor's visit filed beside itself (owner, 2026-10-03): nobody stood
           // at the pharmacy with a phone for it, so it has no place reading of its own to report.

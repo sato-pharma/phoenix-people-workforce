@@ -2207,6 +2207,17 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // (the copy is the runner's --apply). Re-applying is a no-op (`drop function if exists` of the two-argument
   // one, `create or replace`).
   "20261107001714_phoenix_crm_import_history_after_the_start.sql",
+  // Applied 7 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler) — the MCP
+  // refuses a body holding `delete` / `drop table pg_temp`. md5(pg_proc.prosrc) on production equals the md5 of
+  // this file's own LF body between the dollar markers for all six: phoenix_crm_visits_old_system_kpi
+  // fe59ed9b96c12bfc8f7f5b90bb3aeac9, phoenix_crm_visits_old_system_far_archive 7e3d44d7a6a03db3f3525ae05c5a1d31,
+  // phoenix_crm_prepare_ireports360_conversion fdd914ee2c61a1f5cef7c56be13fe716,
+  // phoenix_crm_ireports360_conversion_page 3eca80908c9f5b0fa121cc0596bb0fc7,
+  // phoenix_crm_apply_ireports360_conversion 294ca6923fe0d2eef59d62bc5533acc4,
+  // phoenix_crm_import_ireports360_history 11d473ef1b53772c1b97d9cada2542a2; EXECUTE for postgres and
+  // service_role only. phoenix_crm_visit_archive has RLS on, granted to service_role only; crm_visits_unified has
+  // counts_in_kpi. Every month Jan–Nov of crm_visits_unified hashed the same before and after (0 rows moved).
+  "20261107044059_phoenix_crm_old_visits_convert_and_archive.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

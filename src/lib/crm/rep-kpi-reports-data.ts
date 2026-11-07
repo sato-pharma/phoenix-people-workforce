@@ -241,6 +241,8 @@ export async function loadRepKpiReports(input: {
       columns: VISIT_COLUMNS,
       collapseDoubleVisits: true,
       reuseRecentWindow: input.reuseRecentWindow === true,
+      // Counts visits: only the rows that count (counts_in_kpi — never a campaign, archived or uncounted copied old visit).
+      kpiOnly: true,
     }),
   ]);
 

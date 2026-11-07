@@ -30,9 +30,15 @@
  * brings in, a seat or team new since the last run, a doctor with a new link. Read the dry run first: what
  * it will write is rows_to_write less conflicts_skipped. --apply takes no value: --apply=false is refused.
  *
+ * --leavers (owner, 7 Nov 2026) copies the visits of a person on NO current territory today — resigned, or moved
+ * off the REP seats — each filed under the territory he held that day, on a day with no Phoenix entry. Since that
+ * day EVERY mode copies only a regular visit with a check-in location (phoenix_crm_ireports360_checkin_matches,
+ * filled by scripts/phoenix-crm-convert-ireports360-visits.ts --apply, which must run FIRST): a campaign visit,
+ * or one with no location, is never added. Its records go in phoenix-crm-ireports360-leavers-<date>.
+ *
  * Usage:
  *   node --env-file-if-exists=.env.production.rls.local --experimental-strip-types \
- *     scripts/phoenix-crm-import-ireports360-history.ts [--after-start] [--seat=<seat id>] [--apply] [--out=<folder>]
+ *     scripts/phoenix-crm-import-ireports360-history.ts [--after-start | --leavers] [--seat=<seat id>] [--apply] [--out=<folder>]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -60,6 +66,7 @@ type Answer = {
 
 const DATE = "20261029";
 const AFTER_START_DATE = "20261107";
+const LEAVERS_DATE = "20261107";
 
 // The text after `=`, "" for a bare flag, null when the flag is absent.
 const arg = (name: string): string | null => {
@@ -72,7 +79,7 @@ const value = (name: string): string | null => {
   if (given === "") throw new Error(`--${name} needs a value: --${name}=<…> — refused rather than guessed.`);
   return given;
 };
-const known = new Set(["apply", "seat", "out", "after-start"]);
+const known = new Set(["apply", "seat", "out", "after-start", "leavers"]);
 for (const entry of process.argv.slice(2)) {
   const name = entry.replace(/^--/, "").split("=")[0];
   if (!entry.startsWith("--") || !known.has(name)) throw new Error(`Unknown flag ${entry} — refused rather than ignored.`);
@@ -80,15 +87,22 @@ for (const entry of process.argv.slice(2)) {
 // Decided before anything connects: --apply=false must never read as --apply.
 if (arg("apply") !== null && arg("apply") !== "") throw new Error(`--apply takes no value (got ${arg("apply")}); leave it out for a dry run.`);
 if (arg("after-start") !== null && arg("after-start") !== "") throw new Error(`--after-start takes no value (got ${arg("after-start")}).`);
+if (arg("leavers") !== null && arg("leavers") !== "") throw new Error(`--leavers takes no value (got ${arg("leavers")}).`);
 const APPLY = arg("apply") === "";
 const AFTER_START = arg("after-start") === "";
+const LEAVERS = arg("leavers") === "";
+if (AFTER_START && LEAVERS) throw new Error("--after-start and --leavers are two runs: give one.");
 const ONLY = value("seat");
 const FOLDER =
   value("out") ??
   path.join(
     "F:",
     "PHX backup",
-    AFTER_START ? `phoenix-crm-ireports360-after-start-${AFTER_START_DATE}` : `phoenix-crm-ireports360-history-${DATE}`,
+    LEAVERS
+      ? `phoenix-crm-ireports360-leavers-${LEAVERS_DATE}`
+      : AFTER_START
+        ? `phoenix-crm-ireports360-after-start-${AFTER_START_DATE}`
+        : `phoenix-crm-ireports360-history-${DATE}`,
   );
 // Cairo wall time, file-name safe: 2026-10-31-05-36-25.
 const STAMP = new Intl.DateTimeFormat("sv-SE", {
@@ -143,10 +157,11 @@ function connect(): postgres.Sql {
 const TIMEOUT = "set local statement_timeout = '15min'";
 
 async function call(tx: postgres.TransactionSql, seat: string | null, apply: boolean): Promise<Answer> {
-  const [row] = await tx.unsafe("select public.phoenix_crm_import_ireports360_history($1, $2, $3) as answer", [
+  const [row] = await tx.unsafe("select public.phoenix_crm_import_ireports360_history($1, $2, $3, $4) as answer", [
     seat,
     apply,
     AFTER_START,
+    LEAVERS,
   ]);
   const answer = row.answer as Answer;
   return { ...answer, seats: answer.seats ?? [] };

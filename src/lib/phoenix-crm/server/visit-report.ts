@@ -336,6 +336,8 @@ const VISIT_COLUMNS = [
   "device_skew_minutes, pharmacy_name, product_availability, voice_note_path, voice_note_seconds, is_unplanned, next_step",
   "next_step_on, objection, objection_note, samples_given, dwell_seconds, form_open_seconds, capture_source, offline_seconds",
   "synced_at, photo_lat, photo_lon, photo_accuracy_meters, photo_captured_at, unplanned_kind",
+  // A copied old visit counts only on the trigger's answer (owner, 2026-11-07; `visitCountsInKpi`).
+  "imported_from_ireports360_at, ireports360_kpi_counted",
   // The rep's own write-up, added after the door, and when he last changed it (owner, 2026-10-15).
   "detail_comment, detail_edited_at",
 ].join(", ");
@@ -359,6 +361,8 @@ async function readSeatRange(
       let query: any = getSupabaseAdmin().from(table).select(columns);
       query = seatScoped(query, seatIds).gte(window.column, window.from).lte(window.column, window.to);
       if (!includeTest) query = query.eq("is_test", false);
+      // A copied visit in the visits archive (owner, 2026-11-07) is no visit.
+      if (table === "phoenix_crm_visits") query = query.is("archived_at", null);
       if (narrow) query = narrow(query);
       return query;
     },
@@ -392,6 +396,7 @@ async function readManagerVisitRange(
             .from("phoenix_crm_visits")
             .select(VISIT_COLUMNS)
             .in(column, keys)
+            .is("archived_at", null)
             .gte("visit_date", window.from)
             .lte("visit_date", window.to);
           if (!includeTest) query = query.eq("is_test", false);
@@ -416,7 +421,7 @@ async function readManagerVisitRange(
     "id",
     listed.map((row) => idOf(row.visit_id)),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (query: any) => tuneByIds(includeTest)(query.gte("visit_date", window.from).lte("visit_date", window.to)),
+    (query: any) => tuneByIds(includeTest)(query.is("archived_at", null).gte("visit_date", window.from).lte("visit_date", window.to)),
   );
   const byId = new Map<string, Row>();
   for (const rows of [...answers, asCompanion]) {
@@ -473,6 +478,8 @@ function visitReportHoldBack(visit: Row, customer: Row | null, approval: Row | n
     isUnplanned,
     unplannedKind,
     unplannedStatus: unplannedKind === "out_of_plan" && isUnplannedVisitStatus(status) ? status : null,
+    copiedFromOldSystem: typeof visit.imported_from_ireports360_at === "string",
+    oldSystemKpiCounted: visit.ireports360_kpi_counted === true,
   });
 }
 
