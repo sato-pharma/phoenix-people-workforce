@@ -259,8 +259,8 @@ export function runPortalRepNavigationSpeedTests(): void {
     // The reference entry is read for one contact, beside his own row id.
     const subject = functionBody(list, "async function validationSubject(");
     assert.ok(
-      subject.includes("await Promise.all([loadReferenceEntry(seatId, isTest, contact), customerIdForReference(seatId, isTest, contact)])"),
-      "the carried-over entry and his row id are read at once",
+      subject.includes("await Promise.all([loadReferenceEntry(seatId, isTest, contact), customerRowForReference(seatId, isTest, contact)])"),
+      "the carried-over entry and his own row (id and name) are read at once",
     );
     assert.doesNotMatch(subject, /loadReference\(seatId, isTest\)/, "never the whole territory's reference for one contact");
     const entry = functionBody(list, "async function loadReferenceEntry(");
