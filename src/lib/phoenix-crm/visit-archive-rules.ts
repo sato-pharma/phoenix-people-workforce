@@ -3,7 +3,7 @@
  *
  * The old iReports360 visits that could not be carried into Phoenix CRM as visits — a campaign visit, or a
  * visit with no check-in location — were retired into `public.phoenix_crm_visit_archive`; so is a converted
- * visit whose check-in lay more than visit_far_meters from the customer's validated place (`far`, owner,
+ * visit whose check-in lay more than 500 m from the customer's validated place (`far`, owner,
  * 7 Nov 2026, kept by the database trigger as places are validated). The screen has TWO TABS: "Campaign and
  * no location" (the first two reasons) and "Far from the customer" (far, with the distance and both points). The Super Admin
  * and the SFE Manager read that table on /admin/phoenix-crm/visits-archive; the reader is

@@ -38,7 +38,7 @@ export const dynamic = "force-dynamic";
 /**
  * The visits archive — the old iReports360 visits Phoenix CRM did not carry over as visits (owner,
  * 2026-11-07), in two tabs: "Campaign and no location" (a campaign visit, or a visit with no check-in
- * location) and "Far from the customer" (a converted visit whose check-in lay more than visit_far_meters from
+ * location) and "Far from the customer" (a converted visit whose check-in lay more than 500 m from
  * the customer's validated place, with the distance and both points — no map). Read-only: nothing on this
  * page acts, and nothing here is a verdict on anybody. Both tabs sit behind the one gate below.
  *
@@ -136,7 +136,7 @@ export default async function PhoenixCrmVisitsArchivePage({
             icon={<Ruler className="h-5 w-5" />}
             label={VISIT_ARCHIVE_REASON_LABELS.far}
             value={totals.total}
-            description={filtered ? "Matching the filter below" : "Check-in farther than the far line from the validated place"}
+            description={filtered ? "Matching the filter below" : "Check-in more than 500 m from the validated place"}
             tone="orange"
             size="compact"
           />

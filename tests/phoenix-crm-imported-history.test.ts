@@ -5,6 +5,7 @@ import { archiveReasonLabel } from "../src/lib/phoenix-crm/list-request-rules.ts
 import {
   CONVERTED_VISIT_IS_UNPLANNED,
   convertOldVisitLocation,
+  OLD_VISIT_ARCHIVE_FAR_METERS,
   OLD_SYSTEM_CAMPAIGN_VISIT,
   OLD_VISIT_ARCHIVE_REASONS,
   OLD_SYSTEM_REGULAR_VISIT,
@@ -491,12 +492,19 @@ function runOldVisitConversionTests(): void {
   assert.equal(near?.placeId, "place-1");
   assert.equal(near?.kpiCounted, true, "measured against a validated place: counted");
   assert.equal(near?.archiveReason, null, "and never archived");
-  // FAR (owner, 7 Nov 2026): a converted visit whose check-in lay beyond visit_far_meters is ARCHIVED, never counted.
+  // FAR (owner, 7 Nov 2026): a converted visit whose check-in lay beyond the 500 m archive line is ARCHIVED, never counted.
   const far = convertOldVisitLocation({ checkin: { checkinId: 8, lat: 30.06, lon: 31.2357 }, places: [place], farMeters: 300 });
   assert.equal(far?.locationFlag, "far", "beyond visit_far_meters is far");
-  assert.equal(far?.kpiCounted, false, "a far old visit is never counted");
+  assert.equal(far?.kpiCounted, false, "a far old visit beyond 500 m is never counted");
   assert.equal(far?.archiveReason, "far", "it is archived as far");
-  assert.ok((far?.distanceMeters ?? 0) > 300, "with its distance");
+  assert.ok((far?.distanceMeters ?? 0) > OLD_VISIT_ARCHIVE_FAR_METERS, "with its distance");
+  // UP TO 500 m (owner, 7 Nov 2026: "visits upto 500 m move them to normal visits but flag them"): far, counted, not archived.
+  assert.equal(OLD_VISIT_ARCHIVE_FAR_METERS, 500, "the archive line is 500 m");
+  const flagged = convertOldVisitLocation({ checkin: { checkinId: 12, lat: 30.0480, lon: 31.2357 }, places: [place], farMeters: 300 });
+  assert.equal(flagged?.locationFlag, "far", "400 m is past the far line: flagged far");
+  assert.ok((flagged?.distanceMeters ?? 0) > 300 && (flagged?.distanceMeters ?? 0) <= 500, "and within the archive line");
+  assert.equal(flagged?.kpiCounted, true, "a far old visit within 500 m is a normal, counted visit");
+  assert.equal(flagged?.archiveReason, null, "and is never archived");
   assert.deepEqual([...OLD_VISIT_ARCHIVE_REASONS], ["campaign", "no_checkin_location", "far"], "the precedence: campaign > no check-in location > far");
   const nearest = convertOldVisitLocation({
     checkin: { checkinId: 9, lat: 30.06, lon: 31.2357 },
