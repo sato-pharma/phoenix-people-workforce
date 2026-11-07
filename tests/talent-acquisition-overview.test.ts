@@ -1281,10 +1281,9 @@ function testHerWeekIsTheInterviewCalendarItself() {
   assert.match(
     data,
     /upcomingWeekStart\(now\)/,
-    "and the week it opens on must be `upcomingWeekStart`, not the week today sits in. They differ " +
-      "on a FRIDAY and a SATURDAY, which are not working days here: the week containing today is " +
-      "then Sunday-to-Thursday entirely in the past, so her landing page would open every weekend " +
-      "on a week that is over — which reads as a week with nothing in it",
+    "and the week it opens on must be `upcomingWeekStart`, not a week computed some other way — " +
+      "it is the one rule for which week has interview days left in it (every day holds interviews " +
+      "since 7 Nov 2026), so her landing page and the calendar always open on the same week",
   );
 }
 

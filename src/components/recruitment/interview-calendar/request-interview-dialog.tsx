@@ -145,7 +145,7 @@ export function RequestInterviewDialog({
               <MonthPicker cursor={cursor} onCursor={setCursor} onSelect={setDay} selected={day} todayKey={todayKey} />
             </div>
             <NoteLine tone={day ? "emerald" : "slate"}>
-              {day ? `Interviews on ${formatDayLong(day)}. HR sets the time of each one.` : "Pick a day, Sunday to Thursday. You choose the day; HR chooses the times."}
+              {day ? `Interviews on ${formatDayLong(day)}. HR sets the time of each one.` : "Pick a day. You choose the day; HR chooses the times."}
             </NoteLine>
           </div>
         </section>

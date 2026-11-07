@@ -17,7 +17,7 @@ import { isZoomConfigured } from "@/lib/zoom/meetings";
 export const dynamic = "force-dynamic";
 
 // Interview Calendar — the week-by-week schedule of interviews the owner asked for on 2026-09-18,
-// modelled on his own "DAILY SCHEDULE" sheet: a column per day, Sunday to Thursday, a row per half
+// modelled on his own "DAILY SCHEDULE" sheet: a column per day, every day of the week since 7 Nov 2026, a row per half
 // hour from 9:00 AM to 5:00 PM, every name opening that candidate's CV, exportable as PDF or Excel
 // with the names still linked, and shared from here with Viewer, Commenter or Editor access.
 //
@@ -59,7 +59,7 @@ export default async function InterviewCalendarPage({
         badges={
           role ? (
             <>
-              <AdminInsightChip tone="orange">Sunday to Thursday · Cairo time</AdminInsightChip>
+              <AdminInsightChip tone="orange">Every day · Cairo time</AdminInsightChip>
               <AdminInsightChip tone={zoomConnected ? "emerald" : "slate"}>{zoomConnected ? "Zoom connected" : "Zoom not connected"}</AdminInsightChip>
             </>
           ) : null

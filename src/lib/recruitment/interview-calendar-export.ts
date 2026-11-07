@@ -184,7 +184,7 @@ export async function buildInterviewCalendarWorkbook(model: InterviewCalendarExp
   let row = writeHouseMasthead(workbook, grid, {
     columns: GRID_COLUMNS,
     provenance: [`Generated ${model.generatedAtLabel} (Cairo)`, `${model.bookings.length} interview${model.bookings.length === 1 ? "" : "s"}`],
-    subtitle: `${model.weekOfLabel} · ${model.weekLabel} · Sunday to Thursday, 9:00 AM to 5:00 PM. Click a name to open the CV.`,
+    subtitle: `${model.weekOfLabel} · ${model.weekLabel} · Every day, 9:00 AM to 5:00 PM. Click a name to open the CV.`,
     title: "Interview Calendar",
   });
 

@@ -21,13 +21,17 @@ import {
 import type { MrRow } from "@/lib/recruitment/mr-hiring/rows";
 import {
   MR_COMMENT_LIMIT,
+  MR_LINE_LABELS,
+  MR_LINES,
   MR_LOCATION_LIMIT,
   MR_RECOMMENDATION_LABELS,
   MR_RESULT_STEP_LABELS,
   MR_RESULTS,
   MR_ROUND_LABELS,
   mrResultLabel,
+  type MrAreaChoice,
   type MrInterviewRound,
+  type MrLine,
   type MrRecommendation,
   type MrResult,
   type MrResultStep,
@@ -48,21 +52,34 @@ function errorText(error: unknown, fallback: string): string {
 // ─── A result at one step ─────────────────────────────────────────────────────
 
 export function MrResultForm({
+  areaChoices = [],
   candidateId,
   candidateName,
   decidedWithoutDsm = false,
+  defaultArea = null,
+  defaultLine = null,
   onCancel,
   onDone,
   step,
 }: {
+  /** The 1st interview only: the areas HR may confirm, region by region. */
+  areaChoices?: MrAreaChoice[];
   candidateId: string;
   candidateName: string;
   decidedWithoutDsm?: boolean;
+  /** The area the candidate is filed under or asked for — pre-selected when it is on the list. */
+  defaultArea?: string | null;
+  defaultLine?: MrLine | null;
   onCancel: () => void;
   onDone: () => void;
   step: MrResultStep;
 }) {
   const [result, setResult] = useState<MrResult | null>(null);
+  const isFirst = step === "hr_first";
+  const [area, setArea] = useState(() =>
+    defaultArea && areaChoices.some((choice) => choice.areas.includes(defaultArea)) ? defaultArea : "",
+  );
+  const [line, setLine] = useState<MrLine | null>(defaultLine);
   const [rating, setRating] = useState<number | null>(null);
   const [comment, setComment] = useState("");
   const [reason, setReason] = useState<RejectionReason>("other");
@@ -76,11 +93,15 @@ export function MrResultForm({
   async function submit() {
     if (!result) return setError("Choose one answer.");
     if (!comment.trim()) return setError("Write a short comment — every result carries one.");
+    if (isFirst && result === "pass" && !area) return setError("Confirm the area the candidate is applying to.");
+    if (isFirst && result === "pass" && !line) return setError("Confirm the line — Pedia, Anti Infective or CNS.");
     setBusy(true);
     setError(null);
     try {
       await postJson(`/api/recruitment/mr-hiring/${encodeURIComponent(candidateId)}/result`, {
         comment,
+        confirmedArea: isFirst ? area || null : null,
+        confirmedLine: isFirst ? line : null,
         decidedWithoutDsm,
         rating: isInterview ? rating : null,
         rejectionReason: step === "hr_screening" && result === "not_pass" ? reason : null,
@@ -123,6 +144,39 @@ export function MrResultForm({
           ))}
         </div>
       </FormField>
+      {isFirst ? (
+        <>
+          <FormField
+            error={areaChoices.length === 0 ? "The area list could not be loaded — close this and open the journey again." : null}
+            hint="Pre-filled from the candidate's filing. The DSM interview is booked for this area."
+            htmlFor="mr-area"
+            label="Area the candidate is applying to"
+            required={result === "pass"}
+          >
+            <select className={phxSelectClassName} id="mr-area" onChange={(event) => setArea(event.target.value)} value={area}>
+              <option value="">Choose the area</option>
+              {areaChoices.map((choice) => (
+                <optgroup key={choice.region} label={choice.region}>
+                  {choice.areas.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </FormField>
+          <FormField hint="Pedia adds the RSM interview after the DSM's. The other lines go straight to the 3rd interview." label="Line" required={result === "pass"}>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup">
+              {MR_LINES.map((value) => (
+                <CheckTile checked={line === value} key={value} name="mr-line" onChange={() => setLine(value)} type="radio">
+                  {MR_LINE_LABELS[value]}
+                </CheckTile>
+              ))}
+            </div>
+          </FormField>
+        </>
+      ) : null}
       {step === "hr_screening" && result === "not_pass" ? (
         <FormField htmlFor="mr-reason" label="Why is the CV rejected?" required>
           <select className={phxSelectClassName} id="mr-reason" onChange={(event) => setReason(event.target.value as RejectionReason)} value={reason}>
@@ -363,7 +417,11 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
   const [dateKey, setDateKey] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState(30);
-  const [inCairoOrGiza, setInCairoOrGiza] = useState<boolean | null>(row.inCairoOrGiza);
+  // The 1st interview's way: §3's answer pre-filled from the governorate, or a phone call (owner,
+  // 7 Nov 2026: "only for hr first interview u will add a third option which is phone call").
+  const [firstWay, setFirstWay] = useState<"in_office" | "zoom" | "phone" | null>(
+    row.inCairoOrGiza === null ? null : row.inCairoOrGiza ? "in_office" : "zoom",
+  );
   const [platform, setPlatform] = useState<"zoom" | "in_office">("zoom");
   const [location, setLocation] = useState("");
   const [interviewer, setInterviewer] = useState<Person | null>(null);
@@ -373,11 +431,12 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
   const [error, setError] = useState<string | null>(null);
   const [today] = useState(cairoTodayKey);
   const first = round === "hr_first";
-  const inPerson = first ? inCairoOrGiza === true : platform === "in_office";
+  const inPerson = first ? firstWay === "in_office" : platform === "in_office";
+  const byPhone = first && firstWay === "phone";
 
   async function submit() {
     if (!dateKey || !time) return setError("Choose the interview day and time.");
-    if (first && inCairoOrGiza === null) return setError("Say whether the candidate is in Cairo or Giza — that decides in person or Zoom.");
+    if (first && firstWay === null) return setError("Say whether the candidate is in Cairo or Giza, or choose a phone call.");
     if (!first && !interviewer) return setError("Choose who conducts this interview.");
     if (round === "joint_final" && !nsm) return setError("A joint final has the HR Manager and the NSM — choose both.");
     const [hours, minutes] = time.split(":").map(Number);
@@ -387,12 +446,12 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
       const data = await postJson(`/api/recruitment/mr-hiring/${encodeURIComponent(row.candidateId)}/book`, {
         dateKey,
         durationMinutes: duration,
-        inCairoOrGiza: first ? inCairoOrGiza : undefined,
+        inCairoOrGiza: first && !byPhone ? firstWay === "in_office" : undefined,
         interviewerHrId: interviewer?.hrId ?? null,
         location: inPerson ? location : null,
         notes,
         panelistHrIds: round === "joint_final" && nsm ? [nsm.hrId] : [],
-        platform: first ? undefined : platform,
+        platform: first ? (byPhone ? "phone" : undefined) : platform,
         round,
         startMinutes: hours * 60 + minutes,
       });
@@ -416,11 +475,7 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
         <p className="mt-1 break-words text-sm font-bold text-slate-900">{row.name}</p>
       </div>
       {rounds.length > 1 ? (
-        <FormField htmlFor="mr-round" hint={
-            rounds.includes("rsm")
-              ? "Book the RSM interview first for a Pedia line candidate. The joint final replaces the 3rd interview and the NSM final."
-              : "The joint final replaces the 3rd interview and the NSM final."
-          } label="Interview" required>
+        <FormField htmlFor="mr-round" hint="The joint final replaces the 3rd interview and the NSM final." label="Interview" required>
           <select className={phxSelectClassName} id="mr-round" onChange={(event) => setRound(event.target.value as MrInterviewRound)} value={round}>
             {rounds.map((value) => (
               <option key={value} value={value}>
@@ -459,12 +514,15 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
           label="Is the candidate in Cairo or Giza?"
           required
         >
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup">
-            <CheckTile checked={inCairoOrGiza === true} name="mr-cairo" onChange={() => setInCairoOrGiza(true)} type="radio">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup">
+            <CheckTile checked={firstWay === "in_office"} name="mr-cairo" onChange={() => setFirstWay("in_office")} type="radio">
               Yes — in person at the office
             </CheckTile>
-            <CheckTile checked={inCairoOrGiza === false} name="mr-cairo" onChange={() => setInCairoOrGiza(false)} type="radio">
+            <CheckTile checked={firstWay === "zoom"} name="mr-cairo" onChange={() => setFirstWay("zoom")} type="radio">
               No — on Zoom
+            </CheckTile>
+            <CheckTile checked={firstWay === "phone"} name="mr-cairo" onChange={() => setFirstWay("phone")} type="radio">
+              Phone call
             </CheckTile>
           </div>
         </FormField>
@@ -491,6 +549,8 @@ export function MrBookingForm({ onCancel, onDone, row }: { onCancel: () => void;
             value={location}
           />
         </FormField>
+      ) : byPhone ? (
+        <p className="text-xs leading-5 text-slate-600">No Zoom meeting and no place — the interviewer calls the candidate at the booked time.</p>
       ) : (
         <p className="text-xs leading-5 text-slate-600">The Zoom link is created from the official Sato Pharma Zoom account when the interview is booked.</p>
       )}

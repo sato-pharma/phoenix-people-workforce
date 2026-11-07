@@ -4,7 +4,8 @@
 // (who may book, the Zoom meeting from the Sato Pharma account, the change history, the invitation
 // the calendar then offers) and adds only what the workflow asks:
 //   * the round, the job title "Medical Representative" and the in-person place on the booking (§5);
-//   * §3 for the 1st interview — Cairo or Giza in person, anywhere else on Zoom (inputs.ts);
+//   * §3 for the 1st interview — Cairo or Giza in person, anywhere else on Zoom, or a phone call
+//     (owner, 7 Nov 2026), which makes no Zoom meeting (inputs.ts);
 //   * §4 for the DSM interview — the CV reaches the DSM through Phoenix, by the existing send, when it
 //     has not been sent to that DSM already;
 //   * the notice to everyone on the interview (§4), which a booking made straight on the calendar
@@ -25,7 +26,7 @@ import { parseMrBookingInput, type MrBookingInput } from "@/lib/recruitment/mr-h
 import { notifyMrInterviewBooked } from "@/lib/recruitment/mr-hiring/notify";
 import { mrBookingRefusal } from "@/lib/recruitment/mr-hiring/rows";
 import { mrHiringStage, type MrStage } from "@/lib/recruitment/mr-hiring/stage";
-import { MR_JOB_TITLE } from "@/lib/recruitment/mr-hiring/vocabulary";
+import { MR_JOB_TITLE, MR_LINE_LABELS } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 export type MrBookingResult = { booking: InterviewBooking; notice: string | null; stage: MrStage };
 
@@ -54,6 +55,8 @@ export async function bookMrInterview(access: AccessContext, candidateId: string
     interviewRound: input.round,
     interviewerHrId,
     jobTitle: MR_JOB_TITLE,
+    // The line HR confirmed at the 1st interview, on every later interview of the candidate.
+    line: record.line ? MR_LINE_LABELS[record.line] : null,
     location: input.location,
     notes: input.notes,
     panelistHrIds: input.panelistHrIds,

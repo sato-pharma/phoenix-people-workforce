@@ -6,8 +6,10 @@
 // one — which is why the Cairo conversion below names "Africa/Cairo" itself rather than going
 // through src/lib/attendance/timezone.ts (that one reads the server's environment).
 //
-// THE WEEK IS THE OWNER'S, chosen in chat on 2026-09-18: Sunday to Thursday, 9:00 AM to 5:00 PM,
-// one row every 30 minutes. An interview must start at 9:00 AM or later and END by 5:00 PM.
+// THE WEEK IS THE OWNER'S: every day of it, Sunday first, 9:00 AM to 5:00 PM, one row every 30
+// minutes. An interview must start at 9:00 AM or later and END by 5:00 PM. It was Sunday to Thursday
+// from 2026-09-18 until the owner opened Friday and Saturday on 7 Nov 2026: "remove this Interviews
+// are booked Sunday to Thursday only. make able to schedule any day in the week".
 //
 // A DAY IS A "DATE KEY" — "2026-09-20" — never a Date. A Date is an instant, and an instant is a
 // different calendar day in Cairo and in UTC for two or three hours of every night; carrying the
@@ -22,8 +24,8 @@ export const WORKDAY_START_MINUTES = 9 * 60;
 export const WORKDAY_END_MINUTES = 17 * 60;
 export const SLOT_MINUTES = 30;
 
-/** Sunday = 0 … Thursday = 4. Friday and Saturday are never offered. */
-export const CALENDAR_WEEKDAYS = [0, 1, 2, 3, 4] as const;
+/** Sunday = 0 … Saturday = 6 — every day of the week can hold an interview (owner, 7 Nov 2026). */
+export const CALENDAR_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
 
 /** The lengths the dialog offers as buttons. */
 export const DURATION_CHOICES = [30, 45, 60] as const;
@@ -113,12 +115,12 @@ export function addDays(key: string, days: number): string {
   return keyOf(noon);
 }
 
-/** The Sunday that starts the week holding this day. A Friday or Saturday belongs to the week it ends. */
+/** The Sunday that starts the week holding this day. */
 export function weekStartFor(key: string): string {
   return addDays(key, -weekdayOf(key));
 }
 
-/** Sunday to Thursday of the week that starts on `weekStart`. */
+/** The interview days of the week that starts on `weekStart` — Sunday to Saturday. */
 export function weekDays(weekStart: string): string[] {
   const sunday = weekStartFor(weekStart);
   return CALENDAR_WEEKDAYS.map((offset) => addDays(sunday, offset));
@@ -284,8 +286,8 @@ export function currentWeekStart(now: Date): string {
 }
 
 /**
- * The week the calendar opens on. Sunday to Thursday that is this week; on Friday and Saturday this
- * week has no interview day left in it, so it is the coming one.
+ * The week the calendar opens on: this week while it still has an interview day left in it, else the
+ * coming one. With every day an interview day, that is always this week.
  */
 export function upcomingWeekStart(now: Date): string {
   const today = cairoDateKey(now);

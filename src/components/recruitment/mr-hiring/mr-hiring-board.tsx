@@ -13,16 +13,16 @@ import { MrJourneyDrawer } from "@/components/recruitment/mr-hiring/mr-journey-d
 import { adminPanelHeaderClassName, adminSoftDepthClassName } from "@/components/admin/admin-design-tokens";
 import { phxCheckTileClassName, phxFieldClassName } from "@/components/ui/form-tokens";
 import { candidatePageHref } from "@/lib/recruitment/candidate-page-link";
-import { cairoDayShort, cairoWhen, MR_ACTION_LABELS, mrStageHeadline, mrStageStateLine, mrStageTone } from "@/lib/recruitment/mr-hiring/display";
+import { cairoDayShort, cairoWhen, MR_ACTION_LABELS, mrStageHeadline, mrStageStateLine, mrStageTone, mrWhere } from "@/lib/recruitment/mr-hiring/display";
 import type { MrRow } from "@/lib/recruitment/mr-hiring/rows";
 import {
   MR_CLOSED,
   MR_CLOSED_LABELS,
+  MR_LINE_LABELS,
   MR_RESULT_STEP_LABELS,
   MR_STEP_LABELS,
   MR_STEPS,
   mrResultLabel,
-  mrStepNumber,
   type MrClosed,
   type MrStep,
 } from "@/lib/recruitment/mr-hiring/vocabulary";
@@ -52,9 +52,20 @@ function nextActionLabel(row: MrRow): string | null {
 function interviewText(row: MrRow): string {
   const booking = row.stage.open ? row.stage.booking : null;
   if (!booking) return "—";
-  const where = booking.platform === "zoom" ? "Zoom" : `In person · ${booking.location?.trim() || "Head office"}`;
-  return `${cairoWhen(booking.startsAt)} · ${where}${booking.interviewerName ? ` · ${booking.interviewerName}` : ""}`;
+  return `${cairoWhen(booking.startsAt)} · ${mrWhere(booking)}${booking.interviewerName ? ` · ${booking.interviewerName}` : ""}`;
 }
+
+/** "Alex-BHR · Pedia line · Alexandria", or "No area". */
+function placeText(row: MrRow): string {
+  return [row.area, row.line ? `${MR_LINE_LABELS[row.line]} line` : null, row.governorate].filter(Boolean).join(" · ") || "No area";
+}
+
+/**
+ * The strip's steps, numbered along the eight every candidate walks. The RSM interview is the Pedia
+ * line's alone (owner, 7 Nov 2026: "by default, it is not appearing"), so it carries no number and is
+ * shown only while a candidate is on it.
+ */
+const MAIN_STEPS = MR_STEPS.filter((step) => step !== "rsm");
 
 function lastResultText(row: MrRow): string {
   const result = row.lastResult;
@@ -110,7 +121,9 @@ export function MrHiringBoard({
       <nav aria-label="Steps" className="space-y-2">
         <div className="flex flex-wrap gap-2">
           {chip("open", "In progress", openCount)}
-          {MR_STEPS.map((step) => chip(step, MR_STEP_LABELS[step], counts.get(step) ?? 0, mrStepNumber(step)))}
+          {MR_STEPS.filter((step) => step !== "rsm" || (counts.get(step) ?? 0) > 0).map((step) =>
+            chip(step, MR_STEP_LABELS[step], counts.get(step) ?? 0, step === "rsm" ? undefined : MAIN_STEPS.indexOf(step) + 1),
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {MR_CLOSED.map((closed) => chip(closed, MR_CLOSED_LABELS[closed], counts.get(closed) ?? 0))}
@@ -159,7 +172,7 @@ export function MrHiringBoard({
                     <td className="px-3 py-2.5">
                       <p className="break-words text-sm font-bold text-slate-900">{row.name}</p>
                       <p className="break-words text-xs text-slate-500">
-                        {[row.area, row.governorate].filter(Boolean).join(" · ") || "No area"} · CV {cairoDayShort(row.receivedAt)}
+                        {placeText(row)} · CV {cairoDayShort(row.receivedAt)}
                       </p>
                     </td>
                     <td className="px-3 py-2.5">
@@ -193,7 +206,7 @@ export function MrHiringBoard({
                   >
                     <p className="break-words text-sm font-bold text-slate-900">{row.name}</p>
                     <p className="break-words text-xs text-slate-500">
-                      {[row.area, row.governorate].filter(Boolean).join(" · ") || "No area"} · CV {cairoDayShort(row.receivedAt)}
+                      {placeText(row)} · CV {cairoDayShort(row.receivedAt)}
                     </p>
                     <div className="mt-2">
                       <RecruitmentPill tone={mrStageTone(row.stage)}>{mrStageHeadline(row.stage)}</RecruitmentPill>

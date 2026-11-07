@@ -6,7 +6,7 @@
 // identity band, so it lands on every role's home in one place, and renders NOTHING when the person
 // has no interviews coming up — most people never see it.
 
-import { Building2, CalendarClock, CalendarPlus, Check, Copy, Loader2, Video } from "lucide-react";
+import { Building2, CalendarClock, CalendarPlus, Check, Copy, Loader2, Phone, Video } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -68,7 +68,7 @@ export function MyInterviewsCard({ interviews }: { interviews: PortalMyInterview
               href={`/employee-portals/interview-calendar?open=${encodeURIComponent(interview.id)}`}
             >
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-slate-500 group-hover:border-orange-300 group-hover:text-orange-600 ${adminControlDepthClassName}`}>
-                {interview.platform === "zoom" ? <Video className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
+                {interview.platform === "zoom" ? <Video className="h-4 w-4" /> : interview.platform === "phone" ? <Phone className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block break-words text-sm font-bold text-slate-900">{interview.candidateName}</span>

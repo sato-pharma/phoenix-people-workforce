@@ -6,13 +6,17 @@
 
 import { normalizeGovernorate } from "@/lib/recruitment/candidate-region";
 import {
+  MR_AREA_LIMIT,
   MR_COMMENT_LIMIT,
   MR_LOCATION_LIMIT,
   isMrInterviewRound,
+  isMrLine,
   isMrRecommendation,
   isMrResult,
   isMrResultStep,
   type MrInterviewRound,
+  type MrLine,
+  type MrPlatform,
   type MrRecommendation,
   type MrResult,
   type MrResultStep,
@@ -27,6 +31,10 @@ export type MrResultInput = {
   decidedWithoutDsm: boolean;
   /** Screening only: why the CV is rejected, in the workspace's own reasons. */
   rejectionReason: RejectionReason | null;
+  /** 1st interview only: the area the candidate is applying to, as HR confirmed it. */
+  confirmedArea: string | null;
+  /** 1st interview only: the line HR confirmed — Pedia adds the RSM interview. */
+  confirmedLine: MrLine | null;
 };
 
 export type MrRecommendationInput = {
@@ -41,7 +49,7 @@ export type MrBookingInput = {
   dateKey: string;
   startMinutes: number;
   durationMinutes: number;
-  platform: "zoom" | "in_office";
+  platform: MrPlatform;
   location: string | null;
   interviewerHrId: string | null;
   panelistHrIds: string[];
@@ -79,7 +87,22 @@ export function parseMrResultInput(raw: unknown): MrResultInput {
   if (body.step === "hr_screening" && body.result === "not_pass") {
     rejectionReason = isRejectionReason(body.rejectionReason) ? body.rejectionReason : "other";
   }
-  return { comment, decidedWithoutDsm, rating, rejectionReason, result: body.result, step: body.step };
+  // The 1st interview's result confirms where the candidate is applying and on which line (owner,
+  // 7 Nov 2026). A pass needs both — the line decides the RSM interview, the area the DSM's folder; a
+  // backup or a "do not pass" may carry them. No other step carries either.
+  let confirmedArea: string | null = null;
+  let confirmedLine: MrLine | null = null;
+  if (body.step === "hr_first") {
+    confirmedArea = text(body.confirmedArea).replace(/\s+/g, " ") || null;
+    if (confirmedArea && confirmedArea.length > MR_AREA_LIMIT) throw new Error("Choose the area from the list.");
+    if (body.confirmedLine !== undefined && body.confirmedLine !== null && body.confirmedLine !== "") {
+      if (!isMrLine(body.confirmedLine)) throw new Error("Choose Pedia, Anti Infective or CNS.");
+      confirmedLine = body.confirmedLine;
+    }
+    if (body.result === "pass" && !confirmedArea) throw new Error("Confirm the area the candidate is applying to.");
+    if (body.result === "pass" && !confirmedLine) throw new Error("Confirm the line — Pedia, Anti Infective or CNS.");
+  }
+  return { comment, confirmedArea, confirmedLine, decidedWithoutDsm, rating, rejectionReason, result: body.result, step: body.step };
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -129,7 +152,9 @@ export function isCairoOrGiza(governorate: string | null | undefined): boolean {
 /**
  * The booking request. For the 1st interview, §3 decides the place: Cairo or Giza is in person at the
  * office, anywhere else is Zoom — `inCairoOrGiza` is HR's confirmation of the answer the screen
- * pre-filled from the candidate's governorate. The other rounds may be either (§5).
+ * pre-filled from the candidate's governorate — or HR holds it as a phone call, the 1st interview's
+ * third way (owner, 7 Nov 2026: "only for hr first interview u will add a third option which is phone
+ * call"). The other rounds are in person or Zoom (§5); a phone call is refused for them.
  */
 export function parseMrBookingInput(raw: unknown): MrBookingInput {
   const body = object(raw);
@@ -141,13 +166,18 @@ export function parseMrBookingInput(raw: unknown): MrBookingInput {
   const durationMinutes = body.durationMinutes === undefined || body.durationMinutes === "" ? 30 : Number(body.durationMinutes);
   if (!Number.isInteger(durationMinutes) || durationMinutes < 10 || durationMinutes > 240) throw new Error("An interview lasts 10 minutes to 4 hours.");
 
-  let platform: "zoom" | "in_office";
+  let platform: MrPlatform;
   if (body.round === "hr_first") {
-    if (body.inCairoOrGiza !== true && body.inCairoOrGiza !== false) {
-      throw new Error("Say whether the candidate is in Cairo or Giza — that decides in person or Zoom.");
+    if (body.platform === "phone") {
+      platform = "phone";
+    } else {
+      if (body.inCairoOrGiza !== true && body.inCairoOrGiza !== false) {
+        throw new Error("Say whether the candidate is in Cairo or Giza, or choose a phone call.");
+      }
+      platform = body.inCairoOrGiza ? "in_office" : "zoom";
     }
-    platform = body.inCairoOrGiza ? "in_office" : "zoom";
   } else {
+    if (body.platform === "phone") throw new Error("A phone call is for the HR 1st interview only — choose In person or Zoom.");
     if (body.platform !== "zoom" && body.platform !== "in_office") throw new Error("Choose In person or Zoom.");
     platform = body.platform;
   }
