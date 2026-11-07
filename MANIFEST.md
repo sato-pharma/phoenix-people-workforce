@@ -100,7 +100,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
 | `scripts/spare-follow-production.ps1` | 6328 | `21b71605b3e45826` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
-| `scripts/spare-test.ps1` | 11980 | `2e5d89f0051b9edf` |
+| `scripts/spare-test.ps1` | 11985 | `79fc29050ea05072` |
 | `scripts/spare-tunnel.ps1` | 1338 | `ad01fbbdf1b43fe0` |
 | `scripts/spare.ps1` | 1333 | `f1d5a4cb414ecef9` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |

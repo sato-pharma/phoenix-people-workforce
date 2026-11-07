@@ -111,7 +111,7 @@ try {
   $remote = @"
 `$ErrorActionPreference = 'Continue'
 `$env:PATH = 'C:\Program Files\Git\bin;C:\Program Files\Git\usr\bin;' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + `$env:APPDATA + '\npm'   # Git's bash first: the WSL bash.exe in WindowsApps fails the ci.yml step tests
-# Tests run on the system Node, like CI's floating 24.x. A pinned 24.15.0 (D:\Phoenix\node-test, still on disk) was
+# Tests run on the system Node, like CI's floating 24.x. A pinned 24.15.0 (D:\Phoenix\node-test, removed 2026-11-07) was
 # tried 2026-11-07 against the CV worker test's crash (0xC0000005) and did not cure it: it crashed on both versions.
 # The variable is spelled 'Path' here; CI (Linux) and Git Bash spell it 'PATH'. Seven test sites copy the env into a
 # plain object and read env.PATH, which is then undefined, so a fake gh became the WHOLE PATH and findstr vanished
