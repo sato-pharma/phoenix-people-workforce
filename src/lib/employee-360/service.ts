@@ -881,9 +881,11 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
 }
 
 /**
- * Whether this reader sees the subject's Phoenix CRM positions as GPS check-ins: never on his own record
+ * Whether this reader sees the subject's Phoenix CRM positions as GPS check-ins: never on a reader's own record
  * (golden rule #1 — phoenixRowSight answers "none" for a reader's own rows), and never for a role whose
- * tier is "none". No reader named means no positions.
+ * tier is "none". The Super Admin and the SFE Manager are the one exception, by phoenixRowSight's own rule:
+ * the measurement is their job, so they are never blinded, their own rows included. No reader named means
+ * no positions.
  */
 export function employee360ReaderSeesPhoenixCheckins(
   subjectHrId: string,
