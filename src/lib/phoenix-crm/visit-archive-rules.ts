@@ -3,9 +3,9 @@
  *
  * The old iReports360 visits that could not be carried into Phoenix CRM as visits — a campaign visit, or a
  * visit with no check-in location — were retired into `public.phoenix_crm_visit_archive`; so is a converted
- * visit whose check-in lay more than visit_far_meters from the doctor's validated place (`far`, owner,
+ * visit whose check-in lay more than visit_far_meters from the customer's validated place (`far`, owner,
  * 7 Nov 2026, kept by the database trigger as places are validated). The screen has TWO TABS: "Campaign and
- * no location" (the first two reasons) and "Far from the doctor" (far, with the distance and both points). The Super Admin
+ * no location" (the first two reasons) and "Far from the customer" (far, with the distance and both points). The Super Admin
  * and the SFE Manager read that table on /admin/phoenix-crm/visits-archive; the reader is
  * `src/lib/phoenix-crm/server/visit-archive.ts`. Everything here is pure, so the labels, the month bounds
  * and the page cursor are pinned without a database (tests/phoenix-crm-visit-archive-screen.test.ts).
@@ -21,7 +21,7 @@ export type VisitArchiveReason = (typeof VISIT_ARCHIVE_REASONS)[number];
 export const VISIT_ARCHIVE_REASON_LABELS: Readonly<Record<VisitArchiveReason, string>> = {
   campaign: "Campaign visit",
   no_checkin_location: "No check-in location",
-  far: "Far from the doctor",
+  far: "Far from the customer",
 };
 
 // ── The tabs ───────────────────────────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ export type VisitArchiveTab = (typeof VISIT_ARCHIVE_TABS)[number];
 
 export const VISIT_ARCHIVE_TAB_LABELS: Readonly<Record<VisitArchiveTab, string>> = {
   retired: "Campaign and no location",
-  far: "Far from the doctor",
+  far: "Far from the customer",
 };
 
 /** The reasons each tab lists. Every reason is in exactly one tab. */

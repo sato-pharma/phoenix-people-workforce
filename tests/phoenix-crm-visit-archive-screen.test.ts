@@ -100,13 +100,13 @@ function checkLabels(): void {
   assert.deepEqual([...VISIT_ARCHIVE_REASONS], ["campaign", "no_checkin_location", "far"], "the three reasons the archive stores");
   assert.equal(VISIT_ARCHIVE_REASON_LABELS.campaign, "Campaign visit");
   assert.equal(VISIT_ARCHIVE_REASON_LABELS.no_checkin_location, "No check-in location");
-  assert.equal(VISIT_ARCHIVE_REASON_LABELS.far, "Far from the doctor");
-  assert.equal(visitArchiveReasonLabel("far"), "Far from the doctor");
+  assert.equal(VISIT_ARCHIVE_REASON_LABELS.far, "Far from the customer");
+  assert.equal(visitArchiveReasonLabel("far"), "Far from the customer");
 
   // The two tabs, and every reason under exactly one of them.
   assert.deepEqual([...VISIT_ARCHIVE_TABS], ["retired", "far"]);
   assert.equal(VISIT_ARCHIVE_TAB_LABELS.retired, "Campaign and no location");
-  assert.equal(VISIT_ARCHIVE_TAB_LABELS.far, "Far from the doctor");
+  assert.equal(VISIT_ARCHIVE_TAB_LABELS.far, "Far from the customer");
   assert.deepEqual(
     VISIT_ARCHIVE_TABS.flatMap((tab) => [...VISIT_ARCHIVE_TAB_REASONS[tab]]).sort(),
     [...VISIT_ARCHIVE_REASONS].sort(),

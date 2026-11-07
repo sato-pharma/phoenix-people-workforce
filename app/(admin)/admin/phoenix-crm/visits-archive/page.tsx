@@ -38,8 +38,8 @@ export const dynamic = "force-dynamic";
 /**
  * The visits archive — the old iReports360 visits Phoenix CRM did not carry over as visits (owner,
  * 2026-11-07), in two tabs: "Campaign and no location" (a campaign visit, or a visit with no check-in
- * location) and "Far from the doctor" (a converted visit whose check-in lay more than visit_far_meters from
- * the doctor's validated place, with the distance and both points — no map). Read-only: nothing on this
+ * location) and "Far from the customer" (a converted visit whose check-in lay more than visit_far_meters from
+ * the customer's validated place, with the distance and both points — no map). Read-only: nothing on this
  * page acts, and nothing here is a verdict on anybody. Both tabs sit behind the one gate below.
  *
  * 🔴 THE ADMIN CRM WORKSPACE'S TWO PEOPLE — `canUseAdminCrmWorkspace` (Super Admin + SFE Manager), the
@@ -107,7 +107,7 @@ export default async function PhoenixCrmVisitsArchivePage({
       <AdminPageHero
         eyebrow="CRM"
         title="Visits archive"
-        description="The old iReports360 visits Phoenix CRM did not take over as visits — campaign visits, visits that carried no check-in location, and visits whose check-in lay far from the doctor's validated place. They are kept here as they were recorded, they count in no visit figure, and nothing on this page changes them."
+        description="The old iReports360 visits Phoenix CRM did not take over as visits — campaign visits, visits that carried no check-in location, and visits whose check-in lay far from the customer's validated place. They are kept here as they were recorded, they count in no visit figure, and nothing on this page changes them."
         icon={<Archive className="h-3.5 w-3.5" />}
       />
 
@@ -252,7 +252,7 @@ export default async function PhoenixCrmVisitsArchivePage({
         >
           {far ? (
             <>
-              {/* Far from the doctor — desktop: the full table, fitted to the screen. */}
+              {/* Far from the customer — desktop: the full table, fitted to the screen. */}
               <div className="hidden lg:block">
                 <table className="w-full table-fixed border-collapse">
                   <colgroup>
@@ -266,7 +266,7 @@ export default async function PhoenixCrmVisitsArchivePage({
                     <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
                       <th className="px-5 py-3">Date</th>
                       <th className="px-5 py-3">Rep</th>
-                      <th className="px-5 py-3">Doctor</th>
+                      <th className="px-5 py-3">Customer</th>
                       <th className="px-5 py-3">Distance</th>
                       <th className="px-5 py-3">Check-in vs validated place</th>
                     </tr>
@@ -292,7 +292,7 @@ export default async function PhoenixCrmVisitsArchivePage({
                 </table>
               </div>
 
-              {/* Far from the doctor — mobile: the same visits as cards. */}
+              {/* Far from the customer — mobile: the same visits as cards. */}
               <div className="space-y-3 px-5 py-4 sm:px-6 lg:hidden">
                 {page.rows.map((row) => (
                   <div key={row.crmVisitId} className="border border-slate-200 bg-white p-4">
@@ -303,7 +303,7 @@ export default async function PhoenixCrmVisitsArchivePage({
                       <span className="text-xs text-slate-500">{visitArchiveDateText(row.visitDate)}</span>
                     </div>
                     <p className="mt-1 break-words text-sm text-slate-700" dir="auto">
-                      {row.customerName ?? "Doctor not recorded"}
+                      {row.customerName ?? "Customer not recorded"}
                     </p>
                     <p className="mt-2 text-sm font-semibold text-slate-900">{visitArchiveDistanceText(row.distanceMeters)} from the validated place</p>
                     <div className="mt-1">

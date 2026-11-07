@@ -314,7 +314,7 @@ The owner's rules, 7 Nov 2026:
   `phoenix_crm_visit_archive`; campaign wins when both apply. A copied row of either kind gets
   `archived_at` and `archive_reason`. It is NEVER deleted, and every visit screen leaves it out. The Super
   Admin and the SFE Manager read the archive at `/admin/phoenix-crm/visits-archive`, in two tabs behind one
-  gate: "Campaign and no location", and "Far from the doctor" (date, rep, doctor, distance, check-in against
+  gate: "Campaign and no location", and "Far from the customer" (date, rep, doctor, distance, check-in against
   the validated place; no map), each with its total.
 - **Leavers** are copied by `--leavers`, under the territory each held on the visit's day. A leaver with no REP
   seat that day stays served from iReports360. A visit with no hr id cannot be converted.
