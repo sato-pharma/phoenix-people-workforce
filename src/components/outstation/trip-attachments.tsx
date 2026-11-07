@@ -305,20 +305,23 @@ function TicketTile({ kind, label, large, name, url }: { kind: TicketTileKind; l
       data-ticket-tile={kind}
     >
       {kind === "image" && !failed ? (
-        // The tile crops the receipt to a 112px strip, so tapping the image opens the full photo
-        // rather than following a link — the amount on a receipt cannot be read at this size. The
-        // label beneath opens the file in a new tab.
-        <ZoomablePhoto
-          alt={label}
-          caption={name ? `${label} · ${name}` : label}
-          // Large: the whole picture, uncropped, on a dark ground like the trip photos — the amount
-          // on a receipt must be readable without a click (owner, 2026-11-07: "the photos uploaded
-          // from managers I cannot see"). Compact: the 112px strip on the field-work view.
-          className={large ? "h-72 w-full bg-slate-900 object-contain" : "h-28 w-full object-cover"}
-          onError={() => setFailed(true)}
-          onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
-          src={url}
-        />
+        // Tapping the image opens the full photo rather than following a link; the label beneath
+        // opens the file in a new tab. Large: the whole picture, uncropped, on a dark ground like the
+        // trip photos — the amount on a receipt must be readable without a click (owner, 2026-11-07:
+        // "the photos uploaded from managers I cannot see"). Compact: a 112px tile on the field-work view.
+        // ↺ ↻ turn a ticket photographed sideways, for the view only (owner, 2026-11-07, claim 338's
+        // Ticket 2: "rotate ticket 2 upright in the deck" — "Both"). The stored file is never changed.
+        <div className={cn("relative w-full", large ? "h-72 bg-slate-900" : "h-28 bg-slate-100")} data-turnable-ticket>
+          <ZoomablePhoto
+            alt={label}
+            caption={name ? `${label} · ${name}` : label}
+            className="h-full w-full object-contain"
+            onError={() => setFailed(true)}
+            onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
+            rotatable
+            src={url}
+          />
+        </div>
       ) : (
         <a
           className={cn("flex flex-col items-center justify-center gap-1 bg-slate-50 px-2 text-center text-slate-500", large ? "h-40" : "h-28")}
