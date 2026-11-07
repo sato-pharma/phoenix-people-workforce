@@ -132,6 +132,14 @@ export async function resolveVendorSyncStandDown(): Promise<string | null> {
   }
 }
 
+/** Pure: the first day iReports360 holds nothing new — the UTC date of the retirement — or null. */
+export function vendorSyncRetiredOn(setting: Pick<CrmCutoverSetting, "vendorSyncRetiredAt">): string | null {
+  const raw = setting.vendorSyncRetiredAt;
+  if (!raw) return null;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString().slice(0, 10);
+}
+
 /** Pure: whether a Cairo day (YYYY-MM-DD) is Phoenix's record rather than the vendor's. */
 export function isOnOrAfterCrmCutover(setting: CrmCutoverSetting, day: string): boolean {
   return setting.cutoverDate != null && day.slice(0, 10) >= setting.cutoverDate;

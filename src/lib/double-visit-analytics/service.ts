@@ -38,6 +38,7 @@ import {
 } from "@/lib/private-calendar/activity-kinds";
 import { privateCalendarTileCountsText } from "@/lib/private-calendar/day-tile";
 import { isPhoenixNativeVisitRow } from "@/lib/crm/phoenix-team-starts";
+import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
 import {
   PHOENIX_VISIT_DETAIL_COLUMNS,
   phoenixDetailViewer,
@@ -3001,11 +3002,18 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
     : missingDates.length > 0
       ? "partial"
       : "matched";
+  // UNPLANNED replaced "campaign" (owner, 6 Nov 2026): a Phoenix double visit he marked out of list or out
+  // of plan, or an archive day's iReports360 campaign visit. The door serves every Phoenix visit as type 0,
+  // so before this a Phoenix unplanned double visit read as regular and the cap below could never see one.
+  const isUnplanned = (row: DoubleVisitDbRow) =>
+    isUnplannedFieldVisit({ is_unplanned: row.phoenix_detail?.is_unplanned ?? null, visit_type: row.visit_type });
   const campaignVisits = ownRows
-    .filter((row) => deriveVisitKind(row) !== "Regular")
+    .filter((row) => isUnplanned(row))
     .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+  // Every other double visit is planned, so planned + unplanned is still every double visit of the trip
+  // (the cap's "no field visits" test reads that sum).
   const regularVisits = ownRows
-    .filter((row) => deriveVisitKind(row) === "Regular")
+    .filter((row) => !isUnplanned(row))
     .reduce((sum, row) => sum + asNumber(row.visit_count), 0);
   return {
     amWorkload: dateBreakdown.reduce((sum, row) => sum + row.am, 0),
@@ -3019,7 +3027,7 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
     campaignVisits,
     regularVisits,
     source: "double_visit_import",
-    sourceLabel: "Live iReports360 Visits Report (double-visit mirror).",
+    sourceLabel: "Phoenix CRM double visits (iReports360 before each team's start).",
   };
 }
 

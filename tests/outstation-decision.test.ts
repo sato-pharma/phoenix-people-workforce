@@ -8,6 +8,7 @@ import {
   outstationTicketEvidenceRejection,
   type OutstationDecisionInput,
 } from "../src/lib/outstation/decision.ts";
+import { isUnplannedFieldVisit } from "../src/lib/crm/visit-type-meaning.ts";
 
 /** The body of one top-level function, so a pin can target the submit path alone. */
 function functionSlice(src: string, declaration: string) {
@@ -233,12 +234,12 @@ export function runOutstationDecisionTests() {
     );
     assert.match(
       sameDay.reason,
-      /not in the CRM yet/i,
+      /not in Phoenix CRM yet/i,
       `${role} hold reason says the evidence is not in yet, not that he did no double-visits`,
     );
     assert.doesNotMatch(
       sameDay.reason,
-      /No double-visit activity was recorded/i,
+      /No field visits were recorded/i,
       `${role} must not be told he did no double-visits while the evidence window is open`,
     );
     // Once the window closes the original rejection is unchanged.
@@ -306,6 +307,57 @@ export function runOutstationDecisionTests() {
     null,
     "a meeting expense is outside the campaign rule, window open or closed",
   );
+
+  // 3c. The cap counts UNPLANNED visits, his double visits' and his own (owner, 6 Nov 2026:
+  // "replace campagin with unplanned visist"; a manager's own single visits count to him).
+  // Phoenix serves every visit as visit_type 0, so unplanned is read from is_unplanned; on
+  // archive days the old campaign visit (-8) still counts as unplanned.
+  assert.equal(isUnplannedFieldVisit({ is_unplanned: true, visit_type: 0 }), true, "a Phoenix unplanned visit is unplanned");
+  assert.equal(isUnplannedFieldVisit({ visit_type: -8 }), true, "an archived campaign visit counts as unplanned");
+  assert.equal(isUnplannedFieldVisit({ is_unplanned: false, visit_type: 0 }), false, "a planned Phoenix visit is planned");
+  assert.equal(isUnplannedFieldVisit({ visit_type: 0 }), false, "a plain archived visit is planned");
+
+  const overCap = outstationCampaignRuleOutcome({
+    campaignVisits: 3,
+    dvEvidenceWindowClosed: true,
+    expenseType: "traveling",
+    role: "District Manager",
+    totalDvVisits: 6,
+  });
+  assert.equal(overCap?.kind, "reject", "three unplanned visits break the cap");
+  assert.match(overCap?.reason ?? "", /at most 2 unplanned visits/, "the refusal names unplanned visits, not campaign visits");
+  assert.doesNotMatch(overCap?.reason ?? "", /campaign/i, "the word campaign is gone from the refusal");
+
+  // His own visits could not be read: a zero total is unmeasured, so it HOLDS even after the window.
+  assert.equal(
+    outstationCampaignRuleOutcome({
+      campaignVisits: 0,
+      dvEvidenceWindowClosed: true,
+      expenseType: "traveling",
+      ownVisitsUnmeasured: true,
+      role: "District Manager",
+      totalDvVisits: 0,
+    })?.kind,
+    "hold",
+    "a zero total with his own visits unread is held, never rejected",
+  );
+  const emptyTrip = outstationCampaignRuleOutcome({
+    campaignVisits: 0,
+    dvEvidenceWindowClosed: true,
+    expenseType: "traveling",
+    ownVisitsUnmeasured: false,
+    role: "District Manager",
+    totalDvVisits: 0,
+  });
+  assert.equal(emptyTrip?.kind, "reject", "a measured empty trip is still rejected once the window has closed");
+  assert.match(emptyTrip?.reason ?? "", /no own visit/, "the refusal says both parts were empty");
+
+  // The submit path feeds both parts: his own visits join the total and the unplanned count, and an
+  // unread own count is passed as unmeasured.
+  const campaignRuleSlice = functionSlice(readFileSync("src/lib/outstation/service.ts", "utf8"), "function campaignRuleOutcome(");
+  assert.match(campaignRuleSlice, /ownVisitsUnmeasured:\s*ownTotal === undefined/, "an unread own count holds the claim");
+  assert.match(campaignRuleSlice, /totalDvVisits:\s*doubleTotal \+ \(ownTotal \?\? 0\)/, "his own visits join the total");
+  assert.match(campaignRuleSlice, /campaignVisits:\s*doubleUnplanned \+ \(ownTotal === undefined \? 0 : ownUnplanned\)/, "his own unplanned visits join the cap");
 
   // 4. Ticket evidence for train/bus.
   assert.equal(

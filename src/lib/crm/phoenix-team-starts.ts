@@ -102,8 +102,8 @@
  * integrity column at all (no accuracy, flag, distance, skew, photo, dwell, capture source or offline
  * time — those stay on the integrity board). The app reads those rows ONLY where it asks
  * (`queryCheckins` `includePhoenixVisits`), and only a reader no rep can reach asks:
- *   - the CRM Master (its Check-ins tab reads the view direct; its visits' nearest check-in asks) and
- *     the CRM integrity page — the Super Admin's;
+ *   - the CRM Master (its Check-ins tab reads the view direct; its visits' nearest check-in asks) — the
+ *     Super Admin's (the CRM integrity page asked too, until it was retired with iReports360 on 7 Nov 2026);
  *   - GPS brick coverage — an admin-shell board (Super Admin, CEO, SFE Manager);
  *   - the SFE and CEO overview's field analytics, whose start-time table reads the day's first Phoenix
  *     visit through `phoenixFirstVisitStarts` (sfe-field-analytics.ts) — the helper Early Birds reads;
@@ -112,7 +112,12 @@
  *     team calendar; Field Activity (`double_visit_analytics`, which no Medical Rep holds); probation SFE
  *     evidence (company-wide probation access, or the SFE Manager);
  *   - the Double Visit audit workbook's check-in times (`double_visit_analytics` export, which no
- *     Medical Rep holds).
+ *     Medical Rep holds);
+ *   - the outstation trip workload (`getRepTripVisitWorkload` `includePhoenixCheckins`), only for an
+ *     approver or a manager looking at SOMEONE ELSE's trip and for the Super Admin's claim check — the
+ *     employee's own trip panel stays blind (7 Nov 2026);
+ *   - Employee 360's GPS module (`fetchCheckinRows` `includePhoenixCheckins`), only for a reader whose
+ *     row sight on the subject is not "none" — never the subject on his own record (7 Nov 2026).
  * Every other check-in reader reads iReports360 check-ins only, so a started team's people show none
  * there within the start — see "Which still do not".
  *

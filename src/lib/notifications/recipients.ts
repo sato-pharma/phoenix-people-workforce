@@ -60,7 +60,9 @@ export const PERSONAL_BELL_CATEGORIES = [
   // the in-app-sent-must-be-bell-renderable reconciliation check on 2026-10-23 (215 rows, three of
   // the six still being written that day). Each is addressed to one named person, so each belongs.
   //   weekly_plan       — weekly-planning/drift-check.ts, the plan-drift alert
-  //   crm               — crm/account-setup-reminder.ts, the account-setup reminder and chase
+  //   crm               — the iReports360 account-setup reminder and chase. Its writer was retired on
+  //                       2026-11-07 with the vendor CRM, and the category stays so the reminders
+  //                       already in people's bells still open (history is never hidden).
   //   security          — notifications/settings.ts, "your Telegram was linked"
   //   system            — notifications/dead-telegram-link-alert.ts, the dead-link alert
   //   market_awareness  — market-awareness/notifications.ts, activity approved / decision pending

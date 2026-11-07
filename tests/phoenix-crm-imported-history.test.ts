@@ -400,8 +400,8 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.match(copy, /'admin', v_now from phx_import_rows r where not r\.conflict/, "every copied row is the admin shape and carries the mark");
     assert.match(copy, /on conflict \(seat_id, customer_id, visit_date, is_test\) do nothing/, "a visit already in Phoenix is never overwritten");
     assert.match(copy, /on conflict \(crm_visit_id\) do nothing/, "a second run never writes an old visit twice");
-    assert.match(migration, /revoke execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean\) from public, anon, authenticated;/);
-    assert.match(migration, /grant execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean\) to service_role;/);
+    assert.match(migration, /revoke execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean, boolean\) from public, anon, authenticated;/);
+    assert.match(migration, /grant execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean, boolean\) to service_role;/);
     assert.match(
       stripSqlComments(read(IMPORT_MIGRATION)).replace(/\s+/g, " "),
       /alter table public\.phoenix_crm_imported_visit_sources enable row level security; revoke all on table public\.phoenix_crm_imported_visit_sources from public, anon, authenticated;/,

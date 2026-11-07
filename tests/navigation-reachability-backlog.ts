@@ -284,6 +284,15 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // its gate readable, so the guard counts it as a page; nothing should link to a forwarder.
   { route: "/coaching/new", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Administration", "HR Advisory", "HR Operations", "HR Resourcing", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "A redirect-only stub onto the Team Coaching Skills Survey since the old coaching form stopped taking new reports (owner, 2026-10-31). Its only remaining links are the admin-shell redirects in app/employee-portals/coaching/page.tsx and app/employee-portals/coaching/[id]/page.tsx; nothing should offer a forwarder in the rail.", recorded: "2026-10-31" },
   { route: "/coaching/import", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Administration", "HR Advisory", "HR Operations", "HR Resourcing", "SFE Manager", "Super Admin"], kind: "no-link-anywhere", reason: "A redirect-only stub onto the Team Coaching Skills Survey since the old coaching form stopped taking new reports, imported ones included (owner, 2026-10-31). Its hub card was replaced by the survey's; the address stays so old bookmarks land on the survey.", recorded: "2026-10-31" },
+  // 2026-11-07: CRM Integrity is retired with iReports360 — it matched vendor visits against vendor
+  // check-ins, so with the vendor gone it compared a frozen archive with itself. Every link to it was
+  // withdrawn on purpose, and its address stays as a short pointer page (not a forwarder, because it
+  // points at three Phoenix CRM screens, not one) behind the gate it always had. That gate is
+  // canUseAdminCrmWorkspace, which the reader does not parse, so two guards see it and each needs its
+  // row: the blind-spot roll-call and the literal-scan findability ratchet. Same fact, stated twice,
+  // as /whatsapp-connect is. tests/crm-switch-off-safety.test.ts F9 pins that nothing links it.
+  { route: "/admin/crm-integrity", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Retired with iReports360 (7 Nov 2026): a pointer page for a bookmark, leading to Location Integrity, Refused Readings and Duplicate Customers. Deliberately linked from nowhere — a rail row or hub card for a retired page would be wrong, not missing. Gate is canUseAdminCrmWorkspace (Super Admin, SFE Manager), which the reader does not parse.", recorded: "2026-11-07" },
+  { route: "/admin/crm-integrity", roles: "all", kind: "invisible-to-literal-scan", reason: "Retired with iReports360 (7 Nov 2026): a pointer page for a bookmark, deliberately linked from nowhere, so no other file names its address. Not a stranded page — the same fact as its gate-unreadable-and-unlinked row, stated for the findability ratchet, which reads a different helper.", recorded: "2026-11-07" },
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;
