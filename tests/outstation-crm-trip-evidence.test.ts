@@ -170,7 +170,7 @@ export function runOutstationCrmTripEvidenceTests() {
   assert.match(evidenceReader, /daysBeforePhoenixCrm\(windows, teams, dates\)/, "HEADLINE: the reader asks the rule with the person's own teams");
   assert.match(evidenceReader, /beforePhoenix,\s*claimedKm/, "and hands the days to the builder");
   assert.match(readFileSync("src/lib/phoenix-crm/server/live-teams.ts", "utf8"), /export async function loadTeamCountedWindows/, "the starts are read in the table's own file");
-  assert.match(readFileSync("src/components/outstation/expense-approvals/crm-trip-section.tsx", "utf8"), /day\.beforePhoenix \? "Before Phoenix CRM"/, "the day says so in words");
+  assert.match(readFileSync("src/components/outstation/expense-review/review-deck/crm-trip-section.tsx", "utf8"), /day\.beforePhoenix \? "Before Phoenix CRM"/, "the day says so in words");
 
   // ── 4. The trip on the CRM side ─────────────────────────────────────────────────────────────
   const trips = foldPlanOutstationTrips([
@@ -190,9 +190,12 @@ export function runOutstationCrmTripEvidenceTests() {
   assert.match(readFileSync("src/components/phoenix-crm/plan-review-steps.tsx", "utf8"), /<PlanOutstationTrips\s+from=\{week\.weekStart\}/, "the manager reads the week under review");
 
   // ── 5. The pre-cut: Approve applies it; nothing is written by opening a trip ────────────────
-  const bar = stripComments(readFileSync("src/components/outstation/expense-approvals/decision-bar.tsx", "utf8"));
+  // The rebuilt screen (expense-review/, 2026-11-07): the offer and the pre-cut are worked out once,
+  // in deck-decision.tsx's idleOffer, and read by both the decision box and the pinned Approve.
+  const bar = stripComments(readFileSync("src/components/outstation/expense-review/review-deck/deck-decision.tsx", "utf8"));
   assert.match(bar, /const preCut = suggestions\.length > 0 && !adjusted && !keptFull\[record\.tripId\] \? suggestions\[0\] : null;/, "HEADLINE: an undecided, unadjusted trip with idle days arrives pre-cut by the per-idle-day share");
-  assert.match(bar, /const approve = \(\) => \{\s*if \(preCut\) applySuggestion\(preCut\);\s*onApprove\(\);/, "HEADLINE: Approve applies the pre-cut and its reason, then approves");
+  assert.match(bar, /const approve = \(\) => \{\s*if \(preCut\) applySuggestion\(preCut\);\s*onApprove\(pays\);/, "HEADLINE: Approve applies the pre-cut and its reason, then approves");
+  assert.match(bar, /const pays = preCut \? approvedAmountFromDeduction\(record\.total, preCut\.deduction\) : decision\.approvedAmount;/, "and the pinned bar shows what Approve will pay");
   assert.match(bar, /onClick=\{approve\}/);
   assert.match(bar, /data-keep-full onClick=\{keepFull\}/, "HEADLINE: Keep full claim sets the pre-cut aside");
   assert.equal((bar.match(/keepFull\(\);\s*onChangeAmount/g) ?? []).length, 3, "typing a deduction, typing Approved, or Clear also sets it aside");
@@ -220,7 +223,14 @@ export function runOutstationCrmTripEvidenceTests() {
   const areas = stripComments(readFileSync("app/api/outstation/planned-areas/route.ts", "utf8"));
   assert.match(areas, /const hrId = access\.hrId \|\| access\.loginId \|\| "";/, "HEADLINE: the wizard reads the caller's own plan only");
   assert.doesNotMatch(areas, /searchParams\.get\("(employeeHrId|hrId)"\)/, "never an hr id from the request");
-  const review = readFileSync("src/components/outstation/expense-approvals/trip-review.tsx", "utf8");
-  assert.match(review, /<SignalTile href="#trip-crm" icon=\{Network\} signal=\{crmSignal\} title="Phoenix CRM" \/>/, "HEADLINE: a Phoenix CRM verdict tile");
-  assert.ok(review.indexOf('id="trip-crm"') > review.indexOf('id="trip-field-work"'), "the section follows the day-by-day field work");
+  const stage = readFileSync("src/components/outstation/expense-review/review-deck/deck-stage.tsx", "utf8");
+  assert.match(stage, /\{ icon: Network, key: "crm", label: "Phoenix CRM" \}/, "HEADLINE: Phoenix CRM is one of the reviewer's views, and one of what the system found");
+  assert.ok(stage.indexOf('id="deck-view-crm"') > stage.indexOf('id="deck-view-field"'), "the section follows the day-by-day field work");
+  assert.match(stage, /<CrmTripSection onSignal=\{onCrmSignal\} requestId=\{validationRequestId\} \/>/, "and hands its sentence up");
+  assert.match(readFileSync("src/components/outstation/expense-review/review-deck/deck-signals.ts", "utf8"), /crm: input\.crm,/, "the CRM sentence sits beside field work, claim checks and photos");
+  // A list row and the batch follow the same rule: a trip with idle days goes only from the opened trip.
+  const model = stripComments(readFileSync("src/components/outstation/expense-review/review-model.ts", "utf8"));
+  assert.match(model, /if \(plan\.needsPreCutTripIds\.length > 0\) return "pre-cut";/, "HEADLINE: a row's own Approve never pays an idle day in full");
+  const hook = stripComments(readFileSync("src/components/outstation/expense-review/use-expense-review.ts", "utf8"));
+  assert.match(hook, /planBulkApproval\(selectedVisible\.map\(\(record\) => bulkCandidate\(record, decisionFor\(record\)\)\)\)/, "HEADLINE: the batch reads the allowance and the live field work through the same candidate");
 }

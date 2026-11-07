@@ -5,7 +5,7 @@
  * "he put trip from 23 to 26 and visits are 23 24 25 only, then don't count 26", choosing
  * "Approver sees it pre-cut". So the decision box offers the shares below and the FIRST one is
  * pre-cut: Approve applies it unless he keeps the full claim or types his own deduction
- * (decision-bar.tsx). Nothing is cut before a person presses Approve, and the amount stays an
+ * (review-deck/deck-decision.tsx). Nothing is cut before a person presses Approve, and the amount stays an
  * ordinary editable deduction.
  *
  *   - "per idle day": the allowance spread evenly over the trip's days, times the idle days

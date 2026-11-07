@@ -2916,6 +2916,7 @@ import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts"
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
+import { runOutstationExpenseReviewModelTests } from "./outstation-expense-review-model.test.ts";
 import { runOutstationCrmTripEvidenceTests } from "./outstation-crm-trip-evidence.test.ts";
 import { runOutstationTripDayRouteLineTests } from "./outstation-trip-day-route-line.test.ts";
 import { runOutstationTripDayMeetingsTests } from "./outstation-trip-day-meetings.test.ts";
@@ -11862,6 +11863,10 @@ await runTest(
 await runTest(
   "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and pre-cut, never over the reviewer's own reason",
   runOutstationExpenseApprovalsQueueTests,
+);
+await runTest(
+  "the rebuilt Expense approvals screen's rules hold by behaviour: a trip's tab is read from its stored decision so a row never moves when it is decided, every one of the six tiles says \"of N\" when narrowed (Adjusted included), the next trip skips decided trips and imported history, a draft written by the retired screen is read back, and a reason chip is true of the trip and never writes over the reviewer's own words",
+  runOutstationExpenseReviewModelTests,
 );
 await runTest(
   "Phoenix CRM on an outstation trip: each day's visits measured from home and the destination, the nights read from the next morning, a draft is not a sent plan, a car claim against the farthest visit, a visit partner's car, the trip banner on the plan boards, and an idle day arrives pre-cut — Approve applies it, opening writes nothing, a batch holds it back",

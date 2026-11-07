@@ -100,7 +100,7 @@ export function runOutstationRouteCheckinsTests() {
   assert.match(panel, /×\{fmt\(checkin\.taps \?\? 1\)\} taps/, "a folded stop says its taps");
   assert.match(panel, /if \(\/\^am\$\/i\.test\(value\)\) return "AM list";/, "HEADLINE: AM reads 'AM list' beside the name");
   assert.doesNotMatch(panel, /\{visit\.ampm \? ` · \$\{visit\.ampm\}` : ""\}/, "and never sits beside the saved time as if it were the clock");
-  const review = source("../src/components/outstation/expense-approvals/trip-review.tsx");
+  const review = source("../src/components/outstation/expense-review/review-deck/deck-days.tsx");
   assert.match(review, /sm:columns-2/, "HEADLINE: the map legend reads down its columns");
   assert.doesNotMatch(review, /<ul className="[^"]*grid[^"]*" data-map-legend/, "never a grid, which reads zig-zag");
   assert.match(review, /legendTimeline\(legend, checkins\)/, "the photos, stops and check-ins are one time-ordered list");

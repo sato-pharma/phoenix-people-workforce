@@ -89,7 +89,7 @@ export function runOutstationTripDayRouteLineTests() {
   assert.match(map, /path: tripPath,/, "the map draws the trip's route as its own line");
   assert.match(map, /markers\.some\(\(marker\) => marker\.at\) \? dayRouteLine\(points, markers\) : null/, "timed pins join the day's line");
 
-  const review = code("src/components/outstation/expense-approvals/trip-review.tsx");
+  const review = code("src/components/outstation/expense-review/review-deck/deck-days.tsx");
   assert.equal((review.match(/tripRoute=\{routeFor\(/g) ?? []).length, 2, "both day-map mounts receive the trip's route");
   assert.match(review, /dayKey === firstDay \|\| dayKey === lastDay/, "the way out and back: first and last day");
   assert.match(review, /\{ at: photo\.capturedAt \?\? null, id: photo\.kind/, "a photo pin carries its time");
