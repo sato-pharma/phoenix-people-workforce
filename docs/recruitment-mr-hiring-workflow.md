@@ -71,6 +71,15 @@ outcome sync and Mark as hired therefore move it without any second write that c
   salary leaves the server only for the HR Manager, Talent Acquisition and the NSM who wrote it** (owner,
   7 Nov 2026); everyone else, the CEO included, receives the recommendation without it.
 
+- **The CV and the application at every step, for everyone** (owner, 7 Nov 2026). The hiring journey sheet
+  carries the candidate's CV and their application — every question and answer, under the labels the
+  workspace's Medical Rep tab uses — whatever step they are on: beside the journey on a wide screen, so the CV
+  stays in view while a result is written, and under the current step on a phone. It is read from
+  `/api/recruitment/mr-hiring/[candidateId]/cv`, which admits exactly the people who read the journey. The
+  DSM's feedback, the RSM's evaluation and the NSM's result and recommendation open in that sheet. A manager
+  reads the CV with the phone numbers masked and no download (the manager portal's own rule — HR books every
+  Medical Rep interview); the HR Manager, Talent Acquisition and the CEO read it in full.
+
 ## Decisions made while building
 
 - **"If applicable" means "HR booked it".** Every Medical Rep area exists on all three lines

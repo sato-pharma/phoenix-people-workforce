@@ -3,7 +3,9 @@
 // Recruitment / Medical Rep hiring — "My Medical Rep interviews", at the top of a manager's My
 // Candidates in the portal. The DSM and the NSM see each Medical Rep interview booked with them: when,
 // the Zoom link or the place, and — once it has ended — the form the email makes mandatory (§6: the
-// DSM's feedback; §8: the NSM's result and recommendation). The interview-booked notice links here.
+// DSM's feedback; §8: the NSM's result and recommendation). The form opens in the hiring journey, beside
+// the candidate's CV and application, so nobody evaluates a candidate without them in view (owner,
+// 7 Nov 2026). The interview-booked notice links here.
 //
 // Rendered only for a manager who is on at least one Medical Rep interview, so nobody else sees an
 // empty panel. The rows come from the server with the salary already removed for this viewer; `null`
@@ -15,19 +17,18 @@ import { Stethoscope } from "lucide-react";
 
 import { RecruitmentPanel, RecruitmentPill } from "@/components/recruitment/recruitment-premium";
 import { MrJourneyDrawer } from "@/components/recruitment/mr-hiring/mr-journey-drawer";
-import { MrRecommendationForm, MrResultForm } from "@/components/recruitment/mr-hiring/mr-forms";
 import { phxButtonAccentClassName, phxButtonGhostClassName } from "@/components/ui/form-tokens";
 import { portalCandidatesHref } from "@/lib/recruitment/candidate-page-link";
 import { cairoWhen, mrStageHeadline, mrStageStateLine, mrStageTone } from "@/lib/recruitment/mr-hiring/display";
 import type { MrInterviewRow } from "@/lib/recruitment/mr-hiring/rows";
 import { MR_ROUND_LABELS } from "@/lib/recruitment/mr-hiring/vocabulary";
 
-type Open = { candidateId: string; kind: "result" | "recommend" } | null;
+/** The journey sheet this manager has open, and the form it opens with beside the CV, if any. */
+type Open = { candidateId: string; action: "result" | "recommend" | null } | null;
 
 export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
   const router = useRouter();
-  const [form, setForm] = useState<Open>(null);
-  const [journeyId, setJourneyId] = useState<string | null>(null);
+  const [open, setOpen] = useState<Open>(null);
   if (rows === null) {
     return (
       <p className="mb-6 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
@@ -36,11 +37,6 @@ export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
     );
   }
   if (rows.length === 0) return null;
-
-  const done = () => {
-    setForm(null);
-    router.refresh();
-  };
 
   return (
     <div className="mb-6 scroll-mt-24" id="mr-interviews">
@@ -52,7 +48,6 @@ export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
       >
         <ul className="divide-y divide-slate-200">
           {rows.map((row) => {
-            const formOpen = form?.candidateId === row.candidateId ? form.kind : null;
             return (
               <li className="px-4 py-3 sm:px-5" key={row.candidateId}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -84,42 +79,34 @@ export function MrInterviewsPanel({ rows }: { rows: MrInterviewRow[] | null }) {
                     </ul>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {row.can.record && !formOpen ? (
-                      <button className={phxButtonAccentClassName} onClick={() => setForm({ candidateId: row.candidateId, kind: "result" })} type="button">
+                    {row.can.record ? (
+                      <button className={phxButtonAccentClassName} onClick={() => setOpen({ action: "result", candidateId: row.candidateId })} type="button">
                         {row.can.record === "dsm" ? "Write your feedback" : row.can.record === "rsm" ? "Write your evaluation" : "Record your result"}
                       </button>
                     ) : null}
-                    {row.can.recommend && !formOpen ? (
-                      <button className={phxButtonAccentClassName} onClick={() => setForm({ candidateId: row.candidateId, kind: "recommend" })} type="button">
+                    {row.can.recommend ? (
+                      <button className={phxButtonAccentClassName} onClick={() => setOpen({ action: "recommend", candidateId: row.candidateId })} type="button">
                         Write your recommendation
                       </button>
                     ) : null}
-                    <button className={phxButtonGhostClassName} onClick={() => setJourneyId(row.candidateId)} type="button">
-                      Hiring journey
+                    <button className={phxButtonGhostClassName} onClick={() => setOpen({ action: null, candidateId: row.candidateId })} type="button">
+                      CV, application and journey
                     </button>
                   </div>
                 </div>
-                {formOpen === "result" && row.can.record ? (
-                  <div className="mt-3 border-t border-slate-200 pt-3">
-                    <MrResultForm candidateId={row.candidateId} candidateName={row.name} onCancel={() => setForm(null)} onDone={done} step={row.can.record} />
-                  </div>
-                ) : null}
-                {formOpen === "recommend" ? (
-                  <div className="mt-3 border-t border-slate-200 pt-3">
-                    <MrRecommendationForm candidateId={row.candidateId} candidateName={row.name} onCancel={() => setForm(null)} onDone={done} />
-                  </div>
-                ) : null}
               </li>
             );
           })}
         </ul>
       </RecruitmentPanel>
-      {journeyId ? (
+      {open ? (
         <MrJourneyDrawer
-          candidateHref={portalCandidatesHref(journeyId)}
-          candidateId={journeyId}
+          candidateHref={portalCandidatesHref(open.candidateId)}
+          candidateId={open.candidateId}
+          initialAction={open.action}
+          key={open.candidateId}
           onChanged={() => router.refresh()}
-          onClose={() => setJourneyId(null)}
+          onClose={() => setOpen(null)}
         />
       ) : null}
     </div>
