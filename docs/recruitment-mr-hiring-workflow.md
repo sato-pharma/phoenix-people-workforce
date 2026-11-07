@@ -152,11 +152,11 @@ outcome sync and Mark as hired therefore move it without any second write that c
   mixed in); each phrase is added to what is already typed, never replacing it. Nothing is recorded. A
   browser with no speech engine (Firefox) shows the plain box.
 
-- **Then the words are put into professional English** (owner, 8 Nov 2026: "it fix the spelling and the
+- **Then the words are professionally rewritten** (owner, 8 Nov 2026: "it fix the spelling and the
   grammar … like ChatGPT … rephrase it into professional corporate language"). When the speaker presses Stop,
   what he said in that turn goes to `POST /api/recruitment/mr-hiring/[candidateId]/polish`
-  (`src/lib/recruitment/mr-hiring/polish.ts`, through the one AI door) and comes back as clear corporate
-  English in place of the raw words, with "Keep my own words" to put them back. What was typed before Speak
+  (`src/lib/recruitment/mr-hiring/polish.ts`, through the one AI door) and comes back as clear professional
+  wording in place of the raw words, with "Keep my own words" to put them back. What was typed before Speak
   is never sent or changed, and the candidate's name is never sent. The box keeps the words exactly as
   spoken when the rewrite fails, when it carries a number that was not said (Arabic digits count as said),
   when it names how it was written, or when the speaker edited the box while it was away. Only someone who
@@ -165,13 +165,18 @@ outcome sync and Mark as hired therefore move it without any second write that c
 - **The rewrite is Claude Sonnet's** (owner, 8 Nov 2026: "put an Anthropic Sonnet agent … the agent you added
   is very weak. It doesn't change anything"). It first shipped on the cheap nano tier, which only touched the
   words up. Now Claude Sonnet is asked first and OpenAI's strong model only when Claude's account is dead, with
-  an instruction to rewrite fully: reorder the points, drop the filler, translate every word. A small number said
+  an instruction to rewrite fully: reorder the points, drop the filler. A small number said
   as a word ("خمسة" → 5) and a number said with ألف ("15 ألف" → 15,000) count as said. A refused rewrite now
   leaves one row in the error table (route `/ai/recruitment/mr-hiring-dictation-polish/refused`) naming the
   reason, the model and the box, never the words.
 - **It knows the words of Egyptian pharma hiring** (owner screenshot, 8 Nov 2026): امتياز is the internship
   year (it had come back as "franchise"), تكليف the government assignment, دعاية medical promotion. The list is
   in the rewrite instructions in `polish.ts`; a word it keeps getting wrong goes there.
+- **It keeps the language that was spoken** (owner, 8 Nov 2026: "I needed to be able to understand Egyptian
+  Arabic and enhance the Egyptian Arabic"). Egyptian Arabic comes back as clear, professional written Arabic,
+  with the English work terms the speaker mixed in (attitude, language, accent, communication) in English
+  letters, even when the speech engine wrote them in Arabic letters (الاتيتيود, اللانجوج). English speech comes
+  back as professional English. It never translates the whole comment into the other language.
 
 ## Everything is open to HR (owner, 8 Nov 2026)
 

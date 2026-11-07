@@ -55,8 +55,8 @@ export function runRecruitmentMrHiringDictationTests() {
   assert.equal(MR_DICTATE_LABEL, "Speak");
   assert.match(mic, /onChange\(\(current\) => \{\s*const next = appendDictated\(current, text, limit\);/, "each phrase is APPENDED to what was typed, within the cap");
 
-  // THEN PROFESSIONAL ENGLISH — after Stop, only what was said in that turn, never what was typed before.
-  assert.match(mic, /onEnd: \(\) => \{[^}]*void polish\(\);/, "pressing Stop sends the words to be put into professional English");
+  // THEN PROFESSIONALLY REWRITTEN — after Stop, only what was said in that turn, never what was typed before.
+  assert.match(mic, /onEnd: \(\) => \{[^}]*void polish\(\);/, "pressing Stop sends the words to be rewritten professionally");
   assert.match(mic, /\/api\/recruitment\/mr-hiring\/\$\{encodeURIComponent\(candidateId\)\}\/polish/, "to this candidate's own gated route");
   assert.match(mic, /\{ kind, spoken \}\)/, "only the spoken words and the kind of box are sent");
   assert.match(mic, /if \(!text \|\| latest\.current !== spokenValue\) return;/, "a box edited while the words were away keeps what he typed");
@@ -102,6 +102,13 @@ export function runRecruitmentMrHiringDictationTests() {
   // The Egyptian pharma hiring words (owner's screenshot, 8 Nov 2026: امتياز came back as "franchise").
   assert.match(polish, /امتياز[^\n]*internship year[^\n]*never \\"franchise\\"/, "امتياز is the internship year");
   assert.match(polish, /تكليف[^\n]*government assignment/, "تكليف is the government assignment");
+  // THE SPEAKER'S OWN LANGUAGE (owner, 8 Nov 2026: "I needed to be able to understand Egyptian Arabic and
+  // enhance the Egyptian Arabic … هو عربي مصري ده الاساسي, وبيبقى في كلام انجلش في النص"): Arabic speech comes back
+  // as professional Arabic with the English work terms in English letters, never translated into English.
+  assert.match(polish, /Spoken mainly in Arabic → write it in clear, professional written Arabic/, "Arabic said stays Arabic");
+  assert.match(polish, /English work term the speaker used in English letters/, "attitude, language, accent stay in English letters");
+  assert.match(polish, /Never translate the whole comment into the other language\./, "never translated into the other language");
+  assert.doesNotMatch(polish, /Always English|leave no Arabic word/, "the old English-only rule is gone");
   assert.equal(sanitizeMrPolished('"**The candidate** communicates clearly."', "result"), "The candidate communicates clearly.");
   const long = sanitizeMrPolished("The candidate is confident. ".repeat(60), "booking");
   assert.ok(long.length <= mrPolishLimit("booking") && long.endsWith("confident.") && !long.includes("…"), "cut at a whole sentence inside the box's cap, never an ellipsis");

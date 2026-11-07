@@ -1,10 +1,11 @@
-// Recruitment / Medical Rep hiring — the spoken words turned into a professional English comment.
+// Recruitment / Medical Rep hiring — the spoken words turned into a professional comment, in the speaker's own language.
 //
 // The owner, 8 Nov 2026: "when I talk first, it fix, it understand me and it fix the spelling and the grammar
 // … like ChatGPT. It take what I want and then it rephrase it into professional corporate language." The
 // microphone (`MrDictate`) writes the words as they are said — Egyptian Arabic with English mixed in, and the
 // speech engine's own mishearings — and when the speaker presses Stop, those words come here and go back as
-// clear corporate English, in the same box, before anything is saved. The speaker reads it, edits it or puts
+// clear professional wording in the language that was spoken (Egyptian Arabic as clean written Arabic with the
+// English work terms in English letters; English as corporate English), in the same box, before anything is saved. The speaker reads it, edits it or puts
 // his own words back ("Keep my own words"); nothing here saves, sends or decides anything.
 //
 // TWO GUARDS on the way out, each failing the call rather than patching it — the box then keeps the words as
@@ -148,30 +149,36 @@ export function findMrPolishViolations(polished: string, spoken: string): string
 // ── I/O ───────────────────────────────────────────────────────────────────────
 
 const instructions = [
-  "You turn what a manager said into a microphone into the professional English text of a comment box inside Phoenix Workforce, the HR system of an Egyptian pharmaceutical company that is hiring Medical Representatives.",
+  "You turn what a manager said into a microphone into the professional text of a comment box inside Phoenix Workforce, the HR system of an Egyptian pharmaceutical company that is hiring Medical Representatives.",
   [
     "THE INPUT:",
-    "- It is speech-to-text, mostly Egyptian Arabic with English words mixed in, without punctuation.",
+    "- It is speech-to-text, without punctuation. The speaker talks Egyptian Arabic and mixes English work terms into it, and the speech engine writes those English terms in Arabic letters: الاتيتيود is attitude, اللانجوج is language, الاكسنت is accent, الكومينكيشن is communication, البريزنتيشن is presentation, الكونفيدنس is confidence, الانترفيو is interview, الفيدباك is feedback.",
     "- The speech engine mishears: words may be misspelt, split, merged or replaced by a similar-sounding word. Work out what the speaker meant.",
   ].join("\n"),
   [
-    "THE OUTPUT — a real rewrite, never a light touch-up:",
-    "- Always English, whatever language was spoken. Translate everything; leave no Arabic word in the text.",
-    "- Write it the way a senior HR professional writes an evaluation for a company file: polished, fluent corporate English in complete, well-organised sentences, with correct spelling, grammar and punctuation.",
-    "- Do not follow the speaker's word order, repetitions, filler words or broken phrasing. Put the points in a logical order (overall impression, strengths, concerns, then the verdict or next step) and merge repeated points.",
-    "- Use precise professional vocabulary: communication skills, presentation, product knowledge, confidence, attitude, commitment, field experience, salary expectations, availability, and so on.",
-    "- Plain prose: no greeting, no sign-off, no headings, no bullets, no markdown, no surrounding quotation marks.",
-    "- Write about the candidate in the third person (\"The candidate…\"), never assuming a gender. Keep the speaker's own view in the first person where the speaker gave one (\"In my assessment…\"), and keep an instruction to someone as an instruction.",
+    "THE LANGUAGE — the speaker's own:",
+    "- Spoken mainly in Arabic → write it in clear, professional written Arabic: simple Modern Standard Arabic that any Egyptian manager reads at a glance, never street slang and never heavy classical style. Write every English work term the speaker used in English letters inside the Arabic sentence (\"الـ attitude لديها جيد\"), as Egyptian HR people write them.",
+    "- Spoken mainly in English → write it in professional English.",
+    "- Never translate the whole comment into the other language.",
   ].join("\n"),
   [
-    "EXAMPLE",
+    "THE OUTPUT — a real rewrite, never a light touch-up:",
+    "- Write it the way a senior HR professional writes an evaluation for a company file: polished, complete, well-organised sentences with correct spelling, grammar and punctuation.",
+    "- Do not follow the speaker's word order, repetitions, filler words (يعني، فاهمني، بقى، أه) or broken phrasing. Put the points in a logical order (overall impression, strengths, concerns, then the verdict or next step) and merge repeated points.",
+    "- Plain prose: no greeting, no sign-off, no headings, no bullets, no markdown, no surrounding quotation marks.",
+    "- Write about the candidate as \"the candidate\" (in Arabic المرشح / المرشحة, following the gender the speaker used; in English never assuming a gender). Keep the speaker's own view in the first person where the speaker gave one, and keep an instruction to someone as an instruction.",
+  ].join("\n"),
+  [
+    "EXAMPLES",
+    "Said: \"هي كويسة جدا الاتيتيود بتاعها كويس بتعرف تتكلم اللانجوج بتاعتها و الاكسنت كويسين فاهمني\"",
+    "Written: \"المرشحة جيدة جدًا، والـ attitude لديها جيد، وتتمتع بقدرة جيدة على التحدث، كما أن مستوى الـ language والـ accent لديها جيد.\"",
     "Said: \"هو كويس بس متوتر شوية و الكومينكيشن بتاعه حلو و عنده خبره سنتين في نوفارتس بس الانجلش ضعيف شويه انا شايف انه ينفع للمرحله الجايه\"",
-    "Written: \"The candidate made a good overall impression and has good communication skills, although the candidate appeared somewhat nervous during the interview. The candidate brings 2 years of experience at Novartis. The candidate's English is relatively weak. In my assessment, the candidate is suitable to proceed to the next stage.\"",
+    "Written: \"انطباعي العام عن المرشح جيد، ويتمتع بمهارات communication جيدة، رغم أنه بدا متوترًا بعض الشيء خلال المقابلة. لديه خبرة 2 سنة في Novartis، إلا أن مستوى اللغة الإنجليزية لديه ضعيف نسبيًا. وأرى أنه مناسب للانتقال إلى المرحلة التالية.\"",
   ].join("\n"),
   // The words of Egyptian pharma hiring a general model gets wrong (owner's screenshot, 8 Nov 2026: "امتياز"
   // came back as "franchise", "التكليف" as "assignment" with no meaning).
   [
-    "EGYPTIAN PHARMA HIRING WORDS — use these meanings:",
+    "EGYPTIAN PHARMA HIRING WORDS — what they mean (keep the Arabic word in an Arabic comment; use the English meaning in an English one):",
     "- امتياز (imtiyaz): the pharmacy or medical internship year a graduate completes before practising — \"internship year\", never \"franchise\" or \"distinction\".",
     "- تكليف (takleef): the compulsory government service posting after graduation — \"government assignment\".",
     "- دعاية / مجال الدعاية: medical promotion, the Medical Representative's work — \"medical promotion\".",
@@ -196,7 +203,7 @@ const textFormat = {
     schema: {
       additionalProperties: false,
       properties: {
-        text: { description: "The finished comment, in professional English. Plain text only.", type: "string" },
+        text: { description: "The finished comment, in the speaker's own language, professionally written. Plain text only.", type: "string" },
       },
       required: ["text"],
       type: "object",
@@ -238,7 +245,7 @@ function parsePolished(text: string): string {
 }
 
 /**
- * The spoken words as professional English, for the speaker to read in the box. Never saves anything.
+ * The spoken words professionally written, in the speaker's own language, for the speaker to read in the box. Never saves anything.
  * The caller has already decided the speaker may write on this candidate (`assertMayPolishMrWords`).
  */
 export async function polishMrSpokenWords(input: { kind: MrPolishKind; spoken: string }): Promise<{ text: string }> {
