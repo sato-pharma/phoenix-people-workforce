@@ -160,5 +160,11 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.match(bar, /!locked && undecided && idle\s*\? idleDayDeductionSuggestions\(/, "HEADLINE: offered only on an undecided trip a decider can change");
   assert.match(bar, /onClick=\{\(\) => applySuggestion\(suggestion\)\}/, "a share is applied only by his click");
   assert.match(bar, /if \(!decision\.hrComment\.trim\(\)\) onChangeReason\(suggestion\.reason\);/, "HEADLINE: his own reason is never written over");
+  // Owner, 2026-11-07, "FIX BUTTONS": in the 19rem rail, Approve and Reject read "Approv" and
+  // "Reject" cut off beside "3 unsaved", because a `flex-1` pair shared one line with Save. The pair
+  // takes the whole rail width and Save drops to its own line under it.
+  assert.match(bar, /placement === "rail" \? "grid w-full basis-full grid-cols-2 gap-2"/, "HEADLINE: in the rail Approve and Reject take the whole width");
+  assert.match(bar, /placement === "rail" \? "flex w-full basis-full justify-end" : "ml-auto"/, "HEADLINE: in the rail Save sits on its own line, never beside the pair");
+  assert.doesNotMatch(bar, /"grid flex-1 grid-cols-2/, "the squeezed flex-1 pair never comes back");
   assert.doesNotMatch(bar, /useEffect\([^)]*applySuggestion|onChangeAmount\(approvedAmountFromDeduction\(record\.total, suggestions\[/, "nothing deducts on its own");
 }
