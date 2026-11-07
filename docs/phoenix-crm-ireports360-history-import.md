@@ -301,7 +301,12 @@ The owner's rules, 7 Nov 2026:
   customer with no place is `no_place`: shown, never counted. The trigger `phoenix_crm_visits_old_system_kpi`
   keeps the answer in `ireports360_kpi_counted`. A place validated later restamps the visit, and the flag
   follows.
-- **A visit FARTHER than `visit_far_meters` from the validated place is archived** (owner, 7 Nov 2026). It
+- **A visit past `visit_far_meters` but within 500 m is a normal visit, flagged far** (owner, 7 Nov 2026:
+  "visits upto 500 m move them to normal visits but flag them"). It counts in visits and KPIs and keeps
+  `location_flag = 'far'`, so the visit reports show it "Far from the place". The line is
+  `OLD_VISIT_ARCHIVE_FAR_METERS` in `old-visit-conversion.ts` and the same 500 in the trigger
+  (20261107064148). Applied 7 Nov 2026: 1,800 visits came back from the archive; 3,802 stay archived.
+- **A visit MORE THAN 500 m from the validated place is archived** (owner, 7 Nov 2026). It
   gets `archived_at` and `archive_reason = 'far'`, is never counted and is never deleted. Each of its old
   visits gets an archive row with reason `far`, the distance in metres and both points. The same trigger
   does it, so it happens on the conversion's write AND on any later restamp: an old `no_place` visit whose

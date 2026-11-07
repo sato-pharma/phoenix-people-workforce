@@ -3,7 +3,7 @@
  *
  * The old iReports360 visits that were not carried into Phoenix CRM as visits were retired into
  * `public.phoenix_crm_visit_archive`: a campaign visit (type -8), or a visit that carried no check-in
- * location — and, kept by a database trigger, a converted visit whose check-in lay more than visit_far_meters
+ * location — and, kept by a database trigger, a converted visit whose check-in lay more than 500 m
  * from the customer's validated place (`far`, with its distance and both points; owner, 7 Nov 2026). This file
  * reads that ONE table for /admin/phoenix-crm/visits-archive — a page of one tab's rows, the totals by tab and
  * by reason for the current filter, and the lists the filters offer. It writes nothing.

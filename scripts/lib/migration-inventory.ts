@@ -2218,6 +2218,20 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // service_role only. phoenix_crm_visit_archive has RLS on, granted to service_role only; crm_visits_unified has
   // counts_in_kpi. Every month Jan–Nov of crm_visits_unified hashed the same before and after (0 rows moved).
   "20261107044059_phoenix_crm_old_visits_convert_and_archive.sql",
+  // Applied 7 Nov 2026 by scripts/apply-sql-file.mjs (staging, then production with the aws-1 pooler), after the
+  // runner and the leavers step as its header requires. md5(pg_proc.prosrc) on staging and production equals the
+  // md5 of this file's own LF body between the dollar markers: phoenix_crm_rep_entry_days_calc
+  // 58b4b1ab46288ee6a3fd1bea9062a318, phoenix_crm_seat_visit_firsts d58174ef98d7b9c74bf4bd9f0a4ae895. Read back on
+  // production: phoenix_crm_countable_visits admits 27,939 copied visits (= ireports360_kpi_counted); October of
+  // crm_visits_unified hashed cd17b12ca95aa7ade06e4cb79428aba2 before and after; crm_checkins_unified 149,620 and
+  // the entry-days cache 1,241 rows, both unchanged. Re-applying is a no-op (`create or replace`).
+  "20261107044742_phoenix_crm_countable_admits_converted_visits.sql",
+  // Applied 7 Nov 2026 by scripts/apply-sql-file.mjs (staging 0 rows, then production 1,800 rows). md5(pg_proc.prosrc)
+  // of phoenix_crm_visits_old_system_kpi on staging and production = 568427fb918d769f31faeecc9410f762, the md5 of
+  // this file's own LF body between the dollar markers. Read back on production: 0 converted visits archived far
+  // within 500 m, 1,800 far and counted, 3,802 archived far (= the archive's far rows). Every month Jan–Nov of
+  // crm_visits_unified hashed the same as before the conversion. Re-applying touches no row (none is left to lift).
+  "20261107064148_phoenix_crm_far_old_visits_within_500m_count.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
