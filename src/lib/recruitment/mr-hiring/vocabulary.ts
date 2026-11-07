@@ -48,6 +48,16 @@ export type MrRecommendation = (typeof MR_RECOMMENDATIONS)[number];
  */
 export const MR_WORKFLOW_START = "2026-11-07T22:00:00.000Z";
 
+/**
+ * Whether a CV belongs to the workflow at all: received on or after the start. Only those are on the
+ * Medical Rep Hiring page; a candidate received before it finishes in the workspace as before (owner,
+ * 7 Nov 2026: "New CVs only"). An unreadable date is left out rather than guessed in.
+ */
+export function isInMrWorkflow(receivedAt: string | null | undefined): boolean {
+  const received = new Date(String(receivedAt ?? "")).getTime();
+  return Number.isFinite(received) && received >= new Date(MR_WORKFLOW_START).getTime();
+}
+
 /** The job title every Medical Rep booking and offer carries. */
 export const MR_JOB_TITLE = "Medical Representative";
 

@@ -17,8 +17,8 @@
 // the client components that render it.
 
 import {
+  isInMrWorkflow,
   MR_STEPS,
-  MR_WORKFLOW_START,
   type MrClosed,
   type MrInterviewRound,
   type MrRecommendation,
@@ -215,8 +215,7 @@ function cairoDay(now: Date): string {
  */
 export function isHeldOffChannel(facts: Pick<MrCandidateFacts, "receivedAt" | "onOfficialLine">): boolean {
   if (facts.onOfficialLine) return false;
-  const received = new Date(facts.receivedAt).getTime();
-  return Number.isFinite(received) && received >= new Date(MR_WORKFLOW_START).getTime();
+  return isInMrWorkflow(facts.receivedAt);
 }
 
 type InterviewStepSpec = {

@@ -1863,6 +1863,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/recommendation", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/book", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/mr-hiring/*/journey", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/recruitment/mr-hiring/*/cv", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/shares", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/recruitment/interview-calendar/shares/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/interview-shares", permission: null, guard: "domain-helper", csrfRequired: true }),

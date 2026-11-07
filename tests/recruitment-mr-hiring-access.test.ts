@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // Who may do what in the Medical Rep workflow (owner's email, effective 8 November 2026, and his
 // answers of 7 November): HR screens and holds the 1st interview; the DSM who held the 2nd records its
@@ -18,6 +19,9 @@ import type { MrCandidateRecord } from "../src/lib/recruitment/mr-hiring/facts-d
 import { buildMrRow } from "../src/lib/recruitment/mr-hiring/rows.ts";
 import type { MrBookingFact, MrCandidateFacts, MrStepResultFact } from "../src/lib/recruitment/mr-hiring/stage.ts";
 import type { MrInterviewRound, MrResult, MrResultStep } from "../src/lib/recruitment/mr-hiring/vocabulary.ts";
+import { stripComments } from "./support/comment-strip.ts";
+
+const codeOnly = (path: string) => stripComments(readFileSync(path, "utf8"));
 
 const NOW = new Date("2026-11-12T12:00:00.000Z");
 
@@ -199,4 +203,34 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.equal(readsJourneyWithoutLookup(otherDsm, finalRecord), false, "a manager on none of the interviews does not");
   assert.equal(readsJourneyWithoutLookup(otherDsm, record(finalEnded, { sentToHrId: "D-9" })), true, "the manager the CV was sent to does");
   assert.equal(readsJourneyWithoutLookup(mrViewer({ hrId: null, role: "District Manager" }), finalRecord), false, "nobody without an HR id");
+
+  // The CV and the application, at every step and for everyone involved (owner, 7 Nov 2026: "the cv
+  // and application must appear and be appearing in all steps for every one"). Read from the code with
+  // comments removed, so a comment cannot pass it.
+  const server = codeOnly("src/lib/recruitment/mr-hiring/server.ts");
+  assert.match(
+    server,
+    /async function readableMrRecord\([\s\S]{0,300}mayReadMrJourney\(access, record\)[\s\S]{0,120}notFoundError\(/,
+    "one gate: whoever may read the journey, and a not-found for anyone else",
+  );
+  assert.match(server, /export async function loadMrJourney\([\s\S]{0,160}await readableMrRecord\(access, candidateId\)/, "the journey passes it");
+  assert.match(server, /export async function loadMrCvAndApplication\([\s\S]{0,160}await readableMrRecord\(access, candidateId\)/, "the CV and application pass the same gate");
+  assert.match(server, /export async function loadMrCvFile\([\s\S]{0,160}await readableMrRecord\(access, candidateId\)/, "and so does each file");
+  assert.match(server, /if \(!files\.some\(\(file\) => file\.id === fileId\)\) return null/, "a file that is not this candidate's is never served");
+  assert.match(server, /phonesHidden: !mrViewer\(access\)\.readsAll/, "a manager reads the CV with the phone numbers masked; HR and the CEO in full");
+  assert.equal(hrManager.readsAll && talent.readsAll && ceo.readsAll, true, "the HR Manager, Talent Acquisition and the CEO read the CV in full");
+  assert.equal(dsm.readsAll || nsm.readsAll, false, "the DSM and the NSM read it masked");
+  const route = codeOnly("app/api/recruitment/mr-hiring/[candidateId]/cv/route.ts");
+  assert.match(route, /assertCandidateVisible\(access, candidateId\)[\s\S]*loadMrCvAndApplication\(access, candidateId\)[\s\S]*loadMrCvFile\(access, candidateId, fileId\)/, "the route asks the fence, then the gate");
+
+  const sheet = codeOnly("src/components/recruitment/mr-hiring/mr-cv-application.tsx");
+  assert.match(sheet, /redactPhones=\{state\.phonesHidden\}/, "the CV masks the phone numbers when the server says so");
+  assert.match(sheet, /allowDownload=\{!state\.phonesHidden\}/, "and offers no download");
+  assert.match(sheet, /state\.application\.map\(/, "the application lists every question and answer");
+  const drawer = codeOnly("src/components/recruitment/mr-hiring/mr-journey-drawer.tsx");
+  assert.match(drawer, /\{wide \? \(\s*<aside aria-label="CV and application"[\s\S]{0,300}<MrCvApplication candidateId=\{candidateId\} \/>/, "a wide screen shows the CV and application beside the journey");
+  assert.match(drawer, /\{wide \? null : <MrCvApplication candidateId=\{candidateId\} \/>\}/, "a narrow one under the current step");
+  const panel = codeOnly("src/components/recruitment/mr-hiring/mr-interviews-panel.tsx");
+  assert.doesNotMatch(panel, /<MrResultForm|<MrRecommendationForm/, "a manager never writes feedback away from the CV");
+  assert.match(panel, /initialAction=\{open\.action\}/, "the feedback and recommendation open in the journey, beside the CV");
 }

@@ -10,6 +10,12 @@
 // 7 Nov 2026: 98 filed and 14 such declared-only candidates in the 30 days before). Archived
 // candidates are left out, as the workspace leaves them out.
 //
+// NEW CVs ONLY. A candidate received before Sunday 8 November 2026 00:00 Cairo is not in the workflow:
+// the page does not list them, their journey is not offered, and no step can be recorded or booked
+// for them — they finish in the workspace as before (owner, 7 Nov 2026: "New CVs only"). Without it
+// the page listed 54 candidates the old flow had already shortlisted or sent to a manager as
+// "Screen the CV".
+//
 // NEVER STOPS AT A PAGE. Every list read goes through `fetchAllRows` and every id filter through
 // `fetchRowsInBatches`, so a growing table can never return a silently short answer.
 
@@ -27,6 +33,7 @@ import type {
   MrStepResultFact,
 } from "@/lib/recruitment/mr-hiring/stage";
 import {
+  isInMrWorkflow,
   isMrInterviewRound,
   isMrRecommendation,
   isMrResult,
@@ -173,8 +180,8 @@ async function medicalRepCandidateIds(only: readonly string[] | null): Promise<{
 }
 
 /**
- * Every Medical Rep candidate (or just the given ones, when they are Medical Rep candidates), newest
- * CV first. Archived candidates are left out.
+ * Every Medical Rep candidate received from the start of the workflow (or just the given ones, when
+ * they are such candidates), newest CV first. Archived candidates are left out.
  */
 export async function loadMrCandidates(options: { candidateIds?: readonly string[] } = {}): Promise<MrCandidateRecord[]> {
   const only = options.candidateIds ? Array.from(new Set(options.candidateIds.filter(Boolean))) : null;
@@ -197,7 +204,7 @@ export async function loadMrCandidates(options: { candidateIds?: readonly string
     ),
   ]);
 
-  const live = candidates.filter((row) => !row.archived_at);
+  const live = candidates.filter((row) => !row.archived_at && isInMrWorkflow(row.created_at));
   const offerIds = Array.from(new Set(live.map((row) => row.offer_id).filter((id): id is string => Boolean(id))));
   const offers = offerIds.length
     ? await fetchRowsInBatches<OfferRow>(offerIds, (batch) =>
