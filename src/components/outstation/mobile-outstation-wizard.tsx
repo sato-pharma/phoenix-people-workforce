@@ -2008,7 +2008,7 @@ export function MobileOutstationWizard({
         </div>
       ) : null}
 
-      {isTicketRequired && ticketFiles.length === 0 && !isReadingTickets ? (
+      {isTicketRequired && ticketFiles.length === 0 ? (
         <StepNote tone="warn">
           {isOffline ? "No connection: you" : "No ticket yet? You"} can submit without it now — the claim is held for review until you attach the ticket from My claims, below this form.
         </StepNote>
