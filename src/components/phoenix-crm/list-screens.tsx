@@ -98,6 +98,9 @@ import {
   EMPTY_DOCTOR_NAME,
   joinDoctorName,
   splitDoctorName,
+  VALIDATION_FULL_NAME_ASK,
+  VALIDATION_FULL_NAME_CODE,
+  validationNeedsFullName,
   type DoctorNameParts,
 } from "@/lib/phoenix-crm/pm-name-rules";
 import { CUSTOMER_NAME_MAX, DROP_COMMENT_REQUIRED, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
@@ -648,6 +651,11 @@ export function ValidateScreen({
   const title = subject.mode === "new" ? "Add new customer" : "Validate a customer";
   /** What the SFE wrote for him in the sheet: where to find the customer, and anything else. */
   const intake = listed?.intake ?? null;
+  // 🔴 A CLINIC CUSTOMER LISTED WITH ONLY ONE OR TWO NAMES IS VALIDATED WITH ALL THREE (owner, 2026-11-07:
+  // "Don't accept from the beginning the two names. Must enter the three names."). His own row's name
+  // first, because that is the name the server judges (`validationSubject`), then the reference entry's.
+  const currentName = carried?.name ?? reference?.name ?? "";
+  const [fullParts, setFullParts] = useState<DoctorNameParts>(() => splitDoctorName(currentName));
 
   function close() {
     if (saving) return;
@@ -663,7 +671,10 @@ export function ValidateScreen({
 
   const doctorName = listType === "PM";
   const cleanName = doctorName ? normalizedName(joinDoctorName(nameParts)) : normalizedName(name);
-  const customerName = subjectFacts?.name ?? cleanName;
+  /** A listed clinic customer whose name is still one or two words: the three names are asked in step 1. */
+  const needsFullName = subject.mode !== "new" && validationNeedsFullName({ listType: subjectFacts?.listType, name: currentName });
+  const fullNameText = needsFullName ? normalizedName(joinDoctorName(fullParts)) : "";
+  const customerName = (needsFullName && fullNameText) || (subjectFacts?.name ?? cleanName);
   const specialityOptions = subject.mode === "new" ? knownSpecialities(view) : [];
   const canAskToDrop = Boolean(onAskToDrop && pendingCustomer && movesOf(pendingCustomer).includes("ask_to_drop"));
 
@@ -675,6 +686,10 @@ export function ValidateScreen({
         if (nameProblem) return nameProblem;
       } else if (cleanName.length < 3) return "Write the customer's full name.";
       if (!grade) return "Propose a grade (A, B or C).";
+    }
+    if (needsFullName) {
+      const nameProblem = doctorFullNameProblem(fullParts);
+      if (nameProblem) return nameProblem;
     }
     const phoneCheck = parseCustomerPhone(phone);
     if (!phoneCheck.ok) return phoneCheck.error;
@@ -688,11 +703,14 @@ export function ValidateScreen({
     const at =
       door === "shared" ? { seated: seatedPayload(photo, seated, standingAt) } : { place: placePayload(photoAtOwnDoor(photo), draft) };
     const phoneValue = phone.trim() || null;
+    // The three names travel only when they were asked; the server judges them against the board in the
+    // same save and writes them with the validation (`fullNameAtValidation`).
+    const named = needsFullName ? { nameParts: fullParts } : {};
     if (subject.mode === "reference")
-      return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, ...at };
-    // His name, list and grades were set when the sheet was loaded; the validation adds the place and
-    // nothing else, so none of them is sent back and none of them can be changed at the door.
-    if (subject.mode === "listed") return { seatId, test, mode: "listed", customerId: subject.customerId, phone: phoneValue, ...at };
+      return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, ...named, ...at };
+    // His list and grades were set when the sheet was loaded; the validation adds the place — and the
+    // three names when the sheet gave fewer — and nothing else.
+    if (subject.mode === "listed") return { seatId, test, mode: "listed", customerId: subject.customerId, phone: phoneValue, ...named, ...at };
     return {
       seatId,
       test,
@@ -773,7 +791,10 @@ export function ValidateScreen({
         setProblem(UNCHECKED);
         return;
       }
-      if (door === "shared" && code === SCHEDULE_RETAKE_CODE) {
+      if (code === VALIDATION_FULL_NAME_CODE) {
+        // The three names are answered on the first step, so he is taken back to them.
+        goStep(1);
+      } else if (door === "shared" && code === SCHEDULE_RETAKE_CODE) {
         setSeated(retakeTimetable(photo));
         goStep(4);
       } else if (door === "shared" && code === SEATING_AWAY_CODE) {
@@ -802,8 +823,11 @@ export function ValidateScreen({
 
   const isNew = subject.mode === "new";
   const shared = door === "shared";
-  const summaryCustomer: Pick<ListCustomer, "name" | "listType" | "grade" | "speciality"> | null =
-    subjectFacts ?? (listType && grade ? { name: cleanName, listType, grade, speciality: normalizedName(speciality) || null } : null);
+  const summaryCustomer: Pick<ListCustomer, "name" | "listType" | "grade" | "speciality"> | null = subjectFacts
+    ? { ...subjectFacts, name: needsFullName ? fullNameText || subjectFacts.name : subjectFacts.name }
+    : listType && grade
+      ? { name: cleanName, listType, grade, speciality: normalizedName(speciality) || null }
+      : null;
 
   // The same six steps for every customer; what changes is what steps 3 and 4 ask for, by the door he chose.
   const steps: ReadonlyArray<CrmStep> = [
@@ -829,6 +853,10 @@ export function ValidateScreen({
           if (nameProblem) return nameProblem;
         } else if (cleanName.length < 3) return "Write the customer's full name.";
         if (!grade) return "Propose a grade (A, B or C).";
+      }
+      if (needsFullName) {
+        const nameProblem = doctorFullNameProblem(fullParts);
+        if (nameProblem) return nameProblem;
       }
       const phoneCheck = parseCustomerPhone(phone);
       return phoneCheck.ok ? null : phoneCheck.error;
@@ -925,12 +953,30 @@ export function ValidateScreen({
               {/* Owner, 2026-09-22, kept 2026-09-29: validating is the captures and nothing else, once and for
                   good. The name and the grade are changed later, from the customer's own page. A loaded
                   customer's grade is the SFE's, not iReports360's, so the sentence says whose it is. */}
-              <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-                {subject.mode === "listed"
-                  ? "The name and grade were set when this list was loaded — the name is yours to correct later from the customer’s page. "
-                  : "The name and grade are iReports360’s for now — you can change them later from the customer’s page. "}
-                You validate a customer once.
-              </p>
+              {needsFullName ? (
+                <div className="mt-3 space-y-2">
+                  <p className="break-words text-sm font-bold leading-6 text-slate-800">{VALIDATION_FULL_NAME_ASK}</p>
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                    <DoctorNameFields
+                      disabled={saving}
+                      idPrefix="phoenix-crm-validate-name"
+                      onChange={(next) => {
+                        setFullParts(next);
+                        setProblem(null);
+                      }}
+                      value={fullParts}
+                    />
+                  </div>
+                  <p className="text-xs font-semibold leading-5 text-slate-500">You validate a customer once.</p>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+                  {subject.mode === "listed"
+                    ? "The name and grade were set when this list was loaded — the name is yours to correct later from the customer’s page. "
+                    : "The name and grade are iReports360’s for now — you can change them later from the customer’s page. "}
+                  You validate a customer once.
+                </p>
+              )}
               {/* Owner, 2026-09-30: the phone is asked for here, optional, and saved with the validation. */}
               <CustomerPhoneField
                 className="mt-3 sm:max-w-sm"

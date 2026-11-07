@@ -24,6 +24,7 @@ import { RefusalNoteHint, RefusalReasonField } from "@/components/phoenix-crm/re
 import { SystemAdvice } from "@/components/phoenix-crm/system-advice";
 import { CrmButton, CrmCardsOnPhone, CrmNote, CrmPill, CrmTable, crmTdClassName, crmTextareaClassName, crmThClassName } from "@/components/phoenix-crm/ui";
 import { adviseOnReview } from "@/lib/phoenix-crm/place-check-advice";
+import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
 import {
   PLACE_APPROVAL_IS_NOT_A_LIST_ADD,
@@ -190,6 +191,8 @@ function Evidence({ row }: { row: ValidationReviewRow }) {
  */
 function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
   const done = usePlaceCheckDone();
+  // Bringing it back validates the customer again, so a clinic customer with one or two names cannot be.
+  const shortName = approvalNeedsFullName(row);
   const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -225,9 +228,10 @@ function Restore({ row, scope }: { row: ValidationReviewRow; scope: string }) {
         rows={2}
         value={note}
       />
-      <CrmButton disabled={saving} onClick={() => void restore()} variant="primary">
+      <CrmButton disabled={saving || shortName} onClick={() => void restore()} variant="primary">
         {saving ? "Bringing it back…" : "Approve it after all"}
       </CrmButton>
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       <p className="break-words text-xs text-slate-500">
         The place comes back and the customer is validated again in {row.repName}&rsquo;s own name. Their visits are measured against it again.
       </p>
@@ -336,8 +340,11 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
   const done = usePlaceCheckDone();
   const { saved, markSaved } = useSavedOutcome(row);
   const [note, setNote] = useState("");
+  // 🔴 A clinic customer with only one or two names is never approved — sent back for all three (owner,
+  // 2026-11-07, "Send them back to the rep"). Approve is disabled and the reason opens on short_name.
+  const shortName = approvalNeedsFullName(row);
   // Opens on the reason the system's own confident reading gives, and on nothing otherwise.
-  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => adviseOnReview(row).refusal ?? "");
+  const [reason, setReason] = useState<ValidationRefusalReason | "">(() => (shortName ? "short_name" : (adviseOnReview(row).refusal ?? "")));
   const [saving, setSaving] = useState<"approve" | "reject" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -398,13 +405,14 @@ function Decision({ row, scope = "" }: { row: ValidationReviewRow; scope?: strin
       />
       <RefusalNoteHint />
       <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-        <CrmButton disabled={saving !== null} onClick={() => void decide("approve")} variant="primary">
+        <CrmButton disabled={saving !== null || shortName} onClick={() => void decide("approve")} variant="primary">
           {saving === "approve" ? "Approving…" : "Approve"}
         </CrmButton>
         <CrmButton disabled={saving !== null || reason === ""} onClick={() => void decide("reject")} variant="danger">
           {saving === "reject" ? "Rejecting…" : "Reject"}
         </CrmButton>
       </div>
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       {reason === "" ? <p className="break-words text-xs text-slate-500">{VALIDATION_REASON_REQUIRED} Approve needs no reason.</p> : null}
       <p className="break-words text-xs text-slate-500">{PLACE_APPROVAL_IS_NOT_A_LIST_ADD}</p>
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
@@ -460,7 +468,8 @@ const WAITING_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
     busyLabel: "Approving",
     variant: "primary",
     needsReason: false,
-    takes: (row) => row.status === "pending",
+    // Never a clinic customer with one or two names: he is sent back for all three (owner, 2026-11-07).
+    takes: (row) => row.status === "pending" && !approvalNeedsFullName(row),
     run: (row, answer) => bulkDecide(row, "approve", answer.note, ""),
   },
   {
@@ -494,7 +503,7 @@ const DECIDED_ACTIONS: ReadonlyArray<BulkAction<ValidationReviewRow>> = [
     busyLabel: "Bringing back",
     variant: "primary",
     needsReason: false,
-    takes: (row) => row.restorable,
+    takes: (row) => row.restorable && !approvalNeedsFullName(row),
     run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/restore", { reviewId: row.reviewId, note: answer.note }, "restored"),
   },
 ];

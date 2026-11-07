@@ -274,3 +274,41 @@ export type HeldFullName = {
   heldAt: string;
   isTest: boolean;
 };
+
+// ── Validating a doctor already on the list, and Place checks (owner, 2026-11-07) ─────────────────
+
+/**
+ * 🔴 A DOCTOR ALREADY ON THE LIST IS VALIDATED WITH HIS THREE NAMES, IN THE SAME SAVE (owner, 2026-11-07:
+ * "Don't accept from the beginning the two names. Must enter the three names … if I approve this
+ * validation, then will come to submit visits … also blocked. So why make it one step only?"). A PM
+ * doctor carried over from iReports360 or loaded from the SFE's sheet whose name is one or two words is
+ * asked for the first, middle and last name on the validation screen itself; the full name is what his
+ * signboard or timetable is read against, and it is saved with the validation — one step, never a
+ * validation the plan then refuses.
+ */
+export function validationNeedsFullName(subject: { listType: unknown; name: unknown }): boolean {
+  if (String(subject.listType ?? "").toUpperCase() !== "PM") return false;
+  return doctorNameWordCount(String(subject.name ?? "")) < 3;
+}
+
+/** What the rep reads above the three boxes at the door: his own fix, in his own words. */
+export const VALIDATION_FULL_NAME_ASK = "Write the first, middle and last name as the sign shows them.";
+
+/** The refusal when a short-named doctor's validation arrives without the three names. */
+export const VALIDATION_FULL_NAME_MISSING = "Write the first, middle and last name.";
+
+/** The error code of that refusal, so the screen returns the rep to the step that holds the boxes. */
+export const VALIDATION_FULL_NAME_CODE = "phoenix_crm_full_name_needed";
+
+/**
+ * 🔴 PLACE CHECKS NEVER APPROVES A CLINIC DOCTOR WITH ONE OR TWO NAMES — IT IS SENT BACK TO THE REP
+ * (owner, 2026-11-07, chose "Send them back to the rep"). An approval would validate a doctor the plan
+ * and Add visit still refuse; sent back, the rep's validation screen asks for the three names.
+ */
+export function approvalNeedsFullName(row: { listType: unknown; customerName: unknown }): boolean {
+  return validationNeedsFullName({ listType: row.listType, name: row.customerName });
+}
+
+/** Beside the disabled Approve, and the server's refusal of one. */
+export const APPROVAL_NEEDS_FULL_NAME =
+  "This customer has only one or two names. Send it back so the rep writes the first, middle and last name.";

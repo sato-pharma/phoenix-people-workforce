@@ -55,6 +55,7 @@ import {
   VALIDATION_REASON_REQUIRED,
   type ValidationPhotoKind,
 } from "@/lib/phoenix-crm/validation-feedback";
+import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName, VALIDATION_FULL_NAME_CODE } from "@/lib/phoenix-crm/pm-name-rules";
 import { invalidateMyMapSnapshotCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
@@ -91,6 +92,35 @@ export { canDecideValidationReviews, placeChecksSeatScope } from "@/lib/phoenix-
 function text(value: unknown): string | null {
   const cleaned = typeof value === "string" ? value.trim() : "";
   return cleaned ? cleaned : null;
+}
+
+/**
+ * 🔴 A CLINIC CUSTOMER WITH ONLY ONE OR TWO NAMES IS NEVER APPROVED — HE IS SENT BACK FOR ALL THREE
+ * (owner, 2026-11-07: "Don't accept from the beginning the two names"; for the validations already
+ * waiting, "Send them back to the rep"). Approving him would validate a name every visit save then
+ * refuses, so every approve path asks this first: a held review, a rejection taken back, and a place the
+ * system never questioned. The screens disable Approve on the same rule (`approvalNeedsFullName`); this
+ * is the boundary. Nothing is refused in the data — the rejection, with `short_name`, is the decider's press.
+ */
+async function refuseApprovalOfShortName(customerId: unknown): Promise<void> {
+  if (!isUuid(customerId)) return;
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_customers")
+    .select("name, list_type")
+    .eq("id", String(customerId).toLowerCase())
+    .maybeSingle();
+  throwIfError(error);
+  const customer = data as Row | null;
+  if (customer && approvalNeedsFullName({ listType: customer.list_type, customerName: customer.name })) {
+    throw validationError(APPROVAL_NEEDS_FULL_NAME, VALIDATION_FULL_NAME_CODE);
+  }
+}
+
+/** The customer a review is about, for the gate above. */
+async function reviewCustomerId(reviewId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin().from("phoenix_crm_validation_reviews").select("customer_id").eq("id", reviewId).maybeSingle();
+  throwIfError(error);
+  return text((data as Row | null)?.customer_id);
 }
 
 // ── What the rep's own list reads ───────────────────────────────────────────────────────────────
@@ -727,6 +757,7 @@ export async function decideValidationReview(viewer: PhoenixCrmViewer, raw: unkn
   const refusalReason = decision === "reject" ? parseValidationRefusalReason(body.refusalReason) : null;
   if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
   const reviewId = String(body.reviewId).toLowerCase();
+  if (decision === "approve") await refuseApprovalOfShortName(await reviewCustomerId(reviewId));
   // `review_not_found` and `review_decided` come back worded by the module's refusal table (db.ts).
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_validation_review", {
     p: { review_id: reviewId, actor_hr_id: viewer.hrId, decision, note: cleanText(body.note, 500), refusal_reason: refusalReason },
@@ -778,6 +809,8 @@ export async function restoreValidation(viewer: PhoenixCrmViewer, raw: unknown):
   const body = (raw && typeof raw === "object" ? raw : {}) as Row;
   if (!isUuid(body.reviewId)) throw validationError("Choose the rejection to take back.");
   const note = cleanText(body.note, 500);
+  // Taking a rejection back validates him again, so the short-name rule holds here as on Approve.
+  await refuseApprovalOfShortName(await reviewCustomerId(String(body.reviewId).toLowerCase()));
 
   // `review_not_found`, `review_not_rejected` and `place_not_retired` come back worded by the
   // module's refusal table (db.ts).
@@ -1191,6 +1224,7 @@ export async function approveValidatedPlace(viewer: PhoenixCrmViewer, raw: unkno
     await tellDecisionComment(viewer, "place", placeId, note);
     return { placeId, approved: false };
   }
+  await refuseApprovalOfShortName(place.customer_id);
 
   let reviewId = existing ? String(existing.id) : null;
   if (!reviewId) {

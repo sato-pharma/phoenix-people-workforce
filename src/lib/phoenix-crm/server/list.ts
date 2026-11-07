@@ -42,6 +42,9 @@ import {
   fullNameMatchPercent,
   fullNameRuling,
   parseDoctorFullName,
+  VALIDATION_FULL_NAME_CODE,
+  VALIDATION_FULL_NAME_MISSING,
+  validationNeedsFullName,
 } from "@/lib/phoenix-crm/pm-name-rules";
 import {
   cleanText,
@@ -2176,9 +2179,12 @@ async function validationSubject(seatId: string, isTest: boolean, mode: string, 
     //
     // Both read at once, and the reference for this one contact only (2026-10-16 performance audit):
     // the entry is the one the whole list would have given, and the row id never fails the read.
-    const [entry, customerId] = await Promise.all([loadReferenceEntry(seatId, isTest, contact), customerIdForReference(seatId, isTest, contact)]);
+    const [entry, own] = await Promise.all([loadReferenceEntry(seatId, isTest, contact), customerRowForReference(seatId, isTest, contact)]);
     if (!entry) return null;
-    return { name: String(entry.name), listType: parseListType(entry.list_type), customerId };
+    // His name as HIS ROW carries it: iReports360's for a row never renamed, and the full name he wrote
+    // on "Change the details" for one that was — the reference list keeps the contact's own name for
+    // ever (owner, 2026-11-07: a doctor already at three names is never asked for them again).
+    return { name: own?.name || String(entry.name), listType: parseListType(entry.list_type), customerId: own?.id ?? null };
   }
   if (mode === "listed") {
     const { data, error } = await getSupabaseAdmin()
@@ -2196,11 +2202,11 @@ async function validationSubject(seatId: string, isTest: boolean, mode: string, 
 }
 
 /** The seat's own row for a carried-over contact, if it has one yet. Null is never an error here. */
-async function customerIdForReference(seatId: string, isTest: boolean, contactCrmId: number): Promise<string | null> {
+async function customerRowForReference(seatId: string, isTest: boolean, contactCrmId: number): Promise<{ id: string; name: string } | null> {
   if (!Number.isFinite(contactCrmId)) return null;
   const { data, error } = await getSupabaseAdmin()
     .from("phoenix_crm_customers")
-    .select("id")
+    .select("id, name")
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("reference_contact_crm_id", contactCrmId)
@@ -2212,7 +2218,23 @@ async function customerIdForReference(seatId: string, isTest: boolean, contactCr
     return null;
   }
   const row = (data ?? null) as Row | null;
-  return row ? String(row.id) : null;
+  return row ? { id: String(row.id), name: String(row.name ?? "").trim() } : null;
+}
+
+/**
+ * 🔴 THE THREE NAMES AT THE DOOR (owner, 2026-11-07, pm-name-rules.ts — "Don't accept from the beginning
+ * the two names"). A clinic doctor already on the list (`reference` or `listed`, seated or not) whose
+ * name is one or two words is validated only with his first, middle and last name, and that full name is
+ * what every check below judges against his board — so a match validates him with it in ONE save. Asked
+ * before any check runs and before anything is written; null when nothing is asked (AM, a pharmacy, a
+ * doctor already at three names, `new` and `outside`, which ask for the three boxes themselves).
+ */
+function fullNameAtValidation(subject: ValidationSubject | null, body: Row): string | null {
+  if (!subject || !validationNeedsFullName(subject)) return null;
+  if (!body.nameParts || typeof body.nameParts !== "object") throw validationError(VALIDATION_FULL_NAME_MISSING, VALIDATION_FULL_NAME_CODE);
+  const full = parseDoctorFullName(body.nameParts, null);
+  if (!full.ok) throw validationError(full.error, VALIDATION_FULL_NAME_CODE);
+  return cleanText(full.value, CUSTOMER_NAME_MAX) ?? full.value;
 }
 
 /**
@@ -2397,7 +2419,19 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   // point of its own — `body.seated` instead of `body.place`. Everything below is shared: the mode, the
   // phone, the request a `new` or `outside` customer files, the notice, the restamp.
   const seated = seatedDraftOf(body);
+  const mode = String(body.mode ?? "");
+  // A customer ALREADY ON THE LIST is read first, beside the venue: his name decides whether the three
+  // names are asked (`fullNameAtValidation`), and that is answered before any check or write below. An
+  // id that could never name him is left to the mode's own refusal further down.
+  const contactId = Number(body.referenceContactCrmId);
+  const onListRead =
+    (mode === "reference" && Number.isSafeInteger(contactId) && contactId > 0) || (mode === "listed" && isUuid(body.customerId))
+      ? validationSubject(seat.seatId, isTest, mode, body)
+      : Promise.resolve(null);
+  onListRead.catch(() => undefined);
   const venue = seated ? await sharedPlaceForSeating({ seatId: seat.seatId, isTest, sharedPlaceId: seated.sharedPlaceId }) : null;
+  const onListSubject = await onListRead;
+  const fullName = fullNameAtValidation(onListSubject, body);
   // The rep's own seating only: a manager validating beside the rep keeps today's door, as his own visit does.
   if (seated && venue && validatedAs === "rep") {
     await refuseSeatingAwayFromBuilding({ viewer, seatId: seat.seatId, isTest, venue, seated, customerId: isUuid(body.customerId) ? String(body.customerId).toLowerCase() : null });
@@ -2438,7 +2472,6 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     first_stage: firstRequestStage(territoryReviewer(viewer.org, seat.seatId) !== null),
   };
   let proposedGrade: PhoenixCrmGrade | null = null;
-  const mode = String(body.mode ?? "");
   // A manager validates a customer who is ALREADY ON THE LIST, and nothing else: carried over from
   // iReports360 (`reference`) or loaded from the SFE's sheet (`listed`, added on the owner's answer of
   // 2026-10-03, asked directly). Both are the same act — somebody else admitted him and graded him, and
@@ -2494,6 +2527,9 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   } else {
     throw validationError("Reload the page and try again.");
   }
+  // The full name he wrote is saved with the validation, in the same transaction — a refused save writes
+  // neither, and a held one keeps it so the decider reads the name the board was held against.
+  if (fullName) payload.full_name = fullName;
   // 🔴 THE PLACE ROW IS BUILT WHILE THE CHECKS RUN (2026-10-16 Phoenix CRM performance audit).
   // `placePayload` reads the photo's slot and resolves the point's brick and address, and nothing the
   // checks below decide reads or changes any of it — so it starts now and is awaited exactly where it
@@ -2502,10 +2538,14 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   placeRowRead?.catch(() => undefined);
   // The owner's two steps (2026-10-03), before anything is written: is the Google listing this account,
   // and did he stand at it. A mismatch throws here; a hold is saved but not validated.
-  const subject =
+  // A doctor validated with his three names is judged by them: the Google check, the signboard and the
+  // timetable all read the FULL name against the board (owner, 2026-11-07 — one step, not two).
+  const subject: ValidationSubject | null =
     mode === "new" || mode === "outside"
       ? { name: String(payload.name), listType: parseListType(payload.list_type), customerId: null }
-      : await validationSubject(seat.seatId, isTest, mode, body);
+      : onListSubject && fullName
+        ? { ...onListSubject, name: fullName }
+        : onListSubject;
   let signboard: { check: PhoenixCrmSignboardCheck; record: Record<string, unknown>; holds: boolean } | null = null;
   let schedule: PhoenixCrmScheduleCheck | null = null;
   let heldBecause: ScheduleHeldBecause | null = null;
