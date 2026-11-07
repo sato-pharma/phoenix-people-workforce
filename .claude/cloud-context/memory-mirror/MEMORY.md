@@ -29,7 +29,7 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [the spare's suite dies at the CV worker test](spare-suite-crashes-at-the-cv-worker-test.md) - 0xC0000005 at test #2815, intermittent, any Node 24; the C10 red was `Path` casing (fixed in the script).
+- 🔴 [the repo is PUBLIC since 2026-11-07, his word, for free Actions](the-repo-is-public-since-2026-11-07.md) - every push is world-readable; never commit data files or names; private again is his word only.
 
 
 
