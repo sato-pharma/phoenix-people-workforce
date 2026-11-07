@@ -475,6 +475,9 @@ export function runPhoenixCrmDoubleVisitPlanTests(): void {
       holding("@/lib/phoenix-crm/server/double-visit-plans"),
       [
         "app/api/phoenix-crm/double-visit-plans/route.ts",
+        // Expense Approvals' Phoenix CRM evidence (2026-11-07) reads one person's ride-along days through the
+        // service's own `readDoubleVisitPlansForTrip`; that reading is the Super Admin approver's alone.
+        "src/lib/outstation/crm-trip-evidence-reader.ts",
         // The Visit report generator's loader (2026-10-15) reads the plans through the service's own
         // `readDoubleVisitPlansForReport`; the screen is the Super Admin's and the SFE Manager's alone.
         "src/lib/phoenix-crm/server/visit-report.ts",

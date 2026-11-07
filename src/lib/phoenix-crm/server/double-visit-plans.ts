@@ -397,6 +397,31 @@ export async function readDoubleVisitPlansForReport(
   );
 }
 
+/**
+ * One person's ride-along days between two days — as the district manager who planned it or as the rep
+ * joined — for Expense Approvals' Phoenix CRM evidence (2026-11-07). That reading is the Super Admin
+ * approver's alone; it reads the table HERE so this service stays the one place that touches it.
+ */
+export async function readDoubleVisitPlansForTrip(hrId: string, window: { from: string; to: string }): Promise<Row[]> {
+  const read = (column: "manager_hr_id" | "rep_hr_id") =>
+    fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_double_visit_plans")
+          .select("id, plan_date, manager_hr_id, rep_hr_id")
+          .eq("is_test", false)
+          .eq(column, hrId)
+          .gte("plan_date", window.from)
+          .lte("plan_date", window.to),
+      { cursorColumn: "id", cursorOf: (row) => (row.id == null ? null : String(row.id)) },
+    );
+  const byId = new Map<string, Row>();
+  for (const rows of await Promise.all([read("manager_hr_id"), read("rep_hr_id")])) {
+    for (const row of rows) byId.set(String(row.id), row);
+  }
+  return [...byId.values()];
+}
+
 /** GET: one week of a district manager's double-visit plan, with how each planned half-day went. */
 export async function loadDoubleVisitPlan(
   viewer: PhoenixCrmViewer,

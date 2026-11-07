@@ -49,6 +49,7 @@ import type { DailyCaps } from "@/lib/phoenix-crm/plan-week-draft";
 import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
 import type { PhoenixCrmGrade, PhoenixCrmDoctorListType } from "@/lib/phoenix-crm/types";
 import type { MonthlyPlannerView, MonthlyWeekView, PlanDayView } from "@/lib/phoenix-crm/view-types";
+import { PlanOutstationTrips } from "@/components/phoenix-crm/plan-outstation-trips";
 
 /** How many left-out names show before "Show all". */
 const LEFT_OUT_SHOWN = 12;
@@ -277,6 +278,12 @@ export function PlanReviewSteps({
       >
         {step === 1 ? (
           <>
+            {/* A business trip in this week (owner, 2026-11-07: "Trip on the CRM side"). */}
+            <PlanOutstationTrips
+              from={week.weekStart}
+              to={week.days.at(-1)?.date ?? week.weekStart}
+              trips={view.outstationTrips}
+            />
             <CrmBlock
               actions={
                 <span className="flex max-w-full flex-wrap gap-1">

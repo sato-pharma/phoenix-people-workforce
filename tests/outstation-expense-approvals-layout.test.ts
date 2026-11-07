@@ -194,7 +194,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   // The decision bar: the page's ONE sticky footer, holding Approve, Reject and Save.
   assert.match(bar, /"sticky bottom-0 z-20 border-t-2 border-slate-900 bg-white lg:hidden"/, "HEADLINE: the sticky row exists for a phone only — nothing is fixed over the trip on a desktop");
   assert.match(bar, /Adjust · reason/, "the row is slim: the deduction and the reason fold out on request");
-  assert.match(bar, /onClick=\{onApprove\}/, "Approve lives in the bar");
+  assert.match(bar, /onClick=\{approve\}/, "Approve lives in the bar (it applies a pre-cut first)");
   assert.match(bar, /Save \{formatNumberValue\(dirtyCount\)\}/, "and so does Save");
   assert.doesNotMatch(workspace, /sticky bottom-4/, "the old floating Save bar is gone — never two bottom bars");
   // The Adjust panel (owner's review, 2026-11-07, 5 of 10): Approved dropped to a line of its own,

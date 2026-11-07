@@ -22,8 +22,9 @@ import { stripComments } from "./support/comment-strip.ts";
 // Expense Approvals, working the queue (owner, 2026-11-07 ~01:45, choosing from the enhancements
 // offered): "Rail filter: Needs a look / Clean", "Suggested deduction for idle days",
 // "Decide-and-advance", and "Oldest first + awaiting N days". On the idle-day rule he answered
-// "LET ME DECIDE": the screen OFFERS the allowance share and he picks it per trip — nothing is
-// deducted on its own.
+// "LET ME DECIDE": the screen OFFERS the allowance share; later that night he chose "Approver sees
+// it pre-cut" — Approve applies the per-idle-day share unless he keeps the full claim
+// (tests/outstation-crm-trip-evidence.test.ts pins the pre-cut).
 
 export function runOutstationExpenseApprovalsQueueTests() {
   // ── 1. Needs a look / Clean ─────────────────────────────────────────────────────────────────

@@ -118,13 +118,13 @@ export function runOutstationApprovalStateTests() {
     "a rejected trip must never be flipped to approved inside a batch — that decision has to be undone deliberately, or nobody notices until payroll runs",
   );
   assert.equal(
-    plan.approvableTripIds.length + plan.needsReasonTripIds.length + plan.notPendingTripIds.length,
+    plan.approvableTripIds.length + plan.needsPreCutTripIds.length + plan.needsReasonTripIds.length + plan.notPendingTripIds.length,
     5,
     "every selected trip is accounted for, so the UI can always explain why one did not get approved",
   );
   assert.deepEqual(
     planBulkApproval([]),
-    { approvableTripIds: [], needsReasonTripIds: [], notPendingTripIds: [] },
+    { approvableTripIds: [], needsPreCutTripIds: [], needsReasonTripIds: [], notPendingTripIds: [] },
     "an empty selection approves nothing rather than throwing",
   );
 
