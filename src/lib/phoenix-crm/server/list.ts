@@ -39,7 +39,6 @@ import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type 
 import {
   boardNamesOf,
   doctorNeedsFullName,
-  FULL_NAME_REFUSED,
   fullNameMatchPercent,
   fullNameRuling,
   parseDoctorFullName,
@@ -2763,9 +2762,11 @@ export async function renameCustomer(
 /**
  * The name `renameCustomer` saves, and the full name it holds for the Super Admin (owner, 2026-11-07,
  * pm-name-rules.ts). A clinic doctor's NEW name must be three names and is held against what was
- * read off his signboard or timetable: 60%+ is saved, under 40% refused, in between the old name stays
- * and the new one waits — the doctor is no longer blocked meanwhile. An AM account, a pharmacy and a
- * name left as it was keep the old rule.
+ * read off his signboard or timetable: 60%+ is saved; anything less is never refused — the old name
+ * stays and the new one waits for the Super Admin or the SFE Manager (owner, 2026-11-07: "let a refused
+ * full name wait for my decision instead of blocking the rep"), because a misread signboard must never
+ * strand the rep. The doctor is no longer blocked meanwhile, and the rep is never told it waits: his
+ * save simply succeeds. An AM account, a pharmacy and a name left as it was keep the old rule.
  */
 async function fullNameForRename(
   seatId: string,
@@ -2810,7 +2811,6 @@ async function fullNameForRename(
   const percent = fullNameMatchPercent(name, boardNames);
   const validated = current.validated_at !== null && current.validated_at !== undefined;
   const ruling = fullNameRuling(percent, validated);
-  if (ruling === "refuse") throw validationError(FULL_NAME_REFUSED);
   if (ruling === "hold") return { name: String(current.name), hold: { name, percent, boardNames: boardNames.slice(0, 12) } };
   return { name, hold: null };
 }

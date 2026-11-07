@@ -23,8 +23,12 @@ import {
  * by the wait.
  *
  * 🔴 THE FULL NAME IS HELD AGAINST THE SIGNBOARD OR TIMETABLE ALREADY READ FOR HIM, "DO NOT STRICT
- * REJECTION OR FOOLISH APPROVALS": 60% or more is saved, under 40% is refused, and in between it waits
- * for the Super Admin. The percentage is counted over the words the BOARD shows, because "some
+ * REJECTION OR FOOLISH APPROVALS": 60% or more is saved, and anything less waits for the Super Admin or
+ * the SFE Manager — never refused (owner, 2026-11-07: "let a refused full name wait for my decision
+ * instead of blocking the rep"), because a misread signboard must never strand the rep: the reader once
+ * took a door sign for three other names, and the name the rep copied off it scored 0%. The format
+ * checks below still refuse an empty box, a title, a place word or two names in one box. The
+ * percentage is counted over the words the BOARD shows, because "some
  * signboards have only 2 names and i asking for 3" — a two-name plate matching both is 100%. A board
  * showing one word cannot confirm three (50%, so it waits), and a name whose given name is not on the
  * board never passes on its father's and family name alone.
@@ -40,14 +44,8 @@ export const DOCTOR_NAME_FIELDS: ReadonlyArray<{ key: keyof DoctorNameParts; lab
   { key: "last", label: "Last name" },
 ];
 
-/** A full name saved at once. */
+/** A full name saved at once; anything less waits for the Super Admin or the SFE Manager. */
 export const FULL_NAME_APPROVE_AT = 60;
-/** Below this the name is refused; between the two it waits for the Super Admin. */
-export const FULL_NAME_REFUSE_BELOW = 40;
-
-/** What the rep reads when the name does not match the board. His own fix, never who checked. */
-export const FULL_NAME_REFUSED =
-  "This name does not match the name on the signboard. Write the first, middle and last name as the sign shows them.";
 
 /** What the plan and Add visit say about a blocked doctor: the way out, in his own words. */
 export function fullNameNeededSentence(name: string): string {
@@ -246,22 +244,21 @@ export function fullNameMatchPercent(fullName: string, boardNames: readonly stri
   return Math.max(...boards.map((board) => oneBoardScore(typed, board)));
 }
 
-export type FullNameRuling = "save" | "hold" | "refuse";
+export type FullNameRuling = "save" | "hold";
 
 /**
- * Save, hold for the Super Admin, or refuse. With nothing read off a board: a doctor not validated yet
+ * Save, or hold for the Super Admin — never refuse: a board the reader misread must not strand the rep
+ * (owner, 2026-11-07). With nothing read off a board: a doctor not validated yet
  * is saved, because his door will hold the name against the sign; a validated one waits for the Super
  * Admin, because nothing else will ever look.
  */
 export function fullNameRuling(percent: number | null, validated: boolean): FullNameRuling {
   if (percent === null) return validated ? "hold" : "save";
-  if (percent >= FULL_NAME_APPROVE_AT) return "save";
-  if (percent < FULL_NAME_REFUSE_BELOW) return "refuse";
-  return "hold";
+  return percent >= FULL_NAME_APPROVE_AT ? "save" : "hold";
 }
 
 /**
- * A clinic doctor's full name that matched his signboard 40–59%, or a validated doctor whose board was
+ * A clinic doctor's full name that matched his signboard under 60%, or a validated doctor whose board was
  * never read — waiting for a person (owner, 2026-11-07, pm-name-rules.ts). The same people decide it
  * as decide Place checks: the Super Admin and the SFE Manager. The rep is never told it waits; the doctor
  * is not blocked meanwhile.

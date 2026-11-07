@@ -61,7 +61,7 @@ export default async function PhoenixCrmValidationReviewsPage({ searchParams }: 
     loadValidatedPlaces(viewer),
     loadReopenedCustomers(viewer),
     loadSharedPlaceBoard(viewer),
-    // Doctors' full names that matched their board only in part (owner, 2026-11-07).
+    // Doctors' full names that matched their board under 60% (owner, 2026-11-07).
     loadHeldFullNames(viewer),
   ]);
   const validated = validatedRead.rows;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   boardNamesOf,
@@ -6,7 +7,6 @@ import {
   doctorNamePartProblem,
   doctorNeedsFullName,
   FULL_NAME_APPROVE_AT,
-  FULL_NAME_REFUSE_BELOW,
   fullNameMatchPercent,
   fullNameRuling,
   joinDoctorName,
@@ -21,8 +21,8 @@ import type { PlannerCustomer } from "@/lib/phoenix-crm/suggestions";
  * Owner, 2026-11-07 (pm-name-rules.ts): a clinic doctor's name is first, middle and last — three
  * required boxes, each a real name; any doctor on the list with one or two names is blocked from the plan
  * and Add visit until the full name is written; the full name is held against his signboard — 60%+
- * saved, under 40% refused, in between it waits for the Super Admin — "do not strict rejection or
- * foolish approvals".
+ * saved, anything less waits for the Super Admin, never refused — "do not strict rejection or foolish
+ * approvals", and "let a refused full name wait for my decision instead of blocking the rep".
  */
 
 function checkEachBoxIsARealName(): void {
@@ -92,10 +92,15 @@ function checkTheBoardMatch(): void {
   assert.equal(fullNameMatchPercent("أحمد كمال حسن", ["سامي فؤاد", "أحمد كمال"]), 100);
   assert.equal(fullNameMatchPercent("أحمد كمال حسن", []), null);
 
-  assert.equal(fullNameRuling(FULL_NAME_APPROVE_AT, true), "save");
-  assert.equal(fullNameRuling(FULL_NAME_APPROVE_AT - 1, true), "hold");
-  assert.equal(fullNameRuling(FULL_NAME_REFUSE_BELOW, true), "hold");
-  assert.equal(fullNameRuling(FULL_NAME_REFUSE_BELOW - 1, true), "refuse");
+  assert.equal(FULL_NAME_APPROVE_AT, 60);
+  assert.equal(fullNameRuling(60, true), "save");
+  assert.equal(fullNameRuling(60, false), "save");
+  // Never refused (owner, 2026-11-07: "let a refused full name wait for my decision instead of blocking
+  // the rep") — a misread sign scored her correct name 0%, and the refusal stranded her.
+  for (const percent of [0, 39, 59]) {
+    assert.equal(fullNameRuling(percent, true), "hold", `${percent}% on a validated doctor waits for the Super Admin`);
+    assert.equal(fullNameRuling(percent, false), "hold", `${percent}% on a doctor not validated yet waits for the Super Admin`);
+  }
   assert.equal(fullNameRuling(null, true), "hold", "a validated doctor with no board read waits for a person");
   assert.equal(fullNameRuling(null, false), "save", "his door will hold the name against the sign");
 
@@ -103,6 +108,20 @@ function checkTheBoardMatch(): void {
   assert.deepEqual(boardNamesOf({ signs: [{ personNames: ["Ahmed Kamal"] }] }), ["Ahmed Kamal"]);
   assert.deepEqual(boardNamesOf({ personNames: [], signText: "د أحمد كمال" }), ["د أحمد كمال"]);
   assert.deepEqual(boardNamesOf(null), []);
+}
+
+function checkTheRenameNeverRefusesABoardMismatch(): void {
+  // The server's rename used to throw "This name does not match the name on the signboard…" under 40%.
+  // A board-mismatch now waits for the Super Admin; only the format checks may still refuse.
+  const source = readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8").replace(/\r\n/g, "\n");
+  const start = source.indexOf("async function fullNameForRename(");
+  assert.ok(start >= 0, "fullNameForRename is in list.ts");
+  const end = source.indexOf("\n}\n", start);
+  assert.ok(end > start, "fullNameForRename ends where the next function begins");
+  const body = source.slice(start, end);
+  assert.ok(!source.includes("FULL_NAME_REFUSED"), "list.ts names no board-mismatch refusal");
+  assert.ok(!body.includes('=== "refuse"'), "fullNameForRename never refuses on the board match");
+  assert.match(body, /if \(ruling === "hold"\) return \{ name: String\(current\.name\), hold:/, "a low match keeps the old name and waits");
 }
 
 function checkACopyNeverPlacesABlockedDoctor(): void {
@@ -135,5 +154,6 @@ export function runPhoenixCrmDoctorFullNameTests(): void {
   checkTheEditOpensOnWhatHeWrote();
   checkWhoIsBlocked();
   checkTheBoardMatch();
+  checkTheRenameNeverRefusesABoardMismatch();
   checkACopyNeverPlacesABlockedDoctor();
 }
