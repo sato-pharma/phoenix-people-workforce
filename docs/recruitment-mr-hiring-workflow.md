@@ -36,6 +36,11 @@ outcome sync and Mark as hired therefore move it without any second write that c
 
 ## Section by section
 
+- **New CVs only** (owner, 7 Nov 2026). The workflow holds only CVs received from Sunday 8 November 00:00
+  Cairo (`vocabulary.ts`, `isInMrWorkflow`). A candidate received before it is not on the page, has no journey
+  there and no step can be recorded or booked for them; the workspace draws no step line on them, and they
+  finish in the workspace as before. On the day it shipped, the page had listed 54 candidates the old flow had
+  already shortlisted or sent to a manager as "Screen the CV".
 - **§1–2 One channel.** Both company WhatsApp lines count as official (owner, 7 Nov 2026: 01159888247 and
   01098500699). A Medical Rep CV received from 8 November 00:00 Cairo by email, the website or by hand is
   **held** ("Held · not on a company WhatsApp") and not considered (`official-line.ts`, `isHeldOffChannel`).
@@ -65,6 +70,15 @@ outcome sync and Mark as hired therefore move it without any second write that c
 - **§10 One timeline, salary hidden.** Everyone involved reads the candidate's hiring journey. **The proposed
   salary leaves the server only for the HR Manager, Talent Acquisition and the NSM who wrote it** (owner,
   7 Nov 2026); everyone else, the CEO included, receives the recommendation without it.
+
+- **The CV and the application at every step, for everyone** (owner, 7 Nov 2026). The hiring journey sheet
+  carries the candidate's CV and their application — every question and answer, under the labels the
+  workspace's Medical Rep tab uses — whatever step they are on: beside the journey on a wide screen, so the CV
+  stays in view while a result is written, and under the current step on a phone. It is read from
+  `/api/recruitment/mr-hiring/[candidateId]/cv`, which admits exactly the people who read the journey. The
+  DSM's feedback, the RSM's evaluation and the NSM's result and recommendation open in that sheet. A manager
+  reads the CV with the phone numbers masked and no download (the manager portal's own rule — HR books every
+  Medical Rep interview); the HR Manager, Talent Acquisition and the CEO read it in full.
 
 ## Decisions made while building
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // The Medical Rep workflow's steps (owner's email, effective Sunday 8 November 2026): where a
 // candidate is, what comes next and who it waits for. The stage is DERIVED from the bookings, results,
@@ -15,7 +16,8 @@ import {
   type MrStepResultFact,
 } from "../src/lib/recruitment/mr-hiring/stage.ts";
 import { mrStageHeadline, mrStageStateLine } from "../src/lib/recruitment/mr-hiring/display.ts";
-import type { MrInterviewRound, MrResult, MrResultStep } from "../src/lib/recruitment/mr-hiring/vocabulary.ts";
+import { isInMrWorkflow, type MrInterviewRound, type MrResult, type MrResultStep } from "../src/lib/recruitment/mr-hiring/vocabulary.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const NOW = new Date("2026-11-12T12:00:00.000Z");
 
@@ -97,6 +99,21 @@ export function runRecruitmentMrHiringStageTests() {
   const fresh = mrHiringStage(facts(), NOW);
   assert.ok(fresh.open && fresh.step === "screening" && fresh.state === "to_record" && fresh.action === "record_screening", "a new CV waits for HR screening");
   assert.equal(mrStageHeadline(fresh), "Step 1 of 9 · New CV · HR screening", "the headline numbers the step in the email's own words");
+
+  // New CVs only (owner, 7 Nov 2026): a CV received before 8 Nov 00:00 Cairo is not in the workflow at
+  // all — not on the page, no journey, nothing recorded or booked; it finishes in the workspace.
+  assert.equal(isInMrWorkflow("2026-11-07T22:00:00.000Z"), true, "a CV at midnight Cairo on 8 Nov is in the workflow");
+  assert.equal(isInMrWorkflow("2026-11-07T21:59:59.000Z"), false, "a CV from a second before is not");
+  assert.equal(isInMrWorkflow(null), false, "a CV with no received date is left out, never guessed in");
+  assert.equal(isInMrWorkflow("not a date"), false, "and so is one with an unreadable date");
+  const factsDb = stripComments(readFileSync("src/lib/recruitment/mr-hiring/facts-db.ts", "utf8"));
+  assert.match(
+    factsDb,
+    /const live = candidates\.filter\(\(row\) => !row\.archived_at && isInMrWorkflow\(row\.created_at\)\)/,
+    "the one read behind the page, the journey and every write leaves an earlier CV out",
+  );
+  const openedCv = stripComments(readFileSync("src/components/recruitment/workspace/opened-cv.tsx", "utf8"));
+  assert.match(openedCv, /const showMrStep = hr && isInMrWorkflow\(row\.receivedAt\)/, "the workspace draws no step line on an earlier CV");
 
   // §2 — held: from 8 Nov 00:00 Cairo (22:00 UTC on the 7th) a CV that reached no company WhatsApp.
   assert.equal(isHeldOffChannel({ onOfficialLine: false, receivedAt: "2026-11-07T22:00:00.000Z" }), true, "midnight Cairo on 8 Nov is inside the workflow");

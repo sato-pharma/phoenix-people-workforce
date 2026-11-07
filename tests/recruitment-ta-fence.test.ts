@@ -468,6 +468,7 @@ const BOUNDARIES: Array<[file: string, calls: Record<string, number>]> = [
   ["app/api/recruitment/mr-hiring/[candidateId]/recommendation/route.ts", { assertCandidateVisible: 1 }],
   ["app/api/recruitment/mr-hiring/[candidateId]/book/route.ts", { assertCandidateVisible: 1 }],
   ["app/api/recruitment/mr-hiring/[candidateId]/journey/route.ts", { assertCandidateVisible: 1 }],
+  ["app/api/recruitment/mr-hiring/[candidateId]/cv/route.ts", { assertCandidateVisible: 1 }],
   // The "My Candidates" routes — she holds hiring_interviews, so a CV pushed to her reaches these.
   ["app/api/recruitment/hiring-manager/applications/route.ts", { fenceRowsByCandidate: 1 }],
   ["app/api/recruitment/hiring-manager/applications/[id]/interviews/route.ts", { assertApplicationVisible: 2 }],
