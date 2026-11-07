@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { planBulkApproval } from "../src/lib/outstation/approval-state.ts";
 import { buildCrmTripEvidence, type CrmTripDayInput } from "../src/lib/outstation/crm-trip-evidence.ts";
+import { daysBeforePhoenixCrm } from "../src/lib/phoenix-crm/live-team-rules.ts";
 import { foldPlanOutstationTrips, planOutstationTripLine } from "../src/lib/phoenix-crm/outstation-trip-banner.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -121,6 +122,55 @@ export function runOutstationCrmTripEvidenceTests() {
     "danger",
     "HEADLINE: a strong location warning is a danger signal",
   );
+
+  // ── 3b. Before Phoenix CRM: the old system holds the day, so it is no signal (owner, 2026-11-07, on
+  // trip 112 — 1 Sep, eight visits in the old system, read "Nothing in Phoenix CRM" in amber).
+  const windows = [
+    { startsOn: "2026-10-03", stopsOn: null, teamSeatId: "team-delta" },
+    { startsOn: "2026-10-10", stopsOn: "2026-10-24", teamSeatId: "team-cairo" },
+  ];
+  assert.deepEqual(
+    daysBeforePhoenixCrm(windows, new Set(["team-delta"]), ["2026-10-02", "2026-10-03", "2026-11-01"]),
+    ["2026-10-02"],
+    "HEADLINE: a day before the team's Saturday is before Phoenix CRM; from it on, it is counted",
+  );
+  assert.deepEqual(
+    daysBeforePhoenixCrm(windows, new Set(["team-cairo"]), ["2026-10-09", "2026-10-10", "2026-10-23", "2026-10-24"]),
+    ["2026-10-09", "2026-10-24"],
+    "a stop gives the day back to the old system from its Saturday",
+  );
+  assert.deepEqual(daysBeforePhoenixCrm(windows, new Set(["team-elsewhere"]), ["2026-10-20"]), ["2026-10-20"], "a person in no started team is before Phoenix CRM on every day");
+
+  const oldTrip = buildCrmTripEvidence({
+    beforePhoenix: ["2026-09-01"],
+    claimedKm: null,
+    days: [day("2026-09-01", { plan: null })],
+    destination: DEST,
+    home: HOME,
+    isCar: true,
+    warnings: [],
+  });
+  assert.deepEqual(oldTrip.emptyDays, [], "HEADLINE: a day before Phoenix CRM is never 'nothing in Phoenix CRM'");
+  assert.deepEqual(oldTrip.unplannedDays, [], "nor 'not in a sent plan'");
+  assert.equal(oldTrip.days[0].beforePhoenix, true);
+  assert.equal(oldTrip.signal.tone, "neutral", "HEADLINE: a trip wholly before Phoenix CRM reads neutral, never amber");
+  assert.match(oldTrip.signal.sentence, /^Before Phoenix CRM/);
+  const straddle = buildCrmTripEvidence({
+    beforePhoenix: ["2026-10-02"],
+    claimedKm: null,
+    days: [day("2026-10-02", { plan: null }), day("2026-10-03", { plan: null })],
+    destination: DEST,
+    home: HOME,
+    isCar: false,
+    warnings: [],
+  });
+  assert.deepEqual(straddle.emptyDays, ["2026-10-03"], "HEADLINE: a counted day with nothing still reads empty beside one before the start");
+  assert.equal(straddle.signal.tone, "warn");
+  const evidenceReader = stripComments(readFileSync("src/lib/outstation/crm-trip-evidence-reader.ts", "utf8"));
+  assert.match(evidenceReader, /daysBeforePhoenixCrm\(windows, teams, dates\)/, "HEADLINE: the reader asks the rule with the person's own teams");
+  assert.match(evidenceReader, /beforePhoenix,\s*claimedKm/, "and hands the days to the builder");
+  assert.match(readFileSync("src/lib/phoenix-crm/server/live-teams.ts", "utf8"), /export async function loadTeamCountedWindows/, "the starts are read in the table's own file");
+  assert.match(readFileSync("src/components/outstation/expense-approvals/crm-trip-section.tsx", "utf8"), /day\.beforePhoenix \? "Before Phoenix CRM"/, "the day says so in words");
 
   // ── 4. The trip on the CRM side ─────────────────────────────────────────────────────────────
   const trips = foldPlanOutstationTrips([
