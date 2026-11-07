@@ -118,6 +118,9 @@ export type ExpenseTripRecord = {
    * photo, after the trip, not live, …). Phoenix-submitted requests only; absent on an imported row.
    * Read by the Expense Approvals rail's "Needs a look" filter (expense-approval-triage.ts). */
   departurePhotoFlagged?: boolean;
+  /** True when a departure photo is on file but holds no GPS position, so it could never be checked
+   * against the arrival photo. Phoenix-submitted requests only. Read by the same rail filter. */
+  departurePhotoNoGps?: boolean;
   description: string;
   /** Doctor/pharmacy/institution split of the trip's REGULAR CRM visits — display-only context,
    * present only for Phoenix-submitted outstation requests whose workload snapshot recorded it
@@ -128,6 +131,10 @@ export type ExpenseTripRecord = {
    * `description`, which falls back to a placeholder or the system's approval reason, and never
    * `hrComment`, which is HR's decision box. */
   employeeNote?: string | null;
+  /** The allowance guard's sentences ("No allowance — a trip to Cairo from a regional base …"),
+   * split out of the stored notes by parseOutstationDescription so the employee's note holds only
+   * the employee's words. Display-only; Phoenix-submitted requests only. */
+  allowanceNotices?: string[];
   hrId?: string | null;
   from: string;
   hr: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, ChevronUp, Loader2, RotateCcw, Sparkles, Undo2, XCircle } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { adminThumbBarDepthClassName } from "@/components/admin/admin-design-tokens";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/form-tokens";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { isAdjustedAmount, isRejectedStatus } from "@/lib/outstation/approval-state";
-import { idleDayDeductionSuggestions } from "@/lib/outstation/idle-day-deduction";
+import { idleDayDeductionSuggestions, reasonAfterIdleDayPick } from "@/lib/outstation/idle-day-deduction";
 import { approvedAmountFromDeduction, deductionFromApprovedAmount } from "@/lib/outstation/payable";
 import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
@@ -79,6 +79,23 @@ export function DecisionBar({
   // Which trip's bar is unfolded (the deduction and the reason box). One row otherwise.
   const [openFor, setOpenFor] = useState<string | null>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  // The reason box grows with what is in it — WRAPPED lines too, not only typed line breaks — from
+  // three rows to ten, then scrolls inside (owner's review, 2026-11-07: a long system sentence sat
+  // in a one-line box). Measured from scrollHeight after every change and every unfold.
+  const reasonText = decision?.hrComment ?? "";
+  useEffect(() => {
+    const box = reasonRef.current;
+    if (!box) return;
+    const style = window.getComputedStyle(box);
+    const line = Number.parseFloat(style.lineHeight) || 20;
+    const borders = Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth);
+    const chrome = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom) + borders;
+    box.style.height = "auto";
+    const wanted = box.scrollHeight + borders;
+    const ceiling = line * 10 + chrome;
+    box.style.height = `${Math.ceil(Math.min(Math.max(wanted, line * 3 + chrome), ceiling))}px`;
+    box.style.overflowY = wanted > ceiling ? "auto" : "hidden";
+  }, [reasonText, openFor, record?.tripId]);
   // Both placements are mounted at once (CSS picks one per width), so ids must not collide.
   const idPrefix = placement === "rail" ? "rail" : "bar";
   const shellClassName =
@@ -122,10 +139,20 @@ export function DecisionBar({
     !locked && undecided && idle
       ? idleDayDeductionSuggestions({ allowance: record.allowance, idleDays: idle.idleDays, total: record.total, tripDays: idle.tripDays })
       : [];
+  // The sentence the box opened with: the system's hold reason stored on the trip. An undecided
+  // trip's box holds it until he types, so it is labelled as the system's, never read as his.
+  const systemText = (record.hrComment ?? "").trim();
+  const showsSystemText = undecided && systemText !== "" && decision.hrComment.trim() === systemText;
   const applySuggestion = (suggestion: (typeof suggestions)[number]) => {
     onChangeAmount(approvedAmountFromDeduction(record.total, suggestion.deduction));
-    // His own words are never written over; the system's sentence fills an empty box only.
-    if (!decision.hrComment.trim()) onChangeReason(suggestion.reason);
+    // His own words are never written over; the rule lives in idle-day-deduction.ts.
+    const next = reasonAfterIdleDayPick({
+      current: decision.hrComment,
+      picked: suggestion.reason,
+      reasons: suggestions.map((entry) => entry.reason),
+      systemText,
+    });
+    if (next !== null) onChangeReason(next);
   };
   const openPanel = () => {
     setOpenFor(record.tripId);
@@ -154,8 +181,11 @@ export function DecisionBar({
           )}
         </p>
         {decision.hrComment.trim() && !expanded ? (
-          <p className="min-w-0 flex-1 basis-40 break-words text-xs text-slate-600" dir="auto">
-            {decision.hrComment}
+          <p className="min-w-0 flex-1 basis-40 break-words text-xs text-slate-600" data-folded-reason>
+            {showsSystemText ? (
+              <span className="mr-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Why it is held ·</span>
+            ) : null}
+            <bdi dir="auto">{decision.hrComment}</bdi>
           </p>
         ) : null}
         {!locked ? (
@@ -244,22 +274,23 @@ export function DecisionBar({
           {/* Claimed − Deduction = Approved, written out as the equation it is. HR thinks in "cut
               200 off this", so Deduction is the field to type in and Approved follows; typing
               Approved directly still works and back-fills the deduction (one function, payable.ts). */}
-          <div className="flex flex-wrap items-end gap-x-1.5 gap-y-2 lg:gap-x-2">
-            <div>
+          {/* Three equal columns that fit the 19rem rail — label above, input full width — so
+              Approved never drops onto a line of its own (owner's review, 2026-11-07). */}
+          <div className="grid grid-cols-3 items-end gap-x-2 gap-y-2" data-amount-equation>
+            <div className="min-w-0">
               <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Claimed</p>
-              <p className="mt-1 h-10 font-mono text-base font-bold leading-10 text-slate-900 lg:text-lg">{egp(record.total)}</p>
+              <p className="mt-1 h-10 break-words font-mono text-sm font-bold leading-10 text-slate-900">{egp(record.total)}</p>
             </div>
-            <span aria-hidden className="mb-2 font-mono text-lg font-black text-slate-300">−</span>
-            <div>
+            <div className="min-w-0">
               <label
                 className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-600"
                 htmlFor={`${idPrefix}-deduct-${record.tripId}`}
               >
-                Deduction
+                − Deduction
               </label>
               <input
                 className={cn(
-                  phxFieldClassName, "mt-1 block w-20 text-right font-mono lg:w-24",
+                  phxFieldClassName, "mt-1 block w-full min-w-0 text-right font-mono",
                   deduction > 0 ? "border-orange-400 text-orange-700" : "",
                 )}
                 disabled={locked}
@@ -274,14 +305,13 @@ export function DecisionBar({
                 value={String(deduction)}
               />
             </div>
-            <span aria-hidden className="mb-2 font-mono text-lg font-black text-slate-300">=</span>
-            <div>
+            <div className="min-w-0">
               <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`${idPrefix}-amt-${record.tripId}`}>
-                Approved
+                = Approved
               </label>
               <input
                 className={cn(
-                  phxFieldClassName, "mt-1 block w-24 text-right font-mono font-bold lg:w-28",
+                  phxFieldClassName, "mt-1 block w-full min-w-0 text-right font-mono font-bold",
                   adjusted ? "border-orange-400" : "",
                 )}
                 disabled={locked}
@@ -302,7 +332,7 @@ export function DecisionBar({
               />
             </div>
             {adjusted && !locked ? (
-              <button className={cn(phxButtonGhostClassName, "mb-0.5")} onClick={() => onChangeAmount(record.total)} type="button">
+              <button className={cn(phxButtonGhostClassName, "col-span-3 justify-self-start")} onClick={() => onChangeAmount(record.total)} type="button">
                 <RotateCcw className="h-3.5 w-3.5" /> Clear
               </button>
             ) : null}
@@ -376,14 +406,14 @@ export function DecisionBar({
               />
             </div>
             <textarea
-              className={cn(phxTextareaClassName, "mt-1 min-h-10", reasonMissing ? "border-rose-400" : "")}
+              className={cn(phxTextareaClassName, "mt-1 resize-none", reasonMissing ? "border-rose-400" : "")}
               disabled={locked}
               dir="auto"
               id={`${idPrefix}-reason-${record.tripId}`}
               onChange={(event) => onChangeReason(event.target.value)}
               placeholder={adjusted ? "Why is the approved amount different?" : "Optional to approve · required to reject"}
               ref={reasonRef}
-              rows={Math.min(6, Math.max(1, decision.hrComment.split("\n").length))}
+              rows={3}
               value={decision.hrComment}
             />
             {reasonMissing ? (

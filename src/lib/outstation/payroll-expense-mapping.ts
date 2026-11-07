@@ -1,6 +1,8 @@
 import type { PayrollExpenseApproval, ExpenseTripRecord } from "@/lib/payroll/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { outstationClaimRevision } from "@/lib/outstation/claim-revision";
+import { parseOutstationDescription } from "@/lib/outstation/description-format";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { nextPayrollPeriod } from "@/lib/outstation/payroll-period";
 
@@ -328,6 +330,7 @@ export function mapOutstationRequestRowToPayrollApproval(
   // let a display change silently move money. Same divergence class as PR #2951 (total), #2957
   // (components), #2960 (zeroed override) and #2963 (workload).
   const isMeetingTrip = toText(row.expense_type).toLowerCase() === "meeting";
+  const notesParts = parseOutstationDescription(typeof row.notes === "string" ? row.notes : toText(row.notes));
 
   const { meetingAmount, total } = outstationPayableTotal({
     allowanceAmount: allowance,
@@ -340,6 +343,7 @@ export function mapOutstationRequestRowToPayrollApproval(
 
   return {
     allowance,
+    allowanceNotices: notesParts.allowanceNotices,
     amWorkload,
     // Phoenix-submitted requests live in outstation_expense_requests, which has no
     // approved_amount column — HR adjusts amounts on the uploaded expense rows, not here.
@@ -352,9 +356,16 @@ export function mapOutstationRequestRowToPayrollApproval(
     // Read-side only, for the Expense Approvals rail's "Needs a look" filter: whether the departure
     // photo's stored metadata carries any flag. Never read by a pay rule.
     departurePhotoFlagged: departurePhotoFlagged(row.departure_evidence_metadata),
+    // Read-side only, beside it: a departure photo was taken but holds no GPS position, so it
+    // could never be checked against the arrival photo. The rail names it (expense-approval-triage.ts).
+    departurePhotoNoGps: departurePhotoNoGps(row.departure_evidence_image_path, row.departure_evidence_metadata),
     description: toText(row.notes) || "Outstation expense request",
     // The employee's own words, with no placeholder — Expense Approvals shows them on the card.
-    employeeNote: toText(row.notes) || null,
+    // `notes` also carries the machine lines service.ts appends ("Allowance guard: …", "Arrival
+    // photo evidence: source=… gps=… draft_id=…"); the parser cuts them away, read on the RAW text
+    // before any whitespace is collapsed (owner, 2026-11-07: the note box showed that machine text).
+    // The photo evidence is on the photo cards already; the allowance sentences travel on their own.
+    employeeNote: notesParts.note ? toText(notesParts.note) : null,
     from: origin || "Residence",
     hr: hrStatus,
     hrApproved: status === "Approved",
@@ -390,6 +401,13 @@ export function mapOutstationRequestRowToPayrollApproval(
     // The same "manual" fallback the request read uses (service.ts) for a row stamped before the column.
     workloadMatchStatus: toText(row.workload_match_status) || "manual",
   };
+}
+
+/** A departure photo on file whose metadata carries no usable position (none, half a pair, or 0,0). */
+function departurePhotoNoGps(path: unknown, metadata: unknown): boolean {
+  if (!toText(path) || !metadata || typeof metadata !== "object") return false;
+  const meta = metadata as { capturedLatitude?: unknown; capturedLongitude?: unknown };
+  return !usablePosition(meta.capturedLatitude as number | null | undefined, meta.capturedLongitude as number | null | undefined);
 }
 
 /** True only when the stored departure-photo metadata holds at least one flag. */

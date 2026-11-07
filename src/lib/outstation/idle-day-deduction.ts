@@ -61,3 +61,25 @@ export function idleDayDeductionSuggestions(input: IdleDayDeductionInput): IdleD
   });
   return suggestions;
 }
+
+/**
+ * What the reason box holds after he picks a share (owner's review, 2026-11-07). His own words are
+ * never written over. An empty box takes the share's reason. A box still holding only the system's
+ * hold sentence — the text an undecided trip opens with — or a share he picked a moment ago, gets
+ * the share's reason on a new line under that sentence. Before this, the pre-filled box meant the
+ * reason never landed at all. Null = leave the box as it is.
+ */
+export function reasonAfterIdleDayPick(input: {
+  current: string;
+  picked: string;
+  reasons: readonly string[];
+  systemText: string;
+}): string | null {
+  const current = input.current.trim();
+  const systemText = input.systemText.trim();
+  if (!current || input.reasons.includes(current)) return input.picked;
+  const holdsSystemText =
+    systemText !== "" &&
+    (current === systemText || input.reasons.some((reason) => current === `${systemText}\n${reason}`));
+  return holdsSystemText ? `${systemText}\n${input.picked}` : null;
+}

@@ -68,7 +68,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
     /<TripList\b[\s\S]*?footer=\{<DecisionBar placement="rail" \{\.\.\.decisionBarProps\} \/>\}[\s\S]*?<TripReview\b[\s\S]*?<DecisionBar placement="bar" \{\.\.\.decisionBarProps\} \/>/,
     "HEADLINE: the decision sits in the left column under the list; the right side is the trip alone; a phone gets the slim row",
   );
-  assert.match(rail, /\{footer \? <div className="hidden shrink-0 lg:block">\{footer\}<\/div> : null\}/, "the rail's decision block is desktop-only — the phone sheet never carries it");
+  assert.match(rail, /\{footer \? <div className="phx-expense-rail-footer hidden shrink-0 lg:block">\{footer\}<\/div> : null\}/, "the rail's decision block is desktop-only — the phone sheet never carries it");
   assert.match(workspace, /valuesOnly=\{isImportedHistoryTrip\(selected\.date\)\}/, "imported history is still values only where TripReview is mounted");
 
   // One stat line, the ONLY place the four figures render.
@@ -91,7 +91,23 @@ export function runOutstationExpenseApprovalsLayoutTests() {
 
   // The rail: narrow, sticky and window-high on a desktop; a fixed sheet on a phone, no portal.
   assert.match(rail, /lg:w-\[19rem\]/, "the list is the rail");
-  assert.match(rail, /lg:sticky lg:top-4/, "the rail stays on screen while the trip page scrolls");
+  // Owner's review, 2026-11-07 (scored 2 of 10): the decision panel scrolled away with the page. The
+  // sticky sat on the box INSIDE the aside, and the aside was exactly that box's height, so it had
+  // nowhere to travel. The sticky is on the aside itself, under the frozen top bar, whose height
+  // the app shell publishes (chrome-height-probe.tsx) — divided by the zoom <main> wears.
+  assert.match(rail, /<aside className="phx-expense-rail /, "HEADLINE: the WHOLE aside is the sticky rail");
+  assert.doesNotMatch(rail, /lg:sticky/, "never the box inside it again");
+  const css = readFileSync("app/globals.css", "utf8");
+  const railRule = css.match(/\.phx-expense-rail \{[^}]*\}/)?.[0] ?? "";
+  assert.match(railRule, /position: sticky/, "HEADLINE: the rail is sticky on a desktop");
+  assert.match(railRule, /top: calc\(var\(--phx-chrome-h, 104px\) \/ var\(--phx-scale-applied, 1\) \+ 1rem\)/, "HEADLINE: pinned UNDER the top bar, corrected for the zoom");
+  assert.match(railRule, /align-self: flex-start/, "and as tall as its content, so it can travel the row");
+  assert.match(css, /\.phx-expense-rail-footer \{[^}]*overflow-y: auto/, "an open Adjust panel scrolls inside the rail, never pushing Approve off screen");
+  const shell = stripComments(readFileSync("src/components/layout/app-shell.tsx", "utf8"));
+  assert.match(shell, /<div className="sticky top-0 z-30">\s*<ChromeHeightProbe \/>/, "the shell measures its frozen chrome");
+  const probe = readFileSync("src/components/layout/chrome-height-probe.tsx", "utf8");
+  assert.match(probe, /new ResizeObserver\(publish\)/, "and keeps the height current as the chrome changes");
+  assert.match(probe, /setProperty\("--phx-chrome-h"/, "publishing it as --phx-chrome-h");
   assert.match(rail, /fixed inset-0 z-40/, "HEADLINE: on a phone the list is a full-height sheet");
   assert.doesNotMatch(rail, /scrollIntoView\(|createPortal/, "the sheet needs no scrolling and no portal");
   assert.match(
@@ -106,8 +122,15 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.match(review, /Trip \{formatNumberValue\(position\.index\)\} of \{formatNumberValue\(position\.total\)\}/, "the page says where the trip sits and walks the list with Previous / Next");
   assert.match(
     review,
-    /<RouteFact from=\{record\.from\} to=\{displayPlace\(destination\)\} \/>/,
-    "the route wraps (RouteFact), never scrolls sideways, and reads the place in words — never a plus code first",
+    /<RouteFact from=\{displayPlace\(record\.from\)\} to=\{displayPlace\(destination\)\} toTitle=\{destination\} \/>/,
+    "the route wraps (RouteFact), never scrolls sideways, and reads the place in words at both ends — the stored address is the tooltip",
+  );
+  assert.doesNotMatch(review, /Stored address/, "HEADLINE: no second 'Stored address · 6W33+64C…' line under the route (owner's review, 2026-11-07)");
+  const primitives = readFileSync("src/components/outstation/approval-detail-primitives.tsx", "utf8");
+  assert.equal(
+    (primitives.match(/className="m-0 min-w-0 break-words text-left" dir="auto"/g) ?? []).length,
+    2,
+    "HEADLINE: From and To start at the same edge — an Arabic From still reads right to left inside it",
   );
   assert.doesNotMatch(review, /overflow-y-auto|CollapsibleSection|<details/, "HEADLINE: nothing on the trip page is folded or boxed into its own scroll");
   const verdictAt = review.indexOf("data-verdict-strip");
@@ -130,8 +153,19 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   // an IntersectionObserver and never cleared — so a six-day trip costs one Google map load at a
   // time, and nothing is ever behind a click.
   const beforeMap = review.slice(dayMapAt, mapTag);
-  assert.deepEqual(beforeMap.match(/\? \(|&& \(/g), ["? ("], "exactly one condition stands before the day map");
-  assert.match(beforeMap, /\{seen \? \($/m, "and it is the scrolled-into-view latch, never an open/closed state");
+  assert.deepEqual(beforeMap.match(/\? \(|&& \(/g), ["? (", "? ("], "two conditions stand before the day map: scrolled into view, and has it anything to draw");
+  assert.match(beforeMap, /\{seen \? \(\s*empty \? \(\s*<DayMapEmpty \/>\s*\) : \($/m, "the latch, then the empty-day line — never an open/closed state");
+  // A day with nothing of its own to pin and no route on it is ONE line (owner's review, 2026-11-07).
+  assert.match(review, /const empty = !loading && pinned === 0 && !tripRoute;/, "HEADLINE: an empty day is known before any map is drawn");
+  assert.match(review, /\) : empty \? \(\s*<DayMapEmpty \/>/, "and never even gets the map-sized placeholder");
+  assert.match(review, /empty: "No GPS points this day"/, "HEADLINE: it says so in five words");
+  // The legend: the " · " sits OUTSIDE the place's own direction, so coordinates never run into an
+  // Arabic name and no "·" is left dangling at the wrong end.
+  assert.doesNotMatch(review, /<span dir="auto"> · /, "HEADLINE: no separator inside a dir=auto span");
+  assert.equal((review.match(/\{" · "\}\s*<bdi dir="auto">/g) ?? []).length, 4, "the four legend places each sit in a <bdi> after the separator");
+  assert.match(review, /submittedLabel=\{submittedLabel\}/, "the submitted-from place is passed as words, never cut out of the pin's title");
+  // The rep's words only; the system's allowance sentences on a line of their own.
+  assert.match(review, /data-allowance-notices/, "HEADLINE: the allowance notices have their own line");
   const latchAt = review.indexOf("function useSeenOnce");
   const latch = review.slice(latchAt, dayMapAt);
   assert.ok(latchAt > 0 && /new IntersectionObserver\(/.test(latch) && /setSeen\(true\)/.test(latch), "the latch is set by an IntersectionObserver");
@@ -153,6 +187,8 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.match(workload, /function TripDayOpen\(/, "the always-open day block exists beside the folded one the request centre keeps");
   assert.match(workload, /days with no field activity/, "a long trip says how many of its days had no field work");
   assert.match(photos, /\{photo\.latitude\.toFixed\(5\)\}, \{photo\.longitude\.toFixed\(5\)\}/, "HEADLINE: a photo card prints its captured GPS");
+  assert.match(photos, /href=\{`https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=\$\{photo\.latitude\.toFixed\(6\)\},\$\{photo\.longitude\.toFixed\(6\)\}`\}/, "HEADLINE: and the GPS opens that point in Google Maps");
+  assert.match(photos, /\{displayPlace\(photo\.locationLabel\)\}/, "the photo's place reads in words");
   assert.match(photos, /Captured with the live camera\./, "and whether it was a live capture");
 
   // The decision bar: the page's ONE sticky footer, holding Approve, Reject and Save.
@@ -161,6 +197,28 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.match(bar, /onClick=\{onApprove\}/, "Approve lives in the bar");
   assert.match(bar, /Save \{formatNumberValue\(dirtyCount\)\}/, "and so does Save");
   assert.doesNotMatch(workspace, /sticky bottom-4/, "the old floating Save bar is gone — never two bottom bars");
+  // The Adjust panel (owner's review, 2026-11-07, 5 of 10): Approved dropped to a line of its own,
+  // the reason box held one line of a long sentence, and the folded system text read as his own.
+  assert.match(bar, /<div className="grid grid-cols-3 items-end gap-x-2 gap-y-2" data-amount-equation>/, "HEADLINE: Claimed − Deduction = Approved is one three-column row");
+  assert.equal((bar.match(/"mt-1 block w-full min-w-0 text-right font-mono/g) ?? []).length, 2, "both inputs fill their column");
+  assert.match(bar, /box\.style\.height = "auto";[\s\S]*?box\.scrollHeight/, "HEADLINE: the reason box grows with its wrapped text");
+  assert.match(bar, /Math\.max\(wanted, line \* 3 \+ chrome\), ceiling/, "from three rows to ten");
+  assert.match(bar, /Why it is held ·/, "HEADLINE: the folded system sentence is labelled as the system's");
+  // The stat line says what a filtered count is out of.
+  assert.match(statLine, /of \{formatNumberValue\(cell\.of\)\}/, "HEADLINE: narrowed, a count reads '109 of 163'");
+  assert.match(statLine, /data-stat-filtered/, "and the line is tagged Filtered");
+  assert.match(workspace, /narrowed=\{narrowed\}\s*overall=\{overallCounts\}/, "fed the whole-queue counts");
+  assert.match(rail, /data-rail-count>[\s\S]*?\{formatNumberValue\(pendingCount\)\} awaiting[\s\S]*?\{formatNumberValue\(activeList\.length\)\} of \{formatNumberValue\(totalCount\)\} trips/, "the rail header: awaiting, then shown of total");
+  // The rail's order is remembered per reviewer, never shared across people on one PC.
+  assert.match(workspace, /ownerScopedStorageKey\(EXPENSE_APPROVAL_VIEW_KEY_BASE, viewerHrId\)/, "HEADLINE: Biggest / Oldest first is remembered per reviewer");
+  assert.match(workspace, /onSort=\{chooseSort\}/, "and written when he picks it");
+  // By employee and the claim checks.
+  assert.equal((employees.match(/\{displayPlace\(row\.destination\) \|\| "—"\}/g) ?? []).length, 2, "HEADLINE: By employee reads the place in words on desktop and phone");
+  assert.equal((employees.match(/title=\{row\.destination \|\| undefined\}/g) ?? []).length, 2, "the stored address is the tooltip");
+  const checks = stripComments(readFileSync("src/components/outstation/expense-claim-validation-panel.tsx", "utf8"));
+  assert.match(checks, /\{orderClaimChecks\(state\.data\.checks\)\.map\(/, "HEADLINE: problems first");
+  assert.match(checks, /\{bare \? null : \(/, "on the trip page the headline sentence is never said twice");
+  assert.match(checks, /bare && check\.verdict === "clean" \? \(/, "a passed check is one line on the trip page");
 
   // By employee is still a fitted table with cards on a phone.
   assert.match(
