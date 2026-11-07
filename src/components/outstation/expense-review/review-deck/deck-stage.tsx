@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, HelpCircle, Route, ShieldCheck } from "lucide-react";
+import { Camera, HelpCircle, Network, Route, ShieldCheck } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { type ClaimValidationOutcome, ExpenseClaimValidationPanel } from "@/components/outstation/expense-claim-validation-panel";
@@ -11,24 +11,27 @@ import { tripSpan, tripSpanLabel } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
 import type { LoadedRecord, TripIdleDays } from "../review-model";
+import { CrmTripSection } from "./crm-trip-section";
 import { DeckFieldWork } from "./deck-days";
-import { SIGNAL_TONE, type TripSignals } from "./deck-signals";
+import { SIGNAL_TONE, type Signal, type TripSignals } from "./deck-signals";
 
-/** The three things the stage can show — the same three "What the system found" names. */
-export type StageView = "field" | "photos" | "checks";
+/** The four things the stage can show — the same four "What the system found" names. */
+export type StageView = "field" | "crm" | "photos" | "checks";
 
 export const STAGE_VIEWS: ReadonlyArray<{ icon: ComponentType<{ className?: string }>; key: StageView; label: string }> = [
   { icon: Route, key: "field", label: "Field work and maps" },
+  { icon: Network, key: "crm", label: "Phoenix CRM" },
   { icon: Camera, key: "photos", label: "Photos, stops and tickets" },
   { icon: ShieldCheck, key: "checks", label: "Claim checks" },
 ];
 
 /**
  * The evidence, on the dark stage the Place checks reviewer gives its photograph — here the trip's
- * day maps, its photos and tickets, and the claim checks, one at a time under a switcher.
+ * day maps, Phoenix CRM on the trip (the plan, where the visits were, the nights, a shared car), its
+ * photos and tickets, and the claim checks, one at a time under a switcher.
  *
- * 🔴 All three views stay MOUNTED, the inactive two hidden: each reads its own evidence once when the
- * trip opens, and the findings column words its three sentences from what they loaded — so a switch
+ * 🔴 All four views stay MOUNTED, the inactive ones hidden: each reads its own evidence once when the
+ * trip opens, and the findings column words its four sentences from what they loaded — so a switch
  * never re-reads anything, and the column is complete before the reviewer looks at a single view.
  * The day maps are drawn only as each comes into view (deck-days.tsx), so a hidden view costs no map.
  *
@@ -37,6 +40,7 @@ export const STAGE_VIEWS: ReadonlyArray<{ icon: ComponentType<{ className?: stri
 export function DeckStage({
   onAttachments,
   onClaimOutcome,
+  onCrmSignal,
   onIdleDays,
   onView,
   onWorkload,
@@ -49,6 +53,7 @@ export function DeckStage({
   attachments: AttachmentsData | null | undefined;
   onAttachments: (data: AttachmentsData | null) => void;
   onClaimOutcome: (outcome: ClaimValidationOutcome) => void;
+  onCrmSignal: (signal: Signal) => void;
   onIdleDays: (tripId: string, idle: TripIdleDays) => void;
   onView: (view: StageView) => void;
   onWorkload: (data: TripWorkloadEvidence | null) => void;
@@ -61,6 +66,7 @@ export function DeckStage({
   const span = tripSpan(record.date, record.toDate);
   const toneOf: Record<StageView, keyof typeof SIGNAL_TONE> = {
     checks: signals.claim.tone,
+    crm: signals.crm.tone,
     field: signals.fieldWork.tone,
     photos: signals.photos.tone,
   };
@@ -104,6 +110,15 @@ export function DeckStage({
             title="Field work, day by day"
           />
           <DeckFieldWork attachments={attachments} onIdleDays={onIdleDays} onLoaded={onWorkload} record={record} workload={workload} />
+        </section>
+        <section
+          aria-label="Phoenix CRM on this trip"
+          className={cn("min-w-0 bg-white p-3 text-slate-900 sm:p-4", view === "crm" ? null : "hidden")}
+          id="deck-view-crm"
+          role="tabpanel"
+        >
+          <StageHeading line={signals.crm.line} title="Phoenix CRM on this trip" />
+          <CrmTripSection onSignal={onCrmSignal} requestId={validationRequestId} />
         </section>
         <section
           aria-label="Photos, stops and tickets"

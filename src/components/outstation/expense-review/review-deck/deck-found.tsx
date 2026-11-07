@@ -14,8 +14,8 @@ import { SIGNAL_TONE, type Signal, type TripSignals } from "./deck-signals";
 import { STAGE_VIEWS, type StageView } from "./deck-stage";
 
 /**
- * "What the system found" — the Place checks reviewer's own section, here in three sentences: field
- * work, claim checks, photos. Each is a button that puts its evidence on the stage, so reading a
+ * "What the system found" — the Place checks reviewer's own section, here in four sentences: field
+ * work, Phoenix CRM, claim checks, photos. Each is a button that puts its evidence on the stage, so reading a
  * sentence and seeing the proof behind it is one click.
  *
  * Under them, the reasons the list held the trip back for, how long it has waited, why an allowance
@@ -37,7 +37,7 @@ export function DeckFound({
   signals: TripSignals;
   view: StageView;
 }) {
-  const signalFor: Record<StageView, Signal> = { checks: signals.claim, field: signals.fieldWork, photos: signals.photos };
+  const signalFor: Record<StageView, Signal> = { checks: signals.claim, crm: signals.crm, field: signals.fieldWork, photos: signals.photos };
   const awaiting = expenseApprovalState(decision) === "pending" && !isImportedHistoryTrip(record.date);
   const reading = awaiting ? expenseTripTriage(record) : null;
   const daysAwaiting = awaiting ? expenseTripDaysAwaiting(record.submittedAt, now) : null;

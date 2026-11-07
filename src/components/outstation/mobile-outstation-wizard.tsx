@@ -478,6 +478,31 @@ export function MobileOutstationWizard({
   // priced on the two typed amounts and carries an uploaded invoice or picture. The server applies
   // the same predicate, so this is the screen agreeing with it, not a second copy of the rule.
   const isNonTravel = isNonTravelExpenseType(expenseType);
+  // Where the rep's SENT Phoenix CRM plan puts them on the trip days (owner, 2026-11-07: "Wizard
+  // suggests destination"). Shown beside the capture button only: the destination is ALWAYS the
+  // live GPS capture, and a plan never fills it.
+  // Held with the dates it answers, so a change of dates shows nothing until its own answer lands.
+  const plannedAreasKey = isNonTravel || !tripStartDate ? null : `${tripStartDate}|${tripEndDate || tripStartDate}`;
+  const [plannedAreasRead, setPlannedAreasRead] = useState<{
+    key: string;
+    value: { areas: Array<{ area: string; places: number }>; plannedDays: number; tripDays: number };
+  } | null>(null);
+  const plannedAreas = plannedAreasRead && plannedAreasRead.key === plannedAreasKey ? plannedAreasRead.value : null;
+  useEffect(() => {
+    if (!plannedAreasKey) return;
+    let live = true;
+    const [start, end] = plannedAreasKey.split("|");
+    const query = new URLSearchParams({ tripEndDate: end, tripStartDate: start });
+    fetch(`/api/outstation/planned-areas?${query.toString()}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (live && body && Array.isArray(body.areas)) setPlannedAreasRead({ key: plannedAreasKey, value: body });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [plannedAreasKey]);
   const isTicketBased =
     !isNonTravel && (transportationType === "train" || transportationType === "bus");
   // Owner request 2026-08-19: Product Manager, Group Product Manager and National Sales Manager
@@ -1721,6 +1746,19 @@ export function MobileOutstationWizard({
           Phoenix reads your phone&apos;s GPS once, here, and measures the trip from your home to this point.
         </StepNote>
       )}
+      {plannedAreas && plannedAreas.areas.length > 0 ? (
+        <StepNote tone="neutral">
+          <span className="font-black">Your sent Phoenix CRM plan for these days:</span>{" "}
+          <bdi dir="auto">
+            {plannedAreas.areas.map((entry) => `${entry.area} (${entry.places} place${entry.places === 1 ? "" : "s"})`).join(" · ")}
+          </bdi>
+          . Capture your location once you are there.
+        </StepNote>
+      ) : plannedAreas && plannedAreas.tripDays > 0 ? (
+        <StepNote tone="neutral">
+          No sent Phoenix CRM plan places these days. A trip day with no visit and no meeting can have its allowance deducted at approval.
+        </StepNote>
+      ) : null}
     </div>
   );
 

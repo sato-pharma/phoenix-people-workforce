@@ -10,7 +10,7 @@ import type { LoadedRecord } from "../review-model";
 /** One sentence of "What the system found", and how it reads at a glance. */
 export type Signal = { line: string; tone: "danger" | "loading" | "neutral" | "ok" | "warn" };
 
-export type TripSignals = { claim: Signal; fieldWork: Signal; photos: Signal };
+export type TripSignals = { claim: Signal; crm: Signal; fieldWork: Signal; photos: Signal };
 
 export const SIGNAL_TONE: Record<Signal["tone"], { bar: string; dot: string; text: string }> = {
   danger: { bar: "border-l-rose-500", dot: "bg-rose-500", text: "text-rose-700" },
@@ -21,18 +21,21 @@ export const SIGNAL_TONE: Record<Signal["tone"], { bar: string; dot: string; tex
 };
 
 /**
- * The three sentences the reviewer reads before anything else — field work, claim checks, photos —
- * each worded from what its evidence panel loaded (`undefined` while it is still reading). A meeting
- * day is a worked day (trip-day-meetings.ts): said plainly, never in rose.
+ * The four sentences the reviewer reads before anything else — field work, Phoenix CRM, claim checks,
+ * photos — each worded from what its evidence panel loaded (`undefined` while it is still reading). A
+ * meeting day is a worked day (trip-day-meetings.ts): said plainly, never in rose. The Phoenix CRM
+ * sentence is the reading's own (crm-trip-evidence.ts), handed up by its section.
  */
 export function tripSignals(input: {
   attachments: AttachmentsData | null | undefined;
   claimOutcome: ClaimValidationOutcome | undefined;
+  crm: Signal;
   record: LoadedRecord;
   workload: TripWorkloadEvidence | null | undefined;
 }): TripSignals {
   return {
     claim: claimSignal(input.record, input.claimOutcome),
+    crm: input.crm,
     fieldWork: fieldWorkSignal(input.record, input.workload),
     photos: photoSignal(input.record, input.attachments),
   };

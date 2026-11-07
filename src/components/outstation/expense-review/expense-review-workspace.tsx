@@ -125,6 +125,7 @@ export function ExpenseReviewWorkspace({ canDecide, viewerHrId }: { canDecide: b
               <ReviewBulkBar
                 approvableCount={review.bulkPlan.approvableTripIds.length}
                 cleanCount={cleanCount}
+                needsPreCutCount={review.bulkPlan.needsPreCutTripIds.length}
                 needsReasonCount={review.bulkPlan.needsReasonTripIds.length}
                 onApprove={review.approveSelected}
                 onClear={review.clearSelection}

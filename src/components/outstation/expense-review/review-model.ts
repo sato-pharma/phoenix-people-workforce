@@ -1,9 +1,11 @@
 import {
+  type BulkApprovalCandidate,
   expenseApprovalQueueRank,
   expenseApprovalState,
   expenseDecisionChanged,
   isAdjustedAmount,
   isRejectedStatus,
+  planBulkApproval,
 } from "@/lib/outstation/approval-state";
 import {
   type ExpenseApprovalSort,
@@ -269,6 +271,40 @@ export function positionIn(rows: ReadonlyArray<{ tripId: string }>, tripId: stri
   if (!tripId) return null;
   const index = rows.findIndex((record) => record.tripId === tripId);
   return index < 0 ? null : { index: index + 1, total: rows.length };
+}
+
+// ── Approving without opening the trip ──────────────────────────────────────────────────────────
+
+/**
+ * A trip as the batch rule reads it (planBulkApproval): the decision on screen, the claim, the
+ * allowance and the field-work reading — the LIVE day-by-day one once the trip was opened
+ * (withLiveWorkloadStatus), so a conference day that turned out worked no longer holds it back.
+ */
+export function bulkCandidate(record: LoadedRecord, decision: Decision): BulkApprovalCandidate {
+  return {
+    allowance: record.allowance,
+    approvedAmount: decision.approvedAmount,
+    claimedTotal: record.total,
+    hrApproved: decision.hrApproved,
+    hrComment: decision.hrComment,
+    status: decision.status,
+    tripId: record.tripId,
+    workloadMatchStatus: record.workloadMatchStatus,
+  };
+}
+
+/**
+ * Why a row's own Approve cannot go as it stands — the batch rule, one trip at a time, so a row and a
+ * tick-and-approve never disagree. "reason": a changed amount has no written reason yet. "pre-cut":
+ * the trip has days with no visit and no meeting and an allowance, so its Approve carries a pre-cut
+ * only the opened trip shows (owner, 2026-11-07: "then don't count 26") — approving it from the list
+ * would pay the idle day in full behind his back. Null when it can go.
+ */
+export function rowApproveBlock(record: LoadedRecord, decision: Decision): "pre-cut" | "reason" | null {
+  const plan = planBulkApproval([bulkCandidate(record, decision)]);
+  if (plan.needsReasonTripIds.length > 0) return "reason";
+  if (plan.needsPreCutTripIds.length > 0) return "pre-cut";
+  return null;
 }
 
 // ── Unsaved decisions ───────────────────────────────────────────────────────────────────────────

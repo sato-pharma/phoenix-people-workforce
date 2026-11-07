@@ -14,6 +14,7 @@ import {
   exportTriageForTab,
   inReviewTab,
   isUnsaved,
+  rowApproveBlock,
   nextAwaitingTrip,
   openingTab,
   parseExpenseDecisionDraft,
@@ -195,6 +196,23 @@ export function runOutstationExpenseReviewModelTests() {
     isUnsaved(rejected, { "T-6": { ...stored(rejected), status: PENDING_STATUS } }),
     true,
     "HEADLINE: Undo rejection is a change Save must send",
+  );
+
+  // A row's own Approve follows the batch rule: a trip with idle days and an allowance goes only from
+  // the opened trip, where its pre-cut is shown (owner, 2026-11-07: "then don't count 26").
+  assert.equal(rowApproveBlock(waitingClean, stored(waitingClean)), null, "a clean trip can be approved from its row");
+  assert.equal(rowApproveBlock(waitingLook, stored(waitingLook)), "pre-cut", "HEADLINE: a trip with idle days is never approved in full from its row");
+  assert.equal(rowApproveBlock({ ...waitingLook, allowance: 0 }, stored(waitingLook)), null, "with no allowance there is nothing to cut");
+  assert.equal(
+    rowApproveBlock(waitingLook, { ...stored(waitingLook), approvedAmount: 850, hrComment: "Two idle days." }),
+    null,
+    "a cut already chosen, with its reason, can go",
+  );
+  assert.equal(rowApproveBlock(waitingLook, { ...stored(waitingLook), approvedAmount: 850 }), "reason", "a changed amount with no reason cannot");
+  assert.equal(
+    rowApproveBlock({ ...waitingLook, workloadMatchStatus: "matched" }, stored(waitingLook)),
+    null,
+    "once the opened trip's live read finds every day worked, the hold lifts",
   );
 
   // The draft keeps the retired page's shape exactly, so the decisions left unsaved there come back.

@@ -131,7 +131,7 @@ export function CustomerVisitTimesLines({
           <span className="font-black text-slate-900">Rep&apos;s last visit: </span>
           {times.rep ? (
             <>
-              {visitMomentText(times.rep, today)}
+              {visitMomentText(times.rep, today, { saved: true })}
               <span className={cn("font-black", times.rep.withYou ? "text-emerald-700" : "text-slate-500")}>{times.rep.withYou ? " · with you" : " · without you"}</span>
             </>
           ) : (

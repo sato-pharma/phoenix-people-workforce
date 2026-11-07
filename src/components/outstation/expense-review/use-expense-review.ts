@@ -38,6 +38,7 @@ import {
   type TripIdleDays,
   type TripTab,
   TRIP_TABS,
+  bulkCandidate,
   computeReviewStats,
   countReviewTabs,
   countUnsaved,
@@ -392,19 +393,9 @@ export function useExpenseReview({ canDecide, viewerHrId }: { canDecide: boolean
   );
   const bulkPlan = useMemo(
     () =>
-      planBulkApproval(
-        selectedVisible.map((record) => {
-          const decision = decisionFor(record);
-          return {
-            approvedAmount: decision.approvedAmount,
-            claimedTotal: record.total,
-            hrApproved: decision.hrApproved,
-            hrComment: decision.hrComment,
-            status: decision.status,
-            tripId: record.tripId,
-          };
-        }),
-      ),
+      // The allowance and the live field-work reading ride along, so a trip with idle days is held
+      // back to be opened: a batch cannot show the pre-cut, and never pays an idle day in full.
+      planBulkApproval(selectedVisible.map((record) => bulkCandidate(record, decisionFor(record)))),
     [selectedVisible, decisionFor],
   );
   const allSelectableSelected = selectable.length > 0 && selectable.every((record) => selectedTripIds.has(record.tripId));
@@ -444,6 +435,9 @@ export function useExpenseReview({ canDecide, viewerHrId }: { canDecide: boolean
     const skipped: string[] = [];
     if (bulkPlan.needsReasonTripIds.length > 0) {
       skipped.push(`${formatNumberValue(bulkPlan.needsReasonTripIds.length)} still need a reason for a changed amount`);
+    }
+    if (bulkPlan.needsPreCutTripIds.length > 0) {
+      skipped.push(`${formatNumberValue(bulkPlan.needsPreCutTripIds.length)} have idle days · open each to apply its pre-cut`);
     }
     if (bulkPlan.notPendingTripIds.length > 0) {
       skipped.push(`${formatNumberValue(bulkPlan.notPendingTripIds.length)} were already decided`);

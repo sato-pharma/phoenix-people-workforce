@@ -16,6 +16,7 @@ import { egp } from "./review-parts";
 export function ReviewBulkBar({
   approvableCount,
   cleanCount,
+  needsPreCutCount,
   needsReasonCount,
   onApprove,
   onClear,
@@ -27,6 +28,8 @@ export function ReviewBulkBar({
   approvableCount: number;
   /** How many waiting rows in this tab the system found nothing on — offered as one pick. */
   cleanCount: number;
+  /** Ticked trips with idle days: a batch cannot show their pre-cut, so each is opened instead. */
+  needsPreCutCount: number;
   needsReasonCount: number;
   onApprove: () => void;
   onClear: () => void;
@@ -65,6 +68,12 @@ export function ReviewBulkBar({
       {needsReasonCount > 0 ? (
         <p className="text-xs font-bold text-rose-700">
           {formatNumberValue(needsReasonCount)} cannot be approved yet — a changed amount needs a written reason
+        </p>
+      ) : null}
+      {needsPreCutCount > 0 ? (
+        <p className="text-xs font-bold text-orange-700" data-bulk-precut>
+          {formatNumberValue(needsPreCutCount)} {needsPreCutCount === 1 ? "has" : "have"} days with no visit and no meeting · open each to approve it with
+          its pre-cut
         </p>
       ) : null}
     </div>

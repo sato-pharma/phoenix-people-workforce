@@ -197,6 +197,7 @@ import { runOutstationTerritoryFlagIsInvertedTests } from "./outstation-territor
 import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
 import { runOutstationTripWorkloadPharmaciesTests } from "./outstation-trip-workload-pharmacies.test.ts";
 import { runOutstationPartnerRepNameTests } from "./outstation-partner-rep-name.test.ts";
+import { runOutstationRouteCheckinsTests } from "./outstation-route-checkins.test.ts";
 import { runExpenseReviewRowHeightTests } from "./expense-review-row-height.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
 import { runOutstationExpenseTemplatePharmaciesTests } from "./outstation-expense-template-pharmacies.test.ts";
@@ -2916,6 +2917,7 @@ import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-tri
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
 import { runOutstationExpenseReviewModelTests } from "./outstation-expense-review-model.test.ts";
+import { runOutstationCrmTripEvidenceTests } from "./outstation-crm-trip-evidence.test.ts";
 import { runOutstationTripDayRouteLineTests } from "./outstation-trip-day-route-line.test.ts";
 import { runOutstationTripDayMeetingsTests } from "./outstation-trip-day-meetings.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
@@ -9472,6 +9474,10 @@ await runTest(
   runOutstationPartnerRepNameTests,
 );
 await runTest(
+  "an outstation trip's route is its places, not the phone's taps (repeat taps within 120 seconds fold into one stop), a borrowed route is only the stops shared with the person, the person's own visits with no GPS are said, the AM/PM tag reads as the customer's list, and the map legend reads down its columns in time order",
+  runOutstationRouteCheckinsTests,
+);
+await runTest(
   "the expenses review row height comes from the HR DECISION column, not the person column (all five body cells py-2, the headers keep py-3, the fieldset gap is 1.5, and every approval control keeps its full size and unconditional reason field)",
   runExpenseReviewRowHeightTests,
 );
@@ -11855,12 +11861,16 @@ await runTest(
   runOutstationExpenseApprovalsLayoutTests,
 );
 await runTest(
-  "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and applied only on a click, never over the reviewer's own reason",
+  "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and pre-cut, never over the reviewer's own reason",
   runOutstationExpenseApprovalsQueueTests,
 );
 await runTest(
   "the rebuilt Expense approvals screen's rules hold by behaviour: a trip's tab is read from its stored decision so a row never moves when it is decided, every one of the six tiles says \"of N\" when narrowed (Adjusted included), the next trip skips decided trips and imported history, a draft written by the retired screen is read back, and a reason chip is true of the trip and never writes over the reviewer's own words",
   runOutstationExpenseReviewModelTests,
+);
+await runTest(
+  "Phoenix CRM on an outstation trip: each day's visits measured from home and the destination, the nights read from the next morning, a draft is not a sent plan, a car claim against the farthest visit, a visit partner's car, the trip banner on the plan boards, and an idle day arrives pre-cut — Approve applies it, opening writes nothing, a batch holds it back",
+  runOutstationCrmTripEvidenceTests,
 );
 await runTest(
   "the Expense Approvals day maps draw the route, not loose dots: the trip's stored road route from home on its first and last day with a home pin, and each day's check-ins, photos and stops joined in the order they happened on Cairo's clock",

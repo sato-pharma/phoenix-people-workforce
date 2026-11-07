@@ -132,12 +132,19 @@ export async function resolveVendorSyncStandDown(): Promise<string | null> {
   }
 }
 
-/** Pure: the first day iReports360 holds nothing new — the UTC date of the retirement — or null. */
+/** Cairo's calendar date of an instant, as the combined CRM views read the retirement (at time zone 'Africa/Cairo'). */
+const CAIRO_DATE = new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone: "Africa/Cairo", year: "numeric" });
+
+/**
+ * Pure: the first day iReports360 holds nothing new — the CAIRO date of the retirement, the same day the
+ * combined views bound their archive at — or null. A UTC date would differ for a retirement between
+ * midnight and 02:00 Cairo, and the screens would then disagree with the views by a day.
+ */
 export function vendorSyncRetiredOn(setting: Pick<CrmCutoverSetting, "vendorSyncRetiredAt">): string | null {
   const raw = setting.vendorSyncRetiredAt;
   if (!raw) return null;
   const at = new Date(raw);
-  return Number.isNaN(at.getTime()) ? null : at.toISOString().slice(0, 10);
+  return Number.isNaN(at.getTime()) ? null : CAIRO_DATE.format(at);
 }
 
 /** Pure: whether a Cairo day (YYYY-MM-DD) is Phoenix's record rather than the vendor's. */

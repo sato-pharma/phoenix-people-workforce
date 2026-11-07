@@ -43,40 +43,31 @@ function readDecision({ canDecide, decision, record, valuesOnly }: DecisionInput
   };
 }
 
-/**
- * "Your decision" — in the white column, under what the system found: Claimed − Deduction = Approved,
- * the idle-day share OFFERED for the days with no field activity, the reasons as one-click chips, and
- * the reason box. Everything here only prepares the decision; Approve and Reject are the pinned bar's.
- *
- * Owner, 2026-11-07 ~01:50, on how idle days are deducted: "LET ME DECIDE". The share is offered — per
- * idle day, or the whole allowance — and nothing moves until he clicks one; the Deduction it fills stays
- * editable and Approve is still his click. Only an undecided trip is offered one.
- */
-export function DeckAdjust({
-  idle,
-  duplicateOf,
-  onChangeAmount,
-  onChangeReason,
-  reasonRef,
-  ...input
-}: DecisionInput & {
-  duplicateOf?: string[];
+/** What the idle-day offer needs, on top of the decision: the idle days and the pre-cuts set aside. */
+type IdleOfferInput = DecisionInput & {
   /** The trip's idle days once its field work is read; null until then, or with none to read. */
   idle: TripIdleDays | null;
+  /** Trips whose pre-cut was set aside — "Keep full claim", or a figure typed in. Screen state only. */
+  keptFull: Readonly<Record<string, true>>;
   onChangeAmount: (value: number) => void;
   onChangeReason: (value: string) => void;
-  reasonRef: RefObject<HTMLTextAreaElement | null>;
-}) {
+};
+
+/**
+ * The allowance share offered for the trip's idle days (a day with no visit and no meeting), and the
+ * PRE-CUT. Owner, 2026-11-07 ~01:50: "LET ME DECIDE"; then ~03:10: "he put trip from 23 to 26 and
+ * visits are 23 24 25 only, then don't count 26", choosing "Approver sees it pre-cut". So the first
+ * share — per idle day — is pre-cut: Approve applies it with its reason, unless the reviewer keeps the
+ * full claim or types a figure. Opening a trip writes nothing; the cut lands only on Approve. Only an
+ * undecided trip a decider can change is offered one (idle-day-deduction.ts holds the arithmetic).
+ */
+function idleOffer({ idle, keptFull, onChangeAmount, onChangeReason, ...input }: IdleOfferInput) {
   const { decision, record } = input;
-  const { adjusted, deduction, isRejected, locked, reasonMissing, rejectReasonMissing, undecided } = readDecision(input);
-  const span = tripSpan(record.date, record.toDate);
+  const { adjusted, locked, undecided } = readDecision(input);
   const suggestions =
     !locked && undecided && idle ? idleDayDeductionSuggestions({ allowance: record.allowance, idleDays: idle.idleDays, total: record.total, tripDays: idle.tripDays }) : [];
-  const chips = locked ? [] : reasonChipsFor({ duplicateOf, idle, record });
-  // The sentence the box opened with: the system's hold reason stored on the trip. An undecided trip's
-  // box holds it until he types, so it is labelled as the system's, never read as his.
+  // The sentence the box opened with: the system's hold reason stored on the trip.
   const systemText = (record.hrComment ?? "").trim();
-  const showsSystemText = undecided && systemText !== "" && decision.hrComment.trim() === systemText;
   const applySuggestion = (suggestion: (typeof suggestions)[number]) => {
     onChangeAmount(approvedAmountFromDeduction(record.total, suggestion.deduction));
     // His own words are never written over; the rule lives in idle-day-deduction.ts.
@@ -88,6 +79,35 @@ export function DeckAdjust({
     });
     if (next !== null) onChangeReason(next);
   };
+  const preCut = suggestions.length > 0 && !adjusted && !keptFull[record.tripId] ? suggestions[0] : null;
+  return { applySuggestion, preCut, suggestions, systemText };
+}
+
+/**
+ * "Your decision" — in the white column, under what the system found: Claimed − Deduction = Approved,
+ * the pre-cut and the idle-day shares (idleOffer), the reasons as one-click chips, and the reason box.
+ * Everything here only prepares the decision; Approve and Reject are the pinned bar's.
+ */
+export function DeckAdjust({
+  duplicateOf,
+  onKeepFull,
+  reasonRef,
+  ...offer
+}: IdleOfferInput & {
+  duplicateOf?: string[];
+  onKeepFull: (tripId: string) => void;
+  reasonRef: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const { decision, idle, onChangeAmount, onChangeReason, record } = offer;
+  const { adjusted, deduction, isRejected, locked, reasonMissing, rejectReasonMissing, undecided } = readDecision(offer);
+  const span = tripSpan(record.date, record.toDate);
+  const { applySuggestion, preCut, suggestions, systemText } = idleOffer(offer);
+  const chips = locked ? [] : reasonChipsFor({ duplicateOf, idle, record });
+  // An undecided trip's box holds the system's hold sentence until he types, so it is labelled as the
+  // system's, never read as his.
+  const showsSystemText = undecided && systemText !== "" && decision.hrComment.trim() === systemText;
+  // His own figure — typed, or Back to the claimed amount — sets the pre-cut aside, whatever it is.
+  const keepFull = () => onKeepFull(record.tripId);
 
   // The reason box grows with what is in it — WRAPPED lines too — from three rows to ten, then scrolls
   // inside (owner's review, 2026-11-07: a long system sentence sat in a one-line box).
@@ -139,7 +159,10 @@ export function DeckAdjust({
             inputMode="decimal"
             max={record.total}
             min={0}
-            onChange={(event) => onChangeAmount(approvedAmountFromDeduction(record.total, Number(event.target.value)))}
+            onChange={(event) => {
+              keepFull();
+              onChangeAmount(approvedAmountFromDeduction(record.total, Number(event.target.value)));
+            }}
             type="number"
             value={String(deduction)}
           />
@@ -154,21 +177,44 @@ export function DeckAdjust({
             inputMode="decimal"
             max={record.total}
             min={0}
-            onChange={(event) =>
-              onChangeAmount(approvedAmountFromDeduction(record.total, deductionFromApprovedAmount(record.total, Number(event.target.value))))
-            }
+            onChange={(event) => {
+              keepFull();
+              onChangeAmount(approvedAmountFromDeduction(record.total, deductionFromApprovedAmount(record.total, Number(event.target.value))));
+            }}
             type="number"
             value={String(decision.approvedAmount)}
           />
         </div>
         {adjusted ? (
           <div className="col-span-3">
-            <CrmButton onClick={() => onChangeAmount(record.total)} size="sm" variant="ghost">
+            <CrmButton
+              onClick={() => {
+                keepFull();
+                onChangeAmount(record.total);
+              }}
+              size="sm"
+              variant="ghost"
+            >
               <RotateCcw aria-hidden className="h-3.5 w-3.5" /> Back to the claimed amount
             </CrmButton>
           </div>
         ) : null}
       </div>
+
+      {preCut && idle ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-l-[3px] border-orange-600 bg-orange-50 px-3 py-2.5" data-precut>
+          <p className="min-w-0 flex-1 basis-56 break-words text-sm font-bold text-orange-900">
+            Pre-cut −<span className="tabular-nums">{egp(preCut.deduction)}</span> · Approve pays{" "}
+            <span className="tabular-nums">{egp(approvedAmountFromDeduction(record.total, preCut.deduction))}</span>
+            <span className="block text-xs font-semibold text-orange-800">
+              {preCut.label} · {formatNumberValue(idle.idleDays)} of {formatNumberValue(idle.tripDays)} days with no visit and no meeting
+            </span>
+          </p>
+          <CrmButton data-keep-full onClick={keepFull} size="sm">
+            Keep full claim
+          </CrmButton>
+        </div>
+      ) : null}
 
       {suggestions.length > 0 && idle ? (
         <div className="min-w-0 border-l-[3px] border-orange-500 bg-orange-50 px-3 py-2.5" data-idle-deduction>
@@ -196,8 +242,8 @@ export function DeckAdjust({
             })}
           </div>
           <p className="mt-1.5 text-phx-2xs text-slate-600">
-            Allowance {egp(record.allowance)} only · travel and tickets are never part of it. Nothing changes until you pick one, and the deduction
-            stays editable.
+            Allowance {egp(record.allowance)} only · travel and tickets are never part of it.{" "}
+            {preCut ? "Approve applies the pre-cut unless you keep the full claim or type your own." : "The deduction stays editable."}
           </p>
         </div>
       ) : null}
@@ -291,10 +337,11 @@ export function DeckDecisionBar({
   onUnreject,
   reasonRef,
   saving,
-  ...input
-}: DecisionInput & {
+  ...offer
+}: IdleOfferInput & {
   dirtyCount: number;
-  onApprove: () => void;
+  /** Approve, with the amount it pays — the pre-cut figure when one is applied. */
+  onApprove: (paid: number) => void;
   onReject: () => void;
   onSave: () => void;
   onUnapprove: () => void;
@@ -302,9 +349,16 @@ export function DeckDecisionBar({
   reasonRef: RefObject<HTMLTextAreaElement | null>;
   saving: boolean;
 }) {
-  const { decision, record, valuesOnly, canDecide } = input;
-  const { adjusted, isRejected, reasonMissing, rejectReasonMissing } = readDecision(input);
+  const { canDecide, decision, record, valuesOnly } = offer;
+  const { adjusted, isRejected, reasonMissing, rejectReasonMissing } = readDecision(offer);
   const state = decisionStateLabel(decision, record);
+  const { applySuggestion, preCut } = idleOffer(offer);
+  const pays = preCut ? approvedAmountFromDeduction(record.total, preCut.deduction) : decision.approvedAmount;
+  // Approve applies the pre-cut and its reason first, then approves — the cut lands only here.
+  const approve = () => {
+    if (preCut) applySuggestion(preCut);
+    onApprove(pays);
+  };
   // With no reason yet, Reject puts the cursor in the reason box instead of refusing.
   const askForReason = () => {
     const box = reasonRef.current;
@@ -316,11 +370,11 @@ export function DeckDecisionBar({
     <div className="min-w-0 space-y-2.5" data-deck-decision>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <p className="min-w-0 text-sm font-bold tabular-nums text-slate-900">
-          <span className={cn("text-phx-2xs font-black uppercase tracking-[0.12em]", adjusted ? "text-orange-600" : "text-slate-400")}>
-            {adjusted ? "Pays " : "Claimed "}
+          <span className={cn("text-phx-2xs font-black uppercase tracking-[0.12em]", adjusted || preCut ? "text-orange-600" : "text-slate-400")}>
+            {preCut ? "Pre-cut · pays " : adjusted ? "Pays " : "Claimed "}
           </span>
-          {egp(decision.approvedAmount)}
-          {adjusted ? <span className="ml-2 text-xs font-semibold text-slate-400 line-through">{egp(record.total)}</span> : null}
+          {egp(pays)}
+          {adjusted || preCut ? <span className="ml-2 text-xs font-semibold text-slate-400 line-through">{egp(record.total)}</span> : null}
         </p>
         <CrmPill tone={state.tone}>{state.label}</CrmPill>
       </div>
@@ -338,7 +392,14 @@ export function DeckDecisionBar({
         </CrmButton>
       ) : (
         <div className="grid min-w-0 grid-cols-2 gap-2">
-          <CrmButton data-deck-approve disabled={reasonMissing} onClick={onApprove} title={reasonMissing ? "Add a reason for the changed amount first" : undefined} variant="success">
+          <CrmButton
+            data-approve-precut={preCut ? preCut.deduction : undefined}
+            data-deck-approve
+            disabled={reasonMissing}
+            onClick={approve}
+            title={reasonMissing ? "Add a reason for the changed amount first" : undefined}
+            variant="success"
+          >
             <Check aria-hidden className="h-4 w-4" /> Approve
           </CrmButton>
           <CrmButton data-deck-reject onClick={rejectReasonMissing ? askForReason : onReject} variant="danger">

@@ -150,8 +150,12 @@ export function DeckFieldWork({
   );
 }
 
-/** One line of a day's legend: the pin's label, where it sits on the map (if it has a position), the words. */
-type DayLegendItem = { label: string; line: ReactNode; marker: RouteMarker | null };
+/**
+ * One line of a day's legend: the pin's label, where it sits on the map (if it has a position), the
+ * words. `at` is a real instant (a photo's or a stop's capture), read in Cairo to place it among the
+ * day's check-ins.
+ */
+type DayLegendItem = { at: string | null; label: string; line: ReactNode; marker: RouteMarker | null };
 
 /** The trip's road route on one day's map: the line (a stable reference) and what the legend says. */
 type DayRouteOverlay = { line: TripRouteLine; route: ApproverTripRoute };
@@ -187,6 +191,7 @@ function buildDayLegends(attachments: AttachmentsData | null | undefined, firstD
     const label = photo.kind === "arrival" ? "A" : "D";
     const when = photo.capturedAt ? ` · ${formatDateTimeValue(photo.capturedAt)}` : "";
     add(photo.kind === "arrival" ? firstDay : lastDay, {
+      at: photo.capturedAt ?? null,
       label,
       line: (
         <>
@@ -217,6 +222,7 @@ function buildDayLegends(attachments: AttachmentsData | null | undefined, firstD
     const where = stop.governorate ? ` · ${stop.governorate}` : "";
     const located = typeof stop.latitude === "number" && typeof stop.longitude === "number";
     add(cairoDayKey(stop.capturedAt), {
+      at: stop.capturedAt,
       label,
       line: (
         <>
@@ -330,6 +336,7 @@ function DayMap({
     ],
     [home, legend],
   );
+  const timeline = useMemo(() => legendTimeline(legend, checkins), [legend, checkins]);
   const pinned = markers.length + mapped.filter((checkin) => checkin.lat !== null && checkin.lon !== null).length;
   // Nothing of this day's own carries a position and no route is drawn on it: ONE line, never a 420px
   // map holding only the submitted-from pin.
@@ -361,7 +368,9 @@ function DayMap({
         // The map's own box size, so the column does not jump when the map replaces it.
         <div aria-hidden className="h-[360px] border border-slate-200 bg-slate-50 sm:h-[420px]" />
       )}
-      <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 [&>*]:min-w-0" data-map-legend>
+      {/* Columns, never a grid: a grid fills row by row, so two columns read zig-zag (owner, 2026-11-07).
+          The route, home and submitted-from first; then every photo, stop and check-in in time order. */}
+      <ul className="mt-3 gap-x-6 text-xs sm:columns-2 [&>*]:mb-1 [&>*]:min-w-0 [&>*]:break-inside-avoid" data-map-legend>
         {tripRoute ? (
           <li className="flex items-start gap-2">
             <span aria-hidden className="mt-1.5 h-1 w-5 shrink-0 bg-orange-500" />
@@ -401,31 +410,76 @@ function DayMap({
             </span>
           </li>
         ) : null}
-        {legend.map((item) => (
-          <li className="flex items-start gap-2" key={item.label}>
-            <PinBadge label={item.label} tone="photo" />
-            <span className="min-w-0 break-words text-slate-700">{item.line}</span>
-          </li>
-        ))}
-        {mapped.map((checkin, index) => (
-          <li className="flex items-start gap-2" key={checkin.id}>
-            <PinBadge label={String(firstCheckinNumber + index)} tone="checkin" />
-            <span className="min-w-0 break-words text-slate-700">
-              <span className="font-bold text-slate-900">{checkin.contactName ?? "Check-in"}</span>
-              {` · ${formatClock(checkin.checkDate)}`}
-              {checkin.address ? (
-                <>
-                  {" · "}
-                  <bdi dir="auto">{displayPlace(checkin.address)}</bdi>
-                </>
-              ) : null}
-              {checkin.lat === null || checkin.lon === null ? <span className="text-amber-700"> · no coordinates, not on the map</span> : null}
-            </span>
-          </li>
-        ))}
+        {timeline.map((row) =>
+          row.kind === "pin" ? (
+            <li className="flex items-start gap-2" key={row.item.label}>
+              <PinBadge label={row.item.label} tone="photo" />
+              <span className="min-w-0 break-words text-slate-700">{row.item.line}</span>
+            </li>
+          ) : (
+            <li className="flex items-start gap-2" key={mapped[row.index]?.id ?? row.index}>
+              <PinBadge label={String(firstCheckinNumber + row.index)} tone="checkin" />
+              <span className="min-w-0 break-words text-slate-700">
+                <span className="font-bold text-slate-900">{mapped[row.index]?.contactName ?? "Check-in"}</span>
+                {(checkins[row.index]?.taps ?? 1) > 1 ? ` · ×${formatNumberValue(checkins[row.index]?.taps ?? 1)} taps` : ""}
+                {` · ${formatClock(mapped[row.index]?.checkDate ?? null)}`}
+                {/* The place is in the Check-ins list under the map; here only a check-in with no
+                    contact name is named by its address. */}
+                {!checkins[row.index]?.contact && checkins[row.index]?.address ? (
+                  <>
+                    {" · "}
+                    <bdi dir="auto">{displayPlace(checkins[row.index]?.address ?? "")}</bdi>
+                  </>
+                ) : null}
+                {checkins[row.index]?.lat == null || checkins[row.index]?.lon == null ? (
+                  <span className="text-amber-700"> · no coordinates, not on the map</span>
+                ) : null}
+              </span>
+            </li>
+          ),
+        )}
       </ul>
     </div>
   );
+}
+
+type LegendRow = { item: DayLegendItem; kind: "pin" } | { index: number; kind: "checkin" };
+
+/** "2026-09-06T12:44:47" — a real instant's Cairo wall clock, to order it among vendor check-in stamps. */
+function cairoWallClockKey(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
+/**
+ * The day's photos, stops and check-ins as ONE time-ordered list. A check-in's `at` is the vendor's
+ * stamp, already a Cairo wall clock (formatClock), so it is compared as written; a photo or stop is a
+ * real instant, read in Cairo first. Anything with no time goes last, in its own order. Pure.
+ */
+function legendTimeline(legend: DayLegendItem[], checkins: WorkloadCheckinDetail[]): LegendRow[] {
+  const rows: Array<{ key: string | null; row: LegendRow }> = [
+    ...legend.map((item) => ({ key: item.at ? cairoWallClockKey(item.at) : null, row: { item, kind: "pin" as const } })),
+    ...checkins.map((checkin, index) => ({
+      key: checkin.at ? checkin.at.replace(" ", "T").slice(0, 19) : null,
+      row: { index, kind: "checkin" as const },
+    })),
+  ];
+  // Array.prototype.sort is stable, so equal or missing times keep the order they were listed in.
+  return rows
+    .sort((a, b) => (a.key === null ? (b.key === null ? 0 : 1) : b.key === null ? -1 : a.key.localeCompare(b.key)))
+    .map((entry) => entry.row);
 }
 
 /** The pin's label as it appears on the map, so the legend and the map read the same. */

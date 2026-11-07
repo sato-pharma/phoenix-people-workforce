@@ -22,7 +22,7 @@ import { egp } from "../review-parts";
 import { DECK_TABS, type ExpenseReview } from "../use-expense-review";
 import { DeckAdjust, DeckDecisionBar } from "./deck-decision";
 import { DeckFound } from "./deck-found";
-import { tripSignals } from "./deck-signals";
+import { type Signal, tripSignals } from "./deck-signals";
 import { DeckStage, type StageView } from "./deck-stage";
 import { DeckSubject } from "./deck-subject";
 
@@ -61,6 +61,10 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
   const { closeDeck, deck, moveDeck } = review;
   const [lastDecision, setLastDecision] = useState<LastDecision | null>(null);
   const [now] = useState(() => Date.now());
+  // Trips whose idle-day pre-cut was set aside ("Keep full claim", or a figure typed in) while the
+  // reviewer is open. Screen state only: nothing is written for a trip until Approve and Save.
+  const [keptFull, setKeptFull] = useState<Record<string, true>>({});
+  const keepFull = useCallback((tripId: string) => setKeptFull((current) => (current[tripId] ? current : { ...current, [tripId]: true })), []);
 
   const close = useCallback(() => {
     // The zoomed photo answers Escape first; the reviewer closes only when nothing is open over it.
@@ -103,10 +107,12 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
   const progress = total === 0 ? 0 : Math.round((shown / total) * 100);
   const record = review.selected;
 
-  const decide = (verb: LastDecision["verb"]) => {
+  // `paid` is what Approve pays — the pre-cut figure when one was applied in the same click, which the
+  // decision on screen does not hold yet.
+  const decide = (verb: LastDecision["verb"], paid?: number) => {
     if (!record) return;
     const decision = review.decisionFor(record);
-    setLastDecision({ amount: decision.approvedAmount, name: record.specialist || record.tripId, tripId: record.tripId, verb });
+    setLastDecision({ amount: paid ?? decision.approvedAmount, name: record.specialist || record.tripId, tripId: record.tripId, verb });
     if (verb === "Approved") review.decisionHandlers.onApprove();
     else review.decisionHandlers.onReject();
   };
@@ -128,9 +134,11 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
     return (
       <DeckTrip
         key={record.tripId}
+        keptFull={keptFull}
         lastDecision={lastDecision && lastDecision.tripId !== record.tripId ? lastDecision : null}
         now={now}
-        onApprove={() => decide("Approved")}
+        onApprove={(paid) => decide("Approved", paid)}
+        onKeepFull={keepFull}
         onMove={move}
         onReject={() => decide("Rejected")}
         onUndoLast={(tripId) => {
@@ -222,9 +230,11 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
  * — the three evidence panels read once when it mounts, and the column words its findings from them.
  */
 function DeckTrip({
+  keptFull,
   lastDecision,
   now,
   onApprove,
+  onKeepFull,
   onMove,
   onReject,
   onUndoLast,
@@ -233,9 +243,11 @@ function DeckTrip({
   review,
   total,
 }: {
+  keptFull: Readonly<Record<string, true>>;
   lastDecision: LastDecision | null;
   now: number;
-  onApprove: () => void;
+  onApprove: (paid: number) => void;
+  onKeepFull: (tripId: string) => void;
   onMove: (step: -1 | 1) => void;
   onReject: () => void;
   onUndoLast: (tripId: string) => void;
@@ -248,10 +260,12 @@ function DeckTrip({
   const [workload, setWorkload] = useState<TripWorkloadEvidence | null | undefined>(undefined);
   const [attachments, setAttachments] = useState<AttachmentsData | null | undefined>(undefined);
   const [claimOutcome, setClaimOutcome] = useState<ClaimValidationOutcome | undefined>(undefined);
+  // Phoenix CRM on this trip — the sentence its section words from the reading (crm-trip-section.tsx).
+  const [crm, setCrm] = useState<Signal>({ line: "Reading Phoenix CRM", tone: "loading" });
   const reasonRef = useRef<HTMLTextAreaElement | null>(null);
   const decision = review.decisionFor(record);
   const valuesOnly = isImportedHistoryTrip(record.date);
-  const signals = useMemo(() => tripSignals({ attachments, claimOutcome, record, workload }), [attachments, claimOutcome, record, workload]);
+  const signals = useMemo(() => tripSignals({ attachments, claimOutcome, crm, record, workload }), [attachments, claimOutcome, crm, record, workload]);
   // The stage opens on the field work — the day maps, and where the idle days the decision offers a
   // share for come from. The findings beside it switch to the photos or the checks in one click.
   const [view, setView] = useState<StageView>("field");
@@ -267,6 +281,7 @@ function DeckTrip({
           attachments={attachments}
           onAttachments={setAttachments}
           onClaimOutcome={setClaimOutcome}
+          onCrmSignal={setCrm}
           onIdleDays={review.recordIdleDays}
           onView={setView}
           onWorkload={setWorkload}
@@ -305,8 +320,10 @@ function DeckTrip({
             decision={decision}
             duplicateOf={duplicateOf}
             idle={idle}
+            keptFull={keptFull}
             onChangeAmount={decisionHandlers.onChangeAmount}
             onChangeReason={decisionHandlers.onChangeReason}
+            onKeepFull={onKeepFull}
             reasonRef={reasonRef}
             record={record}
             valuesOnly={valuesOnly}
@@ -320,7 +337,11 @@ function DeckTrip({
               canDecide={review.canDecide}
               decision={decision}
               dirtyCount={review.dirtyCount}
+              idle={idle}
+              keptFull={keptFull}
               onApprove={onApprove}
+              onChangeAmount={decisionHandlers.onChangeAmount}
+              onChangeReason={decisionHandlers.onChangeReason}
               onReject={onReject}
               onSave={decisionHandlers.onSave}
               onUnapprove={decisionHandlers.onUnapprove}

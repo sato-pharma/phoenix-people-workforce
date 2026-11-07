@@ -22,8 +22,9 @@ import { stripComments } from "./support/comment-strip.ts";
 // Expense Approvals, working the queue (owner, 2026-11-07 ~01:45, choosing from the enhancements
 // offered): "Rail filter: Needs a look / Clean", "Suggested deduction for idle days",
 // "Decide-and-advance", and "Oldest first + awaiting N days". On the idle-day rule he answered
-// "LET ME DECIDE": the screen OFFERS the allowance share and he picks it per trip — nothing is
-// deducted on its own.
+// "LET ME DECIDE": the screen OFFERS the allowance share; later that night he chose "Approver sees
+// it pre-cut" — Approve applies the per-idle-day share unless he keeps the full claim
+// (tests/outstation-crm-trip-evidence.test.ts pins the pre-cut).
 
 export function runOutstationExpenseApprovalsQueueTests() {
   // ── 1. Needs a look / Clean ─────────────────────────────────────────────────────────────────
@@ -222,7 +223,7 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.match(bar, /const next = reasonAfterIdleDayPick\(\{/, "the decision box uses that one rule");
   assert.match(bar, /if \(next !== null\) onChangeReason\(next\);/, "and leaves the reviewer's words alone on null");
   // Approve and Reject are two equal halves of the pinned bar; Save sits on its own line under them.
-  assert.match(bar, /<div className="grid min-w-0 grid-cols-2 gap-2">\s*<CrmButton data-deck-approve/, "HEADLINE: Approve and Reject take the whole width, side by side");
+  assert.match(bar, /<div className="grid min-w-0 grid-cols-2 gap-2">\s*<CrmButton\s+data-approve-precut=\{[^}]*\}\s+data-deck-approve/, "HEADLINE: Approve and Reject take the whole width, side by side");
   assert.match(bar, /data-save-cluster/, "and Save has its own line");
   assert.doesNotMatch(bar, /useEffect\([^)]*applySuggestion|onChangeAmount\(approvedAmountFromDeduction\(record\.total, suggestions\[/, "nothing deducts on its own");
 }

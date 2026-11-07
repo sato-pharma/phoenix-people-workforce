@@ -18,7 +18,7 @@ import {
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
-import { expenseApprovalState, isAdjustedAmount } from "@/lib/outstation/approval-state";
+import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { expenseTripAwaitingLabel, expenseTripDaysAwaiting, expenseTripTriage } from "@/lib/outstation/expense-approval-triage";
 import { isImportedHistoryTrip } from "@/lib/outstation/imported-history";
 import { displayPlace } from "@/lib/outstation/place-label";
@@ -32,6 +32,7 @@ import {
   REVIEW_TAB_LABELS,
   type TripTab,
   distanceFlag,
+  rowApproveBlock,
 } from "./review-model";
 import { DecisionPill, DistanceChip, DuplicateTripFlag, MoneyFigure } from "./review-parts";
 
@@ -245,9 +246,9 @@ function DecisionCell({ actions, record }: { actions: RowActions; record: Loaded
   const decision = actions.decisionFor(record);
   const state = expenseApprovalState(decision);
   const imported = isImportedHistoryTrip(record.date);
-  const adjusted = isAdjustedAmount(decision.approvedAmount, record.total);
-  // planBulkApproval's own rule, row by row: a changed amount needs its reason before it can go.
-  const needsReason = adjusted && !decision.hrComment.trim();
+  // planBulkApproval's own rule, row by row: a changed amount needs its reason before it can go, and
+  // a trip with idle days goes only from the opened trip, where its pre-cut is shown and applied.
+  const blocked = rowApproveBlock(record, decision);
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
       <DecisionPill decision={decision} record={record} unsaved={actions.isUnsaved(record)} />
@@ -255,10 +256,17 @@ function DecisionCell({ actions, record }: { actions: RowActions; record: Loaded
         {actions.canDecide && !imported && state === "pending" ? (
           <CrmButton
             data-quick-approve
-            disabled={needsReason}
+            data-row-block={blocked ?? undefined}
+            disabled={blocked !== null}
             onClick={() => actions.onQuickApprove(record)}
             size="sm"
-            title={needsReason ? "A changed amount needs its reason — open the trip to write it" : "Approve as it stands; Save commits it"}
+            title={
+              blocked === "reason"
+                ? "A changed amount needs its reason — open the trip to write it"
+                : blocked === "pre-cut"
+                  ? "Days with no visit and no meeting — open the trip to approve it with its pre-cut"
+                  : "Approve as it stands; Save commits it"
+            }
             variant="success"
           >
             <Check aria-hidden className="h-3.5 w-3.5" /> Approve
