@@ -73,7 +73,8 @@ This laptop starts no browser: the wrapper copies THIS checkout's `driver.mjs` i
 gitignored `output/run-skill-remote/<stamp>/`, runs it there against the spare's own server with
 `--timeout 900`, and copies the PNGs back to `output/run-skill/`. It reads healthz first and
 sends nothing when the server does not answer in 60 s. Every argument goes to the driver unchanged.
-`/admin` takes over 11 minutes on the spare (Gotchas), so the smoke test is the login page:
+`/admin` takes over 11 minutes on the spare (Gotchas), so the smoke test is the login page
+(25 s end to end on 2026-11-07, `overflow @1440px ok`, `copied back: outputun-skilllogin-desktop.png`):
 
 ```bash
 powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 go /login shot login-desktop overflow
@@ -234,6 +235,6 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 | screenshot is a grey skeleton | add `waitfor "<text on the loaded page>"` before `shot` |
 | a block reads empty, a console error says an unexpected response came from the server, or `ERR_BLOCKED_BY_CLIENT` | its POST was stopped: look for it under `writes stopped`, and do not read it as a defect |
 | `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `--hrId` |
-| `on-spare.ps1`: `the spare's dev server does not answer /api/healthz in 60 s` | it is compiling or out of memory — read its log through `spare.ps1`, wait, never restart it |
+| `on-spare.ps1`: `the spare's dev server does not answer /api/healthz in 60 s` | it is busy or out of memory — read its log through `spare.ps1` and wait. If the log ends on `restarting once the N request(s) in flight finish` and healthz stays dead, it is wedged: restarting it is the owner's word, then stop the "Phoenix Dev Server" task, its `dev-server`/`next` node processes, and start the task (as `spare-follow-production.ps1` does); healthz answered ~30 s later on 2026-11-07 |
 | `FAILED: page.goto: Timeout 180000ms exceeded` (or `900000ms` on the spare) | a slow server render: read the spare's log for `application-code: …min`; drive a lighter page, or pass a longer `--timeout` |
 | background launcher task "failed, exit 127" after you stopped it | expected — that is the kill, not a crash |
