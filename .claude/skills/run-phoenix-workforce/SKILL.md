@@ -1,6 +1,6 @@
 ---
 name: run-phoenix-workforce
-description: Run, start, launch, drive or screenshot the Phoenix Workforce web app locally — start the dev server, sign in as any role through dev-auth (Super Admin, HR Operations, Medical Rep, District Manager, CEO...), open a page, click by text, take desktop and 375px mobile screenshots, measure horizontal scroll, or call a src/lib domain function directly. Use to see a change working in the real app, not just in tests.
+description: Run, start, launch, drive or screenshot the Phoenix Workforce web app — drive the spare laptop's dev server (localhost:3000), start a local one only when that is down, sign in as any role through dev-auth (Super Admin, HR Operations, Medical Rep, District Manager, CEO...), open a page, click by text, take desktop and 375px mobile screenshots, measure horizontal scroll, or call a src/lib domain function directly. Use to see a change working in the real app, not just in tests.
 ---
 
 # Run Phoenix Workforce
@@ -9,7 +9,8 @@ Next.js 16 web app (admin shell, HR shell, employee portal). An agent drives it 
 `driver.mjs` in this folder: headless Chromium (the Playwright install the e2e suite already
 has) signs in through `GET /api/dev-auth?role=…`, then runs steps — `go`, `click`, `shot`,
 `overflow`, `text`, `waitfor`, `eval`. Paths below are relative to the repo root (or your
-`_wt-<task>` worktree). Verified on the owner's Windows laptop, Git Bash, Node 24.15, 2026-10-20.
+`_wt-<task>` worktree). First verified on the owner's Windows laptop, Git Bash, Node 24.15,
+2026-10-20; the spare-laptop path below was added and run 2026-11-07.
 
 🔴 **`.env.local` is PRODUCTION Supabase, so opening a page is not automatically read-only.** Every
 page reads live payroll and sales data. Signed in as a real person (`--hrId`), a page writes under
@@ -47,16 +48,50 @@ download.
 Work in your own worktree — `node scripts/new-session.mjs <task>` — and never run `pnpm` inside
 one (it purges the `node_modules` junction).
 
+## Where the app runs — the spare laptop, not this one
+
+🔴 **`localhost:3000` on this laptop is the SPARE laptop's dev server** (owner, 2026-11-07): the
+scheduled task "Phoenix Spare Tunnel" holds an `ssh -L 3000` forward to it, and
+`spare-follow-production.ps1` keeps it on **production's exact version, on the production
+database**, every 10 minutes. So:
+
+- **Never start a dev server on this laptop while `localhost:3000` answers**, and never move the
+  spare's checkout to a branch.
+- **It shows what is LIVE, never your branch.** To prove a change in `src/lib/`, use Direct
+  invocation below or the tests on the spare (`& ~/.claude/scripts/spare-test.ps1`); the PR's CI is
+  the verdict.
+- Read it first (it can take 8 s when cold, and times out while the spare is compiling):
+
+```bash
+curl -s -m 60 -o /dev/null -w '%{http_code} %{time_total}
+' http://localhost:3000/api/healthz
+```
+
+### Drive it ON the spare — `on-spare.ps1` (the default)
+
+This laptop starts no browser: the wrapper copies THIS checkout's `driver.mjs` into the spare's
+gitignored `output/run-skill-remote/<stamp>/`, runs it there against the spare's own server with
+`--timeout 900`, and copies the PNGs back to `output/run-skill/`. It reads healthz first and
+sends nothing when the server does not answer in 60 s. Every argument goes to the driver unchanged.
+
+```bash
+powershell -NoProfile -File .claude/skills/run-phoenix-workforce/on-spare.ps1 --role "Super Admin" go /admin shot admin-desktop overflow
+```
+
+Run it with `run_in_background: true`: a page the spare has not served since its last restart
+compiles for minutes (see Gotchas).
+
+### A local dev server — only when localhost:3000 does NOT answer
+
 Read live free RAM first; do not start the server under ~3 GB free:
 
 ```bash
 powershell -NoProfile -c "[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1024)"
 ```
 
-## Start the dev server
-
 Run it with `run_in_background: true` (the launcher picks `--webpack`, caps the heap at
 4,096 MB and refuses a second server). `preview_start` cannot spawn it here (space in the path).
+Verified 2026-10-20, before the spare took the dev server.
 
 ```bash
 node scripts/dev-server.mjs --port 3000
@@ -65,10 +100,15 @@ node scripts/dev-server.mjs --port 3000
 Ready in ~2 s; the first request compiles (healthz took 8 s, a page 12-60 s):
 
 ```bash
-curl -s -m 150 -w "\n%{http_code}\n" http://localhost:3000/api/healthz
+curl -s -m 150 -w "
+%{http_code}
+" http://localhost:3000/api/healthz
 ```
 
-## Run (agent path) — the driver
+## The driver — steps and output
+
+The same steps work on the spare (above) or locally against `localhost:3000`; a local run starts
+Edge on THIS laptop (~300 MB), so prefer `on-spare.ps1` when free RAM is under ~3 GB.
 
 ```bash
 export MSYS_NO_PATHCONV=1
@@ -91,7 +131,7 @@ overflow @375px ok [{"sel":"main","scrollWidth":351,"clientWidth":351},{"sel":"b
 - Screenshots land in `output/run-skill/<name>.png` (gitignored); a failed step also writes
   `failure.png`. **Open the PNG and look at it.**
 - Options: `--role`, `--hrId` (sign in as that person), `--width` (375 = phone, with touch),
-  `--base`, `--out`. Steps: `go <path>`, `click <exact text>`, `fill <label> <value>`,
+  `--base`, `--out`, `--timeout <s>` (one navigation's limit, default 180). Steps: `go <path>`, `click <exact text>`, `fill <label> <value>`,
   `waitfor <text>`, `shot <name>`, `text`, `overflow`, `eval <js>`, `wait <ms>`.
 - Exit 1 on a failed step or on horizontal scroll (`overflow`). Console errors, 5xx responses and
   `writes stopped (N)` print at the end. A stopped write does not fail the run. A page that reads
@@ -115,11 +155,14 @@ reads the database — that is production.
 ## Tests and typecheck
 
 Not run locally on this 16 GB laptop: the PR's `validate` + `checks` jobs are the verdict
-(AGENTS.md §7), and a local typecheck is refused by `bash-guard.mjs` C8.
+(AGENTS.md §7), and a local typecheck is refused by `bash-guard.mjs` C8. Tests that must run
+before the push go to the spare: `& ~/.claude/scripts/spare-test.ps1` (the whole suite, this
+checkout's state sent as one patch; never the dev server's folder).
 
 ## Stop
 
-Stop the server YOU started by port (never one the owner or another session started):
+Never stop or restart the spare's dev server — the scheduled task owns it. Stop only a LOCAL
+server YOU started, by port (never one the owner or another session started):
 
 ```powershell
 $c = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { Stop-Process -Id $c.OwningProcess -Force }; Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*scripts/dev-server.mjs --port 3000*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; Start-Sleep 2; "listening: " + [bool](Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)
@@ -135,6 +178,18 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 
 ## Gotchas
 
+- 🔴 **The spare is an 8 GB box and its first compile of a page can take 10+ minutes.** On
+  2026-11-07 (free RAM 500-1,000 MB, a suite from another session running beside it) the first
+  `go /admin` sat on `Compiling /(admin)/admin/page ...` for over 15 minutes: the default 180 s
+  `page.goto` timed out, and for several minutes even `/api/healthz` stopped answering through the
+  tunnel. Hence `--timeout 900` and the healthz read in `on-spare.ps1`. Read the spare's own log
+  for progress, never re-send the request:
+  `& ~/.claude/scripts/spare.ps1 'Get-Content D:Phoenixdev-server.log -Tail 5'`.
+- **A killed run leaves its Edge on the spare.** Stop only the headless ones you started:
+  `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'"` filtered on `--headless`, via
+  `spare.ps1`.
+- **The spare has no Playwright browser either**, so the driver there also falls back to Edge
+  (`browser: Playwright's own Chromium is missing, using installed msedge`) — expected.
 - **Git Bash rewrites `/admin` into `C:/Program Files/Git/admin`** before node sees it — the first
   run failed `net::ERR_FILE_NOT_FOUND at c:/Program%20Files/Git/admin`. `export
   MSYS_NO_PATHCONV=1`; the driver also undoes the rewrite on `go`.
@@ -176,4 +231,6 @@ then open http://localhost:3000/api/dev-auth?role=Super%20Admin in a browser.
 | screenshot is a grey skeleton | add `waitfor "<text on the loaded page>"` before `shot` |
 | a block reads empty, a console error says an unexpected response came from the server, or `ERR_BLOCKED_BY_CLIENT` | its POST was stopped: look for it under `writes stopped`, and do not read it as a defect |
 | `dev-auth refused (409) role_mismatch` | use the role the message names, or drop `--hrId` |
+| `on-spare.ps1`: `the spare's dev server does not answer /api/healthz in 60 s` | it is compiling or out of memory — read its log through `spare.ps1`, wait, never restart it |
+| `FAILED: page.goto: Timeout 180000ms exceeded` | a first compile on a slow server: run through `on-spare.ps1` (900 s) or pass `--timeout 900` |
 | background launcher task "failed, exit 127" after you stopped it | expected — that is the kill, not a crash |
