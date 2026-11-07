@@ -49,6 +49,7 @@ import {
 import { decisionStamp } from "@/lib/phoenix-crm/decision-stamp";
 import { adviseOnPlaceInUse } from "@/lib/phoenix-crm/place-check-advice";
 import { placeNoteSubjectKey } from "@/lib/phoenix-crm/place-note-rules";
+import { APPROVAL_NEEDS_FULL_NAME, approvalNeedsFullName } from "@/lib/phoenix-crm/pm-name-rules";
 import { PLACE_APPROVAL_IS_NOT_A_LIST_ADD, VALIDATION_NOTE_LABEL, type ValidationRefusalReason } from "@/lib/phoenix-crm/validation-feedback";
 import type { PlaceNoteIndex, ValidatedPlaceRow } from "@/lib/phoenix-crm/view-types";
 
@@ -353,9 +354,11 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A clinic customer with one or two names is never approved — refused and sent back for all three (owner, 2026-11-07).
+  const shortName = approvalNeedsFullName(row);
 
   async function approve() {
-    if (saving) return;
+    if (saving || shortName) return;
     setSaving(true);
     setProblem(null);
     try {
@@ -389,9 +392,10 @@ function Approve({ row }: { row: ValidatedPlaceRow }) {
           <RefusalNoteHint />
         </>
       ) : null}
-      <CrmButton disabled={saving} onClick={() => void approve()} variant="primary">
+      <CrmButton disabled={saving || shortName} onClick={() => void approve()} variant="primary">
         {saving ? "Approving…" : "Approve this validation"}
       </CrmButton>
+      {shortName ? <p className="break-words text-xs font-semibold text-slate-700">{APPROVAL_NEEDS_FULL_NAME}</p> : null}
       {commenting ? null : (
         <CrmButton onClick={() => setCommenting(true)} size="sm" variant="ghost">
           Add a comment
@@ -448,7 +452,7 @@ const IN_USE_ACTIONS: ReadonlyArray<BulkAction<ValidatedPlaceRow>> = [
     busyLabel: "Approving",
     variant: "primary",
     needsReason: false,
-    takes: () => true,
+    takes: (row) => !approvalNeedsFullName(row),
     run: (row, answer) => crmPost<unknown>("/api/phoenix-crm/validation-reviews/approve", { placeId: row.placeId, note: answer.note }, "approved"),
   },
   {

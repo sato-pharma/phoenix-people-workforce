@@ -247,11 +247,14 @@ function checkRepCanValidate(): void {
     /const at =\s*\n?\s*door === "shared" \? \{ seated: seatedPayload\(photo, seated, standingAt\) \} : \{ place: placePayload\(photoAtOwnDoor\(photo\), draft\) \};/,
     "the evidence is one door or the other: a captured place, or a seat in a shared place",
   );
+  // Since 2026-11-07 (owner: "Must enter the three names") the save also carries the three names — and
+  // only them, only for a clinic customer the sheet gave one or two names (`named`); never the grades.
   assert.match(
     screens,
-    /if \(subject\.mode === "listed"\) return \{ seatId, test, mode: "listed", customerId: subject\.customerId, phone: phoneValue, \.\.\.at \};/,
-    "the save sends the place and the phone, and never the name or the grades the SFE set",
+    /if \(subject\.mode === "listed"\) return \{ seatId, test, mode: "listed", customerId: subject\.customerId, phone: phoneValue, \.\.\.named, \.\.\.at \};/,
+    "the save sends the place, the phone and the asked-for three names, and never the grades the SFE set",
   );
+  assert.ok(screens.includes("const named = needsFullName ? { nameParts: fullParts } : {};"), "the names travel only when they were asked");
   assert.match(screens, /intake\?\.where/, "and the rep is shown where to find a customer he has never visited");
 
   // 🔴 THE CHAIN, END TO END — THE SEAM NOTHING WAS CHECKING AND WHERE THE FEATURE DIED.

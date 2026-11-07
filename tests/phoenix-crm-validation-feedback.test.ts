@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  buildingRefusalReason,
   parseValidationRefusalReason,
   reasonsFor,
   VALIDATION_REFUSAL_REASON_KEYS,
@@ -37,25 +38,40 @@ export function runPhoenixCrmValidationFeedbackTests(): void {
       // polyclinic rather than a signboard.
       "schedule_other_name",
       "schedule_missing",
+      // The ninth, the owner's word of 2026-11-07: a clinic customer with only one or two names is
+      // sent back for all three.
+      "short_name",
     ],
-    "eight, closed — a ninth needs the owner's word",
+    "nine, closed — a tenth needs the owner's word",
   );
-  // 🔴 THE CHECK THAT IS LIVE IS THE SECOND MIGRATION'S: 20261010013001 DROPS the 2026-10-08 constraint
-  // and recreates it with eight keys. Reading only the older file would pass while the database refused
-  // the two new reasons — which is exactly the shape this assertion exists to catch.
-  const migration = readFileSync("supabase/migrations/20261010013001_phoenix_crm_shared_places.sql", "utf8");
-  const reviewCheck = migration.slice(migration.indexOf("add constraint phoenix_crm_validation_reviews_refusal_reason"));
-  assert.ok(reviewCheck.length > 0, "the shared-places migration recreates the review table's refusal-reason CHECK");
+  // 🔴 THE CHECK THAT IS LIVE IS THE NEWEST MIGRATION'S: 20261107195700 DROPS the 20261010013001
+  // constraint and recreates it with nine keys. Reading an older file would pass while the database refused
+  // the newest reason — which is exactly the shape this assertion exists to catch.
+  const reviewMigration = readFileSync("supabase/migrations/20261107195700_phoenix_crm_three_names_at_validation.sql", "utf8");
+  const reviewCheck = reviewMigration.slice(reviewMigration.indexOf("add constraint phoenix_crm_validation_reviews_refusal_reason"));
+  assert.ok(reviewCheck.length > 0, "the three-names migration recreates the review table's refusal-reason CHECK");
   for (const key of VALIDATION_REFUSAL_REASON_KEYS) {
     assert.ok(reviewCheck.includes(`'${key}'`), `the live SQL CHECK holds ${key}`);
   }
-  // The venue's own column carries the same closed list, for a polyclinic the administrator rejects.
+  // The venue's own column carries the closed list a BUILDING is offered, for a polyclinic the
+  // administrator rejects — every reason but `short_name`, which is about a customer's name.
+  const migration = readFileSync("supabase/migrations/20261010013001_phoenix_crm_shared_places.sql", "utf8");
   const venueCheckAt = migration.indexOf("refusal_reason text check (");
   assert.ok(venueCheckAt > 0, "phoenix_crm_shared_places carries its own refusal_reason CHECK");
   const venueCheck = migration.slice(venueCheckAt, migration.indexOf("retired_at timestamptz", venueCheckAt));
-  for (const key of VALIDATION_REFUSAL_REASON_KEYS) {
-    assert.ok(venueCheck.includes(`'${key}'`), `phoenix_crm_shared_places.refusal_reason holds ${key}`);
+  for (const reason of reasonsFor("building")) {
+    assert.ok(venueCheck.includes(`'${reason.key}'`), `phoenix_crm_shared_places.refusal_reason holds ${reason.key}`);
   }
+  const buildingKeys = reasonsFor("building").map((reason) => reason.key);
+  assert.ok(!buildingKeys.includes("short_name"), "🔴 a building is never refused for a short name — its CHECK does not hold the key");
+  assert.equal(buildingRefusalReason("short_name"), null, "and the venue's server refuses it before the database could");
+  assert.equal(buildingRefusalReason("no_signboard"), "no_signboard", "a building reason passes");
+  const venueServer = stripComments(readFileSync("src/lib/phoenix-crm/server/shared-places.ts", "utf8"));
+  assert.ok(venueServer.includes("buildingRefusalReason(body.refusalReason)"), "the venue decision parses through the building list");
+  const venueScreen = readFileSync("src/components/phoenix-crm/shared-place-list.tsx", "utf8");
+  assert.equal(venueScreen.split(`kind="building"`).length - 1, 2, "the venue row and its bulk bar offer the building list");
+  assert.ok(reasonsFor("signboard").some((reason) => reason.key === "short_name"), "a customer's own signboard can be sent back for a short name");
+  assert.ok(reasonsFor("schedule").some((reason) => reason.key === "short_name"), "and so can a seated customer's timetable");
 
   // ── Which of the eight are OFFERED depends on what the photo is ───────────────────────────────
   const signboardKeys = reasonsFor("signboard").map((reason) => reason.key);

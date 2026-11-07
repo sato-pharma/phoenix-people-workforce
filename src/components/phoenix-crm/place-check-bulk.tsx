@@ -32,7 +32,7 @@ import type { PlaceCheckAdviceKind } from "@/lib/phoenix-crm/place-check-advice"
 import {
   VALIDATION_NOTE_LABEL,
   VALIDATION_REASON_REQUIRED,
-  type ValidationPhotoKind,
+  type ValidationPickKind,
   type ValidationRefusalReason,
 } from "@/lib/phoenix-crm/validation-feedback";
 
@@ -137,7 +137,7 @@ export function BulkDecideBar<Row>({
    */
   adviceOf?: (row: Row) => PlaceCheckAdviceKind | null;
   /** Which photo the selection is about, so the pick-list offers only reasons true of it. */
-  kind?: ValidationPhotoKind;
+  kind?: ValidationPickKind;
   /** How a row names itself, so a failure says which place it was. */
   nameOf: (row: Row) => string;
   picks: RowPicks<Row>;

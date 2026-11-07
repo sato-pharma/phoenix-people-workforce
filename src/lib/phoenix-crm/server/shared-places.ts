@@ -65,7 +65,7 @@ import {
   type SharedPlaceNamed,
 } from "@/lib/phoenix-crm/shared-place-rules";
 import { placePoint } from "@/lib/phoenix-crm/entry-rules";
-import { parseValidationRefusalReason, VALIDATION_REASON_REQUIRED } from "@/lib/phoenix-crm/validation-feedback";
+import { buildingRefusalReason, VALIDATION_REASON_REQUIRED } from "@/lib/phoenix-crm/validation-feedback";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
@@ -753,8 +753,10 @@ export async function decideSharedPlace(viewer: PhoenixCrmViewer, raw: unknown):
   const decision = body.decision === "approve" ? "approve" : body.decision === "reject" ? "reject" : null;
   if (!decision) throw validationError("Choose approve or reject.");
   // A refusal always says what is wrong with the photo, in the owner's own closed list (2026-10-08):
-  // the rep is told that reason and nothing else, so a rejection without one is refused here.
-  const refusalReason = decision === "reject" ? parseValidationRefusalReason(body.refusalReason) : null;
+  // the rep is told that reason and nothing else, so a rejection without one is refused here. A building is
+  // offered only the reasons true of a building (`reasonsFor("building")`) — never `short_name`, which its
+  // own CHECK does not hold.
+  const refusalReason = decision === "reject" ? buildingRefusalReason(body.refusalReason) : null;
   if (decision === "reject" && !refusalReason) throw validationError(VALIDATION_REASON_REQUIRED);
 
   const result = await callPhoenixCrm<Row>("phoenix_crm_decide_shared_place", {
