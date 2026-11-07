@@ -145,6 +145,12 @@ outcome sync and Mark as hired therefore move it without any second write that c
   current step is booked on, while no result is in — a phone call nobody answered is moved, not failed. The
   interviewer and the round stay. Everyone on it is told "Interview moved" with the old and new time.
 
+- **Every comment box has a microphone** (owner, 7 Nov 2026: "make the same mic so I can talk and it is
+  written instead of me typing") — the result's comment, the NSM's recommendation note and the notes for the
+  interviewer. "Speak" opens the Phoenix CRM visit form's own speech engine (Egyptian Arabic, English words
+  mixed in); each phrase is added to what is already typed, never replacing it. Nothing is recorded. A
+  browser with no speech engine (Firefox) shows the plain box.
+
 ## Who sees what
 
 | Seat | Page | Records |

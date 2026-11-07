@@ -2642,6 +2642,7 @@ import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
 import { runRecruitmentMrHiringAccessTests } from "./recruitment-mr-hiring-access.test.ts";
 import { runRecruitmentMrHiringAreaNoticeTests } from "./recruitment-mr-hiring-area-notice.test.ts";
 import { runRecruitmentMrHiringBookingTests } from "./recruitment-mr-hiring-booking.test.ts";
+import { runRecruitmentMrHiringDictationTests } from "./recruitment-mr-hiring-dictation.test.ts";
 import { runRecruitmentMrHiringStageTests } from "./recruitment-mr-hiring-stage.test.ts";
 import { runInterviewManagerShareTests } from "./interview-manager-share.test.ts";
 import { runWhatsAppApplicationCvCapTests, runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
@@ -10317,6 +10318,11 @@ await runTest(
 await runTest(
   "Medical Rep hiring, 7 November 2026: HR's pass at the 1st interview tells the area's DSM — or the line's NSM where the area has no real DSM — in-app, by push, Telegram and email and on a banner on his portal home he dismisses himself; and HR moves a booked interview, a missed phone call included, until its result is in",
   runRecruitmentMrHiringAreaNoticeTests,
+);
+
+await runTest(
+  "Medical Rep hiring, 7 November 2026: every comment box carries the Phoenix CRM visit form's microphone — its own speech engine, the words appended to what was typed within the box's cap, nothing recorded, and no microphone drawn where the browser has no engine",
+  runRecruitmentMrHiringDictationTests,
 );
 
 await runTest(

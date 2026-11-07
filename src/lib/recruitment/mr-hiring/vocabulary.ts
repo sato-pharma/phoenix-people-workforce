@@ -189,6 +189,8 @@ export function isMrRecommendation(value: unknown): value is MrRecommendation {
 
 /** The longest comment a result may carry — the column's own check. */
 export const MR_COMMENT_LIMIT = 2000;
+/** The interview booking's notes for the interviewer — the calendar's own cap (`NOTE_LIMIT`, interview-calendar.ts). */
+export const MR_BOOKING_NOTES_LIMIT = 1000;
 
 /** The longest place an in-person interview may name — the column's own check. */
 export const MR_LOCATION_LIMIT = 300;
