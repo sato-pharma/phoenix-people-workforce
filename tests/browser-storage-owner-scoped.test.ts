@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   CONTACT_HR_DRAFT_KEY_BASE,
+  EXPENSE_APPROVAL_VIEW_KEY_BASE,
   EXPENSE_DECISION_DRAFT_KEY_BASE,
   PUSH_REGISTRATION_MEMO_KEY_BASE,
   UNOWNED_LEGACY_DRAFT_KEYS,
@@ -80,6 +81,13 @@ export function runBrowserStorageOwnerScopedTests() {
   );
   assert.equal(ownerScopedStorageKey(CONTACT_HR_DRAFT_KEY_BASE, null), null, "no owner means store nothing");
   assert.equal(ownerScopedStorageKey(EXPENSE_DECISION_DRAFT_KEY_BASE, "   "), null);
+  // The Expense Approvals rail order (owner's review, 2026-11-07) is each reviewer's own.
+  assert.equal(
+    ownerScopedStorageKey(EXPENSE_APPROVAL_VIEW_KEY_BASE, "b-10"),
+    "phoenix.outstation.expense-approvals.view.v1:B-10",
+    "HEADLINE: the rail order is stored under the reviewer's own HR id",
+  );
+  assert.equal(ownerScopedStorageKey(EXPENSE_APPROVAL_VIEW_KEY_BASE, null), null, "no reviewer, nothing remembered");
 
   // ── 2. Sign-out clears the unsaved typing, and keeps the offline queues ───────────────────────────────
   {
@@ -91,12 +99,13 @@ export function runBrowserStorageOwnerScopedTests() {
       "phoenix.outstation.expense-approvals.draft.v1": "{}",
       "phoenix-outstation-draft:MR-0412": "{}",
       [`${VISIT_OUTBOX_KEY_BASE}:MR-0412`]: "[]",
+      [`${EXPENSE_APPROVAL_VIEW_KEY_BASE}:B-10`]: "oldest",
       "phoenix-theme": "dark",
     });
     clearSignedOutDrafts(storage);
     assert.deepEqual(
       storage.keys(),
-      ["phoenix-outstation-draft:MR-0412", "phoenix-theme", `${VISIT_OUTBOX_KEY_BASE}:MR-0412`],
+      ["phoenix-outstation-draft:MR-0412", "phoenix-theme", `${VISIT_OUTBOX_KEY_BASE}:MR-0412`, `${EXPENSE_APPROVAL_VIEW_KEY_BASE}:B-10`],
       "sign-out removes every person's unsaved-typing draft and every un-owned legacy key, and leaves the " +
         "owner-checked queues (the outstation claim, the visits a phone holds) and unrelated settings alone",
     );

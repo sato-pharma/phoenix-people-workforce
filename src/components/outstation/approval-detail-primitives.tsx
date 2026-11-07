@@ -104,15 +104,18 @@ export function Fact({ label, value }: { label: string; value: string }) {
  * keeps its own `dir="auto"`: residence addresses are Arabic in 70 of 70 production rows and the
  * destination is Arabic-first in 19, so each resolves on its own rather than from its neighbour.
  */
-export function RouteFact({ from, to }: { from: string; to: string }) {
+export function RouteFact({ from, to, toTitle }: { from: string; to: string; toTitle?: string }) {
   return (
     <div className="col-span-2 min-w-0 sm:col-span-4">
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
       <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-sm font-semibold text-slate-900">
         <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">From</dt>
-        <dd className="m-0 min-w-0 break-words" dir="auto">{from || "—"}</dd>
+        {/* `text-left` beside `dir="auto"` (owner's review, 2026-11-07): an Arabic From still reads
+            right to left, but both ends start at the same edge, so the route reads down one line
+            instead of zig-zagging — Arabic From on the right, Latin To on the left. */}
+        <dd className="m-0 min-w-0 break-words text-left" dir="auto">{from || "—"}</dd>
         <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">To</dt>
-        <dd className="m-0 min-w-0 break-words" dir="auto">{to || "—"}</dd>
+        <dd title={toTitle || undefined} className="m-0 min-w-0 break-words text-left" dir="auto">{to || "—"}</dd>
       </dl>
     </div>
   );

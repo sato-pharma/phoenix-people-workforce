@@ -22,7 +22,12 @@ import { type Decision, type LoadedRecord, PANEL_CLASS, type TripIdleDays, egp }
 import { StatLine } from "@/components/outstation/expense-approvals/stat-line";
 import { TripList } from "@/components/outstation/expense-approvals/trip-list";
 import { TripReview } from "@/components/outstation/expense-approvals/trip-review";
-import { EXPENSE_DECISION_DRAFT_KEY_BASE, ownerScopedStorageKey } from "@/lib/browser-storage/owner-scoped";
+import {
+  EXPENSE_APPROVAL_VIEW_KEY_BASE,
+  EXPENSE_DECISION_DRAFT_KEY_BASE,
+  browserLocalStorage,
+  ownerScopedStorageKey,
+} from "@/lib/browser-storage/owner-scoped";
 import { formatNumberValue } from "@/lib/i18n/format";
 import {
   APPROVED_STATUS,
@@ -43,7 +48,12 @@ import {
   matchesExpenseApprovalSearchText,
   NO_EXPENSE_APPROVAL_FILTERS,
 } from "@/lib/outstation/expense-approval-filters";
-import { compareExpenseApprovalTrips, expenseTripTriage } from "@/lib/outstation/expense-approval-triage";
+import {
+  type ExpenseApprovalSort,
+  compareExpenseApprovalTrips,
+  expenseTripTriage,
+  withLiveWorkloadStatus,
+} from "@/lib/outstation/expense-approval-triage";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
 import {
   buildExpenseApprovalEmployeeSummary,
@@ -172,7 +182,8 @@ export function ExpenseApprovalsWorkspace({
   viewerHrId = null,
 }: { canDecide?: boolean; viewerHrId?: string | null } = {}) {
   const draftKey = ownerScopedStorageKey(EXPENSE_DECISION_DRAFT_KEY_BASE, viewerHrId);
-  const [records, setRecords] = useState<LoadedRecord[]>([]);
+  const viewKey = ownerScopedStorageKey(EXPENSE_APPROVAL_VIEW_KEY_BASE, viewerHrId);
+  const [loadedRecords, setRecords] = useState<LoadedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -181,6 +192,10 @@ export function ExpenseApprovalsWorkspace({
   // Each opened trip's idle days, lifted from its field-work read so the decision box can offer
   // the allowance share for them (owner, 2026-11-07: "LET ME DECIDE" — offered, never applied).
   const [idleByTrip, setIdleByTrip] = useState<Record<string, TripIdleDays>>({});
+  // An opened trip's live day-by-day answer replaces its stored workload stamp for the rail's
+  // reasons, its Needs a look / Clean split and their counts — the rail never disagrees with the
+  // page it opens (owner's review, 2026-11-07). Rows not yet opened keep the stored stamp.
+  const records = useMemo(() => withLiveWorkloadStatus(loadedRecords, idleByTrip), [loadedRecords, idleByTrip]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [saving, setSaving] = useState(false);
@@ -278,6 +293,39 @@ export function ExpenseApprovalsWorkspace({
       cancelled = true;
     };
   }, [records, draftKey]);
+
+  // The rail's order is remembered per reviewer (owner's review, 2026-11-07). Read once the viewer
+  // is known — after a microtask, as the draft restore above, so no setState runs in the effect
+  // body. Anything unreadable leaves "Biggest first".
+  useEffect(() => {
+    if (!viewKey) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      let stored: string | null = null;
+      try {
+        stored = browserLocalStorage()?.getItem(viewKey) ?? null;
+      } catch {
+        stored = null;
+      }
+      if (stored === "oldest" || stored === "value") setFilters((current) => (current.sort === stored ? current : { ...current, sort: stored }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewKey]);
+  const chooseSort = useCallback(
+    (sort: ExpenseApprovalSort) => {
+      setFilters((current) => ({ ...current, sort }));
+      if (!viewKey) return;
+      try {
+        browserLocalStorage()?.setItem(viewKey, sort);
+      } catch {
+        // Storage blocked or full: the order still changes, it is just not remembered.
+      }
+    },
+    [viewKey],
+  );
 
   // Persist on every change, so the draft is never more than one decision behind the screen.
   useEffect(() => {
@@ -391,6 +439,17 @@ export function ExpenseApprovalsWorkspace({
       undecidedHistory: undecided.filter((record) => isImportedHistoryTrip(record.date)),
     };
   }, [records, search, filters, decisionFor]);
+
+  // The stat line's "of": the same three states over the WHOLE queue, filters and search ignored.
+  const overallCounts = useMemo(() => {
+    const counts = { approved: 0, pending: 0, rejected: 0 };
+    for (const record of records) {
+      const state = expenseApprovalState(decisionFor(record));
+      if (state === "pending" && isImportedHistoryTrip(record.date)) continue;
+      counts[state] += 1;
+    }
+    return counts;
+  }, [records, decisionFor]);
 
   // How many trips AWAIT a decision under each rail choice — within the month, the employee and
   // the search, but across both triage choices, so each button says what clicking it would show.
@@ -846,6 +905,8 @@ export function ExpenseApprovalsWorkspace({
             adjustedDelta={totals.adjustedDelta}
             approvedCount={approved.length}
             approvedValue={totals.approvedValue}
+            narrowed={narrowed}
+            overall={overallCounts}
             pendingCount={pending.length}
             pendingValue={totals.pendingValue}
             rejectedCount={rejected.length}
@@ -1084,7 +1145,7 @@ export function ExpenseApprovalsWorkspace({
               setLoadError(null);
               void load();
             }}
-            onSort={(sort) => setFilters((current) => ({ ...current, sort }))}
+            onSort={chooseSort}
             onTriage={(triage) => setFilters((current) => ({ ...current, triage }))}
             pendingCount={pending.length}
             selectedTripIds={selectedTripIds}
