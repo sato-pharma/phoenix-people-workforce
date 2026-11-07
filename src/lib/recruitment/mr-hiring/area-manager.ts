@@ -18,6 +18,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { loadWorkspacePlaces } from "@/lib/recruitment/workspace/places";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import type { MrLine } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 export type MrOrgSeat = {
@@ -132,4 +133,80 @@ export async function resolveMrAreaManagers(areaName: string, line: MrLine): Pro
     }
   }
   return pickMrAreaManagers(districtSeatId, seats);
+}
+
+/**
+ * Whether a district seat sits inside a regional manager's region: climbing its parents reaches an
+ * occupied RSM seat before the NSM. A vacant RSM seat is no regional manager. PURE.
+ */
+export function mrSeatUnderRsm(districtSeatId: string, seats: ReadonlyMap<string, MrOrgSeat>): boolean {
+  let parentId = seats.get(districtSeatId)?.parentSeatId ?? null;
+  for (let hop = 0; hop < MAX_CLIMB && parentId; hop += 1) {
+    const parent = seats.get(parentId);
+    if (!parent) return false;
+    const tier = parent.tier.toUpperCase();
+    if (tier === "RSM") return parent.occupantHrIds.length > 0;
+    if (tier === "NSM") return false;
+    parentId = parent.parentSeatId;
+  }
+  return false;
+}
+
+/**
+ * Of the area names given (the bot's own, as HR confirmed them), the ones that sit on the Pedia line
+ * inside a regional manager's region today — folded names, so the caller folds the same way
+ * (`mrFoldAreaName`). Measured 7 Nov 2026: 17 of the 49 Pedia areas are under the RSM; the other 32
+ * sit directly under the NSM. One read per level of the seat tree, never per candidate.
+ */
+export async function loadPediaAreasUnderRsm(areaNames: readonly string[]): Promise<Set<string>> {
+  const wanted = new Set(areaNames.map(foldName).filter(Boolean));
+  const under = new Set<string>();
+  if (wanted.size === 0) return under;
+  const places = await loadWorkspacePlaces("medical_rep");
+  const nameByCode = new Map<string, string>();
+  for (const region of places.regions) {
+    for (const area of region.areas) if (wanted.has(foldName(area.name))) nameByCode.set(area.code, foldName(area.name));
+  }
+  if (nameByCode.size === 0) return under;
+  const today = currentCairoDateOnlyIso();
+  const mapRows = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      recruitmentDb()
+        .from("au_v_line_area_map")
+        .select("area_code,dm_seat_id,effective_from,effective_to")
+        .eq("line_code", "pedia")
+        .in("area_code", Array.from(nameByCode.keys())),
+    "area_code",
+  );
+  const seatByCode = new Map<string, string>();
+  for (const row of mapRows) {
+    const from = String(row.effective_from ?? "");
+    const to = String(row.effective_to ?? "");
+    if (from && from > today) continue;
+    if (to && to < today) continue;
+    const code = String(row.area_code ?? "").trim();
+    const seatId = String(row.dm_seat_id ?? "").trim();
+    if (code && seatId && !seatByCode.has(code)) seatByCode.set(code, seatId);
+  }
+  const seats = new Map<string, MrOrgSeat>();
+  let level = Array.from(new Set(seatByCode.values()));
+  for (let hop = 0; hop <= MAX_CLIMB && level.length > 0; hop += 1) {
+    await loadSeats(level, seats);
+    level = Array.from(
+      new Set(
+        level
+          .map((id) => seats.get(id))
+          .filter((seat): seat is MrOrgSeat => Boolean(seat) && !["RSM", "NSM"].includes(seat!.tier.toUpperCase()))
+          .map((seat) => seat.parentSeatId)
+          .filter((id): id is string => Boolean(id) && !seats.has(id!)),
+      ),
+    );
+  }
+  for (const [code, seatId] of seatByCode) if (mrSeatUnderRsm(seatId, seats)) under.add(nameByCode.get(code)!);
+  return under;
+}
+
+/** The fold `loadPediaAreasUnderRsm` answers in. */
+export function mrFoldAreaName(name: string): string {
+  return foldName(name);
 }

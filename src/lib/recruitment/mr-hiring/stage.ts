@@ -91,6 +91,12 @@ export type MrCandidateFacts = {
   receivedAt: string;
   /** Whether any of the candidate's CVs reached one of the company WhatsApp lines. */
   onOfficialLine: boolean;
+  /**
+   * Whether the area HR confirmed sits, on the Pedia line, inside a regional manager's region — its
+   * district seat climbs to an occupied RSM seat before the NSM (the organogram, read in facts-db.ts).
+   * False before an area is confirmed, off the Pedia line, and for an area directly under the NSM.
+   */
+  pediaAreaUnderRsm: boolean;
   bookings: readonly MrBookingFact[];
   results: readonly MrStepResultFact[];
   recommendations: readonly MrRecommendationFact[];
@@ -216,11 +222,13 @@ export function mrConfirmedArea(facts: Pick<MrCandidateFacts, "results">): strin
 
 /**
  * Whether this candidate has the RSM interview: HR confirmed the Pedia line at the 1st interview
- * (owner, 7 Nov 2026 — "by default, it is not appearing"). An RSM interview already booked or
- * evaluated keeps its step, so nothing that happened ever disappears from the journey.
+ * (owner, 7 Nov 2026 — "by default, it is not appearing") AND the area HR confirmed is in one of the
+ * regional manager's regions (owner, 7 Nov 2026: "only if this candidate is in … one of the regions
+ * of this regional manager"). A Pedia area directly under the NSM has no RSM interview. An RSM
+ * interview already booked or evaluated keeps its step, so nothing that happened ever disappears.
  */
-export function mrRsmApplies(facts: Pick<MrCandidateFacts, "results" | "bookings">): boolean {
-  if (mrConfirmedLine(facts) === "pedia") return true;
+export function mrRsmApplies(facts: Pick<MrCandidateFacts, "results" | "bookings" | "pediaAreaUnderRsm">): boolean {
+  if (mrConfirmedLine(facts) === "pedia" && facts.pediaAreaUnderRsm) return true;
   return facts.bookings.some((booking) => booking.round === "rsm") || facts.results.some((row) => row.step === "rsm");
 }
 
@@ -290,8 +298,8 @@ export function mrHiringStage(facts: MrCandidateFacts, now: Date = new Date()): 
 
   const checklist: MrChecklistItem[] = MR_STEPS.map((step) => ({ booking: null, result: null, status: "upcoming", step }));
   const item = (step: MrStep) => checklist[MR_STEPS.indexOf(step)];
-  // The RSM interview is the Pedia line's alone — decided up front, so a candidate who is not on it
-  // never shows the step, not even as "upcoming" while the earlier steps run.
+  // The RSM interview is the Pedia line's alone, in the RSM's regions — decided up front, so a
+  // candidate outside them never shows the step, not even as "upcoming" while the earlier steps run.
   const rsmApplies = mrRsmApplies(facts);
   if (!rsmApplies) item("rsm").status = "skipped";
   const mark = (step: MrStep, status: MrChecklistItem["status"], result: MrStepResultFact | null = null, booking: MrBookingFact | null = null) => {
@@ -362,8 +370,8 @@ export function mrHiringStage(facts: MrCandidateFacts, now: Date = new Date()): 
     const rounds = spec.step === "final" ? (jointFinal ? (["joint_final"] as const) : (["nsm_final"] as const)) : spec.rounds;
     const booking = latestBooking(facts.bookings, rounds);
     const result = latestResult(facts.results, rounds as readonly MrResultStep[]);
-    // The RSM interview is "if applicable" (the Pedia line, as HR confirmed it at the 1st interview):
-    // off the Pedia line the candidate goes straight on to the 3rd interview. On it, the RSM interview
+    // The RSM interview is "if applicable" (the Pedia line, as HR confirmed it at the 1st interview, in
+    // an area inside the RSM's regions): otherwise the candidate goes straight on to the 3rd interview. On it, the RSM interview
     // is booked and evaluated like every other round, and the 3rd interview waits for it.
     if (spec.step === "rsm" && !rsmApplies) continue;
     if (result) {
