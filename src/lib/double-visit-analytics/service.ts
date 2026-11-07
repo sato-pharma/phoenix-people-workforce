@@ -2063,7 +2063,10 @@ function focusMonthBuckets(startMonth: string, asOf = new Date()) {
  * this module no longer selects — see paginateLiveMirrorVisits). Those two columns are the exact
  * source of the jsonb's visitType / visitTypeDescription fields — proven identical over the full
  * mirror population (113,458 rows, 0 mismatches). */
-function deriveVisitKind(row: Pick<DoubleVisitDbRow, "visit_type" | "visit_type_description">): string {
+function deriveVisitKind(row: Pick<DoubleVisitDbRow, "phoenix_detail" | "visit_type" | "visit_type_description">): string {
+  // "Campaign" is UNPLANNED now (owner, 6 Nov 2026): Phoenix's own flag, or a campaign visit (−8) on an archive
+  // day. Every Phoenix visit arrives as type 0, so without the flag every one of them read "Regular".
+  if (isUnplannedFieldVisit({ is_unplanned: row.phoenix_detail?.is_unplanned ?? null, visit_type: row.visit_type })) return "Unplanned";
   if (row.visit_type === 0) return "Regular";
   return nullableText(row.visit_type_description) ?? "Non-Regular";
 }
