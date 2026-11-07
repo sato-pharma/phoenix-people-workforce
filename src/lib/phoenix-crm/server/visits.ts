@@ -341,7 +341,7 @@ const VISIT_COLUMNS =
   // 2026-10-15). `linked_from_visit_id` is read for one reason only: the pharmacy visit a doctor's
   // visit filed has no detail of its own to fill in, so its card offers nothing, and nor does a visit
   // copied from the old system, which is history.
-  "detail_comment, detail_edited_at, linked_from_visit_id, imported_from_ireports360_at, " +
+  "detail_comment, detail_edited_at, linked_from_visit_id, imported_from_ireports360_at, ireports360_kpi_counted, " +
   // `lat` and `lon` are read only to say whether the row holds a reading; `mapVisitRow` passes no coordinate on.
   "lat, lon, accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, unplanned_kind, " +
   "next_step, next_step_on, objection, objection_note, samples_given, " +
@@ -521,6 +521,8 @@ function mapVisitRow(
       unplannedKind,
       unplannedStatus: unplannedApproval?.status ?? null,
       customerValidated,
+      copiedFromOldSystem: importedAt !== null,
+      oldSystemKpiCounted: row.ireports360_kpi_counted === true,
     }),
     outOfList: unplannedKind === "out_of_list" ? outOfListVisitNote(textOrNull(record(row.customer).status)) : null,
     outcome: visitOutcome(row),
@@ -543,7 +545,15 @@ function mapVisitRow(
 
 async function loadVisitRows(seatId: string, isTest: boolean, date: string): Promise<Row[]> {
   const rows = await fetchAllRowsKeyset<Row>(
-    () => getSupabaseAdmin().from("phoenix_crm_visits").select(VISIT_COLUMNS).eq("seat_id", seatId).eq("is_test", isTest).eq("visit_date", date),
+    // A copied visit in the visits archive (owner, 2026-11-07) is no visit: never on the day's list.
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_visits")
+        .select(VISIT_COLUMNS)
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .eq("visit_date", date)
+        .is("archived_at", null),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
   return rows.sort((left, right) => String(right.captured_at).localeCompare(String(left.captured_at)));
@@ -970,6 +980,7 @@ async function loadLastVisits(
         .select("id, customer_id, visit_date, captured_at, products, next_step, next_step_on")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)
+        .is("archived_at", null)
         .lt("visit_date", today)
         .gte("visit_date", monthsBackFrom(today, LAST_VISIT_MONTHS)),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },

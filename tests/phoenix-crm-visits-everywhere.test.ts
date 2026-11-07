@@ -775,9 +775,14 @@ function runNoDoubleCountTests(code: string): void {
     1,
     "the vendor table is scanned ONCE, not once per side of the split",
   );
+  // AN OLD VISIT IS SERVED ONLY AS A VISIT WITH A LOCATION, AND ONCE (owner, 7 Nov 2026): never a campaign visit
+  // (retired), never one in the visits archive (no check-in location), never one copied into Phoenix CRM — the
+  // Phoenix arm serves that one when it counts, and nobody when it does not.
+  const servedOnce =
+    "x.visit_type <> -8 and not exists (select 1 from public.phoenix_crm_visit_archive a where a.crm_visit_id = x.crm_visit_id) and not exists (select 1 from public.phoenix_crm_imported_visit_sources s where s.crm_visit_id = x.crm_visit_id)";
   assert.ok(
-    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ${retired} and ( x.visit_date < ${firstDay} or ( not exists`),
-    "one scan, the cutover bound and the retirement bound on it, and the first-day bound as the first arm of the choice",
+    vendor.includes(`from ( select x.* from public.ireports360_visits x where ${cutover} and ${retired} and ${servedOnce} and ( x.visit_date < ${firstDay} or ( not exists`),
+    "one scan, the cutover bound and the retirement bound on it, the served-once rule, and the first-day bound as the first arm of the choice",
   );
   assert.ok(
     vendor.includes(
@@ -841,10 +846,23 @@ function runNoDoubleCountTests(code: string): void {
     ),
     "a Phoenix visit is served on a counted territory, for the days it counts",
   );
+  // A CONVERTED OLD VISIT THAT COUNTS IS SERVED FROM PHOENIX, WHATEVER ITS DAY (owner, 7 Nov 2026): the countable view
+  // admits a copied visit only when ireports360_kpi_counted, and the iReports360 arm no longer serves it — so the
+  // windows join is LEFT, and only a copied visit may pass outside a window.
+  assert.ok(
+    flat(visitBranch).includes("left join public.phoenix_crm_counted_seat_windows() team on team.seat_id = p.seat_id"),
+    "the windows join is LEFT, so a converted old visit dated before its team's start is still served",
+  );
+  assert.ok(
+    flat(visitBranch).endsWith("where not p.is_test and (team.seat_id is not null or p.imported_from_ireports360_at is not null)"),
+    "outside a counted window, only a copied visit — every Phoenix visit still counts only inside its window",
+  );
   // WHICH TERRITORY COUNTS ON WHICH DAY (owner, 6 Nov 2026: "Count all teams from 6 Nov"): a started team's
   // territory from its start, cut at the day iReports360 was retired, and EVERY territory from that day on.
   // The two windows meet at the retirement day and never overlap, so no visit is served twice.
-  const seatWindows = flat(functionSql(VISITS_DOOR, "phoenix_crm_counted_seat_windows"));
+  // Each window function is read from ITS OWN last definer: the door was redefined without them (20261107044742).
+  const windowsSql = (fn: string): string => lastDefinerSql(new RegExp(`create or replace function public\\.${fn}\\(`), fn);
+  const seatWindows = flat(functionSql(windowsSql("phoenix_crm_counted_seat_windows"), "phoenix_crm_counted_seat_windows"));
   for (const clause of [
     "returns table(seat_id text, starts_on date, stops_on date) language sql stable security definer rows 200 set search_path to 'public'",
     "with retired as ( select (select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id) as on_day )",
@@ -855,8 +873,8 @@ function runNoDoubleCountTests(code: string): void {
   }
   assert.ok(!seatWindows.includes("day_activities_from"), "a VISIT never counts before the start — only the recorded day activity does");
   for (const fn of ["phoenix_crm_counted_seat_windows", "phoenix_crm_counted_day_activity_windows"]) {
-    assert.match(VISITS_DOOR, new RegExp(`revoke execute on function public\\.${fn}\\(\\) from public, anon, authenticated;`), `${fn} is not callable with the browser's key`);
-    assert.match(VISITS_DOOR, new RegExp(`grant execute on function public\\.${fn}\\(\\) to postgres, service_role;`), `${fn} is callable by the door's two readers`);
+    assert.match(windowsSql(fn), new RegExp(`revoke execute on function public\\.${fn}\\(\\) from public, anon, authenticated;`), `${fn} is not callable with the browser's key`);
+    assert.match(windowsSql(fn), new RegExp(`grant execute on function public\\.${fn}\\(\\) to postgres, service_role;`), `${fn} is callable by the door's two readers`);
   }
   assert.ok(
     flat(activityBranch).includes(
@@ -864,7 +882,7 @@ function runNoDoubleCountTests(code: string): void {
     ),
     "and so is a day activity — on a counted territory, or on the team's own seat where a district manager's day sits",
   );
-  const activityWindows = flat(functionSql(VISITS_DOOR, "phoenix_crm_counted_day_activity_windows"));
+  const activityWindows = flat(functionSql(windowsSql("phoenix_crm_counted_day_activity_windows"), "phoenix_crm_counted_day_activity_windows"));
   for (const clause of [
     "returns table(seat_id text, counted_from date, stops_on date) language sql stable security definer rows 240 set search_path to 'public'",
     "started as ( select t.seat_id, t.team_seat_id, t.starts_on, t.stops_on from public.phoenix_crm_started_team_seats() t union " +
@@ -1119,6 +1137,8 @@ const VISIT_COLUMNS_CARRIED = new Set([
   "captured_at",
   "comment",
   "created_at",
+  // Read in the WHERE only, to serve a converted old visit outside a counted window (owner, 2026-11-07) — no column.
+  "imported_from_ireports360_at",
   "customer_id",
   "customer_validated",
   "id",
@@ -1190,7 +1210,11 @@ function runRowShapeTests(code: string): void {
 
   // COUNTABLE AND REAL ONLY.
   assert.ok(flat(visitBranch).includes("from public.phoenix_crm_countable_visits p"), "the module's own predicate for 'this visit counts', read and never re-typed");
-  assert.ok(flat(visitBranch).endsWith("where not p.is_test"), "never a test account's visit");
+  // The second clause admits a converted old visit outside a counted window (owner, 7 Nov 2026) — never a test row.
+  assert.ok(
+    flat(visitBranch).endsWith("where not p.is_test and (team.seat_id is not null or p.imported_from_ireports360_at is not null)"),
+    "never a test account's visit",
+  );
   assert.doesNotMatch(view, /public\.phoenix_crm_visits\b/, "the view never reads the raw visits table, so an unapproved off-plan visit never counts");
   // 🔴 THE APPROVAL RULE IS STILL THE COUNTABLE VIEW'S, AND THE DOOR STILL NEVER RE-TYPES IT. From
   // 2026-10-07 the door CARRIES `is_unplanned` and `unplanned_kind` for the admin reports to print —
@@ -1293,7 +1317,9 @@ function runRowShapeTests(code: string): void {
   assert.ok(
     flat(vendorBranch).includes(
       "from ( select x.* from public.ireports360_visits x where x.visit_date < coalesce((select c.cutover_date from public.crm_cutover c where c.id), 'infinity'::date) " +
-        "and x.visit_date < coalesce((select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id), 'infinity'::date) and ( x.visit_date < (",
+        "and x.visit_date < coalesce((select (c.vendor_sync_retired_at at time zone 'Africa/Cairo')::date from public.crm_cutover c where c.id), 'infinity'::date) " +
+        "and x.visit_type <> -8 and not exists (select 1 from public.phoenix_crm_visit_archive a where a.crm_visit_id = x.crm_visit_id) " +
+        "and not exists (select 1 from public.phoenix_crm_imported_visit_sources s where s.crm_visit_id = x.crm_visit_id) and ( x.visit_date < (",
     ),
     "the iReports360 branch keeps its source, its cutover clause and the retirement bound on its one scan",
   );
@@ -1409,7 +1435,7 @@ function runRowShapeTests(code: string): void {
   assert.equal(phoenix.get("ampm"), "p.list_type", "the bucket still reads the CUSTOMER'S OWN LIST and nothing the visit says");
 
   // Golden rule #1: nothing silent leaves Phoenix CRM.
-  const columnsRead = new Set([...visitBranch.matchAll(/\bp\.([a-z_]+)/g)].map((match) => match[1]));
+  const columnsRead = new Set([...visitBranch.matchAll(/\bp\.([a-z0-9_]+)/g)].map((match) => match[1]));
   for (const column of columnsRead) {
     assert.ok(VISIT_COLUMNS_CARRIED.has(column), `the Phoenix branch reads p.${column}, which golden rule #1 keeps inside Phoenix CRM`);
   }
@@ -1748,7 +1774,8 @@ const INTEGRITY_COLUMNS = [
   "synced_at",
   "voice_note_path",
 ];
-const CHECKIN_COLUMNS_CARRIED = new Set(["captured_at", "created_at", "customer_id", "id", "is_test", "lat", "lon", "manager_hr_id", "rep_hr_id", "seat_id", "visit_date"]);
+// `imported_from_ireports360_at` is read only to leave a copied visit out (owner, 7 Nov 2026) — it is no column of the door.
+const CHECKIN_COLUMNS_CARRIED = new Set(["captured_at", "created_at", "customer_id", "id", "imported_from_ireports360_at", "is_test", "lat", "lon", "manager_hr_id", "rep_hr_id", "seat_id", "visit_date"]);
 
 /** Readers that may ask for Phoenix check-ins: each is a screen no rep can reach (phoenix-team-starts.ts). */
 // The CRM Integrity page's service (src/lib/crm-integrity/service.ts) was the first reader here; it was
@@ -1880,8 +1907,11 @@ function runCheckinDoorTests(plans: string): void {
   }
   const phoenix = flat(phoenixBranch);
   assert.ok(phoenix.includes("join public.phoenix_crm_counted_seat_windows() team on team.seat_id = p.seat_id and p.visit_date >= team.starts_on and (team.stops_on is null or p.visit_date < team.stops_on)"), "only a counted territory's visits, within its window — the visit door's own windows");
-  assert.ok(phoenix.endsWith("where not p.is_test and p.lat is not null and p.lon is not null;"), "real only, and only a visit whose position was read");
-  const columnsRead = new Set([...phoenixBranch.matchAll(/\bp\.([a-z_]+)/g)].map((match) => match[1]));
+  assert.ok(
+    phoenix.endsWith("where not p.is_test and p.imported_from_ireports360_at is null and p.lat is not null and p.lon is not null;"),
+    "real only, never a copied old visit (its position is the old check-in the iReports360 arm already serves — owner, 7 Nov 2026), and only a visit whose position was read",
+  );
+  const columnsRead = new Set([...phoenixBranch.matchAll(/\bp\.([a-z0-9_]+)/g)].map((match) => match[1]));
   for (const column of columnsRead) {
     assert.ok(CHECKIN_COLUMNS_CARRIED.has(column), `the Phoenix check-in reads p.${column}`);
   }

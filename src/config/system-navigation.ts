@@ -4762,6 +4762,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // The visits archive (owner, 2026-11-07): the old iReports360 visits Phoenix CRM did not take over as
+    // visits — campaign visits and visits with no check-in location — read-only, a page at a time. The
+    // admin CRM workspace's two people: `canUseAdminCrmWorkspace` is the enforcing gate inside the page
+    // and every loader (src/lib/phoenix-crm/server/visit-archive.ts); this card only draws the link.
+    href: "/admin/phoenix-crm/visits-archive",
+    icon: Archive,
+    label: "Visits archive",
+    description: "The old CRM's campaign visits and visits with no check-in location, kept as they were recorded — by month, reason, rep and line, with whether each was copied into Phoenix.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // Places the Google Maps check could not confirm (owner, 2026-10-03: "held for review and only
     // system admin can approve or reject"; the SFE Manager added 2026-10-19: "show check place to sfe
     // manager exactly as it in the admin account to be able validate approve and refuse"). The enforcing
@@ -5461,6 +5473,8 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/phoenix-crm/master-list",
           // A rep turned away on his location: housekeeping like the duplicates row, same band.
           "/admin/phoenix-crm/refused-readings",
+          // The old CRM's visits Phoenix did not take over as visits: a record kept, read-only, same band.
+          "/admin/phoenix-crm/visits-archive",
           // A place Google Maps could not confirm: the same band, the Super Admin's and the SFE Manager's.
           "/admin/field-crm/validation-reviews",
           // The visit recordings a chosen rep makes: field evidence, the Super Admin's alone.

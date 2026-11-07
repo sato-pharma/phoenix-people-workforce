@@ -615,13 +615,14 @@ const NOT_THIS_MODULE: ReadonlyArray<readonly [RegExp, string]> = [
   [/["'`]\/api\/crm\//, "the old CRM's and the pilot's API routes"],
   // 🔴 `/admin/phoenix-crm` and `/employee-portals/phoenix-crm` are the retired 2026-09-14 pilot's
   // own pages — the first only forwards to `/admin/field-crm` (see src/lib/needs-you/types.ts), and a
-  // module file linking to either is the defect this catches. Four sub-paths beneath it are NOT the
-  // pilot's: the integrity board, the duplicate sweep, the refused readings and the list template are
-  // this module's own admin screens, linked from system-navigation.ts, and the board page is pinned as
+  // module file linking to either is the defect this catches. Five sub-paths beneath it are NOT the
+  // pilot's: the integrity board, the duplicate sweep, the refused readings, the list template and the
+  // visits archive (owner, 2026-11-07) are this module's own admin screens, linked from
+  // system-navigation.ts, and the board page is pinned as
   // a blind reader in tests/phoenix-crm-blind-half.test.ts. They are named one at a time on purpose —
   // anything else under the retired path still fails, so a real pilot link cannot ride in behind them.
   [
-    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|list-template)\b)\b/,
+    /["'`]\/(?:admin|employee-portals)\/phoenix-crm(?!\/(?:integrity|duplicates|refused-readings|list-template|visits-archive)\b)\b/,
     "the pilot's pages",
   ],
 ];
@@ -632,8 +633,10 @@ function runIsolationTests() {
   for (const file of files) {
     // `imported_from_ireports360_at` is Phoenix CRM's OWN column — the mark on a visit copied from the old
     // history (20261029212200), which the readers that judge filter on. It names no iReports360 table, so
-    // it alone is taken out before the scan; any other `ireports360_` still fails.
-    const source = readFileSync(file, "utf8").replaceAll("imported_from_ireports360_at", "");
+    // it alone is taken out before the scan; any other `ireports360_` still fails. `ireports360_kpi_counted`
+    // (owner, 2026-11-07) is the same kind: a column of phoenix_crm_visits, the trigger's "this converted old
+    // visit counts", naming no iReports360 table.
+    const source = readFileSync(file, "utf8").replaceAll("imported_from_ireports360_at", "").replaceAll("ireports360_kpi_counted", "");
     for (const [pattern, what] of NOT_THIS_MODULE) {
       assert.doesNotMatch(source, pattern, `${file} reaches ${what} — Phoenix CRM is built clean, never wired into the old CRM`);
     }

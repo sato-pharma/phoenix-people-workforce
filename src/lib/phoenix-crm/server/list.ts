@@ -1217,6 +1217,7 @@ export async function loadCustomerPharmacies(seatId: string, isTest: boolean): P
           .select("id, customer_id, pharmacy_name, product_availability, captured_at")
           .eq("seat_id", seatId)
           .eq("is_test", isTest)
+          .is("archived_at", null)
           .not("pharmacy_name", "is", null),
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );

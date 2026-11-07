@@ -3,6 +3,14 @@ import { readFileSync, readdirSync } from "node:fs";
 
 import { archiveReasonLabel } from "../src/lib/phoenix-crm/list-request-rules.ts";
 import {
+  CONVERTED_VISIT_IS_UNPLANNED,
+  convertOldVisitLocation,
+  OLD_SYSTEM_CAMPAIGN_VISIT,
+  OLD_SYSTEM_REGULAR_VISIT,
+  oldVisitArchiveReason,
+} from "../src/lib/phoenix-crm/old-visit-conversion.ts";
+import { kpiHoldBackOf, visitCountsInKpi } from "../src/lib/phoenix-crm/unplanned-rules.ts";
+import {
   VISIT_ASK_MARKETING_MANAGER_LINE_CODES,
   VISIT_ASK_MARKETING_MANAGER_ROLE,
   VISIT_ASK_PRODUCT_MANAGER_ROLES,
@@ -122,10 +130,13 @@ export function runPhoenixCrmImportedHistoryTests() {
       why: "the roster and cadence sweep judges Phoenix work, not the old system's",
     },
     {
+      // Owner, 7 Nov 2026: a converted old visit that counts IS a visit. readVisits reads the countable view, which
+      // admits a copied visit only when ireports360_kpi_counted — so it names no mark of its own, and judges no
+      // copied visit's placement (its capture_source is admin).
       path: "src/lib/rep-ranks/server/compute.ts",
       declaration: "async function readVisits(",
-      skips: 1,
-      why: "ranks read Phoenix CRM only",
+      skips: 0,
+      why: "the countable view decides which copied visit counts",
     },
     {
       path: "src/lib/rep-ranks/server/compute.ts",
@@ -174,9 +185,8 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/day-route.ts": 2,
     "src/lib/phoenix-crm/server/double-visit-plans.ts": 1,
     "src/lib/phoenix-crm/server/insight-reports.ts": 1,
-    "src/lib/phoenix-crm/server/integrity-board.ts": 3,
+    "src/lib/phoenix-crm/server/integrity-board.ts": 2,
     "src/lib/phoenix-crm/server/list.ts": 2,
-    "src/lib/phoenix-crm/server/location-integrity.ts": 2,
     "src/lib/phoenix-crm/server/manager-customer-marks.ts": 1,
     "src/lib/phoenix-crm/server/manager-plan-report.ts": 1,
     "src/lib/phoenix-crm/server/manager-visit-details.ts": 3,
@@ -188,7 +198,6 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/offplan-day.ts": 2,
     "src/lib/phoenix-crm/server/refused-readings-board.ts": 1,
     "src/lib/phoenix-crm/server/reports.ts": 3,
-    "src/lib/phoenix-crm/server/silent-detectors.ts": 1,
     "src/lib/phoenix-crm/server/team-calendar.ts": 4,
     "src/lib/phoenix-crm/server/team.ts": 1,
     "src/lib/phoenix-crm/server/unplanned.ts": 2,
@@ -201,8 +210,8 @@ export function runPhoenixCrmImportedHistoryTests() {
     "src/lib/phoenix-crm/server/visit-resend-log.ts": 1,
     // The fourth (2026-11-04) reads the other visits of a customer's days for the day order: one customer's history
     // keeps the copied visits, which are exactly that history.
-    "src/lib/phoenix-crm/server/visit-report.ts": 4,
-    "src/lib/phoenix-crm/server/visit-rollup.ts": 1,
+    // The fifth is no read: readSeatRange names the table to add the visits archive's filter (owner, 2026-11-07).
+    "src/lib/phoenix-crm/server/visit-report.ts": 5,
     "src/lib/phoenix-crm/server/visits.ts": 2,
     "src/lib/phoenix-crm/server/week-progress.ts": 1,
     "src/lib/system-audit/detectors/visit-lifecycle.ts": 15,
@@ -306,8 +315,8 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.ok(file >= IMPORT_MIGRATION, `the countable view's newest definer (${file}) predates the import`);
     assert.match(
       sqlObject(sql, "create or replace view public.phoenix_crm_countable_visits"),
-      /v\.product_manager_hr_id, v\.imported_from_ireports360_at from public\.phoenix_crm_visits v/,
-      "the view carries the mark, appended last, so ranks and exceptions can skip a copied visit by name",
+      /v\.product_manager_hr_id, v\.imported_from_ireports360_at, v\.ireports360_checkin_id, v\.ireports360_kpi_counted, v\.archived_at from public\.phoenix_crm_visits v/,
+      "the view carries the mark, appended, then the conversion's three (owner, 2026-11-07), so ranks and exceptions can skip a copied visit by name",
     );
   }
 
@@ -315,16 +324,19 @@ export function runPhoenixCrmImportedHistoryTests() {
   {
     const { file, sql } = newestDefiner(/create or replace view public\.phoenix_crm_countable_visits\b/, "phoenix_crm_countable_visits");
     const countable = sqlObject(sql, "create or replace view public.phoenix_crm_countable_visits");
-    const FILTER = " and v.imported_from_ireports360_at is null";
+    // Owner, 7 Nov 2026: a copied visit counts only once CONVERTED and measured against a validated place
+    // (ireports360_kpi_counted, the trigger's answer); an archived one (a campaign visit, or no check-in location)
+    // never. A new reader that forgets the mark still never counts a copied visit that is not a visit.
+    const FILTER = " and (v.imported_from_ireports360_at is null or v.ireports360_kpi_counted) and v.archived_at is null";
     assert.ok(
       countable.endsWith(FILTER),
-      `${file}: phoenix_crm_countable_visits must end with \`${FILTER.trim()}\` — a new reader that forgets the mark must still never count ~69,000 copied visits as Phoenix work`,
+      `${file}: phoenix_crm_countable_visits must end with \`${FILTER.trim()}\` — only a converted old visit that counts is ever Phoenix work`,
     );
     const history = newestDefiner(/create or replace view public\.phoenix_crm_countable_visits_with_history\b/, "phoenix_crm_countable_visits_with_history");
     assert.equal(
       sqlObject(history.sql, "create or replace view public.phoenix_crm_countable_visits_with_history").replace("_with_history", ""),
-      countable.slice(0, -FILTER.length),
-      `${history.file}: the history view is the countable view without the import filter — every other rule the same`,
+      `${countable.slice(0, -FILTER.length)} and v.archived_at is null`,
+      `${history.file}: the history view is the countable view without the import filter — every other rule the same, and never an archived row`,
     );
   }
   for (const report of ["brick_coverage", "coverage", "manager_visits", "visits_by_day"]) {
@@ -400,8 +412,9 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.match(copy, /'admin', v_now from phx_import_rows r where not r\.conflict/, "every copied row is the admin shape and carries the mark");
     assert.match(copy, /on conflict \(seat_id, customer_id, visit_date, is_test\) do nothing/, "a visit already in Phoenix is never overwritten");
     assert.match(copy, /on conflict \(crm_visit_id\) do nothing/, "a second run never writes an old visit twice");
-    assert.match(migration, /revoke execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean, boolean\) from public, anon, authenticated;/);
-    assert.match(migration, /grant execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean, boolean\) to service_role;/);
+    // Four arguments since --leavers (owner, 2026-11-07): p_seat, p_apply, p_after_start, p_leavers.
+    assert.match(migration, /revoke execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean, boolean, boolean\) from public, anon, authenticated;/);
+    assert.match(migration, /grant execute on function public\.phoenix_crm_import_ireports360_history\(text, boolean, boolean, boolean\) to service_role;/);
     assert.match(
       stripSqlComments(read(IMPORT_MIGRATION)).replace(/\s+/g, " "),
       /alter table public\.phoenix_crm_imported_visit_sources enable row level security; revoke all on table public\.phoenix_crm_imported_visit_sources from public, anon, authenticated;/,
@@ -435,5 +448,179 @@ export function runPhoenixCrmImportedHistoryTests() {
     assert.match(copy, /and \(e\.captured_at, e\.rep_hr_id\) < \(r\.captured_at, r\.rep_hr_id\)/, "and the later one stays unmapped, on the List's old-system line");
     assert.match(copy, /iv\.visit_type = -8 and not exists \(/, "a day with no seat keeps only its campaign visits");
     assert.doesNotMatch(copy, /o\.seat_id <> c\.seat_id/, "a visit is kept for holding THIS seat, not for not holding another");
+
+    // Owner, 7 Nov 2026: every mode copies ONLY a regular visit with a check-in location — never a campaign visit.
+    assert.match(
+      copy,
+      /and iv\.visit_type = 0 and contact\.id is not null and exists \(select 1 from public\.phoenix_crm_ireports360_checkin_matches m where m\.crm_visit_id = iv\.crm_visit_id\)/,
+      "the copy takes a regular visit with a located check-in, and nothing else",
+    );
+    assert.match(copy, /if p_after_start and p_leavers then raise exception 'phoenix_crm:import_one_mode_at_a_time'/, "--after-start and --leavers are two runs");
   }
+
+  runOldVisitConversionTests();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE CONVERSION AND THE VISITS ARCHIVE (owner, 7 Nov 2026).
+//
+//   · A regular old visit with a check-in location becomes a PLANNED Phoenix visit, at the check-in's position,
+//     measured against the customer's validated place today with the one distance rule (geo.ts).
+//   · A visit to a customer with a validated place counts; one with no place is shown and never counted.
+//   · A CAMPAIGN VISIT NEVER COUNTS, and a visit with no check-in location is no visit: both are in the visits
+//     archive, and a copied row of either kind is marked archived — never deleted — and read by nothing.
+//   · Money and alerts keep ignoring every copied row, converted or not; nothing is counted twice.
+// ─────────────────────────────────────────────────────────────────────────────
+function runOldVisitConversionTests(): void {
+  const CONVERT = "supabase/migrations/20261107044059_phoenix_crm_old_visits_convert_and_archive.sql";
+  const convertSql = stripSqlComments(read(CONVERT)).replace(/\s+/g, " ");
+
+  // ── The archive reason: campaign wins, and only a located regular visit converts ──
+  assert.equal(oldVisitArchiveReason({ visitType: OLD_SYSTEM_CAMPAIGN_VISIT, hasCheckinLocation: true }), "campaign", "a campaign visit is retired even with a check-in");
+  assert.equal(oldVisitArchiveReason({ visitType: OLD_SYSTEM_CAMPAIGN_VISIT, hasCheckinLocation: false }), "campaign", "campaign wins when both apply");
+  assert.equal(oldVisitArchiveReason({ visitType: OLD_SYSTEM_REGULAR_VISIT, hasCheckinLocation: false }), "no_checkin_location");
+  assert.equal(oldVisitArchiveReason({ visitType: OLD_SYSTEM_REGULAR_VISIT, hasCheckinLocation: true }), null, "a located regular visit converts");
+  assert.equal(CONVERTED_VISIT_IS_UNPLANNED, false, "a regular visit was on the rep's list: a converted visit is planned");
+
+  // ── The location: the one distance rule, far line from the settings ──
+  const place = { id: "place-1", lat: 30.0444, lon: 31.2357 };
+  const near = convertOldVisitLocation({ checkin: { checkinId: 7, lat: 30.0445, lon: 31.2358 }, places: [place], farMeters: 300 });
+  assert.equal(near?.locationFlag, "ok");
+  assert.equal(near?.placeId, "place-1");
+  assert.equal(near?.kpiCounted, true, "measured against a validated place: counted");
+  const far = convertOldVisitLocation({ checkin: { checkinId: 8, lat: 30.06, lon: 31.2357 }, places: [place], farMeters: 300 });
+  assert.equal(far?.locationFlag, "far", "beyond visit_far_meters is far — a far visit still counts, flagged, as a new one would");
+  assert.equal(far?.kpiCounted, true);
+  const nearest = convertOldVisitLocation({
+    checkin: { checkinId: 9, lat: 30.06, lon: 31.2357 },
+    places: [place, { id: "place-2", lat: 30.0601, lon: 31.2357 }],
+    farMeters: 300,
+  });
+  assert.equal(nearest?.placeId, "place-2", "every active place is asked, nearest first");
+  assert.equal(nearest?.locationFlag, "ok");
+  const unplaced = convertOldVisitLocation({ checkin: { checkinId: 10, lat: 30.0445, lon: 31.2358 }, places: [], farMeters: 300 });
+  assert.deepEqual(
+    unplaced,
+    { checkinId: 10, placeId: null, distanceMeters: null, locationFlag: "no_place", kpiCounted: false },
+    "a customer with no validated place: shown, never counted",
+  );
+  assert.equal(convertOldVisitLocation({ checkin: { checkinId: 11, lat: 0, lon: 0 }, places: [place], farMeters: 300 }), null, "a fix outside Egypt is no location");
+
+  // ── The KPI twin: a copied visit counts only on the trigger's answer ──
+  const planned = { isUnplanned: false, unplannedKind: null, unplannedStatus: null, customerValidated: true } as const;
+  assert.equal(visitCountsInKpi({ ...planned, copiedFromOldSystem: true, oldSystemKpiCounted: true }), true, "a converted visit to a validated place counts");
+  assert.equal(visitCountsInKpi({ ...planned, copiedFromOldSystem: true, oldSystemKpiCounted: false }), false, "a copied visit without the counted flag never counts");
+  assert.equal(visitCountsInKpi({ ...planned, copiedFromOldSystem: true }), false, "a copied visit read without the flag never counts");
+  assert.equal(visitCountsInKpi(planned), true, "a Phoenix visit is untouched");
+  assert.equal(kpiHoldBackOf({ ...planned, copiedFromOldSystem: true, oldSystemKpiCounted: false }), "validation", "it waits for a validated place");
+  // A copied CAMPAIGN visit was filed as an unplanned out-of-list visit — it never counts, even to a validated customer.
+  assert.equal(
+    visitCountsInKpi({ isUnplanned: true, unplannedKind: "out_of_list", unplannedStatus: null, customerValidated: true, copiedFromOldSystem: true, oldSystemKpiCounted: false }),
+    false,
+    "a campaign visit never counts",
+  );
+
+  // ── The trigger: the counted flag is the row's own, and an archived or unconverted row never has it ──
+  const trigger = sqlObject(convertSql, "create or replace function public.phoenix_crm_visits_old_system_kpi(");
+  assert.match(
+    trigger,
+    /new\.ireports360_kpi_counted := new\.imported_from_ireports360_at is not null and new\.archived_at is null and new\.ireports360_checkin_id is not null and new\.lat is not null and new\.place_id is not null and new\.location_flag in \('ok', 'far', 'weak_gps'\);/,
+    "counted = copied, not archived, converted with a check-in, at a position, measured against a place",
+  );
+  assert.match(
+    convertSql,
+    /add constraint phoenix_crm_visits_old_system_kpi check \( not ireports360_kpi_counted or \(ireports360_checkin_id is not null and archived_at is null and lat is not null\) \)/,
+    "and the table refuses a counted row that is archived or carries no check-in",
+  );
+
+  // ── The archive: campaign, then no check-in location; the copied rows are marked, never deleted ──
+  const prepare = sqlObject(convertSql, "create or replace function public.phoenix_crm_prepare_ireports360_conversion(");
+  assert.match(prepare, /case when iv\.visit_type = -8 then 'campaign' else 'no_checkin_location' end as reason/, "campaign wins");
+  assert.match(
+    prepare,
+    /where iv\.visit_type = -8 or \(iv\.visit_type = 0 and not exists \(select 1 from phx_conv_match m where m\.crm_visit_id = iv\.crm_visit_id\)\)/,
+    "every campaign visit, and every regular visit with no located check-in, is in the archive",
+  );
+  assert.match(prepare, /where iv\.visit_type = 0 and nullif\(iv\.contact_crm_id, 0\) is not null;/, "only a regular visit is ever matched to a check-in");
+  assert.match(prepare, /having not bool_or\(iv\.visit_type = 0 and m\.crm_visit_id is not null\)/, "a copied row is archived only when none of its old visits is a located regular visit");
+  assert.match(prepare, /set archived_at = v_now, archive_reason = r\.reason/, "a copied row that is no visit is MARKED");
+  assert.match(prepare, /pg_advisory_xact_lock/, "one conversion at a time");
+  for (const sql of [convertSql, stripSqlComments(read("supabase/migrations/20261107044742_crm_doors_count_converted_old_visits.sql"))]) {
+    assert.doesNotMatch(sql, /delete from public\.phoenix_crm_visits\b/i, "a copied row is never deleted — production has no PITR");
+  }
+  assert.match(
+    convertSql,
+    /alter table public\.phoenix_crm_visit_archive enable row level security; revoke all on table public\.phoenix_crm_visit_archive from public, anon, authenticated;/,
+    "the archive is the service role's alone",
+  );
+  assert.match(
+    convertSql,
+    /alter table public\.phoenix_crm_ireports360_checkin_matches enable row level security; revoke all on table public\.phoenix_crm_ireports360_checkin_matches from public, anon, authenticated;/,
+    "and so are the check-in matches",
+  );
+
+  // ── The write takes the position from the match, never from the caller ──
+  const apply = sqlObject(convertSql, "create or replace function public.phoenix_crm_apply_ireports360_conversion(");
+  assert.match(apply, /set lat = m\.lat, lon = m\.lon, accuracy_meters = null,/, "the position is the matched check-in's own");
+  assert.match(apply, /where s\.visit_id = v\.id and s\.crm_visit_id = m\.crm_visit_id/, "and that check-in is one of THIS visit's old visits");
+  assert.match(apply, /pl\.id = i\.place_id and pl\.customer_id = v\.customer_id and pl\.status = 'active'/, "the place is the customer's own active place");
+  assert.match(apply, /and v\.archived_at is null/, "an archived row is never converted");
+  for (const fn of ["phoenix_crm_prepare_ireports360_conversion(boolean)", "phoenix_crm_ireports360_conversion_page(uuid, integer)", "phoenix_crm_apply_ireports360_conversion(jsonb)"]) {
+    const escaped = fn.replace(/[().]/g, (character) => `\\${character}`);
+    assert.match(convertSql, new RegExp(`revoke execute on function public\\.${escaped} from public, anon, authenticated;`), `${fn} is not callable with the browser's key`);
+    assert.match(convertSql, new RegExp(`grant execute on function public\\.${escaped} to service_role;`), `${fn} is the service role's`);
+  }
+
+  // ── The runner: dry run by default, the one distance rule, the count checked ──
+  const runner = stripComments(read("scripts/phoenix-crm-convert-ireports360-visits.ts"));
+  assert.match(runner, /const APPLY = arg\("apply"\) === "";/, "--apply is a bare flag; anything else is a dry run");
+  assert.match(runner, /if \(arg\("apply"\) !== null && arg\("apply"\) !== ""\) throw/, "--apply=false is refused");
+  assert.match(runner, /Unknown flag \$\{entry\} — refused rather than ignored\./);
+  assert.match(runner, /convertOldVisitLocation\(/, "the runner measures with the one rule");
+  assert.match(runner, /if \(count !== items\.length\) throw new PageMismatch/, "a page that wrote another number of rows is rolled back");
+  assert.match(runner, /fs\.appendFileSync\(\s*beforeFile,/, "every row's earlier values are kept before the write");
+
+  // ── Every visit screen leaves an archived row out ──
+  const ARCHIVED = '.is("archived_at", null)';
+  const archiveReaders: Array<{ path: string; declaration: string }> = [
+    { path: "src/lib/phoenix-crm/server/visits.ts", declaration: "async function loadVisitRows(" },
+    { path: "src/lib/phoenix-crm/server/visits.ts", declaration: "async function loadLastVisits(" },
+    { path: "src/lib/phoenix-crm/server/customer-timeline.ts", declaration: "export async function loadCustomerTimeline(" },
+    { path: "src/lib/phoenix-crm/server/daily-plan-report.ts", declaration: "async function loadVisits(" },
+    { path: "src/lib/phoenix-crm/server/visit-report.ts", declaration: "async function readSeatRange(" },
+    { path: "src/lib/phoenix-crm/server/visit-report.ts", declaration: "async function readManagerVisitRange(" },
+  ];
+  for (const { path, declaration } of archiveReaders) {
+    assert.ok(count(body(path, declaration), ARCHIVED) >= 1, `${path}: ${declaration} must leave out a copied visit in the visits archive`);
+  }
+  for (const path of [
+    "src/lib/phoenix-crm/server/plan-insight.ts",
+    "src/lib/phoenix-crm/server/call-prep.ts",
+    "src/lib/phoenix-crm/server/team.ts",
+    "src/lib/phoenix-crm/server/commitments.ts",
+    "src/lib/phoenix-crm/server/list.ts",
+    "src/lib/phoenix-crm/server/reports.ts",
+  ]) {
+    assert.ok(stripComments(read(path)).includes(ARCHIVED), `${path} must leave out a copied visit in the visits archive`);
+  }
+
+  // ── Alerts: a converted visit now carries a position, and nothing that judges a reading reads it ──
+  for (const { path, declaration, skips } of [
+    { path: "src/lib/phoenix-crm/server/location-integrity.ts", declaration: "async function loadHistory(", skips: 2 },
+  ]) {
+    assert.ok(count(body(path, declaration), SKIP_VISIT) >= skips, `${path}: both reads of prior fixes skip a copied visit`);
+  }
+  for (const path of [
+    "src/lib/phoenix-crm/server/integrity-board.ts",
+    "src/lib/phoenix-crm/server/silent-detectors.ts",
+    "src/lib/phoenix-crm/server/visit-rollup.ts",
+  ]) {
+    assert.ok(stripComments(read(path)).includes(SKIP_VISIT), `${path}: a converted visit's position judges nobody`);
+  }
+
+  // ── The place-vs-actual report admits a converted visit that counts, and no other admin entry ──
+  assert.ok(
+    stripComments(read("src/lib/phoenix-crm/server/reports.ts")).includes('.or("capture_source.neq.admin,ireports360_kpi_counted.is.true")'),
+    "place against actual: a converted old visit that counts is a reading at the door; a hand-keyed entry still is not",
+  );
 }

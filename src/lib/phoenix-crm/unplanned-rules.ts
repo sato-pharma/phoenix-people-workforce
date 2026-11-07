@@ -266,8 +266,17 @@ export function visitCountsInKpi(input: {
   unplannedStatus: UnplannedVisitStatus | null;
   /** `customerCountsAsValidated` for the visited customer. */
   customerValidated: boolean;
+  /** Copied from iReports360 (`imported_from_ireports360_at`). Absent reads as false. */
+  copiedFromOldSystem?: boolean;
+  /**
+   * `ireports360_kpi_counted` — the trigger's answer for a copied visit: converted with its old check-in and
+   * measured against a validated place, and not archived (owner, 2026-11-07). The countable view admits a copied
+   * visit on exactly this, so a copied visit without it counts in nothing, whatever else it says.
+   */
+  oldSystemKpiCounted?: boolean;
 }): boolean {
   if (!input.customerValidated) return false;
+  if (input.copiedFromOldSystem) return input.oldSystemKpiCounted === true;
   if (!input.isUnplanned) return true;
   if (input.unplannedKind === "out_of_list") return true;
   return input.unplannedStatus === "approved";
@@ -290,6 +299,9 @@ export type KpiHoldBack = "validation" | "approval" | "refused";
 export function kpiHoldBackOf(input: Parameters<typeof visitCountsInKpi>[0]): KpiHoldBack | null {
   if (visitCountsInKpi(input)) return null;
   if (!input.customerValidated) return "validation";
+  // A copied visit that does not count is waiting for a validated PLACE (no place, so nothing was measured):
+  // the visit is shown and counted the day its customer's place is validated (the restamp sets the flag).
+  if (input.copiedFromOldSystem) return "validation";
   return input.unplannedStatus === "refused" ? "refused" : "approval";
 }
 

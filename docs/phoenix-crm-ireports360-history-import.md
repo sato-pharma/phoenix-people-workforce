@@ -287,6 +287,89 @@ names it. To remove only this copy, change the rollback below to
   (10,736) and the notification outbox (5,153).
 - **Its rows are** `imported_from_ireports360_at >= '2026-11-06 22:00+00'`.
 
+## The conversion (2026-11-07)
+
+The owner's rules, 7 Nov 2026:
+
+- **A regular old visit (type 0) becomes a planned Phoenix visit** only when it has a matching old check-in
+  with coordinates. The match is the agent's check-in at that contact on the visit's day, read on the vendor
+  wall clock the doors use, inside Egypt's box. Of several, the one nearest the visit's own time wins.
+- **The check-in's position is the visit's.** It is measured against the customer's active places today, with
+  `checkVisitLocation` (`src/lib/phoenix-crm/old-visit-conversion.ts`) and the far line `visit_far_meters`
+  (300 m). A check-in has no accuracy, so it is never "weak GPS".
+- **A visit to a customer with a validated place counts** in visits and KPIs. A visit to a customer with no
+  place is `no_place`: shown, never counted. The trigger `phoenix_crm_visits_old_system_kpi` keeps the
+  answer in `ireports360_kpi_counted`. A place validated later restamps the visit, and the flag follows.
+- **Campaign visits (−8) are retired.** They are never converted and never copied again.
+- **A visit with no check-in location is not a visit.** Both kinds go to the visits archive,
+  `phoenix_crm_visit_archive`; campaign wins when both apply. A copied row of either kind gets
+  `archived_at` and `archive_reason`. It is NEVER deleted, and every visit screen leaves it out. The Super
+  Admin reads the archive at `/admin/phoenix-crm/visits-archive`.
+- **Leavers** are copied by `--leavers`, under the territory each held on the visit's day. A leaver with no REP
+  seat that day stays served from iReports360. A visit with no hr id cannot be converted.
+- **Money and alerts keep ignoring every copied row**, converted or not. Work evidence, trip evidence, the
+  entry days, the adoption board, prior fixes, the integrity board, the photograph check and the roll-up all
+  filter by `imported_from_ireports360_at`.
+- **Nothing is counted twice.** Once `20261107044742` is applied, the iReports360 arm of `crm_visits_unified`
+  serves no campaign visit, no archived visit and no copied visit. The Phoenix arm serves a converted visit
+  that counts, whatever its day. `crm_checkins_unified` serves the old check-in from iReports360 only.
+
+**Measured read-only on production, 7 Nov 2026, before any run:**
+
+- **Old visits:** 144,524 dated 2026. Of these, 106,231 are regular (6,042 with no hr id) and 32,110 are
+  campaign.
+- **Check-ins:** 101,829 regular visits match one.
+- **Copied rows today:** 72,113. Of these, 13,028 are campaign (archive) and 1,697 have no check-in (archive).
+  The other 57,388 convert: 27,058 count (22,406 ok, 4,652 far) and 30,330 have no place.
+- **Archive, campaign:** 13,028 copied and 19,082 never copied.
+- **Archive, no check-in location:** 1,759 copied and 2,643 never copied.
+- **Never copied, regular, located with an hr id:** 38,575. Of these, 30,472 belong to leavers who held a REP
+  seat that day, 7,483 to leavers with none, and 620 to current reps.
+
+What the door serves for regular visits, by month. "Before" counts every iReports360 regular visit served
+today. "After" splits the same month into what iReports360 still serves, the converted copies that count, and
+an estimate of the leavers' copies that will count:
+
+| Month | Before | iReports360 left | Converted, counted | Leavers, counted (estimate) |
+| --- | --- | --- | --- | --- |
+| Jan | 5,197 | 1,790 | 609 | 131 |
+| Feb | 5,852 | 1,478 | 593 | 255 |
+| Mar | 8,125 | 1,999 | 1,215 | 402 |
+| Apr | 11,924 | 2,104 | 2,320 | 642 |
+| May | 12,579 | 2,157 | 2,718 | 683 |
+| Jun | 15,046 | 1,963 | 3,316 | 810 |
+| Jul | 13,925 | 1,250 | 3,370 | 736 |
+| Aug | 14,786 | 946 | 5,158 | 626 |
+| Sep | 13,250 | 228 | 5,725 | 369 |
+| Oct | 5,391 | 30 | 2,034 | 29 |
+| Nov | 153 | 0 | 0 | 0 |
+
+Campaign visits served today, which all leave the door: 1,994, 4,134, 5,319, 3,956, 4,303, 5,063, 3,893, 1,932,
+1,160, 355 and 1. 🔴 **The counted visits fall sharply** — January from 7,191 to about 2,530. The cause is the
+"no validated place, not counted" rule, and every customer validated later brings his visits back.
+
+**The order on production** (each step is a bulk production change, announced first):
+
+1. Apply `20261107044059` — the columns, the trigger, the two tables, the three functions and importer v4.
+   The new readers select `archived_at` and `ireports360_kpi_counted`, so it goes BEFORE the deploy.
+2. Deploy.
+3. `scripts/phoenix-crm-convert-ireports360-visits.ts` as a dry run, then with `--apply`. It fills the matches
+   and the archive, marks the archived copies, and converts every other copy page by page. Each page is
+   refused and rolled back unless the database wrote exactly the rows sent. `before-<Cairo time>.jsonl`
+   keeps each row's earlier values. Records go to `F:\PHX backup\phoenix-crm-ireports360-conversion-20261107\`.
+4. `scripts/phoenix-crm-import-ireports360-history.ts --leavers` as a dry run, then with `--leavers --apply`.
+5. The conversion with `--apply` again, for the leavers' copies.
+6. Apply `20261107044742` — the doors. Only after step 5, or the old visits it stops serving are served by
+   nobody.
+
+```powershell
+node --env-file-if-exists=.env.production.rls.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/phoenix-crm-convert-ireports360-visits.ts
+```
+
+**Undo the conversion:** write each row of `before-<Cairo time>.jsonl` back by `visit_id`. Clear `archived_at`
+and `archive_reason` on the copied rows the run marked (`archived_at` equals that run's time). The archive and
+the match tables are copies of iReports360 rows, which stay; drop them only on the owner's word.
+
 ## Rollback
 
 Production has no PITR. The copy is removed by its marks, never by a restore:
