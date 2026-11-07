@@ -97,8 +97,9 @@ export function mrBookingRefusal(stage: MrStage, round: MrInterviewRound): strin
     (round === "hr_first" && (stage.step === "screening" || (stage.step === "hr_first" && toBook))) ||
     (round === "dsm" && stage.step === "dsm" && toBook) ||
     // The RSM interview is "if applicable" (the Pedia line): with none booked the stage has already
-    // moved past it to the 3rd interview, so it is offered there, until the 3rd interview is booked.
-    (round === "rsm" && stage.step === "hr_manager" && toBook) ||
+    // moved past it to the 3rd interview, so it is offered there, until the 3rd interview is booked —
+    // and only while it was never held (an RSM interview already evaluated is not booked again).
+    (round === "rsm" && stage.step === "hr_manager" && toBook && stage.checklist.some((item) => item.step === "rsm" && item.status === "skipped")) ||
     (round === "hr_manager" && stage.step === "hr_manager" && toBook) ||
     (round === "nsm_final" && stage.step === "final" && toBook && !stage.jointFinal) ||
     // §7's "or": the joint final replaces the 3rd interview and the NSM final, so it is offered from
