@@ -104,7 +104,7 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.match(railRule, /align-self: flex-start/, "and as tall as its content, so it can travel the row");
   assert.match(css, /\.phx-expense-rail-footer \{[^}]*overflow-y: auto/, "an open Adjust panel scrolls inside the rail, never pushing Approve off screen");
   const shell = stripComments(readFileSync("src/components/layout/app-shell.tsx", "utf8"));
-  assert.match(shell, /<div className="sticky top-0 z-30">\s*<ChromeHeightProbe \/>/, "the shell measures its frozen chrome");
+  assert.match(shell, /<div className="sticky top-0 z-30">[\s{}]*<ChromeHeightProbe \/>/, "the shell measures its frozen chrome");
   const probe = readFileSync("src/components/layout/chrome-height-probe.tsx", "utf8");
   assert.match(probe, /new ResizeObserver\(publish\)/, "and keeps the height current as the chrome changes");
   assert.match(probe, /setProperty\("--phx-chrome-h"/, "publishing it as --phx-chrome-h");

@@ -115,9 +115,7 @@ export function RouteFact({ from, to, toTitle }: { from: string; to: string; toT
             instead of zig-zagging — Arabic From on the right, Latin To on the left. */}
         <dd className="m-0 min-w-0 break-words text-left" dir="auto">{from || "—"}</dd>
         <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">To</dt>
-        <dd className="m-0 min-w-0 break-words text-left" dir="auto" title={toTitle || undefined}>
-          {to || "—"}
-        </dd>
+        <dd title={toTitle || undefined} className="m-0 min-w-0 break-words text-left" dir="auto">{to || "—"}</dd>
       </dl>
     </div>
   );
