@@ -51,11 +51,11 @@ export default async function MrHiringPage({ searchParams }: { searchParams: Pro
       <RecruitmentPageHeader
         badges={
           <>
-            <AdminInsightChip tone="orange">From Sunday 8 November 2026</AdminInsightChip>
+            <AdminInsightChip tone="orange">From Saturday 7 November 2026</AdminInsightChip>
             <AdminInsightChip tone="slate">Medical Representative only</AdminInsightChip>
           </>
         }
-        description="One channel, one system, one process — from the WhatsApp CV to the offer. Every Medical Rep CV received from Sunday 8 November 2026, the step it is on, and the one thing to do next. An earlier CV finishes in the workspace as before."
+        description="One channel, one system, one process — from the WhatsApp CV to the offer. Every Medical Rep CV received from Saturday 7 November 2026, the step it is on, and the one thing to do next. An earlier CV finishes in the workspace as before."
         icon={<Stethoscope aria-hidden="true" className="h-3.5 w-3.5" />}
         title="Medical Rep Hiring"
       />

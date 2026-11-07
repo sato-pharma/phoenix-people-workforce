@@ -49,13 +49,26 @@ export type MrRecommendation = (typeof MR_RECOMMENDATIONS)[number];
 export const MR_WORKFLOW_START = "2026-11-07T22:00:00.000Z";
 
 /**
- * Whether a CV belongs to the workflow at all: received on or after the start. Only those are on the
- * Medical Rep Hiring page; a candidate received before it finishes in the workspace as before (owner,
- * 7 Nov 2026: "New CVs only"). An unreadable date is left out rather than guessed in.
+ * The first CV the Medical Rep Hiring page lists: Saturday 7 November 2026, 00:00 in Cairo (22:00 UTC
+ * on the 6th) — owner, 7 Nov 2026: "all the cvs recieved starting from 7 nov". A day before the
+ * workflow starts, so the CVs of the 7th are worked in it too; the one-channel hold still starts with
+ * the workflow (MR_WORKFLOW_START), so a CV that came by email on the 7th is listed, never held.
+ */
+export const MR_LIST_FROM = "2026-11-06T22:00:00.000Z";
+
+/** Whether an instant is on or after another. An unreadable date is never on or after anything. */
+export function receivedOnOrAfter(receivedAt: string | null | undefined, instant: string): boolean {
+  const received = new Date(String(receivedAt ?? "")).getTime();
+  return Number.isFinite(received) && received >= new Date(instant).getTime();
+}
+
+/**
+ * Whether a CV belongs to the workflow at all: received on or after MR_LIST_FROM. Only those are on
+ * the Medical Rep Hiring page; a candidate received before it finishes in the workspace as before
+ * (owner, 7 Nov 2026). An unreadable date is left out rather than guessed in.
  */
 export function isInMrWorkflow(receivedAt: string | null | undefined): boolean {
-  const received = new Date(String(receivedAt ?? "")).getTime();
-  return Number.isFinite(received) && received >= new Date(MR_WORKFLOW_START).getTime();
+  return receivedOnOrAfter(receivedAt, MR_LIST_FROM);
 }
 
 /** The job title every Medical Rep booking and offer carries. */

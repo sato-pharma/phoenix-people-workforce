@@ -10,11 +10,11 @@
 // 7 Nov 2026: 98 filed and 14 such declared-only candidates in the 30 days before). Archived
 // candidates are left out, as the workspace leaves them out.
 //
-// NEW CVs ONLY. A candidate received before Sunday 8 November 2026 00:00 Cairo is not in the workflow:
-// the page does not list them, their journey is not offered, and no step can be recorded or booked
-// for them — they finish in the workspace as before (owner, 7 Nov 2026: "New CVs only"). Without it
-// the page listed 54 candidates the old flow had already shortlisted or sent to a manager as
-// "Screen the CV".
+// CVs FROM 7 NOVEMBER ONLY. A candidate received before Saturday 7 November 2026 00:00 Cairo is not in
+// the workflow: the page does not list them, their journey is not offered, and no step can be recorded
+// or booked for them — they finish in the workspace as before (owner, 7 Nov 2026: "all the cvs recieved
+// starting from 7 nov"). Without it the page listed 54 candidates the old flow had already shortlisted
+// or sent to a manager as "Screen the CV".
 //
 // NEVER STOPS AT A PAGE. Every list read goes through `fetchAllRows` and every id filter through
 // `fetchRowsInBatches`, so a growing table can never return a silently short answer.
