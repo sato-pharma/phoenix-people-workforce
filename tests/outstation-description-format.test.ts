@@ -174,4 +174,14 @@ export function runOutstationDescriptionFormatTests() {
   // 9. The email keeps the summary's line breaks; without them the five facts arrive as one block.
   assert.equal(emailKeepsLineBreaks("outstation"), true, "the outstation email keeps its line breaks");
   assert.equal(emailKeepsLineBreaks("payroll"), false, "other modules keep one block, as before");
+
+  // 10. A lead of punctuation only is no note (owner's review, 2026-11-07: a note box reading "..").
+  for (const lead of [".", "..", "-", " . - "]) {
+    assert.equal(
+      parseOutstationDescription(`${lead} Arrival photo evidence: source=camera gps=31.2,29.9`).note,
+      null,
+      `HEADLINE: a "${lead}" lead is not the employee's note`,
+    );
+  }
+  assert.equal(parseOutstationDescription("Met Dr. Hany.").note, "Met Dr. Hany.", "a real sentence with dots stays whole");
 }

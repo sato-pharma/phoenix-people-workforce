@@ -7,6 +7,7 @@ import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { isAdjustedAmount } from "@/lib/outstation/approval-state";
 import type { ExpenseApprovalEmployeeSummary } from "@/lib/outstation/expense-approval-summary";
 import type { totalExpenseApprovalSummary } from "@/lib/outstation/expense-approval-summary";
+import { displayPlace } from "@/lib/outstation/place-label";
 import { tripSpan } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
@@ -300,8 +301,8 @@ function EmployeeTripsTable({
                   <SummaryTripDates row={row} />
                   <span className="block font-mono text-phx-2xs text-slate-400">{row.tripId}</span>
                 </td>
-                <td className="break-words px-3 py-2 align-top text-slate-800" dir="auto">
-                  {row.destination || "—"}
+                <td className="break-words px-3 py-2 align-top text-slate-800" dir="auto" title={row.destination || undefined}>
+                  {displayPlace(row.destination) || "—"}
                 </td>
                 <td className="px-3 py-2 text-right align-top font-mono">
                   <SummaryDistance km={row.km} />
@@ -346,7 +347,9 @@ function EmployeeTripsTable({
                     ) : null}
                   </span>
                 </div>
-                <p className="break-words text-slate-800" dir="auto">{row.destination || "—"}</p>
+                <p className="break-words text-slate-800" dir="auto" title={row.destination || undefined}>
+                  {displayPlace(row.destination) || "—"}
+                </p>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono">
                   <SummaryDistance km={row.km} />
                   <span className="text-slate-700">
