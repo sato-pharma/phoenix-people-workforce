@@ -11,7 +11,7 @@
 import { bumpSharedReadGeneration, getOrLoadShared } from "@/lib/cache/shared-read";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
-import { liveTeamSeatIds } from "@/lib/phoenix-crm/live-team-rules";
+import { liveTeamSeatIds, type TeamCountedWindow } from "@/lib/phoenix-crm/live-team-rules";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const TEAM_STARTS_TABLE = "phoenix_crm_team_starts";
@@ -34,6 +34,23 @@ function liveFromRows(rows: readonly StartRow[], cairoToday: string): Set<string
       })),
     cairoToday,
   );
+}
+
+/**
+ * Every start with its Saturday and its stop, for a reader that asks "was this day counted from Phoenix CRM"
+ * (Expense Approvals' Phoenix CRM reading, 2026-11-07). A failed read throws: the caller says it could not
+ * read the starts rather than calling a day "before Phoenix CRM".
+ */
+export async function loadTeamCountedWindows(): Promise<TeamCountedWindow[]> {
+  const { data, error } = await getSupabaseAdmin().from(TEAM_STARTS_TABLE).select("team_seat_id, starts_on, stops_on");
+  if (error) throw error;
+  return ((data ?? []) as Array<StartRow & { starts_on?: string | null }>)
+    .filter((row) => typeof row.team_seat_id === "string" && row.team_seat_id.length > 0 && typeof row.starts_on === "string")
+    .map((row) => ({
+      startsOn: String(row.starts_on).slice(0, 10),
+      stopsOn: typeof row.stops_on === "string" ? row.stops_on.slice(0, 10) : null,
+      teamSeatId: row.team_seat_id as string,
+    }));
 }
 
 /** The gate every SENDER asks — read fresh on every call, because it decides whether anybody is told. */

@@ -1,0 +1,33 @@
+{
+  // GitHub Codespaces setup for Phoenix Workforce.
+  // Node 24 matches package.json "engines" and .nvmrc; corepack reads the exact pnpm version
+  // from package.json "packageManager", the same way CI does.
+  // .env.local is gitignored and is NOT in the codespace, so nothing here talks to the
+  // production database until environment values are added as Codespaces secrets.
+  "name": "Phoenix Workforce",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24-bookworm",
+  // The Next.js dev server has been measured at 3-6 GB; the 2-core / 8 GB machine runs out.
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb"
+  },
+  "containerEnv": {
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
+  },
+  "postCreateCommand": "sudo corepack enable && pnpm install --frozen-lockfile",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Phoenix dev server",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  }
+}

@@ -51,6 +51,23 @@ export function seatHasLiveTeamBelow(
   return false;
 }
 
+/** One start of a team as every other screen counts it: from its Saturday, until its stop. */
+export type TeamCountedWindow = { teamSeatId: string; startsOn: string; stopsOn: string | null };
+
+/**
+ * The days, of those given, on which NONE of these teams was counted from Phoenix CRM — before its start, or
+ * after its stop (owner, 2026-10-02: "Before the start date, iReports360 stays the source"). A person whose
+ * seats sit in no started team has every day here. Pure.
+ */
+export function daysBeforePhoenixCrm(
+  windows: ReadonlyArray<TeamCountedWindow>,
+  teamSeatIds: ReadonlySet<string>,
+  dates: ReadonlyArray<string>,
+): string[] {
+  const mine = windows.filter((window) => teamSeatIds.has(window.teamSeatId));
+  return dates.filter((date) => !mine.some((window) => window.startsOn <= date && (window.stopsOn === null || date < window.stopsOn)));
+}
+
 /** Same question by seat id, through the organogram. */
 export function seatIdIsInLiveTeam(
   seats: ReadonlyMap<string, { seatId: string; parentSeatId?: string | null }>,

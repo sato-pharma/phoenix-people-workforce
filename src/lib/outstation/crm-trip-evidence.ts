@@ -82,6 +82,11 @@ export type CrmTripInput = {
   home: CrmPoint | null;
   /** His Day Start the morning AFTER the trip — read only for the last night, never a trip day. */
   morningAfter?: { at: string; point: CrmPoint | null } | null;
+  /**
+   * Trip days before this person's team was counted from Phoenix CRM: the old system holds that day's field
+   * work (the Field work section), so "nothing in Phoenix CRM" there is no signal at all.
+   */
+  beforePhoenix?: ReadonlyArray<string>;
   /** Open (unsettled) location warnings on the trip days, already narrowed to what this viewer may read. */
   warnings: Array<{ label: string; strong: boolean }>;
   isCar: boolean;
@@ -112,6 +117,8 @@ export type CrmDayReading = {
   activitiesLogged: string[];
   dayStart: (CrmTripDayInput["dayStart"] & { kmFromDestination: number | null }) | null;
   sharedCar: CrmTripDayInput["sharedCar"];
+  /** Before the team was counted from Phoenix CRM — never empty, never unplanned, never a signal. */
+  beforePhoenix: boolean;
   /** Nothing at all in Phoenix CRM: no visit, no plan, no activity, no Day Start. */
   nothingInCrm: boolean;
   /** The night after this day, when the trip has one. */
@@ -174,7 +181,9 @@ export function buildCrmTripEvidence(input: CrmTripInput): CrmTripReading {
   const realOutstation = homeToDestination !== null && homeToDestination >= CRM_OUTSTATION_MIN_KM;
   const days = [...input.days].sort((left, right) => left.date.localeCompare(right.date));
 
+  const before = new Set(input.beforePhoenix ?? []);
   const readings: CrmDayReading[] = days.map((day) => {
+    const beforePhoenix = before.has(day.date);
     const visits = day.visits.map((visit) => ({
       ...visit,
       kmFromDestination: kmBetween(visit.point, input.destination),
@@ -188,11 +197,13 @@ export function buildCrmTripEvidence(input: CrmTripInput): CrmTripReading {
     return {
       activitiesLogged: day.activitiesLogged,
       areas: distinct(visits.map((visit) => visit.area)),
+      beforePhoenix,
       date: day.date,
       dayStart: day.dayStart ? { ...day.dayStart, kmFromDestination: kmBetween(day.dayStart.point, input.destination) } : null,
       managerPlan: day.managerPlan,
       night: null,
       nothingInCrm:
+        !beforePhoenix &&
         day.visits.length === 0 &&
         day.activitiesLogged.length === 0 &&
         !day.dayStart &&
@@ -237,7 +248,7 @@ export function buildCrmTripEvidence(input: CrmTripInput): CrmTripReading {
 
   const homeDays = realOutstation ? readings.filter((day) => day.whereabouts === "home").map((day) => day.date) : [];
   const emptyDays = readings.filter((day) => day.nothingInCrm).map((day) => day.date);
-  const unplannedDays = readings.filter((day) => !day.planned).map((day) => day.date);
+  const unplannedDays = readings.filter((day) => !day.planned && !day.beforePhoenix).map((day) => day.date);
   const sharedCarDays = input.isCar ? readings.filter((day) => day.sharedCar.length > 0).map((day) => day.date) : [];
 
   const fromHome = readings.flatMap((day) => [
@@ -255,7 +266,10 @@ export function buildCrmTripEvidence(input: CrmTripInput): CrmTripReading {
 
   const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
   let signal: CrmTripReading["signal"];
-  if (homeDays.length > 0) {
+  const allBefore = readings.length > 0 && readings.every((day) => day.beforePhoenix);
+  if (allBefore) {
+    signal = { sentence: "Before Phoenix CRM · the old system's visits are under Field work", tone: "neutral" };
+  } else if (homeDays.length > 0) {
     signal = { sentence: `${plural(homeDays.length, "trip day")} with every visit back home`, tone: "danger" };
   } else if (strongWarnings > 0) {
     signal = { sentence: `${plural(strongWarnings, "strong location warning")} on the trip days`, tone: "danger" };

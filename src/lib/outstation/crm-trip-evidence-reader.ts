@@ -29,12 +29,14 @@ import {
   type CrmTripVisit,
 } from "@/lib/outstation/crm-trip-evidence";
 import { fieldWeekStart } from "@/lib/phoenix-crm/calendar";
+import { daysBeforePhoenixCrm } from "@/lib/phoenix-crm/live-team-rules";
 import { dayActivityLabel, isDayActivity } from "@/lib/phoenix-crm/day-activities";
 import { planDayStatus } from "@/lib/phoenix-crm/plan-rules";
 import { heldManagerSeats, ownTerritories, personKey } from "@/lib/phoenix-crm/scope";
 import { readDoubleVisitPlansForTrip } from "@/lib/phoenix-crm/server/double-visit-plans";
 import { integritySourceLabel, loadIntegrityCasesForWindow } from "@/lib/phoenix-crm/server/integrity-board";
 import { loadManagerDayPlans } from "@/lib/phoenix-crm/server/manager-plan-readers";
+import { loadTeamCountedWindows } from "@/lib/phoenix-crm/server/live-teams";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPlanActivities } from "@/lib/phoenix-crm/server/plan-activities";
@@ -287,10 +289,29 @@ export async function loadCrmTripEvidence(requestId: number): Promise<CrmTripEvi
     };
   });
 
+  // The days before his team was counted from Phoenix CRM: the old system holds them. His teams are the
+  // district-manager seat over each territory he holds, each manager seat he holds, and every team below
+  // one. A failed read (or no organogram) marks no day — the section names the source as not read.
+  const beforePhoenix = org
+    ? await settle("the Phoenix CRM team starts", [] as string[], async () => {
+        const held = heldManagerSeats(org, hrId).map((seat) => seat.seatId);
+        const teams = new Set<string>([
+          ...ownTerritories(org, hrId).map((seat) => seat.parentSeatId).filter((id): id is string => Boolean(id)),
+          ...held,
+        ]);
+        const windows = await loadTeamCountedWindows();
+        for (const window of windows) {
+          if (held.some((seatId) => org.seats.get(window.teamSeatId)?.path.includes(seatId))) teams.add(window.teamSeatId);
+        }
+        return daysBeforePhoenixCrm(windows, teams, dates);
+      })
+    : [];
+
   // The morning after the trip: only its Day Start matters (for the last night).
   const after = addDaysIso(last, 1);
   const afterStart = dayStarts.find((row) => String(row.started_on) === after) ?? null;
   const reading = buildCrmTripEvidence({
+    beforePhoenix,
     claimedKm: request.distanceFromResidenceKm ?? null,
     days,
     morningAfter: afterStart ? { at: String(afterStart.started_at ?? ""), point: pointOf(afterStart.lat, afterStart.lon) } : null,
