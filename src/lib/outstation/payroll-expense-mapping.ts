@@ -363,7 +363,7 @@ export function mapOutstationRequestRowToPayrollApproval(
     // The employee's own words, with no placeholder — Expense Approvals shows them on the card.
     // `notes` also carries the machine lines service.ts appends ("Allowance guard: …", "Arrival
     // photo evidence: source=… gps=… draft_id=…"); the parser cuts them away, read on the RAW text
-    // before any whitespace is collapsed (owner, 2026-11-07: the note box showed that machine text).
+    // before any whitespace is collapsed (owner, 2026-11-07: "why employee notes are awful like this, tidy them").
     // The photo evidence is on the photo cards already; the allowance sentences travel on their own.
     employeeNote: notesParts.note ? toText(notesParts.note) : null,
     from: origin || "Residence",

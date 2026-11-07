@@ -6,9 +6,15 @@
  * campaign visits unplanned; a doctor Phoenix does not have goes to the rep's Archive; a visit made on
  * another seat is not copied. The rules, the readers that skip the copy and the rollback are in
  * docs/phoenix-crm-ireports360-history-import.md. The write itself is ONE database function,
- * public.phoenix_crm_import_ireports360_history(p_seat, p_apply)
- * (supabase/migrations/20261029212200_phoenix_crm_imports_ireports360_history.sql), so this script only
- * asks it and keeps the record.
+ * public.phoenix_crm_import_ireports360_history(p_seat, p_apply, p_after_start)
+ * (supabase/migrations/20261029212200_phoenix_crm_imports_ireports360_history.sql; the after-start mode is
+ * 20261107001714), so this script only asks it and keeps the record.
+ *
+ * --after-start (owner, 6 Nov 2026: "Keep + show in Phoenix") copies, instead of the history before each
+ * team's start, the iReports360 visits a current rep made from his team's start to the day before iReports360
+ * was retired, on days he made no Phoenix entry. Those days already count, read from the stored iReports360
+ * rows; the copy only lets Phoenix CRM's own screens show them and moves no count. Its records go in a folder
+ * of their own (phoenix-crm-ireports360-after-start-<date>).
  *
  * DRY RUN IS THE DEFAULT. It asks the function for every seat at once (it writes nothing) and saves
  * dry-run-<Cairo time>.json OUTSIDE the repository, into F:\PHX backup\phoenix-crm-ireports360-history-<date>\.
@@ -26,7 +32,7 @@
  *
  * Usage:
  *   node --env-file-if-exists=.env.production.rls.local --experimental-strip-types \
- *     scripts/phoenix-crm-import-ireports360-history.ts [--seat=<seat id>] [--apply] [--out=<folder>]
+ *     scripts/phoenix-crm-import-ireports360-history.ts [--after-start] [--seat=<seat id>] [--apply] [--out=<folder>]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -53,6 +59,7 @@ type Answer = {
 };
 
 const DATE = "20261029";
+const AFTER_START_DATE = "20261107";
 
 // The text after `=`, "" for a bare flag, null when the flag is absent.
 const arg = (name: string): string | null => {
@@ -65,16 +72,24 @@ const value = (name: string): string | null => {
   if (given === "") throw new Error(`--${name} needs a value: --${name}=<…> — refused rather than guessed.`);
   return given;
 };
-const known = new Set(["apply", "seat", "out"]);
+const known = new Set(["apply", "seat", "out", "after-start"]);
 for (const entry of process.argv.slice(2)) {
   const name = entry.replace(/^--/, "").split("=")[0];
   if (!entry.startsWith("--") || !known.has(name)) throw new Error(`Unknown flag ${entry} — refused rather than ignored.`);
 }
 // Decided before anything connects: --apply=false must never read as --apply.
 if (arg("apply") !== null && arg("apply") !== "") throw new Error(`--apply takes no value (got ${arg("apply")}); leave it out for a dry run.`);
+if (arg("after-start") !== null && arg("after-start") !== "") throw new Error(`--after-start takes no value (got ${arg("after-start")}).`);
 const APPLY = arg("apply") === "";
+const AFTER_START = arg("after-start") === "";
 const ONLY = value("seat");
-const FOLDER = value("out") ?? path.join("F:", "PHX backup", `phoenix-crm-ireports360-history-${DATE}`);
+const FOLDER =
+  value("out") ??
+  path.join(
+    "F:",
+    "PHX backup",
+    AFTER_START ? `phoenix-crm-ireports360-after-start-${AFTER_START_DATE}` : `phoenix-crm-ireports360-history-${DATE}`,
+  );
 // Cairo wall time, file-name safe: 2026-10-31-05-36-25.
 const STAMP = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Africa/Cairo",
@@ -128,7 +143,11 @@ function connect(): postgres.Sql {
 const TIMEOUT = "set local statement_timeout = '15min'";
 
 async function call(tx: postgres.TransactionSql, seat: string | null, apply: boolean): Promise<Answer> {
-  const [row] = await tx.unsafe("select public.phoenix_crm_import_ireports360_history($1, $2) as answer", [seat, apply]);
+  const [row] = await tx.unsafe("select public.phoenix_crm_import_ireports360_history($1, $2, $3) as answer", [
+    seat,
+    apply,
+    AFTER_START,
+  ]);
   const answer = row.answer as Answer;
   return { ...answer, seats: answer.seats ?? [] };
 }

@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
+import {
+  adminHubPromotions,
+  adminNavigationSectionSeeds,
+  crmPageItems,
+  hubPageItemGroups,
+} from "../src/config/system-navigation.ts";
 import { summarizeFieldWorkforceMirrorFreshness } from "../src/lib/field-workforce-compliance/live-snapshots.ts";
 import { JOB_SCHEDULES } from "../src/lib/observability/job-schedule.ts";
 import { detectDvDays } from "../src/lib/probation/intelligence/dv-detection.ts";
 import type { RawDvVisitRow } from "../src/lib/probation/intelligence/dv-source.ts";
+import { reconciliationChecks } from "../src/lib/reconciliation/checks/index.ts";
+import { crmSalesReconciliationChecks } from "../src/lib/reconciliation/checks/crm-sales.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // What must keep working, stay quiet, or stop crying wolf once iReports360 is switched off and Phoenix
 // records visits itself. Each block names the finding it pins. The pure rules are exercised for real;
@@ -162,5 +171,60 @@ export function runCrmSwitchOffSafetyTests() {
     const page = read("app/(admin)/admin/crm/page.tsx");
     assert.match(page, /retiredAt=\{vendorSyncRetiredAt\}/, "F8: the hub passes the retirement to the panel");
     assert.match(page, /setting\.vendorSyncRetiredAt/, "F8: the hub reads the retirement from the cutover setting");
+  }
+
+  // F9 — CRM Integrity matched iReports360 visits against iReports360 check-ins, so with the vendor
+  // retired it could only compare a frozen archive with itself. Every link to it is gone and its route
+  // is a pointer to Phoenix CRM's own integrity screens, behind the gate it always had (7 Nov 2026).
+  {
+    const RETIRED = "/admin/crm-integrity";
+    const hrefsIn = (value: unknown, seen = new Set<unknown>()): string[] => {
+      if (value === null || typeof value !== "object" || seen.has(value)) return [];
+      seen.add(value);
+      const own = value as Record<string, unknown>;
+      const found = [own.href, ...(Array.isArray(own.hrefs) ? own.hrefs : [])].filter((h): h is string => typeof h === "string");
+      return [...found, ...Object.values(own).flatMap((child) => hrefsIn(child, seen))];
+    };
+    assert.ok(hrefsIn(crmPageItems).includes("/admin/phoenix-crm/integrity"), "F9: the collector reads the hub cards it is meant to");
+    assert.ok(hrefsIn(adminHubPromotions).includes("/admin/double-visit-analytics"), "F9: and the promoted bands");
+    assert.equal(hrefsIn(crmPageItems).includes(RETIRED), false, "F9: no CRM hub card opens CRM Integrity");
+    assert.equal(hrefsIn(hubPageItemGroups).includes(RETIRED), false, "F9: no hub card anywhere opens it");
+    assert.equal(hrefsIn(adminHubPromotions).includes(RETIRED), false, "F9: no promoted band row opens it");
+    assert.equal(hrefsIn(adminNavigationSectionSeeds).includes(RETIRED), false, "F9: no sidebar row opens it");
+    assert.equal(read("app/(admin)/admin/crm/page.tsx").includes(`"${RETIRED}"`), false, "F9: the CRM workspace's tool buttons do not link it");
+    assert.equal(read("src/components/admin/ceo-phase-b.tsx").includes(`"${RETIRED}"`), false, "F9: nor does the SFE Manager's quick navigation");
+
+    for (const gone of [
+      "src/lib/crm-integrity/service.ts",
+      "src/lib/crm-integrity/correlation.ts",
+      "src/lib/crm-integrity/types.ts",
+      "src/components/crm-integrity/crm-integrity-workspace.tsx",
+    ]) {
+      assert.equal(existsSync(gone), false, `F9: ${gone} left with the vendor comparison`);
+    }
+
+    const pointer = stripComments(read("app/(admin)/admin/crm-integrity/page.tsx"));
+    assert.match(pointer, /if \(!canUseAdminCrmWorkspace\(access\)\) \{\s*redirect\(resolveLandingPathForRole\(access\.role\)\);/, "F9: the route keeps its gate");
+    assert.doesNotMatch(pointer, /@\/lib\/crm-integrity\/|crm-integrity-workspace|getCrmIntegrityData|@\/lib\/crm\/reads/, "F9: the route reads no vendor comparison");
+    const listed = /const PHOENIX_INTEGRITY_HREFS = \[([\s\S]*?)\] as const;/.exec(pointer)?.[1] ?? "";
+    const targets = [...listed.matchAll(/"(\/[^"]+)"/g)].map((match) => match[1]!);
+    assert.equal(targets[0], "/admin/phoenix-crm/integrity", "F9: the pointer leads with Location Integrity");
+    for (const href of targets) {
+      assert.ok(crmPageItems.some((card) => card.href === href), `F9: ${href} is a live CRM hub card, so the pointer never renders an empty list`);
+    }
+  }
+
+  // F10 — reconciliation check 9 compared the Unmapped Agents punch-list, derived from ireports360_visits,
+  // with the visits door. Nothing writes that table since the retirement and a Phoenix visit always carries
+  // an hr id, so the check is retired rather than left to agree with a frozen archive every night.
+  {
+    const ids = reconciliationChecks.map((check) => check.id);
+    assert.equal(ids.includes("crm-recent-visits-all-resolve-to-an-employee"), false, "F10: check 9 no longer runs");
+    assert.deepEqual(
+      crmSalesReconciliationChecks.map((check) => check.id),
+      ["sos-top-customers-one-row-per-customer", "sos-coverage-numerator-inside-master-denominator"],
+      "F10: the CRM-and-sales domain keeps its two Source-of-Sales checks, untouched",
+    );
+    assert.equal(new Set(ids).size, ids.length, "F10: the registry still holds each check once");
   }
 }

@@ -28,11 +28,10 @@ export function storedWorkloadMatchStatus(status: DoubleVisitExpenseWorkloadEvid
  *   double-visit mirror cannot see a rep's SOLO field days, so it reported worked days as
  *   "no activity" and the engine judged real trips against a workload of zero.
  *
- * - "How many campaign DOUBLE-visits were there?" → the double-visit mirror, kept as-is.
- *   The campaign-cap rule rejects on `campaignVisits > MAX` and on `totalDvVisits <= 0`.
- *   Feeding it the CRM read would break it in both directions: a rep's solo campaign visits
- *   would inflate `campaignVisits` into spurious auto-rejections, and solo visits would satisfy
- *   the `totalDvVisits > 0` test — silently fail-opening a live rejection rule.
+ * - "How many planned and unplanned DOUBLE visits were there?" → the double-visit source, kept as-is
+ *   (`campaignVisits` is the stored name for the unplanned ones). A manager's OWN single visits come
+ *   from the CRM read's `managerOwnVisits` and are carried beside them, never mixed in: the cap
+ *   (decision.ts) adds the two, and the CRM read's whole total would count a partner visit twice.
  *
  * A null `repWorkload` means the corrected read failed; the previous (under-counting) evidence is
  * returned unchanged rather than blocking an expense submission.
@@ -71,7 +70,12 @@ export function mergeWorkloadEvidence(
     doctorVisits: repWorkload.doctorVisits,
     institutionVisits: repWorkload.institutionVisits,
     pharmacyVisits: repWorkload.pharmacyVisits,
-    sourceLabel: `${repWorkload.sourceLabel} Campaign/regular counts remain from: ${doubleVisitEvidence.sourceLabel}`,
+    // His own single visits, apart from the double visits (owner, 6 Nov 2026: both count to him). Left
+    // out when they could not be read, so the cap reads them as unmeasured, never as zero.
+    ...(repWorkload.managerOwnVisits === undefined
+      ? {}
+      : { managerOwnUnplannedVisits: repWorkload.managerOwnUnplannedVisits ?? 0, managerOwnVisits: repWorkload.managerOwnVisits }),
+    sourceLabel: `${repWorkload.sourceLabel} Planned and unplanned double visits: ${doubleVisitEvidence.sourceLabel}`,
     // campaignVisits, regularVisits, source and importId deliberately fall through from
     // doubleVisitEvidence via the spread above. Do not "unify" them onto the CRM read.
   };

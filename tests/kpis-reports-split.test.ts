@@ -147,8 +147,8 @@ export function runKpisReportsSplitTests() {
     ["/employee-portals/kpis", "/employee-portals/kpis/frequency", "/employee-portals/kpis/coverage", "/employee-portals/kpis/call-rate"],
     "the summary, then Frequency, Coverage and Call Rate",
   );
-  const ireports = sections.find((section) => section.title === "iReports 360");
-  assert.ok(ireports && !ireports.hrefs.includes("/employee-portals/kpis"), "and the KPIs row left iReports 360 for it");
+  const fieldWork = sections.find((section) => section.title === "Field Work");
+  assert.ok(fieldWork && !fieldWork.hrefs.includes("/employee-portals/kpis"), "and the KPIs row left Field Work for it");
   const layout = code("src/components/employee-portal/employee-portal-layout.tsx");
   assert.equal(
     (layout.match(/showKpisTab \? \[\{ href: "\/employee-portals\/kpis/g) ?? []).length,

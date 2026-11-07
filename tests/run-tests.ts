@@ -615,7 +615,6 @@ import { runCrmMappedAgentHrIdsTests } from "./crm-mapped-agent-hr-ids.test.ts";
 import { runCrmPlanEntryKeysetTests } from "./crm-plan-entry-keyset.test.ts";
 import { runPortalHomeCardReadsTests } from "./portal-home-card-reads.test.ts";
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
-import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
 import { runEarlyBirdsCloseSchedulerTests } from "./early-birds-close-scheduler.test.ts";
 import { runCrmParticipantFilterTests } from "./crm-participant-filter.test.ts";
@@ -4383,7 +4382,6 @@ await runTest("crm mapped agent hr ids (one vendor row per person, then one shri
 await runTest("crm plan entry keyset (every paged plan read walks (day, entry id, hr id), every row once)", runCrmPlanEntryKeysetTests);
 await runTest("portal home card reads (a rep's KPI tile asks each plan read once, the interview card asks only when there is one, the focus panel leaves the field set behind)", runPortalHomeCardReadsTests);
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
-await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
 await runTest("early birds close scheduler (keeps its host guards; the retired iReports360 poller is never started again)", runEarlyBirdsCloseSchedulerTests);
 await runTest("crm participant visit filter (agent-or-partner door filter fails closed)", runCrmParticipantFilterTests);

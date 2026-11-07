@@ -103,6 +103,47 @@ outlives the code:
 - 🔴 **THE PARITY SWEEP'S "MIRROR" IS `ireports360_visits`, READ DIRECTLY — NEVER `queryVisits`, WHICH SCANS `crm_visits_unified` AND COUNTS EVERY PHOENIX-BORN VISIT AS A ROW THE VENDOR LOST** (23 Oct 2026). The newest window was refused at 4,779 extra of 12,116 — 4,780 of them Phoenix rows, first one 3 Oct, growing ~300 a day — so it could never be verified again and 8 real late saves went unwritten; nothing was ever at risk of deletion, because the repair path only ever touches the mirror table. `loadMirrorVisitIds` in `src/lib/crm/parity.ts`, keyset by `crm_visit_id`. Account: `docs/crm-parity-sweep-mirror-only.md`, which also holds the one window still legitimately refused.
 
 
+### The read side — Phoenix CRM is the one source of field work (7 November 2026)
+
+Owner, 6 November 2026: *"any single source of field work is now the Phoenix CRM, wire it everywhere"*, with his
+answers that day: count every team from 6 November; keep the old-app visits and show them in Phoenix; replace
+"campaign" with unplanned visits; and a manager's visits count to him both ways — the double visit a rep submits
+with him on it, and a single visit he submits himself.
+
+Retiring the vendor stopped the writes; this stopped the reads. Before it, the three combined views still served
+3,611 stored iReports360 visits by 42 people on 450 person-days after their own team's start, and several readers
+asked the vendor tables alone, so they would have gone quietly to zero.
+
+- **The doors** (`20261106235920`): `crm_visits_unified`, `crm_checkins_unified` and `crm_plan_entries_unified`
+  serve the iReports360 branch only before `vendor_sync_retired_at::date`, and every seat from Phoenix from that
+  day, started team or not. Before each team's start the archive stands exactly as it was.
+- **Nothing lost:** the old-app days after each team's start were copied into Phoenix as history (the after-start
+  mode of `phoenix_crm_import_ireports360_history`), stamped `imported_from_ireports360_at` so no figure counts
+  them twice — Phoenix's own timeline, Visit Report and calendar show them.
+- **Leave** from the retirement is HR's approved vacation requests (`src/lib/crm/hr-leave-days.ts`), so a leave day
+  reads AV on Field Workforce Compliance and never as no activity; vendor code −4 answers archive days only.
+- **Unplanned replaces campaign:** a Phoenix visit with `is_unplanned`, or vendor −8 on an archive day. The
+  outstation trip allows at most 2 unplanned visits; the Business Review reads Planned and Unplanned.
+- **A manager's own visits** count on the outstation trip (beside the double visits his reps submitted), in the
+  attendance day maps and as worked days on Field Workforce Compliance. The chain-visit ruling of 8 October is
+  unchanged.
+- **Check-ins:** Phoenix visit positions are check-ins for every reader above the rep — the trip workload on an
+  approver's view and the Employee 360 GPS module — never on the rep's own payload.
+- **Paging:** the Phoenix work-evidence loader reads every page, so proven-worked days are not cut at 1,000 rows.
+- **The outstation stamp** writes `workload_source = 'phoenix_crm'` (`20261107010725` widened the check); rows
+  stamped `ireports360` keep it.
+- **Retired with it:** the iReports360 account-setup alert and its reminder, the CRM Integrity page (now a pointer),
+  reconciliation check 9, and the dead `ireports360_*` event names. The company activity report's CRM channel means
+  holding a Phoenix seat. The manager plan board reads an old-CRM week only for weeks before the retirement.
+- **Words:** the portal sidebar's "iReports 360" section is **Field Work**, and every field-visit screen names
+  Phoenix CRM as its source, with the iReports360 archive before each team's start.
+
+Deliberately unchanged: past months' archive; `cutover_date` stays null (a money decision that is his); the dated
+contact register; the vendor resolution tables; leaver CRM-id lookups on the frozen mirror; the vendor tables
+themselves; the half-day deduction (it already counts Phoenix positions — adding check-ins would double them);
+Early Birds (Phoenix days already use the visit clock); "Copy last month" (it prefers the previous Phoenix plan and
+falls back to iReports360 only for a seat's first month).
+
 ## Who enters what from the cutover date
 
 - **Every rep of every line** enters visits in Phoenix (My Visits → Log a visit). A regular (doctor)

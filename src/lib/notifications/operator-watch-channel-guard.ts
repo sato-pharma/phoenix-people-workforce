@@ -41,10 +41,10 @@ const OPERATOR_WATCH_EVENTS: ReadonlySet<string> = new Set([
   "system_audit_daily",
 
   // Same audience and the same three channels, with no written ban: no feature may add an outbound email.
+  // The three iReports360 sync alarms (`ireports360_sync_failed`, `_unmapped_agent`,
+  // `_unrecognized_visit_type`) stood here until 7 Nov 2026: their sender was deleted with the vendor
+  // sync, so nothing could raise them any more (tests/operator-watch-channel-guard.test.ts).
   "background_jobs_run_failed",
-  "ireports360_sync_failed",
-  "ireports360_unmapped_agent",
-  "ireports360_unrecognized_visit_type",
 
   // Recruitment alarms and nudges, each written as never email in its own file.
   "recruitment_inbound_intake_dead_letter",

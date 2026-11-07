@@ -10,11 +10,13 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // were meant to make visible arrived in the same stream, so the signal they carried was spent on
 // telling him the mirror was fresh. A real one that morning read exactly like the 178 before it.
 //
-// SCOPED TO THE SUCCESS HALF, AND THAT IS THE WHOLE POINT. Both digests build their event type as
-// `<name>_${input.status}`, so the failure events (`ireports360_sync_failed`,
-// `background_jobs_run_failed`) do not match this list and keep every channel they had. A guard
-// keyed on the module, or on the job, would have taken the failures with them — which is the one
-// outcome worse than the noise.
+// SCOPED TO THE SUCCESS HALF, AND THAT IS THE WHOLE POINT. The digest builds its event type as
+// `<name>_${input.status}`, so the failure event (`background_jobs_run_failed`) does not match this
+// list and keeps every channel it had. A guard keyed on the module, or on the job, would have taken
+// the failures with them — which is the one outcome worse than the noise.
+//
+// ONE DIGEST NOW, NOT TWO. `ireports360_sync_success` — the 178 above — left this list on 7 Nov 2026:
+// the iReports360 sync digest that sent it was deleted with the vendor sync, so nothing raises it.
 //
 // Blocks the TELEGRAM axis only. `in_app` stays, so the confirmation is still on record and still
 // renderable in the bell; `push` stays because the owner named Telegram and nothing else, and a
@@ -37,7 +39,6 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
  * scheduled job finished normally — never that anything needs doing.
  */
 const ROUTINE_SUCCESS_EVENT_TYPES = new Set<string>([
-  "ireports360_sync_success",
   "background_jobs_run_success",
 ]);
 

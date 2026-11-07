@@ -96,4 +96,23 @@ export function runCrmDayMapPushdownTests() {
     source.includes("return mergeDayMapVisitPages"),
     "the two index reads must be combined through mergeDayMapVisitPages so the merged row set matches a single scan",
   );
+
+  // A MANAGER'S OWN SINGLE VISITS ARE A WORKED DAY (owner, 2026-10-19: "proof he worked the day"; 6 Nov
+  // 2026: his own visits count to him). They live in phoenix_crm_manager_visits, outside the CRM door and
+  // the work-evidence read, so the day map reads them itself — into the field-visit cancel only.
+  assert.ok(
+    source.includes("loadManagerOwnVisitDays({ end: input.dateToIso, managerHrIds: input.employeeHrIds, start: input.dateFromIso })"),
+    "the day map reads the wanted people's own manager visits for the window",
+  );
+  const foldAt = source.indexOf("for (const day of managerOwnDays)");
+  assert.ok(foldAt > 0, "and folds them in");
+  const ownFold = source.slice(foldAt, source.indexOf("return { detailMap, fieldVisitMap, leaveMap };", foldAt));
+  for (const line of [
+    "if (day.visits <= 0) continue;",
+    "if (!hrId || !wantedAttendanceKeys.has(hrId)) continue;",
+    "fieldVisitMap.set(hrId, fieldDates);",
+  ]) {
+    assert.ok(ownFold.includes(line), `only a day with a visit, only a wanted person, and only into the field-visit cancel: ${line}`);
+  }
+  assert.ok(!ownFold.includes("leaveMap"), "never into the leave map");
 }

@@ -119,7 +119,8 @@ const COLLAPSED_INTO_HUBS = [
   // its card. The route still exists as a redirect stub, so the guard follows the live href.
   "/admin/reps-list",
   "/admin/plan-verification",
-  "/admin/crm-integrity",
+  // "/admin/crm-integrity" was here until 2026-11-07, when CRM Integrity was retired with iReports360
+  // and its row left every rail on purpose (tests/crm-switch-off-safety.test.ts pins that).
   "/admin/brick-coverage",
   "/admin/double-visit-analytics",
   "/admin/double-visit-data-integrity",
