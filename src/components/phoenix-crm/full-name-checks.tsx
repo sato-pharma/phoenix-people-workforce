@@ -11,7 +11,7 @@ import type { HeldFullName } from "@/lib/phoenix-crm/pm-name-rules";
 
 /**
  * PM customers' full names waiting for a decision (owner, 2026-11-07, pm-name-rules.ts): the name a rep
- * wrote matched what was read off the signboard or timetable 40–59%, or a validated customer's board was
+ * wrote matched what was read off the signboard or timetable under 60%, or a validated customer's board was
  * never read. Approve renames the customer; reject keeps the old name and the customer stays blocked
  * until the rep writes another. The rep is never told it waited.
  */
@@ -61,7 +61,7 @@ export function FullNameChecks({ rows }: { rows: HeldFullName[] }) {
 
   return (
     <AdminTableShell
-      description="A rep wrote a PM customer's first, middle and last name, and it matched the signboard or timetable only in part (40% to 59%), or the customer is validated and nothing was read off the board. Approve renames the customer. Reject keeps the old name, and the customer stays out of the plan and Add visit until the rep writes it again."
+      description="A rep wrote a PM customer's first, middle and last name, and it matched the signboard or timetable under 60%, or the customer is validated and nothing was read off the board. Approve renames the customer. Reject keeps the old name, and the customer stays out of the plan and Add visit until the rep writes it again."
       title={`PM full names to check (${shown.length})`}
     >
       {problem ? <p className="border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm text-rose-800">{problem}</p> : null}

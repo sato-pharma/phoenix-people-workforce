@@ -205,7 +205,7 @@ const ROUTE_GATES: RouteGate[] = [
   post("validation-reviews/shared-place", "approve"),
   // Approving a venue AFTER rejecting it (owner, 2026-10-15) — its own route, its own rules.
   post("validation-reviews/shared-place/restore", "approve"),
-  // A PM customer's full name that matched the signboard only in part (owner, 2026-11-07, pm-name-rules.ts):
+  // A PM customer's full name that matched the signboard under 60% (owner, 2026-11-07, pm-name-rules.ts):
   // `approve` at the route, and `decideHeldFullName` narrows it to the Super Admin and the SFE Manager
   // before a row is read.
   post("full-names", "approve"),
