@@ -15,7 +15,9 @@
 //
 // The candidate is never named to the model — it is given the spoken words and the kind of box, nothing else.
 
-import { createOpenAiResponseText, hasAiApiKey, PhoenixOpenAiError } from "@/lib/ai/openai-client";
+import { ANTHROPIC_STRONG_MODEL } from "@/lib/ai/anthropic-fallback";
+import { createOpenAiResponseText, hasAiApiKey, OPENAI_STRONG_MODEL, PhoenixOpenAiError } from "@/lib/ai/openai-client";
+import { logAppError } from "@/lib/error-monitor/service";
 import { MR_BOOKING_NOTES_LIMIT, MR_COMMENT_LIMIT } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 /** Which box the words were spoken into — it decides the register of the rewrite and its cap. */
@@ -30,6 +32,9 @@ export function isMrPolishKind(value: unknown): value is MrPolishKind {
 export function mrPolishLimit(kind: MrPolishKind): number {
   return kind === "booking" ? MR_BOOKING_NOTES_LIMIT : MR_COMMENT_LIMIT;
 }
+
+/** Sonnet answers a few sentences in seconds; past this the speaker is better served by the words as said. */
+export const MR_POLISH_TIMEOUT_MS = 45_000;
 
 export class MrPolishError extends Error {
   code: "polish_failed" | "polish_not_configured" | "polish_rate_limited";
@@ -104,6 +109,28 @@ export function sanitizeMrPolished(raw: string, kind: MrPolishKind): string {
   return text;
 }
 
+/**
+ * The numbers the speaker may be quoted as saying. A small number (0–12: a rating, years, months) is said as an
+ * Arabic word far more often than in digits — "خمسة" written "5" is the speaker's own number, and refusing it
+ * threw whole rewrites away (owner, 8 Nov 2026: "it doesn't change anything"). A number said with ألف or
+ * مليون ("15 ألف") is that many thousands or millions. Anything else must have been said in digits.
+ */
+export function mrSaidNumbers(spoken: string): Set<string> {
+  const said = new Set<string>();
+  for (let small = 0; small <= 12; small += 1) said.add(String(small));
+  for (const token of mrNumberTokens(spoken)) {
+    said.add(token);
+    const value = Number(token);
+    if (Number.isFinite(value)) {
+      said.add(String(value * 1_000));
+      said.add(String(value * 1_000_000));
+    }
+  }
+  if (/[أا]لف/.test(spoken)) said.add("1000");
+  if (/[أا]لفين/.test(spoken)) said.add("2000");
+  return said;
+}
+
 /** Why a rewrite must not replace the spoken words. Empty means it may. */
 export function findMrPolishViolations(polished: string, spoken: string): string[] {
   const clean = String(polished ?? "").trim();
@@ -112,7 +139,7 @@ export function findMrPolishViolations(polished: string, spoken: string): string
   const written = wordsIn(clean);
   const said = wordsIn(spoken);
   if (AI_WORDS.some((word) => written.includes(` ${word} `) && !said.includes(` ${word} `))) violations.push("it mentions how it was written");
-  const saidNumbers = new Set(mrNumberTokens(spoken));
+  const saidNumbers = mrSaidNumbers(spoken);
   const invented = Array.from(new Set(mrNumberTokens(clean).filter((token) => !saidNumbers.has(token))));
   if (invented.length > 0) violations.push(`numbers that were never said (${invented.join(", ")})`);
   return violations;
@@ -128,10 +155,18 @@ const instructions = [
     "- The speech engine mishears: words may be misspelt, split, merged or replaced by a similar-sounding word. Work out what the speaker meant.",
   ].join("\n"),
   [
-    "THE OUTPUT:",
-    "- Always English, whatever language was spoken: clear, professional corporate English with correct spelling, grammar and punctuation.",
-    "- Concise. Plain sentences, no greeting, no sign-off, no headings, no bullets, no markdown, no surrounding quotation marks.",
-    "- About the candidate, the interview or the arrangement — in the third person (\"The candidate…\") unless the speaker gave an instruction to someone, which stays an instruction.",
+    "THE OUTPUT — a real rewrite, never a light touch-up:",
+    "- Always English, whatever language was spoken. Translate everything; leave no Arabic word in the text.",
+    "- Write it the way a senior HR professional writes an evaluation for a company file: polished, fluent corporate English in complete, well-organised sentences, with correct spelling, grammar and punctuation.",
+    "- Do not follow the speaker's word order, repetitions, filler words or broken phrasing. Put the points in a logical order (overall impression, strengths, concerns, then the verdict or next step) and merge repeated points.",
+    "- Use precise professional vocabulary: communication skills, presentation, product knowledge, confidence, attitude, commitment, field experience, salary expectations, availability, and so on.",
+    "- Plain prose: no greeting, no sign-off, no headings, no bullets, no markdown, no surrounding quotation marks.",
+    "- Write about the candidate in the third person (\"The candidate…\"), never assuming a gender. Keep the speaker's own view in the first person where the speaker gave one (\"In my assessment…\"), and keep an instruction to someone as an instruction.",
+  ].join("\n"),
+  [
+    "EXAMPLE",
+    "Said: \"هو كويس بس متوتر شوية و الكومينكيشن بتاعه حلو و عنده خبره سنتين في نوفارتس بس الانجلش ضعيف شويه انا شايف انه ينفع للمرحله الجايه\"",
+    "Written: \"The candidate made a good overall impression and has good communication skills, although the candidate appeared somewhat nervous during the interview. The candidate brings 2 years of experience at Novartis. The candidate's English is relatively weak. In my assessment, the candidate is suitable to proceed to the next stage.\"",
   ].join("\n"),
   [
     "MEANING — keep it exactly:",
@@ -201,24 +236,44 @@ export async function polishMrSpokenWords(input: { kind: MrPolishKind; spoken: s
   if (!hasAiApiKey()) throw new MrPolishError("polish_not_configured", "Your words were kept as you said them.");
 
   let outputText: string;
+  let model = "";
   try {
-    // The fast tier at low effort: the speaker has just pressed Stop and is waiting with the form open.
+    // THE STRONG TIER, CLAUDE SONNET FIRST (owner, 8 Nov 2026: "put an Anthropic Sonnet agent … the agent you
+    // added is very weak. It doesn't change anything"). It shipped on the cheap nano tier, which touched the
+    // words up and left them. OpenAI's strong model answers only when Claude's account is dead.
     const response = await createOpenAiResponseText({
+      anthropicModel: ANTHROPIC_STRONG_MODEL,
       input: buildMrPolishPrompt(spoken, input.kind),
       instructions,
-      maxOutputTokens: 2000,
+      maxOutputTokens: 3000,
+      maxRetries: 0,
+      model: OPENAI_STRONG_MODEL,
+      preferProvider: "anthropic",
       purpose: "recruitment-mr-hiring-dictation-polish",
       reasoning: { effort: "low" },
       text: textFormat,
+      timeoutMs: MR_POLISH_TIMEOUT_MS,
     });
     outputText = response.outputText;
+    model = response.model;
   } catch (error) {
     if (error instanceof PhoenixOpenAiError) throw polishErrorFromOpenAi(error);
     throw new MrPolishError("polish_failed", "Your words were kept as you said them.");
   }
 
   const text = sanitizeMrPolished(parsePolished(outputText), input.kind);
-  if (findMrPolishViolations(text, spoken).length > 0) {
+  const violations = findMrPolishViolations(text, spoken);
+  if (violations.length > 0) {
+    // A refused rewrite used to vanish without a trace, so "it doesn't change anything" could not be told apart
+    // from a weak model. The row names the reason, the model and the box — never the words, which are about a
+    // candidate.
+    await logAppError({
+      message: `Medical Rep hiring: a spoken comment's rewrite was refused (${violations.join("; ")}) — model ${model || "unknown"}, box ${input.kind}`,
+      moduleKey: "recruitment",
+      moduleLabel: "Recruitment",
+      route: "/ai/recruitment/mr-hiring-dictation-polish/refused",
+      source: "server",
+    }).catch(() => null);
     throw new MrPolishError("polish_failed", "Your words were kept as you said them.");
   }
   return { text };
