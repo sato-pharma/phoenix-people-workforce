@@ -19,6 +19,14 @@ import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { prepareTicketAttachment } from "@/components/outstation/prepare-ticket-attachment";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
+import {
+  judgeScannedTickets,
+  scanTrainTicket,
+  TicketScanNotices,
+  TicketScanReading,
+  type ScannedTrainTicket,
+} from "@/components/outstation/train-ticket-scan";
+import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 import { isNonTravelExpenseType, nonTravelAmountRefusal } from "@/lib/outstation/non-travel-expense";
 import { humanizeCode } from "@/lib/format/code-label";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -446,7 +454,12 @@ export function MobileOutstationWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [permissionPrompt, setPermissionPrompt] = useState<PermissionPromptState | null>(null);
-  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
+  const [pickedTicketFiles, setPickedTicketFiles] = useState<File[]>([]);
+  // A train ticket is read the moment it is picked (owner, 2026-11-07; train-ticket-scan.tsx), and the
+  // exact bytes that were read are the ones sent, with the signed note of the read.
+  const [trainTicketPicks, setTrainTicketPicks] = useState<Array<{ file: File; ticket: ScannedTrainTicket }>>([]);
+  const [isReadingTickets, setIsReadingTickets] = useState(false);
+  const ticketPickSequenceRef = useRef(0);
   const carEvidenceStreamRef = useRef<MediaStream | null>(null);
   const pendingOfflineDraftRef = useRef(false);
   const permissionActionRef = useRef<(() => Promise<void>) | null>(null);
@@ -478,6 +491,23 @@ export function MobileOutstationWizard({
   // priced on the two typed amounts and carries an uploaded invoice or picture. The server applies
   // the same predicate, so this is the screen agreeing with it, not a second copy of the rule.
   const isNonTravel = isNonTravelExpenseType(expenseType);
+  // Judged again whenever the arrival photo or the trip days change: a ticket read before the photo
+  // was taken is held to the photo's own day once it exists. Only the accepted ones count and are sent.
+  const isTrainTicketScan = !isNonTravel && ticketScanApplies(transportationType);
+  const trainTicketJudgement = useMemo(() => {
+    const judged = judgeScannedTickets(
+      trainTicketPicks.map((pick) => pick.ticket),
+      {
+        arrivalAt: carEvidence?.capturedAt ?? null,
+        departureAt: null,
+        tripEndDate: tripEndDate || tripStartDate,
+        tripStartDate,
+      },
+    );
+    const acceptedTickets = new Set(judged.accepted.map((entry) => entry.ticket));
+    return { ...judged, acceptedFiles: trainTicketPicks.filter((pick) => acceptedTickets.has(pick.ticket)).map((pick) => pick.file) };
+  }, [carEvidence?.capturedAt, trainTicketPicks, tripEndDate, tripStartDate]);
+  const ticketFiles = isTrainTicketScan ? trainTicketJudgement.acceptedFiles : pickedTicketFiles;
   // Where the rep's SENT Phoenix CRM plan puts them on the trip days (owner, 2026-11-07: "Wizard
   // suggests destination"). Shown beside the capture button only: the destination is ALWAYS the
   // live GPS capture, and a plan never fills it.
@@ -624,7 +654,10 @@ export function MobileOutstationWizard({
     setReturnTicketAmount("");
     setTripStartDate("");
     setTripEndDate("");
-    setTicketFiles([]);
+    setPickedTicketFiles([]);
+    setTrainTicketPicks([]);
+    ticketPickSequenceRef.current += 1;
+    setIsReadingTickets(false);
     setTransportationType("car");
     setStep(1);
   }, [draftKey, stopCarEvidenceCamera]);
@@ -876,9 +909,14 @@ export function MobileOutstationWizard({
 
   function handleTransportationTypeChange(value: OutstationTransportationType) {
     setTransportationType(value);
-    if (value === "car") {
-      setTicketFiles([]);
-    } else {
+    // Only a train ticket is read, so a switch to or from train starts the tickets again.
+    if (value === "car" || value === "train" || transportationType === "train") {
+      setPickedTicketFiles([]);
+      setTrainTicketPicks([]);
+      ticketPickSequenceRef.current += 1;
+      setIsReadingTickets(false);
+    }
+    if (value !== "car") {
       setCarEvidence(null);
     }
   }
@@ -1403,6 +1441,43 @@ export function MobileOutstationWizard({
     }
   }
 
+  /** Reads each picked train ticket against the trip; a later pick makes an earlier read's answer stale. */
+  async function readTrainTickets(files: File[]) {
+    ticketPickSequenceRef.current += 1;
+    const sequence = ticketPickSequenceRef.current;
+    setTrainTicketPicks([]);
+    if (files.length === 0) {
+      setIsReadingTickets(false);
+      return;
+    }
+    if (!tripStartDate) {
+      setPickedTicketFiles([]);
+      setMessage("Choose the trip dates before attaching the train ticket, so its date can be checked.");
+      return;
+    }
+    setIsReadingTickets(true);
+    try {
+      const picks: Array<{ file: File; ticket: ScannedTrainTicket }> = [];
+      for (const file of files) {
+        const prepared = await prepareTicketAttachment(file);
+        const ticket = await scanTrainTicket(prepared, {
+          arrivalAt: carEvidence?.capturedAt ?? null,
+          tripEndDate: tripEndDate || tripStartDate,
+          tripStartDate,
+        });
+        picks.push({ file, ticket });
+      }
+      if (sequence === ticketPickSequenceRef.current) setTrainTicketPicks(picks);
+    } catch (error) {
+      if (sequence === ticketPickSequenceRef.current) {
+        setPickedTicketFiles([]);
+        setMessage(error instanceof Error ? error.message : "Unable to read the attached ticket. Attach it again.");
+      }
+    } finally {
+      if (sequence === ticketPickSequenceRef.current) setIsReadingTickets(false);
+    }
+  }
+
   async function submit() {
     if (isNonTravel && isOffline) {
       setMessage(
@@ -1430,6 +1505,11 @@ export function MobileOutstationWizard({
       return;
     }
 
+    if (isReadingTickets) {
+      setMessage("The ticket is still being read. Wait a moment, then submit again.");
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
     try {
@@ -1440,10 +1520,17 @@ export function MobileOutstationWizard({
       // phone said "offline", and the claim was held for a ticket he had attached. sync-offline
       // now carries ticketAttachments exactly like submit. Only a draft REPLAYED later from
       // localStorage has no file to send; that claim gets its ticket from My claims.
-      let ticketAttachments: Array<{ dataUrl: string; name: string }> | undefined;
+      let ticketAttachments: Array<{ dataUrl: string; name: string; scanToken?: string }> | undefined;
       if ((isTicketBased || isNonTravel) && ticketFiles.length > 0) {
         try {
-          ticketAttachments = await Promise.all(ticketFiles.map(prepareTicketAttachment));
+          // A train ticket goes as the exact bytes that were read, with the signed note of that read.
+          ticketAttachments = isTrainTicketScan
+            ? trainTicketJudgement.accepted.map(({ ticket }) => ({
+                dataUrl: ticket.dataUrl,
+                name: ticket.name,
+                ...(ticket.scanToken ? { scanToken: ticket.scanToken } : {}),
+              }))
+            : await Promise.all(ticketFiles.map(prepareTicketAttachment));
         } catch (error) {
           setMessage(
             error instanceof Error ? error.message : "Unable to read the attached ticket. Attach it again.",
@@ -1898,8 +1985,9 @@ export function MobileOutstationWizard({
             }
             accepted.push(file);
           }
-          setTicketFiles(accepted);
+          setPickedTicketFiles(accepted);
           setMessage(refusal);
+          if (isTrainTicketScan) void readTrainTickets(accepted);
         }}
         required={isTicketRequired}
         transportationType={transportationType}
@@ -1913,7 +2001,14 @@ export function MobileOutstationWizard({
           : {})}
       />
 
-      {isTicketRequired && ticketFiles.length === 0 ? (
+      {isTrainTicketScan ? (
+        <div className="grid gap-2">
+          {isReadingTickets ? <TicketScanReading count={pickedTicketFiles.length} /> : null}
+          <TicketScanNotices accepted={trainTicketJudgement.accepted} refused={trainTicketJudgement.refused} />
+        </div>
+      ) : null}
+
+      {isTicketRequired && ticketFiles.length === 0 && !isReadingTickets ? (
         <StepNote tone="warn">
           {isOffline ? "No connection: you" : "No ticket yet? You"} can submit without it now — the claim is held for review until you attach the ticket from My claims, below this form.
         </StepNote>
