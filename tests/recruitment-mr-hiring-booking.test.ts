@@ -127,10 +127,10 @@ export function runRecruitmentMrHiringBookingTests() {
   assert.throws(() => parseMrResultInput({ comment: "ok", decidedWithoutDsm: true, result: "pass", step: "hr_first" }), /DSM interview only/, "no-feedback applies to the DSM step only");
   assert.throws(() => parseMrResultInput({ comment: "ok", rating: 6, result: "pass", step: "dsm" }), /1 to 5/, "the rating is 1 to 5");
   // §8 — an offer recommendation names the salary and the joining date.
-  assert.throws(() => parseMrRecommendationInput({ proposedSalary: "15000", recommendation: "make_offer" }, "2026-11-12"), /joining date/, "an offer recommendation needs the joining date");
-  assert.throws(() => parseMrRecommendationInput({ proposedJoiningDate: "2026-11-01", proposedSalary: 15000, recommendation: "make_offer" }, "2026-11-12"), /past/, "the joining date cannot be in the past");
-  assert.equal(parseMrRecommendationInput({ proposedJoiningDate: "2026-12-01", proposedSalary: "15,000", recommendation: "make_offer" }, "2026-11-12").proposedSalary, 15000, "a salary typed with a comma is read as the number");
-  assert.equal(parseMrRecommendationInput({ recommendation: "keep_backup" }, "2026-11-12").proposedSalary, null, "keep as backup needs no salary");
+  assert.throws(() => parseMrRecommendationInput({ proposedSalary: "15000", recommendation: "make_offer" }), /joining date/, "an offer recommendation needs the joining date");
+  assert.equal(parseMrRecommendationInput({ proposedJoiningDate: "2026-11-01", proposedSalary: 15000, recommendation: "make_offer" }).proposedJoiningDate, "2026-11-01", "a joining date already gone is taken — nothing is blocked to HR");
+  assert.equal(parseMrRecommendationInput({ proposedJoiningDate: "2026-12-01", proposedSalary: "15,000", recommendation: "make_offer" }).proposedSalary, 15000, "a salary typed with a comma is read as the number");
+  assert.equal(parseMrRecommendationInput({ recommendation: "keep_backup" }).proposedSalary, null, "keep as backup needs no salary");
 
   // The notices: never email, on their own policy rows so the `recruitment.*` email default never applies.
   assert.equal((MR_NOTICE_CHANNELS as readonly string[]).includes("email"), false, "the senders never ask for email");

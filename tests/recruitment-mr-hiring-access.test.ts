@@ -106,14 +106,22 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.equal(mayRecordStep(dsm, dsmEnded, "dsm", { now: NOW }).ok, true, "the DSM who held the interview records its feedback");
   assert.equal(mayRecordStep(dsm, dsmRunning, "dsm", { now: NOW }).ok, false, "not before the interview has ended");
   assert.equal(mayRecordStep(otherDsm, dsmEnded, "dsm", { now: NOW }).ok, false, "another DSM may not");
-  assert.equal(mayRecordStep(talent, dsmEnded, "dsm", { now: NOW }).ok, false, "HR does not write the DSM's feedback for him");
-  // §6 — HR decides without it, but only once the interview has ended, and only HR.
-  const noDsm = mayRecordStep(talent, dsmEnded, "dsm", { decidedWithoutDsm: true, now: NOW });
-  assert.ok(noDsm.ok && noDsm.decidedWithoutDsm, "HR may decide with no DSM feedback once the interview has ended");
-  assert.equal(mayRecordStep(talent, dsmRunning, "dsm", { decidedWithoutDsm: true, now: NOW }).ok, false, "never while the DSM interview is still to happen");
+  // EVERYTHING IS OPEN TO HR (owner, 8 Nov 2026: "don't block anything to me, make everything open to
+  // the HR") — HR decides the DSM step in his place at any time, before the interview's hour included,
+  // and the result is marked as decided without DSM feedback.
+  const hrForDsm = mayRecordStep(talent, dsmEnded, "dsm", { now: NOW });
+  assert.ok(hrForDsm.ok && hrForDsm.decidedWithoutDsm, "HR writes the DSM step in his place, marked as no DSM feedback");
+  const hrEarly = mayRecordStep(talent, dsmRunning, "dsm", { decidedWithoutDsm: true, now: NOW });
+  assert.ok(hrEarly.ok && hrEarly.decidedWithoutDsm, "HR is not held by the clock — the DSM interview may still be to come");
   assert.equal(mayRecordStep(ceo, dsmEnded, "dsm", { decidedWithoutDsm: true, now: NOW }).ok, false, "the CEO may not decide without the DSM");
   const dsmAnswered = facts({ bookings: dsmEnded.bookings, results: [...screenedAndFirst, result("dsm", "backup", "2026-11-10T09:00:00.000Z")] });
-  assert.equal(mayRecordStep(talent, dsmAnswered, "dsm", { decidedWithoutDsm: true, now: NOW }).ok, false, "once the DSM has answered, HR does not overrule him through the no-feedback path");
+  assert.equal(mayRecordStep(talent, dsmAnswered, "dsm", { decidedWithoutDsm: true, now: NOW }).ok, true, "HR may change the DSM step's result after he answered");
+  const hrRunningRow = buildMrRow(talent, record(dsmRunning), NOW);
+  assert.equal(hrRunningRow.can.decideWithoutDsm, true, "HR's row offers the DSM-step decision before the interview has even ended");
+  assert.equal(hrRunningRow.can.record, null, "and never as if HR were the DSM giving feedback");
+  const firstUnbooked = facts({ results: [result("hr_screening", "pass", "2026-11-08T09:00:00.000Z")] });
+  const unbooked = mayRecordStep(talent, firstUnbooked, "hr_first", { now: NOW });
+  assert.ok(unbooked.ok && unbooked.booking === null, "HR records the 1st interview with no booking at all — one held before it was booked");
 
   // 5 and 6 — the NSM's final and recommendation.
   const dsmPassed = [...screenedAndFirst, result("dsm", "pass", "2026-11-10T09:00:00.000Z")];
@@ -133,9 +141,10 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.equal(mayRecordStep(rsm, rsmRunning, "rsm", { now: NOW }).ok, false, "not before the interview has ended");
   assert.equal(mayRecordStep(otherRsm, rsmEnded, "rsm", { now: NOW }).ok, false, "another RSM may not");
   assert.equal(mayRecordStep(dsm, rsmEnded, "rsm", { now: NOW }).ok, false, "nor the DSM");
-  assert.equal(mayRecordStep(talent, rsmEnded, "rsm", { now: NOW }).ok, false, "Talent Acquisition does not write the RSM's evaluation");
+  assert.equal(mayRecordStep(talent, rsmRunning, "rsm", { now: NOW }).ok, true, "HR records the RSM step too, at any time");
   assert.equal(mayRecordStep(ceo, rsmEnded, "rsm", { now: NOW }).ok, false, "nor the CEO");
-  assert.equal(mayRecordStep(talent, rsmEnded, "rsm", { decidedWithoutDsm: true, now: NOW }).ok, false, "the no-feedback path is the DSM's step only");
+  const hrRsm = mayRecordStep(talent, rsmEnded, "rsm", { decidedWithoutDsm: true, now: NOW });
+  assert.ok(hrRsm.ok && !hrRsm.decidedWithoutDsm, "the no-feedback mark is the DSM's step only");
   assert.equal(mayRecordStep(rsm, rsmEnded, "hr_manager", { now: NOW }).ok, false, "the 3rd interview waits until the RSM has evaluated");
   const rsmRow = buildMrRow(rsm, record(rsmEnded), NOW);
   assert.equal(rsmRow.can.record, "rsm", "the RSM's row offers the evaluation");
@@ -163,8 +172,9 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.equal(mayRecommend(dsm, atRecommendation, NOW).ok, false, "the DSM does not");
   assert.equal(mayRecommend(otherNsm, atRecommendation, NOW).ok, false, "another NSM does not");
   assert.equal(mayRecommend(nsm, finalEnded, NOW).ok, false, "not before the final has passed");
+  assert.equal(mayRecommend(talent, atRecommendation, NOW).ok, true, "HR writes the recommendation too");
 
-  // 7 — the final decision belongs to the HR Manager alone (owner, 7 Nov 2026).
+  // 7 — the final decision is HR's: the HR Manager and Talent Acquisition (owner, 8 Nov 2026).
   const atDecision = facts({
     ...atRecommendation,
     recommendations: [
@@ -172,7 +182,8 @@ export function runRecruitmentMrHiringAccessTests() {
     ],
   });
   assert.equal(mayRecordStep(hrManager, atDecision, "final_decision", { now: NOW }).ok, true, "the HR Manager makes the final decision");
-  for (const [name, viewer] of [["Talent Acquisition", talent], ["the NSM", nsm], ["the CEO", ceo], ["the DSM", dsm]] as const) {
+  assert.equal(mayRecordStep(talent, atDecision, "final_decision", { now: NOW }).ok, true, "Talent Acquisition makes it too");
+  for (const [name, viewer] of [["the NSM", nsm], ["the CEO", ceo], ["the DSM", dsm]] as const) {
     assert.equal(mayRecordStep(viewer, atDecision, "final_decision", { now: NOW }).ok, false, `${name} never makes the final decision`);
   }
 
@@ -199,7 +210,7 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.equal(managerRow.can.record, "final_decision", "the HR Manager's row offers the decision");
   assert.equal(managerRow.recommendation?.proposedSalary, 15000, "and the salary he decides on");
   const talentRow = buildMrRow(talent, record(atDecision), NOW);
-  assert.equal(talentRow.can.record, null, "Talent Acquisition's row never offers the decision");
+  assert.equal(talentRow.can.record, "final_decision", "Talent Acquisition's row offers the decision too");
 
   // Who may read the journey without a lookup: the three read-all seats, and anyone on an interview.
   const finalRecord = record(finalEnded);
