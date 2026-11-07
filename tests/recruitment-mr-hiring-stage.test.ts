@@ -56,7 +56,7 @@ function result(step: MrResultStep, value: MrResult, createdAt: string, extra: P
   return {
     bookingId: null,
     byHrId: "B-10",
-    byName: "Omar Gawish",
+    byName: "Hassan Kamel",
     comment: "Clear and confident.",
     createdAt,
     decidedWithoutDsm: false,
@@ -194,13 +194,13 @@ export function runRecruitmentMrHiringStageTests() {
     NOW,
   );
   assert.ok(!rsmFailed.open && rsmFailed.closed === "rejected" && rsmFailed.closedAt === "rsm", "Do not pass at the RSM rejects at the RSM");
-  const hrManagerBooked = mrHiringStage(facts({ ...throughDsm(), bookings: [...throughDsm().bookings!, booking("hr_manager", "2026-11-13T08:00:00.000Z", "B-10", "Omar Gawish")] }), NOW);
+  const hrManagerBooked = mrHiringStage(facts({ ...throughDsm(), bookings: [...throughDsm().bookings!, booking("hr_manager", "2026-11-13T08:00:00.000Z", "B-10", "Hassan Kamel")] }), NOW);
   assert.notEqual(mrBookingRefusal(hrManagerBooked, "rsm"), null, "once the 3rd interview is booked, the RSM interview is no longer offered");
 
   const base = throughDsm();
   const atRecommendation = mrHiringStage(
     facts({
-      bookings: [...base.bookings!, booking("hr_manager", "2026-11-11T08:00:00.000Z", "B-10", "Omar Gawish"), booking("nsm_final", "2026-11-11T10:00:00.000Z", "N-1", "Sara Nabil")],
+      bookings: [...base.bookings!, booking("hr_manager", "2026-11-11T08:00:00.000Z", "B-10", "Hassan Kamel"), booking("nsm_final", "2026-11-11T10:00:00.000Z", "N-1", "Sara Nabil")],
       results: [...base.results!, result("hr_manager", "pass", "2026-11-11T09:00:00.000Z"), result("nsm_final", "pass", "2026-11-11T11:00:00.000Z", { byHrId: "N-1" })],
     }),
     NOW,

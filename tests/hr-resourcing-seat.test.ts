@@ -460,7 +460,7 @@ export async function runHrResourcingSeatTests() {
   }
   assert.deepEqual(
     rail.find((section) => section.id === "hr-recruitment")?.items.map((row) => row.label),
-    ["Recruitment", "Screening Queue", "My Candidates", "Interview Calendar", "Job Offers", "Hiring Analytics", "Manager CV Engagement"],
+    ["Recruitment", "Screening Queue", "My Candidates", "Interview Calendar", "Medical Rep Hiring", "Job Offers", "Hiring Analytics", "Manager CV Engagement"],
     "Recruitment reads in the order the work runs",
   );
   assert.deepEqual(

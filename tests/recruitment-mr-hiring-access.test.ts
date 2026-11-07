@@ -81,6 +81,11 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.ok(talent.isTalentAcquisition && talent.canWork && !talent.isHrManager, "Talent Acquisition works the CVs but is not the HR Manager");
   assert.ok(ceo.readsAll && !ceo.canWork, "the CEO reads every candidate and works none");
   assert.ok(!dsm.readsAll && !dsm.canWork, "a DSM reads only the candidates he is involved with");
+  // The page's own gate, called for both HR seats (tests/hr-seat-route-coherence.test.ts records it).
+  const hrOperations = mrViewer({ hrId: "O-1", role: "HR Operations" });
+  assert.ok(talent.readsAll, "HR Resourcing opens the Medical Rep Hiring page");
+  assert.ok(!hrOperations.readsAll && !hrOperations.canWork && !hrOperations.isTalentAcquisition, "HR Operations reads and works nothing in it");
+  assert.equal(canSeeSalary(hrOperations, { byHrId: "N-1" }), false, "and never sees the salary");
 
   // 1 — screening is HR's.
   const fresh = facts();

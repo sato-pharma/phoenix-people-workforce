@@ -27,9 +27,8 @@ import {
   type MrBookingFact,
   type MrCandidateFacts,
   type MrRecommendationFact,
-  type MrStep,
 } from "@/lib/recruitment/mr-hiring/stage";
-import type { MrInterviewRound, MrResultStep } from "@/lib/recruitment/mr-hiring/vocabulary";
+import type { MrInterviewRound, MrResultStep, MrStep } from "@/lib/recruitment/mr-hiring/vocabulary";
 
 export type MrViewer = {
   hrIdKey: string | null;

@@ -316,6 +316,15 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // payroll figure, so it crosses none of her named boundaries.
   "src/lib/recruitment/interview-calendar.ts",
   "src/lib/recruitment/manager-cv-engagement.ts",
+  // Medical Rep hiring, the 8 November 2026 workflow (docs/recruitment-mr-hiring-workflow.md). The
+  // access file names HR Resourcing as the Talent Acquisition seat that works the Medical Rep
+  // candidates — screening, the 1st interview, bookings — and reads the NSM's proposed salary, which
+  // the owner granted her by name on 7 Nov 2026 ("You, TA and that NSM"). The notice file names her
+  // only to send her to her own /hr/ address. Recruiting is her function; neither hands her an
+  // employee document, a personnel record or payroll. HR Operations is named in neither, and
+  // tests/recruitment-mr-hiring-access.test.ts asserts its viewer reads nothing.
+  "src/lib/recruitment/mr-hiring/access.ts",
+  "src/lib/recruitment/mr-hiring/notify.ts",
   // The job workbook. It names both seats because it IS the two job descriptions, one per seat —
   // but it grants nothing: every field is prose and an href, there is no permission, no gate and
   // no branch on the seat name anywhere in it. tests/hr-job-workbook.test.ts asserts the opposite
