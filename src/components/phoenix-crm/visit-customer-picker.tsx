@@ -44,6 +44,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { useInsideCrmStepForm } from "@/components/phoenix-crm/step-form";
 import { directionsPlace, directionsUrl } from "@/lib/phoenix-crm/directions";
+import { FULL_NAME_NEEDED_TAG, fullNameNeededSentence } from "@/lib/phoenix-crm/pm-name-rules";
 import { UNVALIDATED_CUSTOMER_VISIT_REFUSED } from "@/lib/phoenix-crm/entry-rules";
 import { isPharmacyListType } from "@/lib/phoenix-crm/pharmacy-call-rules";
 import { offPlanBlock, type OffPlanAllowance } from "@/lib/phoenix-crm/offplan-cap-rules";
@@ -301,7 +302,7 @@ export function VisitCustomerPicker({
                           <li className="min-w-0" key={customer.customerId}>
                             <button
                               className="block w-full min-w-0 rounded-none border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
-                              disabled={customer.visitedToday || blocked !== null || customer.validateFirst}
+                              disabled={customer.visitedToday || blocked !== null || customer.validateFirst || customer.needsFullName === true}
                               onClick={() => onPick(customer.customerId)}
                               type="button"
                             >
@@ -322,6 +323,7 @@ export function VisitCustomerPicker({
                                   {customer.waitingToSend ? <CrmPill tone="orange">{VISIT_WAITING_PILL}</CrmPill> : null}
                                   {blocked === "day" || blocked === "week" ? <CrmPill tone="warn">{blocked === "day" ? "Plan for another day" : "This week is full"}</CrmPill> : null}
                                   {customer.validateFirst ? <CrmPill tone="warn">{VALIDATE_FIRST_PILL}</CrmPill> : null}
+                                  {customer.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
                                 </span>
                               </span>
                               <PlaceWindows customer={customer} />
@@ -333,9 +335,11 @@ export function VisitCustomerPicker({
                               <span className="mt-1 block text-xs font-semibold text-slate-600">
                                 {customer.validateFirst
                                   ? UNVALIDATED_CUSTOMER_VISIT_REFUSED
-                                  : customer.pending
-                                    ? pendingVisitsText(customer.visitsThisMonth)
-                                    : monthVisitsText(customer.visitsThisMonth, customer.target)}
+                                  : customer.needsFullName
+                                    ? fullNameNeededSentence(customer.name)
+                                    : customer.pending
+                                      ? pendingVisitsText(customer.visitsThisMonth)
+                                      : monthVisitsText(customer.visitsThisMonth, customer.target)}
                               </span>
                             </button>
                             {/* The way to his saved place (owner, 2026-10-02) hangs UNDER the card, joined by its

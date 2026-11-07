@@ -59,6 +59,11 @@ function capFor(listType: PhoenixCrmDoctorListType, caps: Caps): number {
   return listType === "AM" ? caps.amDailyCap : caps.pmDailyCap;
 }
 
+/** The customers a copy may place: a doctor waiting for his full name never is (owner, 2026-11-07). */
+function plannableById(customers: ReadonlyArray<PlannerCustomer>): Map<string, PlannerCustomer> {
+  return new Map(customers.filter((customer) => !customer.needsFullName).map((customer) => [customer.customerId, customer]));
+}
+
 /**
  * The placements a "Copy last month" would write, grouped by field-week. Only weeks that gain at least
  * one placement appear, and every draft is a plain placement with no exception — a copied doctor is on
@@ -70,7 +75,7 @@ export function buildCopyPlacements(
   weeks: ReadonlyArray<CopyWeek>,
   caps: Caps,
 ): Map<string, PlanItemDraft[]> {
-  const byCustomer = new Map(customers.map((customer) => [customer.customerId, customer]));
+  const byCustomer = plannableById(customers);
   // One weekday set per still-on-list customer; a doctor on the list twice in the reference merges.
   const weekdaysByCustomer = new Map<string, Set<number>>();
   for (const entry of entries) {
@@ -171,7 +176,7 @@ export function buildMonthCopyPlacements(
   weeks: ReadonlyArray<CopyWeek>,
   caps: Caps,
 ): Map<string, PlanItemDraft[]> {
-  const byCustomer = new Map(customers.map((customer) => [customer.customerId, customer]));
+  const byCustomer = plannableById(customers);
   const bySlot = new Map<string, string[]>();
   for (const placement of source) {
     const slot = `${weekNumberInMonth(fieldWeekStart(placement.planDate))}:${weekdayOfIsoDay(placement.planDate)}`;
@@ -197,7 +202,7 @@ export function buildWeekCopyPlacements(
   week: CopyWeek,
   caps: Caps,
 ): PlanItemDraft[] {
-  const byCustomer = new Map(customers.map((customer) => [customer.customerId, customer]));
+  const byCustomer = plannableById(customers);
   const byWeekday = new Map<number, string[]>();
   for (const placement of source) {
     const weekday = weekdayOfIsoDay(placement.planDate);
@@ -215,7 +220,7 @@ export function buildDayCopyPlacements(
   day: CopyDay,
   caps: Caps,
 ): PlanItemDraft[] {
-  const byCustomer = new Map(customers.map((customer) => [customer.customerId, customer]));
+  const byCustomer = plannableById(customers);
   return placeOnDay(day, uniqueInOrder(sourceCustomerIds), byCustomer, caps);
 }
 

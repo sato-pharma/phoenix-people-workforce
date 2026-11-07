@@ -100,6 +100,11 @@ export type PlannerCustomer = {
   visitsThisMonth: number;
   /** Carried over from iReports360 and not validated yet: no place and no days and hours. */
   pending: boolean;
+  /**
+   * A clinic doctor he added with one or two names (owner, 2026-11-07, pm-name-rules.ts): shown on
+   * the board, never ticked, suggested or copied until he writes the full name.
+   */
+  needsFullName?: boolean;
   places: PlannerPlace[];
   /** iReports360's brick and address while he is not validated yet; null once he has a place. */
   reference?: PlannerReference | null;
@@ -186,6 +191,7 @@ export function suggestForDay(input: {
 
   const suggestions: DaySuggestion[] = [];
   for (const customer of input.customers) {
+    if (customer.needsFullName) continue;
     const target = gradeTarget(input.settings, customer.listType, customer.grade);
     const tier = coverageTier(customer.visitsThisMonth, target);
     // A customer who is not validated yet has no place and no days and hours, so there is nothing to
