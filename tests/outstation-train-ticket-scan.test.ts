@@ -183,7 +183,8 @@ function normalizing() {
   assert.ok(nightBus.accepted && nightBus.travelDate === "2026-07-27", "HEADLINE: a yearless ticket takes the trip's year, then is judged like any other");
   assert.equal(anchorYear("2000-12-31", "2027-01-01"), "2026-12-31", "a late-December ticket on an early-January trip is last year's");
   assert.equal(anchorYear("2000-01-01", "2026-12-31"), "2027-01-01");
-  assert.equal(anchorYear("2000-02-29", "2026-03-01"), "2028-02-29", "29 Feb lands only in a year that has one");
+  assert.equal(anchorYear("2000-02-29", "2028-03-01"), "2028-02-29", "29 Feb lands only in a year that has one");
+  assert.equal(anchorYear("2000-02-29", "2026-03-01"), "2000-02-29", "with no 29 Feb within a year of the trip, the date is left unanchored and so never matches");
   const printed = normalizeTicketScan({ is_train_ticket: true, problems: [], travel_date: "2025-07-27", year_printed: true });
   assert.equal(
     judgeTrainTicket(printed, { arrivalAt: null, departureAt: null, tripEndDate: "2026-07-29", tripStartDate: "2026-07-28" }).accepted,
