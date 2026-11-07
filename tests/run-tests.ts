@@ -2959,6 +2959,8 @@ import { runStructuredLogLabelsReachTheRowTests } from "./structured-log-labels-
 import { runClosingSnapshotPricesOnceTests } from "./closing-snapshot-prices-once.test.ts";
 import { runNotificationEventKeyIncludesTheActorTests } from "./notification-event-key-includes-the-actor.test.ts";
 import { createShardDeal } from "./shard-deal.ts";
+import { spareSkipRefusal, spareSkips } from "./spare-skip.ts";
+import { runSpareSkipTests } from "./spare-skip.test.ts";
 import { runLoginBridgeRepairLogsOnlyWhenItFailsTests } from "./login-bridge-repair-logs-only-when-it-fails.test.ts";
 import { runWeakPasswordBridgeTests } from "./weak-password-bridge.test.ts";
 import { runLoginSuccessAuditBeforeReplyTests } from "./login-success-audit-before-reply.test.ts";
@@ -3040,11 +3042,21 @@ if (shardSpec && (shardTotal < 1 || shardIndex < 1 || shardIndex > shardTotal)) 
 }
 let seenCount = 0;
 let ranCount = 0;
+// The spare laptop's one skip (tests/spare-skip.ts): refused outright on CI, never counted as ran.
+const spareSkipStop = spareSkipRefusal(process.env);
+if (spareSkipStop) {
+  console.error(spareSkipStop);
+  process.exit(2);
+}
+const spareSkipped: string[] = [];
 
 process.on("exit", () => {
   // One machine-readable line, always, so the parent can prove coverage. Printed from `exit` rather
   // than after the last call because a crash outside a test can still end this file early.
   console.log(`PHX_SHARD_RESULT shard=${shardIndex}/${shardTotal} seen=${seenCount} ran=${ranCount}`);
+  if (spareSkipped.length > 0) {
+    console.log(`PHX_SHARD_SKIPPED shard=${shardIndex}/${shardTotal} skipped=${spareSkipped.length} ${spareSkipped.join(", ")}`);
+  }
 });
 
 const dealShard = createShardDeal(shardTotal);
@@ -3081,6 +3093,11 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
   seenCount += 1;
   const mine = dealShard(execute.name) === shardIndex - 1;
   if (!mine) return;
+  if (spareSkips(process.env, execute.name)) {
+    spareSkipped.push(execute.name);
+    console.log(`SKIP ${name} (the spare laptop's switch, tests/spare-skip.ts)`);
+    return;
+  }
   ranCount += 1;
   const watchId = seenCount;
   writeWatchMarker?.(`PHX_TEST_START ${watchId} ${name.replace(/\s+/g, " ")}\n`);
@@ -11564,6 +11581,10 @@ await runTest(
 await runTest(
   "the sharded CI runner REFUSES a run the shards did not cover between them — a shard that printed no `PHX_SHARD_RESULT` marker, a ran-sum short of the declared count, shards disagreeing about that count, and two shards handed the same index are each a named failure rather than a smaller suite reporting success; a shard that merely FAILED reports once, without a coverage complaint on top of it (run-tests.ts rethrows at the first red test, so its counts are legitimately short); and the shard count is bounded by free memory as well as by CPUs, because each shard holds the whole module graph and this repo's runners are 7 GB, not the public tier's 16",
   runRunTestsShardedTests,
+);
+await runTest(
+  "the spare laptop's one skip leaves out the CV worker test and nothing else, only when its switch reads 1, is refused on CI, is never counted as ran, and prints its own skipped line beside the unchanged shard tally",
+  runSpareSkipTests,
 );
 await runTest(
   "a manager's double visit with a rep who LATER resigned is still his working day — the exclusion is keyed on who LOGGED the row, so a resignation used to erase its partner's evidence retroactively and charge him a no-activity deduction (100 person-days, 18 active people, 11 of them charged and 2 approved for payroll, June-September 2026); the rescued row credits the partner only, keeps agent_crm_id so the duplicate collapse still works, and every money-deciding read goes through the new door",
