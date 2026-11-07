@@ -32,8 +32,6 @@ import {
   SESSION_SLOT_CHOICES,
   DAY_END_MINUTES,
   MAX_DURATION_MINUTES,
-  cairoDateKey,
-  cairoMinutesOfDay,
   formatDayLong,
   formatDuration,
   formatTimeOfDay,
@@ -154,9 +152,6 @@ export function CellDialog({
   onSessionCreated: (session: InterviewSession) => void;
   zoomConnected: boolean;
 }) {
-  const [now] = useState(() => new Date());
-  const todayKey = cairoDateKey(now);
-  const nowMinutes = cairoMinutesOfDay(now);
   const firstStart = Math.min(Math.max(initialStart, 0), LATEST_START);
 
   const [mode, setMode] = useState<"interview" | "session">("interview");
@@ -200,7 +195,6 @@ export function CellDialog({
     };
   }, [api, dateKey]);
 
-  const passed = dateKey < todayKey || (dateKey === todayKey && start <= nowMinutes);
   const sessionMinutes = end - start;
   const slots = useMemo(() => sessionSlotStarts({ durationMinutes: sessionMinutes, slotMinutes: slot, startMinutes: start }), [sessionMinutes, slot, start]);
   const leftover = sessionMinutes - slots.length * slot;
@@ -238,10 +232,10 @@ export function CellDialog({
     return lines.sort((a, b) => a.start - b.start);
   }, [day]);
 
-  const interviewProblem = passed
-    ? "That time has already passed."
-    : (personProblem(person) ?? (platform === null ? "Choose In office or Zoom." : null));
-  const sessionProblem = passed ? "That time has already passed." : slots.length === 0 ? "The session is shorter than one slot." : null;
+  // A time already gone is booked like any other — HR records an interview held before it was put on
+  // the calendar (owner, 8 Nov 2026: "don't block anything to me").
+  const interviewProblem = personProblem(person) ?? (platform === null ? "Choose In office or Zoom." : null);
+  const sessionProblem = slots.length === 0 ? "The session is shorter than one slot." : null;
 
   async function book() {
     if (interviewProblem || platform === null) return;

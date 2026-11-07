@@ -114,8 +114,8 @@ function realDay(value: string): boolean {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-/** `todayCairo` is YYYY-MM-DD in Cairo — a joining date in the past is refused. */
-export function parseMrRecommendationInput(raw: unknown, todayCairo: string): MrRecommendationInput {
+/** Any real day is a joining date, a past one included — nothing is blocked to HR (owner, 8 Nov 2026). */
+export function parseMrRecommendationInput(raw: unknown): MrRecommendationInput {
   const body = object(raw);
   if (!isMrRecommendation(body.recommendation)) throw new Error("Choose Make an offer or Keep as backup.");
   const note = text(body.note) || null;
@@ -133,7 +133,6 @@ export function parseMrRecommendationInput(raw: unknown, todayCairo: string): Mr
   const dateText = text(body.proposedJoiningDate);
   if (dateText) {
     if (!realDay(dateText)) throw new Error("Choose the proposed joining date from the calendar.");
-    if (dateText < todayCairo) throw new Error("The proposed joining date cannot be in the past.");
     proposedJoiningDate = dateText;
   }
   if (body.recommendation === "make_offer" && (proposedSalary === null || proposedJoiningDate === null)) {

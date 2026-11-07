@@ -1072,11 +1072,14 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       // REQUESTED this interview (owner, 2026-10-04). Never a session slot (HR re-slots those), never a
       // past interview, never a link guest. The server (updateInterviewBooking) re-checks and confines
       // a requester to the day/time/place.
+      // HR (the booking tier) moves an interview at any time, a past one included (owner, 8 Nov 2026:
+      // "don't block anything to me"); the requesting manager still only before it ends.
       canReschedule:
         !session &&
-        now.getTime() < endsAt(row.starts_at, row.duration_minutes) &&
         (roleMeets(effectiveCalendarRole(caller, weekStartFor(dateKey)), "book") ||
-          (Boolean(viewerKey) && viewerKey === canonicalHrIdKey(row.requested_by_hr_id))),
+          (now.getTime() < endsAt(row.starts_at, row.duration_minutes) &&
+            Boolean(viewerKey) &&
+            viewerKey === canonicalHrIdKey(row.requested_by_hr_id))),
       outcome: readInterviewOutcome(row.outcome),
       outcomeSetAt: row.outcome_set_at,
       outcomeSetByName: personName(people, row.outcome_set_by_hr_id),

@@ -46,7 +46,6 @@ import { tellMrAreaManagers } from "@/lib/recruitment/mr-hiring/area-notices";
 import { notifyMrRecommendationReady } from "@/lib/recruitment/mr-hiring/notify";
 import { mrHiringStage, type MrStage } from "@/lib/recruitment/mr-hiring/stage";
 import { bookingOutcomeForResult, MR_RESULT_STEP_LABELS, mrResultLabel } from "@/lib/recruitment/mr-hiring/vocabulary";
-import { todayInCairo } from "@/lib/date-only";
 
 export type MrWriteResult = { stage: MrStage };
 
@@ -154,7 +153,7 @@ export async function recordMrStepResult(access: AccessContext, candidateId: str
 export async function recordMrRecommendation(access: AccessContext, candidateId: string, raw: unknown): Promise<MrWriteResult> {
   let input: MrRecommendationInput;
   try {
-    input = parseMrRecommendationInput(raw, todayInCairo());
+    input = parseMrRecommendationInput(raw);
   } catch (error) {
     throw validationError(error instanceof Error ? error.message : "Check the recommendation and try again.");
   }

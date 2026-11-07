@@ -1,11 +1,13 @@
 // Recruitment / Medical Rep hiring — who may see a candidate's journey, who may record each step, and
 // who may see the NSM's proposed salary.
 //
-// THE OWNER'S DECISIONS (7 Nov 2026), on top of the email:
-//   * The final decision is the HR Manager's alone — the Super Admin seat (`recruitmentManageRoles`).
+// THE OWNER'S DECISIONS, on top of the email:
+//   * EVERYTHING IS OPEN TO HR (owner, 8 Nov 2026: "don't block anything to me, make everything open
+//     to the HR … Everything is open"). The HR Manager and Talent Acquisition record every step — the
+//     interviews, the DSM's, the recommendation and the final decision — at any time: before the
+//     interview's hour, after it, or with no booking at all. Only the managers keep their own gates.
 //   * The NSM's proposed salary is seen by the HR Manager, Talent Acquisition (HR Resourcing) and the
 //     NSM who wrote it — never the DSM, the CEO or anyone else. It is stripped on the server.
-//   * HR may decide without DSM feedback any time after the DSM interview has ended; no deadline.
 //
 // THE TIMELINE (§10) IS FOR EVERYONE INVOLVED: the HR Manager and Talent Acquisition in full, the CEO
 // to read, and a manager who is on one of the candidate's interviews, was sent the CV, or sits above
@@ -20,7 +22,6 @@ import { isCandidateWithinViewerTeam } from "@/lib/recruitment/hiring-manager-te
 import { isCandidateSentToCaller } from "@/lib/recruitment/hiring-manager-view";
 import type { MrCandidateRecord } from "@/lib/recruitment/mr-hiring/facts-db";
 import {
-  dsmBookingAwaitingFeedback,
   latestRoundBooking,
   mrHiringStage,
   mrInterviewEnded,
@@ -135,33 +136,29 @@ export function mayRecordStep(
     return { ok: false, reason: "The final interview booked for this candidate is the other kind of final." };
   }
   const booking = round ? latestRoundBooking(facts, round) : null;
+
+  // HR is never held by the clock, the booking or the seat (owner, 8 Nov 2026). At the DSM step a
+  // result HR writes in the DSM's place is marked "Decided by HR, no DSM feedback".
+  if (viewer.canWork) {
+    const forDsm = step === "dsm" && (options.decidedWithoutDsm === true || !isOnBooking(viewer, booking));
+    return { booking, decidedWithoutDsm: forDsm, ok: true };
+  }
   if (round) {
     if (!booking) return { ok: false, reason: "Book this interview first." };
     if (!mrInterviewEnded(booking, now)) return { ok: false, reason: "The result is recorded once the interview has ended." };
   }
 
-  if (step === "final_decision") {
-    return viewer.isHrManager
-      ? { booking: null, decidedWithoutDsm: false, ok: true }
-      : { ok: false, reason: "The final decision is the HR Manager's." };
-  }
-  if (step === "hr_screening" || step === "hr_first") {
-    return viewer.canWork ? { booking, decidedWithoutDsm: false, ok: true } : { ok: false, reason: "HR records this step." };
-  }
+  // Everyone below is not HR.
+  if (step === "final_decision") return { ok: false, reason: "The final decision is HR's." };
+  if (step === "hr_screening" || step === "hr_first") return { ok: false, reason: "HR records this step." };
   if (step === "dsm") {
-    if (options.decidedWithoutDsm) {
-      if (!viewer.canWork) return { ok: false, reason: "Only HR may decide without the DSM's feedback." };
-      if (!dsmBookingAwaitingFeedback(facts, now)) {
-        return { ok: false, reason: "HR decides only once the DSM interview has ended with no DSM feedback." };
-      }
-      return { booking, decidedWithoutDsm: true, ok: true };
-    }
+    if (options.decidedWithoutDsm) return { ok: false, reason: "Only HR may decide without the DSM's feedback." };
     return isOnBooking(viewer, booking)
       ? { booking, decidedWithoutDsm: false, ok: true }
       : { ok: false, reason: "The DSM who held this interview records its feedback." };
   }
   // rsm, hr_manager, nsm_final, joint_final.
-  return isOnBooking(viewer, booking) || viewer.isHrManager
+  return isOnBooking(viewer, booking)
     ? { booking, decidedWithoutDsm: false, ok: true }
     : { ok: false, reason: "The interviewer on this interview records its result." };
 }
@@ -173,8 +170,9 @@ export function mayRecommend(viewer: MrViewer, facts: MrCandidateFacts, now: Dat
     return { ok: false, reason: "The recommendation is written after the final interview has passed." };
   }
   const booking = latestRoundBooking(facts, stage.jointFinal ? "joint_final" : "nsm_final");
+  if (viewer.canWork) return { booking, decidedWithoutDsm: false, ok: true };
   if (!booking) return { ok: false, reason: "Book the final interview first." };
-  return isOnBooking(viewer, booking) || viewer.isHrManager
+  return isOnBooking(viewer, booking)
     ? { booking, decidedWithoutDsm: false, ok: true }
     : { ok: false, reason: "The NSM who held the final interview writes the recommendation." };
 }

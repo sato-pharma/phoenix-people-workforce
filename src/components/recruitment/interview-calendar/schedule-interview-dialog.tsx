@@ -198,11 +198,10 @@ export function ScheduleInterviewDialog({
 
   function chipState(minutes: number): { disabled: boolean; holders: string[] } {
     const fits = isBookableWindow(minutes, durationMinutes);
-    const gone = dateKey < todayKey || (dateKey === todayKey && minutes <= nowMinutes);
     const holders = others
       .filter((booking) => overlaps(minutes, durationMinutes, booking.startMinutes, booking.durationMinutes))
       .map((booking) => booking.candidateName);
-    return { disabled: !fits || gone, holders };
+    return { disabled: !fits, holders };
   }
 
   // A duration change can push the chosen time past 5:00 PM; drop it rather than book something the
@@ -342,6 +341,7 @@ export function ScheduleInterviewDialog({
                 <section aria-label="Date">
                   <StepLabel number={1}>Date</StepLabel>
                   <MonthPicker
+                    allowPast
                     cursor={cursor}
                     onCursor={setCursor}
                     onSelect={(key) => {
