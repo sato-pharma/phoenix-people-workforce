@@ -29,9 +29,7 @@
 
 
 ## Inbox — new notes land here
-- 🔴 [a Thursday holiday-bridge day is a FULL day](a-thursday-holiday-bridge-day-is-a-full-day.md) - owner 2026-11-07; the Thursday half is a CRM rule only, never weight a bridge row.
-- 🔴 [PR 89 (run skill on the spare) rides the NEXT code PR](pr-89-run-skill-rides-the-next-code-pr.md) - owner 2026-11-07; merge `codex/run-skill-spare` into it, close 89 after.
-- 🔴 [released daily lines show on the portal; Finance Manager reads Daily Deductions](daily-deductions-reach-the-portal-and-the-finance-manager-reads.md) - owner 2026-11-07 (PR 74); he stays OFF the month Deductions screen.
+- 🔴 [the spare's suite dies at the CV worker test](spare-suite-crashes-at-the-cv-worker-test.md) - 0xC0000005 at test #2815, intermittent, any Node 24; the C10 red was `Path` casing (fixed in the script).
 
 
 
