@@ -29,12 +29,18 @@ import {
 } from "@/lib/outstation/ticket-scan-rules";
 
 const INSTRUCTIONS = [
-  "You read Egyptian train tickets (Egyptian National Railways and similar) from a photo or a PDF.",
+  "You read Egyptian travel tickets — train tickets (Egyptian National Railways and similar) and bus tickets (Go Bus, Blue Bus, Super Jet and similar) — from a photo or a PDF.",
   "The ticket may be in Arabic, English or both, with Arabic or Western digits.",
-  "Return the TRAVEL date — the day the train runs — as YYYY-MM-DD. Never the purchase or print date when a separate travel date is shown.",
-  "Return null for travel_date unless you can read every digit of it with certainty. Never guess a digit.",
-  "from_station and to_station as printed; train_number as printed; null when not readable.",
-  "is_train_ticket is false when the image is not a train ticket at all.",
+  "Booking-app tickets, e-tickets, payment receipts for a train or bus seat (OPay, Fawry and similar) and screenshots of a booking count as tickets.",
+  "Return the TRAVEL date — the day the train or bus runs — as YYYY-MM-DD. Never the purchase, issue, booking or print date when a separate travel date is shown:",
+  "on Egyptian National Railways tickets the bottom line and the 'Issued' (صادر) line are when it was sold; on booking apps 'تاريخ إصدار الحجز' and 'التاريخ' are the booking date, while 'رحلة ذهاب', 'رحلة السفر', 'رحلة العودة' and 'وقت المغادرة' give the travel day.",
+  "Egyptian National Railways tickets print the travel date twice: in English as DD/MM/YYYY beside the departure time, and in Arabic digits as YYYY/MM/DD with the time at the top right.",
+  "Read whichever copy is clear. When one copy is blurred, smudged, crossed by a pen line or cut off and the other copy shows every digit, the date IS readable — return it and leave problems empty.",
+  "When the ticket prints the travel day and month but no year (for example الاثنين ٢٧ يوليو, Monday 27 July), return that day and month with the year 2000 and set year_printed to false. Otherwise year_printed is true.",
+  "A date written by hand on the ticket is not a printed travel date.",
+  "Return null for travel_date unless you can read every digit of it with certainty in at least one printed copy. Never guess a digit.",
+  "from_station and to_station as printed; train_number as the train or bus trip number printed; null when not readable.",
+  "is_train_ticket is false when the image is not a train or bus ticket at all.",
   "problems: when the date is not readable, list every photo problem that stopped you, from:",
   "too_far (the ticket is small in the frame), too_close (part of the ticket is outside the frame because the camera is too near),",
   "cut_off (an edge or the date is outside the frame), blurry, dark, glare, rotated, date_hidden (covered or folded), not_a_ticket.",
@@ -53,8 +59,9 @@ const TEXT_FORMAT = {
         to_station: { type: ["string", "null"] as const },
         train_number: { type: ["string", "null"] as const },
         travel_date: { type: ["string", "null"] as const },
+        year_printed: { type: "boolean" as const },
       },
-      required: ["is_train_ticket", "travel_date", "from_station", "to_station", "train_number", "problems"],
+      required: ["is_train_ticket", "travel_date", "year_printed", "from_station", "to_station", "train_number", "problems"],
       type: "object" as const,
     },
     strict: true as const,
@@ -72,7 +79,7 @@ export async function readTrainTicket(ticket: Pick<OutstationTicketAttachmentUpl
       : { detail: "high" as const, image_url: dataUrl, type: "input_image" as const };
   try {
     const response = await createOpenAiResponseText({
-      input: [{ content: [{ text: "Read this train ticket.", type: "input_text" as const }, file], role: "user" as const }],
+      input: [{ content: [{ text: "Read this ticket.", type: "input_text" as const }, file], role: "user" as const }],
       instructions: INSTRUCTIONS,
       maxOutputTokens: 1_000,
       purpose: "outstation-train-ticket-scan",

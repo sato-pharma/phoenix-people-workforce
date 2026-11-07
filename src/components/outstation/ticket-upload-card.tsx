@@ -1,6 +1,8 @@
 "use client";
 
 import { Upload } from "lucide-react";
+import type { OutstationTransportationType } from "@/lib/outstation/types";
+import { ticketScanApplies } from "@/lib/outstation/ticket-scan-rules";
 
 /**
  * What the file picker will offer. Named to match exactly what the server accepts in
@@ -36,7 +38,7 @@ export function TicketUploadCard({
    * thought about it keeps the stricter behaviour.
    */
   required?: boolean;
-  transportationType: "car" | "train" | "bus" | "other";
+  transportationType: OutstationTransportationType;
   visible: boolean;
 }) {
   if (!visible) return null;
@@ -51,9 +53,9 @@ export function TicketUploadCard({
           ? "Attach go and return tickets as a PDF or a photo — they are kept as proof of travel. Without them the claim still submits, but it is held for review until you attach them from My claims."
           : "Optional for your role. If you have the tickets, attach them as a PDF or a photo — you can take the photo here. The request submits either way."
         : "Attach any supporting document for this expense request.") +
-    // The train ticket is read on pick (owner, 2026-11-07; ticket-scan-rules.ts).
-    (descriptionOverride == null && transportationType === "train"
-      ? " Each train ticket is read when you attach it: its travel date must be your arrival day or your return day."
+    // Every ticket is read on pick (owner, 2026-11-07; ticket-scan-rules.ts).
+    (descriptionOverride == null && ticketScanApplies(transportationType)
+      ? " Each ticket is read when you attach it: its travel date must be your arrival day or your return day."
       : "");
 
   // A block inside the Evidence step, not a card of its own — the step form already draws the one

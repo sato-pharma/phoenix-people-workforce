@@ -11,6 +11,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
+import { NoTicketFareUnavailableError } from "@/lib/outstation/train-fare";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -127,7 +128,7 @@ export async function POST(request: Request) {
       clientSafeErrorMessage(error, "Unable to sync offline outstation request.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_sync_failed", message },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      { status: isForbiddenError(error) ? 403 : error instanceof NoTicketFareUnavailableError ? 400 : 500 },
     );
   }
 }

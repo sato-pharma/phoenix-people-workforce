@@ -97,6 +97,18 @@ export async function POST(request: Request) {
       );
     }
 
+    // "No ticket" is priced by the system from the employee's own home and arrival capture (owner,
+    // 2026-11-07), so HR never records one by hand — an edit of an existing No-ticket claim keeps it.
+    if (transportationType === "no_ticket") {
+      return NextResponse.json(
+        {
+          error: "invalid_transportation_type",
+          message: "No ticket is chosen by the employee on Submit Expense. Record this trip as Car, Train, Bus or Other.",
+        },
+        { status: 400 },
+      );
+    }
+
     if (!isOutstationTransportationType(transportationType)) {
       return NextResponse.json(
         {

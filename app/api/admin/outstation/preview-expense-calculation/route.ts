@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       !tripStartDate ||
       !tripEndDate ||
       !transportationType ||
-      !["car", "train", "bus", "other"].includes(transportationType)
+      !["car", "train", "bus", "other", "no_ticket"].includes(transportationType)
     ) {
       return NextResponse.json(
         {
