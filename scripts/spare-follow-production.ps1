@@ -2,7 +2,7 @@
 .SYNOPSIS
   Keeps the spare laptop's dev server (localhost:3000 here, through the "Phoenix Spare Tunnel") on a
   chosen version. Its database is always production (.env.local).
-  🔴 GOLDEN RULE (owner, 2026-11-07 05:30 Cairo): "local dev is always always always pointing to production
+  GOLDEN RULE (owner, 2026-11-07 05:30 Cairo): "local dev is always always always pointing to production
   never staging" - so -Target production is the default and the scheduled task's argument, and every run
   checks the spare's .env.local names the production project and never the staging one (logged LOUDLY).
     -Target production (default; owner, 2026-11-07 01:44: "POINT DEV TO PRODUCTION") follows production's
@@ -33,9 +33,14 @@ if ($Target -eq 'production') {
   if ($rev -notmatch '^[0-9a-f]{40}$') { Log "could not read origin/main ($rev)"; exit 1 }
 }
 
-$now = (& "$PSScriptRoot\spare.ps1" -Command 'git -C D:\Phoenix\phoenix-workforce rev-parse HEAD' -ConnectTimeout 20 | Select-Object -Last 1)
+# The golden rule's other half, read on every run: the dev server's .env.local names the PRODUCTION Supabase
+# project (ozucdzovmcqvepbozvqf) and never the staging one (cifwmndunmlxjhyjugxa). Only the verdict crosses the wire.
+$answer = @(& "$PSScriptRoot\spare.ps1" -Command '$e = Get-Content D:\Phoenix\phoenix-workforce\.env.local -Raw -ErrorAction SilentlyContinue; if (-not $e) { "ENV missing" } elseif ($e -match "cifwmndunmlxjhyjugxa") { "ENV STAGING" } elseif ($e -match "ozucdzovmcqvepbozvqf") { "ENV production" } else { "ENV unknown" }; git -C D:\Phoenix\phoenix-workforce rev-parse HEAD' -ConnectTimeout 20)
+$envVerdict = "$($answer | Where-Object { "$_" -like 'ENV *' } | Select-Object -First 1)"
+if ($envVerdict -and $envVerdict -ne 'ENV production') { Log "GOLDEN RULE BROKEN: the spare's dev server .env.local reads '$($envVerdict.Substring(4))', not production - fix it now" }
+$now = ($answer | Select-Object -Last 1)
 if (-not $now) { Log 'spare laptop did not answer'; exit 1 }
-$now = $now.Trim()
+$now = "$now".Trim()
 if ($now -eq $rev) { exit 0 }
 
 git -C $repo cat-file -e "$rev^{commit}" 2>$null

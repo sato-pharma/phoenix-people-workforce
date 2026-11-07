@@ -27,7 +27,11 @@ param([Parameter(Position = 0)][string]$Command, [string]$Path = (Get-Location).
 # count. CI never runs the suite as one process; on the spare the one-process run died before its summary.
 if (-not $Command) {
   $Command = @'
-$seen = 0; $ran = 0; $red = 0
+$seen = 0; $ran = 0; $skipped = 0; $red = 0
+# The CV worker test is left out here, and only here (owner, 2026-11-07: "skip the CV worker test on the spare only"):
+# node crashes inside it on the spare in most runs and never on CI. tests/spare-skip.ts refuses the switch on CI,
+# never counts the skip as ran, and prints PHX_SHARD_SKIPPED, added back below so the cover check stays whole.
+$env:PHX_SPARE_SKIP_CV_WORKER_TEST = '1'
 foreach ($k in 1..4) {
   $env:PHX_TEST_SHARD = "$k/4"
   # A shard that dies by access violation (-1073741819 = 0xC0000005) is run ONCE more: on the spare node crashes
@@ -37,6 +41,7 @@ foreach ($k in 1..4) {
     "=== spare laptop: shard $k/4" + $(if ($try -gt 1) { ' (again: the last attempt crashed)' } else { '' })
     node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts | ForEach-Object {
       if ($_ -match 'PHX_SHARD_RESULT shard=\S+ seen=(\d+) ran=(\d+)') { $seen = [int]$Matches[1]; $ran += [int]$Matches[2] }
+      if ($_ -match 'PHX_SHARD_SKIPPED shard=\S+ skipped=(\d+)') { $skipped += [int]$Matches[1] }
       if ($_ -notlike 'PHX_TEST_*') { $_ }
     }
     $shardExit = $LASTEXITCODE
@@ -44,9 +49,9 @@ foreach ($k in 1..4) {
   }
   if ($shardExit) { $red++; "=== shard $k/4 exit $shardExit" }
 }
-Remove-Item Env:\PHX_TEST_SHARD
-"spare laptop: 4 shards ran $ran of $seen tests, $red shard(s) red"
-if ($ran -ne $seen -or $seen -eq 0) { 'spare laptop: the shards did not cover the suite - NOT a full run'; $red++ }
+Remove-Item Env:\PHX_TEST_SHARD, Env:\PHX_SPARE_SKIP_CV_WORKER_TEST
+"spare laptop: 4 shards ran $ran of $seen tests + $skipped skipped on purpose (the CV worker test), $red shard(s) red"
+if ($ran + $skipped -ne $seen -or $seen -eq 0 -or $skipped -gt 1) { 'spare laptop: the shards did not cover the suite - NOT a full run'; $red++ }
 cmd /c exit $red
 '@
 }
