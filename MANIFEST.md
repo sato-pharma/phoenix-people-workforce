@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 10980 | `b67d78cef264d2eb` |
+| `CLAUDE.md` | 11614 | `772d15124e7dbe4d` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -98,10 +98,11 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/scratchpad-regen-run.mjs` | 11474 | `beeb32be59eb2e60` |
 | `scripts/slowness-sentinel-watch.ps1` | 2519 | `4523c5301ee076e8` |
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
+| `scripts/spare-follow-production.ps1` | 4596 | `fff7c4bbea825060` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
-| `scripts/spare-test.ps1` | 4166 | `b13d75655c2b4498` |
+| `scripts/spare-test.ps1` | 7404 | `d1820b0797a0af94` |
 | `scripts/spare-tunnel.ps1` | 1338 | `ad01fbbdf1b43fe0` |
-| `scripts/spare.ps1` | 1175 | `7ba442622894454d` |
+| `scripts/spare.ps1` | 1333 | `f1d5a4cb414ecef9` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
 | `scripts/tests/archive/run-all.mjs` | 4108 | `5ae84e5c757c2d1c` |
 | `scripts/tests/archive/test-busy-lock.mjs` | 7494 | `6cdb2fcde5618427` |

@@ -14,7 +14,8 @@ param([Parameter(Position = 0)][string]$Command, [string]$File, [int]$ConnectTim
 $ErrorActionPreference = 'Stop'
 if ($File) { $Command = Get-Content -LiteralPath $File -Raw }
 if (-not $Command) { throw 'Give a command or -File.' }
+$ErrorActionPreference = 'Continue'   # the remote side's stderr must not abort the caller (PS 5.1)
 $b64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ProgressPreference='SilentlyContinue'`n" + $Command))
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
-& ssh -o BatchMode=yes -o ConnectTimeout=$ConnectTimeout -o LogLevel=ERROR -i $key TransferUser@192.168.1.60 "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $b64"
+& "$env:SystemRoot\System32\OpenSSH\ssh.exe" -o BatchMode=yes -o ConnectTimeout=$ConnectTimeout -o LogLevel=ERROR -i $key TransferUser@192.168.1.60 "powershell -NoProfile -NonInteractive -OutputFormat Text -ExecutionPolicy Bypass -EncodedCommand $b64"
 exit $LASTEXITCODE
