@@ -692,7 +692,7 @@ export function CompanyVacationReportTable({
                   <option value="All">All sources</option>
                   {COMPANY_VACATION_SOURCE_SYSTEMS.map((option) => (
                     <option key={option} value={option}>
-                      {option === "Phoenix" ? "Phoenix (submitted here)" : "CRM (iReports360, before Phoenix CRM)"}
+                      {option === "Phoenix" ? "Phoenix (submitted here)" : "CRM (iReports360)"}
                     </option>
                   ))}
                 </select>

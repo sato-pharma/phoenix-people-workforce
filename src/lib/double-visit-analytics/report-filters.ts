@@ -138,7 +138,7 @@ export function buildReportSummaryMetrics(filtered: {
     { metric: "PM Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "PM")) },
     { metric: "Pharmacy Visits", value: pharmacyVisitsMetric(logRows) },
     { metric: "Regular Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind === "Regular")) },
-    { metric: "Campaign Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind !== "Regular")) },
+    { metric: "Unplanned Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind === "Unplanned")) },
     { metric: "Never Visited / At Risk (filtered)", value: neverVisitedRows.length },
     { metric: "Probation Watchlist (filtered)", value: probationRows.length },
   ];
