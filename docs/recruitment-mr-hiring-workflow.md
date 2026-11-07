@@ -75,8 +75,10 @@ outcome sync and Mark as hired therefore move it without any second write that c
 
 - **The CV and the application at every step, for everyone** (owner, 7 Nov 2026). The hiring journey sheet
   carries the candidate's CV and their application — every question and answer, under the labels the
-  workspace's Medical Rep tab uses — whatever step they are on: beside the journey on a wide screen, so the CV
-  stays in view while a result is written, and under the current step on a phone. It is read from
+  workspace's Medical Rep tab uses — whatever step they are on. A wide screen (1024px and up) is three panes
+  (owner, 7 Nov 2026): the CV on the left, the application and the WhatsApp replies in the middle, the journey
+  on the right as it was, so the CV stays in view while a result is written. A phone keeps one column, under
+  the current step. Each question is said once — by its row, never again inside the answer box. It is read from
   `/api/recruitment/mr-hiring/[candidateId]/cv`, which admits exactly the people who read the journey. The
   DSM's feedback, the RSM's evaluation and the NSM's result and recommendation open in that sheet. A manager
   reads the CV with the phone numbers masked and no download (the manager portal's own rule — HR books every

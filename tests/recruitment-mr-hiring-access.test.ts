@@ -227,8 +227,15 @@ export function runRecruitmentMrHiringAccessTests() {
   assert.match(sheet, /redactPhones=\{state\.phonesHidden\}/, "the CV masks the phone numbers when the server says so");
   assert.match(sheet, /allowDownload=\{!state\.phonesHidden\}/, "and offers no download");
   assert.match(sheet, /state\.application\.map\(/, "the application lists every question and answer");
+  assert.match(sheet, /<AnswerChip [^>]*withLabel=\{false\}/, "each question said once: the row names it, the chip does not repeat it");
   const drawer = codeOnly("src/components/recruitment/mr-hiring/mr-journey-drawer.tsx");
-  assert.match(drawer, /\{wide \? \(\s*<aside aria-label="CV and application"[\s\S]{0,300}<MrCvApplication candidateId=\{candidateId\} \/>/, "a wide screen shows the CV and application beside the journey");
+  // Three panes on a wide screen (owner, 7 Nov 2026): the CV left, the application and the WhatsApp
+  // replies in the middle, the journey right — the CV pane first, the application pane second, and the
+  // journey after both in the same row.
+  assert.match(drawer, /\{wide \? <MrCvApplication candidateId=\{candidateId\} layout="panes" \/> : null\}\s*<div className="min-h-0 min-w-0 flex-1/, "a wide screen: the CV and application panes, then the journey");
+  assert.match(sheet, /panes \? \(\s*<>\s*<div className=\{CV_PANE\}>\{cv\}<\/div>\s*<div className=\{APPLICATION_PANE\}>\{application\}<\/div>/, "the CV is the left pane, the application the middle one");
+  assert.match(sheet, /return arrange\(cv, application\);/, "the ready sheet hands the CV and the application to those panes");
+  assert.match(drawer, /lg:max-w-\[min\(160rem,96%\)\]/, "the sheet is wide enough for three panes");
   assert.match(drawer, /\{wide \? null : <MrCvApplication candidateId=\{candidateId\} \/>\}/, "a narrow one under the current step");
   const panel = codeOnly("src/components/recruitment/mr-hiring/mr-interviews-panel.tsx");
   assert.doesNotMatch(panel, /<MrResultForm|<MrRecommendationForm/, "a manager never writes feedback away from the CV");
