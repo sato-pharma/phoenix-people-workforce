@@ -3,14 +3,17 @@
 -- WHAT THIS CHANGES (schema and functions; it writes no row — the runner does, dry run first):
 --   1. phoenix_crm_visits gains four columns, all empty on every row today:
 --        ireports360_checkin_id   the old check-in a copied visit was converted with;
---        ireports360_kpi_counted  a copied visit converted AND measured against a validated place — the only
+--        ireports360_kpi_counted  a copied visit converted AND measured ok against a validated place — the only
 --                                 copied visit that ever counts (kept true/false by a trigger, never by hand);
---        archived_at, archive_reason ('campaign' | 'no_checkin_location') — a copied visit that is not a visit.
+--        archived_at, archive_reason ('campaign' | 'no_checkin_location' | 'far') — a copied visit that is not
+--                                 a visit, or a converted one whose check-in lay far from the validated place.
 --   2. public.phoenix_crm_ireports360_checkin_matches — the ONE answer to "did this old regular visit have a
 --      check-in location": its agent and contact checked in that day (the vendor's wall-clock day, the doors'
 --      own `(check_date at time zone 'UTC')::date`), inside Egypt's box. Frozen data, filled once by (4).
 --   3. public.phoenix_crm_visit_archive — the visits archive: one row per retired iReports360 visit — every
---      campaign visit, and every regular visit with no check-in location — copied or not. Service role only.
+--      campaign visit, and every regular visit with no check-in location — copied or not; and, kept by a
+--      trigger, every converted visit whose check-in lay more than visit_far_meters from the customer's
+--      validated place ('far', with the distance). Service role only.
 --   4. phoenix_crm_prepare_ireports360_conversion(p_apply) — fills (2) and (3) and archives the copied rows.
 --      Dry run by default: it returns the counts and writes nothing.
 --   5. phoenix_crm_ireports360_conversion_page / phoenix_crm_apply_ireports360_conversion — the runner reads a
@@ -28,6 +31,10 @@
 --   "No visits with no location"; campaign visits are retired; both go to an explicit visits archive and count
 --   nowhere. A visit to a customer with no validated place is shown, never counted. Leavers are converted too.
 --   Money never moves: work evidence and trip evidence keep skipping every copied row.
+--   FAR (owner, 7 Nov 2026, the same day): a converted visit whose check-in lay more than visit_far_meters
+--   (300 m) from the validated place is archived too, as 'far', with its distance — on the conversion AND on
+--   any later restamp (a 'no_place' visit whose customer is validated later and lands far is archived at that
+--   moment). Precedence: campaign > no_checkin_location > far. Live Phoenix visits are never touched.
 --
 -- ROLLBACK: nothing here deletes or rewrites a row. To undo the schema:
 --     re-run the 20261107001714 importer statement after
@@ -37,6 +44,8 @@
 --     drop function public.phoenix_crm_prepare_ireports360_conversion(boolean);
 --     drop function public.phoenix_crm_ireports360_conversion_page(uuid, integer);
 --     drop function public.phoenix_crm_apply_ireports360_conversion(jsonb);
+--     drop trigger phoenix_crm_visits_old_system_far_archive on public.phoenix_crm_visits;
+--     drop function public.phoenix_crm_visits_old_system_far_archive();
 --     drop trigger phoenix_crm_visits_old_system_kpi on public.phoenix_crm_visits;
 --     drop function public.phoenix_crm_visits_old_system_kpi();
 --   and, ONLY once the owner agrees the archive's rows may go (they are copies of iReports360 rows, which stay):
@@ -61,7 +70,7 @@ alter table public.phoenix_crm_visits
 
 alter table public.phoenix_crm_visits
   add constraint phoenix_crm_visits_archive_reason check (
-    (archive_reason is null or archive_reason in ('campaign', 'no_checkin_location'))
+    (archive_reason is null or archive_reason in ('campaign', 'no_checkin_location', 'far'))
     and ((archived_at is null) = (archive_reason is null))
   ),
   -- Only a copied visit is ever converted, counted as converted, or archived.
@@ -76,26 +85,45 @@ alter table public.phoenix_crm_visits
 comment on column public.phoenix_crm_visits.ireports360_checkin_id is
   'A copied iReports360 visit converted into a Phoenix visit: the old check-in (crm_checkin_id) whose position is its lat/lon (owner, 2026-11-07).';
 comment on column public.phoenix_crm_visits.ireports360_kpi_counted is
-  'A copied visit that counts in visits and KPIs: converted with a check-in AND measured against a validated place. Set by the trigger phoenix_crm_visits_old_system_kpi only.';
+  'A copied visit that counts in visits and KPIs: converted with a check-in AND measured ok (or weak GPS) against a validated place, and not archived. Set by the trigger phoenix_crm_visits_old_system_kpi only.';
 comment on column public.phoenix_crm_visits.archived_at is
-  'A copied visit that is not a visit (a campaign visit, or no check-in location; owner, 2026-11-07). Never deleted, counted nowhere, shown on no visit screen. Its old visits are in phoenix_crm_visit_archive.';
+  'A copied visit that is not a visit (a campaign visit, or no check-in location), or a converted one whose check-in lay more than visit_far_meters from the validated place (far, kept by the trigger phoenix_crm_visits_old_system_kpi). Owner, 2026-11-07. Never deleted, counted nowhere, shown on no visit screen. Its old visits are in phoenix_crm_visit_archive.';
 
 -- 🔴 ONE RULE FOR "THIS COPIED VISIT COUNTS", KEPT BY THE ROW ITSELF. A copied visit counts once it carries
--- its check-in and a place it was measured against, and is not archived. Whoever writes the place — the
--- conversion runner, or the restamp a later validation runs (visit-locations.ts) — the flag follows, so a
--- customer validated next month brings his converted visits into the count with no second step.
+-- its check-in and a place it was measured against, lands ok (or weak GPS), and is not archived. Whoever
+-- writes the place — the conversion runner, or the restamp a later validation runs (visit-locations.ts) — the
+-- flag follows, so a customer validated next month brings his converted visits into the count with no second
+-- step.
+-- 🔴 AND A CONVERTED VISIT THAT LANDS FAR IS ARCHIVED, BY THE SAME ROW (owner, 7 Nov 2026): flag 'far'
+-- against a validated place marks it archived 'far', unless it is already archived for another reason
+-- (campaign > no_checkin_location > far). The 'far' mark is this trigger's alone: a later measurement that is
+-- no longer far lifts it again, and the row counts as above. Its archive rows follow in
+-- phoenix_crm_visits_old_system_far_archive (AFTER UPDATE, below the archive table).
 create or replace function public.phoenix_crm_visits_old_system_kpi()
 returns trigger
 language plpgsql
 set search_path to 'public'
 as $function$
+declare
+  v_far boolean := new.imported_from_ireports360_at is not null
+    and new.ireports360_checkin_id is not null
+    and new.place_id is not null
+    and new.location_flag = 'far';
 begin
+  if v_far and new.archived_at is null then
+    new.archived_at := now();
+    new.archive_reason := 'far';
+  elsif not v_far and new.archive_reason = 'far' then
+    new.archived_at := null;
+    new.archive_reason := null;
+  end if;
+
   new.ireports360_kpi_counted := new.imported_from_ireports360_at is not null
     and new.archived_at is null
     and new.ireports360_checkin_id is not null
     and new.lat is not null
     and new.place_id is not null
-    and new.location_flag in ('ok', 'far', 'weak_gps');
+    and new.location_flag in ('ok', 'weak_gps');
   return new;
 end;
 $function$;
@@ -146,10 +174,19 @@ create table if not exists public.phoenix_crm_visit_archive (
   seat_id text,
   line_code text,
   archived_at timestamptz not null default now(),
-  constraint phoenix_crm_visit_archive_reason check (reason in ('campaign', 'no_checkin_location')),
+  -- A far visit only: how far its check-in lay from the validated place, and the two points, as measured.
+  distance_meters integer,
+  checkin_lat double precision,
+  checkin_lon double precision,
+  place_id uuid,
+  place_lat double precision,
+  place_lon double precision,
+  constraint phoenix_crm_visit_archive_reason check (reason in ('campaign', 'no_checkin_location', 'far')),
   constraint phoenix_crm_visit_archive_type check (visit_type in (0, -8)),
   -- A campaign visit is archived as a campaign visit whatever else is true of it.
-  constraint phoenix_crm_visit_archive_campaign_wins check ((visit_type = -8) = (reason = 'campaign'))
+  constraint phoenix_crm_visit_archive_campaign_wins check ((visit_type = -8) = (reason = 'campaign')),
+  -- A far visit always carries its distance; no other reason does.
+  constraint phoenix_crm_visit_archive_far_measured check ((reason = 'far') = (distance_meters is not null))
 );
 create index if not exists phoenix_crm_visit_archive_date_idx
   on public.phoenix_crm_visit_archive (visit_date desc, crm_visit_id desc);
@@ -166,6 +203,67 @@ comment on table public.phoenix_crm_visit_archive is
 alter table public.phoenix_crm_visit_archive enable row level security;
 revoke all on table public.phoenix_crm_visit_archive from public, anon, authenticated;
 grant select, insert, update, delete on table public.phoenix_crm_visit_archive to service_role;
+
+comment on column public.phoenix_crm_visit_archive.distance_meters is
+  'A far visit (reason far): metres from its check-in to the validated place it was measured against, more than visit_far_meters. Null for every other reason.';
+
+-- The far rows of the archive, kept by the visit row (owner, 7 Nov 2026). When a converted copied visit is
+-- archived 'far' (the BEFORE trigger in section 1), each of its regular old visits that had a check-in
+-- location gets an archive row 'far' with the distance and the two points; a later far measurement refreshes
+-- them. When the mark is lifted (a restamp no longer far), its far rows go — they are this trigger's own
+-- copies, and the archive answers what is archived NOW. An old visit already archived for another reason
+-- keeps it (campaign > no_checkin_location > far).
+create or replace function public.phoenix_crm_visits_old_system_far_archive()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+begin
+  if new.archive_reason is distinct from 'far' then
+    delete from public.phoenix_crm_visit_archive a where a.visit_id = new.id and a.reason = 'far';
+    return null;
+  end if;
+
+  insert into public.phoenix_crm_visit_archive (
+    crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_crm_id, customer_name,
+    visit_type, reason, visit_id, seat_id, line_code, archived_at,
+    distance_meters, checkin_lat, checkin_lon, place_id, place_lat, place_lon
+  )
+  select iv.crm_visit_id, iv.visit_date, iv.agent_crm_id, nullif(btrim(iv.agent_hr_id), ''),
+         nullif(btrim(iv.agent_name), ''), nullif(iv.contact_crm_id, 0), left(nullif(btrim(iv.contact_name), ''), 200),
+         0, 'far', new.id, new.seat_id, new.line_code, new.archived_at,
+         new.distance_meters, new.lat, new.lon, new.place_id, pl.lat, pl.lon
+  from public.phoenix_crm_imported_visit_sources s
+  join public.ireports360_visits iv on iv.crm_visit_id = s.crm_visit_id and iv.visit_type = 0
+  join public.phoenix_crm_ireports360_checkin_matches m on m.crm_visit_id = s.crm_visit_id
+  left join public.phoenix_crm_places pl on pl.id = new.place_id
+  where s.visit_id = new.id
+  order by iv.crm_visit_id
+  on conflict (crm_visit_id) do update
+    set distance_meters = excluded.distance_meters,
+        checkin_lat = excluded.checkin_lat,
+        checkin_lon = excluded.checkin_lon,
+        place_id = excluded.place_id,
+        place_lat = excluded.place_lat,
+        place_lon = excluded.place_lon
+    where phoenix_crm_visit_archive.reason = 'far';
+  return null;
+end;
+$function$;
+
+revoke execute on function public.phoenix_crm_visits_old_system_far_archive() from public, anon, authenticated;
+
+drop trigger if exists phoenix_crm_visits_old_system_far_archive on public.phoenix_crm_visits;
+create trigger phoenix_crm_visits_old_system_far_archive
+  after update on public.phoenix_crm_visits
+  for each row
+  when (
+    (old.archive_reason = 'far' or new.archive_reason = 'far')
+    and (old.archive_reason, old.distance_meters, old.place_id, old.lat, old.lon)
+        is distinct from (new.archive_reason, new.distance_meters, new.place_id, new.lat, new.lon)
+  )
+  execute function public.phoenix_crm_visits_old_system_far_archive();
 
 -- 4. Prepare: the check-in matches, the archive, the copied rows archived -----------------------------------
 

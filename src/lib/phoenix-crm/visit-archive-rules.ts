@@ -2,7 +2,10 @@
  * Phoenix CRM — the visits archive screen's pure rules (owner, 2026-11-07).
  *
  * The old iReports360 visits that could not be carried into Phoenix CRM as visits — a campaign visit, or a
- * visit with no check-in location — were retired into `public.phoenix_crm_visit_archive`. The Super Admin
+ * visit with no check-in location — were retired into `public.phoenix_crm_visit_archive`; so is a converted
+ * visit whose check-in lay more than visit_far_meters from the doctor's validated place (`far`, owner,
+ * 7 Nov 2026, kept by the database trigger as places are validated). The screen has TWO TABS: "Campaign and
+ * no location" (the first two reasons) and "Far from the doctor" (far, with the distance and both points). The Super Admin
  * and the SFE Manager read that table on /admin/phoenix-crm/visits-archive; the reader is
  * `src/lib/phoenix-crm/server/visit-archive.ts`. Everything here is pure, so the labels, the month bounds
  * and the page cursor are pinned without a database (tests/phoenix-crm-visit-archive-screen.test.ts).
@@ -11,14 +14,49 @@
  * through a time zone: `new Date("2026-11-07")` is UTC midnight, and any zone west of it prints the 6th.
  */
 
-export const VISIT_ARCHIVE_REASONS = ["campaign", "no_checkin_location"] as const;
+export const VISIT_ARCHIVE_REASONS = ["campaign", "no_checkin_location", "far"] as const;
 export type VisitArchiveReason = (typeof VISIT_ARCHIVE_REASONS)[number];
 
 /** What each reason reads as on the screen. A stored code is never shown. */
 export const VISIT_ARCHIVE_REASON_LABELS: Readonly<Record<VisitArchiveReason, string>> = {
   campaign: "Campaign visit",
   no_checkin_location: "No check-in location",
+  far: "Far from the doctor",
 };
+
+// ── The tabs ───────────────────────────────────────────────────────────────────────────────────────
+
+/** The screen's two tabs; the first is the default. */
+export const VISIT_ARCHIVE_TABS = ["retired", "far"] as const;
+export type VisitArchiveTab = (typeof VISIT_ARCHIVE_TABS)[number];
+
+export const VISIT_ARCHIVE_TAB_LABELS: Readonly<Record<VisitArchiveTab, string>> = {
+  retired: "Campaign and no location",
+  far: "Far from the doctor",
+};
+
+/** The reasons each tab lists. Every reason is in exactly one tab. */
+export const VISIT_ARCHIVE_TAB_REASONS: Readonly<Record<VisitArchiveTab, readonly VisitArchiveReason[]>> = {
+  retired: ["campaign", "no_checkin_location"],
+  far: ["far"],
+};
+
+export function parseVisitArchiveTab(value: string | null | undefined): VisitArchiveTab {
+  const text = String(value ?? "").trim();
+  return (VISIT_ARCHIVE_TABS as readonly string[]).includes(text) ? (text as VisitArchiveTab) : "retired";
+}
+
+/** "1,234 m" — whole metres; no distance reads as a dash. */
+export function visitArchiveDistanceText(meters: number | null | undefined): string {
+  if (meters === null || meters === undefined || !Number.isFinite(meters) || meters < 0) return "—";
+  return `${Math.round(meters).toLocaleString("en-US")} m`;
+}
+
+/** "30.04441, 31.23571" — a point to five decimals (about a metre); no point reads as a dash. */
+export function visitArchivePointText(lat: number | null | undefined, lon: number | null | undefined): string {
+  if (lat === null || lat === undefined || lon === null || lon === undefined || !Number.isFinite(lat) || !Number.isFinite(lon)) return "—";
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
 
 /** Rows on one page of the list. */
 export const VISIT_ARCHIVE_PAGE_SIZE = 100;
@@ -133,6 +171,7 @@ export function visitArchivePersonLeft(employmentStatus: string | null | undefin
 }
 
 export type VisitArchiveFilter = {
+  tab: VisitArchiveTab;
   month: string | null;
   reason: VisitArchiveReason | null;
   rep: string | null;
@@ -148,9 +187,13 @@ function firstOf(value: SearchValue): string {
 
 /** The page's search parameters, each one checked; a value that does not parse is simply not applied. */
 export function parseVisitArchiveFilter(params: Record<string, SearchValue>): VisitArchiveFilter {
+  const tab = parseVisitArchiveTab(firstOf(params.tab));
+  const reason = parseVisitArchiveReason(firstOf(params.reason));
   return {
+    tab,
     month: parseVisitArchiveMonth(firstOf(params.month)),
-    reason: parseVisitArchiveReason(firstOf(params.reason)),
+    // A reason outside the tab is not applied: the tab decides which reasons can be listed.
+    reason: reason && VISIT_ARCHIVE_TAB_REASONS[tab].includes(reason) ? reason : null,
     rep: parseVisitArchiveRep(firstOf(params.rep)),
     line: parseVisitArchiveLine(firstOf(params.line)),
     cursor: decodeVisitArchiveCursor(firstOf(params.after)),
@@ -162,6 +205,7 @@ export const VISIT_ARCHIVE_PATH = "/admin/phoenix-crm/visits-archive";
 /** The address of a filtered view; `after` moves to the page past that cursor. */
 export function visitArchiveHref(filter: Omit<VisitArchiveFilter, "cursor">, after: VisitArchiveCursor | null = null): string {
   const query = new URLSearchParams();
+  if (filter.tab !== "retired") query.set("tab", filter.tab);
   if (filter.month) query.set("month", filter.month);
   if (filter.reason) query.set("reason", filter.reason);
   if (filter.rep) query.set("rep", filter.rep);

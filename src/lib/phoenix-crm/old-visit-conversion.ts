@@ -5,7 +5,9 @@
  * on Phoenix". Its check-in is its position, measured against the customer's validated place TODAY — every
  * active place, nearest first, the line `visit_far_meters` — with `checkVisitLocation`, the one distance rule a
  * new visit is saved with. A check-in carries no accuracy, so it is never "weak". A customer with no place
- * leaves the visit `no_place`: shown on the history screens and counted in no KPI. A campaign visit, and a
+ * leaves the visit `no_place`: shown on the history screens and counted in no KPI. A check-in more than
+ * `visit_far_meters` from the validated place is FAR: counted nowhere and archived as `far` with its distance
+ * (owner, 7 Nov 2026) — the database trigger archives it, on the conversion and on any later restamp. A campaign visit, and a
  * visit with no check-in location, is never converted: it is in the visits archive.
  *
  * The database writes the position from the matched check-in itself and keeps the counted flag
@@ -15,8 +17,11 @@
 
 import { checkVisitLocation, isUsableFix } from "@/lib/phoenix-crm/geo";
 
-/** The old visit's reasons for being in the visits archive — campaign wins when both are true. */
-export const OLD_VISIT_ARCHIVE_REASONS = ["campaign", "no_checkin_location"] as const;
+/**
+ * The old visit's reasons for being in the visits archive, in precedence order: campaign wins over no check-in
+ * location, which wins over far (a converted visit whose check-in lay more than visit_far_meters from the place).
+ */
+export const OLD_VISIT_ARCHIVE_REASONS = ["campaign", "no_checkin_location", "far"] as const;
 export type OldVisitArchiveReason = (typeof OLD_VISIT_ARCHIVE_REASONS)[number];
 
 /** The old system's two visit types the conversion reads: 0 is a regular visit, -8 a campaign visit. */
@@ -44,8 +49,10 @@ export type OldVisitConversion = {
   placeId: string | null;
   distanceMeters: number | null;
   locationFlag: "ok" | "far" | "no_place";
-  /** Counts in visits AND KPIs: measured against a validated place. False is shown, never counted. */
+  /** Counts in visits AND KPIs: measured ok against a validated place. False is never counted. */
   kpiCounted: boolean;
+  /** `far` when the check-in lay more than visit_far_meters from the place: archived, never shown as a visit. */
+  archiveReason: "far" | null;
 };
 
 /**
@@ -61,7 +68,7 @@ export function convertOldVisitLocation(input: {
   if (!isUsableFix(checkin.lat, checkin.lon)) return null;
   const places = input.places.filter((place) => isUsableFix(place.lat, place.lon));
   if (places.length === 0) {
-    return { checkinId: checkin.checkinId, placeId: null, distanceMeters: null, locationFlag: "no_place", kpiCounted: false };
+    return { checkinId: checkin.checkinId, placeId: null, distanceMeters: null, locationFlag: "no_place", kpiCounted: false, archiveReason: null };
   }
   // No accuracy on an old check-in: weak GPS is never the answer, so the line below is the far line alone.
   const check = checkVisitLocation({
@@ -76,6 +83,8 @@ export function convertOldVisitLocation(input: {
     placeId: check.placeId,
     distanceMeters: check.distanceMeters === null ? null : Math.round(check.distanceMeters),
     locationFlag,
-    kpiCounted: check.placeId !== null,
+    // A far visit counts nowhere: it is archived as far (the trigger phoenix_crm_visits_old_system_kpi).
+    kpiCounted: check.placeId !== null && locationFlag === "ok",
+    archiveReason: locationFlag === "far" ? "far" : null,
   };
 }

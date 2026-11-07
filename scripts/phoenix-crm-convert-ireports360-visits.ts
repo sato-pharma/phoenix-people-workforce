@@ -5,7 +5,9 @@
  * Owner, 7 Nov 2026: every old regular visit with a check-in location becomes a Phoenix visit "as if submitted
  * on Phoenix" — the check-in's position is the visit's, measured against the customer's validated place today
  * (every active place, nearest first, the line `visit_far_meters`). A visit to a customer with a validated
- * place counts in visits and KPIs; one to a customer with no place is shown and not counted. Campaign visits
+ * place counts in visits and KPIs when its check-in lay within visit_far_meters of it; one that lay FARTHER is
+ * archived as far, with its distance (the trigger phoenix_crm_visits_old_system_kpi does it on the write, and
+ * again on any later restamp). One to a customer with no place is shown and not counted. Campaign visits
  * are retired, and a visit with no check-in location is not a visit: both go to the visits archive
  * (phoenix_crm_visit_archive), and a copied row of either kind is marked archived — NEVER deleted.
  * The rules and the rollback: docs/phoenix-crm-ireports360-history-import.md, "The conversion".
@@ -25,8 +27,9 @@
  * Before the first --apply the match table is empty, so the dry run's step 2 reads "no match yet" for every
  * row: step 1's counts are the forecast.
  *
- * --apply is a BULK PRODUCTION CHANGE (~57,000 visit rows measured, ~14,700 marked archived, ~106,000 match
- * rows, ~36,500 archive rows). Announce it in plain words before it runs (AGENTS.md §8): production has NO
+ * --apply is a BULK PRODUCTION CHANGE (~57,000 visit rows measured, ~14,700 marked archived, ~4,650 more
+ * archived as far, ~106,000 match rows, ~41,200 archive rows). Rolling a far row back to its earlier values
+ * lifts the far mark and its archive rows by the same trigger. Announce it in plain words before it runs (AGENTS.md §8): production has NO
  * PITR. Step 1 runs in ONE transaction; step 2 one page per transaction, each refused and rolled back unless
  * the database wrote exactly the rows sent. Every row it changes is recorded first, with its earlier values,
  * in before-<Cairo time>.jsonl — the rollback. A second --apply sends only rows whose answer changed, so it
@@ -140,7 +143,8 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ prepared }));
 
     // Step 2: every copied, not archived row, in id order.
-    const tally = { rows: 0, noMatch: 0, unusableFix: 0, unchanged: 0, toWrite: 0, written: 0, ok: 0, far: 0, noPlace: 0, counts: 0 };
+    // far = archived as far by the trigger on the write (owner, 7 Nov 2026): never counted, never a visit row again.
+    const tally = { rows: 0, noMatch: 0, unusableFix: 0, unchanged: 0, toWrite: 0, written: 0, ok: 0, far: 0, archivedFar: 0, noPlace: 0, counts: 0 };
     const beforeFile = path.join(FOLDER, `before-${STAMP}.jsonl`);
     if (APPLY) fs.writeFileSync(beforeFile, "", { flag: "wx" });
     let after: string | null = null;
@@ -169,7 +173,10 @@ async function main(): Promise<void> {
           continue;
         }
         if (answer.locationFlag === "ok") tally.ok += 1;
-        else if (answer.locationFlag === "far") tally.far += 1;
+        else if (answer.locationFlag === "far") {
+          tally.far += 1;
+          if (answer.archiveReason === "far") tally.archivedFar += 1;
+        }
         else tally.noPlace += 1;
         if (answer.kpiCounted) tally.counts += 1;
         const same =

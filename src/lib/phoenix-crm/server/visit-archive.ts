@@ -3,8 +3,10 @@
  *
  * The old iReports360 visits that were not carried into Phoenix CRM as visits were retired into
  * `public.phoenix_crm_visit_archive`: a campaign visit (type -8), or a visit that carried no check-in
- * location. This file reads that ONE table for /admin/phoenix-crm/visits-archive — a page of rows, the
- * totals by reason for the current filter, and the lists the filters offer. It writes nothing.
+ * location — and, kept by a database trigger, a converted visit whose check-in lay more than visit_far_meters
+ * from the doctor's validated place (`far`, with its distance and both points; owner, 7 Nov 2026). This file
+ * reads that ONE table for /admin/phoenix-crm/visits-archive — a page of one tab's rows, the totals by tab and
+ * by reason for the current filter, and the lists the filters offer. It writes nothing.
  *
  * 🔴 THE ADMIN CRM WORKSPACE'S TWO PEOPLE ONLY — `canUseAdminCrmWorkspace` (Super Admin + SFE Manager),
  * asked by the page AND again here before any read, because the table is the service role's alone (RLS on,
@@ -19,7 +21,8 @@
  * employee record says anything but active is marked as having left.
  *
  * The filter lists (months, reps, lines) come from one walk of four narrow columns, remembered for an hour:
- * the archive is written once, when a visit is retired, and is never edited by anybody afterwards.
+ * the archive is written by the conversion and, for far visits, by the trigger as places are validated —
+ * never by a person — so a list an hour old is at most missing the newest month or rep.
  */
 
 import { unstable_cache } from "next/cache";
@@ -35,12 +38,15 @@ import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import {
   VISIT_ARCHIVE_PAGE_SIZE,
   VISIT_ARCHIVE_REASONS,
+  VISIT_ARCHIVE_TAB_REASONS,
+  VISIT_ARCHIVE_TABS,
   visitArchiveMonthBounds,
   visitArchiveMonthOf,
   visitArchivePersonLeft,
   type VisitArchiveCursor,
   type VisitArchiveFilter,
   type VisitArchiveReason,
+  type VisitArchiveTab,
 } from "@/lib/phoenix-crm/visit-archive-rules";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import { quotePostgrestValue } from "@/lib/supabase/search-filter";
@@ -58,7 +64,8 @@ function visitArchiveKeysetFilter(cursor: VisitArchiveCursor): string {
   const id = quotePostgrestValue(cursor.crmVisitId);
   return `visit_date.lt.${day},and(visit_date.eq.${day},crm_visit_id.lt.${id})`;
 }
-const LIST_COLUMNS = "crm_visit_id, visit_date, agent_hr_id, agent_name, customer_name, reason, visit_id, line_code";
+const LIST_COLUMNS =
+  "crm_visit_id, visit_date, agent_hr_id, agent_name, customer_name, reason, visit_id, line_code, distance_meters, checkin_lat, checkin_lon, place_lat, place_lon";
 const OPTION_COLUMNS = "crm_visit_id, visit_date, agent_hr_id, agent_name, line_code";
 /** The most rows the filter-list walk reads. Far above the archive's size; past it the lists say so. */
 const OPTION_WALK_MAX_ROWS = 400_000;
@@ -85,6 +92,18 @@ function text(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
   return trimmed ? trimmed : null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function pointOf(lat: unknown, lon: unknown): { lat: number; lon: number } | null {
+  const latitude = numberOrNull(lat);
+  const longitude = numberOrNull(lon);
+  return latitude === null || longitude === null ? null : { lat: latitude, lon: longitude };
 }
 
 // ── Who is who ───────────────────────────────────────────────────────────────────────────────────
@@ -210,6 +229,10 @@ export type VisitArchiveRow = {
   reason: string;
   copiedIntoPhoenix: boolean;
   lineName: string | null;
+  /** A far visit only: metres from the check-in to the validated place, and the two points. */
+  distanceMeters: number | null;
+  checkin: { lat: number; lon: number } | null;
+  place: { lat: number; lon: number } | null;
 };
 
 export type VisitArchivePage = {
@@ -219,6 +242,9 @@ export type VisitArchivePage = {
 };
 
 export type VisitArchiveTotals = {
+  /** Rows in each tab for the month, rep and line chosen (the reason is not applied: it belongs to one tab). */
+  byTab: Record<VisitArchiveTab, number>;
+  /** Rows in the open tab for the whole filter. */
   total: number;
   byReason: Record<VisitArchiveReason, number>;
   copiedIntoPhoenix: number;
@@ -229,8 +255,10 @@ export type VisitArchiveTotals = {
  * shape with every select, and the filter methods are all this needs.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function applyFilter(query: any, filter: Omit<VisitArchiveFilter, "cursor">, options: { reason: boolean }): any {
+function applyFilter(query: any, filter: Omit<VisitArchiveFilter, "cursor">, options: { reason: boolean; tab: boolean }): any {
   let next = query;
+  // The open tab's reasons, always: a far row never lists under the first tab, nor a campaign row under far.
+  if (options.tab) next = next.in("reason", [...VISIT_ARCHIVE_TAB_REASONS[filter.tab]]);
   const bounds = filter.month ? visitArchiveMonthBounds(filter.month) : null;
   if (bounds) next = next.gte("visit_date", bounds.from).lt("visit_date", bounds.before);
   if (filter.rep) next = next.in("agent_hr_id", hrIdLookupKeys(filter.rep));
@@ -245,7 +273,7 @@ export async function loadVisitArchivePage(
   lineNames: ReadonlyMap<string, string> = new Map(),
 ): Promise<VisitArchivePage> {
   assertReader(access);
-  let query = applyFilter(getSupabaseAdmin().from(ARCHIVE_TABLE).select(LIST_COLUMNS), filter, { reason: true });
+  let query = applyFilter(getSupabaseAdmin().from(ARCHIVE_TABLE).select(LIST_COLUMNS), filter, { reason: true, tab: true });
   if (filter.cursor) query = query.or(visitArchiveKeysetFilter(filter.cursor));
   // One row past the page answers "is there another page?" without counting anything.
   const { data, error } = await query
@@ -272,6 +300,9 @@ export async function loadVisitArchivePage(
       reason: String(row.reason ?? ""),
       copiedIntoPhoenix: text(row.visit_id) !== null,
       lineName: lineCode ? (lineNames.get(lineCode) ?? lineCode) : null,
+      distanceMeters: numberOrNull(row.distance_meters),
+      checkin: pointOf(row.checkin_lat, row.checkin_lon),
+      place: pointOf(row.place_lat, row.place_lon),
     };
   });
 
@@ -282,8 +313,16 @@ export async function loadVisitArchivePage(
   };
 }
 
-async function countWhere(filter: Omit<VisitArchiveFilter, "cursor">, extra: { reason?: VisitArchiveReason; copied?: boolean }): Promise<number> {
-  let query = applyFilter(getSupabaseAdmin().from(ARCHIVE_TABLE).select("crm_visit_id", { count: "exact", head: true }), filter, { reason: true });
+async function countWhere(
+  filter: Omit<VisitArchiveFilter, "cursor">,
+  extra: { reason?: VisitArchiveReason; copied?: boolean; tab?: VisitArchiveTab },
+): Promise<number> {
+  // Another tab's total is counted with that tab and without the open tab's reason choice.
+  const scoped = extra.tab ? { ...filter, tab: extra.tab, reason: null } : filter;
+  let query = applyFilter(getSupabaseAdmin().from(ARCHIVE_TABLE).select("crm_visit_id", { count: "exact", head: true }), scoped, {
+    reason: true,
+    tab: true,
+  });
   if (extra.reason) query = query.eq("reason", extra.reason);
   if (extra.copied) query = query.not("visit_id", "is", null);
   const { count, error } = await query;
@@ -297,14 +336,20 @@ export async function loadVisitArchiveTotals(
   filter: VisitArchiveFilter,
 ): Promise<VisitArchiveTotals> {
   assertReader(access);
-  const [total, copiedIntoPhoenix, ...reasonCounts] = await Promise.all([
+  const [total, copiedIntoPhoenix, tabCounts, reasonCounts] = await Promise.all([
     countWhere(filter, {}),
     countWhere(filter, { copied: true }),
-    ...VISIT_ARCHIVE_REASONS.map((reason) =>
-      // A reason the filter already excludes is zero without asking.
-      filter.reason && filter.reason !== reason ? Promise.resolve(0) : countWhere(filter, { reason }),
+    Promise.all(VISIT_ARCHIVE_TABS.map((tab) => countWhere(filter, { tab }))),
+    Promise.all(
+      VISIT_ARCHIVE_REASONS.map((reason) =>
+        // A reason outside the open tab, or one the filter already excludes, is zero without asking.
+        !VISIT_ARCHIVE_TAB_REASONS[filter.tab].includes(reason) || (filter.reason && filter.reason !== reason)
+          ? Promise.resolve(0)
+          : countWhere(filter, { reason }),
+      ),
     ),
   ]);
+  const byTab = Object.fromEntries(VISIT_ARCHIVE_TABS.map((tab, index) => [tab, tabCounts[index] ?? 0])) as Record<VisitArchiveTab, number>;
   const byReason = Object.fromEntries(VISIT_ARCHIVE_REASONS.map((reason, index) => [reason, reasonCounts[index] ?? 0])) as Record<VisitArchiveReason, number>;
-  return { total, byReason, copiedIntoPhoenix };
+  return { byTab, total, byReason, copiedIntoPhoenix };
 }

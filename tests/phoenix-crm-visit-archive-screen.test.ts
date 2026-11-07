@@ -7,15 +7,20 @@ import {
   VISIT_ARCHIVE_PAGE_SIZE,
   VISIT_ARCHIVE_REASON_LABELS,
   VISIT_ARCHIVE_REASONS,
+  VISIT_ARCHIVE_TAB_LABELS,
+  VISIT_ARCHIVE_TAB_REASONS,
+  VISIT_ARCHIVE_TABS,
   decodeVisitArchiveCursor,
   encodeVisitArchiveCursor,
   parseVisitArchiveFilter,
   parseVisitArchiveMonth,
   visitArchiveDateText,
+  visitArchiveDistanceText,
   visitArchiveHref,
   visitArchiveMonthBounds,
   visitArchiveMonthLabel,
   visitArchivePersonLeft,
+  visitArchivePointText,
   visitArchiveReasonLabel,
 } from "../src/lib/phoenix-crm/visit-archive-rules.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -77,12 +82,41 @@ function checkGate(): void {
   assert.ok(pageGate < page.indexOf("loadVisitArchiveOptions("), "before the filter lists");
   assert.ok(pageGate < page.indexOf("loadVisitArchivePage("), "and before the rows");
   assert.match(page.slice(pageGate, pageGate + 200), /redirect\(/, "a refused viewer is redirected, never told what the page holds");
+
+  // THE FAR TAB HAS THE SAME GATE (owner, 7 Nov 2026): the tab is read only after the gate, both tabs are this
+  // one page with these loaders, and every loader asks the gate before it reads the filter that carries the tab.
+  assert.ok(pageGate < page.indexOf("parseVisitArchiveFilter("), "the tab is read from the address only after the gate");
+  assert.equal(page.match(/export default async function/g)?.length, 1, "one page serves both tabs — no second route to gate");
+  assert.doesNotMatch(page.slice(0, page.indexOf("parseVisitArchiveFilter(")), /\btab\b/, "nothing before the gate depends on the tab");
+  for (const loader of ["loadVisitArchivePage", "loadVisitArchiveTotals"]) {
+    const start = reader.indexOf(`export async function ${loader}(`);
+    const body = reader.slice(reader.indexOf("{", reader.indexOf(")", start)), reader.indexOf("\n}\n", start));
+    const gate = body.indexOf("assertReader(access)");
+    assert.ok(gate !== -1 && gate < body.indexOf("filter"), `${loader} asks the gate before it reads the tab`);
+  }
 }
 
 function checkLabels(): void {
-  assert.deepEqual([...VISIT_ARCHIVE_REASONS], ["campaign", "no_checkin_location"], "the two reasons the archive stores");
+  assert.deepEqual([...VISIT_ARCHIVE_REASONS], ["campaign", "no_checkin_location", "far"], "the three reasons the archive stores");
   assert.equal(VISIT_ARCHIVE_REASON_LABELS.campaign, "Campaign visit");
   assert.equal(VISIT_ARCHIVE_REASON_LABELS.no_checkin_location, "No check-in location");
+  assert.equal(VISIT_ARCHIVE_REASON_LABELS.far, "Far from the doctor");
+  assert.equal(visitArchiveReasonLabel("far"), "Far from the doctor");
+
+  // The two tabs, and every reason under exactly one of them.
+  assert.deepEqual([...VISIT_ARCHIVE_TABS], ["retired", "far"]);
+  assert.equal(VISIT_ARCHIVE_TAB_LABELS.retired, "Campaign and no location");
+  assert.equal(VISIT_ARCHIVE_TAB_LABELS.far, "Far from the doctor");
+  assert.deepEqual(
+    VISIT_ARCHIVE_TABS.flatMap((tab) => [...VISIT_ARCHIVE_TAB_REASONS[tab]]).sort(),
+    [...VISIT_ARCHIVE_REASONS].sort(),
+    "every reason is listed under exactly one tab",
+  );
+  assert.equal(visitArchiveDistanceText(752.4), "752 m");
+  assert.equal(visitArchiveDistanceText(12345), "12,345 m");
+  assert.equal(visitArchiveDistanceText(null), "—");
+  assert.equal(visitArchivePointText(30.044412, 31.235712), "30.04441, 31.23571");
+  assert.equal(visitArchivePointText(null, 31.2), "—");
   assert.equal(visitArchiveReasonLabel("campaign"), "Campaign visit");
   assert.equal(visitArchiveReasonLabel("no_checkin_location"), "No check-in location");
   assert.equal(visitArchiveReasonLabel("some_new_reason"), "Some new reason", "an unknown reason reads as words, never as its code");
@@ -123,13 +157,21 @@ function checkCursorAndMonths(): void {
   assert.equal(visitArchiveDateText("not a date"), "—");
 
   const filter = parseVisitArchiveFilter({ month: "2026-10", reason: "campaign", rep: "B-10", line: "CNS", after: encoded });
-  assert.deepEqual(filter, { month: "2026-10", reason: "campaign", rep: "B-10", line: "CNS", cursor });
-  const dropped = parseVisitArchiveFilter({ month: "October", reason: "violation", rep: "b-10';drop", line: "x".repeat(60) });
-  assert.deepEqual(dropped, { month: null, reason: null, rep: null, line: null, cursor: null }, "a value that does not parse is not applied");
+  assert.deepEqual(filter, { tab: "retired", month: "2026-10", reason: "campaign", rep: "B-10", line: "CNS", cursor });
+  const dropped = parseVisitArchiveFilter({ tab: "everything", month: "October", reason: "violation", rep: "b-10';drop", line: "x".repeat(60) });
+  assert.deepEqual(dropped, { tab: "retired", month: null, reason: null, rep: null, line: null, cursor: null }, "a value that does not parse is not applied");
+  assert.equal(parseVisitArchiveFilter({ tab: "far" }).tab, "far");
+  assert.equal(parseVisitArchiveFilter({ tab: "far", reason: "campaign" }).reason, null, "a reason outside the tab is not applied");
+  assert.equal(parseVisitArchiveFilter({ tab: "retired", reason: "far" }).reason, null, "nor a far reason under the first tab");
   assert.equal(
-    visitArchiveHref({ month: "2026-10", reason: null, rep: "B-10", line: null }, cursor),
+    visitArchiveHref({ tab: "retired", month: "2026-10", reason: null, rep: "B-10", line: null }, cursor),
     `/admin/phoenix-crm/visits-archive?month=2026-10&rep=B-10&after=${encodeURIComponent(encoded)}`,
     "the next-page link keeps the filter",
+  );
+  assert.equal(
+    visitArchiveHref({ tab: "far", month: null, reason: null, rep: "B-10", line: null }, cursor),
+    `/admin/phoenix-crm/visits-archive?tab=far&rep=B-10&after=${encodeURIComponent(encoded)}`,
+    "and the tab",
   );
   assert.equal(VISIT_ARCHIVE_PAGE_SIZE, 100);
 }
@@ -147,6 +189,8 @@ function checkReadsOnlyTheArchive(): void {
   assert.match(reader, /\.order\("visit_date", \{ ascending: false \}\)\s*\.order\("crm_visit_id", \{ ascending: false \}\)/, "the list is keyset-ordered as the index is");
   assert.match(reader, /\.or\(visitArchiveKeysetFilter\(filter\.cursor\)\)/, "and the next page is a keyset, never an offset");
   assert.doesNotMatch(reader, /\.range\(/, "no offset read on the list");
+  assert.match(reader, /if \(options\.tab\) next = next\.in\("reason", \[\.\.\.VISIT_ARCHIVE_TAB_REASONS\[filter\.tab\]\]\);/, "every read is held to the open tab's reasons");
+  assert.doesNotMatch(reader, /tab: false/, "and no read opts out of it");
 
   const page = stripComments(read(PAGE));
   assert.doesNotMatch(page, /\.from\(|getSupabaseAdmin|createClient/, "the page reads only through the reader");

@@ -297,14 +297,25 @@ The owner's rules, 7 Nov 2026:
 - **The check-in's position is the visit's.** It is measured against the customer's active places today, with
   `checkVisitLocation` (`src/lib/phoenix-crm/old-visit-conversion.ts`) and the far line `visit_far_meters`
   (300 m). A check-in has no accuracy, so it is never "weak GPS".
-- **A visit to a customer with a validated place counts** in visits and KPIs. A visit to a customer with no
-  place is `no_place`: shown, never counted. The trigger `phoenix_crm_visits_old_system_kpi` keeps the
-  answer in `ireports360_kpi_counted`. A place validated later restamps the visit, and the flag follows.
+- **A visit within `visit_far_meters` of a validated place counts** in visits and KPIs. A visit to a
+  customer with no place is `no_place`: shown, never counted. The trigger `phoenix_crm_visits_old_system_kpi`
+  keeps the answer in `ireports360_kpi_counted`. A place validated later restamps the visit, and the flag
+  follows.
+- **A visit FARTHER than `visit_far_meters` from the validated place is archived** (owner, 7 Nov 2026). It
+  gets `archived_at` and `archive_reason = 'far'`, is never counted and is never deleted. Each of its old
+  visits gets an archive row with reason `far`, the distance in metres and both points. The same trigger
+  does it, so it happens on the conversion's write AND on any later restamp: an old `no_place` visit whose
+  customer is validated later and lands far is archived at that moment; one that lands ok counts. A far
+  visit that a later restamp measures ok again comes back and counts, and its far archive rows go (the
+  trigger `phoenix_crm_visits_old_system_far_archive`). Precedence: campaign, then no check-in location,
+  then far. A live Phoenix visit is never far-archived.
 - **Campaign visits (−8) are retired.** They are never converted and never copied again.
 - **A visit with no check-in location is not a visit.** Both kinds go to the visits archive,
   `phoenix_crm_visit_archive`; campaign wins when both apply. A copied row of either kind gets
   `archived_at` and `archive_reason`. It is NEVER deleted, and every visit screen leaves it out. The Super
-  Admin reads the archive at `/admin/phoenix-crm/visits-archive`.
+  Admin and the SFE Manager read the archive at `/admin/phoenix-crm/visits-archive`, in two tabs behind one
+  gate: "Campaign and no location", and "Far from the doctor" (date, rep, doctor, distance, check-in against
+  the validated place; no map), each with its total.
 - **Leavers** are copied by `--leavers`, under the territory each held on the visit's day. A leaver with no REP
   seat that day stays served from iReports360. A visit with no hr id cannot be converted.
 - **Money and alerts keep ignoring every copied row**, converted or not. Work evidence, trip evidence, the
@@ -320,33 +331,39 @@ The owner's rules, 7 Nov 2026:
   campaign.
 - **Check-ins:** 101,829 regular visits match one.
 - **Copied rows today:** 72,113. Of these, 13,028 are campaign (archive) and 1,697 have no check-in (archive).
-  The other 57,388 convert: 27,058 count (22,406 ok, 4,652 far) and 30,330 have no place.
+  The other 57,388 convert: 22,406 count (ok), 4,652 are far and archived (4,657 old visits, median 753 m),
+  and 30,330 have no place.
 - **Archive, campaign:** 13,028 copied and 19,082 never copied.
 - **Archive, no check-in location:** 1,759 copied and 2,643 never copied.
 - **Never copied, regular, located with an hr id:** 38,575. Of these, 30,472 belong to leavers who held a REP
   seat that day, 7,483 to leavers with none, and 620 to current reps.
+- **Leavers' copies (estimate, per old visit):** of the 30,472, 3,729 will count, 954 will be far and
+  archived, and 25,789 will have no place.
 
 What the door serves for regular visits, by month. "Before" counts every iReports360 regular visit served
 today. "After" splits the same month into what iReports360 still serves, the converted copies that count, and
 an estimate of the leavers' copies that will count:
 
-| Month | Before | iReports360 left | Converted, counted | Leavers, counted (estimate) |
-| --- | --- | --- | --- | --- |
-| Jan | 5,197 | 1,790 | 609 | 131 |
-| Feb | 5,852 | 1,478 | 593 | 255 |
-| Mar | 8,125 | 1,999 | 1,215 | 402 |
-| Apr | 11,924 | 2,104 | 2,320 | 642 |
-| May | 12,579 | 2,157 | 2,718 | 683 |
-| Jun | 15,046 | 1,963 | 3,316 | 810 |
-| Jul | 13,925 | 1,250 | 3,370 | 736 |
-| Aug | 14,786 | 946 | 5,158 | 626 |
-| Sep | 13,250 | 228 | 5,725 | 369 |
-| Oct | 5,391 | 30 | 2,034 | 29 |
-| Nov | 153 | 0 | 0 | 0 |
+Far visits are archived, so they are in neither "counted" column; they are shown beside them.
+
+| Month | Before | iReports360 left | Converted, counted | Converted, far | Leavers, counted (estimate) | Leavers, far (estimate) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Jan | 5,197 | 1,790 | 566 | 43 | 127 | 4 |
+| Feb | 5,852 | 1,478 | 544 | 49 | 230 | 25 |
+| Mar | 8,125 | 1,999 | 1,067 | 148 | 312 | 90 |
+| Apr | 11,924 | 2,104 | 1,910 | 410 | 500 | 142 |
+| May | 12,579 | 2,157 | 2,312 | 406 | 517 | 166 |
+| Jun | 15,046 | 1,963 | 2,771 | 545 | 643 | 167 |
+| Jul | 13,925 | 1,250 | 2,765 | 605 | 594 | 142 |
+| Aug | 14,786 | 946 | 4,283 | 875 | 498 | 128 |
+| Sep | 13,250 | 228 | 4,631 | 1,094 | 284 | 85 |
+| Oct | 5,391 | 30 | 1,557 | 477 | 24 | 5 |
+| Nov | 153 | 0 | 0 | 0 | 0 | 0 |
 
 Campaign visits served today, which all leave the door: 1,994, 4,134, 5,319, 3,956, 4,303, 5,063, 3,893, 1,932,
-1,160, 355 and 1. 🔴 **The counted visits fall sharply** — January from 7,191 to about 2,530. The cause is the
-"no validated place, not counted" rule, and every customer validated later brings his visits back.
+1,160, 355 and 1. 🔴 **The counted visits fall sharply** — January from 7,191 to about 2,480. The main cause is
+the "no validated place, not counted" rule, and every customer validated later brings his visits back; the
+far rule takes about 15% of the converted visits (re-measured 7 Nov 2026).
 
 **The order on production** (each step is a bulk production change, announced first):
 
@@ -367,7 +384,9 @@ node --env-file-if-exists=.env.production.rls.local --experimental-strip-types -
 ```
 
 **Undo the conversion:** write each row of `before-<Cairo time>.jsonl` back by `visit_id`. Clear `archived_at`
-and `archive_reason` on the copied rows the run marked (`archived_at` equals that run's time). The archive and
+and `archive_reason` on the copied rows the run marked (`archived_at` equals that run's time). A far row
+needs nothing more: written back to its earlier `no_place` values, the trigger lifts its far mark and its far
+archive rows. The archive and
 the match tables are copies of iReports360 rows, which stay; drop them only on the owner's word.
 
 ## Rollback

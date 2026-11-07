@@ -6,6 +6,7 @@ import {
   CONVERTED_VISIT_IS_UNPLANNED,
   convertOldVisitLocation,
   OLD_SYSTEM_CAMPAIGN_VISIT,
+  OLD_VISIT_ARCHIVE_REASONS,
   OLD_SYSTEM_REGULAR_VISIT,
   oldVisitArchiveReason,
 } from "../src/lib/phoenix-crm/old-visit-conversion.ts";
@@ -467,6 +468,8 @@ export function runPhoenixCrmImportedHistoryTests() {
 //   · A regular old visit with a check-in location becomes a PLANNED Phoenix visit, at the check-in's position,
 //     measured against the customer's validated place today with the one distance rule (geo.ts).
 //   · A visit to a customer with a validated place counts; one with no place is shown and never counted.
+//   · A visit whose check-in lay FARTHER than visit_far_meters from that place is archived as far, with its
+//     distance, and never counted — on the conversion and on any later restamp (the row's own trigger).
 //   · A CAMPAIGN VISIT NEVER COUNTS, and a visit with no check-in location is no visit: both are in the visits
 //     archive, and a copied row of either kind is marked archived — never deleted — and read by nothing.
 //   · Money and alerts keep ignoring every copied row, converted or not; nothing is counted twice.
@@ -488,9 +491,14 @@ function runOldVisitConversionTests(): void {
   assert.equal(near?.locationFlag, "ok");
   assert.equal(near?.placeId, "place-1");
   assert.equal(near?.kpiCounted, true, "measured against a validated place: counted");
+  assert.equal(near?.archiveReason, null, "and never archived");
+  // FAR (owner, 7 Nov 2026): a converted visit whose check-in lay beyond visit_far_meters is ARCHIVED, never counted.
   const far = convertOldVisitLocation({ checkin: { checkinId: 8, lat: 30.06, lon: 31.2357 }, places: [place], farMeters: 300 });
-  assert.equal(far?.locationFlag, "far", "beyond visit_far_meters is far — a far visit still counts, flagged, as a new one would");
-  assert.equal(far?.kpiCounted, true);
+  assert.equal(far?.locationFlag, "far", "beyond visit_far_meters is far");
+  assert.equal(far?.kpiCounted, false, "a far old visit is never counted");
+  assert.equal(far?.archiveReason, "far", "it is archived as far");
+  assert.ok((far?.distanceMeters ?? 0) > 300, "with its distance");
+  assert.deepEqual([...OLD_VISIT_ARCHIVE_REASONS], ["campaign", "no_checkin_location", "far"], "the precedence: campaign > no check-in location > far");
   const nearest = convertOldVisitLocation({
     checkin: { checkinId: 9, lat: 30.06, lon: 31.2357 },
     places: [place, { id: "place-2", lat: 30.0601, lon: 31.2357 }],
@@ -501,7 +509,7 @@ function runOldVisitConversionTests(): void {
   const unplaced = convertOldVisitLocation({ checkin: { checkinId: 10, lat: 30.0445, lon: 31.2358 }, places: [], farMeters: 300 });
   assert.deepEqual(
     unplaced,
-    { checkinId: 10, placeId: null, distanceMeters: null, locationFlag: "no_place", kpiCounted: false },
+    { checkinId: 10, placeId: null, distanceMeters: null, locationFlag: "no_place", kpiCounted: false, archiveReason: null },
     "a customer with no validated place: shown, never counted",
   );
   assert.equal(convertOldVisitLocation({ checkin: { checkinId: 11, lat: 0, lon: 0 }, places: [place], farMeters: 300 }), null, "a fix outside Egypt is no location");
@@ -524,9 +532,52 @@ function runOldVisitConversionTests(): void {
   const trigger = sqlObject(convertSql, "create or replace function public.phoenix_crm_visits_old_system_kpi(");
   assert.match(
     trigger,
-    /new\.ireports360_kpi_counted := new\.imported_from_ireports360_at is not null and new\.archived_at is null and new\.ireports360_checkin_id is not null and new\.lat is not null and new\.place_id is not null and new\.location_flag in \('ok', 'far', 'weak_gps'\);/,
-    "counted = copied, not archived, converted with a check-in, at a position, measured against a place",
+    /new\.ireports360_kpi_counted := new\.imported_from_ireports360_at is not null and new\.archived_at is null and new\.ireports360_checkin_id is not null and new\.lat is not null and new\.place_id is not null and new\.location_flag in \('ok', 'weak_gps'\);/,
+    "counted = copied, not archived, converted with a check-in, at a position, measured ok against a place — never far",
   );
+
+  // ── FAR: the row archives itself, on the conversion's write AND on any later restamp ──
+  assert.match(
+    trigger,
+    /v_far boolean := new\.imported_from_ireports360_at is not null and new\.ireports360_checkin_id is not null and new\.place_id is not null and new\.location_flag = 'far';/,
+    "far = a converted copied visit measured far against a validated place — a live Phoenix visit is never far-archived",
+  );
+  assert.match(
+    trigger,
+    /if v_far and new\.archived_at is null then new\.archived_at := now\(\); new\.archive_reason := 'far'; elsif not v_far and new\.archive_reason = 'far' then new\.archived_at := null; new\.archive_reason := null; end if;/,
+    "a far row is archived unless already archived for a stronger reason; the far mark lifts when it is no longer far",
+  );
+  assert.ok(trigger.indexOf("new.archive_reason := 'far'") < trigger.indexOf("new.ireports360_kpi_counted :="), "the archive is decided before the counted flag, so a far row is never counted");
+  assert.match(
+    convertSql,
+    /create trigger phoenix_crm_visits_old_system_kpi before insert or update on public\.phoenix_crm_visits for each row when \(new\.imported_from_ireports360_at is not null or new\.ireports360_kpi_counted\)/,
+    "the trigger fires on every update of a copied row — the conversion's write and the restamp alike",
+  );
+  // The restamp a later validation runs writes place, distance and flag with no archive filter of its own, so
+  // an old no_place visit whose customer is validated later and lands far is archived by the trigger then.
+  const restampSql = stripSqlComments(read("supabase/migrations/20260929235106_phoenix_crm_list_admission.sql")).replace(/\s+/g, " ");
+  // Its body is quoted with $$, not $function$: sliced by hand, from its create to its closing $$;.
+  const restampAt = restampSql.indexOf("create or replace function public.phoenix_crm_restamp_visit_locations(");
+  assert.notEqual(restampAt, -1, "the restamp function is where it was");
+  const restamp = restampSql.slice(restampAt, restampSql.indexOf("$$;", restampSql.indexOf("as $$", restampAt) + 5));
+  assert.ok(restamp.length > 500 && restamp.includes("returning v.id"), "the whole restamp body");
+  assert.match(restamp, /set place_id = x\.place_id, distance_meters = x\.distance_meters, location_flag = x\.location_flag/, "the restamp writes the flag the trigger reads");
+  assert.doesNotMatch(restamp, /archived_at/, "and does not skip an archived row, so a far one can come back when it is no longer far");
+  assert.doesNotMatch(stripComments(read("src/lib/phoenix-crm/server/visit-locations.ts")), /archived_at/, "the restamp's reader measures every visit of the customer");
+  const farArchive = sqlObject(convertSql, "create or replace function public.phoenix_crm_visits_old_system_far_archive(");
+  assert.match(farArchive, /if new\.archive_reason is distinct from 'far' then delete from public\.phoenix_crm_visit_archive a where a\.visit_id = new\.id and a\.reason = 'far'; return null; end if;/, "a lifted far mark takes only its own far rows");
+  assert.match(farArchive, /0, 'far', new\.id, new\.seat_id, new\.line_code, new\.archived_at, new\.distance_meters, new\.lat, new\.lon, new\.place_id, pl\.lat, pl\.lon/, "each far old visit is archived with its distance and both points");
+  assert.match(farArchive, /join public\.phoenix_crm_ireports360_checkin_matches m on m\.crm_visit_id = s\.crm_visit_id/, "one archive row per located regular old visit of the row");
+  assert.match(farArchive, /where phoenix_crm_visit_archive\.reason = 'far';/, "an old visit archived for a stronger reason keeps it");
+  assert.match(
+    convertSql,
+    /create trigger phoenix_crm_visits_old_system_far_archive after update on public\.phoenix_crm_visits for each row when \( \(old\.archive_reason = 'far' or new\.archive_reason = 'far'\)/,
+    "the archive rows follow the far mark",
+  );
+  assert.match(convertSql, /check \( \(archive_reason is null or archive_reason in \('campaign', 'no_checkin_location', 'far'\)\)/, "a visit row may carry the far reason");
+  assert.match(convertSql, /constraint phoenix_crm_visit_archive_reason check \(reason in \('campaign', 'no_checkin_location', 'far'\)\)/, "and so may the archive");
+  assert.match(convertSql, /constraint phoenix_crm_visit_archive_far_measured check \(\(reason = 'far'\) = \(distance_meters is not null\)\)/, "a far archive row always carries its distance");
+  assert.match(convertSql, /revoke execute on function public\.phoenix_crm_visits_old_system_far_archive\(\) from public, anon, authenticated;/);
   assert.match(
     convertSql,
     /add constraint phoenix_crm_visits_old_system_kpi check \( not ireports360_kpi_counted or \(ireports360_checkin_id is not null and archived_at is null and lat is not null\) \)/,
