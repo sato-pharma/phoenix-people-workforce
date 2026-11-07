@@ -423,6 +423,11 @@ export const adminNavigationSectionSeeds = [
       // through the portal twin. A plain sidebar row, NOT a hub card — hub cards trip four extra CI
       // gates for no more reach. The managers being measured never see any of it.
       { href: "/recruitment/manager-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO", "HR Resourcing"] },
+      // Medical Rep Hiring, read-only for the CEO (owner, 2026-11-07 — the 8 November workflow's
+      // timeline is visible to every stakeholder, salary excluded). The Super Admin and Talent
+      // Acquisition reach the same page from the Recruitment section; excluded here so the Super
+      // Admin's waiver does not show it twice.
+      { href: "/recruitment/mr-hiring", icon: Stethoscope, label: "Medical Rep Hiring", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"], excludedRoles: ["Super Admin"] },
       // Hiring Analytics: channel effectiveness and where the pipeline stops. Reads across
       // EVERY candidate, so it is gated on `candidates: read` rather than the per-manager
       // hiring_interviews grant, and has no portal twin - a portal role would be shown a
@@ -1041,6 +1046,12 @@ export const adminNavigationSectionSeeds = [
       // rather than bouncing them. A sharee outside recruitment reaches it from the share notice,
       // and in the portal from a row that appears only once it is shared with them.
       { href: "/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // Medical Rep Hiring — the 8 November 2026 workflow, step for step, from the WhatsApp CV to the
+      // offer (app/(admin)/recruitment/mr-hiring/page.tsx, docs/recruitment-mr-hiring-workflow.md).
+      // The HR Manager and Talent Acquisition work it; HR Operations is not offered it, because the
+      // page admits only the seats that work or read the workflow (src/lib/recruitment/mr-hiring/
+      // access.ts) and a row that bounces is the defect every-offered-link-opens.test.ts exists for.
+      { href: "/recruitment/mr-hiring", icon: Stethoscope, label: "Medical Rep Hiring", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Super Admin", "HR Resourcing"] },
       // CV Sheet Links — the bearer tokens feeding the owner's live CV-lifecycle Google Sheet
       // (app/(admin)/recruitment/cv-lifecycle-sheet/page.tsx). #3102 shipped that whole feature
       // with no UI, so the only token was minted by hand in SQL against production and nothing in
@@ -2395,6 +2406,9 @@ const hrNavigationSectionSeeds = [
       // the copy there): she is its admin, but she holds no recruitment grant and is never shown a
       // Recruitment heading.
       { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment" }] },
+      // The HR shell's row for /recruitment/mr-hiring — Talent Acquisition works the Medical Rep
+      // workflow every day (owner, 2026-11-07).
+      { href: "/hr/recruitment/mr-hiring", icon: Stethoscope, label: "Medical Rep Hiring", permissions: [{ resource: "recruitment", action: "read" }], roles: ["HR Resourcing"], excludedRoles: ["Super Admin"] },
       // `recruitment`, matching the page's own gate — NOT `vacancies`. Owner instruction
       // 2026-09-01, "block the cv database for her too": HR Operations was granted
       // vacancies:read for the Vacancies Report, which handed her this recruiting screen as a

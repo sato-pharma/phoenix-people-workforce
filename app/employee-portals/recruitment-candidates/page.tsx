@@ -5,6 +5,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recruitment-candidates-portal";
+import { MrInterviewsPanel } from "@/components/recruitment/mr-hiring/mr-interviews-panel";
 import {
   canAccess,
   canOpenPersonalCandidateInbox,
@@ -32,6 +33,7 @@ import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { loadRequisitionPlaces } from "@/lib/recruitment/requisition-places-db";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
+import { loadMyMrInterviews } from "@/lib/recruitment/mr-hiring/server";
 import { isUuid } from "@/lib/http/uuid";
 import { fenceDistrictBoards, fenceRowsByCandidate } from "@/lib/recruitment/workspace/fence";
 import { answerChipsByCandidate, loadAnswerChipContext } from "@/components/recruitment/workspace/manager-answer-chips";
@@ -103,21 +105,27 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
   //   • the question set — so each CV's answers read as the workspace's labelled chips (owner,
   //     2026-10-20: the manager portal draws the workspace's own rows). Started now, read later; a
   //     failed read leaves the rows saying they hold no answers, never a blank page.
+  //   • mrInterviews — the Medical Rep interviews booked with this caller (the 8 November 2026
+  //     workflow, docs/recruitment-mr-hiring-workflow.md): the DSM's 2nd interview and the NSM's
+  //     final, each with its mandatory feedback form. Empty for anybody on none, and the panel then
+  //     renders nothing. A failed read says so on the page rather than showing no interviews.
   const chipContextLoad = loadAnswerChipContext().catch(() => null);
-  const [everyApplication, everySentToMe, team, filings, areaOptions, everyDistrictBoard] = await Promise.all([
+  const [everyApplication, everySentToMe, team, filings, areaOptions, everyDistrictBoard, everyMrInterview] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
     listManagerFolderFilings(access.hrId),
     listCandidateFolderAreaOptions(),
     listDistrictBoardsForManager(access.hrId),
+    loadMyMrInterviews(access).catch(() => null),
   ]);
   // The Talent Acquisition fence (owner, 2026-10-20): an HR applicant is on none of these lists, so no
   // card, file, claim or count below can name one. Free for every viewer it does not apply to.
-  const [applications, sentToMe, districtBoards] = await Promise.all([
+  const [applications, sentToMe, districtBoards, mrInterviews] = await Promise.all([
     fenceRowsByCandidate(access, everyApplication, (application) => application.candidateId),
     fenceRowsByCandidate(access, everySentToMe, (candidate) => candidate.id),
     fenceDistrictBoards(access, everyDistrictBoard),
+    everyMrInterview ? fenceRowsByCandidate(access, everyMrInterview, (row) => row.candidateId) : null,
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -208,6 +216,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
       description="CVs sent to you by the recruitment team, candidates assigned to your open positions, a folder for every area you hold, and the CVs sitting with the managers who report to you — read the CV, answer, comment, and keep the good ones in your own folders."
       title="My Candidates"
     >
+      <MrInterviewsPanel rows={mrInterviews} />
       <RecruitmentCandidatesPortal
         areaOptions={areaOptions}
         initialAnswerChips={answerChips}

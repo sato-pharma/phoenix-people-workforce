@@ -37,6 +37,7 @@ import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import { getJson } from "@/components/recruitment/recruitment-fetch";
 import { RecruitmentTabBar } from "@/components/recruitment/recruitment-premium";
 import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
+import { MrStepStrip } from "@/components/recruitment/mr-hiring/mr-step-strip";
 import { CandidateStars } from "@/components/recruitment/workstation/candidate-stars";
 import { WorkstationNotesTab, WorkstationTimelineTab } from "@/components/recruitment/workstation/workstation-history-tabs";
 import { AnswerChip, type AnswerOption } from "@/components/recruitment/workspace/answer-chip";
@@ -307,6 +308,8 @@ export function OpenedCv({
   viewingTab: WorkspaceTabKey | null;
 }) {
   const hr = mode === "hr";
+  /** A Medical Rep candidate opened by the recruitment team or the CEO — the step strip is drawn. */
+  const showMrStep = hr && row.placements.some((placement) => placement.tab === "medical_rep");
   /** The CEO: HR mode without the right to work it. Only the parts the workspace gave him are drawn. */
   const readOnly = hr && !canWork;
   const [section, setSection] = useState<Section>(readOnly ? "answers" : "cv");
@@ -405,6 +408,9 @@ export function OpenedCv({
             )}
           </p>
         </div>
+
+        {/* A Medical Rep candidate: where they are in the 8 November workflow */}
+        {showMrStep ? <MrStepStrip candidateId={row.id} className="shrink-0" key={`mr-${row.id}`} /> : null}
 
         {/* 2 — the action bar, always in view */}
         {readOnly ? (
@@ -596,6 +602,7 @@ export function OpenedCv({
         </div>
       </div>
 
+      {showMrStep ? <MrStepStrip candidateId={row.id} key={`mr-${row.id}`} /> : null}
       <div className="space-y-3 p-3 sm:p-4">
         {readOnly ? (
           <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">

@@ -78,6 +78,11 @@ export type InvitationFacts = {
    */
   interviewerName?: string | null;
   interviewerTitle?: string | null;
+  /**
+   * Where an in-person interview is held when the booker named a place (the Medical Rep workflow, §5:
+   * "date, time and location must be registered"). Absent or blank means the company's usual venue.
+   */
+  location?: string | null;
 };
 
 export type InvitationLine = { label: string; value: string };
@@ -113,6 +118,10 @@ function companyLines(): InvitationLine[] {
 
 function whereLines(facts: InvitationFacts): InvitationLine[] {
   if (facts.platform === "zoom") return facts.zoomJoinUrl ? [{ label: "Zoom link", value: facts.zoomJoinUrl }] : [];
+  // A place the booker named is printed as it was typed — the head office's map link would send the
+  // candidate to the wrong building.
+  const place = facts.location?.trim();
+  if (place) return [{ label: "Address", value: place }];
   return companyLines().slice(0, 2);
 }
 
@@ -157,7 +166,9 @@ export function buildInvitationMessage(input: { recipient: InvitationRecipient; 
     ? facts.zoomJoinUrl
       ? { href: facts.zoomJoinUrl, label: "Join the Zoom meeting" }
       : null
-    : { href: VENUE.mapUrl, label: "Open the location on the map" };
+    : facts.location?.trim()
+      ? null
+      : { href: VENUE.mapUrl, label: "Open the location on the map" };
 
   if (recipient === "interviewer") {
     const who: InvitationLine[] = [{ label: "Candidate", value: facts.candidateName }];

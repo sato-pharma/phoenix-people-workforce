@@ -1852,6 +1852,17 @@ export const accessRegistry = [
   // null unless the caller could open the application from WhatsApp Applicants (HR authority with
   // recruitment:read and candidates:read; getInterviewCalendarCandidateApplication).
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/application", permission: null, guard: "domain-helper" }),
+  // Medical Rep hiring — the 8 November 2026 workflow (docs/recruitment-mr-hiring-workflow.md). No
+  // single resource fits: the DSM and the NSM who interview hold hiring_interviews, HR holds
+  // recruitment, and the final decision is the Super Admin's alone. So each route asks the domain
+  // (src/lib/recruitment/mr-hiring/access.ts) before the first read or write: `mayRecordStep`,
+  // `mayRecommend`, `mayBookMrInterview` and `mayReadMrJourney`, the same rules that decide which
+  // buttons a screen offers. The salary is removed on the server for everyone but the HR Manager,
+  // Talent Acquisition and the NSM who proposed it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/result", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/recommendation", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/mr-hiring/*/book", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/mr-hiring/*/journey", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/shares", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/recruitment/interview-calendar/shares/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/interview-shares", permission: null, guard: "domain-helper", csrfRequired: true }),
