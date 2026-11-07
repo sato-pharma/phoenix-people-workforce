@@ -1246,7 +1246,7 @@ export function Employee360View({
 
   const campaignPart = showCampaign ? (
       <Card className={PREMIUM_CARD}>
-        <SectionHeader icon={Megaphone} tone="orange" sub="100% regular is the best case; unplanned falling while regular rises is the best direction. Each month shows the company's SAME-month campaign share beside it, read before Phoenix CRM.">
+        <SectionHeader icon={Megaphone} tone="orange" sub="100% regular is the best case; unplanned falling while regular rises is the best direction. Each month shows the company's SAME-month unplanned share beside it, read before Phoenix CRM.">
           Unplanned vs Regular
         </SectionHeader>
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-600">

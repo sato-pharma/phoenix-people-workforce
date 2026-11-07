@@ -598,7 +598,8 @@ export function summarizeVisits(
     const isRegular = isFieldCall && !isCampaign;
     const isProductive = isRegular || isCampaign;
 
-    const mixLabel = row.visit_kind && row.is_unplanned ? "Unplanned visit" : label;
+    // One row for the lane: an archive-day campaign visit (−8) is an unplanned visit too, never a separate "Campaign".
+    const mixLabel = isCampaign ? "Unplanned visit" : label;
     typeMix.set(mixLabel, (typeMix.get(mixLabel) ?? 0) + 1);
 
     if (isRegular) regularVisits += 1;
