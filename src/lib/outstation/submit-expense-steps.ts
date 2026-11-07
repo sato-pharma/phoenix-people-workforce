@@ -93,8 +93,9 @@ export function submitExpenseStepInstruction(key: SubmitExpenseStepKey, facts: S
         ? "Attach your ticket if you have it. No photo is needed for your role."
         : "No photo or ticket is needed for your role on this trip.";
     case "amounts":
-      return facts.isNonTravel
-        ? "Enter what you paid. The claim is paid on these amounts alone."
+      if (facts.isNonTravel) return "Enter what you paid. The claim is paid on these amounts alone.";
+      return facts.transportationType === "no_ticket"
+        ? "The train fare is fixed and the allowance is calculated for you. Add any meeting or other amount."
         : "Enter what you paid. The allowance and the travel cost are calculated for you.";
     case "review":
       return "Check the total Phoenix calculated, then press Submit.";

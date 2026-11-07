@@ -395,12 +395,25 @@ export function mapOutstationRequestRowToPayrollApproval(
     toDate: tripEndDate,
     total,
     transportationType: normalizeTransportation(toText(row.transportation_type), tripType, meetingAmount),
+    // A No-ticket trip's stations and fixed fare, so the approver sees what the fare was priced on.
+    noTicketFareLine: noTicketFareLine(row.no_ticket_fare),
     travelCost,
     tripId: outstationPayrollTripId(requestId),
     tripType: normalizeExpenseType(tripType),
     // The same "manual" fallback the request read uses (service.ts) for a row stamped before the column.
     workloadMatchStatus: toText(row.workload_match_status) || "manual",
   };
+}
+
+/**
+ * The stored fare's own line ("Cairo → Asyut · second-class AC · EGP 210 each way · EGP 420 there and back").
+ * Read here rather than through `readNoTicketFare` because this module reaches the approvals deck's browser
+ * bundle, and train-fare.ts carries the whole fare table.
+ */
+function noTicketFareLine(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const line = (value as { line?: unknown }).line;
+  return typeof line === "string" && line.trim() ? line.trim() : null;
 }
 
 /** A departure photo on file whose metadata carries no usable position (none, half a pair, or 0,0). */

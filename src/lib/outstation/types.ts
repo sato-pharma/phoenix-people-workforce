@@ -10,7 +10,13 @@ export type OutstationEligibilityStatus =
 
 export type OutstationExpenseType = "traveling" | "meeting" | "other";
 
-export type OutstationTransportationType = "car" | "train" | "bus" | "other";
+/**
+ * How the trip was paid (owner, 2026-11-07): the employee now chooses Fuel, Ticket or No ticket.
+ * Fuel is stored as "car" and Ticket as "train", so every rule and every older claim keeps its meaning;
+ * "no_ticket" is priced by the fixed train fare (train-fare.ts). "bus" and "other" remain for older claims
+ * and the admin's own entry.
+ */
+export type OutstationTransportationType = "car" | "train" | "bus" | "other" | "no_ticket";
 
 export type OutstationCalculationStatus =
   | "blocked"
@@ -251,6 +257,24 @@ export type OutstationCalculationInput = {
   tripStartDate: string;
 };
 
+/**
+ * The fixed train fare a "No ticket" trip is paid (train-fare.ts), kept on the claim
+ * (outstation_expense_requests.no_ticket_fare) so the approver reads the stations and the fare it used.
+ */
+export type OutstationNoTicketFare = {
+  collectedFor: string;
+  fromStation: string;
+  fromStationArabic: string;
+  fromStationKm: number;
+  line: string;
+  nearestHadNoTrain: boolean;
+  oneWayFare: number;
+  toStation: string;
+  toStationArabic: string;
+  toStationKm: number;
+  totalFare: number;
+};
+
 export type OutstationCalculationResult = OutstationCaptureResult & {
   allowanceAmount: number;
   allowanceBreakdown: OutstationAllowanceBreakdown;
@@ -278,6 +302,8 @@ export type OutstationCalculationResult = OutstationCaptureResult & {
   ticketAmount: number;
   carEvidenceImagePath?: string | null;
   carEvidenceMetadata?: OutstationCarEvidenceMetadata;
+  /** Set on a "No ticket" trip only: the fixed fare the server priced it at. */
+  noTicketFare?: OutstationNoTicketFare | null;
   transportationType: OutstationTransportationType;
   tripEndDate: string;
   tripStartDate: string;
@@ -309,6 +335,8 @@ export type OutstationExpenseRequest = {
   carEvidenceImagePath: string | null;
   carEvidenceImageUrl: string | null;
   carEvidenceMetadata: OutstationCarEvidenceMetadata | null;
+  /** A "No ticket" trip's fixed train fare, as priced when it was submitted. Null on every other trip. */
+  noTicketFare?: OutstationNoTicketFare | null;
   departureCapturedAt: string | null;
   departureEvidenceImagePath: string | null;
   /** Signed URL for departureEvidenceImagePath, signed on the same read paths as

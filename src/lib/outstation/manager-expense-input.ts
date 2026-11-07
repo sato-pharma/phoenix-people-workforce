@@ -50,6 +50,7 @@ const TRANSPORTATION_TYPES: Record<OutstationTransportationType, true> = {
   train: true,
   bus: true,
   other: true,
+  no_ticket: true,
 };
 
 export const OUTSTATION_EXPENSE_TYPES = Object.keys(EXPENSE_TYPES) as readonly OutstationExpenseType[];

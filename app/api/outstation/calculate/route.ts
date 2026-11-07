@@ -8,6 +8,7 @@ import {
   NON_TRAVEL_AMOUNT_REQUIRED_MESSAGE,
 } from "@/lib/outstation/non-travel-expense";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
+import { NoTicketFareUnavailableError } from "@/lib/outstation/train-fare";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   MISSING_CAPTURED_COORDINATES,
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
       {
         status: isForbiddenError(error)
           ? 403
-          : message === NON_TRAVEL_AMOUNT_REQUIRED_MESSAGE
+          : message === NON_TRAVEL_AMOUNT_REQUIRED_MESSAGE || error instanceof NoTicketFareUnavailableError
             ? 400
             : 500,
       },

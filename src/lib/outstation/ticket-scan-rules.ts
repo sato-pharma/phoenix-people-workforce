@@ -15,7 +15,8 @@
  *    photo (the roles that take none), the trip's first day stands in for the arrival.
  *  - A refusal always says why, and an unreadable photo says what to change: zoom in or out, centre the
  *    ticket, steady, light, glare, straight.
- *  - Train only. A bus ticket is not read (the owner named the train).
+ *  - Every ticket is read, train or bus (owner, 2026-11-07: the trip now says only "Ticket", and he chose
+ *    "Read every ticket"). Earlier it was train only.
  *  - When the reader itself cannot be reached, the ticket is KEPT and marked "not read" — an employee is
  *    never refused for the system's own outage.
  */
@@ -50,7 +51,7 @@ export const TICKET_SCAN_GUIDANCE: Record<TicketScanProblem, string> = {
   dark: "Take the photo in more light.",
   date_hidden: "Make sure the travel date on the ticket is in the photo and not covered by a finger or a fold.",
   glare: "Tilt the ticket or the phone so no light reflects on it.",
-  not_a_ticket: "This does not look like a train ticket. Take the photo of the ticket itself.",
+  not_a_ticket: "This does not look like a train or bus ticket. Take the photo of the ticket itself.",
   rotated: "Hold the ticket straight and the right way up.",
   too_close: "Zoom out or move the phone back — the whole ticket must fit in the photo.",
   too_far: "Zoom in or move the phone closer — the ticket should fill most of the photo.",
@@ -58,13 +59,19 @@ export const TICKET_SCAN_GUIDANCE: Record<TicketScanProblem, string> = {
 
 /** What the system needs from a ticket photo, said before and after every refusal. */
 export const TICKET_SCAN_NEEDS =
-  "To accept a train ticket the system must read its travel date. Keep the whole ticket in the photo, sharp and well lit, with the date, the stations and the train number clear.";
+  "To accept a ticket the system must read its travel date. Keep the whole ticket in the photo, sharp and well lit, with the date, the stations and the train or bus number clear.";
 
 export type TicketScanRead =
   | {
       status: "read";
-      /** YYYY-MM-DD as printed on the ticket. */
+      /** YYYY-MM-DD as printed on the ticket. When the ticket prints no year, the year here is a placeholder. */
       travelDate: string;
+      /**
+       * False when the ticket prints the day and month but no year (a booking app's "Monday 27 July"). The judge
+       * then takes the year that puts that day nearest the trip — the sweep of 2026-11-07 found real bus bookings
+       * refused for want of a year.
+       */
+      yearPrinted?: boolean;
       fromStation: string | null;
       toStation: string | null;
       trainNumber: string | null;
@@ -107,6 +114,28 @@ function shiftDay(day: string, by: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * A ticket that prints no year: its day and month, in the year that puts it nearest the trip's own day (a trip in
+ * early January can carry a ticket from late December). Never moves a printed year — only a yearless read comes here.
+ */
+export function anchorYear(day: string, near: string | null): string {
+  if (!near || !ISO_DAY.test(near) || !ISO_DAY.test(day)) return day;
+  const monthDay = day.slice(5);
+  const year = Number(near.slice(0, 4));
+  let best = day;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const candidate of [year - 1, year, year + 1]) {
+    const iso = `${candidate}-${monthDay}`;
+    if (shiftDay(iso, 0) !== iso) continue; // 29 Feb in a year without one
+    const gap = Math.abs(Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${near}T00:00:00Z`));
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = iso;
+    }
+  }
+  return best;
+}
+
 /** "Fri 23 Oct 2026" — the date as the employee reads it on the screen. */
 export function ticketDayLabel(day: string): string {
   const date = new Date(`${day}T00:00:00Z`);
@@ -114,9 +143,10 @@ export function ticketDayLabel(day: string): string {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC", weekday: "short", year: "numeric" }).format(date);
 }
 
-/** Only a train ticket is read. */
+/** Every ticket is read — a train ticket and a bus ticket alike (owner, 2026-11-07: "Read every ticket"). */
 export function ticketScanApplies(transportationType: string | null | undefined): boolean {
-  return String(transportationType ?? "").toLowerCase() === "train";
+  const transport = String(transportationType ?? "").toLowerCase();
+  return transport === "train" || transport === "bus";
 }
 
 /** A model's answer, made safe: a date only when it is a real YYYY-MM-DD, problems only from the known list. */
@@ -128,7 +158,14 @@ export function normalizeTicketScan(raw: Record<string, unknown>): TicketScanRea
     return out ? out : null;
   };
   if (raw.is_train_ticket !== false && real) {
-    return { fromStation: text(raw.from_station), status: "read", toStation: text(raw.to_station), trainNumber: text(raw.train_number), travelDate: date };
+    return {
+      fromStation: text(raw.from_station),
+      status: "read",
+      toStation: text(raw.to_station),
+      trainNumber: text(raw.train_number),
+      travelDate: date,
+      ...(raw.year_printed === false ? { yearPrinted: false } : {}),
+    };
   }
   const problems = (Array.isArray(raw.problems) ? raw.problems : [])
     .map((entry) => String(entry))
@@ -148,7 +185,7 @@ export function judgeTrainTicket(scan: TicketScanRead, context: TicketDateContex
       accepted: false,
       guidance: scan.problems.map((problem) => TICKET_SCAN_GUIDANCE[problem]),
       reason: scan.problems.includes("not_a_ticket")
-        ? "Not accepted: this is not a train ticket the system can read."
+        ? "Not accepted: this is not a ticket the system can read."
         : "Not accepted: the system could not read the travel date on this ticket.",
     };
   }
@@ -157,7 +194,7 @@ export function judgeTrainTicket(scan: TicketScanRead, context: TicketDateContex
   const departureDay = cairoDay(context.departureAt) ?? cairoDay(context.tripEndDate);
   const arrivalWord = context.arrivalAt ? "your arrival photo" : "the trip's first day";
   const departureWord = context.departureAt ? "your departure photo" : "the trip's last day";
-  const travel = scan.travelDate;
+  const travel = scan.yearPrinted === false ? anchorYear(scan.travelDate, arrivalDay ?? departureDay) : scan.travelDate;
   const route = [scan.fromStation, scan.toStation].filter(Boolean).join(" to ");
   const described = `${ticketDayLabel(travel)}${route ? ` · ${route}` : ""}${scan.trainNumber ? ` · train ${scan.trainNumber}` : ""}`;
 
@@ -167,9 +204,27 @@ export function judgeTrainTicket(scan: TicketScanRead, context: TicketDateContex
   if (departureDay && travel === departureDay) {
     return { accepted: true, line: `Ticket read: ${described} — matches ${departureWord}.`, matchedTo: "departure", travelDate: travel };
   }
-  const allowed = [arrivalDay ? `${ticketDayLabel(arrivalDay)} (${arrivalWord})` : null, departureDay ? `${ticketDayLabel(departureDay)} (${departureWord})` : null]
-    .filter(Boolean)
-    .join(" or ");
+  // Before the departure photo exists, the return or onward ticket may be dated any day of the trip, not only
+  // its planned last day (owner, 2026-11-07, claim 338: arrival 2 Nov, a Sohag → Asyut ticket dated 3 Nov on a
+  // trip that ends 4 Nov — "the second photo is 3/11, which is the departure date"). Once a departure photo
+  // exists, its own day is the only departure day.
+  const windowStart = arrivalDay ?? cairoDay(context.tripStartDate);
+  const midTrip = !context.departureAt && windowStart && departureDay && travel > windowStart && travel < departureDay;
+  if (midTrip) {
+    return {
+      accepted: true,
+      line: `Ticket read: ${described} — a day of this trip, before ${departureWord}.`,
+      matchedTo: "departure",
+      travelDate: travel,
+    };
+  }
+  const departureAllowed =
+    departureDay && !context.departureAt && windowStart && shiftDay(windowStart, 1) < departureDay
+      ? `any day from ${ticketDayLabel(shiftDay(windowStart, 1))} to ${ticketDayLabel(departureDay)} (${departureWord})`
+      : departureDay
+        ? `${ticketDayLabel(departureDay)} (${departureWord})`
+        : null;
+  const allowed = [arrivalDay ? `${ticketDayLabel(arrivalDay)} (${arrivalWord})` : null, departureAllowed].filter(Boolean).join(" or ");
   return {
     accepted: false,
     guidance: ["Attach the ticket of this trip — the one you travelled on to arrive or to come back."],

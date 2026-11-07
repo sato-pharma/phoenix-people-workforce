@@ -25,6 +25,7 @@ import {
   money,
 } from "@/components/outstation/my-expense-submissions";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import type { ManagerOutstationSubmissionView } from "@/lib/outstation/service";
 
 /**
@@ -75,7 +76,7 @@ export function ManagerOutstationReview({
             label="Trip end"
             value={formatPhoenixLongDate(submission.tripEndDate)}
           />
-          <Fact icon={<Route className="h-3.5 w-3.5" />} label="Transportation" value={submission.transportationType} />
+          <Fact icon={<Route className="h-3.5 w-3.5" />} label="Transportation" value={normalizeTransportation(submission.transportationType, null, null) || submission.transportationType} />
           <Fact icon={<MapPin className="h-3.5 w-3.5" />} label="Origin" value={submission.origin} />
         </div>
 

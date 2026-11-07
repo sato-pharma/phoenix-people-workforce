@@ -60,7 +60,7 @@ export function MissingTicketCard({ requests }: { requests: MissingTicketRequest
           ? "One train or bus claim reached Phoenix without its ticket."
           : `${requests.length} train or bus claims reached Phoenix without their tickets.`}{" "}
         Attach a photo or PDF of the ticket here. The claim stays held for review until it has one. No amount
-        changes. A train ticket is read when you choose it, and its travel date must match your arrival or
+        changes. The ticket is read when you choose it, and its travel date must match your arrival or
         departure photo.
       </p>
       <div className="mt-4 space-y-3">
@@ -85,7 +85,8 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
   const [scanned, setScanned] = useState<ScannedTrainTicket[]>([]);
   const [state, setState] = useState<AttachState>({ kind: "idle" });
   const transport = request.transportationType === "bus" ? "bus" : "train";
-  const isTrain = transport === "train";
+  // Every ticket is read, train or bus (owner, 2026-11-07: "Read every ticket").
+  const isTrain = transport === "train" || transport === "bus";
   const judged = scanned.map((ticket) => ({ ticket, verdict: verdictOf(ticket) }));
   const acceptedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [{ ticket: entry.ticket, verdict: entry.verdict }] : []));
   const refusedTickets = judged.flatMap((entry) => (entry.verdict.accepted ? [] : [{ ticket: entry.ticket, verdict: entry.verdict }]));
@@ -163,7 +164,7 @@ function MissingTicketRow({ request }: { request: MissingTicketRequest }) {
       <div className="min-w-0">
         <p className="text-sm font-bold text-slate-900">{request.destination}</p>
         <p className="mt-0.5 text-xs font-semibold text-slate-500">
-          {transport === "bus" ? "Bus" : "Train"} · {formatPhoenixLongDate(request.tripStartDate)} –{" "}
+          {transport === "bus" ? "Bus" : "Ticket"} · {formatPhoenixLongDate(request.tripStartDate)} –{" "}
           {formatPhoenixLongDate(request.tripEndDate)}
         </p>
       </div>

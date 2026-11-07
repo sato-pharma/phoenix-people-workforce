@@ -7,14 +7,15 @@ be able to read the ticket".
 
 ## The rule
 
-- **Train only.** A bus ticket, an extra ticket and a journey-stop ticket are not read.
+- **Every ticket on the claim's Ticket choice is read — train and bus** (owner, 2026-11-07: "Read every ticket"). Since 2026-11-07 the employee chooses Fuel, Ticket or No ticket; Ticket is stored as `train`, and an older bus claim's late ticket is read the same way. An extra ticket and a journey-stop ticket are not read. A **No ticket** trip carries no ticket at all: it is paid the fixed train fare (`src/lib/outstation/train-fare.ts`).
 - **What must be read:** the travel date printed on the ticket. The stations and the train number are kept
   when readable.
 - **Accepted dates:**
   - The arrival photo's Cairo day, or the day before it (a night train arrives the next morning). With no
     arrival photo (a waived role), the trip's first day stands in.
-  - The departure photo's day, for the return ticket. Until the departure photo exists, the trip's last day
-    stands in.
+  - The departure photo's day, for the return or onward ticket. Until the departure photo exists, any day
+    after the arrival day up to the trip's last day is accepted (owner, 2026-11-07, claim 338: a Sohag → Asyut
+    ticket dated 3 Nov on a trip from 2 to 4 Nov, "the second photo is 3/11, which is the departure date").
 - **A refused ticket says why, then what to change, then what the system needs**, one instruction per photo
   problem: zoom in, zoom out, centre the ticket, hold still and focus, more light, tilt against glare, hold
   it straight, show the date, or "this is not a train ticket".

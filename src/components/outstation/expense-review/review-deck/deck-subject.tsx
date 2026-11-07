@@ -97,6 +97,11 @@ export function DeckSubject({
           <DistanceChip km={record.km} withLabel />
         </SubjectFact>
         <SubjectFact label="Transport">{record.transportationType || "—"}</SubjectFact>
+        {record.noTicketFareLine ? (
+          <SubjectFact className="col-span-2" label="Fixed train fare">
+            <span data-no-ticket-fare>{record.noTicketFareLine}</span>
+          </SubjectFact>
+        ) : null}
         <SubjectFact className="col-span-2" label="Expense · trip">
           {typeLine || "—"}
         </SubjectFact>
