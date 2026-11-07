@@ -83,7 +83,7 @@ export function EvidenceTable({ columns, rows, title }: { columns: ReadonlyArray
 export const evidenceRowClassName = "align-top even:bg-slate-50";
 
 const thClassName =
-  "border-b border-slate-200 bg-slate-100 px-2.5 py-1.5 align-bottom text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500";
+  "border-b border-slate-200 bg-slate-100 px-2.5 py-1.5 align-bottom whitespace-nowrap text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-500";
 
 const tdClassName = "border-t border-slate-100 px-2.5 py-1.5 break-words text-slate-700";
 

@@ -13,6 +13,8 @@ import {
 import { EvidenceTable } from "@/components/outstation/evidence-table";
 import type { AttachmentsData } from "@/components/outstation/trip-attachments";
 import {
+  CoordinatesLink,
+  PlaceLink,
   type TripWorkloadEvidence,
   TripWorkloadEvidencePanel,
   type WorkloadCheckinDetail,
@@ -172,10 +174,6 @@ function cairoDayKey(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone: "Africa/Cairo", year: "numeric" }).format(date);
 }
 
-function coordinates(lat: number, lon: number) {
-  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-}
-
 /**
  * Every photo and stop the trip has, grouped by the day it belongs on. A photo or stop captured
  * outside the trip's dates (a departure photo taken the morning after, say) is drawn on the nearest
@@ -199,17 +197,15 @@ function buildDayLegends(attachments: AttachmentsData | null | undefined, firstD
           <span className="font-bold text-slate-900">{photo.label}</span>
           {when}
           {photo.url ? (photo.sourceNote ? " · uploaded" : " · live capture") : ` · ${photo.missingNote ?? "no photo"}`}
-          {positioned ? (
-            <span className="tabular-nums text-slate-500"> · {coordinates(photo.latitude as number, photo.longitude as number)}</span>
-          ) : photo.url ? (
-            <span className="text-amber-700"> · no GPS position, not on the map</span>
-          ) : null}
+          {!positioned && photo.url ? <span className="text-amber-700"> · no GPS position, not on the map</span> : null}
+          {/* The place on a line of its own, then the point as a link: one fact per line, never one
+              run-on sentence (owner, 2026-11-07: "tidy it"). */}
           {photo.locationLabel ? (
-            <>
-              {" · "}
+            <span className="block text-slate-600">
               <bdi dir="auto">{displayPlace(photo.locationLabel)}</bdi>
-            </>
+            </span>
           ) : null}
+          {positioned ? <CoordinatesLink lat={photo.latitude as number} lon={photo.longitude as number} /> : null}
         </>
       ),
       marker:
@@ -230,7 +226,7 @@ function buildDayLegends(attachments: AttachmentsData | null | undefined, firstD
           <span className="font-bold text-slate-900">Stop {stop.stopNumber}</span>
           {where}
           {` · ${formatDateTimeValue(stop.capturedAt)}`}
-          {located ? <span className="tabular-nums text-slate-500"> · {coordinates(stop.latitude as number, stop.longitude as number)}</span> : null}
+          {located ? <CoordinatesLink lat={stop.latitude as number} lon={stop.longitude as number} /> : null}
         </>
       ),
       marker: located
@@ -373,7 +369,7 @@ function DayMap({
                     <bdi dir="auto">{displayPlace(home.label)}</bdi>
                   </>
                 ) : null}
-                <span className="block tabular-nums text-slate-500">{coordinates(home.lat, home.lon)}</span>
+                <CoordinatesLink lat={home.lat} lon={home.lon} />
               </>
             ),
             key: "home",
@@ -393,7 +389,7 @@ function DayMap({
                     <bdi dir="auto">{submittedLabel}</bdi>
                   </>
                 ) : null}
-                <span className="block tabular-nums text-slate-500">{coordinates(submittedAt.lat, submittedAt.lon)}</span>
+                <CoordinatesLink lat={submittedAt.lat} lon={submittedAt.lon} />
               </>
             ),
             key: "submitted",
@@ -407,7 +403,9 @@ function DayMap({
             badge: <PinBadge label={String(firstCheckinNumber + row.index)} tone="checkin" />,
             body: (
               <>
-                <span className="font-bold text-slate-900">{mapped[row.index]?.contactName ?? "Check-in"}</span>
+                <PlaceLink lat={checkins[row.index]?.lat} lon={checkins[row.index]?.lon}>
+                  {mapped[row.index]?.contactName ?? "Check-in"}
+                </PlaceLink>
                 <span className="tabular-nums"> · {formatClock(mapped[row.index]?.checkDate ?? null)}</span>
                 {(checkins[row.index]?.taps ?? 1) > 1 ? ` · ×${formatNumberValue(checkins[row.index]?.taps ?? 1)} taps` : ""}
                 {/* The place is in the Check-ins table under the map; here only a check-in with no

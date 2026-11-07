@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, MapPin } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
@@ -41,6 +41,8 @@ export type WorkloadCheckinDetail = {
   contactCrmId?: number | null;
   lat: number | null;
   lon: number | null;
+  /** The nearest Phoenix brick, its area and region, and how far (visit-workload.ts). */
+  place?: { area: string | null; brick: string | null; km: number; region: string | null };
   /** Saved taps this one stop stands for — set by routeTripDay, absent on the raw payload. */
   taps?: number;
   via: string | null;
@@ -121,6 +123,85 @@ export function formatClock(value: string | null) {
   return match ? match[1] : "—";
 }
 
+/** Google Maps at a GPS point, in a new tab. */
+export function mapsHref(lat: number, lon: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
+}
+
+function hasPoint(lat: number | null | undefined, lon: number | null | undefined): lat is number {
+  return typeof lat === "number" && typeof lon === "number" && Number.isFinite(lat) && Number.isFinite(lon);
+}
+
+/**
+ * A doctor's or a place's name that opens its GPS point on Google Maps (owner, 2026-11-07: "make the
+ * dr name clickable to location"); plain words when it has no position, so nothing pretends to a pin.
+ */
+export function PlaceLink({ children, lat, lon }: { children: ReactNode; lat: number | null | undefined; lon: number | null | undefined }) {
+  if (!hasPoint(lat, lon)) return <bdi className="font-semibold text-slate-900">{children}</bdi>;
+  return (
+    <a
+      className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500"
+      data-place-link
+      href={mapsHref(lat, lon as number)}
+      rel="noreferrer"
+      target="_blank"
+      title="Open this place on Google Maps"
+    >
+      <bdi>{children}</bdi>
+      <MapPin aria-hidden className="ml-0.5 inline h-3 w-3 align-[-2px] text-orange-500" />
+    </a>
+  );
+}
+
+/** "29.31036, 30.85894" on its own line, opening the point on Google Maps. */
+export function CoordinatesLink({ lat, lon }: { lat: number; lon: number }) {
+  return (
+    <a
+      className="block w-fit tabular-nums text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-orange-700 hover:decoration-orange-500"
+      href={mapsHref(lat, lon)}
+      rel="noreferrer"
+      target="_blank"
+      title="Open this point on Google Maps"
+    >
+      {lat.toFixed(5)}, {lon.toFixed(5)}
+    </a>
+  );
+}
+
+/**
+ * "BRICK إطسا · AREA Fayoum · REGION Giza" — the nearest Phoenix brick to the GPS point (owner,
+ * 2026-11-07: "show me brick area and region"). An area that only repeats its region is said once,
+ * and a brick more than 10 km away says so, never passing as the place itself.
+ */
+export function BrickLine({ place }: { place: WorkloadCheckinDetail["place"] }) {
+  if (!place) return null;
+  const parts = [
+    ["Brick", place.brick],
+    ["Area", place.area !== place.region ? place.area : null],
+    ["Region", place.region],
+  ].filter((part): part is [string, string] => Boolean(part[1]));
+  if (parts.length === 0) return null;
+  return (
+    <span className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-phx-2xs" data-brick-line>
+      {parts.map(([label, value]) => (
+        <span key={label}>
+          <span className="font-black uppercase tracking-[0.12em] text-slate-400">{label}</span>{" "}
+          <bdi className="font-semibold text-slate-700" dir="auto">
+            {value}
+          </bdi>
+        </span>
+      ))}
+      {place.km > 10 ? <span className="font-semibold text-amber-700">nearest brick {fmt(place.km)} km away</span> : null}
+    </span>
+  );
+}
+
+/** A name as the visit and the check-in both spell it, to pair a visit with its check-in. */
+function placeKey(value: string | null | undefined): string | null {
+  const key = String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  return key || null;
+}
+
 /**
  * A day's visits and check-ins, every one printed: the visit's kind, who was visited, the partner
  * on a double, AM or PM and the time the rep SAVED it; the check-in's number (the same number its
@@ -143,6 +224,13 @@ function DayDetail({
   ownVisitsWithoutGps?: number;
   visits: WorkloadVisitDetail[];
 }) {
+  // A visit carries no GPS of its own; its check-in at the same place does, so the visit's name opens
+  // that point and prints its brick — the first positioned check-in under the same name that day.
+  const checkinByPlace = new Map<string, WorkloadCheckinDetail>();
+  for (const checkin of checkins) {
+    const key = placeKey(checkin.contact);
+    if (key && hasPoint(checkin.lat, checkin.lon) && !checkinByPlace.has(key)) checkinByPlace.set(key, checkin);
+  }
   return (
     // `[&>*]:min-w-0`: below `md` this is one column, and a grid item defaults to
     // `min-width: auto`, so the longest visit line would size the column (measured 283 vs 436).
@@ -165,56 +253,62 @@ function DayDetail({
               // from the check-in on site.
               { hint: "When the visit was saved in the CRM, not the check-in on site", label: "Saved", role: "time", width: "4.25rem" },
             ]}
-            rows={visits.map((visit, index) => ({
-              badge: (
-                <span
-                  className={cn(
-                    "inline-block px-1 py-0.5 text-phx-3xs font-bold uppercase",
-                    visit.kind === "campaign"
-                      ? "bg-violet-100 text-violet-700"
-                      : visit.kind === "meeting"
-                        ? "bg-slate-200 text-slate-700"
-                        : "bg-sky-100 text-sky-700",
-                  )}
-                >
-                  {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
-                </span>
-              ),
-              body: (
-                <>
-                  <bdi className="font-semibold text-slate-900">{visit.contact || visit.customer || "—"}</bdi>
-                  {visit.contact && visit.customer && visit.customer !== visit.contact ? (
-                    <span className="text-slate-400">
-                      {" · "}
-                      <bdi>{visit.customer}</bdi>
-                    </span>
-                  ) : null}
-                  {/* The CUSTOMER's list (AM = pharmacy, hospital, contract; PM = doctors), never the
-                      clock: "13:42 · AM" read as a morning visit at 13:42 (owner, 2026-11-07). */}
-                  {visit.ampm ? (
-                    <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-3xs font-bold uppercase text-slate-500">
-                      {visitListLabel(visit.ampm)}
-                    </span>
-                  ) : null}
-                  <span className="text-slate-500">
-                    {visit.role === "partner" ? (
-                      visit.repName ? (
-                        <>
-                          {" · double with "}
-                          <span className="font-semibold text-slate-900">{visit.repName}</span>
-                        </>
-                      ) : (
-                        " · double"
-                      )
-                    ) : visit.role === "own" ? (
-                      " · own visit"
-                    ) : null}
+            rows={visits.map((visit, index) => {
+              const atPlace = checkinByPlace.get(placeKey(visit.contact) ?? "") ?? null;
+              return {
+                badge: (
+                  <span
+                    className={cn(
+                      "inline-block px-1 py-0.5 text-phx-3xs font-bold uppercase",
+                      visit.kind === "campaign"
+                        ? "bg-violet-100 text-violet-700"
+                        : visit.kind === "meeting"
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-sky-100 text-sky-700",
+                    )}
+                  >
+                    {visit.kind === "campaign" ? "Unplanned" : visit.kind === "meeting" ? "Meeting" : "Planned"}
                   </span>
-                </>
-              ),
-              key: String(index),
-              time: <span title={visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}>{formatClock(visit.submittedAt)}</span>,
-            }))}
+                ),
+                body: (
+                  <>
+                    <PlaceLink lat={atPlace?.lat} lon={atPlace?.lon}>
+                      {visit.contact || visit.customer || "—"}
+                    </PlaceLink>
+                    {visit.contact && visit.customer && visit.customer !== visit.contact ? (
+                      <span className="text-slate-400">
+                        {" · "}
+                        <bdi>{visit.customer}</bdi>
+                      </span>
+                    ) : null}
+                    {/* The CUSTOMER's list (AM = pharmacy, hospital, contract; PM = doctors), never the
+                        clock: "13:42 · AM" read as a morning visit at 13:42 (owner, 2026-11-07). */}
+                    {visit.ampm ? (
+                      <span className="ml-1.5 inline-block border border-slate-300 px-1 text-phx-3xs font-bold uppercase text-slate-500">
+                        {visitListLabel(visit.ampm)}
+                      </span>
+                    ) : null}
+                    <span className="text-slate-500">
+                      {visit.role === "partner" ? (
+                        visit.repName ? (
+                          <>
+                            {" · double with "}
+                            <span className="font-semibold text-slate-900">{visit.repName}</span>
+                          </>
+                        ) : (
+                          " · double"
+                        )
+                      ) : visit.role === "own" ? (
+                        " · own visit"
+                      ) : null}
+                    </span>
+                    <BrickLine place={atPlace?.place} />
+                  </>
+                ),
+                key: String(index),
+                time: <span title={visit.kind === "meeting" ? "Saved meeting time" : "Saved visit time"}>{formatClock(visit.submittedAt)}</span>,
+              };
+            })}
             title={
               <>
                 Visits <span className="tabular-nums text-slate-400">· {fmt(visits.length)}</span>
@@ -234,7 +328,7 @@ function DayDetail({
             columns={[
               { hint: "The number its pin wears on the map", label: "Pin", role: "badge", width: "2.75rem" },
               { label: "Place", role: "body", width: null },
-              { hint: "The time of the GPS check-in itself", label: "Check-in", role: "time", width: "4.25rem" },
+              { hint: "The time of the GPS check-in itself", label: "Check-in", role: "time", width: "5.25rem" },
             ]}
             rows={checkins.map((checkin, index) => ({
               badge: (
@@ -244,18 +338,19 @@ function DayDetail({
               ),
               body: (
                 <>
-                  <bdi className="font-semibold text-slate-900">
+                  <PlaceLink lat={checkin.lat} lon={checkin.lon}>
                     {checkin.contact ||
                       checkin.address ||
                       (checkin.lat != null && checkin.lon != null
                         ? `${checkin.lat.toFixed(4)}, ${checkin.lon.toFixed(4)}`
                         : "—")}
-                  </bdi>
+                  </PlaceLink>
                   {checkin.contact && checkin.address ? (
                     <span className="block text-slate-500">
                       <bdi>{checkin.address}</bdi>
                     </span>
                   ) : null}
+                  <BrickLine place={checkin.place} />
                   {checkin.via || (checkin.taps ?? 1) > 1 ? (
                     <span className="block text-slate-400">
                       {checkin.via ? <>via {checkin.via}</> : null}

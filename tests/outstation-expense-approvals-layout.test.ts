@@ -232,7 +232,8 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.match(latch, /if \(box\.width === 0 && box\.height === 0\) return;/, "HEADLINE: a hidden view's map is never created early — a zero-sized box is not on screen");
   assert.match(review, /className="h-\[360px\] border border-slate-200 bg-slate-50 sm:h-\[420px\]"/, "the box before the map is the map's own size, so the column never jumps");
   assert.doesNotMatch(review, /<span dir="auto"> · /, "HEADLINE: no separator inside a dir=auto span");
-  assert.equal((review.match(/\{" · "\}\s*<bdi dir="auto">/g) ?? []).length, 4, "the four legend places each sit in a <bdi> after the separator");
+  assert.equal((review.match(/\{" · "\}\s*<bdi dir="auto">/g) ?? []).length, 3, "the three inline legend places each sit in a <bdi> after the separator");
+  assert.match(review, /<span className="block text-slate-600">\s*<bdi dir="auto">\{displayPlace\(photo\.locationLabel\)\}<\/bdi>/, "and a photo's place is a <bdi> on a line of its own (owner, 2026-11-07: \"tidy it\")");
   assert.match(review, /submittedLabel=\{submittedLabel\}/, "the submitted-from place is passed as words");
   assert.match(review, /typeof record\.capturedLatitude === "number" && typeof record\.capturedLongitude === "number"/, "the submission point is read from the record");
   assert.match(review, /destination=\{submittedAt\}/, "HEADLINE: and drawn as the hollow pin on each day's map");
