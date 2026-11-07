@@ -16,12 +16,32 @@
   and the working tree is LF (like CI). Exit code is the command's; 4 = refused, nothing tested.
 
 .EXAMPLE
-  & ~/.claude/scripts/spare-test.ps1                      # the whole suite (what pnpm run test runs; never pnpm here, it purges the linked node_modules)
+  & ~/.claude/scripts/spare-test.ps1                      # the whole suite as CI's 4 shards, one at a time, on Node 24.15 (never pnpm here, it purges the linked node_modules)
   & ~/.claude/scripts/spare-test.ps1 'node scripts/check-contracts.mjs'
   & ~/.claude/scripts/spare-test.ps1 -Rev origin/main     # one commit exactly, no local changes
   & ~/.claude/scripts/spare-test.ps1 -Path 'F:\Phoenix Workforce\phoenix-workforce\_wt-foo'
 #>
-param([Parameter(Position = 0)][string]$Command = 'node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts', [string]$Path = (Get-Location).Path, [string]$Rev)
+param([Parameter(Position = 0)][string]$Command, [string]$Path = (Get-Location).Path, [string]$Rev)
+# The default is CI's own split: the suite as 4 shards (tests/shard-deal.ts, the same deal ci.yml's two
+# jobs of two shards run), one at a time, then refused unless the shards' ran counts add up to the seen
+# count. CI never runs the suite as one process; on the spare the one-process run died before its summary.
+if (-not $Command) {
+  $Command = @'
+$seen = 0; $ran = 0; $red = 0
+foreach ($k in 1..4) {
+  $env:PHX_TEST_SHARD = "$k/4"; "=== spare laptop: shard $k/4"
+  node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts | ForEach-Object {
+    if ($_ -match 'PHX_SHARD_RESULT shard=\S+ seen=(\d+) ran=(\d+)') { $seen = [int]$Matches[1]; $ran += [int]$Matches[2] }
+    if ($_ -notlike 'PHX_TEST_*') { $_ }
+  }
+  if ($LASTEXITCODE) { $red++; "=== shard $k/4 exit $LASTEXITCODE" }
+}
+Remove-Item Env:\PHX_TEST_SHARD
+"spare laptop: 4 shards ran $ran of $seen tests, $red shard(s) red"
+if ($ran -ne $seen -or $seen -eq 0) { 'spare laptop: the shards did not cover the suite - NOT a full run'; $red++ }
+cmd /c exit $red
+'@
+}
 $ErrorActionPreference = 'Continue'   # PS 5.1 turns any git warning on stderr into a fatal error under 'Stop'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
 $spare = 'TransferUser@192.168.1.60'
@@ -78,6 +98,14 @@ try {
   $remote = @"
 `$ErrorActionPreference = 'Continue'
 `$env:PATH = 'C:\Program Files\Git\bin;C:\Program Files\Git\usr\bin;' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + `$env:APPDATA + '\npm'   # Git's bash first: the WSL bash.exe in WindowsApps fails the ci.yml step tests
+# Tests run on a pinned Node 24.15.0 (D:\Phoenix\node-test), never the system 24.22.1 the dev server uses: under
+# 24.22.1 node crashed (0xC0000005) at the CV worker test in every whole and sharded suite run (2026-11-07).
+if (Test-Path 'D:\Phoenix\node-test\node.exe') { `$env:PATH = 'D:\Phoenix\node-test;' + `$env:PATH }
+# The variable is spelled 'Path' here; CI (Linux) and Git Bash spell it 'PATH'. Seven test sites copy the env into a
+# plain object and read env.PATH, which is then undefined, so a fake gh became the WHOLE PATH and findstr vanished
+# (bash-guard C10 read 'allow', 2026-11-07). Re-create it as 'PATH', like the runners.
+`$p = `$env:Path; [Environment]::SetEnvironmentVariable('Path', `$null, 'Process'); [Environment]::SetEnvironmentVariable('PATH', `$p, 'Process')
+"spare laptop: tests on node `$(node -v)"
 `$repo = 'D:\Phoenix\phoenix-workforce'; `$run = 'D:\Phoenix\runs\$id'; `$patch = 'D:\Phoenix\inbox\run-$id.patch'
 function Remove-Run([string]`$dir) {
   if (Test-Path "`$dir\node_modules") { cmd /c rmdir "`$dir\node_modules" | Out-Null }   # the junction first, never what it points at

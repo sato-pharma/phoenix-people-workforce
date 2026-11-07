@@ -79,9 +79,11 @@ the primary by absolute path with no error. Never send parallel subagents into o
   a merge/deploy or the database; `scripts/claude-leftover-reaper.ps1` stops idle git watchers hourly. 🔴 Never
   close, stop or archive an open session to free RAM ("donot touch any fucken session").
 - 🔴 **THE SPARE LAPTOP RUNS THE DEV SERVER AND THE TESTS** (owner, 2026-11-07: "16+8 = 24 GB", "Dev server and
-  tests") — `localhost:3000` here IS the spare's dev server (scheduled task "Phoenix Spare Tunnel"); never start one on
-  this laptop while it answers. It runs production's EXACT version on the production database ("POINT DEV TO
-  PRODUCTION"; `spare-follow-production.ps1` every 10 min) — never move it to a branch. Tests: `& ~/.claude/scripts/spare-test.ps1 '<command>'` from the checkout (default the
+  tests") — 🔴 **the spare's dev server is STOPPED** (owner, 2026-11-07 04:07: "KILL DEV"; tasks "Phoenix Dev
+  Server" on the spare, "Phoenix Spare Tunnel" and "Phoenix Spare Dev Server Follows" here are DISABLED) — never
+  re-enable them without his word. When he restarts it: `localhost:3000` here IS the spare's dev server. It runs the NEWEST MAIN on the production database ("RUN LOCAL DEV FROM MAIN",
+  03:45, replacing 01:44's "POINT DEV TO PRODUCTION"; task "Phoenix Spare Dev Server Follows" runs
+  `spare-follow-production.ps1 -Target main` every 10 min) — never move it to a branch. Tests: `& ~/.claude/scripts/spare-test.ps1 '<command>'` from the checkout (default the
   whole suite; runs queue one at a time, each in a fresh folder; never `pnpm` there, never a second test folder); any other command: `~/.claude/scripts/spare.ps1`. Spare: `ssh phoenix-spare`, D:\Phoenix, 8 GB.
 - 🔴 **NEVER run a typecheck locally** — bash-guard C8 refuses it; the PR's CI answers. `PHX_TYPECHECK_OK=1 <cmd>`
   stands it down for one watched command.

@@ -1,12 +1,17 @@
 <#
 .SYNOPSIS
-  Keeps the spare laptop's dev server on the EXACT version production serves (owner, 2026-11-07:
-  "POINT DEV TO PRODUCTION"). Its database is already production (.env.local). Reads production's
-  /api/healthz revision; when the dev server's checkout differs, sends only the missing commits and
-  checks that revision out in D:\Phoenix\phoenix-workforce. If the package lockfile changed, it
-  reinstalls and restarts the dev server. Runs every 10 minutes from the "Phoenix Spare Follows
-  Production" scheduled task; a run with nothing to do touches nothing. Log: ~/.claude/logs/spare-follow-production.log
+  Keeps the spare laptop's dev server (localhost:3000 here, through the "Phoenix Spare Tunnel") on a
+  chosen version. Its database is always production (.env.local).
+    -Target main (default; owner, 2026-11-07 03:45: "RUN LOCAL DEV FROM MAIN", chose "Spare runs main")
+        follows the newest origin/main.
+    -Target production (owner, 2026-11-07 01:44: "POINT DEV TO PRODUCTION") follows production's
+        /api/healthz revision.
+  When the dev server's checkout differs, sends only the missing commits and checks that version out
+  in D:\Phoenix\phoenix-workforce. If the package lockfile changed, it reinstalls and restarts the dev
+  server. Runs every 10 minutes from the "Phoenix Spare Dev Server Follows" scheduled task; a run with
+  nothing to do touches nothing. Log: ~/.claude/logs/spare-follow-production.log
 #>
+param([ValidateSet('main', 'production')][string]$Target = 'main')
 $ErrorActionPreference = 'Continue'
 $repo = 'F:\Phoenix Workforce\phoenix-workforce'
 $key = Join-Path $env:USERPROFILE '.ssh\phoenix_spare_ed25519'
@@ -16,8 +21,14 @@ $sshOpts = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', '-o', 'LogLevel=E
 $log = Join-Path $env:USERPROFILE '.claude\logs\spare-follow-production.log'
 function Log($m) { $l = '{0} {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $m; Write-Output $l; Add-Content -LiteralPath $log -Value $l -Encoding utf8 }
 
-try { $rev = (Invoke-RestMethod 'https://phoenix-hr.satopharma.com/api/healthz' -TimeoutSec 30).revision } catch { Log "production did not answer: $($_.Exception.Message)"; exit 1 }
-if ($rev -notmatch '^[0-9a-f]{40}$') { Log "production gave no revision ($rev)"; exit 1 }
+if ($Target -eq 'production') {
+  try { $rev = (Invoke-RestMethod 'https://phoenix-hr.satopharma.com/api/healthz' -TimeoutSec 30).revision } catch { Log "production did not answer: $($_.Exception.Message)"; exit 1 }
+  if ($rev -notmatch '^[0-9a-f]{40}$') { Log "production gave no revision ($rev)"; exit 1 }
+} else {
+  git -C $repo fetch -q origin main 2>$null
+  $rev = (git -C $repo rev-parse origin/main 2>$null | Select-Object -First 1)
+  if ($rev -notmatch '^[0-9a-f]{40}$') { Log "could not read origin/main ($rev)"; exit 1 }
+}
 
 $now = (& "$PSScriptRoot\spare.ps1" -Command 'git -C D:\Phoenix\phoenix-workforce rev-parse HEAD' -ConnectTimeout 20 | Select-Object -Last 1)
 if (-not $now) { Log 'spare laptop did not answer'; exit 1 }
