@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 
 import type { ClaimValidationOutcome } from "@/components/outstation/expense-claim-validation-panel";
 import type { AttachmentsData } from "@/components/outstation/trip-attachments";
-import type { TripWorkloadEvidence } from "@/components/outstation/trip-workload-evidence";
+import type { DayOrder, TripWorkloadEvidence } from "@/components/outstation/trip-workload-evidence";
 import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import { CrmButton } from "@/components/phoenix-crm/ui";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
@@ -64,6 +64,8 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
   // Trips whose idle-day pre-cut was set aside ("Keep full claim", or a figure typed in) while the
   // reviewer is open. Screen state only: nothing is written for a trip until Approve and Save.
   const [keptFull, setKeptFull] = useState<Record<string, true>>({});
+  // Map first or data first: chosen once, kept from trip to trip while the reviewer is open.
+  const [dayOrder, setDayOrder] = useState<DayOrder>("map-first");
   const keepFull = useCallback((tripId: string) => setKeptFull((current) => (current[tripId] ? current : { ...current, [tripId]: true })), []);
 
   const close = useCallback(() => {
@@ -137,7 +139,9 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
         keptFull={keptFull}
         lastDecision={lastDecision && lastDecision.tripId !== record.tripId ? lastDecision : null}
         now={now}
+        dayOrder={dayOrder}
         onApprove={(paid) => decide("Approved", paid)}
+        onDayOrder={setDayOrder}
         onKeepFull={keepFull}
         onMove={move}
         onReject={() => decide("Rejected")}
@@ -230,10 +234,12 @@ export function ExpenseReviewDeck({ review }: { review: ExpenseReview }) {
  * — the three evidence panels read once when it mounts, and the column words its findings from them.
  */
 function DeckTrip({
+  dayOrder,
   keptFull,
   lastDecision,
   now,
   onApprove,
+  onDayOrder,
   onKeepFull,
   onMove,
   onReject,
@@ -243,10 +249,12 @@ function DeckTrip({
   review,
   total,
 }: {
+  dayOrder: DayOrder;
   keptFull: Readonly<Record<string, true>>;
   lastDecision: LastDecision | null;
   now: number;
   onApprove: (paid: number) => void;
+  onDayOrder: (order: DayOrder) => void;
   onKeepFull: (tripId: string) => void;
   onMove: (step: -1 | 1) => void;
   onReject: () => void;
@@ -279,7 +287,9 @@ function DeckTrip({
       <section aria-label="The evidence" className="relative h-[55svh] min-h-0 min-w-0 bg-slate-950 lg:h-auto lg:flex-1">
         <DeckStage
           attachments={attachments}
+          dayOrder={dayOrder}
           onAttachments={setAttachments}
+          onDayOrder={onDayOrder}
           onClaimOutcome={setClaimOutcome}
           onCrmSignal={setCrm}
           onIdleDays={review.recordIdleDays}

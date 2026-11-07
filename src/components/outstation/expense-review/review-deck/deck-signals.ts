@@ -90,14 +90,22 @@ function photoSignal(record: LoadedRecord, attachments: AttachmentsData | null |
   if (attachments === undefined) return { line: "Loading the photos", tone: "loading" };
   if (attachments === null || !attachments.found) return { line: "The photos could not be loaded.", tone: "warn" };
   const photos = attachments.photos ?? [];
+  const tickets = attachments.tickets?.length ?? 0;
+  // Every upload is counted out loud — a manager's pictures must never hide behind "Not required".
+  const uploaded = tickets > 0 ? `${formatNumberValue(tickets)} uploaded ${tickets === 1 ? "picture or file" : "pictures and files"}` : null;
   const departure = photos.find((photo) => photo.kind === "departure");
   const arrival = photos.find((photo) => photo.kind === "arrival");
   if (departure?.isFlagged && departure.review) return { line: departure.review, tone: "danger" };
   const missing = photos.find((photo) => !photo.url && photo.missingNote);
-  if (missing?.missingNote) return { line: missing.missingNote, tone: missing.missingNote.startsWith("Not required") ? "neutral" : "warn" };
-  if (arrival?.sourceNote) return { line: `Arrival photo ${arrival.sourceNote.toLowerCase()}`, tone: "warn" };
-  if (departure?.gpsMissingReason) return { line: `Departure photo: ${departure.gpsMissingReason}`, tone: "warn" };
-  const tickets = attachments.tickets?.length ?? 0;
+  const withUploads = (line: string) => (uploaded ? `${line} · ${uploaded}` : line);
+  if (missing?.missingNote) {
+    if (missing.missingNote.startsWith("Not required")) {
+      return uploaded ? { line: `No trip photos owed · ${uploaded} to look at.`, tone: "ok" } : { line: missing.missingNote, tone: "neutral" };
+    }
+    return { line: withUploads(missing.missingNote), tone: "warn" };
+  }
+  if (arrival?.sourceNote) return { line: withUploads(`Arrival photo ${arrival.sourceNote.toLowerCase()}`), tone: "warn" };
+  if (departure?.gpsMissingReason) return { line: withUploads(`Departure photo: ${departure.gpsMissingReason}`), tone: "warn" };
   return {
     line: `Arrival and departure photos captured live, with GPS${tickets > 0 ? ` · ${formatNumberValue(tickets)} ticket${tickets === 1 ? "" : "s"}` : ""}.`,
     tone: "ok",

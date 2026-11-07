@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, ImageOff, Loader2, MapPin, Paperclip, Route, TriangleAlert } from "lucide-react";
+import { CameraOff, FileText, ImageOff, Loader2, MapPin, Paperclip, Route, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { JourneyRouteLine, type JourneyRouteLeg } from "@/components/outstation/journey-route-line";
 import {
@@ -20,6 +20,7 @@ import { classifyPhotoFrame, measureImageFrame } from "@/lib/outstation/photo-fr
 import { type TicketTileKind, ticketTileKind, ticketTileLabel } from "@/lib/outstation/ticket-tile";
 import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 import type { ApproverTripRoute } from "@/lib/outstation/day-route-line";
+import { cn } from "@/lib/utils";
 
 type Ticket = { contentType: string; name: string; url: string };
 /** A chained journey's stops and drives (owner rule, 2026-10-18 — chained-journey.ts). */
@@ -287,7 +288,7 @@ function parseRequestId(tripId: string): string | null {
  * no picture in it says "Blank image" (the same luminance read as the arrival and departure photos,
  * photo-frame.ts); a file the browser cannot draw is a file tile (ticket-tile.ts).
  */
-function TicketTile({ kind, label, name, url }: { kind: TicketTileKind; label: string; name: string; url: string }) {
+function TicketTile({ kind, label, large, name, url }: { kind: TicketTileKind; label: string; large: boolean; name: string; url: string }) {
   const [failed, setFailed] = useState(false);
   const [frame, setFrame] = useState<{ maxLuminance: number | null; meanLuminance: number | null }>({
     maxLuminance: null,
@@ -296,7 +297,13 @@ function TicketTile({ kind, label, name, url }: { kind: TicketTileKind; label: s
   const blank = classifyPhotoFrame(frame).verdict === "no-image";
   const title = `${name || label} — open in a new tab`;
   return (
-    <div className="group block w-40 overflow-hidden border border-phx-line bg-white transition-colors hover:border-orange-400" data-ticket-tile={kind}>
+    <div
+      className={cn(
+        "group block overflow-hidden border border-phx-line bg-white transition-colors hover:border-orange-400",
+        large ? "min-w-0" : "w-40",
+      )}
+      data-ticket-tile={kind}
+    >
       {kind === "image" && !failed ? (
         // The tile crops the receipt to a 112px strip, so tapping the image opens the full photo
         // rather than following a link — the amount on a receipt cannot be read at this size. The
@@ -304,14 +311,17 @@ function TicketTile({ kind, label, name, url }: { kind: TicketTileKind; label: s
         <ZoomablePhoto
           alt={label}
           caption={name ? `${label} · ${name}` : label}
-          className="h-28 w-full object-cover"
+          // Large: the whole picture, uncropped, on a dark ground like the trip photos — the amount
+          // on a receipt must be readable without a click (owner, 2026-11-07: "the photos uploaded
+          // from managers I cannot see"). Compact: the 112px strip on the field-work view.
+          className={large ? "h-72 w-full bg-slate-900 object-contain" : "h-28 w-full object-cover"}
           onError={() => setFailed(true)}
           onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
           src={url}
         />
       ) : (
         <a
-          className="flex h-28 flex-col items-center justify-center gap-1 bg-slate-50 px-2 text-center text-slate-500"
+          className={cn("flex flex-col items-center justify-center gap-1 bg-slate-50 px-2 text-center text-slate-500", large ? "h-40" : "h-28")}
           href={url}
           rel="noopener noreferrer"
           target="_blank"
@@ -338,6 +348,37 @@ function TicketTile({ kind, label, name, url }: { kind: TicketTileKind; label: s
       >
         {label}
       </a>
+    </div>
+  );
+}
+
+/**
+ * Every picture, ticket and receipt the employee uploaded with the claim, numbered "Ticket N".
+ * `large` shows each one whole, two to a row; compact is a strip of 160px tiles for the field-work
+ * view, where a tap opens the full picture.
+ */
+export function UploadedPictures({ large, tickets }: { large: boolean; tickets: Ticket[] }) {
+  if (tickets.length === 0) return null;
+  return (
+    <div data-uploaded-pictures={large ? "large" : "compact"}>
+      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+        Uploaded with this claim{" "}
+        <span className="tabular-nums text-slate-400">
+          · {tickets.length} {tickets.length === 1 ? "picture or file" : "pictures and files"}
+        </span>
+      </p>
+      <div className={large ? "grid gap-3 sm:grid-cols-2 [&>*]:min-w-0" : "flex flex-wrap gap-3"}>
+        {tickets.map((ticket, index) => (
+          <TicketTile
+            key={`ticket-${index}`}
+            kind={ticketTileKind(ticket)}
+            label={ticketTileLabel(index)}
+            large={large}
+            name={ticket.name}
+            url={ticket.url}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -436,17 +477,26 @@ export function TripAttachments({
   }
 
   const photos = Array.isArray(data.photos) ? data.photos : [];
-  const items = data.tickets.map((ticket, index) => ({
-    key: `ticket-${index}`,
-    kind: ticketTileKind(ticket),
-    label: ticketTileLabel(index),
-    name: ticket.name,
-    url: ticket.url,
-  }));
+  const tickets = Array.isArray(data.tickets) ? data.tickets : [];
+  // A manager who owes no trip photo (evidence-waiver.ts) used to open on two empty "Not required"
+  // boxes, with the pictures they DID upload cropped to 112px strips underneath — read as "I cannot
+  // see the photos" (owner, 2026-11-07). The pair is now one line, and with no live photo on file the
+  // uploads come first, each shown whole.
+  const notOwed = photos.length > 0 && photos.every((photo) => !photo.url && Boolean(photo.missingNote?.startsWith("Not required")));
+  const anyLivePhoto = photos.some((photo) => Boolean(photo.url));
+  const uploads = tickets.length > 0 ? <UploadedPictures large tickets={tickets} /> : null;
 
   return (
     <div className="space-y-4">
-      {photos.length > 0 ? <TripEvidencePhotos photos={photos} subject={data.employeeName} /> : null}
+      {anyLivePhoto ? null : uploads}
+      {notOwed ? (
+        <p className="flex items-start gap-2 text-xs font-semibold text-slate-500" data-photos-not-owed>
+          <CameraOff aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0">Arrival and departure photos · {photos[0]?.missingNote}</span>
+        </p>
+      ) : photos.length > 0 ? (
+        <TripEvidencePhotos photos={photos} subject={data.employeeName} />
+      ) : null}
       {data.journey ? <TripJourney journey={data.journey} /> : null}
       {stopNotice ? (
         <p className="text-xs leading-relaxed text-emerald-700">
@@ -463,17 +513,8 @@ export function TripAttachments({
           requestId={requestId}
         />
       ) : null}
-      {items.length > 0 ? (
-        <div>
-          <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Tickets and receipts</p>
-          <div className="flex flex-wrap gap-3">
-            {items.map((item) => (
-              <TicketTile key={item.key} kind={item.kind} label={item.label} name={item.name} url={item.url} />
-            ))}
-          </div>
-        </div>
-      ) : null}
-      {photos.length === 0 && items.length === 0 ? (
+      {anyLivePhoto ? uploads : null}
+      {photos.length === 0 && tickets.length === 0 ? (
         <p className="flex items-center gap-2 text-xs text-slate-400">
           <ImageOff className="h-3.5 w-3.5" />
           No attachment on this submission.

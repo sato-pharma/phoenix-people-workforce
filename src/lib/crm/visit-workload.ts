@@ -21,6 +21,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import { isHandedOverLabel, loadCrmIdentityMaps, previousHolderLabel } from "@/lib/crm/identity";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
@@ -90,6 +91,13 @@ export type RepCheckinDetail = {
   contactCrmId: number | null;
   lat: number | null;
   lon: number | null;
+  /**
+   * The Phoenix brick the check-in's GPS sits nearest to, with its area and region — the same
+   * nearest-centroid read, against today's tree, as an outstation trip's captured location
+   * (captured-location.ts). `km` is the distance that justifies it. Absent with no position or no
+   * brick in range (owner, 2026-11-07: "show me brick area and region").
+   */
+  place?: CheckinPlace;
   /** Rep name when the check-in is borrowed (the person was the double/triple-visitor, not the submitter). */
   via: string | null;
   /**
@@ -99,6 +107,8 @@ export type RepCheckinDetail = {
    */
   withoutPerson?: boolean;
 };
+
+export type CheckinPlace = { area: string | null; brick: string | null; km: number; region: string | null };
 
 export type RepVisitWorkloadDay = {
   /** AM · PM · Pharmacies (the golden rule): `am` and `pm` never hold a pharmacy visit, whatever
@@ -191,6 +201,16 @@ type WorkloadVisitRow = {
  * A visit's or check-in's place, as the keys a borrowed check-in is matched on: the contact's CRM id
  * and its name, lower-cased. Either one matching makes the check-in a shared stop. Pure, for the test.
  */
+/** A resolved brick as the screen prints it: area falls back to the region one rung up, never blank. */
+export function checkinPlace(match: ReturnType<typeof resolveBrickForPoint>): CheckinPlace | null {
+  if (!match) return null;
+  const brick = String(match.brickName ?? "").trim() || String(match.brickId ?? "").trim() || null;
+  const region = String(match.regionName ?? "").trim() || null;
+  const area = String(match.areaName ?? "").trim() || region;
+  if (!brick && !area) return null;
+  return { area, brick, km: Math.round(match.distanceKm * 10) / 10, region };
+}
+
 export function sharedPlaceKeys(contactCrmId: number | null | undefined, contactName: string | null | undefined): string[] {
   const keys: string[] = [];
   if (contactCrmId != null && Number.isFinite(Number(contactCrmId))) keys.push(`id:${Number(contactCrmId)}`);
@@ -557,6 +577,18 @@ export async function getRepTripVisitWorkload(input: {
         ? { withoutPerson: !places.some((place) => sharedPlaces?.has(place) === true) }
         : {}),
     });
+  }
+
+  // Brick · area · region for every positioned check-in. The centroid index is cached and shared, the
+  // match is pure maths, and a failed read leaves the check-ins as they were — never a failed day.
+  const centroids = checkinRows.length > 0 ? await loadBrickCentroids() : [];
+  if (centroids.length > 0) {
+    for (const entry of byDate.values()) {
+      for (const checkin of entry.checkins) {
+        const place = checkinPlace(resolveBrickForPoint(checkin.lat, checkin.lon, centroids));
+        if (place) checkin.place = place;
+      }
+    }
   }
 
   // Order each day's detail by time so the visits + check-ins read as the day's route.
