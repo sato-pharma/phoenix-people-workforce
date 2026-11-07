@@ -83,10 +83,22 @@ export function runRecruitmentMrHiringDictationTests() {
   assert.equal(westernDigits("١٥٠٠٠ و ۳"), "15000 و 3");
   assert.deepEqual(mrNumberTokens("15,000 / 15000.00 / ١٥٠٠٠"), ["15000", "15000", "15000"]);
   assert.deepEqual(findMrPolishViolations("The proposed salary is EGP 15,000.", "المرتب ١٥٠٠٠"), [], "a number said in Arabic digits is the same number written");
-  assert.match(findMrPolishViolations("The candidate has 5 years of experience.", "عنده خبرة كويسة").join(" "), /never said \(5\)/, "an invented number fails the rewrite");
+  assert.match(findMrPolishViolations("The candidate has 15 years of experience.", "عنده خبرة كويسة").join(" "), /never said \(15\)/, "an invented number fails the rewrite");
   assert.match(findMrPolishViolations("This note was rewritten by ChatGPT.", "كويس").join(" "), /how it was written/, "never says how it was written");
   assert.deepEqual(findMrPolishViolations("The candidate suits the AI line.", "ينفع في خط ال AI"), [], "\"AI\" the speaker said is the Anti Infective line, his to keep");
   assert.deepEqual(findMrPolishViolations("   ", "x"), ["it came back empty"]);
+  // A small number said as a word, and a number said with ألف, are the speaker's own (owner, 8 Nov 2026:
+  // "it doesn't change anything" — refusing them threw whole rewrites away).
+  assert.deepEqual(findMrPolishViolations("The candidate rated the interview 4 out of 5.", "اربعة من خمسة"), [], "a small number said as a word");
+  assert.deepEqual(findMrPolishViolations("The expected salary is EGP 15,000.", "متوقع 15 ألف"), [], "15 ألف is 15,000");
+  assert.match(findMrPolishViolations("The expected salary is EGP 18,000.", "متوقع 15 ألف").join(" "), /never said \(18000\)/, "a salary that was not said still fails the rewrite");
+
+  // THE STRONG TIER, CLAUDE SONNET FIRST (owner, 8 Nov 2026: "put an Anthropic Sonnet agent … very weak").
+  const polish = codeOnly("src/lib/recruitment/mr-hiring/polish.ts");
+  assert.match(polish, /anthropicModel: ANTHROPIC_STRONG_MODEL,/, "Claude Sonnet writes it");
+  assert.match(polish, /preferProvider: "anthropic",/, "Claude is asked first");
+  assert.match(polish, /model: OPENAI_STRONG_MODEL,/, "never the nano tier, even when OpenAI answers");
+  assert.match(polish, /route: "\/ai\/recruitment\/mr-hiring-dictation-polish\/refused"/, "a refused rewrite leaves a row");
   assert.equal(sanitizeMrPolished('"**The candidate** communicates clearly."', "result"), "The candidate communicates clearly.");
   const long = sanitizeMrPolished("The candidate is confident. ".repeat(60), "booking");
   assert.ok(long.length <= mrPolishLimit("booking") && long.endsWith("confident.") && !long.includes("…"), "cut at a whole sentence inside the box's cap, never an ellipsis");

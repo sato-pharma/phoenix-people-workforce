@@ -162,6 +162,13 @@ outcome sync and Mark as hired therefore move it without any second write that c
   when it names how it was written, or when the speaker edited the box while it was away. Only someone who
   reads the candidate's journey and can write on it may call it — the CEO, who records nothing, is refused.
   Nothing is saved until the form's own Save.
+- **The rewrite is Claude Sonnet's** (owner, 8 Nov 2026: "put an Anthropic Sonnet agent … the agent you added
+  is very weak. It doesn't change anything"). It first shipped on the cheap nano tier, which only touched the
+  words up. Now Claude Sonnet is asked first and OpenAI's strong model only when Claude's account is dead, with
+  an instruction to rewrite fully: reorder the points, drop the filler, translate every word. A small number said
+  as a word ("خمسة" → 5) and a number said with ألف ("15 ألف" → 15,000) count as said. A refused rewrite now
+  leaves one row in the error table (route `/ai/recruitment/mr-hiring-dictation-polish/refused`) naming the
+  reason, the model and the box, never the words.
 
 ## Everything is open to HR (owner, 8 Nov 2026)
 
