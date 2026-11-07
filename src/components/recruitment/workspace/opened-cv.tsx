@@ -243,7 +243,7 @@ function AnswersSection({
       {row.answers.map((chip) => (
         <li className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-2" key={chip.key}>
           <span className={cn("text-xs font-black uppercase tracking-wide", chip.value === null ? "text-amber-800" : "text-slate-500")}>{chip.label}</span>
-          <AnswerChip canEdit={canEdit} chip={chip} onSave={save} options={answerOptions?.[chip.key]} today={today} />
+          <AnswerChip canEdit={canEdit} chip={chip} onSave={save} options={answerOptions?.[chip.key]} today={today} withLabel={false} />
         </li>
       ))}
     </ul>

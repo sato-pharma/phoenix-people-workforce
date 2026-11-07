@@ -14,6 +14,11 @@
 // `variant="cell"` is the same answer inside a cell of the candidate table, where the column head is
 // already the question: the value alone, in reading size, the "added by HR" mark under it, and the
 // same amber "Missing · add" and the same editor.
+//
+// `withLabel={false}` is the chip in a list whose row already names the question — the opened CV's
+// answers and the Medical Rep hiring journey's application. The question is said ONCE, by the row;
+// the chip keeps its box, its value, its "added by HR" mark and its amber "Missing" (owner, 7 Nov
+// 2026: "remove the duplicated question label in both places").
 
 import { Check, PenLine, Plus, X } from "lucide-react";
 import { useState } from "react";
@@ -33,6 +38,7 @@ export function AnswerChip({
   options,
   today,
   variant = "chip",
+  withLabel = true,
 }: {
   canEdit: boolean;
   chip: WorkspaceAnswerChip;
@@ -43,6 +49,8 @@ export function AnswerChip({
   today: string;
   /** "cell": the value alone, for a table cell whose column head names the question. */
   variant?: "chip" | "cell";
+  /** false: the row the chip sits in already names the question, so the chip does not say it again. */
+  withLabel?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(chip.rawValue ?? "");
@@ -75,7 +83,7 @@ export function AnswerChip({
         className={cn("inline-flex max-w-full flex-wrap items-center gap-1.5 border border-orange-300 bg-orange-50/60 p-1.5", adminChipDepthClassName)}
         onClick={(event) => event.stopPropagation()}
       >
-        <span className="text-phx-xs font-black uppercase tracking-wide text-slate-600">{chip.label}</span>
+        {withLabel ? <span className="text-phx-xs font-black uppercase tracking-wide text-slate-600">{chip.label}</span> : null}
         {options && options.length > 0 ? (
           <select
             aria-label={chip.label}
@@ -181,8 +189,12 @@ export function AnswerChip({
   if (chip.value === null) {
     const body = (
       <>
-        <span className="font-black uppercase tracking-wide">{chip.label}</span>
-        <span aria-hidden>·</span>
+        {withLabel ? (
+          <>
+            <span className="font-black uppercase tracking-wide">{chip.label}</span>
+            <span aria-hidden>·</span>
+          </>
+        ) : null}
         <span className="inline-flex items-center gap-0.5 font-bold">
           {canEdit ? <Plus aria-hidden className="h-3 w-3" /> : null}
           {canEdit ? "Missing · add" : "Missing"}
@@ -213,7 +225,7 @@ export function AnswerChip({
   const byHr = chip.addedByHr;
   const content = (
     <>
-      <span className={cn("font-black uppercase tracking-wide text-slate-500", chip.lead ? "text-phx-xs" : "text-phx-xs")}>{chip.label}</span>
+      {withLabel ? <span className={cn("font-black uppercase tracking-wide text-slate-500", chip.lead ? "text-phx-xs" : "text-phx-xs")}>{chip.label}</span> : null}
       <span className={cn("break-words font-bold text-slate-900", chip.lead ? "text-sm" : "text-xs")} dir="auto">
         {chip.value}
       </span>

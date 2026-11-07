@@ -5,9 +5,10 @@
 // checklist, and the full timeline from the WhatsApp CV to the offer.
 //
 // The CV and the application are on the sheet at every step, for everyone who opens it (owner,
-// 7 Nov 2026: "the cv and application must appear and be appearing in all steps for every one"): on
-// a wide screen in their own column beside the journey, so the CV stays in view while a result is
-// written; on a narrow one right under the current step.
+// 7 Nov 2026: "the cv and application must appear and be appearing in all steps for every one"). A
+// wide screen is THREE PANES (owner, same day): the CV on the left, the application and the WhatsApp
+// replies in the middle, the journey on the right as it was — so the CV stays in view while a result is
+// written. A narrow screen keeps one column, the CV and the application right under the current step.
 //
 // Everything is read from the journey route, which has already removed the salary for anyone who may
 // not see it — nothing here hides a number the browser holds.
@@ -108,7 +109,7 @@ export function MrJourneyDrawer({
       <div
         aria-labelledby="mr-journey-title"
         aria-modal="true"
-        className="flex h-full w-full max-w-2xl flex-col border-l border-slate-200 bg-white lg:max-w-6xl"
+        className="flex h-full w-full max-w-2xl flex-col border-l border-slate-200 bg-white lg:max-w-[min(160rem,96%)]"
         onClick={(event) => event.stopPropagation()}
         ref={dialogRef}
         role="dialog"
@@ -131,11 +132,7 @@ export function MrJourneyDrawer({
         </header>
 
         <div className="flex min-h-0 flex-1">
-          {wide ? (
-            <aside aria-label="CV and application" className="min-h-0 w-1/2 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 px-4 py-4 sm:px-5">
-              <MrCvApplication candidateId={candidateId} />
-            </aside>
-          ) : null}
+          {wide ? <MrCvApplication candidateId={candidateId} layout="panes" /> : null}
           <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5">
             {error ? <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">{error}</p> : null}
             {!row && !error ? <p className="text-sm text-slate-500">Loading the journey…</p> : null}
