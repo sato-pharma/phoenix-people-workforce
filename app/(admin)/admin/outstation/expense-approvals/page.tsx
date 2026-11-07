@@ -1,4 +1,5 @@
-import { ExpenseApprovalsWorkspace } from "@/components/outstation/expense-approvals-workspace";
+import { ExpenseReviewWorkspace } from "@/components/outstation/expense-review/expense-review-workspace";
+import { CrmSurfaceProvider } from "@/components/phoenix-crm/surface";
 import {
   canDecideOutstationExpenseApprovals,
   canReviewOutstationExpenseApprovals,
@@ -19,10 +20,12 @@ export default async function OutstationExpenseApprovalsPage() {
   // string: the client cannot be trusted to compute its own authority. This only hides controls —
   // the decision route asserts system-administrator access on its own, so a CEO who reached the
   // buttons anyway would still be refused.
+  //
+  // Rebuilt from scratch in the Phoenix CRM identity on 2026-11-07 (expense-review/), inside the CRM's
+  // admin surface so every dropdown is the combo box you can type into.
   return (
-    <ExpenseApprovalsWorkspace
-      canDecide={canDecideOutstationExpenseApprovals(access)}
-      viewerHrId={access.hrId}
-    />
+    <CrmSurfaceProvider surface="admin">
+      <ExpenseReviewWorkspace canDecide={canDecideOutstationExpenseApprovals(access)} viewerHrId={access.hrId} />
+    </CrmSurfaceProvider>
   );
 }

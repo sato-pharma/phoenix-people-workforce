@@ -152,43 +152,52 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.equal(idleDayDeductionSuggestions({ allowance: 800, idleDays: 2, total: 500, tripDays: 2 })[0].deduction, 500, "never more than the claim");
 
   // ── 4. The screen ───────────────────────────────────────────────────────────────────────────
-  const workspace = stripComments(readFileSync("src/components/outstation/expense-approvals-workspace.tsx", "utf8"));
-  const rail = stripComments(readFileSync("src/components/outstation/expense-approvals/trip-list.tsx", "utf8"));
-  const review = stripComments(readFileSync("src/components/outstation/expense-approvals/trip-review.tsx", "utf8"));
-  const bar = stripComments(readFileSync("src/components/outstation/expense-approvals/decision-bar.tsx", "utf8"));
+  // Rebuilt from scratch on 2026-11-07 (expense-review/): the hook holds the state and the save, the
+  // model the tabs and the next trip, the reviewer the decision.
+  const dir = "src/components/outstation/expense-review";
+  const workspace = stripComments(readFileSync(`${dir}/use-expense-review.ts`, "utf8"));
+  const model = stripComments(readFileSync(`${dir}/review-model.ts`, "utf8"));
+  const rail = stripComments(readFileSync(`${dir}/review-queue-table.tsx`, "utf8"));
+  const filtersBar = stripComments(readFileSync(`${dir}/review-filters.tsx`, "utf8"));
+  const review = stripComments(readFileSync(`${dir}/review-deck/deck-days.tsx`, "utf8"));
+  const deck = stripComments(readFileSync(`${dir}/review-deck/deck.tsx`, "utf8"));
+  const bar = stripComments(readFileSync(`${dir}/review-deck/deck-decision.tsx`, "utf8"));
   const exportRoute = stripComments(readFileSync("app/api/admin/outstation/expenses/export/route.ts", "utf8"));
 
   // Decide-and-advance: Approve and Reject open the next trip awaiting a decision; Save, Undo and the
-  // amount never move the page.
+  // amount never move the reviewer.
   const handler = (name: string) => workspace.match(new RegExp(`${name}: \\(\\) => \\{[\\s\\S]*?\\n {4}\\},`))?.[0] ?? "";
   assert.match(handler("onApprove"), /setDecision\(selected, \{ hrApproved: true, status: APPROVED_STATUS \}\);\s*selectNextPending\(selected\.tripId\);/, "HEADLINE: Approve opens the next trip awaiting a decision");
   assert.match(handler("onReject"), /setDecision\(selected, \{ hrApproved: false, status: REJECTED_STATUS \}\);\s*selectNextPending\(selected\.tripId\);/, "HEADLINE: Reject opens the next trip awaiting a decision");
   const stays = workspace.match(/onSave: [^\n]*\n[\s\S]*?onUnreject: [^\n]*/)?.[0] ?? "";
   assert.ok(stays.length > 0 && !/selectNextPending/.test(stays), "Save and the two Undos never move to another trip");
   assert.doesNotMatch(workspace.match(/onChangeAmount: [^\n]*/)?.[0] ?? "", /selectNextPending/);
-  // ...and "next" is the row under it: the awaiting list and the rail sort by the one comparator.
-  assert.match(workspace, /const byValue = compareExpenseApprovalTrips\(filters\.sort\);/, "HEADLINE: the next trip is the row under the one decided");
-  assert.match(workspace, /rank\(left\) - rank\(right\) \|\| compareExpenseApprovalTrips\(filters\.sort\)\(left, right\)/);
+  assert.match(workspace, /const next = nextAwaitingTrip\(deckRows, fromTripId, decisionFor\);/, "HEADLINE: the next trip is the next one waiting in the reviewer's own frozen walk");
+  // ...and the walk is the list as sorted: one comparator for the tab, the roll-up and the walk.
+  assert.match(workspace, /const byValue = compareExpenseApprovalTrips\(filters\.sort\);/);
+  assert.match(model, /\(tab === "all" \? rank\(left\) - rank\(right\) : 0\) \|\| order\(left, right\)/, "HEADLINE: All trips ranks undecided first, then the reviewer's own order");
+  // No key decides anything: the arrows walk, nothing else.
+  assert.doesNotMatch(deck, /onApprove\(\)[^;]*key|key[^;]*onApprove\(\)/, "no keyboard shortcut approves");
 
-  // The rail carries the choice, the counts, the order, each awaiting row's reasons and its wait.
-  assert.match(rail, /\(\["", "look", "clean"\] as const\)\.map/, "HEADLINE: the rail offers All · Needs a look · Clean");
-  assert.match(rail, /\{loading \? null : controls\}/, "the choices sit under the rail's header, in the phone sheet too");
-  assert.match(rail, /\["oldest", "Oldest first"\]/);
-  assert.match(rail, /const awaiting = state === "pending" && !isImportedHistoryTrip\(record\.date\);/, "only an awaiting trip carries its reasons and its wait");
+  // The tabs carry the choice, each awaiting row its reasons and its wait.
+  assert.match(model, /return expenseTripTriage\(record\)\?\.triage === tab;/, "HEADLINE: Needs a look and Clean are tabs, read from the one triage rule");
+  assert.match(filtersBar, /Oldest first/);
+  assert.match(rail, /const awaiting = state === "pending" && !imported;/, "only an awaiting trip carries its reasons and its wait");
   assert.match(rail, /reading\?\.triage === "look"/);
-  assert.match(rail, /expenseTripDaysAwaiting\(record\.submittedAt, now\)/, "HEADLINE: an awaiting row says how long it has waited");
-  assert.match(rail, /const \[now\] = useState\(\(\) => Date\.now\(\)\);/, "the clock is read once, never during render");
-  assert.match(workspace, /if \(filters\.triage\) params\.set\("triage", filters\.triage\);/, "HEADLINE: the export narrows by the same rail choice");
+  assert.match(rail, /expenseTripDaysAwaiting\(record\.submittedAt, actions\.now\)/, "HEADLINE: an awaiting row says how long it has waited");
+  const workspaceFile = stripComments(readFileSync(`${dir}/expense-review-workspace.tsx`, "utf8"));
+  assert.match(workspaceFile, /const \[now\] = useState\(\(\) => Date\.now\(\)\);/, "the clock is read once, never during render");
+  assert.match(workspace, /const triage = exportTriageForTab\(tab\);[\s\S]*?if \(triage\) params\.set\("triage", triage\);/, "HEADLINE: the export narrows by the same tab");
   assert.match(exportRoute, /triage: parseExpenseTripTriageFilter\(url\.searchParams\.get\("triage"\)\)/);
-  assert.match(workspace, /setFilters\(\(current\) => \(\{ \.\.\.NO_EXPENSE_APPROVAL_FILTERS, sort: current\.sort \}\)\)/, "Clear all keeps the order");
+  assert.match(workspace, /setFilters\(\(current\) => \(\{ \.\.\.NO_EXPENSE_APPROVAL_FILTERS, sort: current\.sort \}\)\)/, "Clear filters keeps the order");
 
   // The idle-day offer: lifted from the field-work read, shown in the decision box, applied only on a click.
-  assert.match(review, /onIdleDays\(record\.tripId, \{ idleDays: days\.filter\(\(day\) => !isWorkedTripDay\(day\)\)\.length, tripDays: days\.length \}\)/, "HEADLINE: the review hands up the idle days its tile states — a meeting day is worked, never idle (owner, 2026-11-07)");
+  assert.match(review, /onIdleDays\(record\.tripId, \{ idleDays: days\.filter\(\(day\) => !isWorkedTripDay\(day\)\)\.length, tripDays: days\.length \}\)/, "HEADLINE: the field work hands up its idle days — a meeting day is worked, never idle (owner, 2026-11-07)");
   assert.match(review, /workload\.matchStatus === "unmapped"\) return;/, "no CRM identity is not an idle day");
-  assert.match(workspace, /onIdleDays=\{recordIdleDays\}/);
-  assert.match(workspace, /idle: selected \? \(idleByTrip\[selected\.tripId\] \?\? null\) : null,/);
-  assert.match(bar, /!locked && undecided && idle\s*\? idleDayDeductionSuggestions\(/, "HEADLINE: offered only on an undecided trip a decider can change");
-  assert.match(bar, /onClick=\{\(\) => applySuggestion\(suggestion\)\}/, "a share is applied only by his click");
+  assert.match(deck, /onIdleDays=\{review\.recordIdleDays\}/);
+  assert.match(deck, /const idle = review\.idleByTrip\[record\.tripId\] \?\? null;/);
+  assert.match(bar, /!locked && undecided && idle \? idleDayDeductionSuggestions\(/, "HEADLINE: offered only on an undecided trip a decider can change");
+  assert.match(bar, /onClick=\{\(\) => applySuggestion\(suggestion\)\}/, "a share is applied only by a click");
   // The reason a share writes (owner's review, 2026-11-07): the box opens holding the system's hold
   // sentence, so "fill an empty box only" meant the share's reason never landed.
   const reasons = ["Allowance deducted for the idle days: 2.", "Allowance deducted in full: 2."];
@@ -208,15 +217,12 @@ export function runOutstationExpenseApprovalsQueueTests() {
   assert.equal(
     reasonAfterIdleDayPick({ current: "Called him, he was at the clinic.", picked: reasons[0], reasons, systemText: held }),
     null,
-    "HEADLINE: his own reason is never written over",
+    "HEADLINE: the reviewer's own reason is never written over",
   );
   assert.match(bar, /const next = reasonAfterIdleDayPick\(\{/, "the decision box uses that one rule");
-  assert.match(bar, /if \(next !== null\) onChangeReason\(next\);/, "and leaves his words alone on null");
-  // Owner, 2026-11-07, "FIX BUTTONS": in the 19rem rail, Approve and Reject read "Approv" and
-  // "Reject" cut off beside "3 unsaved", because a `flex-1` pair shared one line with Save. The pair
-  // takes the whole rail width and Save drops to its own line under it.
-  assert.match(bar, /placement === "rail" \? "grid w-full basis-full grid-cols-2 gap-2"/, "HEADLINE: in the rail Approve and Reject take the whole width");
-  assert.match(bar, /placement === "rail" \? "flex w-full basis-full justify-end" : "ml-auto"/, "HEADLINE: in the rail Save sits on its own line, never beside the pair");
-  assert.doesNotMatch(bar, /"grid flex-1 grid-cols-2/, "the squeezed flex-1 pair never comes back");
+  assert.match(bar, /if \(next !== null\) onChangeReason\(next\);/, "and leaves the reviewer's words alone on null");
+  // Approve and Reject are two equal halves of the pinned bar; Save sits on its own line under them.
+  assert.match(bar, /<div className="grid min-w-0 grid-cols-2 gap-2">\s*<CrmButton data-deck-approve/, "HEADLINE: Approve and Reject take the whole width, side by side");
+  assert.match(bar, /data-save-cluster/, "and Save has its own line");
   assert.doesNotMatch(bar, /useEffect\([^)]*applySuggestion|onChangeAmount\(approvedAmountFromDeduction\(record\.total, suggestions\[/, "nothing deducts on its own");
 }

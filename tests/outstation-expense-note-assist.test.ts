@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -31,9 +31,10 @@ import {
 
 const MODULE = join(process.cwd(), "src/lib/outstation/expense-note-assist.ts");
 const ROUTE = join(process.cwd(), "app/api/admin/outstation/expenses/note-assist/route.ts");
-const WORKSPACE = join(process.cwd(), "src/components/outstation/expense-approvals-workspace.tsx");
-// The rewrite control sits in the decision bar since the 2026-11-07 rebuild.
-const DECISION_BAR = join(process.cwd(), "src/components/outstation/expense-approvals/decision-bar.tsx");
+// Rebuilt from scratch on 2026-11-07: the rewrite control is the reviewer's decision column, and every
+// file of the new screen is read, so a model's name cannot slip in anywhere on it.
+const REVIEW_DIR = join(process.cwd(), "src/components/outstation/expense-review");
+const DECISION = join(REVIEW_DIR, "review-deck/deck-decision.tsx");
 
 /** The prompt the model saw for a typical reduced-amount decision. */
 const PROMPT = buildExpenseNotePrompt({
@@ -195,9 +196,14 @@ export function runOutstationExpenseNoteAssistTests() {
     "note writing is gated on decision access — a read-only CEO has no decision to attach a note to",
   );
 
-  const workspaceSource = readFileSync(WORKSPACE, "utf8") + readFileSync(DECISION_BAR, "utf8");
+  const workspaceSource = [
+    ...readdirSync(REVIEW_DIR).filter((name) => /\.tsx?$/.test(name)).map((name) => join(REVIEW_DIR, name)),
+    ...readdirSync(join(REVIEW_DIR, "review-deck")).map((name) => join(REVIEW_DIR, "review-deck", name)),
+  ]
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
   assert.ok(
-    /Restore my wording/.test(workspaceSource),
+    /Restore my wording/.test(readFileSync(DECISION, "utf8")),
     "the approver's own wording must stay one click away from any rewrite",
   );
   assert.ok(

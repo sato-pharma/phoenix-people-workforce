@@ -2915,6 +2915,7 @@ import { runCrmClearTestRowsTests } from "./phoenix-crm-clear-test-rows.test.ts"
 import { runOutstationDuplicateTripGuardTests } from "./outstation-duplicate-trip-guard.test.ts";
 import { runOutstationExpenseApprovalsLayoutTests } from "./outstation-expense-approvals-layout.test.ts";
 import { runOutstationExpenseApprovalsQueueTests } from "./outstation-expense-approvals-queue.test.ts";
+import { runOutstationExpenseReviewModelTests } from "./outstation-expense-review-model.test.ts";
 import { runOutstationTripDayRouteLineTests } from "./outstation-trip-day-route-line.test.ts";
 import { runOutstationTripDayMeetingsTests } from "./outstation-trip-day-meetings.test.ts";
 import { runMcpSourceTests } from "./mcp-source.test.ts";
@@ -11856,6 +11857,10 @@ await runTest(
 await runTest(
   "Expense Approvals works the queue: the rail filters Needs a look / Clean (unknown is never clean), Oldest first with each awaiting trip's wait, Approve and Reject open the next trip under it, the export narrows by the same choice, and the idle-day allowance share is offered and applied only on a click, never over the reviewer's own reason",
   runOutstationExpenseApprovalsQueueTests,
+);
+await runTest(
+  "the rebuilt Expense approvals screen's rules hold by behaviour: a trip's tab is read from its stored decision so a row never moves when it is decided, every one of the six tiles says \"of N\" when narrowed (Adjusted included), the next trip skips decided trips and imported history, a draft written by the retired screen is read back, and a reason chip is true of the trip and never writes over the reviewer's own words",
+  runOutstationExpenseReviewModelTests,
 );
 await runTest(
   "the Expense Approvals day maps draw the route, not loose dots: the trip's stored road route from home on its first and last day with a home pin, and each day's check-ins, photos and stops joined in the order they happened on Cairo's clock",

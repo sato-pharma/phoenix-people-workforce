@@ -205,7 +205,7 @@ export function runBrowserStorageOwnerScopedTests() {
 
     const page = source("app/(admin)/admin/outstation/expense-approvals/page.tsx");
     assert.match(page, /viewerHrId=\{access\.hrId\}/, "the expense queue is told who the reviewer is");
-    const expense = source("src/components/outstation/expense-approvals-workspace.tsx");
+    const expense = source("src/components/outstation/expense-review/use-expense-review.ts");
     assert.match(expense, /if \(!draftKey\) return null;/, "with no reviewer, no decision draft is read");
     assert.match(expense, /function writeExpenseDecisionDraft\(draftKey: string \| null, decisions: Record<string, Decision>\) \{\s*if \(!draftKey\) return;/, "and none is written");
   }
