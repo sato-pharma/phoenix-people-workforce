@@ -18,7 +18,7 @@ import { displayPlace } from "@/lib/outstation/place-label";
 import { tripSpan } from "@/lib/outstation/trip-span";
 import { cn } from "@/lib/utils";
 
-import { type Decision, DuplicateTripFlag, EmployeeNote, type LoadedRecord, PANEL_CLASS, egp } from "./shared";
+import { type Decision, DuplicateTripFlag, type LoadedRecord, PANEL_CLASS, egp } from "./shared";
 
 /**
  * The rail: every trip in the queue as one narrow list, the chosen one highlighted (owner,
@@ -342,7 +342,8 @@ export function TripList({
                             {expenseTripAwaitingLabel(daysAwaiting)}
                           </p>
                         ) : null}
-                        <EmployeeNote note={record.employeeNote} />
+                        {/* No employee note here (owner, 2026-11-07: "comment already written in the
+                            right panel, remove from here"): it is printed once, on the trip page. */}
                         <DuplicateTripFlag copies={duplicateFlags.get(record.tripId)} />
                       </div>
                       <div className="shrink-0 text-right">
