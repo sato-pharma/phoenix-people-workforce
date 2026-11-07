@@ -22,7 +22,6 @@ import {
   runOutstationSlaDaily,
   runOutstationWorkloadRestamp,
 } from "@/lib/outstation/service";
-import { runCrmAccountSetupReminder } from "@/lib/crm/account-setup-reminder";
 import { runDeadTelegramLinkAlert } from "@/lib/notifications/dead-telegram-link-alert";
 import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/milestone-emails";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
@@ -153,8 +152,10 @@ async function runDailyNotifications(request: Request) {
     needsYouDailyDigest,
     // Position 27, added 2026-09-28. Appended for the same reason as 26.
     needsYouWeeklyEmail,
-    // Position 28, added 2026-09-28. Appended for the same reason as 26 and 27.
-    crmAccountSetupReminder,
+    // Position 28 was the iReports360 account-setup reminder, retired 2026-11-07 with the vendor CRM
+    // (crm_cutover.vendor_sync_retired_at, 6 Nov 2026 — nobody can be given an iReports360 account
+    // any more). Its name and its Promise.all entry left TOGETHER, so every name below still lines
+    // up with its own entry; the position numbers in the comments below are each one lower now.
     // Position 29, added 2026-09-28. Appended for the same reason as 26, 27 and 28.
     deadTelegramLinkAlert,
     // Position 30, added 2026-09-29. Appended for the same reason as 26-29.
@@ -324,25 +325,10 @@ async function runDailyNotifications(request: Request) {
         skipped: true,
       })),
     ),
-    // A new hire still waiting for an iReports360 account. The FIRST notice goes out when the
-    // employee is added and is never repeated, so until today a task nobody acted on aged in
-    // silence: seven were open on 2026-09-28, the oldest for eight days, and five medical reps
-    // could not use Phoenix CRM at all because of them, with nothing red anywhere.
-    //
-    // It rides this job rather than taking a schedule of its own: a JOB_SCHEDULES declaration whose
-    // cron job does not exist reads to job-heartbeat-assess as a job that has STOPPED, and Telegrams
-    // every Super Admin about it for ever.
-    //
-    // 🔴 A clean queue tells nobody, and neither does a task opened today — see the module header.
-    runCrmAccountSetupReminder().catch(
-      onJobFailure("crm-account-setup-reminder", (message) => ({
-        delivered: 0,
-        overdue: 0,
-        pending: 0,
-        recipients: 0,
-        skippedReason: message,
-      })),
-    ),
+    // Retired 2026-11-07: the daily reminder that a new hire was still waiting for an iReports360
+    // account. The vendor CRM was retired on 6 Nov 2026 and Phoenix CRM is the only source of field
+    // work, so there is no account left to wait for. Its name and its result left this list
+    // together, so every position below is still aligned. Never re-wire it.
     // Telegram messages being thrown away because the recipient has no working link. Measured
     // 2026-09-28: NOT ONE link in the company was active, and 1,656 messages had been dropped that
     // way — 448 to the CEO alone — with nothing red anywhere, because the delivery is recorded as
@@ -391,7 +377,8 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (30 since the weekly system health digest retired 2026-10-23; 31 since the
+  // under-reports (29 since the iReports360 account-setup reminder retired 2026-11-07; 30 since the
+  // weekly system health digest retired 2026-10-23; 31 since the
   // outstation workload refresh was added 2026-10-22; 30 since the
   // probation Day 30/60/75 milestone emails were added 2026-09-29;
   // 29 since the dead-Telegram-link alert was added 2026-09-28; 28 since the CRM
@@ -401,7 +388,7 @@ async function runDailyNotifications(request: Request) {
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 30;
+  const totalJobs = 29;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -450,7 +437,6 @@ async function runDailyNotifications(request: Request) {
     marketingSla,
     needsYouDailyDigest,
     deadTelegramLinkAlert,
-    crmAccountSetupReminder,
     needsYouWeeklyEmail,
     notificationRetention,
     outstationGeocodeWarmup,

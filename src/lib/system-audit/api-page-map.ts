@@ -201,7 +201,7 @@ export const API_PAGE_MAP: Readonly<Record<string, ApiPageTargets>> = {
   "/api/support": { admin: "/admin/support-requests", hr: "/hr/admin/support-requests", portal: "/employee-portals/contact-hr-support" },
   "/api/company-activity-report": { admin: "/admin/company-activity-report", hr: "/hr/admin/company-activity-report" },
 
-  // ── Field force: Phoenix CRM, iReports 360, outstation ──────────────────────────────────────────
+  // ── Field force: Phoenix CRM, field work, outstation ──────────────────────────────────────────
   "/api/phoenix-crm": { admin: "/admin/field-crm", portal: "/employee-portals/field-crm" },
   "/api/phoenix-crm/double-visit-requests": {
     admin: "/admin/phoenix-crm/double-visit-requests",

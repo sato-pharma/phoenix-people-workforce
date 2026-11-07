@@ -23,11 +23,13 @@
 //    puts code -30 in the `regular` bucket: those 868 rows ARE field visits, and a hand-rolled
 //    `visit_type IN (0, -8)` would have lost them.
 //
-// 3. REGULAR (0) IS REPORTED SEPARATELY FROM CAMPAIGN (-8), AND NEITHER IS WIDENED INTO THE
-//    OTHER. Two reps log their entire month as campaign work; on any measure built on type 0
-//    alone they read as a flat zero while working full time. Whether a campaign call satisfies a
-//    planned doctor call is a business decision the owner has not made, so the review shows both
-//    columns and lets the reader see which is which.
+// 3. PLANNED IS REPORTED SEPARATELY FROM UNPLANNED, AND NEITHER IS WIDENED INTO THE OTHER. Until
+//    6 Nov 2026 the second column was campaign (-8); the owner replaced it with unplanned visits
+//    ("replace campagin with unplanned visist"). Phoenix serves every visit as type 0, so its own
+//    `is_unplanned` mark decides; on an archive day iReports360's campaign code still counts as
+//    unplanned (isUnplannedFieldVisit). Two reps once logged their entire month as campaign work;
+//    on any measure built on planned visits alone they read as a flat zero while working full
+//    time, so the review shows both columns and lets the reader see which is which.
 //
 // 4. CUSTOMERS COME FROM TYPE 0 ONLY. Regular visits are 100% contact-named; every other type
 //    shares ONE sentinel `contact_crm_id`. Unioning contact ids across all types would add
@@ -54,7 +56,8 @@ import {
   type VisitCountBucket,
   type VisitCountSplit,
 } from "@/lib/crm/visit-count-buckets";
-import { CAMPAIGN_TYPE, REGULAR_TYPE, classifyVisit } from "@/lib/crm/visit-types";
+import { REGULAR_TYPE, classifyVisit } from "@/lib/crm/visit-types";
+import { isUnplannedFieldVisit } from "@/lib/crm/visit-type-meaning";
 import { tidyAllCapitalsName } from "@/lib/employees/display-name";
 
 import { hrKey } from "./attribution";
@@ -77,7 +80,7 @@ import { periodMonthEnd } from "../period-format";
  */
 const VISIT_COLUMNS =
   "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, crm_save_date, crm_visit_id, " +
-  "double_crm_id, double_hr_id, double_name, double2_hr_id, double2_name, speciality, visit_date, visit_type";
+  "double_crm_id, double_hr_id, double_name, double2_hr_id, double2_name, is_unplanned, speciality, visit_date, visit_type";
 
 /** Just enough to route the vendor's unlabelled field visit, keyed back by `crm_visit_id`. */
 const UNLABELLED_FIELD_VISIT_TYPE = -30;
@@ -96,6 +99,8 @@ type VisitRow = {
   double_name: string | null;
   double2_hr_id: string | null;
   double2_name: string | null;
+  /** Phoenix CRM's own planned/unplanned mark; null on an iReports360 row. */
+  is_unplanned?: boolean | null;
   speciality: string | null;
   visit_date: string | null;
   visit_type: number | null;
@@ -109,9 +114,13 @@ export type VisitAgentFact = {
   agentName: string | null;
   /** Regular + campaign + unlabelled field rows — everything the classifier calls fieldwork. */
   fieldVisits: number;
-  /** Visit type 0 exactly. The only figure comparable with Doctor Coverage and DV Analytics. */
+  /** PLANNED visits: visit type 0 that is not unplanned. On an iReports360 month that is type 0 exactly, as before. */
   regularVisits: number;
-  /** Visit type -8. Real work; shown beside `regularVisits`, never folded into it. */
+  /**
+   * UNPLANNED visits (owner, 6 Nov 2026: "replace campagin with unplanned visist"): a Phoenix visit marked
+   * unplanned, or iReports360's campaign code (-8) on an archive day — isUnplannedFieldVisit. Real work; shown
+   * beside `regularVisits`, never folded into it. The field keeps its stored name.
+   */
   campaignVisits: number;
   /** Meetings, leave, admin, BRM. Recorded activity, but not a customer visit. */
   adminRows: number;
@@ -327,8 +336,10 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
       agent.fieldVisits += 1;
       addBucketToSplit(agent.visitSplit, countBucket, 1, fromPhoenix);
     } else agent.adminRows += 1;
-    if (isRegular) agent.regularVisits += 1;
-    if (row.visit_type === CAMPAIGN_TYPE) agent.campaignVisits += 1;
+    // Planned and unplanned, apart: Phoenix serves every visit as type 0, so its own mark decides.
+    const isUnplanned = isUnplannedFieldVisit({ is_unplanned: row.is_unplanned, visit_type: row.visit_type });
+    if (isRegular && !isUnplanned) agent.regularVisits += 1;
+    if (isUnplanned) agent.campaignVisits += 1;
     if (contactId != null) {
       agent.customers.add(contactId);
       if (countBucket === "AM") agent.customersAm.add(contactId);

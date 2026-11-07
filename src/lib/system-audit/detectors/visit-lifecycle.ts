@@ -1640,15 +1640,17 @@ export function createDatabaseVisitLifecyclePorts(supabase: Client): VisitLifecy
 
     async readStartedTeamSeats() {
       const { rpcAll } = await import("@/lib/supabase/server");
-      const rows = await rpcAll<{ seat_id: string; team_seat_id: string; starts_on: string; stops_on: string | null }>(
-        supabase,
-        "phoenix_crm_started_team_seats",
-        {},
-        ["seat_id", "starts_on"],
-      );
+      // THE DOOR'S OWN WINDOWS (20261106235920): a started team's territory from its start, cut at the day
+      // iReports360 was retired, and every territory from that day on. The started seats are read beside them
+      // only for the team each territory sits under (lead R1); a territory under no started team has none.
+      const [rows, started] = await Promise.all([
+        rpcAll<{ seat_id: string; starts_on: string; stops_on: string | null }>(supabase, "phoenix_crm_counted_seat_windows", {}, ["seat_id", "starts_on"]),
+        rpcAll<{ seat_id: string; team_seat_id: string; starts_on: string }>(supabase, "phoenix_crm_started_team_seats", {}, ["seat_id", "starts_on"]),
+      ]);
+      const teamOf = new Map(started.map((row) => [row.seat_id, row.team_seat_id]));
       return rows.map((row) => ({
         seatId: row.seat_id,
-        teamSeatId: row.team_seat_id,
+        teamSeatId: teamOf.get(row.seat_id) ?? "",
         startsOn: String(row.starts_on).slice(0, 10),
         stopsOn: row.stops_on ? String(row.stops_on).slice(0, 10) : null,
       }));

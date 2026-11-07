@@ -11,8 +11,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Per-day field-visit workload for a rep across a trip window, read from the admin/CRM
- * mirror (`ireports360_visits`). Backs the outstation expense-review "Verify workload" panel.
+ * Per-day field-visit workload for a person across a trip window, read from Phoenix CRM through the
+ * CRM visits door (the iReports360 archive only before his team's start). Backs the outstation
+ * expense-review "Verify workload" panel and the employee's own trip panel.
  * Counts every field visit where the rep is the primary agent OR the double-visit partner —
  * unlike the double-visit evidence route, which misses solo days and drops partner-side visits
  * whose primary agent has since departed.
@@ -54,7 +55,16 @@ export async function GET(request: Request) {
       );
     }
 
-    const data = await getRepTripVisitWorkload({ hrId: employeeHrId, tripEndDate, tripStartDate });
+    // Phoenix CRM's positions are a check-in on an approver's or a manager's screen, never on the
+    // employee's own (owner, 2026-10-02): only a caller looking at SOMEONE ELSE's trip — who passed the
+    // scope check above — gets them.
+    const viewingSomeoneElse = Boolean(requestedKey) && !ownKeys.includes(requestedKey as string);
+    const data = await getRepTripVisitWorkload({
+      hrId: employeeHrId,
+      includePhoenixCheckins: viewingSomeoneElse,
+      tripEndDate,
+      tripStartDate,
+    });
     return NextResponse.json({ data, success: true });
   } catch (error) {
     if (isForbiddenError(error)) {

@@ -1046,7 +1046,7 @@ export function DoubleVisitAnalyticsWorkspace({
         // show only a slim snapshot + date-range + export toolbar (no duplicate <h1>).
         <div className="flex flex-wrap items-end justify-between gap-3">
           <p className="text-sm font-medium text-slate-600">
-            Live iReports360 mirror · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
+            Phoenix CRM · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
@@ -1092,7 +1092,7 @@ export function DoubleVisitAnalyticsWorkspace({
             <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">Field performance evidence</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Double Visit Analytics</h1>
             <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
-              Live iReports360 mirror (auto-synced 3x daily) · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
+              Phoenix CRM, with the iReports360 archive before each team&apos;s start · {fmtDate(dashboard.dateFrom)} – {fmtDate(dashboard.dateTo)} · {fmt(dashboard.kpis.totalVisits)} visits
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1190,7 +1190,7 @@ export function DoubleVisitAnalyticsWorkspace({
             <Activity className="mx-auto h-12 w-12 text-slate-300" />
             <h2 className="mt-4 text-lg font-black text-slate-950">Visits Report not provisioned yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-500">
-              Double Visit Analytics reads live off the Visits Report (ireports360_visits) — that table isn&apos;t available in this environment yet.
+              Double Visit Analytics reads the field visits record (crm_visits_unified) — it isn&apos;t available in this environment yet.
             </p>
           </Card>
         ) : (

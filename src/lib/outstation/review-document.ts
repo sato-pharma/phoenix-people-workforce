@@ -42,6 +42,7 @@ import {
 import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
 import { PHOTO_FRAME_INDEX_ATTRIBUTE } from "@/lib/outstation/photo-frame";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
+import { outstationWorkloadSourceLabel } from "@/lib/outstation/workload-source-label";
 
 /** The light-mode Phoenix tokens, pinned. See the header: dark mode must never reach paper. */
 const P = {
@@ -64,22 +65,22 @@ export type ReviewDocumentWorkloadDay = {
   campaign: number;
   date: string;
   pharmacies: number;
-  /** Of the day's visits, how many are Phoenix CRM's own — it logs no pharmacy visit. */
+  /** Of the day's visits, how many are Phoenix CRM's own. */
   phoenix?: number;
   pm: number;
   regular: number;
 };
 
 /**
- * The live figures as the golden-rule split (src/lib/crm/visit-count-buckets.ts): a trip or day logged
- * in Phoenix CRM, which records no pharmacy visit, reads "not recorded in Phoenix" — never 0. The
+ * The live figures as the golden-rule split (src/lib/crm/visit-count-buckets.ts). Phoenix CRM records its
+ * own pharmacy calls (owner, 2026-10-03), so every split's pharmacy figure is the whole count. The
  * declared figure keeps its own wording ("not counted separately").
  */
 function liveSplit(figures: { am: number; pm: number; pharmacies: number; phoenix?: number }): VisitCountSplit {
   return { am: figures.am, pm: figures.pm, pharmacies: figures.pharmacies, ...(figures.phoenix ? { phoenix: figures.phoenix } : {}) };
 }
 
-/** One day's pharmacy cell: "2", "Not recorded" or "2 (iReports360 only)". */
+/** One day's pharmacy cell — the plain count since pharmacyRecordingOf answers "recorded" for every split. */
 function livePharmacyCell(day: ReviewDocumentWorkloadDay): string {
   const split = liveSplit(day);
   return pharmacyRecordingOf(split) === "not-recorded" ? pharmacyTileFigure(split).value : pharmacyFigureText(split);
@@ -207,7 +208,7 @@ function factsBlock(request: OutstationExpenseRequest): string {
     ${fact("AM visits", escapeHtml(String(request.amWorkload ?? 0)))}
     ${fact("PM visits", escapeHtml(String(request.pmWorkload ?? 0)))}
     ${fact("Pharmacy visits", escapeHtml(pharmacies))}
-    ${fact("Workload source", escapeHtml(words(request.workloadSource ?? "manual")))}
+    ${fact("Workload source", escapeHtml(outstationWorkloadSourceLabel(request.workloadSource)))}
     ${fact("Workload match (at submission)", escapeHtml(words(request.workloadMatchStatus)))}
   </div>`;
 }
@@ -272,7 +273,7 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
   const days = workload.days.length
     ? `<table class="tbl">
         <colgroup><col style="width:34%"><col style="width:11%"><col style="width:11%"><col style="width:14%"><col style="width:15%"><col style="width:15%"></colgroup>
-        <thead><tr><th>Day</th><th class="num">AM</th><th class="num">PM</th><th class="num">Pharmacies</th><th class="num">Regular</th><th class="num">Campaign</th></tr></thead>
+        <thead><tr><th>Day</th><th class="num">AM</th><th class="num">PM</th><th class="num">Pharmacies</th><th class="num">Planned</th><th class="num">Unplanned</th></tr></thead>
         <tbody>${workload.days
           .map(
             (day) =>
@@ -283,13 +284,13 @@ function workloadBlock(request: OutstationExpenseRequest, workload: ReviewDocume
     : "";
 
   return `<p class="chipline"><span class="chip" style="${workloadChipStyle(workload.matchStatus)}">${escapeHtml(words(workload.matchStatus))}</span>
-      <span class="thin">Live iReports360 Visits Report (admin/CRM &mdash; every field visit, agent or double-visit partner).</span></p>
+      <span class="thin">Phoenix CRM visits &mdash; every field visit, own or with a rep (the iReports360 archive before the team&rsquo;s start).</span></p>
     ${workload.freshnessHeadline ? `<div class="amber"><p class="amber__k">Stored verdict is out of date</p><p class="amber__v">${escapeHtml(workload.freshnessHeadline)}</p></div>` : ""}
     <div class="boxes boxes--3">
       <div class="box"><p class="box__k">Declared (sheet)</p><p class="box__v">${declared}</p></div>
       <div class="box${differs ? " box--flag" : ""}"><p class="box__k">Actual (evidence)</p><p class="box__v">AM ${live.am} &middot; PM ${live.pm} &middot; ${escapeHtml(formatPharmacyFigure(liveSplit(live)))}</p>
         ${differs ? `<p class="box__flag">&ne; declared (${actualTotal} actual vs ${declaredTotal} declared)</p>` : ""}</div>
-      <div class="box"><p class="box__k">Visit type</p><p class="box__v">Regular ${live.regular} &middot; Campaign ${live.campaign}</p></div>
+      <div class="box"><p class="box__k">Visit type</p><p class="box__v">Planned ${live.regular} &middot; Unplanned ${live.campaign}</p></div>
     </div>
     ${days}`;
 }
