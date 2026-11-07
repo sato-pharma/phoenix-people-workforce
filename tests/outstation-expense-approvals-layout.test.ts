@@ -127,6 +127,15 @@ export function runOutstationExpenseApprovalsLayoutTests() {
   assert.doesNotMatch(filters, />Filters<\/h2>/, "HEADLINE: the filter bar has no heading row of its own");
   assert.match(filters, /data-save-strip[\s\S]*?<p className="min-w-0 flex-1 basis-72 /, "HEADLINE: N unsaved · Save N is one line, never a three-line banner");
   assert.match(workspace, /className="min-w-0 space-y-3" data-expense-review/, "and the parts sit close");
+  // Owner, 2026-11-07: "fold the expense table heading into one line".
+  const bulk = read("review-bulk-bar.tsx");
+  assert.doesNotMatch(table, /<AdminTableShell\b/, "HEADLINE: the trips' table has no three-row section header");
+  assert.match(
+    table,
+    /data-table-heading>\s*<h2 [^>]*title=\{REVIEW_TAB_DESCRIPTIONS\[tab\]\}>[\s\S]*?<\/h2>\s*\{!loading && !loadError && rows\.length > 0 \? bulkBar : null\}\s*<\/div>/,
+    "HEADLINE: the tab's title and the tick-and-approve controls share ONE heading line; the tab's sentence is the title's hover",
+  );
+  assert.doesNotMatch(bulk, /border-b border-slate-200 bg-slate-50 px-4 py-3/, "HEADLINE: the bulk controls are never a band of their own");
 
   // Six tiles, and EVERY ONE says what a filtered count is out of — Adjusted included.
   for (const key of ["pending", "look", "clean", "approved", "adjusted", "rejected"]) {
