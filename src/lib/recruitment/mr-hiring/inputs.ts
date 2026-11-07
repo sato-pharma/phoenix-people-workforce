@@ -9,6 +9,7 @@ import {
   MR_AREA_LIMIT,
   MR_COMMENT_LIMIT,
   MR_LOCATION_LIMIT,
+  MR_PHONE_CALL_MINUTES,
   isMrInterviewRound,
   isMrLine,
   isMrRecommendation,
@@ -163,9 +164,6 @@ export function parseMrBookingInput(raw: unknown): MrBookingInput {
   if (!realDay(dateKey)) throw new Error("Choose the interview day.");
   const startMinutes = Number(body.startMinutes);
   if (!Number.isInteger(startMinutes) || startMinutes < 0 || startMinutes >= 24 * 60) throw new Error("Choose the interview time.");
-  const durationMinutes = body.durationMinutes === undefined || body.durationMinutes === "" ? 30 : Number(body.durationMinutes);
-  if (!Number.isInteger(durationMinutes) || durationMinutes < 10 || durationMinutes > 240) throw new Error("An interview lasts 10 minutes to 4 hours.");
-
   let platform: MrPlatform;
   if (body.round === "hr_first") {
     if (body.platform === "phone") {
@@ -181,6 +179,11 @@ export function parseMrBookingInput(raw: unknown): MrBookingInput {
     if (body.platform !== "zoom" && body.platform !== "in_office") throw new Error("Choose In person or Zoom.");
     platform = body.platform;
   }
+  // A phone call's length is never asked: it holds MR_PHONE_CALL_MINUTES whatever the request sent.
+  const durationMinutes =
+    platform === "phone" ? MR_PHONE_CALL_MINUTES : body.durationMinutes === undefined || body.durationMinutes === "" ? 30 : Number(body.durationMinutes);
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 10 || durationMinutes > 240) throw new Error("An interview lasts 10 minutes to 4 hours.");
+
   const location = platform === "in_office" ? text(body.location) || null : null;
   if (location && location.length > MR_LOCATION_LIMIT) throw new Error(`Keep the location under ${MR_LOCATION_LIMIT} characters.`);
 
