@@ -45,6 +45,7 @@ import { afterResponse } from "@/lib/http/after-response";
 import { cairoBusinessDay, fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
 import type { DayStartView } from "@/lib/phoenix-crm/day-start-rules";
+import { doctorNeedsFullName, fullNameNeededSentence } from "@/lib/phoenix-crm/doctor-name-rules";
 import { loadDayStartOn } from "@/lib/phoenix-crm/server/day-start";
 import {
   DEVICE_CLOCK_TOLERANCE_MINUTES,
@@ -744,6 +745,11 @@ export type VisitCustomerOption = {
    */
   validateFirst: boolean;
   /**
+   * 🔴 A CLINIC DOCTOR HE ADDED WITH ONE OR TWO NAMES (owner, 2026-11-07, doctor-name-rules.ts): Add visit
+   * offers no visit until he writes the full name, and the save refuses one. False on a manager's form.
+   */
+  needsFullName?: boolean;
+  /**
    * Met outside the list and validated at the door, waiting to be added (2026-09-29). A visit to him
    * is an out-of-list visit: it counts once the district manager and SFE admit him.
    */
@@ -1315,6 +1321,15 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
           validated: row.validated_at !== null && row.validated_at !== undefined,
           earlierVisits: unvalidatedVisits.get(customerId) ?? 0,
         }),
+      needsFullName:
+        enteredAs === "rep" &&
+        doctorNeedsFullName({
+          listType: row.list_type,
+          origin: row.origin,
+          status: row.status,
+          name: row.name,
+          fullNameHeld: row.full_name_held,
+        }),
       outside: row.status === "outside",
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
       // Pharmacies only, both of them: a doctor's phone is shown on his own page and the picker has
@@ -1642,7 +1657,11 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     visit.pharmacyName ? loadListedPharmacies(seat.seatId, isTest) : Promise.resolve([] as ListedPharmacy[]),
     // The third-visit rule below is the rep's alone, so only his save reads the customer and his count.
     enteredAs === "rep"
-      ? supabase.from("phoenix_crm_customers").select("validated_at, list_type").eq("id", visit.customerId).maybeSingle()
+      ? supabase
+          .from("phoenix_crm_customers")
+          .select("validated_at, list_type, origin, status, name, full_name_held")
+          .eq("id", visit.customerId)
+          .maybeSingle()
       : Promise.resolve(null),
     enteredAs === "rep"
       ? supabase
@@ -1680,6 +1699,20 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown, client: 
     throwIfError(unvalidatedCustomer.error);
     throwIfError(earlierVisits.error);
     const customer = unvalidatedCustomer.data as Row | null;
+    // 🔴 A doctor he added with one or two names is never visited until the full name is written (owner,
+    // 2026-11-07, doctor-name-rules.ts) — the rep's own save only, before anything is written.
+    if (
+      customer &&
+      doctorNeedsFullName({
+        listType: customer.list_type,
+        origin: customer.origin,
+        status: customer.status,
+        name: customer.name,
+        fullNameHeld: customer.full_name_held,
+      })
+    ) {
+      throw validationError(fullNameNeededSentence(String(customer.name)));
+    }
     if (
       customer &&
       unvalidatedVisitRefused({

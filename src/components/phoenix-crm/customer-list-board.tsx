@@ -58,6 +58,7 @@ import {
 } from "@/lib/phoenix-crm/customer-list-grouping";
 import { clusterRows, describeSharing, findNeighbours, type NearbyContact } from "@/lib/crm/location-confidence";
 import { factInk, gradeInk, listRowFacts, rowPoint } from "@/lib/phoenix-crm/list-row-facts";
+import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/doctor-name-rules";
 import { validateFirstIn } from "@/lib/phoenix-crm/validate-next";
 import { planPatternRows } from "@/lib/phoenix-crm/plan-pattern";
 import { LOCATION_CHECKING_PILL, LOCATION_NOT_CONFIRMED_PILL } from "@/lib/phoenix-crm/google-place-rules";
@@ -230,6 +231,7 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
         {customer.locationCheck === "checking" ? <CrmPill tone="info">{LOCATION_CHECKING_PILL}</CrmPill> : null}
         {customer.locationCheck === "not_confirmed" ? <CrmPill tone="orange">{LOCATION_NOT_CONFIRMED_PILL}</CrmPill> : null}
         {marked && customer.locationCheck !== "checking" ? <CrmPill tone="orange">Validate first</CrmPill> : null}
+        {customer.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
         {waitingPills(customer)}
       </>
     );
@@ -249,6 +251,8 @@ function rowPills(customer: ListCustomer, variant: CustomerListVariant, marked =
   return (
     <>
       <CrmPill tone={standing.tone}>{standing.label}</CrmPill>
+      {/* Owner, 2026-11-07: out of the plan and Add visit until his full name is written (doctor-name-rules.ts). */}
+      {customer.needsFullName ? <CrmPill tone="bad">{FULL_NAME_NEEDED_TAG}</CrmPill> : null}
       {customer.origin === "new" ? <CrmPill tone="orange">New customer</CrmPill> : null}
       {customer.pendingGradeRequestId ? (
         <CrmPill tone="info">{customer.pendingGrade ? `Grade ${customer.pendingGrade} proposed` : "Grade proposed"}</CrmPill>

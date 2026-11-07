@@ -68,6 +68,7 @@ import {
   crmTextareaClassName,
 } from "@/components/phoenix-crm/ui";
 import { directionsUrl } from "@/lib/phoenix-crm/directions";
+import { FULL_NAME_NEEDED_TAG } from "@/lib/phoenix-crm/doctor-name-rules";
 import { DROP_REASONS } from "@/lib/phoenix-crm/entry-rules";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import {
@@ -349,6 +350,21 @@ export function CustomerScreen({
           </CrmNote>
         ) : null}
 
+        {/* Owner, 2026-11-07: a doctor he added with one or two names is out of the plan and Add visit
+            until the full name is written — whatever his status, so the way in is here for a pending one too. */}
+        {customer.needsFullName && view.canEdit ? (
+          <>
+            <CrmNote className="mt-3" title={FULL_NAME_NEEDED_TAG} tone="warn">
+              {customer.name} stays out of your plan and Add visit until you write the doctor&apos;s first, middle and last name, as the signboard
+              shows them.
+            </CrmNote>
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+              <CrmButton onClick={() => onOpen({ name: "edit-details", customerId: customer.customerId })} variant="primary">
+                Write the full name
+              </CrmButton>
+            </div>
+          </>
+        ) : null}
         {view.canEdit || offerValidate ? (
           <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
             {offerValidate ? (

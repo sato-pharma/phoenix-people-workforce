@@ -310,11 +310,11 @@ export function stampBandFraction(width: number, height: number): number {
 // customer-name checks read, and joining compounds there would move every one of those keys.
 
 /** The two words that open an Arabic compound name, as the fold writes them — عبد الشافي, ابو الفتوح. */
-const COMPOUND_HEADS: ReadonlySet<string> = new Set(["عبد", "ابو"]);
+export const COMPOUND_HEADS: ReadonlySet<string> = new Set(["عبد", "ابو"]);
 /** The two words that close one — نور الدين, جاد الله. Neither is a family name on its own. */
-const COMPOUND_TAILS: ReadonlySet<string> = new Set(["الدين", "الله"]);
+export const COMPOUND_TAILS: ReadonlySet<string> = new Set(["الدين", "الله"]);
 /** Honorifics `normalizeContactName` keeps, folded the way it folds them. */
-const PLATE_TITLES: ReadonlySet<string> = new Set([
+export const PLATE_TITLES: ReadonlySet<string> = new Set([
   "استاذ",
   "الاستاذ",
   "استاذه",
@@ -410,7 +410,7 @@ export function boardNamesGivenNameAlone(customerName: string | null, personName
 }
 
 /** Is this word of the customer's name among the words read off one candidate? */
-function nameWordIsThere(given: NameWord, read: readonly NameWord[]): boolean {
+export function nameWordIsThere(given: NameWord, read: readonly NameWord[]): boolean {
   const oneWay = (name: NameWord): NameWord => ({
     core: name.core === null ? null : spelledOneWay(name.core),
     word: spelledOneWay(name.word),

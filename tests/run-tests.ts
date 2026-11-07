@@ -2084,6 +2084,7 @@ import { runPhoenixCrmSplitModulesTests } from "./phoenix-crm-split-modules.test
 import { runPhoenixCrmVisitFormEaseTests } from "./phoenix-crm-visit-form-ease.test.ts";
 import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test.ts";
 import { runPhoenixCrmSignboardCheckTests } from "./phoenix-crm-signboard-check.test.ts";
+import { runPhoenixCrmDoctorFullNameTests } from "./phoenix-crm-doctor-full-name.test.ts";
 import { runPhoenixCrmCaptureTrustPlaceTests } from "./phoenix-crm-capture-trust-place.test.ts";
 import { runPhoenixCrmValidationFeedbackTests } from "./phoenix-crm-validation-feedback.test.ts";
 import { runPhoenixCrmSharedPlaceTests } from "./phoenix-crm-shared-place.test.ts";
@@ -7956,6 +7957,11 @@ await runTest(
 await runTest(
   "Phoenix CRM signboard check (owner, 2026-10-08): the module validated a location while he graded an identification, so the signboard in the place photo is now read — a confident \"no signboard at all\" holds on either list, an AM capture is judged on the place name only and an AM sign naming nobody is a match, a PM capture is judged on the person, NO ANSWER NEVER HOLDS, Phoenix's own caption band is cropped off in both canvas shapes without reaching the camera's frame guide, and the nightly pass reads the backlog oldest first, files a case, and never holds, un-validates or tells anybody",
   runPhoenixCrmSignboardCheckTests,
+);
+
+await runTest(
+  "Phoenix CRM doctor full name (owner, 2026-11-07): a clinic doctor is written as first, middle and last name, each box a real name; a doctor a rep added with one or two names is blocked from the plan, Suggest, Copy and Add visit until it is written; the full name is held against his signboard — 60% saved, under 40% refused, in between it waits — counted over the words the board shows",
+  runPhoenixCrmDoctorFullNameTests,
 );
 
 await runTest(

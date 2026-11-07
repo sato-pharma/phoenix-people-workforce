@@ -70,6 +70,7 @@ import { useSentVisitRecording } from "@/components/phoenix-crm/visit-recording-
 import { CrmVisitRecordingPlayer, CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isDayActivity, PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
+import { fullNameNeededSentence } from "@/lib/phoenix-crm/doctor-name-rules";
 import { UNVALIDATED_CUSTOMER_VISIT_REFUSED, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import { MANAGER_OWN_VISIT_ON_VACANT_SAVED } from "@/lib/phoenix-crm/manager-plan-rules";
 import { MISSED_RECORD_MARK } from "@/lib/phoenix-crm/missed-records";
@@ -883,7 +884,7 @@ function AddFlow({
       {back}
       <CrmBlock>
         <CrmNote title={customer.name} tone="warn">
-          {UNVALIDATED_CUSTOMER_VISIT_REFUSED}
+          {customer.needsFullName ? fullNameNeededSentence(customer.name) : UNVALIDATED_CUSTOMER_VISIT_REFUSED}
         </CrmNote>
       </CrmBlock>
     </CrmPanel>
@@ -925,7 +926,8 @@ function AddFlow({
     const customer = find(step.customerId);
     if (!customer) return missing(step.customerName);
     if (customer.waitingToSend) return alreadyWaiting(customer);
-    if (customer.validateFirst) return validateFirst(customer);
+    // Owner, 2026-11-07: a doctor he added with one or two names is not visited until the full name is written.
+    if (customer.validateFirst || customer.needsFullName) return validateFirst(customer);
     current = routeFor(customer);
   }
 
@@ -1071,7 +1073,7 @@ function AddFlow({
       const customer = find(formStep.customerId);
       if (!customer) return missing(null);
       if (customer.waitingToSend) return alreadyWaiting(customer);
-      if (customer.validateFirst) return validateFirst(customer);
+      if (customer.validateFirst || customer.needsFullName) return validateFirst(customer);
       return shell(
         formStep,
         <VisitLogForm

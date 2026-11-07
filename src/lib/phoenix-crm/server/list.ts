@@ -29,12 +29,21 @@ import { loadBrickNames } from "@/lib/crm/brick-geo";
 // is: the sharing question can only be answered against the WHOLE company's contact roster, which
 // Phoenix CRM's own tables do not hold.
 import type { SharedWith } from "@/lib/crm/location-confidence";
+import { normalizeContactName } from "@/lib/crm/campaign-contact-match";
 import { isMissingCrmRpcError } from "@/lib/crm/reads";
 import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
+import {
+  boardNamesOf,
+  doctorNeedsFullName,
+  FULL_NAME_REFUSED,
+  fullNameMatchPercent,
+  fullNameRuling,
+  parseDoctorFullName,
+} from "@/lib/phoenix-crm/doctor-name-rules";
 import {
   cleanText,
   CUSTOMER_NAME_MAX,
@@ -369,6 +378,11 @@ export type ListCustomer = {
   grade: PhoenixCrmGrade | null;
   origin: "reference" | "new";
   referenceContactCrmId: number | null;
+  /**
+   * 🔴 A CLINIC DOCTOR HE ADDED WITH ONE OR TWO NAMES (owner, 2026-11-07, doctor-name-rules.ts): never
+   * planned and never visited until he writes the first, middle and last name in Change the details.
+   */
+  needsFullName?: boolean;
   /**
    * "pending": carried over from iReports360 and not validated yet. It counts in no report.
    * "outside": met outside the list and validated at the door, waiting to be added (2026-09-29).
@@ -794,7 +808,7 @@ const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, brick_lookup, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
   "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason, shared_place_id, session, signboard_retake:signboard_check->retake";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, " +
+  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, reopened_at, primary_pharmacy_name, phone, intake_where, intake_note, intake_timings, full_name_held, " +
   // A pinned pharmacy's own location (2026-10-09). Every one is nullable and null on every doctor.
   "pharmacy_pin_lat, pharmacy_pin_lon, pharmacy_pin_accuracy_meters, pharmacy_pin_captured_at, pharmacy_pin_captured_by_hr_id, pharmacy_pin_address, " +
   "pharmacy_pin_governorate, pharmacy_pin_area_code, pharmacy_pin_area_name, pharmacy_pin_brick_id, pharmacy_pin_brick_name, pharmacy_pin_brick_distance_km, pharmacy_pin_brick_lookup";
@@ -1731,6 +1745,13 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       grade,
       origin,
       referenceContactCrmId: contactCrmId,
+      needsFullName: doctorNeedsFullName({
+        listType: row.list_type,
+        origin: row.origin,
+        status: row.status,
+        name: row.name,
+        fullNameHeld: row.full_name_held,
+      }),
       status,
       section: listSectionOf({ status, origin, validatedAt, listType: row.list_type }),
       potentialGrade: parsePotentialGrade(row.potential_grade),
@@ -2700,28 +2721,97 @@ export async function renameCustomer(
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to change.");
-  const name = cleanText(body.name, CUSTOMER_NAME_MAX);
-  if (!name || name.length < 3) throw validationError("Write the customer's full name.");
+  const customerId = String(body.customerId).toLowerCase();
   const phone = Object.prototype.hasOwnProperty.call(body, "phone") ? parseCustomerPhone(body.phone) : null;
   if (phone && !phone.ok) throw validationError(phone.error);
+  // A clinic doctor's new name is three names, held against his board (owner, 2026-11-07).
+  const named = await fullNameForRename(seat.seatId, isTest, customerId, body);
   const result = await callPhoenixCrm<Row>("phoenix_crm_rename_customer", {
     p: {
       seat_id: seat.seatId,
       actor_hr_id: viewer.hrId,
       is_test: isTest,
-      customer_id: String(body.customerId).toLowerCase(),
-      name,
+      customer_id: customerId,
+      name: named.name,
       speciality: cleanText(body.speciality, 80),
       allow_same_name: body.allowSameName === true,
       ...(phone?.ok ? { phone: phone.value } : {}),
     },
   });
+  if (named.hold) {
+    await callPhoenixCrm<Row>("phoenix_crm_hold_full_name", {
+      p: {
+        seat_id: seat.seatId,
+        actor_hr_id: viewer.hrId,
+        is_test: isTest,
+        customer_id: customerId,
+        name: named.hold.name,
+        score: named.hold.percent,
+        board_names: named.hold.boardNames,
+      },
+    });
+  }
   return {
     customerId: String(result.customer_id),
     customerName: String(result.customer_name),
     speciality: text(result.speciality),
     phone: text(result.phone),
   };
+}
+
+/**
+ * The name `renameCustomer` saves, and the full name it holds for the Super Admin (owner, 2026-11-07,
+ * doctor-name-rules.ts). A clinic doctor's NEW name must be three names and is held against what was
+ * read off his signboard or timetable: 60%+ is saved, under 40% refused, in between the old name stays
+ * and the new one waits — the doctor is no longer blocked meanwhile. An AM account, a pharmacy and a
+ * name left as it was keep the old rule.
+ */
+async function fullNameForRename(
+  seatId: string,
+  isTest: boolean,
+  customerId: string,
+  body: Record<string, unknown>,
+): Promise<{ name: string; hold: { name: string; percent: number | null; boardNames: string[] } | null }> {
+  const supabase = getSupabaseAdmin();
+  const read = await supabase
+    .from("phoenix_crm_customers")
+    .select("name, list_type, status, validated_at")
+    .eq("id", customerId)
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .maybeSingle();
+  throwIfError(read.error);
+  const current = read.data as Row | null;
+  const typed = cleanText(body.name, CUSTOMER_NAME_MAX);
+  const unchanged =
+    current !== null && typed !== null && normalizeContactName(typed) === normalizeContactName(String(current.name ?? ""));
+  if (!current || String(current.list_type).toUpperCase() !== "PM" || (unchanged && !body.nameParts)) {
+    if (!typed || typed.length < 3) throw validationError("Write the customer's full name.");
+    return { name: typed, hold: null };
+  }
+  const full = parseDoctorFullName(body.nameParts, body.name);
+  if (!full.ok) throw validationError(full.error);
+  const name = cleanText(full.value, CUSTOMER_NAME_MAX) ?? full.value;
+  if (normalizeContactName(name) === normalizeContactName(String(current.name ?? ""))) return { name, hold: null };
+
+  const places = await supabase
+    .from("phoenix_crm_places")
+    .select("signboard_check, schedule_check")
+    .eq("customer_id", customerId)
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .eq("status", "active");
+  throwIfError(places.error);
+  const boardNames = ((places.data ?? []) as Row[]).flatMap((place) => [
+    ...boardNamesOf(place.signboard_check),
+    ...boardNamesOf(place.schedule_check),
+  ]);
+  const percent = fullNameMatchPercent(name, boardNames);
+  const validated = current.validated_at !== null && current.validated_at !== undefined;
+  const ruling = fullNameRuling(percent, validated);
+  if (ruling === "refuse") throw validationError(FULL_NAME_REFUSED);
+  if (ruling === "hold") return { name: String(current.name), hold: { name, percent, boardNames: boardNames.slice(0, 12) } };
+  return { name, hold: null };
 }
 
 /**
