@@ -5,7 +5,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| `CLAUDE.md` | 11614 | `772d15124e7dbe4d` |
+| `CLAUDE.md` | 11712 | `561905e90abed852` |
 | `docs/standing-rules-account.md` | 22427 | `cfb128ad8322e052` |
 | `hooks/cloud-first-router.mjs` | 5388 | `38817a5603e0abe6` |
 | `hooks/compact-summary-log.mjs` | 4793 | `3a0a55fdeba8da84` |
@@ -100,7 +100,7 @@ the tree stays a function of the source and an unchanged hour pushes nothing.
 | `scripts/slowness-sentinel.mjs` | 17031 | `65ae4c4297738ba7` |
 | `scripts/spare-follow-production.ps1` | 4596 | `fff7c4bbea825060` |
 | `scripts/spare-laptop-ssh-setup.ps1` | 3310 | `0c1bc2b6a77249d7` |
-| `scripts/spare-test.ps1` | 7404 | `d1820b0797a0af94` |
+| `scripts/spare-test.ps1` | 9143 | `e986943f1d597c5d` |
 | `scripts/spare-tunnel.ps1` | 1338 | `ad01fbbdf1b43fe0` |
 | `scripts/spare.ps1` | 1333 | `f1d5a4cb414ecef9` |
 | `scripts/tests/archive/lock-racer.mjs` | 561 | `48a1e54132cc6dce` |
